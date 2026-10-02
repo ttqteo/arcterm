@@ -14,13 +14,60 @@ import { ChevronRight } from "lucide-react";
 import { type ReactNode } from "react";
 import { cn } from "@/util/util";
 import { MOTION } from "./motiontokens";
+import {
+    railSectionOpenAtom,
+    sectionExpandable,
+    sectionOpen,
+    toggleSection,
+    type RailSectionHeader,
+} from "./railsections";
 import { Tooltip } from "./tooltip";
 
 export interface RailSection {
     id: string;
     icon: ReactNode; // the first section's icon is the rail's collapsed glyph; others are unused for now
-    label: string; // in-content headings are caller-owned
+    label: string; // in-content headings are caller-owned, unless `header` is set
     content: ReactNode;
+    // when set, the rail draws the section's header row and owns open/closed; the caller's content then
+    // carries no heading of its own
+    header?: RailSectionHeader;
+}
+
+function HeadedSection({ section, header }: { section: RailSection; header: RailSectionHeader }) {
+    const [stored, setStored] = useAtom(railSectionOpenAtom);
+    const expandable = sectionExpandable(header);
+    const open = sectionOpen(stored, section.id, header);
+    return (
+        <section data-rail-section={section.id} data-open={open ? "true" : "false"}>
+            <button
+                type="button"
+                disabled={!expandable}
+                aria-expanded={expandable ? open : undefined}
+                onClick={() => setStored(toggleSection(stored, section.id, header))}
+                className={cn(
+                    "group flex w-full items-center gap-[8px] rounded-[6px] py-[5px] text-left",
+                    expandable ? "cursor-pointer" : "cursor-default opacity-60"
+                )}
+            >
+                <h3 className={cn("text-[12px] font-medium text-muted", expandable && "group-hover:text-secondary")}>
+                    {section.label}
+                </h3>
+                {header.count != null ? (
+                    <span className="font-mono text-[11px] text-ink-faint">{header.count}</span>
+                ) : null}
+                <ChevronRight
+                    size={12}
+                    aria-hidden
+                    className={cn(
+                        "text-ink-faint transition-transform",
+                        open && "rotate-90",
+                        !expandable && "invisible"
+                    )}
+                />
+            </button>
+            {open ? <div className="pb-[10px] pt-[8px]">{section.content}</div> : null}
+        </section>
+    );
 }
 
 // An extra glyph in the rail's icon slot — a trigger for a *sibling* drawer (e.g. the Jarvis profile
@@ -90,6 +137,7 @@ export function CollapsibleRail({
     const [open, setOpen] = useAtom(openAtom);
     const collapsedWidth = hideWhenCollapsed ? 0 : RAIL_COLLAPSED_PX;
     const width = forceCollapsed ? 0 : open ? RAIL_EXPANDED_PX : collapsedWidth;
+    const headed = sections.some((s) => s.header != null);
 
     return (
         <MotionConfig reducedMotion="user">
@@ -144,10 +192,19 @@ export function CollapsibleRail({
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex min-h-0 flex-1 flex-col gap-[24px] overflow-y-auto px-[18px] pb-[40px] pt-[8px]">
-                                {sections.map((s) => (
-                                    <div key={s.id}>{s.content}</div>
-                                ))}
+                            <div
+                                className={cn(
+                                    "flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[8px]",
+                                    headed ? "gap-[4px]" : "gap-[24px]"
+                                )}
+                            >
+                                {sections.map((s) =>
+                                    s.header ? (
+                                        <HeadedSection key={s.id} section={s} header={s.header} />
+                                    ) : (
+                                        <div key={s.id}>{s.content}</div>
+                                    )
+                                )}
                             </div>
                             {footer ? (
                                 <div className="shrink-0 border-t border-border px-[18px] py-3">{footer}</div>
