@@ -54,6 +54,11 @@ fn spawn_wavesrv(
         .env("WAVETERM_APP_PATH", &app_path)
         .env("WAVETERM_DATA_HOME", &data_home)
         .env("WAVETERM_CONFIG_HOME", &config_home)
+        // wavesrv shuts down when its stdin hits EOF (stdinReadWatch), so give it a pipe we own
+        // instead of inheriting ours: an inherited stdin is whatever launched `task dev` (NUL from
+        // a script or agent shell reads EOF at once). The pipe lives in WavesrvChild for the app's
+        // lifetime and closes with this process.
+        .stdin(Stdio::piped())
         // wavesrv logs to stderr (which we parse); discard stdout so an unread pipe can't
         // fill and deadlock it.
         .stdout(Stdio::null())
