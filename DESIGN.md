@@ -1,34 +1,34 @@
 ---
 version: alpha
-name: Wave Terminal Cockpit
-description: Design system of the Tauri agent-cockpit frontend. Tokens mirror frontend/tailwindsetup.css @theme values (Midnight default); prose explains how they are applied. The code is authoritative when this file disagrees.
+name: Arc Cockpit
+description: Design system of the Tauri agent-cockpit frontend. Tokens mirror frontend/tailwindsetup.css @theme values (Graphite default); prose explains how they are applied. The code is authoritative when this file disagrees.
 colors:
   # core surfaces
-  background: "#0c0e11"
-  surface: "#0e1116"
-  surface-raised: "#13171d"
-  surface-hover: "#171c22"
-  surface-code: "#0b0d10"
-  surface-selected: "#1a222c"
-  panel: "rgba(19, 23, 29, 0.6)"
-  lane: "#12161b"
-  modalbg: "#13171d"
+  background: "#101010"
+  surface: "#161616"
+  surface-raised: "#1c1c1c"
+  surface-hover: "#252525"
+  surface-code: "#0c0c0c"
+  surface-selected: "#2d2d2d"
+  panel: "rgba(28, 28, 28, 0.6)"
+  lane: "#141414"
+  modalbg: "#1c1c1c"
   # text (ink ramp)
-  foreground: "#e6e9ed"
-  white: "#e6e9ed"
-  primary: "#e6e9ed"
-  secondary: "#cfd5db"
-  muted-foreground: "#c3cad1"
-  ink-hi: "#dfe4ea"
-  ink-mid: "#9aa3ad"
-  muted: "#7f858b"
-  ink-faint: "#646a72"
+  foreground: "#d6d6d6"
+  white: "#d6d6d6"
+  primary: "#d6d6d6"
+  secondary: "#cccccc"
+  muted-foreground: "#c9c9c9"
+  ink-hi: "#e3e3e3"
+  ink-mid: "#a2a2a2"
+  muted: "#8e8e8e"
+  ink-faint: "#666666"
   # borders (edge ramp)
-  border: "#1c2128"
-  edge-mid: "#20262e"
-  edge-strong: "#2a313a"
-  edge-faint: "#161a20"
-  # accent (periwinkle)
+  border: "#1f1f1f"
+  edge-mid: "#2a2a2a"
+  edge-strong: "#3d3d3d"
+  edge-faint: "#1a1a1a"
+  # accent (blue, with a periwinkle ramp)
   accent: "#5e9cff"
   accent-50: "#e8ecff"
   accent-100: "#cdd6ff"
@@ -88,12 +88,13 @@ colors:
   syntax-comment: "#6b7178"
   syntax-punct: "#8b939d"
   syntax-ident: "#cdd3da"
+  code-inline: "#d7b981"
   # git diff added/removed lines and +N/-N counts
   diff-added: "#3fb950"
   diff-removed: "#f85149"
 typography:
   font-sans:
-    fontFamily: "Hanken Grotesk, system-ui, sans-serif"
+    fontFamily: "Inter, system-ui, sans-serif"
   font-mono:
     fontFamily: "JetBrains Mono, monospace"
   font-markdown:
@@ -165,20 +166,21 @@ is terminal-native: information density is high, chrome is thin, and every
 interactive element answers to the keyboard before the mouse (the app is
 designed to be operated entirely from the keyboard; the mouse is a fallback).
 
-The visual identity is **midnight ink + periwinkle accent**. Backgrounds are
-near-black blue-greys layered in a tonal surface ramp; text rides an ink ramp
-that steps from `ink-faint` through `muted` to near-white; interaction is
-driven by a single periwinkle accent (`#5e9cff`). Status is semantic and never
-color-alone: amber = asking, green = working, red = error.
+The visual identity is **graphite**: neutral greys with no hue, layered in a
+tonal surface ramp so regions are separated by tone rather than by lines. Text
+rides an ink ramp that steps from `ink-faint` through `muted` to near-white.
+The blue accent (`#5e9cff`) is used sparingly (the primary CTA, focus, links
+and the running state) so it still reads as a signal. Status is semantic and
+never color-alone: amber = asking, green = working, red = error.
 
-Typography pairs **Hanken Grotesk** (UI voice) with **JetBrains Mono**
+Typography pairs **Inter** (UI voice) with **JetBrains Mono**
 (technical data, terminal, code). Motion is functional-first: it exists only
 to make state changes more legible, honors `prefers-reduced-motion`, and draws
 exclusively from shared motion tokens.
 
 The whole cockpit re-skins at runtime by overriding `--color-*` custom
 properties on `<html>` — no component edits, no `.dark` class, no
-ThemeProvider. `midnight` is the default palette and is guaranteed to equal
+ThemeProvider. `graphite` is the default palette and is guaranteed to equal
 the `@theme` literals in `frontend/tailwindsetup.css` (guarded by
 `themes.test.ts`).
 
@@ -186,46 +188,49 @@ the `@theme` literals in `frontend/tailwindsetup.css` (guarded by
 
 All colors come from `@theme` tokens in `frontend/tailwindsetup.css`; **raw
 hex/rgba never appears in component `className` or `style`**. Values below are
-the Midnight defaults, verbatim from that file.
+the Graphite defaults, verbatim from that file.
 
 ### Surface ramp (layering, not shadows)
 
 Backgrounds step from the app backdrop up to hovered/selected rows:
 
-- **`background` `#0c0e11`** — app canvas.
-- **`surface` `#0e1116`** — base containers.
-- **`surface-raised` `#13171d`** — cards, panels, modals, app-bar buttons.
-- **`surface-hover` `#171c22`** — hover state for raised elements.
-- **`surface-code` `#0b0d10`** — diff/terminal body, one step *below* surface.
-- **`surface-selected` `#1a222c`** — persistent selected row.
-- **`panel` `rgba(19,23,29,0.6)`** — translucent overlay panels.
-- **`lane` `#12161b`** — agent-card lane fill.
+- **`background` `#101010`** — app canvas.
+- **`surface` `#161616`** — base containers.
+- **`surface-raised` `#1c1c1c`** — cards, panels, modals, app-bar buttons.
+- **`surface-hover` `#252525`** — hover state for raised elements.
+- **`surface-code` `#0c0c0c`** — diff/terminal body, one step *below* surface.
+- **`surface-selected` `#2d2d2d`** — persistent selected row; a grey fill, not
+  an accent tint.
+- **`panel` `rgba(28,28,28,0.6)`** — translucent overlay panels.
+- **`lane` `#141414`** — agent-card lane fill.
 
 ### Ink ramp (text)
 
 Stepped for readability, with a documented contrast floor (see Do's and
-Don'ts): `ink-faint 3.54:1 < muted 5.18:1 < ink-mid 7.56:1 < secondary
-13.06:1` against `background`.
+Don'ts): `ink-faint 3.31:1 < muted 5.81:1 < secondary 11.85:1 < text 13.09:1`
+against `background`; `muted` on a hovered row (`surface-hover`) is 4.68:1.
 
-- **`foreground` / `primary` / `white` `#e6e9ed`** — primary text, near-white.
-- **`secondary` `#cfd5db`** — secondary text.
-- **`ink-hi` `#dfe4ea`** — high-emphasis body text.
-- **`ink-mid` `#9aa3ad`** — tool badges, secondary button text.
-- **`muted` `#7f858b`** — captions/meta; clears WCAG AA (4.5:1) on background
+- **`foreground` / `primary` / `white` `#d6d6d6`** — primary text.
+- **`secondary` `#cccccc`** — secondary text; **`muted-foreground`
+  `#c9c9c9`** sits just below it.
+- **`ink-hi` `#e3e3e3`** — high-emphasis body text.
+- **`ink-mid` `#a2a2a2`** — tool badges, secondary button text.
+- **`muted` `#8e8e8e`** — captions/meta; clears WCAG AA (4.5:1) on background
   and on a hovered row.
-- **`ink-faint` `#646a72`** — gutters/separators; clears the 3:1 non-text
+- **`ink-faint` `#666666`** — gutters/separators; clears the 3:1 non-text
   minimum but is not for body text.
 
 ### Edge ramp (borders)
 
-- **`border` `#1c2128`**, **`edge-faint` `#161a20`**, **`edge-mid` `#20262e`**,
-  **`edge-strong` `#2a313a`** — faint for dividers, strong for hover/focus
-  outlines.
+- **`border` `#1f1f1f`**, **`edge-faint` `#1a1a1a`**, **`edge-mid` `#2a2a2a`**,
+  **`edge-strong` `#3d3d3d`** — faint for dividers, strong for hover/focus
+  outlines. Prefer a tone step over a border where the surface ramp already
+  separates two regions.
 
-### Accent ramp (periwinkle, the sole interaction driver)
+### Accent ramp (blue, used sparingly)
 
-- **`accent` `#5e9cff`** — the main accent: primary buttons, active states,
-  focus rings, links.
+- **`accent` `#5e9cff`** — the main accent: the primary CTA, focus rings,
+  links, the running state. Selection and hover are grey, not accent.
 - **`accent-50…900`** — full ramp (`#e8ecff` → `#232c5c`) for gradients and
   emphasis tiers.
 - **`accenthover` `#8da3ff`**, **`accent-soft` `#aebfff`**, **`accentbg`
@@ -260,7 +265,8 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
 
 - **Syntax tokens** (`syntax-keyword` `#aebfff`, `syntax-string` `#7fd6ab`,
   `syntax-number` `#e6b450`, `syntax-comment` `#6b7178`, `syntax-punct`,
-  `syntax-ident`) color transcript code blocks.
+  `syntax-ident`) color transcript code blocks. **`code-inline` `#d7b981`**
+  (a warm gold) colors inline code in markdown and transcript narration.
 - **Diff tokens** (`diff-added` `#3fb950`, `diff-removed` `#f85149`) color
   git diff bands, inline diff lines, and every `+N` / `−N` count. They are
   not `success` / `error`: a removed line is not a failure. Theme-agnostic
@@ -272,29 +278,35 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
 
 ### Runtime theming
 
-`themes.ts` (`THEMES`: midnight, slate, carbon, nocturne, onedark, monokai)
-maps each base palette to the full `--color-*` override set and writes
+`themes.ts` (`THEMES`: graphite (default), midnight, slate, carbon, nocturne,
+onedark, monokai) maps each base palette to the full `--color-*` override set and writes
 them as inline styles on `document.documentElement` — highest specificity,
 beats `:root`, re-skins everything with zero component edits. Subtle greys
 (`muted-foreground`, `ink-mid`, `lane`, `feed-*`) and the identity palettes
-stay at defaults, safe across all dark themes. All dark only — light mode
+stay at defaults, safe across all dark themes. `DEFAULT_THEME_PRESET` in
+`themes.ts` must equal the `@theme` literals for the surface, ink, edge and
+status tokens (guarded by `themes.test.ts`). All dark only — light mode
 (Paper) was declined 2026-08-24 (see `docs/deferred.md`); an unknown preset
-id falls back to Midnight.
+id falls back to the default. Someone who already picked a preset keeps it
+(it is stored in localStorage), so a user who once reverted to the old
+default stays on Midnight.
 
 ## Typography
 
-- **`font-sans` — Hanken Grotesk** (variable 100–900, bundled) for all UI.
-  Falls back to `system-ui, sans-serif`.
-- **`font-mono` — JetBrains Mono** (400/200/700, bundled) for terminal,
-  code, keys, and technical data.
+- **`font-sans` — Inter** (bundled) for all UI. Falls back to
+  `system-ui, sans-serif`.
+- **`font-mono` — JetBrains Mono** (the variable full-charset file
+  `public/fonts/jetbrains-mono-variable.woff2`) for terminal, code, keys, and
+  technical data. It is also the terminal default.
 - **`font-markdown`** — system UI stack for rendered markdown (GitHub-like
   reading experience).
 
 Fonts are registered via `FontFace` in `frontend/util/fontutil.ts`
-(`loadFonts()` at boot). The settings font picker offers Hanken Grotesk /
-Inter / System UI (sans) and JetBrains Mono / Hack / Fira Code (mono);
+(`loadFonts()` at boot). The settings font picker offers Inter / Hanken
+Grotesk / System UI (sans) and JetBrains Mono / Hack / Fira Code (mono);
 `applyFontVars` re-fonts the whole app by overriding `--font-sans` /
-`--font-mono` on the root.
+`--font-mono` on the root. A bundled face must cover Vietnamese: the bundled
+Hanken Grotesk, Hack and Fira Code do not.
 
 Size tokens are sparse on purpose — most sizes are arbitrary values in
 components: `text-xxxs` 8.5px (micro badges/eyebrows — the former
@@ -316,6 +328,16 @@ content is always fluid.
   window controls.
 - **Nav rail** — fixed 78px wide (56px on narrow windows via
   `navRailCollapsed(windowWidth)` in `navrailwidth.ts`).
+- **Agent surface tree** — a sentence-case header with a "New agent" button,
+  then collapsible project folder rows, each holding one-line agent rows
+  (status dot, name, meta). The selected row is a grey fill
+  (`bg-surface-selected`). Asking is a word in the row, not a filled row: an
+  amber fill would make the list shout.
+- **Details rail** — a list of counted, collapsible sections, each a header
+  row with a count: Needs you, Subagents, Files changed, Background tasks,
+  Tools used, Run/Task, Details, Token usage. An empty section stays listed,
+  dimmed, so the rail does not reshuffle as work arrives; Details and Token
+  usage are closed by default.
 - **Surfaces** — absolutely stacked (`absolute inset-0`) under a
   `relative min-w-0 flex-1` shell; each surface is `flex flex-col bg-background`.
   The Agent surface stays mounted-but-hidden across nav switches so its xterm
@@ -367,7 +389,7 @@ runtime logos stay image assets.
   The pulse is drawn at 12fps by `element/pulsedriver.tsx`, not a CSS animation:
   an infinite CSS animation holds the page at display rate while it is on screen.
 - **Panels/cards** — `bg-surface-raised border-edge-mid rounded-md`; selected
-  rows `bg-surface-selected`.
+  rows `bg-surface-selected` (grey, never an accent tint).
 - **Focus** — a prominent accent ring on the active region + highlighted
   cursor row; the keyboard replaces the mouse, so focus must be visible.
 - **Motion** — `motion/react` only; shared variants/timing from
@@ -397,11 +419,13 @@ runtime logos stay image assets.
   colors — they are fallbacks overridden at runtime by `buildThemeVars`.
 - Do respect the contrast floor: text ≥ 4.5:1 (WCAG AA), non-text ≥ 3:1
   against its background; keep the ink ramp stepping `ink-faint < muted <
-  ink-mid < secondary`.
+  secondary < text`.
 - Do keep status semantic: pair amber/green/red with an icon, label, or dot.
   Never color alone.
-- Do use the accent for the single most important action per screen; the
-  primary CTA is `bg-accent` on `background`-toned text.
+- Do use the accent sparingly: the single most important action per screen
+  (the primary CTA is `bg-accent` on `background`-toned text), focus, links
+  and the running state. Separate regions by tone, and mark selection and
+  hover in grey, not accent.
 - Do keep identity palettes (avatar, graphlane, rt-*) at `@theme` defaults —
   they must survive any theme.
 - Do keep the keyboard first: visible focus ring, roving cursor, regions;
@@ -471,8 +495,8 @@ engine):
   disagree); two postures from focus (Navigate vs Type), leader `g` chords
   with a which-key hint bar, `?` cheat sheet.
 - **Theming.** Tailwind v4 `@theme` tokens → `var(--color-*)` utilities →
-  `themes.ts` `buildThemeVars` inline overrides on `<html>`. Midnight must
-  equal the `@theme` literals (golden-tested). ANSI/terminal derived from the
+  `themes.ts` `buildThemeVars` inline overrides on `<html>`. The default
+  (Graphite) must equal the `@theme` literals (golden-tested). ANSI/terminal derived from the
   same palette.
 - **File organization.** `view/<family>/` holds everything for a surface
   (flat); `element/` shared primitives; `modals/` global overlays; `store/`
