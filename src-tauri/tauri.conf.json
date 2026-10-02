@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Arc",
+  "productName": "arcterm",
   "version": "0.14.21",
   "identifier": "dev.arc.app",
   "build": {
@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [
-      { "label": "main", "title": "Arc", "width": 1000, "height": 700, "decorations": false, "dragDropEnabled": false }
+      { "label": "main", "title": "arcterm", "width": 1000, "height": 700, "decorations": false, "dragDropEnabled": false }
     ],
     "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:*" }
   },
@@ -19,6 +19,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
+    "windows": { "nsis": { "installerIcon": "icons/icon.ico" } },
     "resources": {
       "../dist/bin/wavesrv.x64.exe": "bin/wavesrv.x64.exe",
       "../dist/bin/wsh-*-windows.x64.exe": "bin/"

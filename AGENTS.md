@@ -54,7 +54,8 @@ Other useful commands:
   image names `wave-tauri.exe` and `wavesrv.x64.exe`, so `taskkill /IM wave-tauri.exe` also kills the
   running Arc — and every agent inside it (run 700db496 lost a worker's uncommitted edits this way).
   List `Get-Process wave-tauri,wavesrv.x64 | Select Id,Path`, and stop only the PID whose path is in a
-  repo checkout (`src-tauri\target`, `dist\bin`), never one under `AppData\Local\Arc`.
+  repo checkout (`src-tauri\target`, `dist\bin`), never one under `AppData\Local\arcterm` (or
+  `AppData\Local\Arc`, where installs from before the rename live).
 - CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
 - **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
   `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold
