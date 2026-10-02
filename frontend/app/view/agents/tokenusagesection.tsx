@@ -15,7 +15,7 @@ import { ChevronDown, ChevronUp, Lightbulb } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { prettyModel } from "./modellabel";
 import { usageBreakdownAtom } from "./railstore";
-import { SectionLabel, SubLabel } from "./sectionlabel";
+import { SubLabel } from "./sectionlabel";
 import { sessionUsageAtom, UsageUnavailable } from "./transcriptusagestore";
 import { CLASS_FILL, fmt, usd } from "./usagestats";
 import type { TokenClass } from "./usagestats";
@@ -34,8 +34,7 @@ export function TokenUsageSection() {
     if (usage == null) {
         return (
             <div>
-                <SectionLabel>Token usage</SectionLabel>
-                <SkeletonLine className="mt-[12px] h-[24px] w-[120px]" />
+                <SkeletonLine className="h-[24px] w-[120px]" />
                 <SkeletonLine className="mt-[12px] h-[11px] w-full rounded-[5px]" />
                 <SkeletonLine className="mt-[10px] h-[11px] w-full rounded-[5px]" />
             </div>
@@ -44,16 +43,14 @@ export function TokenUsageSection() {
     if (usage === UsageUnavailable) {
         return (
             <div>
-                <SectionLabel>Token usage</SectionLabel>
-                <div className="mt-[10px] text-[11.5px] text-muted">Token usage unavailable.</div>
+                <div className="text-[11.5px] text-muted">Token usage unavailable.</div>
             </div>
         );
     }
     if (usage.totalTokens === 0) {
         return (
             <div>
-                <SectionLabel>Token usage</SectionLabel>
-                <div className="mt-[10px] text-[11.5px] text-muted">No token usage recorded yet.</div>
+                <div className="text-[11.5px] text-muted">No token usage recorded yet.</div>
             </div>
         );
     }
@@ -66,13 +63,8 @@ export function TokenUsageSection() {
 
     return (
         <div>
-            <div className="flex items-baseline justify-between">
-                <SectionLabel>Token usage</SectionLabel>
-                <span className="font-mono text-[11px] font-semibold text-accent">{fmt(totalTokens)}</span>
-            </div>
-
             {/* headline pair */}
-            <div className="mt-[13px] mb-[15px] flex items-end justify-between">
+            <div className="mb-[15px] flex items-end justify-between">
                 <div>
                     <div className="font-mono text-[22px] font-bold leading-none text-primary">{fmt(totalTokens)}</div>
                     <div className="mt-[4px] font-mono text-[10.5px] text-muted">total tokens</div>
