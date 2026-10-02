@@ -146,6 +146,7 @@
                 overflow: auto;
                 overflow: hidden;
                 background-color: transparent;
+                padding: 0;
                 color: var(--color-foreground);
             }
 
@@ -171,6 +172,8 @@
 
         code {
             color: var(--color-code-inline);
+            background: var(--color-pill);
+            padding: 0 3px;
             font: normal 12px / normal var(--font-mono);
             font-size: 12px;
             border-radius: 4px;

@@ -423,6 +423,7 @@ svg [aria-label="tip"] g path {
     padding: 0 3px;
     border-radius: 3px;
 }
+/* Defensive: MarkdownMessage renders fenced code through CodeBlock today, which emits no pre/code. */
 .agent-md pre code {
     color: inherit;
     background: transparent;

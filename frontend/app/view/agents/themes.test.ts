@@ -15,15 +15,27 @@ import {
     THEMES,
 } from "./themes";
 
-const THEME_CSS = readFileSync(new URL("../../../tailwindsetup.css", import.meta.url), "utf8");
-function themeLiteral(name: string): string | undefined {
-    const m = new RegExp(`${name}:\\s*([^;]+);`).exec(THEME_CSS);
-    return m ? m[1].replace(/\s+/g, " ").trim() : undefined;
+// The @theme block of tailwindsetup.css with comments stripped, so neither a comment that quotes a token nor a
+// later :root redefinition can be read as the literal.
+const THEME_BLOCK = (() => {
+    const css = readFileSync(new URL("../../../tailwindsetup.css", import.meta.url), "utf8");
+    const block = /@theme\s*\{([\s\S]*?)\n\}/.exec(css);
+    if (!block) {
+        throw new Error("tailwindsetup.css: no @theme block");
+    }
+    return block[1].replace(/\/\*[\s\S]*?\*\//g, "");
+})();
+// Every declaration of `name` in the @theme block, whitespace-normalized.
+function themeLiterals(name: string): string[] {
+    const re = new RegExp(`(?:^|[\\s;{])${name}\\s*:\\s*([^;]+);`, "gm");
+    return [...THEME_BLOCK.matchAll(re)].map((m) => m[1].replace(/\s+/g, " ").trim());
 }
 
 describe("buildThemeVars — the default preset equals the @theme literals", () => {
-    // first paint (before useApplyCockpitTheme) uses the literals; they must equal the default preset or the
-    // app flashes another theme on boot
+    // First paint (before useApplyCockpitTheme) uses the literals; they must equal the default preset or the
+    // app flashes another theme on boot. This guards the surface/ink/edge/status tokens listed here only: the
+    // accent ramp, the *-soft tints, on-warning and the --ansi-* literals are fallbacks that buildThemeVars
+    // derives differently.
     const keys = [
         "--color-background",
         "--color-surface",
@@ -44,16 +56,19 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
         "--color-edge-strong",
         "--color-edge-faint",
         "--color-accent",
+        "--color-accent-400",
+        "--color-accentbg",
         "--color-error",
         "--color-warning",
         "--color-asking",
         "--color-success",
+        "--color-working",
     ];
     const vars = buildThemeVars(activePalette(DEFAULT_THEME_PRESET), {});
     for (const k of keys) {
         it(`${k} matches tailwindsetup.css`, () => {
-            expect(themeLiteral(k)).toBeDefined();
-            expect(vars[k]).toBe(themeLiteral(k));
+            expect(vars[k]).toBeDefined();
+            expect(themeLiterals(k)).toEqual([vars[k]]);
         });
     }
 });
