@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
     ACCENT_SWATCHES,
@@ -8,45 +9,64 @@ import {
     applyThemeVars,
     buildThemeVars,
     colorOf,
+    DEFAULT_THEME_PRESET,
     deriveAnsi,
     deriveTermTheme,
     THEMES,
 } from "./themes";
 
-describe("buildThemeVars — Midnight parity", () => {
-    // These 24 high-traffic tokens MUST equal the current tailwindsetup.css @theme values,
-    // so enabling the picker is a visual no-op until the user switches themes.
-    const expected: Record<string, string> = {
-        "--color-background": "#0c0e11",
-        "--color-surface": "#0e1116",
-        "--color-surface-raised": "#13171d",
-        "--color-surface-hover": "#171c22",
-        "--color-surface-selected": "#1a222c",
-        "--color-surface-code": "#0b0d10",
-        "--color-panel": "rgba(19, 23, 29, 0.6)",
-        "--color-modalbg": "#13171d",
-        "--color-foreground": "#e6e9ed",
-        "--color-primary": "#e6e9ed",
-        "--color-white": "#e6e9ed",
-        "--color-secondary": "#cfd5db",
-        // lifted for contrast — see the note in tailwindsetup.css; these two must move together with it
-        "--color-muted": "#7f858b",
-        "--color-ink-faint": "#646a72",
-        "--color-border": "#1c2128",
-        "--color-edge-mid": "#20262e",
-        "--color-edge-strong": "#2a313a",
-        "--color-edge-faint": "#161a20",
-        "--color-accent": "#5e9cff",
-        "--color-accentbg": "rgba(94, 156, 255, 0.12)",
-        "--color-error": "#e0726c",
-        "--color-warning": "#e6b450",
-        "--color-asking": "#e6b450",
-        "--color-success": "#54c79a",
-    };
-    const vars = buildThemeVars(activePalette("midnight"), {});
-    for (const [k, v] of Object.entries(expected)) {
-        it(`${k} === ${v}`, () => expect(vars[k]).toBe(v));
+const THEME_CSS = readFileSync(new URL("../../../tailwindsetup.css", import.meta.url), "utf8");
+function themeLiteral(name: string): string | undefined {
+    const m = new RegExp(`${name}:\\s*([^;]+);`).exec(THEME_CSS);
+    return m ? m[1].replace(/\s+/g, " ").trim() : undefined;
+}
+
+describe("buildThemeVars — the default preset equals the @theme literals", () => {
+    // first paint (before useApplyCockpitTheme) uses the literals; they must equal the default preset or the
+    // app flashes another theme on boot
+    const keys = [
+        "--color-background",
+        "--color-surface",
+        "--color-surface-raised",
+        "--color-surface-hover",
+        "--color-surface-selected",
+        "--color-surface-code",
+        "--color-panel",
+        "--color-modalbg",
+        "--color-foreground",
+        "--color-primary",
+        "--color-white",
+        "--color-secondary",
+        "--color-muted",
+        "--color-ink-faint",
+        "--color-border",
+        "--color-edge-mid",
+        "--color-edge-strong",
+        "--color-edge-faint",
+        "--color-accent",
+        "--color-error",
+        "--color-warning",
+        "--color-asking",
+        "--color-success",
+    ];
+    const vars = buildThemeVars(activePalette(DEFAULT_THEME_PRESET), {});
+    for (const k of keys) {
+        it(`${k} matches tailwindsetup.css`, () => {
+            expect(themeLiteral(k)).toBeDefined();
+            expect(vars[k]).toBe(themeLiteral(k));
+        });
     }
+});
+
+describe("graphite — contrast floor (DESIGN.md)", () => {
+    const p = activePalette("graphite");
+    it("muted clears 4.5:1 on the background and on a hovered row", () => {
+        expect(contrast(p.muted, p.bg)).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(p.muted, p.surfaceHover)).toBeGreaterThanOrEqual(4.5);
+    });
+    it("ink-faint clears the 3:1 non-text minimum on the background", () => {
+        expect(contrast(p.inkFaint, p.bg)).toBeGreaterThanOrEqual(3);
+    });
 });
 
 describe("color math (via override derivation)", () => {
@@ -68,16 +88,17 @@ describe("color math (via override derivation)", () => {
 });
 
 describe("helpers", () => {
-    it("activePalette falls back to midnight for unknown id", () => {
-        expect(activePalette("nope")).toBe(activePalette("midnight"));
+    it("activePalette falls back to the default preset for an unknown id", () => {
+        expect(activePalette("nope")).toBe(activePalette(DEFAULT_THEME_PRESET));
     });
     it("colorOf prefers override over palette", () => {
         const p = activePalette("midnight");
         expect(colorOf(p, {}, "accent")).toBe("#5e9cff");
         expect(colorOf(p, { accent: "#123456" }, "accent")).toBe("#123456");
     });
-    it("THEMES ships the six dark presets — light mode was declined and removed", () => {
-        expect(THEMES).toHaveLength(6);
+    it("THEMES ships the seven dark presets — light mode was declined and removed", () => {
+        expect(THEMES).toHaveLength(7);
+        expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
     });
     it("ACCENT_SWATCHES has 10 hex values", () => {
         expect(ACCENT_SWATCHES).toHaveLength(10);

@@ -146,6 +146,7 @@
                 overflow: auto;
                 overflow: hidden;
                 background-color: transparent;
+                color: var(--color-foreground);
             }
 
             .codeblock-actions {
@@ -169,7 +170,7 @@
         }
 
         code {
-            color: var(--color-foreground);
+            color: var(--color-code-inline);
             font: normal 12px / normal var(--font-mono);
             font-size: 12px;
             border-radius: 4px;
