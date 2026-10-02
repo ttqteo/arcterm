@@ -13,6 +13,9 @@ import { versionInfoAtom } from "./versioninfo";
 
 // Handoff top app bar (46px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
 // Windows adaptation (spec D1): functional min/max/close on the right; no mac traffic-lights.
+// Window dragging: a bare data-tauri-drag-region only fires on a press directly on its own element,
+// so every non-interactive piece carries one. Not "deep" on the bar: the switchers' click-away
+// backdrops and dropdowns render inside it and would start a drag instead of closing.
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const win = getCurrentWindow();
     return (
@@ -20,18 +23,24 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             data-tauri-drag-region
             className="flex h-[46px] shrink-0 items-center gap-4 border-b border-border bg-surface pl-4"
         >
-            <div className="flex items-center gap-[9px]">
-                <div className="flex h-[19px] w-[19px] items-center justify-center rounded-[6px] bg-gradient-to-br from-accent-300 to-accent-500">
-                    <div className="h-[7px] w-[7px] rounded-full bg-surface" />
-                </div>
-                <span className="text-[14.5px] font-bold tracking-[-0.01em] text-primary">Arc</span>
-                <span className="text-[13px] text-muted">/</span>
+            <div data-tauri-drag-region className="flex items-center gap-[9px]">
+                <span data-tauri-drag-region className="flex shrink-0 text-primary">
+                    <ArctermMark />
+                </span>
+                <span data-tauri-drag-region className="text-[14.5px] font-bold tracking-[-0.01em] text-primary">
+                    arcterm
+                </span>
+                <span data-tauri-drag-region className="text-[13px] text-muted">
+                    /
+                </span>
                 <ProjectSwitcher model={model} variant="bar" />
-                <span className="text-[13px] text-muted">/</span>
+                <span data-tauri-drag-region className="text-[13px] text-muted">
+                    /
+                </span>
                 <FocusSwitcher model={model} />
             </div>
 
-            <div className="flex min-w-0 flex-1 justify-center">
+            <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-center">
                 <button
                     type="button"
                     onClick={() => globalStore.set(model.paletteOpenAtom, true)}
@@ -48,7 +57,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </button>
             </div>
 
-            <div className="flex h-full shrink-0 items-center gap-2.5">
+            <div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
                 {/* secondary, so New agent stays the one primary action. data-new-run: the Brief's `r` key
                     presses this (buildJarvisBindings). */}
@@ -69,7 +78,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     <span className="-mt-px text-[15px] leading-none">+</span>New agent
                 </button>
 
-                <div className="flex h-full shrink-0 items-center border-l border-border">
+                <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
                     <button
                         onClick={() => win.minimize()}
                         aria-label="Minimize"
@@ -94,6 +103,29 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </div>
             </div>
         </div>
+    );
+}
+
+// The arcterm "t>" mark (public/logos/arcterm.png) as vector pixel art: a 12x9 grid drawn at 2 CSS px
+// per cell, so edges land on whole device pixels at 100/150/200% scaling where the downscaled PNG
+// blurred. pointer-events-none: drag.js skips SVG elements, so the press must land on the parent span.
+function ArctermMark() {
+    return (
+        <svg
+            width="24"
+            height="18"
+            viewBox="0 0 12 9"
+            fill="currentColor"
+            shapeRendering="crispEdges"
+            aria-hidden="true"
+            className="pointer-events-none"
+        >
+            <rect x="1" y="1" width="1" height="6" />
+            <rect x="0" y="3" width="5" height="1" />
+            <rect x="5" y="6" width="1" height="1" />
+            <rect x="2" y="7" width="3" height="1" />
+            <path d="M7 0h1v1H7zM8 1h1v1H8zM9 2h1v1H9zM10 3h1v1h-1zM11 4h1v1h-1zM10 5h1v1h-1zM9 6h1v1H9zM8 7h1v1H8zM7 8h1v1H7z" />
+        </svg>
     );
 }
 
