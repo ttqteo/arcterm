@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extractAiTitle, extractSubagentSpawns, extractTasks, projectTranscript } from "./transcriptprojection";
+import {
+    extractAiTitle,
+    extractBackgroundTasks,
+    extractSubagentSpawns,
+    extractTasks,
+    projectTranscript,
+} from "./transcriptprojection";
 
 const LINES: string[] = [
     JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "fix the race" }] } }), // human prompt -> user entry
@@ -401,5 +407,94 @@ describe("extractSubagentSpawns", () => {
             asst([{ type: "tool_use", id: "b", name: "Task", input: { subagent_type: "Explore", prompt: "P2" } }]),
         ];
         expect(extractSubagentSpawns(lines).map((s) => s.toolUseId)).toEqual(["a", "b"]);
+    });
+});
+
+describe("extractBackgroundTasks", () => {
+    const asst = (blocks: any[]) => JSON.stringify({ type: "assistant", message: { content: blocks } });
+    const result = (id: string, text: string, extra: object = {}) =>
+        JSON.stringify({
+            type: "user",
+            message: { content: [{ type: "tool_result", tool_use_id: id, content: text }] },
+            ...extra,
+        });
+    const notify = (toolUseId: string, status: string) =>
+        JSON.stringify({
+            type: "user",
+            message: {
+                content: `<task-notification>\n<task-id>x</task-id>\n<tool-use-id>${toolUseId}</tool-use-id>\n<status>${status}</status>\n<summary>s</summary>\n</task-notification>`,
+            },
+        });
+    const bash = (id: string, input: object) => asst([{ type: "tool_use", id, name: "Bash", input }]);
+
+    it("an explicit background command is running until its notification lands", () => {
+        const start = [
+            bash("t1", { command: "npm test", description: "Run tests", run_in_background: true }),
+            result("t1", "Command running in background with ID: b1abc"),
+        ];
+        expect(extractBackgroundTasks(start)).toEqual([
+            { toolUseId: "t1", taskId: "b1abc", label: "Run tests", command: "npm test", status: "running" },
+        ]);
+        expect(extractBackgroundTasks([...start, notify("t1", "completed")])[0].status).toBe("completed");
+        expect(extractBackgroundTasks([...start, notify("t1", "failed")])[0].status).toBe("failed");
+        expect(extractBackgroundTasks([...start, notify("t1", "killed")])[0].status).toBe("stopped");
+    });
+
+    it("a foreground command that timed out into the background is a task too", () => {
+        const lines = [
+            bash("t2", { command: "cargo build", description: "Build" }),
+            result("t2", "", { toolUseResult: { backgroundTaskId: "b2", timedOutAfterMs: 120000 } }),
+        ];
+        expect(extractBackgroundTasks(lines)).toEqual([
+            { toolUseId: "t2", taskId: "b2", label: "Build", command: "cargo build", status: "running" },
+        ]);
+    });
+
+    it("a plain foreground command is not a task", () => {
+        expect(extractBackgroundTasks([bash("t3", { command: "ls" }), result("t3", "a\nb")])).toEqual([]);
+    });
+
+    it("TaskStop on its id stops it", () => {
+        const lines = [
+            bash("t4", { command: "npm run dev", run_in_background: true }),
+            result("t4", "", { toolUseResult: { backgroundTaskId: "b4" } }),
+            asst([{ type: "tool_use", id: "s1", name: "TaskStop", input: { task_id: "b4" } }]),
+        ];
+        expect(extractBackgroundTasks(lines)[0]).toMatchObject({ label: "npm run dev", status: "stopped" });
+    });
+
+    it("a notification queued as a queue-operation record still resolves the task", () => {
+        const lines = [
+            bash("t5", { command: "go test ./...", run_in_background: true }),
+            JSON.stringify({
+                type: "queue-operation",
+                content:
+                    "<task-notification><tool-use-id>t5</tool-use-id><status>completed</status></task-notification>",
+            }),
+        ];
+        expect(extractBackgroundTasks(lines)[0].status).toBe("completed");
+    });
+
+    it("a PowerShell background command is a task too", () => {
+        const lines = [
+            asst([
+                {
+                    type: "tool_use",
+                    id: "p1",
+                    name: "PowerShell",
+                    input: { command: "npm run dev", run_in_background: true },
+                },
+            ]),
+            result("p1", "", { toolUseResult: { backgroundTaskId: "bp1" } }),
+        ];
+        expect(extractBackgroundTasks(lines)).toEqual([
+            { toolUseId: "p1", taskId: "bp1", label: "npm run dev", command: "npm run dev", status: "running" },
+        ]);
+    });
+
+    it("a start whose result is not in the tail stays running with no task id", () => {
+        expect(extractBackgroundTasks([bash("t6", { command: "sleep 99", run_in_background: true })])).toEqual([
+            { toolUseId: "t6", label: "sleep 99", command: "sleep 99", status: "running" },
+        ]);
     });
 });
