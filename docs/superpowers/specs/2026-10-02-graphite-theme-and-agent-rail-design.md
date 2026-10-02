@@ -17,7 +17,8 @@ Two concrete defects ride along:
 - The agent details rail hides any empty section and shows every section expanded under a large
   heading, so its layout shifts from agent to agent and the counts are not scannable.
 
-Out of scope (a later spec): merging or hiding surfaces (Usage/Setup into Settings, Jarvis into Cockpit,
+Out of scope (a later spec): folding the icon nav rail into the sidebar, a "Recent" sessions list in the
+sidebar, merging or hiding surfaces (Usage/Setup into Settings, Jarvis into Cockpit,
 the pet, Radar), a file tab strip, scheduled tasks, an in-app prompt box.
 
 ## Decisions
@@ -98,7 +99,22 @@ the pet, Radar), a file tab strip, scheduled tasks, an in-app prompt box.
    Loading piggybacks on `refreshSubagents` in `subagentsstore.ts`, which already tails the last 1000
    transcript lines on a 4 s debounce; it also sets a new `backgroundTasksByIdAtom`, even when the agent
    has no subagent files. A task started before that 1000-line window is not shown — accepted.
-9. **DESIGN.md** front-matter and Colors/Typography sections are updated to Graphite + Inter, and list
+9. **The Agent surface's left tree is restyled after Antigravity's sidebar** (added 2026-10-02; the
+   icon nav rail stays as is):
+   - A full-width "+ New agent" button heads the tree (opens the same modal as the app bar's), then a
+     sentence-case "Agents  n" header replacing the uppercase mono one.
+   - Every project gets a group row, even when only one project is live (the single-project suppression
+     goes): chevron, folder icon, project name in sentence case, and "N asking" in amber text when agents
+     wait — no rule line, no per-group count, no filled badge. Clicking it collapses or expands the project;
+     collapsed projects persist (`agent.tree.collapsed`, a list of names). A pure
+     `foldCollapsedProjects(rows, collapsed)` in `agenttreemodel.ts` drops a collapsed group's body rows.
+   - Rows under a project are indented. A plain agent row is one line: status dot, name, then on the right
+     its subagents chip, "asking"/review when it wants something, else its age. The branch line goes (the
+     rail's Details carries it). Lead rows keep their run subline.
+   - Selected rows use `surface-selected` instead of the accent tint; an asking row loses its amber fill (the
+     dot and the word carry it). Row padding tightens to `px-[10px] py-[6px]`, radius 6px.
+   - The Terminals header takes the same sentence-case style.
+10. **DESIGN.md** front-matter and Colors/Typography sections are updated to Graphite + Inter, and list
    Midnight among the presets.
 
 ## Testing
@@ -106,7 +122,7 @@ the pet, Radar), a file tab strip, scheduled tasks, an in-app prompt box.
 - vitest: `extractBackgroundTasks` (explicit start, auto-backgrounded timeout, id from result, each
   notification status, TaskStop, missing result), the rail section model (order, counts, zero sections, defaults, needs-you rule),
   `themes.test.ts` (default preset equals `@theme` literals; Graphite contrast floor for muted/inkFaint),
-  `fonts.test.ts` (new defaults).
+  `fonts.test.ts` (new defaults), `foldCollapsedProjects`.
 - `task check:ts`.
 - CDP: screenshot the Agent surface with the rail open under Graphite (a `scripts/cdp/scenarios.mjs`
   step that opens the rail), compared by eye against the Antigravity reference. The dev app currently
