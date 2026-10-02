@@ -6403,6 +6403,13 @@ const focusDivergenceRejoin = {
 const TREE_RAIL_FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 const TREE_RAIL_LEAD = "tree-rail lead";
 const RAIL_VISIBLE_KEY = "agent.rail.visible";
+const RAIL_SECTIONS_KEY = "cockpit.rail.sections";
+const TREE_COLLAPSED_KEY = "agent.tree.collapsed";
+// puts a localStorage key back the way arrange found it
+const restoreStorageKey = (key, prev) =>
+    prev == null
+        ? `localStorage.removeItem(${JSON.stringify(key)})`
+        : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(prev)})`;
 // the text glyphs the polish replaced with lucide icons
 const TREE_RAIL_GLYPHS = ["↳", "◆", "▸", "▾", "›_", "↗", "‹"];
 const MIN_FONT_PX = 10.5;
@@ -6562,6 +6569,9 @@ async function arrangeTreeRail(h, ctx) {
     await waitForDispatch(h, ctx, "t-1");
     // the rail is off by default and persisted, and the fixture roster is read once at boot
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    // measure the defaults: sections at their default open state, every project expanded
+    await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+    await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
     await h.ev("location.reload()");
     await h.ev(`(async () => {
         for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
@@ -6597,7 +6607,12 @@ const agentTreeRail = {
     surface: "agent",
     async arrange(h) {
         const cwd = mkdtempSync(join(tmpdir(), "verify-tree-rail-"));
-        const ctx = { cwd, prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`) };
+        const ctx = {
+            cwd,
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
             await arrangeTreeRail(h, ctx);
@@ -6683,8 +6698,8 @@ const agentTreeRail = {
         })()`);
         const onScale = (l) => l != null && l.size === `${MIN_FONT_PX}px` && l.weight === "700";
         rec(
-            "4. the rail's Details and Run headings are 10.5px bold",
-            labels != null && onScale(labels.Details) && onScale(labels.Run),
+            "4. the rail's Run heading is 10.5px bold",
+            labels != null && onScale(labels.Run),
             JSON.stringify(labels)
         );
 
@@ -6770,17 +6785,104 @@ const agentTreeRail = {
             nested != null && nested.sub && nested.subGuides === 1,
             JSON.stringify(nested)
         );
+
+        const sections = await h.ev(`(() => {
+            const rail = ${RAIL};
+            if (!rail) return null;
+            return [...rail.querySelectorAll("[data-rail-section]")].map((s) => ({
+                id: s.dataset.railSection,
+                open: s.dataset.open === "true",
+                label: s.querySelector("h3")?.textContent.trim() ?? null,
+                size: s.querySelector("h3") ? getComputedStyle(s.querySelector("h3")).fontSize : null,
+            }));
+        })()`);
+        const order = ["subagents", "files", "bgtasks", "tools", "details", "usage"];
+        const seen = (sections ?? []).map((s) => s.id).filter((id) => order.includes(id));
+        rec(
+            "10. the lead's rail lists Subagents, Files changed, Background tasks, Tools used, Details, Token usage in order",
+            JSON.stringify(seen) === JSON.stringify(order),
+            JSON.stringify(sections)
+        );
+        const byId = Object.fromEntries((sections ?? []).map((s) => [s.id, s]));
+        rec(
+            "11. Details and Token usage start closed; the header labels are 12px",
+            byId.details?.open === false && byId.usage?.open === false && byId.details?.size === "12px",
+            JSON.stringify({ details: byId.details, usage: byId.usage })
+        );
+        const theme = await h.ev(`(() => ({
+            preset: localStorage.getItem("cockpit.theme.preset"),
+            bg: getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim(),
+        }))()`);
+        // atomWithStorage keeps JSON, so a picked Graphite is the quoted string
+        steps.push(
+            theme.preset == null || theme.preset === '"graphite"'
+                ? {
+                      step: "12. with no preset picked the cockpit is Graphite",
+                      ok: theme.bg === "#101010",
+                      detail: JSON.stringify(theme),
+                  }
+                : skipStep("12. with no preset picked the cockpit is Graphite", `this profile picked ${theme.preset}`)
+        );
+
+        // a project row is a button without an aria-label (the fold chips inside rows carry one); a plain agent row
+        // is a top-level row: no tree guides, no Workflow mark, not a nested worker, stage or fold row (pl-[28px])
+        const tree = await h.ev(`(() => {
+            const tree = ${TREE};
+            if (!tree) return null;
+            const groups = [...tree.querySelectorAll("button[aria-expanded]:not([aria-label])")];
+            const plain = [...tree.querySelectorAll(".cursor-pointer")].filter(
+                (r) =>
+                    r.tagName !== "BUTTON" &&
+                    r.querySelector("span.rounded-full") &&
+                    !r.querySelector("svg.lucide-workflow") &&
+                    !r.querySelector(":scope > span.absolute") &&
+                    !r.className.includes("pl-[28px]")
+            );
+            return {
+                newAgent: [...tree.querySelectorAll("button")].some((b) => b.textContent.trim() === "New agent"),
+                groups: groups.length,
+                folders: groups.filter((g) => g.querySelector("svg.lucide-folder-open, svg.lucide-folder")).length,
+                plain: plain.length,
+                tallest: Math.max(0, ...plain.map((r) => r.getBoundingClientRect().height)),
+            };
+        })()`);
+        rec(
+            "13. the tree opens with New agent, every project is a folder row, and a plain agent row is one line",
+            tree != null &&
+                tree.newAgent &&
+                tree.groups >= 2 &&
+                tree.folders === tree.groups &&
+                tree.plain > 0 &&
+                tree.tallest <= 34,
+            JSON.stringify(tree)
+        );
+        const fold = await h.ev(`(async () => {
+            const tree = ${TREE};
+            const g = tree && tree.querySelector("button[aria-expanded='true']:not([aria-label])");
+            if (!g) return null;
+            const before = tree.querySelectorAll(".cursor-pointer").length;
+            g.click();
+            await new Promise((r) => setTimeout(r, 600));
+            const after = tree.querySelectorAll(".cursor-pointer").length;
+            g.click();
+            await new Promise((r) => setTimeout(r, 600));
+            return { before, after, back: tree.querySelectorAll(".cursor-pointer").length };
+        })()`);
+        rec(
+            "14. a project row collapses its agents and expands them again",
+            fold != null && fold.after < fold.before && fold.back === fold.before,
+            JSON.stringify(fold)
+        );
         return steps;
     },
     async teardown(h, ctx) {
         await teardownFixtureRun(h, ctx, "agent-tree-rail", {
-            what: "restore the rail preference",
-            fn: () =>
-                h.ev(
-                    ctx.prevRail == null
-                        ? `localStorage.removeItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`
-                        : `localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, ${JSON.stringify(ctx.prevRail)})`
-                ),
+            what: "restore the rail and tree preferences",
+            fn: async () => {
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed));
+            },
         });
     },
 };
