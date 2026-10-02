@@ -39,33 +39,39 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
     const open = sectionOpen(stored, section.id, header);
     return (
         <section data-rail-section={section.id} data-open={open ? "true" : "false"}>
-            <button
-                type="button"
-                disabled={!expandable}
-                aria-expanded={expandable ? open : undefined}
-                onClick={() => setStored(toggleSection(stored, section.id, header))}
-                className={cn(
-                    "group flex w-full items-center gap-[8px] rounded-[6px] py-[5px] text-left",
-                    expandable ? "cursor-pointer" : "cursor-default opacity-60"
-                )}
-            >
-                <h3 className={cn("text-[12px] font-medium text-muted", expandable && "group-hover:text-secondary")}>
-                    {section.label}
-                </h3>
-                {header.count != null ? (
-                    <span className="font-mono text-[11px] text-ink-faint">{header.count}</span>
-                ) : null}
-                <ChevronRight
-                    size={12}
-                    aria-hidden
+            {/* the button sits inside the heading, so a screen reader still lists the section by its label */}
+            <h3 className="text-[12px] font-medium">
+                <button
+                    type="button"
+                    disabled={!expandable}
+                    aria-expanded={expandable ? open : undefined}
+                    aria-controls={expandable ? `rail-section-${section.id}` : undefined}
+                    onClick={() => setStored(toggleSection(stored, section.id, header))}
                     className={cn(
-                        "text-ink-faint transition-transform",
-                        open && "rotate-90",
-                        !expandable && "invisible"
+                        "group flex w-full items-center gap-[8px] rounded-[6px] py-[5px] text-left",
+                        expandable ? "cursor-pointer text-muted hover:text-secondary" : "cursor-default text-ink-faint"
                     )}
-                />
-            </button>
-            {open ? <div className="pb-[10px] pt-[8px]">{section.content}</div> : null}
+                >
+                    {section.label}
+                    {header.count != null ? (
+                        <span className="font-mono text-[11px] text-ink-faint">{header.count}</span>
+                    ) : null}
+                    <ChevronRight
+                        size={12}
+                        aria-hidden
+                        className={cn(
+                            "text-ink-faint transition-transform",
+                            open && "rotate-90",
+                            !expandable && "invisible"
+                        )}
+                    />
+                </button>
+            </h3>
+            {open ? (
+                <div id={`rail-section-${section.id}`} className="pb-[10px] pt-[8px]">
+                    {section.content}
+                </div>
+            ) : null}
         </section>
     );
 }
