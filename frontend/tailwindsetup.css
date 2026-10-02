@@ -150,7 +150,7 @@
         0.05
     ); /* pill/chip fill — faint overlay for memory-type badges (neutral, like hover/highlightbg) */
 
-    --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+    --font-sans: "Inter", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", monospace;
     --font-markdown:
         -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji",

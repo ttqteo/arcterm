@@ -91,7 +91,7 @@ func TestSettingsLayerOrder(t *testing.T) {
 	if full.Settings.EditorFontSize != 13 {
 		t.Errorf("editor:fontsize = %v, want the vault's 13 over the default", full.Settings.EditorFontSize)
 	}
-	if full.Settings.TermFontFamily != "Fira Code" {
+	if full.Settings.TermFontFamily != `"JetBrains Mono", monospace` {
 		t.Errorf("term:fontfamily = %q, want the shipped default", full.Settings.TermFontFamily)
 	}
 	if full.DefaultSettings.TermFontSize != 16 {

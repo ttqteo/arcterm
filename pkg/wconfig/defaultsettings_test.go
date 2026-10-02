@@ -34,7 +34,7 @@ func TestDefaultSettingsIgnoresHomeOverrides(t *testing.T) {
 	if full.Settings.TermFontFamily != "Comic Sans MS" {
 		t.Fatalf("Settings.TermFontFamily = %q, want the home override", full.Settings.TermFontFamily)
 	}
-	if full.DefaultSettings.TermFontFamily != "Fira Code" {
+	if full.DefaultSettings.TermFontFamily != `"JetBrains Mono", monospace` {
 		t.Fatalf("DefaultSettings.TermFontFamily = %q, want the shipped default", full.DefaultSettings.TermFontFamily)
 	}
 }

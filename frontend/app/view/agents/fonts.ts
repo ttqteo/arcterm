@@ -13,8 +13,8 @@ export interface FontDef {
 }
 
 export const SANS_FONTS: FontDef[] = [
-    { id: "hanken", label: "Hanken Grotesk", stack: '"Hanken Grotesk", system-ui, sans-serif' },
     { id: "inter", label: "Inter", stack: '"Inter", system-ui, sans-serif' },
+    { id: "hanken", label: "Hanken Grotesk", stack: '"Hanken Grotesk", system-ui, sans-serif' },
     { id: "system", label: "System UI", stack: "system-ui, sans-serif" },
 ];
 
@@ -24,9 +24,9 @@ export const MONO_FONTS: FontDef[] = [
     { id: "firacode", label: "Fira Code", stack: '"Fira Code", monospace' },
 ];
 
-export const DEFAULT_SANS = "hanken";
+export const DEFAULT_SANS = "inter";
 export const DEFAULT_MONO = "jetbrains";
-export const DEFAULT_TERM_FONT = "hack"; // matches term.tsx's current fallback
+export const DEFAULT_TERM_FONT = "jetbrains"; // matches term.tsx's fallback and defaultconfig's term:fontfamily
 
 // Look up a font's stack by id, falling back to the list's first entry for an unknown id.
 export function stackOf(list: FontDef[], id: string): string {
