@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { buildAgentTree, stageSubline, treeAgentCount, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import {
+    buildAgentTree,
+    foldCollapsedProjects,
+    stageSubline,
+    treeAgentCount,
+    UNGROUPED_PROJECT,
+    type AgentTreeRow,
+} from "./agenttreemodel";
 import { endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
 
 function vm(id: string, state: AgentVM["state"], path?: string): AgentVM {
@@ -498,5 +505,25 @@ describe("stageSubline", () => {
     });
     it("is just the age while the stage is judging", () => {
         expect(stageSubline(undefined, "2m")).toBe("2m");
+    });
+});
+
+describe("foldCollapsedProjects", () => {
+    // waveterm: a (idle), b (asking); loom: c (idle)
+    const rows = buildAgentTree(
+        [vm("a", "idle", WAVE), vm("b", "asking", WAVE), vm("c", "idle", LOOM)],
+        ["a", "b", "c"]
+    );
+    it("keeps every row when nothing is collapsed", () => {
+        expect(foldCollapsedProjects(rows, new Set())).toEqual(rows);
+    });
+    it("drops a collapsed project's body but keeps its group row and its attention", () => {
+        const out = foldCollapsedProjects(rows, new Set(["waveterm"]));
+        expect(out.map((r) => (r.kind === "group" ? `g:${r.project}` : r.kind))).toEqual([
+            "g:waveterm",
+            "g:loom",
+            "parent",
+        ]);
+        expect(out[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 1 });
     });
 });
