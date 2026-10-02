@@ -18,17 +18,25 @@ import {
     Copy,
     CopyPlus,
     ExternalLink,
+    Folder,
+    FolderOpen,
     Pencil,
+    Plus,
     SquareTerminal,
     Workflow,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { agentBranchesAtom, loadAgentBranch } from "./agentbranchstore";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
-import { buildAgentTree, stageSubline, treeAgentCount, type StageOutcome } from "./agenttreemodel";
+import {
+    buildAgentTree,
+    foldCollapsedProjects,
+    stageSubline,
+    treeAgentCount,
+    type StageOutcome,
+} from "./agenttreemodel";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom, setCanvasMode } from "./canvasstore";
 import { renamingRowAtom } from "./rowrenameatom";
@@ -36,6 +44,7 @@ import { duplicateSession, renameSession, sessionCustomLabel } from "./session-m
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { docReviewAtom, parseDocReview } from "./docreview";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
+import { collapsedProjectsAtom, toggleProject } from "./projectfoldstore";
 import {
     endedWorkerId,
     laneLabel,
@@ -222,11 +231,7 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
 }
 
 function AskingBadge({ n }: { n: number }) {
-    return (
-        <span className="whitespace-nowrap rounded-[5px] bg-askingbg px-[6px] py-[1px] font-mono text-[10.5px] font-semibold text-warning">
-            {n} asking
-        </span>
-    );
+    return <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-warning">{n} asking</span>;
 }
 
 // TaskStripBar is a run's per-task strip under its second line: a segment per task, or one bar for a long plan.
@@ -317,7 +322,7 @@ function ParentRow({
     lead?: { run: RunInfo; open: boolean; live: number };
 }) {
     const focusId = useAtomValue(model.focusIdAtom);
-    const branch = useAtomValue(agentBranchesAtom)[agent.id];
+    const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
     // drop children that finished (success/done) so a completed fan-out doesn't linger in the tree
     const subs = visibleSubagents(useAtomValue(subagentsByIdAtom)[agent.id] ?? []);
@@ -375,10 +380,9 @@ function ParentRow({
                 onClick={select}
                 onContextMenu={onContextMenu}
                 className={cn(
-                    "relative flex cursor-pointer items-center gap-[9px] rounded-[9px] px-[11px] py-[9px] transition-colors duration-[140ms]",
-                    // m3 attention: a static amber tint marks an asking row (the pulse lives in the dot, not the row);
-                    // selection wins the background so the focused row still reads as focused.
-                    selected ? "bg-accentbg" : asking ? "bg-warning/[0.06]" : "hover:bg-surface-hover",
+                    "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                    // selection is the one filled row; an asking agent says so in words, not in a tint
+                    selected ? "bg-surface-selected" : "hover:bg-surface-hover",
                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
                 )}
             >
@@ -398,22 +402,21 @@ function ParentRow({
                         <RenameBox tabId={agent.id} />
                     ) : (
                         <div className="flex min-w-0 items-center gap-[6px]">
-                            <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink-hi">
+                            <div
+                                className={cn(
+                                    "min-w-0 flex-1 truncate text-[13px]",
+                                    selected ? "text-primary" : "text-secondary"
+                                )}
+                            >
                                 {agent.name}
                             </div>
                             {/* a lead's second line holds its workers chip and progress, which need its full width */}
                             {lead ? subsChip : null}
                         </div>
                     )}
-                    {lead ? (
-                        <RunSubline run={lead.run} open={lead.open} live={lead.live} />
-                    ) : (
-                        <div className="mt-[3px] flex min-w-0 items-center gap-[6px]">
-                            {subsChip}
-                            <span className="truncate font-mono text-[10.5px] text-muted">{branch || "—"}</span>
-                        </div>
-                    )}
+                    {lead ? <RunSubline run={lead.run} open={lead.open} live={lead.live} /> : null}
                 </div>
+                {lead ? null : subsChip}
                 <CanvasTag model={model} id={agent.id} />
                 {/* a row names its state only when it wants something; the dot already says working or idle */}
                 {review ? (
@@ -432,7 +435,11 @@ function ParentRow({
                     </button>
                 ) : asking ? (
                     <span className="font-mono text-[10.5px] font-semibold text-warning">asking</span>
-                ) : null}
+                ) : (
+                    <span className="whitespace-nowrap font-mono text-[11px] text-ink-faint">
+                        {formatAgeShort(displayAgeMs(agent, now))}
+                    </span>
+                )}
             </div>
             {/* subagent reveal: the children block expands/collapses via composerReveal (height+opacity).
                 It is not a layout node itself, so its height animation and the row-list reflow don't fight. */}
@@ -455,7 +462,7 @@ function ParentRow({
                                     });
                                 }}
                                 className={cn(
-                                    "relative flex items-center gap-[9px] rounded-[9px] py-[6px] pl-[28px] pr-[11px] hover:bg-surface-hover",
+                                    "relative flex items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] hover:bg-surface-hover",
                                     s.transcriptPath && "cursor-pointer"
                                 )}
                             >
@@ -526,7 +533,7 @@ function RunRow({ model, run, open, live }: { model: AgentsViewModel; run: RunIn
         <div
             onClick={() => toggleRunCollapsed(run.runId)}
             onContextMenu={onContextMenu}
-            className="relative flex cursor-pointer items-center gap-[9px] rounded-[9px] px-[11px] py-[9px] transition-colors duration-[140ms] hover:bg-surface-hover"
+            className="relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
         >
             <Slot>
                 <Workflow size={13} aria-hidden className={LEAD_MARK_CLASS[leadMark(run, undefined).tone]} />
@@ -602,14 +609,10 @@ function WorkerRow({
             onClick={select}
             onContextMenu={onContextMenu}
             className={cn(
-                "relative flex items-center gap-[9px] rounded-[9px] py-[7px] pr-[11px] transition-colors duration-[140ms]",
+                "relative flex items-center gap-[9px] rounded-[6px] py-[7px] pr-[11px] transition-colors duration-[140ms]",
                 nested ? "pl-[45px]" : "pl-[28px]",
                 focusKey != null && "cursor-pointer",
-                selected
-                    ? "bg-accentbg"
-                    : asksYou
-                      ? "bg-warning/[0.06]"
-                      : focusKey != null && "hover:bg-surface-hover"
+                selected ? "bg-surface-selected" : focusKey != null && "hover:bg-surface-hover"
             )}
         >
             <Guides depth={nested ? 2 : 1} />
@@ -695,8 +698,8 @@ function StageRow({
             onClick={select}
             onContextMenu={onContextMenu}
             className={cn(
-                "relative flex cursor-pointer items-center gap-[9px] rounded-[9px] py-[7px] pl-[28px] pr-[11px] transition-colors duration-[140ms]",
-                selected ? "bg-accentbg" : "hover:bg-surface-hover"
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[7px] pl-[28px] pr-[11px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
             <Guides depth={1} />
@@ -734,7 +737,7 @@ function FoldRow({
     return (
         <div
             onClick={onToggle}
-            className="relative flex cursor-pointer items-center gap-[9px] rounded-[9px] py-[6px] pl-[28px] pr-[11px] font-mono text-[10.5px] text-ink-mid hover:bg-surface-hover hover:text-secondary"
+            className="relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] font-mono text-[10.5px] text-ink-mid hover:bg-surface-hover hover:text-secondary"
         >
             <Guides depth={1} />
             <Slot>{glyph}</Slot>
@@ -784,8 +787,8 @@ function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: Ag
             onClick={select}
             onContextMenu={onContextMenu}
             className={cn(
-                "relative flex cursor-pointer items-center gap-[9px] rounded-[9px] px-[11px] py-[9px] transition-colors duration-[140ms]",
-                selected ? "bg-accentbg" : "hover:bg-surface-hover"
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
             <Slot>
@@ -795,7 +798,9 @@ function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: Ag
                 {renaming ? (
                     <RenameBox tabId={terminal.id} />
                 ) : (
-                    <div className="truncate text-[13px] font-medium text-ink-hi">{terminal.name}</div>
+                    <div className={cn("truncate text-[13px]", selected ? "text-primary" : "text-secondary")}>
+                        {terminal.name}
+                    </div>
                 )}
             </div>
             <CanvasTag model={model} id={terminal.id} />
@@ -813,26 +818,16 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const lineage = useAtomValue(model.lineageAtom);
     const folds = useAtomValue(treeFoldsAtom);
     const focusId = useAtomValue(model.focusIdAtom);
+    const collapsedList = useAtomValue(collapsedProjectsAtom);
+    const collapsed = new Set(collapsedList);
     const rows = buildAgentTree(agents, order, lineage, folds, focusId);
-    // the project group only earns a row when several projects are live: with one, its name and count
-    // just restate the header, so suppressing it reads the tree at two levels instead of three. Counts
-    // come off the unfiltered rows, and the lone group's attention moves to the header with it.
+    // every project is a folder row; the count comes off the unfolded rows so a collapsed project still counts
     const total = treeAgentCount(rows);
-    const groupRows = rows.filter((r) => r.kind === "group");
-    const multiProject = groupRows.length > 1;
-    const visibleRows = multiProject ? rows : rows.filter((r) => r.kind !== "group");
-    const headerAttn = multiProject ? 0 : groupRows.reduce((n, r) => n + (r.kind === "group" ? r.attn : 0), 0);
+    const visibleRows = foldCollapsedProjects(rows, collapsed);
 
     useRunDigests(Object.values(lineage.runs));
 
     useSubagentTracking(agents);
-
-    // resolve each agent's real branch for its row (cached per cwd-source; see agentbranchstore.ts)
-    useEffect(() => {
-        for (const a of agents) {
-            void loadAgentBranch(a.id, a.transcriptPath, a.blockId);
-        }
-    }, [agents.map((a) => `${a.id}:${a.transcriptPath ?? ""}:${a.blockId ?? ""}`).join(",")]);
 
     // no-cascade guard (single constant key — the surface has one roster): mounting or switching to the
     // surface seeds silently, so only agents/terminals that arrive after mount fade in. See motiontokens.ts.
@@ -847,31 +842,55 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
 
     return (
         <div data-agent-tree className="flex w-[248px] shrink-0 flex-col border-r border-border bg-surface">
-            <div className="border-b border-edge-faint px-[16px] pb-[12px] pt-[16px]">
-                <div className="flex items-center justify-between">
-                    <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[.1em] text-ink-mid">Agents</h3>
-                    <div className="flex items-center gap-[6px]">
-                        {headerAttn > 0 ? <AskingBadge n={headerAttn} /> : null}
-                        <span className="font-mono text-[10.5px] font-semibold text-muted">{total}</span>
-                    </div>
-                </div>
+            <div className="px-[8px] pt-[10px]">
+                <button
+                    type="button"
+                    onClick={() => globalStore.set(model.newAgentOpenAtom, true)}
+                    className="flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[7px] text-[13px] text-secondary hover:bg-surface-hover hover:text-primary"
+                >
+                    <Plus size={14} aria-hidden />
+                    New agent
+                </button>
+            </div>
+            <div className="flex items-center justify-between px-[12px] pb-[4px] pt-[14px]">
+                <h3 className="text-[12px] font-medium text-muted">Agents</h3>
+                <span className="font-mono text-[11px] text-ink-faint">{total}</span>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
                 <AnimatePresence mode="popLayout" initial={false}>
                     {visibleRows.map((r) => {
                         if (r.kind === "group") {
                             return (
-                                <motion.div
-                                    key={`g-${r.project}`}
-                                    layout="position"
-                                    className="flex items-center gap-[8px] px-[11px] pb-[6px] pt-[14px]"
-                                >
-                                    <span className="truncate font-mono text-[10.5px] font-bold uppercase tracking-[.1em] text-muted">
-                                        {r.project}
-                                    </span>
-                                    <div className="h-px flex-1 bg-edge-mid" />
-                                    {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
-                                    <span className="font-mono text-[10.5px] font-semibold text-muted">{r.count}</span>
+                                <motion.div key={`g-${r.project}`} layout="position">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            globalStore.set(
+                                                collapsedProjectsAtom,
+                                                toggleProject(collapsedList, r.project)
+                                            )
+                                        }
+                                        aria-expanded={!collapsed.has(r.project)}
+                                        className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
+                                    >
+                                        <ChevronRight
+                                            size={12}
+                                            aria-hidden
+                                            className={cn(
+                                                "shrink-0 text-ink-faint transition-transform",
+                                                !collapsed.has(r.project) && "rotate-90"
+                                            )}
+                                        />
+                                        {collapsed.has(r.project) ? (
+                                            <Folder size={14} aria-hidden className="shrink-0 text-muted" />
+                                        ) : (
+                                            <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
+                                        )}
+                                        <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
+                                            {r.project}
+                                        </span>
+                                        {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
+                                    </button>
                                 </motion.div>
                             );
                         }
@@ -961,6 +980,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                             <motion.div
                                 key={key}
                                 layout="position"
+                                className="pl-[14px]"
                                 variants={cardVariants}
                                 initial={entranceIds.has(key) ? "initial" : false}
                                 animate="animate"
@@ -974,19 +994,18 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                         <motion.div
                             key="terminals-header"
                             layout="position"
-                            className="flex items-center gap-[8px] px-[11px] pb-[6px] pt-[14px]"
+                            className="flex items-center gap-[7px] px-[8px] pb-[4px] pt-[14px]"
                         >
-                            <span className="truncate font-mono text-[10.5px] font-bold uppercase tracking-[.1em] text-muted">
-                                Terminals
-                            </span>
-                            <div className="h-px flex-1 bg-edge-mid" />
-                            <span className="font-mono text-[10.5px] font-semibold text-muted">{terminals.length}</span>
+                            <SquareTerminal size={14} aria-hidden className="shrink-0 text-muted" />
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">Terminals</span>
+                            <span className="font-mono text-[11px] text-ink-faint">{terminals.length}</span>
                         </motion.div>
                     ) : null}
                     {terminals.map((t) => (
                         <motion.div
                             key={t.id}
                             layout="position"
+                            className="pl-[14px]"
                             variants={cardVariants}
                             initial={entranceIds.has(t.id) ? "initial" : false}
                             animate="animate"
