@@ -19,7 +19,7 @@ async function boot() {
         const init = await invoke<InitData>("get_init");
         installTauriApi(init);
         installChromeListeners();
-        loadFonts(); // register Hanken Grotesk + JetBrains Mono (fonts swap in on load)
+        loadFonts(); // register the bundled fonts (fonts swap in on load)
         hlog("init: ws=" + init.wsEndpoint + " web=" + init.webEndpoint + " version=" + init.version);
 
         const version = deriveVersionInfo(init.appVersion, init.version, init.buildTime, init.platform);

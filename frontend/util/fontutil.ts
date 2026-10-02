@@ -18,7 +18,7 @@ function loadJetBrainsMonoFont() {
         return;
     }
     isJetBrainsMonoLoaded = true;
-    // variable font with the full charset (Vietnamese included); the v13 latin files it replaces had 222 glyphs
+    // variable font with the full charset (Vietnamese included); the v13 latin files it replaces mapped 222 characters
     const jbmFont = new FontFace("JetBrains Mono", "url('fonts/jetbrains-mono-variable.woff2')", {
         style: "normal",
         weight: "100 800",
