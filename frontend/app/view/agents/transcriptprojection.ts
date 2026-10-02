@@ -428,8 +428,9 @@ function notificationTexts(rec: any): string[] {
     return out;
 }
 
-/** Pure: the shell (Bash/PowerShell) commands a Claude transcript ran in the background — started with run_in_background, or a
- *  foreground command auto-backgrounded at its timeout (its result carries a backgroundTaskId) — each with the
+/** Pure: the shell (Bash/PowerShell) commands a Claude transcript ran in the background — started with
+ *  run_in_background, or a foreground command auto-backgrounded at its timeout (its result carries a
+ *  backgroundTaskId) — each with the
  *  status its <task-notification> (joined by tool-use-id) or a later TaskStop/KillShell gave it. Unresolved
  *  tasks stay "running"; the caller decides what that means for a session that is no longer live. First-seen
  *  order. Background subagents are left to extractSubagentSpawns. */
