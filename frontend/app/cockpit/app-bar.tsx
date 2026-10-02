@@ -106,25 +106,27 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     );
 }
 
-// The arcterm "t>" mark (public/logos/arcterm.png) as vector pixel art: a 12x9 grid drawn at 2 CSS px
-// per cell, so edges land on whole device pixels at 100/150/200% scaling where the downscaled PNG
-// blurred. pointer-events-none: drag.js skips SVG elements, so the press must land on the parent span.
+// The arcterm "t>" mark (public/logos/arcterm.png) as vector pixel art on whole CSS pixels, so it stays
+// sharp where the downscaled PNG blurred. The source is a 12x9 cell grid; each cell sits at 2px steps
+// but is drawn 3px square, so neighbours overlap by 1px as the source's blocks do: the chevron reads
+// as one stroke and the strokes carry the weight of the bold wordmark beside it.
+// pointer-events-none: drag.js skips SVG elements, so the press must land on the parent span.
 function ArctermMark() {
     return (
         <svg
-            width="24"
-            height="18"
-            viewBox="0 0 12 9"
+            width="25"
+            height="19"
+            viewBox="0 0 25 19"
             fill="currentColor"
             shapeRendering="crispEdges"
             aria-hidden="true"
             className="pointer-events-none"
         >
-            <rect x="1" y="1" width="1" height="6" />
-            <rect x="0" y="3" width="5" height="1" />
-            <rect x="5" y="6" width="1" height="1" />
-            <rect x="2" y="7" width="3" height="1" />
-            <path d="M7 0h1v1H7zM8 1h1v1H8zM9 2h1v1H9zM10 3h1v1h-1zM11 4h1v1h-1zM10 5h1v1h-1zM9 6h1v1H9zM8 7h1v1H8zM7 8h1v1H7z" />
+            <rect x="2" y="2" width="3" height="13" />
+            <rect x="0" y="6" width="11" height="3" />
+            <rect x="10" y="12" width="3" height="3" />
+            <rect x="4" y="14" width="7" height="3" />
+            <path d="M14 0h3v3h-3zM16 2h3v3h-3zM18 4h3v3h-3zM20 6h3v3h-3zM22 8h3v3h-3zM20 10h3v3h-3zM18 12h3v3h-3zM16 14h3v3h-3zM14 16h3v3h-3z" />
         </svg>
     );
 }
