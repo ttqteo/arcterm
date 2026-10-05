@@ -130,10 +130,26 @@ function LightboxBody({ record, onClose }: { record: UploadRecord; onClose: () =
                         data-upload-lightbox-img=""
                         className="block max-h-[74vh] max-w-full object-contain"
                     />
-                ) : img.status === "loading" ? null : (
-                    <span className="text-[12px] text-muted">
-                        {img.status === "missing" ? "No longer on disk" : "Can't load this image"}
-                    </span>
+                ) : (
+                    // one live region for all three states, so a change of state is announced, not just the first
+                    <div role="status" className="flex max-w-full flex-col items-center gap-[6px] text-center">
+                        <span className="text-[12px] text-muted">
+                            {img.status === "loading"
+                                ? "Loading…"
+                                : img.status === "missing"
+                                  ? "No longer on disk"
+                                  : "Can't load this image"}
+                        </span>
+                        {img.status === "missing" ? (
+                            // where it was, so the file can be found or restored
+                            <span
+                                title={record.path}
+                                className="max-w-full break-all font-mono text-[10.5px] text-muted"
+                            >
+                                {record.path}
+                            </span>
+                        ) : null}
+                    </div>
                 )}
             </div>
         </>
@@ -169,7 +185,8 @@ export function UploadsList({ records, now }: { records: readonly UploadRecord[]
                     }}
                 />
             ))}
-            {/* portaled: ModalShell's backdrop is fixed, and a transformed ancestor in the rail would contain it */}
+            {/* portaled as a guard: no ancestor in the rail has a transform today, but one added later would become the
+                containing block of ModalShell's fixed backdrop and clip the lightbox to the rail */}
             {createPortal(
                 <ModalShell
                     open={open}

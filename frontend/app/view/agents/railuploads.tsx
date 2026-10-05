@@ -36,7 +36,9 @@ export function UploadsSection({ blockId, now }: { blockId: string | undefined; 
                 Attach
             </button>
             {records.length > 0 ? (
-                <UploadsList records={records} now={now} />
+                // keyed by the terminal: Ctrl+Tab swaps the rail's agent while a lightbox is open, and the remount closes it
+                // instead of leaving one agent's image over another's rail
+                <UploadsList key={blockId} records={records} now={now} />
             ) : (
                 <div className="text-[11.5px] text-muted">
                     {blockId
