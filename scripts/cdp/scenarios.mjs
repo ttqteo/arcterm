@@ -12533,8 +12533,10 @@ async function gridDrag(h, { source, target, zone }) {
             }
             return v;
         };
+        // the overlays exist only while an agent is dragged, so none may be up before the dragstart
+        const atRest = document.querySelectorAll("[data-agent-drop-overlay]").length;
         const src = document.querySelector(${JSON.stringify(source)});
-        if (!src) return { ok: false, why: "no drag source" };
+        if (!src) return { ok: false, why: "no drag source", atRest };
         const dt = new DataTransfer();
         const fire = (el, type, x, y) =>
             el.dispatchEvent(
@@ -12546,7 +12548,7 @@ async function gridDrag(h, { source, target, zone }) {
         const ov = await until(() => document.querySelector(${JSON.stringify(`[data-agent-drop-overlay="${target}"]`)}), 60);
         if (!ov) {
             fire(src, "dragend");
-            return { ok: false, why: "no drop overlay over the target cell" };
+            return { ok: false, why: "no drop overlay over the target cell", atRest };
         }
         const r = ov.getBoundingClientRect();
         const x = r.left + r.width * ${fx};
@@ -12559,10 +12561,11 @@ async function gridDrag(h, { source, target, zone }) {
         fire(src, "dragend");
         await wait(100);
         // the drop ends the drag, which takes every overlay down
-        return { ok: true, hint, zones, left: document.querySelectorAll("[data-agent-drop-overlay]").length };
+        return { ok: true, hint, zones, atRest, left: document.querySelectorAll("[data-agent-drop-overlay]").length };
     })()`);
 }
-const gridDropOk = (d, zone) => d.ok === true && d.hint === zone && d.left === 0;
+// the overlays were down before the drag, the zone hint followed the point, and the drop took them down again
+const gridDropOk = (d, zone) => d.ok === true && d.hint === zone && d.atRest === 0 && d.left === 0;
 
 // DOM focus into a cell's terminal, as a click in it leaves it
 const focusGridTerm = (h, id) =>
@@ -12578,6 +12581,8 @@ const gridActiveCell = (h) =>
 
 // Ctrl+P and the agent's name, until its row is the selected one (and offers its actions when `withActions`)
 async function gridPaletteFind(h, name, withActions) {
+    // an empty search "finds" whatever row the palette has selected, and the caller then presses Enter on it
+    if (typeof name !== "string" || name.trim() === "") return { ok: false, why: "no agent name to search for" };
     if (!(await openPalette(h))) return { ok: false, why: "the palette did not open" };
     await h.ev(setInputExpr(PALETTE_INPUT, name));
     const state = await paletteStateWhen(h, (s) => (s.selected ?? "").startsWith(name) && (!withActions || s.chip), 8000);
@@ -12628,7 +12633,7 @@ const agentGrid = {
             await h.ev(
                 `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
             );
-            if (!(await freshBoot(h))) throw new Error("the page did not come back after the reload");
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             const ids = ctx.agents.map((a) => a.tabId);
             ctx.inRoster = await polishWaitFor(h, gridReady(ids), 20000);
@@ -12659,6 +12664,12 @@ const agentGrid = {
                 el.click();
                 return true;
             })()`);
+        // a failing step that ends the scenario: what follows presses keys, and must not run on a page it was not
+        // written for
+        const bail = (step, detail) => {
+            rec(step, false, detail);
+            return steps;
+        };
         const settle = () => polishNap(GRID_SETTLE_MS);
         const cellAt = (lay, id) => lay.cells.find((c) => c.id === id) ?? {};
         const order = (lay) => JSON.stringify(lay.cells.map((c) => c.id));
@@ -12863,7 +12874,9 @@ const agentGrid = {
             // 10. the grid survives a reload (the saved grid is read before the roster is complete). The count attribute
             // can overstate while the roster loads (a saved cell whose agent has not arrived holds its slot, with no
             // pane), so the cells are counted from the panes that are drawn, and read again once things have settled
-            const reloaded = await freshBoot(h);
+            // ahReload, not freshBoot: the old document can answer freshBoot's readiness check before the navigation
+            // commits
+            const reloaded = await ahReload(h);
             await h.goto("agent");
             const back = await polishWaitFor(
                 h,
@@ -12896,12 +12909,34 @@ const agentGrid = {
             );
             await h.shot("cdp-shots/agent-grid-reloaded.png");
 
+            // The steps below press keys in the live app, and a key acts on whatever the page shows, so each one first
+            // checks that the page is what it was written for, and ends the scenario with a failing step if it is not
+            const fromId = gridFocused(lay);
+            const pickId = lay.cells.map((c) => c.id).find((id) => id !== fromId);
+            if (
+                lay.cells.length < 2 ||
+                !lay.cells.every((c) => ALL.includes(c.id)) ||
+                fromId == null ||
+                pickId == null ||
+                nameOf(pickId) === ""
+            ) {
+                return bail("the grid did not come back after the reload: cannot press keys in it safely", {
+                    from: fromId,
+                    pick: pickId,
+                    lay,
+                });
+            }
+
             // 11. a palette pick of an agent that already has a cell. ModalShell hands focus back to what held it when the
             // palette opened (that cell's xterm), and that must not count as picking the cell again
             const before = order(lay);
-            const fromId = gridFocused(lay);
-            const pickId = lay.cells.map((c) => c.id).find((id) => id !== fromId);
             const inTerm = await focusGridTerm(h, fromId);
+            if (inTerm !== true) {
+                return bail("11. the focused cell's terminal could not take the keyboard: the palette is not opened", {
+                    from: fromId,
+                    inTerm,
+                });
+            }
             const found = await gridPaletteFind(h, nameOf(pickId), false);
             if (found.ok) await h.ev(paletteKey("Enter"));
             const gone = await polishWaitFor(h, `!${PALETTE_INPUT}`, 4000);
@@ -12924,8 +12959,20 @@ const agentGrid = {
             // 12. Open in split from the palette adds the agent right after the focused cell
             const splitFrom = gridFocused(lay);
             const ids = lay.cells.map((c) => c.id);
+            if (ids.length !== 3 || splitFrom == null || nameOf(E) === "") {
+                return bail("12. the grid is not the three cells step 11 left: Open in split is not tried", {
+                    from: splitFrom,
+                    lay,
+                });
+            }
             const after = ids.indexOf(splitFrom) + 1;
             const inTerm2 = await focusGridTerm(h, splitFrom);
+            if (inTerm2 !== true) {
+                return bail("12. the focused cell's terminal could not take the keyboard: the palette is not opened", {
+                    from: splitFrom,
+                    inTerm2,
+                });
+            }
             const split = await gridPaletteSplit(h, nameOf(E));
             const gone2 = await polishWaitFor(h, `!${PALETTE_INPUT}`, 4000);
             await settle();
@@ -12941,10 +12988,9 @@ const agentGrid = {
                     gridFocused(lay) === E,
                 { from: splitFrom, inTerm2, split, gone2, active, lay }
             );
-            // The step to watch. An agent row closes the palette in the same event as the focus write, but an action closes
-            // it a microtask later (runPaletteAction), in a later commit. The surface's hand-over effect runs on the agent
-            // change, with the palette's input still the active element, so it has nothing to hand over, and the palette
-            // then gives focus back to the cell the keyboard was in
+            // Guards focusCell's hand-over (afd1bff1). A palette action such as Open in split changes the selection in
+            // one commit and closes the palette in the next, where ModalShell restores focus into the old cell; the
+            // cell's onFocus path then hands it on to the selected agent's xterm, not leaving typing with the old one
             rec("12b. and the keyboard goes to E's terminal, so typing reaches the agent that is shown", active === E, {
                 active,
                 focused: gridFocused(lay),
@@ -12954,7 +13000,19 @@ const agentGrid = {
             // rule and hands the keyboard to the new focused cell. Where it lands depends on the roster's order, so the
             // assertion is that the focus moved and that the keyboard is in the cell that now holds it
             const tabFrom = gridFocused(lay);
+            if (lay.cells.length < 2 || tabFrom == null) {
+                return bail("13. the grid has no focused cell among several: Ctrl+Tab is not pressed", {
+                    from: tabFrom,
+                    lay,
+                });
+            }
             const inTerm3 = await focusGridTerm(h, tabFrom);
+            if (inTerm3 !== true) {
+                return bail("13. the focused cell's terminal could not take the keyboard: Ctrl+Tab is not pressed", {
+                    from: tabFrom,
+                    inTerm3,
+                });
+            }
             await ahKey(h, "Tab", "Tab", { ctrlKey: true });
             await settle();
             lay = await gridLayout(h);
@@ -12980,8 +13038,10 @@ const agentGrid = {
             }
         };
         if (ctx.skip) return;
-        // a palette a failed step left open would take the Esc and the focus the reload does not need
-        await step("close the palette", () => h.ev(PEEKS_ESC));
+        // a palette a failed step left open is closed; an Esc with none open would reach whatever else is listening
+        await step("close a palette a failed step left open", async () => {
+            if (await h.ev(`!!${PALETTE_INPUT}`)) await h.ev(PEEKS_ESC);
+        });
         await step("end the focus emulation", () => h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false }));
         for (const tabId of ctx.tabIds) {
             await step(`close ${tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
