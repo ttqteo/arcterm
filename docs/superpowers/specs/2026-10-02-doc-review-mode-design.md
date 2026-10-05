@@ -1,6 +1,6 @@
 # Doc review mode — reviewing an agent's prose edits on the Agent surface — design
 
-Status: design settled 2026-10-02.
+Status: design settled 2026-10-02; mockup approved 2026-10-05.
 
 ## Problem
 
@@ -23,7 +23,8 @@ and `.md` documents.
 Out of scope: a review the user starts on their own (no ask), choosing which agent receives it, a review
 spanning several files, following `\input`/`\include`, moving `Spec review` / `Plan review` onto the new
 view, Obsidian-specific syntax (wikilinks, `![[…]]` embeds, callouts — the notes are read as plain
-linked markdown), SyncTeX, comments placed on the PDF, and keeping review state across an Arc restart.
+linked markdown), SyncTeX, comments placed on the PDF, showing the previous round's comments beside a
+later round, and keeping review state across an Arc restart.
 
 ## Decisions
 
@@ -93,7 +94,8 @@ existing skills. It tells the agent:
    several files are several asks in turn.
 3. After asking, stop. Don't edit that file while the ask is open.
 4. On Request changes: handle each numbered comment (find the quote in the file), then ask a new
-   `Doc review` of the same file whose `- ` lines say what was done for each comment, by number.
+   `Doc review` of the same file with one `- ` line per comment, starting with its number
+   (`- 1: §5.2 ¶1 now opens with the null result`).
 5. On Approve: carry on.
 
 ## The review view
@@ -125,28 +127,76 @@ displayed (decision 7).
 
 ### Layout
 
-The agent tree and the agent header stay. The area the xterm occupies becomes:
+**The approved mockup is the spec for everything visual:**
+`D:\projects\arcterm\.superpowers\design\doc-review-mode\project\` — `Main.dc.html` (interactive:
+Terminal/Review, Changes/PDF, Whole file, click a sentence to comment), `Narrow.dc.html` (pane under
+720 px), `Note.dc.html` (a `.md` note), `Round2.dc.html` (a second round) and `States.dc.html` (edge
+states). The folder is gitignored, so a worktree reads it by that absolute path. Where this section
+and the mockup disagree on a look, the mockup wins; this spec owns behaviour and wiring.
 
-- **Toolbar:** the file name and its folder; the `Changes | PDF` segmented control (`element/segmented.tsx`);
-  the comment count; `Terminal`, `Approve`, `Request changes (n)`.
-- **Head:** the intro and the focus items as chips; a chip scrolls to the section whose heading it
-  names (matched by the `§` label or heading text; no match → the chip is inert).
-- **Body:** the prose view. Changed sections only, or the whole file with `wholeFile`.
-- **Comment column** to the right, each comment level with the paragraph it anchors to. Below
-  `COMMENT_COLUMN_MIN_PANE` (720 px) the comments render under their paragraph instead.
+The agent tree and the agent header stay; the details rail hides, as in canvas mode. The header gains
+a `Terminal | Review` segmented control (`element/segmented.tsx`, `role="group"`) while a `Doc review`
+ask is open; the Review option carries an amber dot while the terminal is showing. It replaces the
+header's amber review button for this kind of ask. The area the xterm occupies becomes:
+
+- **Toolbar:** the file name and its folder; `Changes | PDF` (`role="tablist"`, `.tex` only — a `.md`
+  file has no tab control); the `Whole file` toggle (Changes only, styled like canvas mode's pressed
+  Mark button); the meta on the right: `+N −N · N edited · against <ref>, session start` (round 2:
+  `against what you reviewed at <time>`). On the PDF tab the right side is the page count, the
+  over-limit chip, `compiled <time> · <engine> · <secs>` and `Recompile`.
+- **Head:** the `Doc review · waiting on you · <agent>` eyebrow (round 2: `Doc review · round 2`), the
+  intro, and the focus items. A focus item scrolls to the section whose heading it names (matched by
+  the `§` label or heading text; no match → inert). A focus item that starts `<n>:` renders as a
+  numbered line tied to comment `n` of the previous round; the others render as chips. The right
+  column of the head reads `Your comments · <n>`.
+- **Body:** the prose view. Changed sections only, with one `<label> <title> · unchanged` row and a
+  `Show whole file` link per run of unchanged sections, or every section with `wholeFile`.
+- **Comments:** each paragraph is one grid row, `minmax(0, 1fr) 300px` with a 40 px gap, so a
+  paragraph's comments sit level with it without measuring. A comment card has its number chip, its
+  `§ ¶` location, the quote and the note; a draft card has the accent border, a textarea and
+  `Add comment` / `Cancel`. The commented sentence is underlined in accent (dashed while the comment is
+  a draft) and followed by its number chip. Below `COMMENT_COLUMN_MIN_PANE` (720 px) the grid becomes
+  one column and the cards follow their paragraph.
+- **Selection:** selecting text inside a paragraph shows a floating `Comment` button above it (key
+  `c`). A selection that crosses a paragraph is clipped to its first paragraph.
+- **Tray** (bottom, like canvas mode's mark tray): a `General note` input on the left; on the right
+  `Approve` and `Request changes <n>`, and a hint line that says what will be sent (`Sends 2 comments
+  to paper-writer as one answer.`, plus `1 comment is not added yet.` while a draft is open). With no
+  saved comment and no note, `Approve` is the accent button and `Request changes` is disabled; the first
+  saved comment or a note swaps them. Below 720 px the note takes its own row. After sending, the tray
+  shows `Sent: <answer>` in success colour until the ask clears; then the state goes to `null` and the
+  view returns to the terminal.
 
 The xterm stays mounted and hidden (the canvas-mode rule: it must never remount). Focus moves into the
 review on entering it, and back to the terminal on leaving, as `agentsurface.tsx` does for canvas mode.
 
-Colours are `@theme` tokens only: insertions and deletions use the existing diff tokens; comment
-anchors use accent. A `design-local` mockup comes before the UI is built (DESIGN.md), and where it
-disagrees with this section on a look, the mockup wins.
+The tree row's amber `review` chip, for a `Doc review` ask, focuses the agent, switches to the Agent
+surface and sets the mode to `review`, instead of opening the dialog.
+
+If the file can't be read (deleted or moved while the ask is open), the body shows `Couldn't read
+<file>` and its path, as the spec dialog's document pane does; the tray still works, so the user can
+answer.
+
+Colours are `@theme` tokens only: insertions are `bg-diff-added/15`, deletions `bg-diff-removed/10`
+with a `diff-removed` line-through and `ink-mid` text (the Tailwind opacity modifiers, no new tokens);
+comment anchors and chips use accent. Images in a `.md` note sit on a light matte, because a diagram
+exported with a transparent background and dark ink (Mermaid's default) is unreadable on the cockpit's
+dark ground; the matte is a new `--color-imagematte` token in `tailwindsetup.css` with that reason in
+its comment, kept at its default across themes.
 
 ### Keys
 
 In `buildAgentBindings`, active only while a `Doc review` ask is open, each with exclusive `when()`s
-so footer chips keep static labels (canvas-mode decision 12): `v` review ↔ terminal, `[` / `]`
-previous / next tab, `Ctrl+Enter` send Request changes. `docs/keyboard-shortcuts.md` mirrors them.
+so footer chips keep static labels (canvas-mode decision 12):
+
+- `r` review ↔ terminal. The header already uses `r` to show the spec dialog, so it keeps one meaning:
+  show the review.
+- `[` / `]` previous / next tab (`.tex` only).
+- `c` comment on the current selection.
+- `Ctrl+Enter` sends whichever answer is the accent button: Request changes when there is something to
+  send, else Approve.
+
+`docs/keyboard-shortcuts.md` mirrors them.
 
 ## Prose model (pure, each with a `.test.ts`)
 
@@ -206,18 +256,18 @@ else empty (a new file: everything is an insertion). The git read is the existin
 1. A `% !TEX root = <rel>` line in the first 20 lines → that file, resolved against the file's dir.
 2. The file contains `\documentclass` → the file.
 3. Up to two parent dirs: a `.tex` containing `\documentclass`, `main.tex` first, then by name.
-4. None → the tab says "No root file found. Add `% !TEX root = …` at the top of the file." The
-   Changes tab is unaffected.
+4. None → `RootPath: ""`, and the tab says "No root file for <file>", why, and the line to add
+   (`% !TEX root = ../main.tex`), as `States.dc.html` draws it. The Changes tab is unaffected.
 
 ### Compile
 
 New wshrpc command `DocCompileCommand(CommandDocCompileData{ Path }) → DocCompileResult{ RootPath,
-PdfPath, Ok, Pages, LogTail, FirstError }` in a new `pkg/wshrpc/wshrpctypes_doc.go`, served by
-`pkg/doccompile`:
+PdfPath, Ok, Engine, DurationMs, Pages, LogTail, FirstError }` in a new
+`pkg/wshrpc/wshrpctypes_doc.go`, served by `pkg/doccompile`:
 
 - `latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=<out>` in the root's dir; if
-  `latexmk` isn't on PATH, `tectonic --outdir <out>`. Neither → `Ok: false`, `FirstError: "No LaTeX
-  engine found (latexmk or tectonic)"`.
+  `latexmk` isn't on PATH, `tectonic --outdir <out>`. `Engine` names the one used; neither →
+  `Ok: false`, `Engine: ""`, and the tab shows "No LaTeX engine found" with how to install one.
 - `<out>` is `<data dir>/doccompile/<sha1 of the root path, 12 hex>/`.
 - 90 s timeout. One compile per root at a time; a request while one runs waits for it and returns its
   result.
@@ -231,8 +281,10 @@ Run `task generate` after adding the types.
 The compile starts in the background when the review opens, and again on a **Recompile** button; not
 on file change (the agent doesn't edit the file while its ask is open). The PDF shows in an iframe on
 `/wave/stream-file?path=<PdfPath>`, WebView2's built-in viewer. The toolbar shows "N pages", with a
-warning when `pageLimit` is set and exceeded. A failed compile shows `FirstError` and a **Send to
-agent** button that appends it to `generalNote`.
+warning chip (icon + "1 page over the 8-page limit") when `pageLimit` is set and exceeded. While a
+compile runs, the tab shows a page skeleton and the elapsed time, and Recompile is disabled. A failed
+compile shows `FirstError` and an **Add to my answer** button that appends it to `generalNote` (it
+sends nothing by itself), beside Recompile.
 
 ## Testing
 
@@ -252,11 +304,15 @@ repo; a real compile, skipped when neither engine is on PATH.
 
 **CDP:** fixture `doc-review` in `scripts/cockpit-fixtures/` (an agent asking `Doc review` on a sample
 `.tex`, and one on a sample `.md` with a relative link and image), and scenario `doc-review` in
-`scripts/cdp/scenarios.mjs` with one shot per state:
-1. Changes tab of the `.tex`: struck and inserted sentences, a word-level modify.
-2. An anchored comment in the comment column.
-3. A narrow pane: the comment under its paragraph.
-4. PDF tab compiled, page count shown, over-limit warning.
-5. PDF tab with a compile error and Send to agent.
-6. The `.md` note with its link and image.
-7. Back to the terminal with `v`.
+`scripts/cdp/scenarios.mjs` with one shot per board of the mockup:
+1. `Main`: Changes tab of the `.tex`, struck and inserted sentences, a word-level modify, a saved and a
+   draft comment in the comment column, the tray with Request changes as the accent button.
+2. `Main`: PDF tab compiled, page count and the over-limit chip.
+3. `Narrow`: a pane under 720 px, the comment under its paragraph, the tray wrapped.
+4. `Note`: the `.md` note with its relative link and its image on the matte.
+5. `Round2`: a second `Doc review` of the same file, diffed against the first round's content, the
+   numbered focus items.
+6. `States`: a selection with the Comment button; terminal mode with the amber dot on Review; PDF
+   compiling, compile failed, no root file, no engine; the tray with no comments; the tray after
+   sending.
+7. Back to the terminal with `r`.
