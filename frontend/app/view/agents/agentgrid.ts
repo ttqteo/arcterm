@@ -9,9 +9,9 @@
 // 3 are two on top and one spanning the bottom, 4 are 2x2. A cell has no place of its own, only a position in
 // the list, so adding, removing or swapping one never needs a geometry rule.
 //
-// Every function returns a normalized state (normalizeGrid): ids are unique, non-empty and at most MAX_CELLS,
-// and `focused` is one of them, or null exactly when there are none. So a stale or hand-edited stored value
-// cannot break a caller. Nothing here mutates its input.
+// Every function that returns a GridState returns a normalized one (normalizeGrid): ids are unique, non-empty
+// and at most MAX_CELLS, and `focused` is one of them, or null exactly when there are none. So a stale or
+// hand-edited stored value cannot break a caller. Nothing here mutates its input.
 
 export const MAX_CELLS = 4;
 
@@ -67,8 +67,9 @@ function refocus(oldIds: readonly string[], focused: string | null, kept: readon
     return kept[kept.length - 1];
 }
 
+// A target index pinned to 0..length-1: a fraction is truncated, +/-Infinity pin to the ends, NaN reads as 0.
 function clampIndex(i: number, length: number): number {
-    return Number.isFinite(i) ? Math.min(length - 1, Math.max(0, Math.trunc(i))) : 0;
+    return Number.isNaN(i) ? 0 : Math.min(length - 1, Math.max(0, Math.trunc(i)));
 }
 
 // Swaps two cells by index. Focus stays on the same agent, wherever it lands.
@@ -179,7 +180,8 @@ export function addCell(state: GridState, id: string, targetIndex: number, zone:
     return { ids, focused: id };
 }
 
-// The grid as one cell: fullscreen, History and the other modes that show a single thing.
+// The grid as one cell, which is what fullscreen shows. The other centre modes (History and the like) hide the
+// grid rather than collapse it, so they do not come through here.
 export function collapseToFocused(state: GridState): GridState {
     const s = normalizeGrid(state);
     return s.focused == null ? s : { ids: [s.focused], focused: s.focused };
@@ -215,7 +217,7 @@ const PLACEMENTS: readonly (readonly CellPlacement[])[] = [
 
 // The placement of each cell for a grid of `count` cells, in order. Clamped to 0..4.
 export function placementFor(count: number): CellPlacement[] {
-    const n = Number.isFinite(count) ? Math.min(MAX_CELLS, Math.max(0, Math.trunc(count))) : 0;
+    const n = Number.isNaN(count) ? 0 : Math.min(MAX_CELLS, Math.max(0, Math.trunc(count)));
     return PLACEMENTS[n].map((p) => ({ ...p }));
 }
 
@@ -234,7 +236,7 @@ export interface GridCell {
 // not a cell, which is then shown alone and leaves the saved grid untouched). `collapsed` shows only the focused
 // one, filling the area (fullscreen). No focus, no cells.
 export function visibleCells(state: GridState, opts: { focusId: string | undefined; collapsed: boolean }): GridCell[] {
-    if (opts.focusId == null) {
+    if (!opts.focusId) {
         return [];
     }
     const s = normalizeGrid(state);
@@ -265,7 +267,10 @@ export function reconcileGrid(state: GridState, input: ReconcileInput): GridStat
 }
 
 // Where focus resumes when nothing is explicitly in focus (a launch, a focused agent that just exited): the
-// grid's focused cell if it is live, else the first live cell.
+// grid's focused cell if it is live, else the first live cell in list order. That is not the neighbour that
+// pruneMissing/removeCell hand focus to (the survivor that slides into the old slot). Once the roster is complete
+// pass the pruned grid (pruneMissing first), whose focused cell is already live, so this returns the same agent
+// the prune chose; on a raw grid it deliberately falls to the first live cell.
 export function gridFallbackFocus(state: GridState, eligible: ReadonlySet<string>): string | undefined {
     const s = normalizeGrid(state);
     const order = s.focused == null ? s.ids : [s.focused, ...s.ids.filter((id) => id !== s.focused)];

@@ -26,9 +26,11 @@ import {
 
 // a state whose focused cell defaults to the first
 const g = (ids: string[], focused: string | null = ids[0] ?? null): GridState => ({ ids, focused });
+// the set of live (eligible) agent ids
+const live = (...ids: string[]) => new Set(ids);
 
 describe("normalizeGrid", () => {
-    it("caps the grid at four cells", () => {
+    it("MAX_CELLS is four", () => {
         expect(MAX_CELLS).toBe(4);
     });
     it("keeps the order and drops duplicate ids", () => {
@@ -56,10 +58,8 @@ describe("normalizeGrid", () => {
 });
 
 describe("parseGrid", () => {
-    it("reads nothing usable as an empty grid", () => {
-        for (const raw of [null, undefined, "x", 3, true, [], {}]) {
-            expect(parseGrid(raw)).toEqual(EMPTY_GRID);
-        }
+    it.each([[null], [undefined], ["x"], [3], [true], [[]], [{}]])("reads %j as an empty grid", (raw) => {
+        expect(parseGrid(raw)).toEqual(EMPTY_GRID);
     });
     it("round-trips a stored grid", () => {
         const s = g(["a", "b", "c"], "b");
@@ -128,6 +128,12 @@ describe("addCell with an agent that is not in the grid", () => {
         expect(addCell(g(["a", "b"]), "x", Number.NaN, "left").ids).toEqual(["x", "a", "b"]);
         expect(addCell(g(["a", "b", "c"]), "x", 1.9, "left").ids).toEqual(["a", "x", "b", "c"]);
     });
+    it("pins an infinite target index to the last or the first cell", () => {
+        expect(addCell(g(["a", "b", "c"]), "x", Number.POSITIVE_INFINITY, "left").ids).toEqual(["a", "b", "x", "c"]);
+        expect(addCell(g(["a", "b", "c"]), "x", Number.POSITIVE_INFINITY, "right").ids).toEqual(["a", "b", "c", "x"]);
+        expect(addCell(g(["a", "b", "c"]), "x", Number.NEGATIVE_INFINITY, "right").ids).toEqual(["a", "x", "b", "c"]);
+        expect(addCell(g(["a", "b", "c"]), "x", Number.NEGATIVE_INFINITY, "left").ids).toEqual(["x", "a", "b", "c"]);
+    });
     it("ignores an empty id", () => {
         expect(addCell(g(["a"]), "", 0, "right")).toEqual(g(["a"]));
         expect(addCell(EMPTY_GRID, "", 0, "right")).toEqual(EMPTY_GRID);
@@ -191,6 +197,9 @@ describe("removeCell", () => {
     it("focus moves to the cell that takes the removed one's place", () => {
         expect(removeCell(g(["a", "b", "c"], "b"), "b")).toEqual(g(["a", "c"], "c"));
         expect(removeCell(g(["a", "b"], "a"), "a")).toEqual(g(["b"], "b"));
+    });
+    it("focus goes to the next survivor, not the last one", () => {
+        expect(removeCell(g(["a", "b", "c", "d"], "b"), "b")).toEqual(g(["a", "c", "d"], "c"));
     });
     it("focus moves to the previous cell when the last one is removed", () => {
         expect(removeCell(g(["a", "b", "c"], "c"), "c")).toEqual(g(["a", "b"], "b"));
@@ -317,9 +326,11 @@ describe("placementFor", () => {
         expect(placementFor(0)).toEqual([]);
         expect(placementFor(-3)).toEqual([]);
         expect(placementFor(Number.NaN)).toEqual([]);
+        expect(placementFor(Number.NEGATIVE_INFINITY)).toEqual([]);
     });
     it("clamps to four and truncates a fraction", () => {
         expect(placementFor(7)).toEqual(placementFor(4));
+        expect(placementFor(Number.POSITIVE_INFINITY)).toEqual(placementFor(4));
         expect(placementFor(2.9)).toEqual(placementFor(2));
     });
     it("every shape covers the 2x2 exactly once", () => {
@@ -360,6 +371,9 @@ describe("visibleCells", () => {
     it("is empty while nothing is in focus", () => {
         expect(visibleCells(g(["a", "b"]), { focusId: undefined, collapsed: false })).toEqual([]);
     });
+    it("reads an empty focus id as nothing in focus", () => {
+        expect(visibleCells(g(["a", "b"]), { focusId: "", collapsed: false })).toEqual([]);
+    });
     it("lays the grid out by count and flags the focused cell", () => {
         const cells = visibleCells(g(["a", "b", "c", "d"], "a"), { focusId: "c", collapsed: false });
         expect(cells.map((c) => c.id)).toEqual(["a", "b", "c", "d"]);
@@ -387,11 +401,10 @@ describe("visibleCells", () => {
 });
 
 describe("reconcileGrid", () => {
-    const live = (...ids: string[]) => new Set(ids);
-
     it("leaves the saved grid alone until the roster has been read", () => {
-        expect(reconcileGrid(g(["a", "b"], "b"), { focusId: "z", eligible: live(), seeded: false })).toEqual(
-            g(["a", "b"], "b")
+        // the focus is live and not a cell, and a saved agent is missing: seeded or not, a rule would act on both
+        expect(reconcileGrid(g(["a", "b"], "a"), { focusId: "c", eligible: live("c"), seeded: false })).toEqual(
+            g(["a", "b"], "a")
         );
     });
     it("prunes agents that are no longer live", () => {
@@ -428,7 +441,7 @@ describe("reconcileGrid", () => {
             [g(["a", "b", "c", "d"], "a"), "e", ["a", "b", "c", "d", "e"], true],
             [g(["a", "x", "b"], "x"), undefined, ["a", "b"], true],
             [g(["a", "b"], "a"), "term", ["a", "b"], true],
-            [g(["a", "b"], "a"), "c", [], false],
+            [g(["a", "b"], "a"), "c", ["c"], false],
             [EMPTY_GRID, "a", ["a"], true],
         ];
         for (const [state, focusId, ids, seeded] of cases) {
@@ -440,8 +453,6 @@ describe("reconcileGrid", () => {
 });
 
 describe("gridFallbackFocus", () => {
-    const live = (...ids: string[]) => new Set(ids);
-
     it("prefers the grid's focused cell", () => {
         expect(gridFallbackFocus(g(["a", "b"], "b"), live("a", "b"))).toBe("b");
     });
@@ -451,6 +462,12 @@ describe("gridFallbackFocus", () => {
     it("has nothing when no cell is live or the grid is empty", () => {
         expect(gridFallbackFocus(g(["a", "b"]), live("z"))).toBeUndefined();
         expect(gridFallbackFocus(EMPTY_GRID, live("a"))).toBeUndefined();
+    });
+    it("takes the first live cell on a raw grid, where pruneMissing would take the neighbour", () => {
+        const grid = g(["a", "b", "c", "d"], "c");
+        const ids = live("a", "b", "d");
+        expect(gridFallbackFocus(grid, ids)).toBe("a");
+        expect(gridFallbackFocus(pruneMissing(grid, ids), ids)).toBe("d");
     });
 });
 
