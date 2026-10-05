@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { focusTerm, pasteIntoTerm, registerTermHandle } from "./termpaste";
 
 function handle() {
-    return { paste: vi.fn(), focus: vi.fn() };
+    return { paste: vi.fn(() => true), focus: vi.fn() };
 }
 
 describe("pasteIntoTerm", () => {
@@ -27,6 +27,24 @@ describe("pasteIntoTerm", () => {
         offA();
         offB();
     });
+    it("says so when the terminal is mounted but not ready for input", () => {
+        const h = { paste: vi.fn(() => false), focus: vi.fn() };
+        const off = registerTermHandle("pb-5", h);
+        expect(pasteIntoTerm("pb-5", "x")).toBe(false);
+        expect(h.paste).toHaveBeenCalledWith("x");
+        off();
+    });
+    it("lets a failing paste reach the caller, which has to catch it", () => {
+        const h = {
+            paste: vi.fn(() => {
+                throw new Error("terminal gone");
+            }),
+            focus: vi.fn(),
+        };
+        const off = registerTermHandle("pb-6", h);
+        expect(() => pasteIntoTerm("pb-6", "x")).toThrow("terminal gone");
+        off();
+    });
 });
 
 describe("registerTermHandle", () => {
@@ -34,6 +52,18 @@ describe("registerTermHandle", () => {
         const h = handle();
         registerTermHandle("pb-2", h)();
         expect(pasteIntoTerm("pb-2", "x")).toBe(false);
+    });
+    it("is harmless to unregister twice, even after the block registered again", () => {
+        const oldH = handle();
+        const newH = handle();
+        const offOld = registerTermHandle("pb-7", oldH);
+        offOld();
+        offOld();
+        const offNew = registerTermHandle("pb-7", newH);
+        offOld();
+        expect(pasteIntoTerm("pb-7", "x")).toBe(true);
+        expect(newH.paste).toHaveBeenCalledOnce();
+        offNew();
     });
     it("does not let a stale unregister remove the newer terminal of the same block", () => {
         const oldH = handle();

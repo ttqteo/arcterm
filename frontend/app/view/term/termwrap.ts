@@ -294,10 +294,17 @@ export class TermWrap {
                 this.connectElem.removeEventListener("paste", pasteHandler, true);
             },
         });
-        // lets the cockpit paste into this terminal by block id (the path of a dropped or attached file)
+        // lets the cockpit paste into this terminal by block id (the path of a dropped or attached file).
+        // handleTermData drops everything until the first load finishes, so a paste before then is refused.
         this.toDispose.push({
             dispose: registerTermHandle(this.blockId, {
-                paste: (text) => this.terminal.paste(text),
+                paste: (text) => {
+                    if (!this.loaded) {
+                        return false;
+                    }
+                    this.terminal.paste(text);
+                    return true;
+                },
                 focus: () => this.terminal.focus(),
             }),
         });

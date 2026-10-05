@@ -19,6 +19,7 @@ export function recordPastedImage(blockId: string, path: string, image: Blob): v
     const now = Date.now();
     fireAndForget(async () => {
         const thumb = await makeThumbnail(image);
-        recordUpload(blockId, makeRecord({ path, source: "paste", now, nonce: nonce(), kind: "image" }), thumb);
+        const record = makeRecord({ path, source: "paste", now, nonce: nonce(), name: "Pasted image", kind: "image" });
+        recordUpload(blockId, record, thumb);
     });
 }

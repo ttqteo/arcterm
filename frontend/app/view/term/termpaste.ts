@@ -8,7 +8,8 @@
 // import cycle can run through it.
 
 export interface TermHandle {
-    paste: (text: string) => void;
+    // false when the terminal cannot take input yet (nothing was pasted)
+    paste: (text: string) => boolean;
     focus: () => void;
 }
 
@@ -24,14 +25,9 @@ export function registerTermHandle(blockId: string, handle: TermHandle): () => v
     };
 }
 
-// false when the block has no mounted terminal to take the text
+// false when the block has no mounted terminal, or one that is not ready for input
 export function pasteIntoTerm(blockId: string, text: string): boolean {
-    const handle = handles.get(blockId);
-    if (handle == null) {
-        return false;
-    }
-    handle.paste(text);
-    return true;
+    return handles.get(blockId)?.paste(text) ?? false;
 }
 
 export function focusTerm(blockId: string): void {
