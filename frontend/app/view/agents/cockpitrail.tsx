@@ -9,6 +9,8 @@ import type { AgentsViewModel } from "./agents";
 import { CockpitEventsRail } from "./cockpiteventsrail";
 import type { Lineage } from "./runlineage";
 
+const EVENTS_ICON = <SquareStack size={20} strokeWidth={1.8} aria-hidden />;
+
 export function CockpitRail({
     model,
     lineage,
@@ -30,7 +32,7 @@ export function CockpitRail({
                 {
                     id: "events",
                     label: "Events",
-                    icon: <SquareStack size={20} strokeWidth={1.8} aria-hidden />,
+                    icon: EVENTS_ICON,
                     content: (
                         <CockpitEventsRail
                             model={model}

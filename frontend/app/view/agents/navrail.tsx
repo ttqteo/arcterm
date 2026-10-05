@@ -12,7 +12,7 @@ import { navRailCollapsed } from "./navrailwidth";
 const iconProps = { size: 20, strokeWidth: 1.8 } as const;
 
 // Cockpit navigation icons. Runtime logos stay as image assets; app controls use Lucide components.
-export const ICON: Record<SurfaceKey, ReactNode> = {
+const ICON: Record<SurfaceKey, ReactNode> = {
     cockpit: <LayoutDashboard {...iconProps} />,
     jarvis: <Brain {...iconProps} />,
     agent: <Bot {...iconProps} />,

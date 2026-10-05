@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Usage surface (handoff redesign: Wave-usage-redesign.dc.html artboard 1B). Master-detail, the same
-// shape Sessions and Radar use: a harness rail on the left grouped by whether the harness reports a
+// shape Conversation History and Radar use: a harness rail on the left grouped by whether the harness reports a
 // quota window at all, and a detail pane holding that harness's two trust zones — LIVE LIMITS
 // (ephemeral 5h/weekly quota, merged live-over-saved via ratelimitstore so it survives idle) and
 // HISTORICAL (durable token-class split, daily series, per-model breakdown, folded from the backend

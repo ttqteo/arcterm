@@ -6,6 +6,7 @@
 // reads the atoms and acts.
 
 import type { CommandItem } from "@/app/cockpit/palette-commands";
+import type { CenterMode } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { parseAddress } from "@/app/view/jarvis/address";
 
@@ -99,7 +100,7 @@ export function resolveAction(
 // the surface it replaced, kept so a worker following an old instruction still lands somewhere sensible.
 export function parseSurfaceAddress(
     address: string
-): { surface: SurfaceKey; center?: "history" } | { error: string } | null {
+): { surface: SurfaceKey; center?: Extract<CenterMode, "history"> } | { error: string } | null {
     if (!address.startsWith(SURFACE_PREFIX)) {
         return null;
     }

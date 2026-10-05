@@ -13,14 +13,16 @@ export const DEFAULT_STARTUP_SURFACE: SurfaceKey = "cockpit";
 export const startupSurfaceAtom = atomWithStorage<SurfaceKey>("cockpit.startup.surface", DEFAULT_STARTUP_SURFACE);
 
 // A persisted "activity" or "sessions" (retired surfaces: Activity folded into Sessions, Sessions into Agent's Conversation
-// History) coerces to "agent". Callers that seed surfaceAtom from the stored value must route through this so a stale key
-// never renders a blank surface.
+// History) coerces to "agent", so a stored legacy startup value boots into the Agent surface (the Settings picker then
+// shows no highlighted option for it). Callers that seed surfaceAtom from the stored value must route through this so a
+// stale key never renders a blank surface.
 export function coerceStartupSurface(k: SurfaceKey | "activity" | "sessions"): SurfaceKey {
     return (k as string) === "activity" || (k as string) === "sessions" ? "agent" : (k as SurfaceKey);
 }
 
-// Surfaces offered as a startup choice: the numbered workflow set minus "agent" (it needs a live
-// agent to be meaningful). "settings" is naturally absent — it was never in SURFACE_ORDER.
+// Surfaces offered as a startup choice: the numbered workflow set minus "agent", which is not offered as a picked default
+// (it is only meaningful with a live agent). A legacy value that coerces to "agent" above still boots there.
+// "settings" is naturally absent — it was never in SURFACE_ORDER.
 export function startupSurfaceOptions(): SurfaceKey[] {
     return SURFACE_ORDER.filter((k) => k !== "agent");
 }
