@@ -1,0 +1,39 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Reaches a mounted terminal by its block id, so the cockpit can put text into an agent's terminal the way a paste
+// does: through xterm's own paste(), which brackets the text when the program asked for bracketed paste (Claude
+// Code does) and sends it as typed text when it did not, and never presses Enter. Each TermWrap registers itself;
+// the callers (uploadsingest.ts) never import termwrap.ts or the cockpit, so this module has no imports and no
+// import cycle can run through it.
+
+export interface TermHandle {
+    paste: (text: string) => void;
+    focus: () => void;
+}
+
+const handles = new Map<string, TermHandle>();
+
+// returns the unregister; a remount that registered the block again first is left alone
+export function registerTermHandle(blockId: string, handle: TermHandle): () => void {
+    handles.set(blockId, handle);
+    return () => {
+        if (handles.get(blockId) === handle) {
+            handles.delete(blockId);
+        }
+    };
+}
+
+// false when the block has no mounted terminal to take the text
+export function pasteIntoTerm(blockId: string, text: string): boolean {
+    const handle = handles.get(blockId);
+    if (handle == null) {
+        return false;
+    }
+    handle.paste(text);
+    return true;
+}
+
+export function focusTerm(blockId: string): void {
+    handles.get(blockId)?.focus();
+}

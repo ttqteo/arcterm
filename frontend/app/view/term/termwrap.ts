@@ -7,6 +7,8 @@ import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { shouldRelaunchWorker } from "@/app/view/agents/session-models/agentresumestore";
+import { recordPastedImage } from "@/app/view/agents/uploadsingest";
+import { pasteTextFor } from "@/app/view/agents/uploadsstore";
 import {
     fetchWaveFile,
     getOverrideConfigAtom,
@@ -35,6 +37,7 @@ import {
     handleOsc7Command,
     type ShellIntegrationStatus,
 } from "./osc-handlers";
+import { registerTermHandle } from "./termpaste";
 import {
     bufferLinesToText,
     createTempFileFromBlob,
@@ -271,8 +274,9 @@ export class TermWrap {
         this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
         this.terminal.open(this.connectElem);
 
-        // a dropped file carries no path in the webview (native drag-drop is off so HTML5 drag works),
-        // so there is nothing to paste; swallow the drop so the webview doesn't navigate to the file.
+        // native drag-drop is off so HTML5 drag works, and a dropped file carries no path in the webview. The
+        // drop bubbles up to CockpitFocusPane, which copies the file and pastes its path (uploadsingest.ts);
+        // here it is only kept from navigating the webview to the file.
         const dropGuard = (e: DragEvent) => e.preventDefault();
         this.connectElem.addEventListener("dragover", dropGuard);
         this.connectElem.addEventListener("drop", dropGuard);
@@ -289,6 +293,13 @@ export class TermWrap {
             dispose: () => {
                 this.connectElem.removeEventListener("paste", pasteHandler, true);
             },
+        });
+        // lets the cockpit paste into this terminal by block id (the path of a dropped or attached file)
+        this.toDispose.push({
+            dispose: registerTermHandle(this.blockId, {
+                paste: (text) => this.terminal.paste(text),
+                focus: () => this.terminal.focus(),
+            }),
         });
     }
 
@@ -615,7 +626,8 @@ export class TermWrap {
                         await new Promise((r) => setTimeout(r, 150));
                     }
                     const tempPath = await createTempFileFromBlob(data.image);
-                    this.terminal.paste(tempPath + " ");
+                    this.terminal.paste(pasteTextFor(tempPath));
+                    recordPastedImage(this.blockId, tempPath, data.image);
                     firstImage = false;
                 }
                 if (data.text) {
