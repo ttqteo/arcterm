@@ -33,7 +33,7 @@ export interface AgentRailInput {
     uploads: number; // files attached to the agent (paste, drop, Attach)
     bgTasks: number;
     terminals: number; // plain terminals the rail lists: the agent's project's, or all of them on request
-    terminalsOther: number; // plain terminals that belong to another project
+    terminalsOther: number; // plain terminals of other projects, counted whether or not the list is widened
     tools: number;
     hasRun: boolean; // the agent leads or works a run
 }
@@ -43,8 +43,8 @@ export interface AgentRailSectionPlan {
     header?: RailSectionHeader; // absent: the section draws its own heading and does not collapse
 }
 
-// Uploads is the one counted section whose empty state carries an action (Attach), so it stays openable at 0;
-// it starts closed until it has something in it
+// a counted section whose empty state carries an action stays openable at 0. Uploads (Attach) also starts closed
+// until it has something in it
 function uploadsHeader(uploads: number): RailSectionHeader {
     return { count: uploads, emptyOpenable: true, defaultOpen: uploads > 0 };
 }
@@ -81,7 +81,7 @@ export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
 
 // A focused terminal has no tools, files, run or usage of its own: its rail is the list that gets you to another
 // terminal, so the Terminals section is all of it
-export function planTerminalRail(i: { terminals: number; terminalsOther: number }): AgentRailSectionPlan[] {
+export function planTerminalRail(i: Pick<AgentRailInput, "terminals" | "terminalsOther">): AgentRailSectionPlan[] {
     return [{ id: "terminals", header: terminalsHeader(i.terminals, i.terminalsOther) }];
 }
 

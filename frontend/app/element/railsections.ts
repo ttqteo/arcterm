@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Open state of a rail's headed sections (collapsiblerail.tsx). A section with a header is a "Label  n  ›" row
-// that opens and closes; a counted section with nothing in it stays listed, dimmed, so the rail keeps one shape.
+// that opens and closes; a counted section with nothing in it stays listed, dimmed and with no chevron (unless it is
+// emptyOpenable, which keeps it live), so the rail keeps one shape.
 
 import { atomWithStorage } from "jotai/utils";
 
@@ -14,7 +15,8 @@ export interface RailSectionHeader {
     emptyOpenable?: boolean;
 }
 
-// per section id; ids are unique across the rails that use headers
+// per section id; ids are unique across the rails that use headers, except "terminals", which the agent rail and the
+// focused-terminal rail deliberately share, so its open state is shared too
 export const railSectionOpenAtom = atomWithStorage<Record<string, boolean>>("cockpit.rail.sections", {});
 
 export function sectionExpandable(h: RailSectionHeader): boolean {

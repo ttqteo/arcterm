@@ -1,6 +1,12 @@
 import { sectionExpandable, sectionOpen } from "@/app/element/railsections";
 import { describe, expect, it } from "vitest";
-import { bgTaskStatusLabel, planAgentRail, planTerminalRail, type AgentRailInput } from "./agentrailsections";
+import {
+    bgTaskStatusLabel,
+    planAgentRail,
+    planTerminalRail,
+    type AgentRailInput,
+    type AgentRailSectionId,
+} from "./agentrailsections";
 
 const base: AgentRailInput = {
     inSubagent: false,
@@ -16,7 +22,7 @@ const base: AgentRailInput = {
     hasRun: false,
 };
 const ids = (i: AgentRailInput) => planAgentRail(i).map((s) => s.id);
-const header = (i: AgentRailInput, id: string) => planAgentRail(i).find((s) => s.id === id)?.header;
+const header = (i: AgentRailInput, id: AgentRailSectionId) => planAgentRail(i).find((s) => s.id === id)?.header;
 
 describe("planAgentRail", () => {
     it("lists attention first, then what the agent holds, then the facts last, keeping empty counted sections", () => {
@@ -87,6 +93,8 @@ describe("planAgentRail", () => {
         expect(sectionExpandable(header(base, "terminals")!)).toBe(false);
         expect(header({ ...base, terminalsOther: 2 }, "terminals")).toEqual({ count: 0, emptyOpenable: true });
         expect(sectionExpandable(header({ ...base, terminalsOther: 2 }, "terminals")!)).toBe(true);
+        // no defaultOpen: it opens at 0, so the toggle for the other projects' terminals is visible
+        expect(sectionOpen({}, "terminals", header({ ...base, terminalsOther: 2 }, "terminals")!)).toBe(true);
     });
 });
 
