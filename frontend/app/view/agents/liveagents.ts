@@ -81,10 +81,15 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
 
 // The plain-terminal sessions (background terminals launched via New Agent): rows that own a term
 // block but never emitted an agent status. Rendered by the Agent surface separately from the roster
-// (own tree group + focus pane), so they never pollute agentsAtom / the cockpit grid counts.
+// (the details rail's Terminals section + focus pane), so they never pollute agentsAtom / the cockpit grid counts.
 export const liveTerminalsAtom: Atom<AgentVM[]> = atom((get) => {
     const vm = get(sessionSidebarViewModelAtom);
-    return deriveTerminalVMs(flattenVisualOrder(vm), (oref) => !!get(getAgentStatusAtom(oref))?.state);
+    const projects = get(projectsAtom);
+    return deriveTerminalVMs(
+        flattenVisualOrder(vm),
+        (oref) => !!get(getAgentStatusAtom(oref))?.state,
+        (cwd) => registeredProjectFor(cwd, projects)
+    );
 });
 
 // The workspace, its tabs, and their blocks have loaded, and every terminal in the sidebar has either a status

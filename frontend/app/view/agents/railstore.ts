@@ -40,6 +40,10 @@ export const terminalFullscreenAtom = atom(false);
 // persisted; global so it holds while the surface unmounts.
 export const usageBreakdownAtom = atom(false);
 
+// whether the rail's Terminals section lists every terminal rather than the focused item's project's. Session-scoped,
+// not persisted, like usageBreakdownAtom: it is a look at the others, not a preference.
+export const railTerminalsAllAtom = atom(false);
+
 export const railStateAtom = atom<RailGitState | null>(null) as PrimitiveAtom<RailGitState | null>;
 
 // guards against a stale focus's load overwriting a newer one (same pattern as filesstore.ts)

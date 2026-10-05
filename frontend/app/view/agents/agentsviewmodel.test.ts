@@ -1020,7 +1020,15 @@ describe("mergePendingLaunches", () => {
 });
 
 describe("deriveTerminalVMs", () => {
-    type Row = { tabId: string; label: string; termBlockOref?: string; isAgentsTab?: boolean; agent?: string };
+    type Row = {
+        tabId: string;
+        label: string;
+        termBlockOref?: string;
+        isAgentsTab?: boolean;
+        agent?: string;
+        projectLabel?: string;
+        cwd?: string;
+    };
     const none = () => false;
 
     it("maps a plain terminal session (term block, no agent status) to a terminal VM", () => {
@@ -1059,6 +1067,28 @@ describe("deriveTerminalVMs", () => {
     it("still maps a real terminal session (no session:agent) to a terminal VM", () => {
         const rows: Row[] = [{ tabId: "t1", label: "waveterm", termBlockOref: "block:b1", agent: undefined }];
         expect(deriveTerminalVMs(rows, none)).toHaveLength(1);
+    });
+
+    it("carries the launch-time project (session:project) onto the terminal", () => {
+        const rows: Row[] = [{ tabId: "t1", label: "SIEM", termBlockOref: "block:b1", projectLabel: "siem-platform" }];
+        expect(deriveTerminalVMs(rows, none)[0].project).toBe("siem-platform");
+    });
+
+    it("prefers the registry's project for the terminal's cwd over the launch-time label", () => {
+        const rows: Row[] = [
+            { tabId: "t1", label: "SIEM", termBlockOref: "block:b1", cwd: "C:\\code\\siem", projectLabel: "old-name" },
+        ];
+        const out = deriveTerminalVMs(rows, none, (cwd) => (cwd === "C:\\code\\siem" ? "SIEM Platform" : ""));
+        expect(out[0].project).toBe("SIEM Platform");
+    });
+
+    it("leaves project unset when neither the registry nor the launch label names one", () => {
+        const rows: Row[] = [
+            { tabId: "t1", label: "sh", termBlockOref: "block:b1", cwd: "~" },
+            { tabId: "t2", label: "sh", termBlockOref: "block:b2", projectLabel: "   " },
+        ];
+        const out = deriveTerminalVMs(rows, none, () => "");
+        expect(out.map((t) => t.project)).toEqual([undefined, undefined]);
     });
 });
 

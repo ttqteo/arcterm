@@ -533,6 +533,8 @@ export interface TerminalRowInput {
     termBlockOref?: string;
     isAgentsTab?: boolean;
     agent?: string; // session:agent runtime, set at launch for agent tabs (never for terminals)
+    projectLabel?: string; // session:project, stamped at launch (launchAgent writes it for a terminal too)
+    cwd?: string; // the session terminal's cwd: the registered project it sits in names its project first
 }
 
 /** Pure: the plain-terminal sessions — rows that own a term block but never emitted an agent status
@@ -541,7 +543,9 @@ export interface TerminalRowInput {
  *  `hasAgentStatus(oref)` reports whether that block has a live agent:status (i.e. it's a real agent). */
 export function deriveTerminalVMs(
     rows: TerminalRowInput[],
-    hasAgentStatus: (termBlockOref: string) => boolean
+    hasAgentStatus: (termBlockOref: string) => boolean,
+    // the registry's project for a cwd; the launch-time label covers a terminal outside every registered project
+    registeredProject: (cwd: string) => string = () => ""
 ): AgentVM[] {
     const out: AgentVM[] = [];
     for (const row of rows) {
@@ -551,6 +555,7 @@ export function deriveTerminalVMs(
         if (row.isAgentsTab || isAgentSession || !row.termBlockOref || hasAgentStatus(row.termBlockOref)) {
             continue;
         }
+        const project = registeredProject(row.cwd ?? "") || row.projectLabel?.trim() || undefined;
         out.push({
             id: row.tabId,
             name: row.label,
@@ -559,6 +564,7 @@ export function deriveTerminalVMs(
             kind: "terminal",
             agent: "terminal", // selects the "Terminal" pill in the header (runtimeMeta)
             blockId: row.termBlockOref.split(":")[1],
+            ...(project != null ? { project } : {}),
         });
     }
     return out;
