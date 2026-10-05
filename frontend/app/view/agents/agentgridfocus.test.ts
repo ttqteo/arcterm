@@ -1,8 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The one focus rule, exercised through the same pure steppers the keyboard uses (cycleFocus in agents.tsx and
-// step in buildAgentBindings): whatever writes focusIdAtom, AgentSurface reconciles the grid against it.
+// The one focus rule: whatever writes focusIdAtom, AgentSurface reconciles the grid against it (reconcileGrid). The
+// keyboard's roster steps are modelled with the pure cycleId and moveCursor that cycleFocus (agents.tsx) and step
+// (buildAgentBindings) are built on; the wrappers themselves, which read atoms, are not driven here.
 
 import { describe, expect, it } from "vitest";
 import { reconcileGrid, type GridState } from "./agentgrid";
@@ -28,27 +29,17 @@ describe("Ctrl+Tab", () => {
     it("onto an agent with no cell replaces the focused cell", () => {
         expect(ctrlTab(g(["a", "b"], "b"))).toEqual(g(["a", "c"], "c"));
     });
-    it("wraps from the last agent to the first by name", () => {
-        expect(ctrlTab(g(["a", "e"], "e")).focused).toBe("a");
+    it("wraps from the last agent to the first", () => {
         expect(ctrlTab(g(["a", "e"], "e"))).toEqual(g(["a", "e"], "a"));
     });
-    it("round the whole roster the grid never grows, and focus always lands on the agent stepped to", () => {
-        let s = g(["a", "b"], "a");
-        for (let i = 0; i < 12; i++) {
-            const expected = cycleId(roster, s.focused ?? undefined, 1);
-            s = ctrlTab(s);
-            expect(s.ids).toHaveLength(2);
-            expect(s.focused).toBe(expected);
-            expect(s.ids).toContain(s.focused);
-        }
-    });
-    it("walks a known sequence of layouts, written out", () => {
+    it("round the whole roster the grid never grows, and each step lands on the agent stepped to", () => {
         let s = g(["a", "b"], "a");
         const trail: GridState[] = [];
         for (let i = 0; i < 12; i++) {
             s = ctrlTab(s);
             trail.push(s);
         }
+        expect(trail.every((t) => t.ids.length === 2)).toBe(true);
         expect(trail).toEqual([
             g(["a", "b"], "b"), // b has a cell: focus moves
             g(["a", "c"], "c"), // c has none: it takes b's cell

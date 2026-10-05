@@ -124,9 +124,9 @@ Load-bearing rules:
   `key`; `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
   `hidden`), and only agents can be cells. Re-parenting a pane or rendering the stack conditionally remounts the xterm
   and replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
-  `min-w-0 min-h-0`, and nothing animating a cell's size. `focusIdAtom` stays the one selection: `AgentSurface`
-  reconciles the grid against it, so every route that selects an agent obeys one rule. Cells are added by drag or by
-  **Open in split** (row menu, palette `agent:split`).
+  `min-w-0 min-h-0`, and nothing animating a cell's size.
+- **`focusIdAtom` stays the one "selected agent"; the grid has no focus input of its own.** `AgentSurface` reconciles the
+  saved grid against it, so every route that selects an agent obeys one rule.
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`
   (`openAddress` for a string, `openTarget` for an id): it loads the target, writes the destination's
   selection, then switches surface. Don't hand-roll set-selection-then-`surfaceAtom`.

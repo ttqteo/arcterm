@@ -212,20 +212,18 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [centerMode]);
 
-    // Ctrl+Tab works from inside a terminal and only writes focusIdAtom. When it lands on another cell, DOM focus is
-    // still in the previous cell's xterm; hand it over so typing goes where the header says. Only from inside a
-    // different cell's terminal: from the tree, the wrapper or a note field there is nothing to hand over, and
-    // focusing an xterm there would turn the next j/k/arrow into typing.
+    // Whatever writes focusIdAtom (Ctrl+Tab, a notification, openref, the palette) leaves DOM focus where it was. When
+    // that is another cell's xterm, typing would still go to the old agent while the header names the new one, so hand
+    // focus to the new agent's xterm. Only from inside a terminal: from the tree, the wrapper or a note field there is
+    // nothing to hand over, and focusing an xterm there would turn the next j/k/arrow into typing.
+    // data-agent-terminal is on the cell wrappers only, so `from` is always a cell of this surface.
     useEffect(() => {
         const wrap = wrapRef.current;
-        if (!multi || agent == null || wrap == null) {
+        if (agent == null || wrap == null) {
             return;
         }
-        const from =
-            document.activeElement instanceof Element
-                ? document.activeElement.closest<HTMLElement>("[data-agent-terminal]")
-                : null;
-        if (from == null || !wrap.contains(from) || from.dataset.agentTerminal === agent.id) {
+        const from = document.activeElement?.closest<HTMLElement>("[data-agent-terminal]");
+        if (from == null || from.dataset.agentTerminal === agent.id) {
             return;
         }
         const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
@@ -294,8 +292,17 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // A click or a focus inside a cell makes it the focused one; the header, the rail and the tree follow focusIdAtom.
     // The x on the bar is left out: it removes its own cell, so focusing that cell first would, on one that is not
     // focused, hand focus to a neighbour instead of keeping it where it was.
-    const focusCell = (id: string, e: { target: EventTarget }) => {
+    // A focus that a closing modal hands back is not a pick either: ModalShell restores focus to what had it when it
+    // opened, which for a palette opened from a terminal is that cell's xterm, and counting it would undo the pick
+    // the palette just made (Open in split, an agent already in the grid). The handover effect above then moves focus
+    // to the picked agent's xterm. relatedTarget cannot spot the restore (null when the old focus was removed), but a
+    // modal's dialog is still in the document through its exit animation, which is when the restore runs. Clicks come
+    // in through onMouseDownCapture, which this does not gate.
+    const focusCell = (id: string, e: { target: EventTarget }, viaFocus = false) => {
         if (e.target instanceof Element && e.target.closest("[data-agent-cell-remove]") != null) {
+            return;
+        }
+        if (viaFocus && document.querySelector('[role="dialog"][aria-modal="true"]') != null) {
             return;
         }
         if (globalStore.get(model.focusIdAtom) !== id) {
@@ -370,7 +377,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                             data-agent-focused={cell?.focused && multi ? "true" : undefined}
                                             style={cell != null ? placementStyle(cell.placement) : undefined}
                                             onMouseDownCapture={(e) => focusCell(a.id, e)}
-                                            onFocus={(e) => focusCell(a.id, e)}
+                                            onFocus={(e) => focusCell(a.id, e, true)}
                                             className={cn(
                                                 "relative isolate min-h-0 min-w-0",
                                                 cell != null ? "flex flex-col" : "hidden",

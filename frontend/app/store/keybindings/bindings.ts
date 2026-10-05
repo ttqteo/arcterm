@@ -298,9 +298,8 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             // Every keyboard way of moving between agents (this, the arrows and j/k in buildAgentBindings) only writes
-            // focusIdAtom. AgentSurface turns that into the grid rule (agentgrid.ts focusAgent): the agent's cell
-            // takes focus if it has one, otherwise the agent replaces the focused cell. Nothing here knows about the grid.
-            // cycle-agent-prev below is not "previous": cycleFocus(true) steps forward through the asking agents only.
+            // focusIdAtom. AgentSurface turns that into the grid rule (agentgrid.ts focusAgent): the agent's cell takes
+            // focus if it has one, otherwise the agent replaces the focused cell. Nothing here knows about the grid.
             id: "cycle-agent-next",
             keys: "Ctrl:Tab",
             group: "Agent",
@@ -309,6 +308,8 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => model.cycleFocus(false),
         },
         {
+            // Not "previous" despite the label: cycleFocus(true) steps forward through the asking agents only, and
+            // follows the same grid rule as cycle-agent-next.
             id: "cycle-agent-prev",
             keys: "Ctrl:Shift:Tab",
             group: "Agent",
