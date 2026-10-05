@@ -826,7 +826,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // with agent:back below (both guarded on focusSubagentAtom), so no key conflict. Still
             // yields to an open modal — the dialog owns Escape, and this dispatcher runs on window
             // capture, so without the guard it would consume the key and the dialog would never close.
-            // A tree row's rename box owns it for the same reason, and needs saying separately: every
+            // A row's rename box owns it for the same reason, and needs saying separately: every
             // other Escape here is gated on !editable, which would exclude a focused input on its own,
             // but this one cannot use that gate (the terminal textarea holds focus for most of this
             // surface's life). Unguarded, Escape would exit the subagent while the box stayed open —

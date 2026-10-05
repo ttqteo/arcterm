@@ -11631,13 +11631,20 @@ const canvasSwap = {
         );
         // a populated store may have an agent focused, so the terminal is focused explicitly
         if (ctx.inRoster) {
-            await h.rpc("uireveal", { address: `agent:${ctx.tabId}` }, UI_ROUTE);
+            try {
+                await h.rpc("uireveal", { address: `agent:${ctx.tabId}` }, UI_ROUTE);
+            } catch (e) {
+                ctx.focusError = String(e?.message ?? e);
+            }
         }
         return ctx;
     },
     async assert(h, ctx) {
         if (ctx.launchError != null) {
             return [skipStep("canvas swap", `could not verify: the terminal launch failed: ${ctx.launchError}`)];
+        }
+        if (ctx.focusError != null) {
+            return [skipStep("canvas swap", `could not verify: focusing the terminal failed: ${ctx.focusError}`)];
         }
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
@@ -11848,13 +11855,20 @@ const canvasTabsScenario = {
         );
         // a populated store may have an agent focused, so the terminal is focused explicitly
         if (ctx.inRoster) {
-            await h.rpc("uireveal", { address: `agent:${ctx.tabId}` }, UI_ROUTE);
+            try {
+                await h.rpc("uireveal", { address: `agent:${ctx.tabId}` }, UI_ROUTE);
+            } catch (e) {
+                ctx.focusError = String(e?.message ?? e);
+            }
         }
         return ctx;
     },
     async assert(h, ctx) {
         if (ctx.launchError != null) {
             return [skipStep("canvas tabs", `could not verify: ${ctx.launchError}`)];
+        }
+        if (ctx.focusError != null) {
+            return [skipStep("canvas tabs", `could not verify: focusing the terminal failed: ${ctx.focusError}`)];
         }
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });

@@ -27,8 +27,9 @@ import { renamingRowAtom } from "./rowrenameatom";
 import { agentProject } from "./runlineage";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
 
-// the terminals this rail lists for the focused item: its project's, or all of them on request. Memoized: railTerminals
-// returns a fresh array whenever it narrows, so an unmemoized call would hand every render new rows
+// the terminals this rail lists for the focused item: its project's, or all of them on request. Memoized so the rows
+// keep their identity across renders that change none of terminals, project and showAll (railTerminals returns a fresh
+// array whenever it narrows)
 export function useRailTerminals(model: AgentsViewModel, agent: AgentVM): RailTerminals {
     const terminals = useAtomValue(model.terminalsAtom);
     const project = agentProject(useAtomValue(model.lineageAtom), useAtomValue(model.agentsAtom), agent);
@@ -78,19 +79,41 @@ function TerminalRailRow({
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
+    // Enter and Space act as a click, but only on the row itself: the rename box is a child, and a Space typed in it
+    // must not select
+    const onKeyDown = (e: React.KeyboardEvent) => {
+        if (e.target !== e.currentTarget) {
+            return;
+        }
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            select();
+        }
+    };
     return (
         <div
             data-rail-terminal={terminal.id}
+            // a button while it is a row; while renaming it holds the name's input, and a button must not
+            role={renaming ? undefined : "button"}
+            tabIndex={renaming ? undefined : 0}
             aria-current={selected ? "true" : undefined}
             onClick={select}
+            onKeyDown={onKeyDown}
             onContextMenu={onContextMenu}
-            className={cn(RAIL_ROW, RAIL_ROW_ACTION, selected && "bg-surface-selected text-primary")}
+            className={cn(
+                RAIL_ROW,
+                RAIL_ROW_ACTION,
+                // selected keeps its fill under the pointer instead of taking the hover one
+                selected && "bg-surface-selected text-primary hover:bg-surface-selected"
+            )}
         >
             <SquareTerminal size={13} aria-hidden className="shrink-0 text-muted" />
             {renaming ? (
                 <RenameBox tabId={terminal.id} />
             ) : (
-                <span className="min-w-0 flex-1 truncate">{terminal.name}</span>
+                <span title={terminal.name} className="min-w-0 flex-1 truncate">
+                    {terminal.name}
+                </span>
             )}
             {showProject && project ? (
                 <span className="max-w-[88px] shrink-0 truncate text-[10.5px] text-muted">{project}</span>
@@ -123,7 +146,8 @@ export function TerminalsSection({
                     />
                 ))
             )}
-            {/* `scoped` stays true when a project narrowed the list without hiding anything, so the toggle needs `other` */}
+            {/* `scoped` stays true when a project narrowed the list without hiding anything, so the toggle needs
+                `other` */}
             {view.other > 0 ? (
                 <button
                     type="button"
