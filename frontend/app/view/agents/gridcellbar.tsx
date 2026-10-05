@@ -15,7 +15,7 @@ export function GridCellBar({ agent, focused, onRemove }: { agent: AgentVM; focu
             data-agent-cell-bar={agent.id}
             title={`${agent.name} (${agent.state})`}
             className={cn(
-                "flex h-[26px] shrink-0 items-center gap-[7px] border-b border-border bg-surface px-[8px]",
+                "flex h-[26px] shrink-0 select-none items-center gap-[7px] border-b border-border bg-surface px-[8px]",
                 focused ? "text-primary" : "text-muted"
             )}
         >
@@ -26,11 +26,8 @@ export function GridCellBar({ agent, focused, onRemove }: { agent: AgentVM; focu
                 data-agent-cell-remove={agent.id}
                 aria-label={`Remove ${agent.name} from the grid`}
                 title="Remove from the grid (the agent keeps running)"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove();
-                }}
-                className="flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-muted hover:bg-surface-hover hover:text-primary"
+                onClick={onRemove}
+                className="flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
                 <X size={12} aria-hidden />
             </button>

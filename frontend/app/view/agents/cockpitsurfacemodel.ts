@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure glue for CockpitSurface: dismissal keying, the roster load phase, the recently-idle
-// grace-window split, and a generic set toggle. Extracted so the surface's orchestration decisions
-// are unit-testable without rendering the grid.
+// Pure glue for CockpitSurface and the Agent surface: dismissal keying, the roster load phase, which agent the
+// Agent surface shows, the recently-idle grace-window split, and a generic set toggle. Extracted so the
+// surfaces' orchestration decisions are unit-testable without rendering the grid.
 
+import { gridFallbackFocus, gridHold, pruneMissing, type GridState } from "./agentgrid";
 import { isRecentlyIdle, type AgentVM } from "./agentsviewmodel";
 import type { LoadPhase } from "./loadphase";
 import { roleRunId, type Lineage } from "./runlineage";
@@ -21,6 +22,41 @@ export function rosterLoadPhase(seeded: boolean, agentCount: number): LoadPhase 
         return "ready";
     }
     return seeded ? "empty" : "loading";
+}
+
+export interface ShownAgentInput<T extends { id: string }> {
+    focused: T | undefined; // what focusIdAtom names: an agent, a terminal, or a done worker (undefined when nothing is)
+    agents: readonly T[];
+    terminals: readonly T[];
+    firstInOrder: string | undefined; // the roster's first agent in display order (orderAtom)
+    grid: GridState; // the saved grid, as stored
+    eligible: ReadonlySet<string>; // live agents that have a terminal (gridstore eligibleIds)
+    seeded: boolean; // the roster has been read once (rosterSeededAtom)
+}
+
+export interface ShownAgent<T> {
+    agent: T | undefined;
+    hold: boolean; // loading with a saved grid none of whose cells has arrived: show nothing yet
+}
+
+// The agent the Agent surface shows. The focused one wins. With nothing in focus (a launch, or the focused agent
+// just exited) it is, in order: the grid's focused cell, else the grid's first live cell, then the roster's first
+// agent in order, then agents[0], then terminals[0] (a plain terminal only when there is no agent). The grid comes
+// before the roster so the surface resumes on a saved cell rather than on an agent the focus rule would then swap
+// into one. Once the roster is read the grid is pruned first, so a cell whose agent exited hands over to its
+// neighbour; before that the raw grid is used, since pruning it would drop cells that have not arrived yet.
+export function resolveShownAgent<T extends { id: string }>(input: ShownAgentInput<T>): ShownAgent<T> {
+    const { focused, agents, terminals, firstInOrder, grid, eligible, seeded } = input;
+    if (focused != null) {
+        return { agent: focused, hold: false };
+    }
+    if (gridHold(grid, eligible, seeded)) {
+        return { agent: undefined, hold: true };
+    }
+    const fromGrid = gridFallbackFocus(seeded ? pruneMissing(grid, eligible) : grid, eligible);
+    const agent =
+        agents.find((a) => a.id === fromGrid) ?? agents.find((a) => a.id === firstInOrder) ?? agents[0] ?? terminals[0];
+    return { agent, hold: false };
 }
 
 // within-grace idle agents keep their full row (recently); dismissed or aged-out ones park in the idle list.

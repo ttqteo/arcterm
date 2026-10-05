@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import type { GridState } from "./agentgrid";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     cardHasContent,
     dismissKey,
     hiddenAgentIds,
+    resolveShownAgent,
     rosterLoadPhase,
     splitRecentlyIdle,
     toggleInSet,
+    type ShownAgentInput,
 } from "./cockpitsurfacemodel";
 import { NO_LINEAGE, type Lineage } from "./runlineage";
 
@@ -115,5 +118,60 @@ describe("hiddenAgentIds", () => {
     it("hides an agent whose run is not in the lineage, as the grid shows it as a plain card", () => {
         const lineage: Lineage = { roles: { orphan: { kind: "worker", leadRunId: "gone", taskId: "1" } }, runs: {} };
         expect([...hiddenAgentIds([agent({ id: "orphan" })], new Set(), lineage)]).toEqual(["orphan"]);
+    });
+});
+
+describe("resolveShownAgent", () => {
+    const a = { id: "a" };
+    const b = { id: "b" };
+    const c = { id: "c" };
+    const term = { id: "term" };
+    const grid = (ids: string[], focused: string | null = ids[0] ?? null): GridState => ({ ids, focused });
+    const input = (over: Partial<ShownAgentInput<{ id: string }>> = {}): ShownAgentInput<{ id: string }> => ({
+        focused: undefined,
+        agents: [a, b, c],
+        terminals: [term],
+        firstInOrder: "c",
+        grid: grid([]),
+        eligible: new Set(["a", "b", "c"]),
+        seeded: true,
+        ...over,
+    });
+
+    it("shows what is focused, a terminal included, whatever the grid says", () => {
+        expect(resolveShownAgent(input({ focused: term, grid: grid(["a", "b"]) }))).toEqual({
+            agent: term,
+            hold: false,
+        });
+        expect(resolveShownAgent(input({ focused: b, grid: grid(["a"]), seeded: false }))).toEqual({
+            agent: b,
+            hold: false,
+        });
+    });
+    it("resumes on the grid's focused cell rather than the roster's first agent", () => {
+        expect(resolveShownAgent(input({ grid: grid(["a", "b"], "b") })).agent).toBe(b);
+    });
+    it("falls to the first live cell of an unseeded grid, and to the neighbour of an exited cell once seeded", () => {
+        const saved = grid(["a", "b", "c"], "b");
+        const live = new Set(["a", "c"]);
+        expect(resolveShownAgent(input({ grid: saved, eligible: live, seeded: false })).agent).toBe(a);
+        expect(resolveShownAgent(input({ grid: saved, eligible: live, seeded: true })).agent).toBe(c);
+    });
+    it("holds, showing nothing, while the roster loads and none of the saved cells has arrived", () => {
+        const held = { grid: grid(["x", "y"]), eligible: new Set(["a"]), seeded: false };
+        expect(resolveShownAgent(input(held))).toEqual({ agent: undefined, hold: true });
+        expect(resolveShownAgent(input({ ...held, seeded: true }))).toEqual({ agent: c, hold: false });
+    });
+    it("without a usable grid takes the first in order, then the first agent, then the first terminal", () => {
+        expect(resolveShownAgent(input()).agent).toBe(c);
+        expect(resolveShownAgent(input({ firstInOrder: undefined })).agent).toBe(a);
+        expect(resolveShownAgent(input({ firstInOrder: "gone" })).agent).toBe(a);
+        expect(resolveShownAgent(input({ agents: [], eligible: new Set() })).agent).toBe(term);
+    });
+    it("shows nothing for an empty roster, and does not hold an empty grid", () => {
+        expect(resolveShownAgent(input({ agents: [], terminals: [], eligible: new Set(), seeded: false }))).toEqual({
+            agent: undefined,
+            hold: false,
+        });
     });
 });

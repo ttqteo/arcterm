@@ -5,9 +5,11 @@
 // (railVisibleAtom, default on, `d` key): the surface is normally 3 panes, 2 plus the 44px strip with the rail
 // closed; a focused terminal's rail is TerminalRail, the Terminals section alone.
 // The center is the focused agent's live Claude Code terminal (CockpitFocusPane) — the real TUI,
-// not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. With no
-// explicit focus it defaults to the first agent in order (handoff dc.html:1790
-// `focusAgent = …find(fid) || list[0]`) — never the cockpit grid; only a zero-agent roster shows an
+// not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. The terminal
+// stack is up to four of them in a 2x2 CSS grid (agentgrid.ts, gridstore.ts): focusIdAtom stays the single
+// selection, and the surface reconciles the saved grid against it, so every route that selects an agent
+// obeys one rule. With no explicit focus it defaults (resolveShownAgent, cockpitsurfacemodel.ts; handoff
+// dc.html:1790 `focusAgent = …find(fid) || list[0]`) — never the cockpit grid; only a zero-agent roster shows an
 // empty state. The center is not always the terminal: centerModeAtom (agentcenter.ts) swaps it for one
 // ended session's transcript or Conversation History, the terminal stack staying mounted but hidden, and
 // with no agent those two still get the tree beside them (the empty state is only for the terminal mode).
@@ -24,19 +26,11 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MotionConfig } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { centerModeAtom, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
-import {
-    gridEquals,
-    gridFallbackFocus,
-    gridHold,
-    placementStyle,
-    pruneMissing,
-    reconcileGrid,
-    visibleCells,
-} from "./agentgrid";
+import { gridEquals, placementStyle, reconcileGrid, visibleCells } from "./agentgrid";
 import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
@@ -45,7 +39,7 @@ import { projectOf } from "./agentsviewmodel";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
-import { rosterLoadPhase } from "./cockpitsurfacemodel";
+import { resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
@@ -79,27 +73,25 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const centerMode = useAtomValue(centerModeAtom);
     const wrapRef = useRef<HTMLDivElement>(null);
     // Focusable set = agents + background terminals. handoff (dc.html:1790): focusAgent = …find(fid) ||
-    // list[0] — the Focus surface always shows something, defaulting to the first agent in order (never
-    // a terminal, so background terminals stay backgrounded); it falls back to the first terminal only
-    // when there are no agents. focusId is kept "always real" (initialized to a default, never empty).
-    // A done task's worker has no terminal to mount, so it is focusable without being mountable.
+    // list[0] — the Focus surface always shows something. With nothing in focus resolveShownAgent picks it (the
+    // order is documented there; a terminal only when there is no agent), and holds the skeleton while the roster
+    // loads and none of a saved grid's agents has arrived. focusId is kept "always real" (initialized to a
+    // default, never empty). A done task's worker has no terminal to mount, so it is focusable without being
+    // mountable.
     const mountable = [...agents, ...terminals];
-    // The grid's cells are live agents with a terminal. A plain terminal or a done worker is shown alone and
-    // leaves the grid as it was (visibleCells).
+    // The grid's cells are live agents with a terminal. A plain terminal is shown alone (visibleCells); a done
+    // worker's transcript replaces the grid (terminalShown). Both leave the saved grid as it was.
     const eligible = useMemo(() => eligibleIds(agents), [agents]);
     const focused = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent) : undefined;
-    // With nothing in focus (a launch, or the focused agent just exited) resume on the grid's own focused cell
-    // rather than the roster's first agent, which the focus rule would then swap into a cell. While the roster is
-    // still loading and none of a saved grid's agents has arrived, hold the skeleton for the same reason.
-    const holdForGrid = focused == null && gridHold(gridState, eligible, seeded);
-    const gridFocusId = gridFallbackFocus(seeded ? pruneMissing(gridState, eligible) : gridState, eligible);
-    const agent = holdForGrid
-        ? undefined
-        : (focused ??
-          agents.find((a) => a.id === gridFocusId) ??
-          agents.find((a) => a.id === order[0]) ??
-          agents[0] ??
-          terminals[0]);
+    const { agent, hold: holdForGrid } = resolveShownAgent({
+        focused,
+        agents,
+        terminals,
+        firstInOrder: order[0],
+        grid: gridState,
+        eligible,
+        seeded,
+    });
     const showSub = focusSub != null && focusSub.parentId === agent?.id;
     const canvasMode = useAtomValue(canvasStateAtom(agent?.id ?? ""))?.mode === "canvas";
     const reviewMode = useAtomValue(docReviewStateAtom(agent?.id ?? ""))?.mode === "review";
@@ -115,13 +107,18 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     }, [agent?.id, focusId, model]);
 
     // The grid follows the roster and the focus (reconcileGrid): agents that left are pruned, and the focused
-    // agent takes its cell or the focused cell. Computed every render so the cells drawn below are already right;
-    // written back only when it differs, which makes it a fixed point (reconcileGrid is idempotent).
+    // agent takes its cell or the focused cell. Memoized in render, not left to the effect, so the cells drawn below
+    // are already right; written back only when it differs, which makes it a fixed point (reconcileGrid is
+    // idempotent). The write is skipped when the stored grid moved on since this render (a drop or an x landing
+    // before the effect flushed): the next render reconciles that one instead of this stale snapshot.
     const reconciled = useMemo(
         () => reconcileGrid(gridState, { focusId: agent?.id, eligible, seeded }),
         [gridState, agent?.id, eligible, seeded]
     );
     useEffect(() => {
+        if (!gridEquals(globalStore.get(agentGridAtom), gridState)) {
+            return;
+        }
         if (!gridEquals(reconciled, gridState)) {
             globalStore.set(agentGridAtom, reconciled);
         }
@@ -130,12 +127,15 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // What the terminal stack shows: the grid's cells, or one cell alone (fullscreen; an agent that is not a cell,
     // such as a terminal). When the centre shows something else (a subagent's interior, a session or History, a canvas
     // or a review, a done worker's transcript) the grid hides, with every pane still mounted, and comes back as it was.
-    // stackHidden is also what hides the whole column (header and all) in the first two cases.
+    // stackHidden is also what hides the whole column (header and all) in the subagent-interior and session/History
+    // cases.
     const stackHidden = showSub || centerMode !== "terminal";
     const terminalShown = agent != null && !stackHidden && swapped == null && !isEndedWorkerId(agent.id);
-    const cells =
-        agent != null && terminalShown ? visibleCells(reconciled, { focusId: agent.id, collapsed: fullscreen }) : [];
-    const cellOf = new Map(cells.map((c) => [c.id, c] as const));
+    // Until the roster is seeded the saved cells are not pruned, so a cell whose agent has not arrived yet still holds
+    // its slot (deliberate: showing the arrived ones full-size first would redraw their TUIs twice). It has no pane, so
+    // it draws as an empty slot, and the count can then read 1 or more while the grid itself is hidden (gridShown).
+    const cells = terminalShown ? visibleCells(reconciled, { focusId: agent?.id, collapsed: fullscreen }) : [];
+    const cellOf = new Map(cells.map((cell, index) => [cell.id, { cell, index }] as const));
     const multi = cells.length > 1;
     // a visible cell with no pane (a launch with no terminal yet) leaves the grid hidden so the fallback below shows
     const gridShown = mountable.some((a) => a.blockId != null && cellOf.has(a.id));
@@ -230,6 +230,26 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         (pane ?? (term?.checkVisibility() ? term : wrap)).focus({ preventScroll: true });
     }, [surface]);
 
+    // The x on a cell's bar unmounts the button that held focus and hides the removed pane, and showTerminal() is a no-op
+    // when the centre is already the terminal, so the lastCenter effect never fires: focus would fall to <body>.
+    // Counting removals lets this effect, which runs once the removal has rendered, hand focus to the focused cell's
+    // terminal (or the wrapper when that xterm is not showing), as the arrival effect above does.
+    const [removals, setRemovals] = useState(0);
+    useEffect(() => {
+        if (removals === 0) {
+            return;
+        }
+        const wrap = wrapRef.current;
+        const term = wrap?.querySelector<HTMLElement>(
+            `[data-agent-terminal="${globalStore.get(model.focusIdAtom)}"] .xterm-helper-textarea`
+        );
+        (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
+    }, [removals]);
+    const removeCell = (id: string) => {
+        removeFromGrid(model, id);
+        setRemovals((n) => n + 1);
+    };
+
     // Agent-surface keys live in the registry (bindings.ts). Stable array — run() reads live atoms.
     const agentBindings = useMemo(() => buildAgentBindings(model), [model]);
     useKeybindings(agentBindings);
@@ -285,7 +305,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                         {/* The grid parent is always rendered: hidden, never unmounted, so no xterm remounts. Tracks
                             are minmax(0, 1fr) and cells min-w-0 min-h-0 so a cell can shrink below its xterm's pixel
                             width, which is what makes the terminal's ResizeObserver fire and refit. Nothing here
-                            animates size: one layout commit is one PTY resize. */}
+                            animates size: one layout commit is one PTY resize. data-agent-grid-count is the visible
+                            cells: before the roster is seeded it includes saved cells with no pane yet, and it can read
+                            1 or more while the grid is hidden (gridShown false). */}
                         <div
                             data-agent-grid
                             data-agent-grid-count={cells.length}
@@ -298,12 +320,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             {mountable
                                 .filter((a) => a.blockId != null)
                                 .map((a) => {
-                                    const cell = cellOf.get(a.id);
+                                    const slot = cellOf.get(a.id);
+                                    const cell = slot?.cell;
                                     return (
                                         <div
                                             key={a.id}
+                                            role="group"
+                                            aria-label={a.name}
+                                            aria-current={cell?.focused && multi ? "true" : undefined}
                                             data-agent-terminal={a.id}
-                                            data-agent-cell={cell != null ? cells.indexOf(cell) : undefined}
+                                            data-agent-cell={slot?.index}
                                             data-agent-focused={cell?.focused && multi ? "true" : undefined}
                                             style={cell != null ? placementStyle(cell.placement) : undefined}
                                             className={cn(
@@ -319,7 +345,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 <GridCellBar
                                                     agent={a}
                                                     focused={cell.focused}
-                                                    onRemove={() => removeFromGrid(model, a.id)}
+                                                    onRemove={() => removeCell(a.id)}
                                                 />
                                             ) : null}
                                             <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
