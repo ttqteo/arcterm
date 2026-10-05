@@ -212,6 +212,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [centerMode]);
 
+    // Moves DOM focus into an agent's xterm when it is showing (not into a hidden pane, which cannot take it).
+    const focusTerminalOf = (id: string) => {
+        const term = wrapRef.current?.querySelector<HTMLElement>(
+            `[data-agent-terminal="${id}"] .xterm-helper-textarea`
+        );
+        if (term?.checkVisibility()) {
+            term.focus({ preventScroll: true });
+        }
+    };
+
     // Whatever writes focusIdAtom (Ctrl+Tab, a notification, openref, the palette) leaves DOM focus where it was. When
     // that is another cell's xterm, typing would still go to the old agent while the header names the new one, so hand
     // focus to the new agent's xterm. Only from inside a terminal: from the tree, the wrapper or a note field there is
@@ -220,19 +230,18 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // cell the old pane is hidden, so nothing is misrouted, and an outside write (wsh ui, a notification) must not
     // redirect the user's typing into a different agent mid-keystroke.
     // data-agent-terminal is on the cell wrappers only, so `from` is always a cell of this surface.
+    // This runs when the selected agent changes, so it cannot see a modal that closes later: a palette thing-action
+    // writes focusIdAtom in one commit and closes in the next, and ModalShell restores focus then. focusCell hands
+    // that one over (below).
     useEffect(() => {
-        const wrap = wrapRef.current;
-        if (!multi || agent == null || wrap == null) {
+        if (!multi || agent == null) {
             return;
         }
         const from = document.activeElement?.closest<HTMLElement>("[data-agent-terminal]");
         if (from == null || from.dataset.agentTerminal === agent.id) {
             return;
         }
-        const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
-        if (term?.checkVisibility()) {
-            term.focus({ preventScroll: true });
-        }
+        focusTerminalOf(agent.id);
     }, [agent?.id]);
 
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
@@ -297,15 +306,21 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // focused, hand focus to a neighbour instead of keeping it where it was.
     // A focus that a closing modal hands back is not a pick either: ModalShell restores focus to what had it when it
     // opened, which for a palette opened from a terminal is that cell's xterm, and counting it would undo the pick
-    // the palette just made (Open in split, an agent already in the grid). The handover effect above then moves focus
-    // to the picked agent's xterm. relatedTarget cannot spot the restore (null when the old focus was removed), but a
-    // modal's dialog is still in the document through its exit animation, which is when the restore runs. Clicks come
-    // in through onMouseDownCapture, which this does not gate.
+    // the palette just made (Open in split, an agent already in the grid). relatedTarget cannot spot the restore (null
+    // when the old focus was removed), but a modal's dialog is still in the document through its exit animation, which
+    // is when the restore runs. The restore lands in the old cell while the selected agent is another one, so hand
+    // focus on to that agent's xterm here rather than leave typing going to the old one (the effect above cannot: a
+    // palette thing-action changes the selection a commit before the palette closes). Clicks come in through
+    // onMouseDownCapture, which this does not gate.
     const focusCell = (id: string, e: { target: EventTarget }, viaFocus = false) => {
         if (e.target instanceof Element && e.target.closest("[data-agent-cell-remove]") != null) {
             return;
         }
         if (viaFocus && document.querySelector('[role="dialog"][aria-modal="true"]') != null) {
+            const picked = globalStore.get(model.focusIdAtom);
+            if (multi && picked != null && picked !== id) {
+                focusTerminalOf(picked);
+            }
             return;
         }
         if (globalStore.get(model.focusIdAtom) !== id) {
