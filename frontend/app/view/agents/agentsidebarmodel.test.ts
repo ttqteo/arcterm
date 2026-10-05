@@ -113,6 +113,18 @@ describe("endedSessionsByProject", () => {
         expect(out.get("waveterm")!.map((r) => r.session.id)).toEqual(["new", "old"]);
     });
 
+    it("breaks a tie on the time by session key, whatever order the scan listed them in", () => {
+        const a = session("a", { lastactivets: NOW - MIN });
+        const b = session("b", { lastactivets: NOW - MIN });
+        const c = session("c", { lastactivets: NOW - MIN });
+        const ids = (list: SessionActivity[]) =>
+            endedOf(list)
+                .get("waveterm")!
+                .map((r) => r.session.id);
+        expect(ids([c, a, b])).toEqual(["a", "b", "c"]);
+        expect(ids([b, c, a])).toEqual(["a", "b", "c"]);
+    });
+
     it("leaves out a session a live agent is running, joined by normalized transcript path", () => {
         const ended = session("w", { transcriptpath: "C:\\Users\\U\\.claude\\projects\\home-u-waveterm\\w.jsonl" });
         const liveAgent = agent("t1", "c:/users/u/.claude/projects/home-u-waveterm/w.jsonl");
@@ -229,6 +241,35 @@ describe("buildSidebarRows", () => {
         ]);
     });
 
+    it("breaks a tie between agentless projects on the project name, whatever order they arrived in", () => {
+        const mk = (project: string) => session(`${project}-1`, { projectname: project, lastactivets: NOW - MIN });
+        const expected = ["group:alpha", "session:alpha-1", "group:beta", "session:beta-1"];
+        expect(labels(buildSidebarRows([], endedOf([mk("beta"), mk("alpha")]), noneCollapsed, noPages))).toEqual(
+            expected
+        );
+        expect(labels(buildSidebarRows([], endedOf([mk("alpha"), mk("beta")]), noneCollapsed, noPages))).toEqual(
+            expected
+        );
+    });
+
+    it("gives no folder to an agentless project with no sessions in its list", () => {
+        const ended = new Map<string, EndedSessionRow[]>([["loom", []]]);
+        expect(buildSidebarRows([], ended, noneCollapsed, noPages)).toEqual([]);
+    });
+
+    it("folds only the collapsed projects when the first is collapsed and a later one is not", () => {
+        const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
+        const ended = endedOf([...solos(2), ...solos(1, "loom", "l"), ...solos(1, "zeta", "z")]);
+        expect(labels(buildSidebarRows(tree, ended, new Set(["waveterm"]), noPages))).toEqual([
+            "group:waveterm",
+            "group:loom",
+            "parent",
+            "session:l1",
+            "group:zeta",
+            "session:z1",
+        ]);
+    });
+
     it("keeps a collapsed agentless project's folder row and hides its sessions", () => {
         const ended = endedOf(solos(2, "loom", "l"));
         expect(labels(buildSidebarRows([], ended, new Set(["loom"]), noPages))).toEqual(["group:loom"]);
@@ -255,6 +296,17 @@ describe("paging", () => {
         showMore(pages, "p");
         expect(pages).toEqual({ p: 1 });
     });
+    it("counts a project named like an Object property as unpressed until it is", () => {
+        for (const name of ["constructor", "toString", "__proto__"]) {
+            expect(visibleCount(name, {})).toBe(5);
+            const once = showMore({}, name);
+            expect(visibleCount(name, once)).toBe(10);
+            expect(visibleCount(name, showMore(once, name))).toBe(15);
+            expect(Object.getPrototypeOf(once)).toBe(Object.prototype);
+            // pressing under one name leaves the others alone
+            expect(visibleCount("other", once)).toBe(5);
+        }
+    });
 });
 
 describe("agentExited", () => {
@@ -270,6 +322,16 @@ describe("agentExited", () => {
 describe("scanDue", () => {
     it("scans on the first arrival", () => {
         expect(scanDue(0, 10_000, "enter")).toBe(true);
+    });
+    it("reads a last scan of 0 as never scanned, against a real clock", () => {
+        expect(scanDue(0, NOW, "enter")).toBe(true);
+        expect(scanDue(0, NOW, "exit")).toBe(true);
+    });
+    it("is due exactly when the gap has passed, not a moment before", () => {
+        expect(scanDue(5_000, 10_000, "enter")).toBe(true);
+        expect(scanDue(5_001, 10_000, "enter")).toBe(false);
+        expect(scanDue(9_000, 10_000, "exit")).toBe(true);
+        expect(scanDue(9_001, 10_000, "exit")).toBe(false);
     });
     it("does not rescan on a quick re-entry", () => {
         expect(scanDue(8_000, 10_000, "enter")).toBe(false);

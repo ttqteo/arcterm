@@ -14,6 +14,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
+import { runIdOfSel } from "./sessionsruns";
 
 export type CenterMode = "terminal" | "session" | "history";
 
@@ -24,7 +25,7 @@ type CenterOpener = Pick<AgentsViewModel, "surfaceAtom" | "sessionsSelAtom" | "s
 /** Pure: where a value written to sessionsSelAtom is read. A run ("run:<id>") and the merged feed ("all") have a
  *  detail only History draws; any other value is one session, which the session pane reads. */
 export function centerForSelection(sel: string): Exclude<CenterMode, "terminal"> {
-    return sel === "all" || sel.startsWith("run:") ? "history" : "session";
+    return sel === "all" || runIdOfSel(sel) != null ? "history" : "session";
 }
 
 /** Back to the focused agent's terminal. Every route that chooses an agent calls this, so choosing one never

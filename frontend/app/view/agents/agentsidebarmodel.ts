@@ -5,7 +5,8 @@
 // a folder: its live agents (agenttreemodel.ts), then up to five ended sessions, then "Show more" (five per press).
 // A live agent and its session record are one row, joined by normalized transcript path (overlayLive); a session an
 // orchestrator run launched is not listed, since the run's own done fold already holds it (History still shows it,
-// grouped by run). Status filters live in History only. No React, no jotai.
+// grouped by run). Status filters live in History only. No React. It imports overlayLive from sessionsarchivestore,
+// which pulls in the RPC client and the store; nothing here calls either.
 
 import { formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
@@ -35,6 +36,9 @@ export interface MoreSessionsRow {
 
 export type SidebarRow = AgentTreeRow | EndedSessionRow | MoreSessionsRow;
 
+// a total order on strings (code units, not locale), so a tie broken by it never depends on the input's order
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 /** Pure: a session's title, its first prompt (the scan already trims it) with whitespace collapsed to one line. */
 export function sessionTitle(task: string): string {
     return task.replace(/\s+/g, " ").trim() || UNTITLED_SESSION;
@@ -46,8 +50,8 @@ export function sessionAgeLabel(lastactivets: number, now: number): string {
 }
 
 /** Pure: the archive's ended, non-run sessions by project (an agent's own project name, else "ungrouped"), newest
- *  first. `base` is null until the scan loads. A session a roster agent is writing the transcript of is live, so it
- *  is that agent's row and not an ended one. */
+ *  first, equal times in key order. `base` is null until the scan loads. A session a roster agent is writing the
+ *  transcript of is live, so it is that agent's row and not an ended one. */
 export function endedSessionsByProject(
     base: SessionActivity[] | null,
     roster: AgentVM[]
@@ -56,6 +60,7 @@ export function endedSessionsByProject(
     if (base == null) {
         return out;
     }
+    // overlayLive's third argument (`now`) is unused, so 0 stands in for it
     for (const s of overlayLive(base, roster, 0)) {
         if (s.live || s.runid) {
             continue;
@@ -78,19 +83,24 @@ export function endedSessionsByProject(
         }
     }
     for (const list of out.values()) {
-        list.sort((a, b) => b.lastactivets - a.lastactivets);
+        list.sort((a, b) => b.lastactivets - a.lastactivets || byText(a.key, b.key));
     }
     return out;
 }
 
+// presses so far under a project; an own-property read, since a project can be named "constructor" or "toString"
+function pressesOf(project: string, pages: Readonly<Record<string, number>>): number {
+    return Object.prototype.hasOwnProperty.call(pages, project) ? pages[project] : 0;
+}
+
 /** Pure: how many ended sessions a project shows, given how many times "Show more" was pressed under it. */
 export function visibleCount(project: string, pages: Readonly<Record<string, number>>): number {
-    return SESSION_PAGE * (1 + (pages[project] ?? 0));
+    return SESSION_PAGE * (1 + pressesOf(project, pages));
 }
 
 /** Pure: the pages map after one more "Show more" press under `project`. */
 export function showMore(pages: Readonly<Record<string, number>>, project: string): Record<string, number> {
-    return { ...pages, [project]: (pages[project] ?? 0) + 1 };
+    return { ...pages, [project]: pressesOf(project, pages) + 1 };
 }
 
 function sessionRowsOf(
@@ -104,9 +114,10 @@ function sessionRowsOf(
 }
 
 /** Pure: the sidebar's rows. `rows` is buildAgentTree's output (a group row, then that project's agent rows);
- *  each project's ended sessions follow its last agent row, and a project with ended sessions but no live agent
- *  gets a folder of its own after the live ones, newest conversation first. A collapsed project keeps its group
- *  row and loses everything under it, agents and sessions alike. */
+ *  `ended` is endedSessionsByProject's, each list newest first. Each project's ended sessions follow its last agent
+ *  row, and a project with ended sessions but no live agent gets a folder of its own after the live ones, newest
+ *  conversation first (equal times in project-name order). A collapsed project keeps its group row and loses
+ *  everything under it, agents and sessions alike. */
 export function buildSidebarRows(
     rows: AgentTreeRow[],
     ended: ReadonlyMap<string, EndedSessionRow[]>,
@@ -133,8 +144,8 @@ export function buildSidebarRows(
     }
     flush();
     const agentless = [...ended.entries()]
-        .filter(([p]) => !placed.has(p))
-        .sort(([, a], [, b]) => b[0].lastactivets - a[0].lastactivets);
+        .filter(([p, list]) => !placed.has(p) && list.length > 0)
+        .sort(([pa, a], [pb, b]) => b[0].lastactivets - a[0].lastactivets || byText(pa, pb));
     for (const [p, list] of agentless) {
         out.push({ kind: "group", project: p, count: 0, attn: 0 });
         if (!collapsed.has(p)) {

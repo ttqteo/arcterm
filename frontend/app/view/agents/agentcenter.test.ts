@@ -2,23 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom } from "jotai";
+import { atom, createStore } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
 import { centerForSelection, centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 
-const stub = () =>
+// `member` seeds sessionsMemberAtom, so a test can tell a member that was left alone from one that was set
+const stub = (member = "lead") =>
     ({
         surfaceAtom: atom<SurfaceKey>("cockpit"),
         sessionsSelAtom: atom("all"),
-        sessionsMemberAtom: atom("lead"),
+        sessionsMemberAtom: atom(member),
     }) as unknown as AgentsViewModel;
 
 beforeEach(() => globalStore.set(centerModeAtom, "terminal"));
 
 describe("centerModeAtom", () => {
     it("starts on the terminal", () => {
-        expect(globalStore.get(centerModeAtom)).toBe("terminal");
+        // a fresh store, not globalStore: beforeEach has already set that one
+        expect(createStore().get(centerModeAtom)).toBe("terminal");
     });
 });
 
@@ -47,11 +49,11 @@ describe("openers", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 
-    it("showSession selects the session and opens the session pane", () => {
-        const model = stub();
+    it("showSession selects the session, opens the session pane and leaves the member in view alone", () => {
+        const model = stub("t-9");
         showSession(model, "claude:abc");
         expect(globalStore.get(model.sessionsSelAtom)).toBe("claude:abc");
-        expect(globalStore.get(model.sessionsMemberAtom)).toBe("lead");
+        expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-9");
         expect(globalStore.get(centerModeAtom)).toBe("session");
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
