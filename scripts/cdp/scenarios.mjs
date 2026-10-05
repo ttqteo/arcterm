@@ -12205,21 +12205,38 @@ const agentRailSections = {
         );
         await h.shot("cdp-shots/agent-rail-sections-terminal.png");
 
-        const treeLists = await h.ev(
-            `[...document.querySelectorAll("[data-agent-tree] span")].some((s) => (s.textContent || "").trim() === "Terminals")`
+        // absent because the tree is not mounted would pass the group check vacuously, so the tree must be there too
+        const tree = await h.ev(`(() => ({
+            mounted: !!document.querySelector("[data-agent-tree]"),
+            terminalsGroup: [...document.querySelectorAll("[data-agent-tree] span")].some((s) => (s.textContent || "").trim() === "Terminals"),
+        }))()`);
+        rec(
+            "8. the Agent tree has no Terminals group",
+            tree?.mounted === true && tree.terminalsGroup === false,
+            JSON.stringify(tree)
         );
-        rec("8. the Agent tree has no Terminals group", treeLists === false, `treeLists=${treeLists}`);
         return steps;
     },
     async teardown(h, ctx) {
         await teardownFixtureRun(h, ctx, "agent-rail-sections", {
             what: "close the terminals and restore the rail preferences",
             fn: async () => {
+                // each close and each restore is its own step: one failing must not skip the rest, and a tab left open
+                // would stay in the user's dev app as a stray "verify-rail-*" terminal
+                const step = async (what, run) => {
+                    try {
+                        await run();
+                    } catch (e) {
+                        console.error(`agent-rail-sections teardown: ${what} failed: ${e?.message ?? e}`);
+                    }
+                };
                 for (const t of ctx.terminals ?? []) {
-                    await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]).catch(() => {});
+                    await step(`close the terminal tab ${t.tabId} (${t.project})`, () =>
+                        waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+                    );
                 }
-                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
-                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+                await step("restore the rail visibility", () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)));
+                await step("restore the rail sections", () => h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections)));
             },
         });
     },
