@@ -112,8 +112,8 @@ function memberLiveSession(m: RunMember, runId: string, roster: AgentVM[]): Live
     return agent ? rosterSession(agent) : undefined;
 }
 
-// navSurface is the surface whose keys the list cursor answers on. History lives in the Agent surface; the prop exists only
-// for the Sessions surface the shell still renders this for until it is removed.
+// navSurface is the surface whose keys the list cursor answers on. History lives in the Agent surface; the prop
+// exists only for the Sessions surface the shell still renders this for until it is removed.
 export function ConversationHistory({
     model,
     navSurface = "agent",
@@ -290,9 +290,9 @@ export function ConversationHistory({
                 {navSurface === "agent" ? (
                     <button
                         type="button"
-                        data-history-close
+                        data-agent-history-close
                         onClick={showTerminal}
-                        className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary"
+                        className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <ArrowLeft size={13} aria-hidden />
                         Back to terminal

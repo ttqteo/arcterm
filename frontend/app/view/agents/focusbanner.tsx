@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Presence-C escape-hatch banner on a scoped surface (roster, sessions). "Show all" reveals the
+// The Presence-C escape-hatch banner on a scoped surface (roster, Conversation History). "Show all" reveals the
 // hidden rows for this surface without leaving the focus, and flips to "Hide the other N"; "Clear
 // focus" leaves it. Copy is computed by focusBannerCopy (pure).
 

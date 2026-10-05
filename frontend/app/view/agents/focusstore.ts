@@ -41,9 +41,9 @@ export const persistedFocusAtom = atomWithStorage<ActiveFocus | null>("cockpit.f
 }) as PrimitiveAtom<ActiveFocus | null>;
 // the resolved scope bundle for the active focus; null when Global or while a resolve is in flight.
 export const focusScopeAtom = atom<SpaceScope | null>(null) as PrimitiveAtom<SpaceScope | null>;
-// which scoped surfaces the user clicked "Show all" on; reset on every switch.
-// a surface, or the Agent surface's Conversation History pane, which is scoped on its own
+// A reveal key is a surface, or the Agent surface's Conversation History pane, which is scoped on its own.
 export type RevealKey = SurfaceKey | "history";
+// which scoped surfaces the user clicked "Show all" on; reset on every switch.
 export const focusRevealAtom = atom<Set<RevealKey>>(new Set<RevealKey>());
 // true while the focus on screen is the one restored at launch, so the banner can say why a filter
 // is on that the user did not set this session. Any explicit enter or exit clears it.

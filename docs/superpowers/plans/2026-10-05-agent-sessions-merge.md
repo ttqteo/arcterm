@@ -1190,7 +1190,7 @@ Tasks, in order:
                 {navSurface === "agent" ? (
                     <button
                         type="button"
-                        data-history-close
+                        data-agent-history-close
                         onClick={showTerminal}
                         className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary"
                     >
