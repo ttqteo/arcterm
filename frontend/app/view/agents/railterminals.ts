@@ -10,7 +10,9 @@ import { projectOf, type AgentVM } from "./agentsviewmodel";
 export interface RailTerminals {
     rows: AgentVM[]; // what the section lists, in the roster's order
     other: number; // terminals that belong to another project, whether or not they are listed
-    scoped: boolean; // rows is narrowed to the project
+    // rows is narrowed to the project. True whenever a project narrowed the list, even when nothing was hidden
+    // (other === 0), so the show-other-projects toggle must be gated on other > 0.
+    scoped: boolean;
 }
 
 export function railTerminals(terminals: AgentVM[], project: string, showAll: boolean): RailTerminals {

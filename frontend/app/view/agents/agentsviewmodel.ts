@@ -540,7 +540,9 @@ export interface TerminalRowInput {
 /** Pure: the plain-terminal sessions — rows that own a term block but never emitted an agent status
  *  (so they're not in the agent roster) and aren't the Agents tab itself. These are the "background"
  *  terminals launched via New Agent; the Agent surface lists + renders them separately from agents.
- *  `hasAgentStatus(oref)` reports whether that block has a live agent:status (i.e. it's a real agent). */
+ *  `hasAgentStatus(oref)` reports whether that block has a live agent:status (i.e. it's a real agent).
+ *  A terminal's project follows its live cwd's registered project first, then the launch-time label, so a `cd`
+ *  into another registered repo moves it. `registeredProject` defaults to "no registry" for callers that have none. */
 export function deriveTerminalVMs(
     rows: TerminalRowInput[],
     hasAgentStatus: (termBlockOref: string) => boolean,
