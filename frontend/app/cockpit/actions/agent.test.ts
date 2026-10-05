@@ -1,5 +1,9 @@
+import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { describe, expect, it, vi } from "vitest";
+import { rosterSeededAtom } from "@/app/view/agents/liveagents";
+import { endedWorkerId } from "@/app/view/agents/runlineage";
+import { atom } from "jotai";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AGENT_KIND, type AgentThing } from "./agent";
 import { actionsFor } from "./types";
 
@@ -7,6 +11,12 @@ const enterFocusFor = vi.fn();
 vi.mock("@/app/view/agents/focusstore", async (importOriginal) => ({
     ...(await importOriginal<object>()),
     enterFocusFor: (...a: any[]) => enterFocusFor(...a),
+}));
+
+const openInSplit = vi.fn();
+vi.mock("@/app/view/agents/gridstore", async (importOriginal) => ({
+    ...(await importOriginal<object>()),
+    openInSplit: (...a: any[]) => openInSplit(...a),
 }));
 
 const vm = (over: Partial<AgentVM> = {}): AgentVM => ({
@@ -71,6 +81,42 @@ describe("agent actions", () => {
     it("offers Review changes only when the card has a diff", () => {
         expect(applies("agent:review", thing({}, { hasDiff: true }))).toBe(true);
         expect(applies("agent:review", thing())).toBe(false);
+    });
+    it("offers Open in split for a live agent with a terminal, not a finished worker or a card with no block", () => {
+        expect(applies("agent:split", thing())).toBe(true);
+        expect(applies("agent:split", thing({ blockId: undefined }))).toBe(false);
+        expect(applies("agent:split", thing({ id: endedWorkerId("r1", "t1") }))).toBe(false);
+    });
+    describe("Open in split, run", () => {
+        const split = (model: unknown) =>
+            AGENT_KIND.actions.find((a) => a.id === "agent:split")!.run(thing(), { model } as any);
+        const modelOn = (surface: string) => ({ surfaceAtom: atom(surface), openTerminal: vi.fn() }) as any;
+        afterEach(() => {
+            openInSplit.mockReset();
+            globalStore.set(rosterSeededAtom, false);
+        });
+        it("splits and shows the Agent surface, whichever surface it ran from", () => {
+            globalStore.set(rosterSeededAtom, true);
+            openInSplit.mockReturnValue(true);
+            const model = modelOn("cockpit");
+            split(model);
+            expect(openInSplit).toHaveBeenCalledWith(model, "tab1");
+            expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+            expect(model.openTerminal).not.toHaveBeenCalled();
+        });
+        it("just opens the agent's terminal when it cannot split (already a cell, grid full)", () => {
+            globalStore.set(rosterSeededAtom, true);
+            openInSplit.mockReturnValue(false);
+            const model = modelOn("cockpit");
+            split(model);
+            expect(model.openTerminal).toHaveBeenCalledWith("tab1");
+        });
+        it("opens the terminal and leaves the grid alone before the roster is seeded", () => {
+            const model = modelOn("cockpit");
+            split(model);
+            expect(openInSplit).not.toHaveBeenCalled();
+            expect(model.openTerminal).toHaveBeenCalledWith("tab1");
+        });
     });
     it("focus enters the agent's name and project", () => {
         enterFocusFor.mockClear();

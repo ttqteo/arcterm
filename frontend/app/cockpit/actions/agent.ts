@@ -14,6 +14,8 @@ import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { diffStatsByIdAtom } from "@/app/view/agents/cardgitstore";
 import { focusForAgent } from "@/app/view/agents/focusfor";
 import { enterFocusFor } from "@/app/view/agents/focusstore";
+import { openInSplit } from "@/app/view/agents/gridstore";
+import { rosterSeededAtom } from "@/app/view/agents/liveagents";
 import { isEndedWorkerId } from "@/app/view/agents/runlineage";
 import type { ThingAction, ThingKindDef } from "./types";
 
@@ -56,6 +58,21 @@ const actions: ThingAction<AgentThing>[] = [
         run: ({ agent }, { model }) => {
             globalStore.set(model.focusIdAtom, agent.id);
             openDiff(model, agentDiffScope(agent.id, agent.name));
+        },
+    },
+    {
+        id: "agent:split",
+        label: "Open in split",
+        group: "open",
+        applies: ({ agent }) => live(agent),
+        // a new cell beside the focused one; when it cannot (already a cell, grid full, roster not seeded yet: a grid
+        // operation prunes against the roster as it is) it just opens the agent, which also shows its terminal
+        run: ({ agent }, { model }) => {
+            if (globalStore.get(rosterSeededAtom) && openInSplit(model, agent.id)) {
+                globalStore.set(model.surfaceAtom, "agent");
+            } else {
+                model.openTerminal(agent.id);
+            }
         },
     },
     {
