@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1052,5 +1053,72 @@ describe("final shots viewer bindings", () => {
         expect(bindings.some((b) => b.when!(ctx("jarvis")))).toBe(false);
         globalStore.set(finalShotsViewerOpenAtom, true);
         expect(bindings.every((b) => b.when!({ ...ctx("jarvis"), modalOpen: true }))).toBe(true);
+    });
+});
+
+describe("Agent centre modes", () => {
+    const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const find = (id: string) => buildAgentBindings(stubModel()).find((b) => b.id === id)!;
+
+    afterEach(() => {
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(focusSubagentAtom, null);
+    });
+
+    it("keeps the agent keys live on the terminal and stands them down while History or a session is open", () => {
+        const next = find("agent:next-j");
+        const rail = find("agent:toggle-rail");
+        expect(next.when!(agentCtx)).toBe(true);
+        expect(rail.when!(agentCtx)).toBe(true);
+        for (const mode of ["history", "session"] as const) {
+            globalStore.set(centerModeAtom, mode);
+            expect(next.when!(agentCtx)).toBe(false);
+            expect(rail.when!(agentCtx)).toBe(false);
+        }
+    });
+
+    it("gives Escape to the terminal while History or a session is open, and to the Cockpit otherwise", () => {
+        const back = find("agent:back");
+        const leave = find("agent:leave-center");
+        expect(leave.keys).toBe("Escape");
+        expect(back.when!(agentCtx)).toBe(true);
+        expect(leave.when!(agentCtx)).toBe(false);
+        for (const mode of ["history", "session"] as const) {
+            globalStore.set(centerModeAtom, mode);
+            expect(back.when!(agentCtx)).toBe(false);
+            expect(leave.when!(agentCtx)).toBe(true);
+        }
+    });
+
+    it("lets a focused subagent's Escape close it before leaving the centre mode", () => {
+        globalStore.set(centerModeAtom, "session");
+        globalStore.set(focusSubagentAtom, { parentId: "p", agentId: "s" } as any);
+        expect(find("agent:leave-center").when!(agentCtx)).toBe(false);
+        expect(find("subagent:back").when!(agentCtx)).toBe(true);
+    });
+
+    it("leaves Escape inside a text field to the field", () => {
+        globalStore.set(centerModeAtom, "history");
+        expect(find("agent:leave-center").when!({ ...agentCtx, editable: true })).toBe(false);
+    });
+
+    it("returns to the terminal when run", () => {
+        globalStore.set(centerModeAtom, "history");
+        find("agent:leave-center").run(agentCtx);
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
+    });
+});
+
+describe("g s: Conversation History", () => {
+    it("opens History in the Agent surface and leaves g a on the Agent surface itself", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+        const bindings = buildGlobalBindings(model);
+        const history = bindings.find((b) => b.id === "go:history")!;
+        expect(history.keys).toBe("g s");
+        expect(bindings.find((b) => b.id === "go:agent")!.keys).toBe("g a");
+        history.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(centerModeAtom)).toBe("history");
+        globalStore.set(centerModeAtom, "terminal");
     });
 });

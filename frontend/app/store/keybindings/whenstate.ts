@@ -25,6 +25,7 @@
 // this list has an atom no predicate reads. Keep that test passing rather than trusting this comment.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
@@ -67,6 +68,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     listNavAtom, // buildListNavBindings: active
     renamingRowAtom, // buildAgentBindings: subagent:back
     focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back
+    centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
 ];
 
 function bumpWhenVersion() {

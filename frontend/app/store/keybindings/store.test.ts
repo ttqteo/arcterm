@@ -3,6 +3,7 @@
 
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
+import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView } from "@/app/view/agents/agentview";
 import {
@@ -209,6 +210,29 @@ describe("keybinding conflict invariant", () => {
                 ...buildAgentBindings(model),
             ])
         ).not.toThrow();
+    });
+
+    // History publishes a list cursor for the Agent surface; j/k must belong to the list alone while it is open
+    it("global + list-nav + agent bindings do not conflict while History is open with its cursor published", () => {
+        const model = stubModel();
+        globalStore.set(centerModeAtom, "history");
+        globalStore.set(listNavAtom, { surface: "agent", navigableIds: ["all"], cursorId: "all", setCursor() {} });
+        try {
+            expect(() =>
+                assertNoConflicts([
+                    ...buildGlobalBindings(model),
+                    ...buildListNavBindings(model),
+                    ...buildAgentBindings(model),
+                ])
+            ).not.toThrow();
+            // not vacuous: the list's j is live on the Agent surface and the agent's j is not
+            const ctx = { surface: "agent" as const, editable: false, modalOpen: false, leader: null };
+            expect(buildListNavBindings(model).find((b) => b.id === "list:next-j")!.when!(ctx)).toBe(true);
+            expect(buildAgentBindings(model).find((b) => b.id === "agent:next-j")!.when!(ctx)).toBe(false);
+        } finally {
+            globalStore.set(centerModeAtom, "terminal");
+            globalStore.set(listNavAtom, null);
+        }
     });
 
     it("Escape stays unambiguous on the Diff surface with filters active", () => {

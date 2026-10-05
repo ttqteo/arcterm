@@ -6,6 +6,7 @@ import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
+import { centerModeAtom, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { answerDigitTarget, canSubmitAsk, moveCursor, projectOf, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView } from "@/app/view/agents/agentview";
@@ -95,13 +96,14 @@ function focusCodeSearchInput(): void {
     }
 }
 
-// g-leader surface teleports (collision-free letters; see design spec).
-const GO_TARGETS: { letter: string; surface: SurfaceKey; label: string }[] = [
+// g-leader surface teleports (collision-free letters; see design spec). Conversation History is a mode of the Agent
+// surface, not a surface, so its target carries its own id and opens History.
+const GO_TARGETS: { letter: string; surface: SurfaceKey; label: string; id?: string; history?: boolean }[] = [
     { letter: "h", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "c", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
     { letter: "r", surface: "radar", label: "Radar" },
-    { letter: "s", surface: "sessions", label: "Sessions" },
+    { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", history: true },
     { letter: "f", surface: "files", label: "Diff" },
     { letter: "u", surface: "usage", label: "Usage" },
     { letter: "b", surface: "code", label: "Code (browse source)" },
@@ -177,12 +179,12 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
     }));
 
     const goBindings: Binding[] = GO_TARGETS.map((t) => ({
-        id: `go:${t.surface}`,
+        id: t.id ?? `go:${t.surface}`,
         keys: `g ${t.letter}`,
         group: "Go to",
         label: t.label,
         when: navigate,
-        run: () => globalStore.set(model.surfaceAtom, t.surface),
+        run: () => (t.history ? showHistory(model) : globalStore.set(model.surfaceAtom, t.surface)),
     }));
 
     // Focuses whatever the row cursor names. Only the surfaces whose cursor is an agent (cockpit,
@@ -770,8 +772,11 @@ export function buildCockpitBindings(): Binding[] {
     ];
 }
 
-const agentNav = (ctx: KeyContext) => navigate(ctx) && ctx.surface === "agent";
-const agentNavStrict = (ctx: KeyContext) => navigateStrict(ctx) && ctx.surface === "agent";
+// History and a session's transcript cover the terminal, so the keys that act on the focused agent (j/k, the arrows, d, f,
+// r, c) stand down there: History publishes its own list cursor on this surface, and j/k must belong to it alone
+const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
+const agentNav = (ctx: KeyContext) => navigate(ctx) && ctx.surface === "agent" && centerAtRest();
+const agentNavStrict = (ctx: KeyContext) => navigateStrict(ctx) && ctx.surface === "agent" && centerAtRest();
 
 // Agent (Focus) surface bindings. Moved out of agentsurface.tsx so the registry has one home
 // and the array is stable: run() reads live atoms instead of closing over per-render focus/order.
@@ -833,6 +838,21 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     globalStore.set(model.surfaceAtom, "cockpit");
                 }
             },
+        },
+        {
+            id: "agent:leave-center",
+            keys: "Escape",
+            group: "Agent",
+            label: "Back to the terminal (from History or a session)",
+            paletteHidden: true, // a posture: Escape while reading
+            // exclusive with agent:back (which needs the centre at rest) and with subagent:back (which needs a focused
+            // subagent), so Escape never means two things
+            when: (ctx) =>
+                navigateStrict(ctx) &&
+                ctx.surface === "agent" &&
+                !centerAtRest() &&
+                globalStore.get(focusSubagentAtom) == null,
+            run: () => showTerminal(),
         },
         {
             id: "agent:prev",

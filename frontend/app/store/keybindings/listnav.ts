@@ -5,7 +5,9 @@
 // publishes its cursor list here while its list view is active; the registry's list-nav bindings
 // (bindings.ts) read it on keypress. Only one surface is mounted at a time (cockpitshell), so at
 // most one controller is active. The rich surfaces (cockpit/agent) own their own keys and MUST NOT
-// register a controller.
+// register a controller, with one exception: the Agent surface's Conversation History (ConversationHistory,
+// `surface: "agent"`), while the centre is on it. Every Agent key that would share j/k with it stands down
+// there (agentNav in bindings.ts), so the list's keys never meet the agent's.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { SurfaceKey } from "@/app/view/agents/agents";
