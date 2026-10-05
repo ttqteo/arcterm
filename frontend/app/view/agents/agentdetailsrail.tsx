@@ -37,6 +37,7 @@ import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
+import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
 import { SubLabel } from "./sectionlabel";
@@ -536,7 +537,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        uploads: () => null,
+        uploads: () => <UploadsSection />,
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (
