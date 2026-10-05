@@ -35,7 +35,7 @@ export const DEFAULT_RAIL_VISIBLE = true;
 
 export const railVisibleAtom = atomWithStorage("agent.rail.visible", DEFAULT_RAIL_VISIBLE, undefined, {
     getOnInit: true,
-});
+}) as PrimitiveAtom<boolean>;
 
 // Terminal-fullscreen toggle for the Agent surface: when on, the AgentTree (and the rail) are
 // hidden so the focused agent's live terminal fills the surface. Session-scoped UI, not persisted.

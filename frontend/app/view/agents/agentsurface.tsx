@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Agent (Focus) surface: AgentTree | center [| AgentDetailsRail]. The rail is toggleable
-// (railVisibleAtom, default on, `d` key): the surface is normally 3 panes, 2 with the rail closed; a focused
-// terminal's rail is TerminalRail, the Terminals section alone.
+// (railVisibleAtom, default on, `d` key): the surface is normally 3 panes, 2 plus the 44px strip with the rail
+// closed; a focused terminal's rail is TerminalRail, the Terminals section alone.
 // The center is the focused agent's live Claude Code terminal (CockpitFocusPane) — the real TUI,
 // not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. With no
 // explicit focus it defaults to the first agent in order (handoff dc.html:1790
