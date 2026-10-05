@@ -6,6 +6,7 @@ import { WorkspaceService } from "@/app/store/services";
 import { RpcApi } from "@/app/store/wshclientapi";
 import * as WOS from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel } from "@/app/view/agents/agents";
 import type { PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { resolveCwd } from "@/app/view/agents/agentcwdresolve";
@@ -110,6 +111,8 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     if (!isTerminal) {
         globalStore.set(model.focusIdAtom, tabId);
         globalStore.set(model.surfaceAtom, "agent");
+        // a resumed session opens its new tab over the transcript it was resumed from
+        showTerminal();
     }
     return tabId;
 }

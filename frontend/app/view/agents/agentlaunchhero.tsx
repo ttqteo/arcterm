@@ -12,6 +12,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
+import { showHistory } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatTokens } from "./agentsviewmodel";
 import type { Runtime } from "./launch";
@@ -64,6 +65,14 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                     className="mt-[22px] flex cursor-pointer items-center gap-2 rounded-[9px] bg-accent px-[18px] py-[10px] text-[13px] font-semibold text-background hover:opacity-90"
                 >
                     Launch new terminal
+                </button>
+                <button
+                    type="button"
+                    data-hero-history
+                    onClick={() => showHistory(model)}
+                    className="mt-3 cursor-pointer text-[12.5px] font-semibold text-accent-soft hover:underline"
+                >
+                    Conversation History
                 </button>
 
                 {sessions != null && sessions.length > 0 ? (

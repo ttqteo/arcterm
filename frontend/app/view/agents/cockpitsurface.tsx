@@ -12,6 +12,7 @@ import { focusClaimed } from "@/app/store/keybindings/dispatcher";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { dismissAgent, toggleAgentBackground } from "./agentactions";
+import { showTerminal } from "./agentcenter";
 import { AgentRow } from "./agentrow";
 import type { AgentsViewModel, ChipFilter } from "./agents";
 import {
@@ -394,6 +395,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         globalStore.set(model.focusIdAtom, id);
         globalStore.set(model.focusReplyAtom, reply);
         globalStore.set(model.surfaceAtom, "agent");
+        showTerminal();
     };
 
     // open this agent's changed files in the Diff surface (which scopes to focusIdAtom)

@@ -21,11 +21,13 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
+import { centerModeAtom, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
 import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
+import { ConversationHistory } from "./conversationhistory";
 import { projectOf } from "./agentsviewmodel";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
@@ -37,6 +39,7 @@ import { EndedTranscript } from "./endedtranscript";
 import { DivergenceBanner } from "./focusbanner";
 import { subjectDecision } from "./focussubject";
 import { rosterSeededAtom } from "./liveagents";
+import { SessionPane } from "./sessionpane";
 import { terminalFullscreenAtom } from "./railstore";
 import { isEndedWorkerId } from "./runlineage";
 import { SubagentInterior } from "./subagentinterior";
@@ -51,6 +54,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const focusSub = useAtomValue(focusSubagentAtom);
     const ended = useAtomValue(model.endedWorkerAtom);
     const seeded = useAtomValue(rosterSeededAtom);
+    // what the centre column shows: the terminal, one session's transcript, or Conversation History (agentcenter.ts).
+    // The terminal stack below stays mounted, hidden, in the other two.
+    const centerMode = useAtomValue(centerModeAtom);
     const wrapRef = useRef<HTMLDivElement>(null);
     // Focusable set = agents + background terminals. handoff (dc.html:1790): focusAgent = …find(fid) ||
     // list[0] — the Focus surface always shows something, defaulting to the first agent in order (never
@@ -119,6 +125,22 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [agent?.id, canvasMode]);
 
+    // History and a session's transcript cover the terminal as canvas mode does, and a hidden xterm can still hold focus
+    // and eat the surface's keys (Esc, j/k): leaving the terminal pulls focus to the wrapper, and returning to it hands
+    // focus back to the focused agent's xterm
+    const lastCenter = useRef<CenterMode>(centerMode);
+    useEffect(() => {
+        const prev = lastCenter.current;
+        lastCenter.current = centerMode;
+        if (centerMode !== "terminal" && prev === "terminal") {
+            wrapRef.current?.focus();
+        } else if (centerMode === "terminal" && prev !== "terminal" && agent != null && !canvasMode) {
+            wrapRef.current
+                ?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`)
+                ?.focus();
+        }
+    }, [centerMode]);
+
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
     // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the live
     // terminal, or the wrapper when none is showing (canvas, subagent interior, no terminal).
@@ -154,10 +176,27 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     };
 
     if (!agent) {
-        return rosterLoadPhase(seeded, agents.length) === "loading" ? (
-            <AgentSurfaceSkeleton />
-        ) : (
-            <AgentLaunchHero model={model} />
+        if (rosterLoadPhase(seeded, agents.length) === "loading") {
+            return <AgentSurfaceSkeleton />;
+        }
+        if (centerMode === "terminal") {
+            return <AgentLaunchHero model={model} />;
+        }
+        // History and a session read without an agent: the tree is where they are opened from
+        return (
+            <MotionConfig reducedMotion="user">
+                <div
+                    ref={wrapRef}
+                    tabIndex={0}
+                    data-cockpit-surface-wrap
+                    className="flex h-full w-full bg-background outline-none"
+                >
+                    <AgentTree model={model} />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        <AgentCenterPane model={model} mode={centerMode} />
+                    </div>
+                </div>
+            </MotionConfig>
         );
     }
 
@@ -165,11 +204,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         <MotionConfig reducedMotion="user">
             <div ref={wrapRef} tabIndex={0} data-cockpit-surface-wrap className="flex h-full w-full bg-background outline-none">
                 {/* the tree stays in canvas mode: hiding it made reaching another agent a round trip through the terminal */}
-                {!fullscreen ? <AgentTree model={model} /> : null}
+                {!fullscreen || centerMode !== "terminal" ? <AgentTree model={model} /> : null}
                 <div className="flex min-w-0 flex-1 flex-col">
-                    {/* terminal stack stays mounted (hidden) while a subagent interior is shown, so
+                    {/* terminal stack stays mounted (hidden) while a subagent interior, a session or History is shown, so
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}
-                    <div className={cn("flex min-h-0 flex-1 flex-col", showSub && "hidden")}>
+                    <div
+                        className={cn(
+                            "flex min-h-0 flex-1 flex-col",
+                            (showSub || centerMode !== "terminal") && "hidden"
+                        )}
+                    >
                         <AgentHeader model={model} agent={agent} />
                         <DivergenceBanner scope="project" decision={decision} onRejoin={rejoin} />
                         {mountable
@@ -196,13 +240,25 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             </div>
                         ) : null}
                     </div>
-                    {showSub ? <SubagentInterior sub={focusSub!} parentName={agent.name} /> : null}
+                    {showSub && centerMode === "terminal" ? (
+                        <SubagentInterior sub={focusSub!} parentName={agent.name} />
+                    ) : null}
+                    {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
                 </div>
-                {!fullscreen && !canvasMode && agent.kind !== "terminal" ? (
+                {!fullscreen && centerMode === "terminal" && !canvasMode && agent.kind !== "terminal" ? (
                     <AgentDetailsRail model={model} agent={agent} />
                 ) : null}
             </div>
         </MotionConfig>
+    );
+}
+
+// History and a session's transcript take the centre column; the terminal stack stays mounted beside them
+function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
+    return (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {mode === "history" ? <ConversationHistory model={model} /> : <SessionPane model={model} />}
+        </div>
     );
 }
 

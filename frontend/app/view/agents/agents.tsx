@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { TabModel } from "@/app/store/tab-model";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { sentAskIdsAtom } from "./agentaskstore";
+import { showTerminal } from "./agentcenter";
 import {
     cycleId,
     groupAgents,
@@ -162,6 +163,7 @@ export class AgentsViewModel implements ViewModel {
     openTerminal(agentId: string) {
         globalStore.set(this.focusIdAtom, agentId);
         globalStore.set(this.surfaceAtom, "agent");
+        showTerminal();
     }
 
     // Cycle the focused agent (Ctrl+Tab). askingOnly restricts to asking agents (Ctrl+Shift+Tab).
@@ -176,6 +178,7 @@ export class AgentsViewModel implements ViewModel {
         const next = cycleId(ids, globalStore.get(this.focusIdAtom), 1);
         if (next != null) {
             globalStore.set(this.focusIdAtom, next);
+            showTerminal();
         }
     }
 

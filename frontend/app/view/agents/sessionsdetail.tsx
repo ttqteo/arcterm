@@ -14,6 +14,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentEntry } from "./agentsviewmodel";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
@@ -86,6 +87,7 @@ export function runSessionPrimary(model: AgentsViewModel, session: LiveSession) 
     if (session.live && session.liveId) {
         globalStore.set(model.focusIdAtom, session.liveId);
         globalStore.set(model.surfaceAtom, "agent");
+        showTerminal();
         return;
     }
     if (session.resumecommand) {
