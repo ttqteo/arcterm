@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/canvasserve"
 	"github.com/wavetermdev/waveterm/pkg/memroots"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -38,6 +39,10 @@ func (ws *WshServer) FileDeleteCommand(ctx context.Context, data wshrpc.CommandD
 
 func (ws *WshServer) FileInfoCommand(ctx context.Context, data wshrpc.FileData) (*wshrpc.FileInfo, error) {
 	return wshfs.Stat(ctx, data.Info.Path)
+}
+
+func (ws *WshServer) CanvasServeCommand(ctx context.Context, designDir string) (string, error) {
+	return canvasserve.Register(designDir)
 }
 
 func (ws *WshServer) FileWriteCommand(ctx context.Context, data wshrpc.FileData) error {

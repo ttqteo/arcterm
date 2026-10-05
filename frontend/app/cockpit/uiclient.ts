@@ -14,6 +14,7 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { RpcResponseHelper, WshClient } from "@/app/store/wshclient";
 import { DefaultRouter } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { getCanvas } from "@/app/view/agents/canvasstore";
 import { currentReportIdAtom } from "@/app/view/agents/radarstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
@@ -27,6 +28,7 @@ import {
     parseSurfaceAddress,
     resolveAction,
     revealError,
+    revealLeavesTrail,
     revealWaitsForUser,
     selectionFor,
     toUiActions,
@@ -72,6 +74,8 @@ class CockpitUiClient extends WshClient {
         }
         // an empty cwd (Getwd failed) still names the caller, so a canvas reveal says where to run it from
         const caller = data.callerblockid ? { blockId: data.callerblockid, cwd: data.callercwd ?? "" } : undefined;
+        // read before the landing attaches it
+        const leavesTrail = revealLeavesTrail(data.address, this.canvasTopic(data.callerblockid));
         const result = await openAddress(
             this.model,
             data.address,
@@ -82,7 +86,9 @@ class CockpitUiClient extends WshClient {
         if ("reason" in result) {
             throw new Error(revealError(data.address, result.reason, result.message));
         }
-        this.trail(data.callerblockid, data.address);
+        if (leavesTrail) {
+            this.trail(data.callerblockid, data.address);
+        }
         return result.notice ?? "";
     }
 
@@ -147,9 +153,17 @@ class CockpitUiClient extends WshClient {
         });
     }
 
+    private roster() {
+        return [...globalStore.get(this.model.agentsAtom), ...globalStore.get(this.model.terminalsAtom)];
+    }
+
     private caller(blockId: string | undefined): string {
-        const roster = [...globalStore.get(this.model.agentsAtom), ...globalStore.get(this.model.terminalsAtom)];
-        return callerName(roster, blockId);
+        return callerName(this.roster(), blockId);
+    }
+
+    private canvasTopic(blockId: string | undefined): string | undefined {
+        const agent = blockId ? this.roster().find((a) => a.blockId === blockId) : undefined;
+        return agent != null ? getCanvas(agent.id)?.topic : undefined;
     }
 
     // a worker moving the view is never unexplained

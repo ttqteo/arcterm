@@ -436,7 +436,7 @@ first, always. The mockup is the design proposal; it must be seen and approved b
 code is written.
 
 - Build it with the `design-local` Claude Code skill: a `.dc.html` canvas under the gitignored
-  `.superpowers/design/<topic>/`, served on `:8766`. This file is its design system — every rule
+  `.superpowers/design/<topic>/`, which Arc serves and shows on the Agent surface. This file is its design system — every rule
   above applies to the mockup as it will to the code.
 - Token values come from `frontend/tailwindsetup.css` `@theme`, never from memory or an
   older canvas.

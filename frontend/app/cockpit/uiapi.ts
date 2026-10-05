@@ -147,6 +147,14 @@ export function revealWaitsForUser(address: string, callerBlockId: string | unde
     return !(callerBlockId && parseAddress(address).kind === "canvas");
 }
 
+// An agent's canvas reveal says so in a toast once. Arc's own hook reveals on every board the agent writes, and
+// a toast for each would bury the first, so a reveal of the topic the caller already has attached says nothing:
+// the row's canvas tag shows there is something new.
+export function revealLeavesTrail(address: string, attachedTopic: string | undefined): boolean {
+    const target = parseAddress(address);
+    return !(target.kind === "canvas" && target.topic === attachedTopic);
+}
+
 export function callerName(roster: readonly { blockId?: string; name: string }[], blockId: string | undefined): string {
     if (!blockId) {
         return UNKNOWN_CALLER;

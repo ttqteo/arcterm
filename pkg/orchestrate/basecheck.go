@@ -94,7 +94,7 @@ func withDetachedTree(ctx context.Context, project, name, label, commit, setup s
 			return &treeStepError{"removing a stale " + label, err}
 		}
 	}
-	if _, err := gitLocked(ctx, project, "worktree", "add", "--detach", wt, commit); err != nil {
+	if _, err := addWorktree(ctx, project, "--detach", wt, commit); err != nil {
 		return &treeStepError{"creating the " + label, err}
 	}
 	defer func() {

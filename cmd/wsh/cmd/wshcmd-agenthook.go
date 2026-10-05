@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,6 +21,14 @@ import (
 )
 
 const transcriptTailBytes = 64 * 1024
+
+// a hook has 10s in all; the reveal only attaches, so the cockpit answers at once or not at all
+const canvasRevealTimeoutMs = 2000
+
+// a design-local board: <project>/.superpowers/design/<topic>/project/<Board>.dc.html. Mirrors BOARD_PATH in
+// frontend/app/view/agents/canvasmodel.ts.
+var canvasBoardPathRe = regexp.MustCompile(`(?i)^(.+?)[\\/]\.superpowers[\\/]design[\\/]([^\\/]+)[\\/]project[\\/][^\\/]+\.dc\.html$`)
+
 const bashDetailMax = 60
 const titleMax = 72 // fallback head-text length cap (rune-safe)
 
@@ -98,6 +107,24 @@ func detailForTool(name string, input json.RawMessage) string {
 		}
 	}
 	return name
+}
+
+// canvasRevealFor names the canvas an agent just wrote a board of, and the project it sits in, so the
+// cockpit attaches it without the agent asking. ok is false for every other event.
+func canvasRevealFor(ev ccHookEvent) (address string, cwd string, ok bool) {
+	if ev.HookEventName != "PostToolUse" {
+		return "", "", false
+	}
+	switch ev.ToolName {
+	case "Write", "Edit", "MultiEdit":
+	default:
+		return "", "", false
+	}
+	m := canvasBoardPathRe.FindStringSubmatch(stringField(ev.ToolInput, "file_path"))
+	if m == nil || !filepath.IsAbs(m[1]) {
+		return "", "", false
+	}
+	return "canvas:" + m[2], m[1], true
 }
 
 func stringField(raw json.RawMessage, field string) string {
@@ -471,6 +498,17 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 	_ = publishAgentStatusData(oref, data, 1)
+	if address, cwd, ok := canvasRevealFor(ev); ok {
+		// best-effort like the rest: a closed cockpit or a topic it refuses must not fail the turn
+		_, err := wshclient.UiRevealCommand(RpcClient, wshrpc.CommandUiRevealData{
+			Address:       address,
+			CallerBlockId: os.Getenv("WAVETERM_BLOCKID"),
+			CallerCwd:     cwd,
+		}, &wshrpc.RpcOpts{Route: wshutil.RouteId_Cockpit, Timeout: canvasRevealTimeoutMs})
+		if err != nil {
+			hookDebugLine("canvas reveal failed address=" + address + " err=" + err.Error())
+		}
+	}
 	hookDebugLine("published event=" + ev.HookEventName + " state=" + em.State + " oref=" + oref.String())
 	return nil
 }

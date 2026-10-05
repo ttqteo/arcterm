@@ -19,6 +19,7 @@ type AgentCommands interface {
 	GetBackgroundAgentsCommand(ctx context.Context, data CommandGetBackgroundAgentsData) (*CommandGetBackgroundAgentsRtnData, error)
 	RemoveBackgroundAgentCommand(ctx context.Context, data CommandRemoveBackgroundAgentData) error // dismiss a background agent: delete its ~/.claude/jobs record (transcript kept)
 	StreamAgentTranscriptCommand(ctx context.Context, data CommandStreamAgentTranscriptData) chan RespOrErrorUnion[AgentTranscriptUpdate] // stream the transcript tail; new lines pushed as appended
+	AgentControlCommand(ctx context.Context, data CommandAgentControlData) chan RespOrErrorUnion[AgentControlMsg]                         // stream the cockpit's prompts for a block's agent session to its harness mod
 }
 
 type CommandGetSessionGroupData struct {
@@ -118,6 +119,15 @@ type CommandStreamAgentTranscriptData struct {
 
 type AgentTranscriptUpdate struct {
 	Lines []string `json:"lines"`
+}
+
+type CommandAgentControlData struct {
+	ORef string `json:"oref"`
+}
+
+// AgentControlMsg is one prompt for the session, as it would be typed: a leading slash is a command.
+type AgentControlMsg struct {
+	Text string `json:"text"`
 }
 
 type CommandGetBackgroundAgentsData struct{}

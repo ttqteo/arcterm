@@ -181,6 +181,30 @@ visibly marked placeholder like [YOUR PRICE] for the user to fill —
 don't fabricate one. And design for a phone width as you write: no
 headlines that break badly, squashed grids or text too small to read.
 
+The defaults a model reaches for on a marketing piece (the general
+list is "AI tells to design past", below):
+
+- The hero fits the first viewport: headline two lines at most,
+  subtext twenty words at most, the action visible without scrolling.
+- Four text elements at most in the hero: an optional eyebrow,
+  headline, subtext, actions (one primary, at most one secondary).
+  Trust logos, pricing teasers and feature bullets get their own
+  section below.
+- A button label fits on one line, three words at most. Navigation
+  fits on one line.
+- No row of three equal feature cards, and no layout family repeated
+  down a page: at most two image-and-text splits in a row.
+- A small uppercase label above a heading: at most one section in
+  three.
+- No "big headline left, small paragraph floating right" section
+  header. Stack them.
+- No scroll cues, locale, time or weather strips, rotated text, or a
+  strip of caps words along the bottom of a hero.
+- No pills or tags laid over an image, no invented photo credits.
+- No product screenshot faked from styled rectangles: use the real
+  image or a marked placeholder.
+- A quote runs three lines at most and carries a name and a role.
+
 ### Print craft
 
 Posters, flyers, brochures, memos, reports — anything that leaves as a
@@ -210,6 +234,95 @@ than from screenshots: when source is available, treat screenshots as
 high-level guidance only. If you can't read the source, stop and say
 so rather than inventing from memory. (And the shared
 copyrighted-designs rule governs whether to recreate at all.)
+
+### AI tells to design past
+
+Adapted from taste-skill (github.com/Leonxlnx/taste-skill, MIT), its
+v2 skill and its redesign audit, keeping only what holds on a canvas
+in any stack. Each is a default a model reaches for when it tries to
+look designed. Check finished artboards against the list before
+handing them over. The design system wins wherever it says otherwise:
+a system that specifies a middle-dot count label or a mono eyebrow is
+not a tell. The tells that only a marketing piece can commit sit under
+"Landing pages and marketing artboards", above.
+
+Locks, held across every artboard of a flow:
+
+- One accent, used the same way everywhere: no blue button on a
+  rose-accented page, no stray teal badge.
+- One corner-radius rule. Mixed radii need a rule you can state
+  ("controls are pills, cards are 16") and follow without exception.
+- One theme per page: sections do not flip between light and dark.
+- One copy register: not mono telemetry, editorial prose and
+  marketing punch in the same piece.
+- One label per intent: "Get in touch", "Contact us" and "Let's talk"
+  on one page are the same button with three names.
+
+States:
+
+- Draw loading, empty and error, not only the successful state.
+  Loading takes the shape of the layout it replaces; an empty state
+  says how to fill it; a form error sits under its field.
+- Hover, pressed and keyboard focus are states too: when the brief
+  asks for a control's states, draw them as variants beside it. A
+  focus ring is never designed away.
+- Navigation marks the current place, and every screen of a flow has
+  a way back.
+- Labels sit above inputs. A placeholder is never the label.
+
+Alignment:
+
+- Side-by-side cards or panels align their shared parts: titles,
+  values and actions start on the same line whatever the content
+  length, and actions pin to the bottom.
+- Centre by eye, not by the box: an icon beside text or a glyph in a
+  round button often needs a pixel or two.
+
+Structure:
+
+- Cards only where elevation means hierarchy; otherwise group with
+  space or one divider. No hairline under every row of a long list:
+  group the rows or pick another component.
+- A grid has exactly as many cells as there is content.
+- No section numbers (`01 / Capabilities`), no `1 / 4` counters on
+  tiles.
+- Not a modal for every action: a simple one edits in place, in a
+  panel or in an expanding row.
+- Not a filled button beside a ghost button by reflex: a secondary
+  action can be a text link.
+
+Type:
+
+- Numbers that are compared or that change in place use tabular
+  figures (`font-variant-numeric: tabular-nums`).
+- Headings and labels in sentence case, not title case.
+- A small uppercase label above a heading is the exception, not the
+  rhythm of the screen.
+- No single word alone on a last line: `text-wrap: balance` on a
+  heading, `pretty` on body text.
+
+Decoration:
+
+- No status dots unless they report real state. No version stamps,
+  and no crosshair or grid lines that organize nothing.
+- The middle dot is not the default separator: one per line at most.
+- No neon or outer glow, no gradient text. A shadow is tinted toward
+  its ground, not pure black on a light page.
+
+Copy:
+
+- Re-read every visible string before handing over. Cute-but-wrong
+  wordplay, forced metaphor and mock-poetic labels ("Field notes",
+  "Quietly trusted by") become a plain functional sentence.
+- No filler verbs: elevate, seamless, unleash, next-gen,
+  revolutionize.
+- Messages are plain and active: "Couldn't save your changes. Try
+  again.", not "Oops!". No exclamation mark on a success message.
+- Sample data in a product mockup is specific and uneven (`47.2%`,
+  not `50%`), with names plausible for the locale, never John Doe or
+  Acme. A figure presented as a claim is still a placeholder.
+- Name the step ("Install"), not its number ("Step 1"). No em-dash in
+  interface copy.
 
 ## Content and design rules shared by every appifact family
 

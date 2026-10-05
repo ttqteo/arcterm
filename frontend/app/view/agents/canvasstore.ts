@@ -20,7 +20,8 @@ export type CanvasState = {
     // every board side by side (the All tab), rather than the selected one alone
     all: boolean;
     boards: CanvasBoard[];
-    port: number | null;
+    // where wavesrv serves the project's design folder; null until the poller has asked it to
+    base: string | null;
     status: "probing" | "ready" | "server-down" | "removed";
     lastModifiedMs: number | null;
     lastViewedMs: number;
@@ -60,7 +61,9 @@ export function attachCanvas(
         // a reveal naming a board opens that board's own tab
         const all = a.board != null ? false : prev.all;
         const keep = board === prev.board && all === prev.all;
-        next = { ...prev, dir: a.dir, projectDir: a.projectDir, board, all, marks: keep ? prev.marks : [] };
+        // the base is the old project's design folder, so a canvas re-attached from another project drops it
+        const base = a.projectDir === prev.projectDir ? prev.base : null;
+        next = { ...prev, dir: a.dir, projectDir: a.projectDir, board, all, base, marks: keep ? prev.marks : [] };
     } else {
         next = {
             topic: a.topic,
@@ -70,7 +73,7 @@ export function attachCanvas(
             board: a.board ?? null,
             all: false,
             boards: [],
-            port: null,
+            base: null,
             status: "probing",
             lastModifiedMs: null,
             lastViewedMs: now,

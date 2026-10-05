@@ -38,6 +38,11 @@ func AgentAskClearCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) 
 	return err
 }
 
+// command "agentcontrol", wshserver.AgentControlCommand
+func AgentControlCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentControlData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg] {
+	return sendRpcRequestResponseStreamHelper[wshrpc.AgentControlMsg](w, "agentcontrol", data, opts)
+}
+
 // command "agentsyncadopt", wshserver.AgentSyncAdoptCommand
 func AgentSyncAdoptCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncAdoptData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncAdoptRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncAdoptRtnData](w, "agentsyncadopt", data, opts)
@@ -126,6 +131,12 @@ func CancelRadarScanCommand(w *wshutil.WshRpc, data wshrpc.CommandCancelRadarSca
 func CancelRunCommand(w *wshutil.WshRpc, data wshrpc.CommandCancelRunData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "cancelrun", data, opts)
 	return err
+}
+
+// command "canvasserve", wshserver.CanvasServeCommand
+func CanvasServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "canvasserve", data, opts)
+	return resp, err
 }
 
 // command "consult", wshserver.ConsultCommand

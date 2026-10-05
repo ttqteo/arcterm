@@ -5,8 +5,6 @@
 
 import type { CanvasState } from "./canvasstore";
 
-export const CANVAS_PORT_FIRST = 8766;
-export const CANVAS_PORT_COUNT = 20;
 export const CANVAS_POLL_MS = 3000;
 export const DEFAULT_BOARD_W = 1440;
 export const DEFAULT_BOARD_H = 900;
@@ -17,11 +15,9 @@ const BOARD_EXT = ".dc.html";
 // the All tab's key: never a board name, which always ends in .dc.html
 export const ALL_TAB = "all";
 const MAIN_BOARD = "Main.dc.html";
-const HTTP_OK = 200;
 
 // x/y/w/h are the board's frame on the canvas, in CSS px, as canvas.json lays it out
 export type CanvasBoard = { name: string; x: number; y: number; w: number; h: number; title?: string };
-export type ProbeResult = { port: number; status: number | "error" };
 
 const MAIN_FALLBACK: CanvasBoard = { name: MAIN_BOARD, x: 0, y: 0, w: DEFAULT_BOARD_W, h: DEFAULT_BOARD_H };
 
@@ -139,27 +135,6 @@ export function stepTab(tabs: string[], current: string | null, delta: number): 
     return tabs[(((at + delta) % n) + n) % n];
 }
 
-// a refused connection means nothing listens there; any other answer is someone else's server
-export function classifyProbe(r: ProbeResult): "serving" | "free" | "taken" {
-    if (r.status === HTTP_OK) {
-        return "serving";
-    }
-    return r.status === "error" ? "free" : "taken";
-}
-
-function lowestPort(rs: ProbeResult[], kind: "serving" | "free"): number | null {
-    const ports = rs.filter((r) => classifyProbe(r) === kind).map((r) => r.port);
-    return ports.length === 0 ? null : Math.min(...ports);
-}
-
-export function pickServingPort(rs: ProbeResult[]): number | null {
-    return lowestPort(rs, "serving");
-}
-
-export function pickFreePort(rs: ProbeResult[]): number | null {
-    return lowestPort(rs, "free");
-}
-
 export function paneState(s: CanvasState): "board" | "probing" | "server-down" | "removed" {
     switch (s.status) {
         case "removed":
@@ -198,16 +173,9 @@ export function fitScale(paneWidth: number, boardWidth: number): number {
     return Math.min(1, paneWidth / boardWidth);
 }
 
-// the poller keeps the last port when its server stops answering; null means no port ever served this canvas
-export function serverDownText(port: number | null): string {
-    if (port != null) {
-        return `Can't reach 127.0.0.1:${port}`;
-    }
-    return `Nothing serves this canvas on 127.0.0.1:${CANVAS_PORT_FIRST}–${CANVAS_PORT_FIRST + CANVAS_PORT_COUNT - 1}`;
-}
-
-export function boardUrl(port: number, topic: string, board: string): string {
-    return `http://127.0.0.1:${port}/${encodeURIComponent(topic)}/project/${encodeURIComponent(board)}`;
+// base is where wavesrv serves the project's design folder (CanvasServeCommand)
+export function boardUrl(base: string, topic: string, board: string): string {
+    return `${base}/${encodeURIComponent(topic)}/project/${encodeURIComponent(board)}`;
 }
 
 function sepOf(path: string): string {
@@ -219,7 +187,7 @@ function join(base: string, ...parts: string[]): string {
     return [base.replace(/[\\/]+$/, ""), ...parts].join(sep);
 }
 
-// the folder the canvas server is rooted at, which start_canvas_server requires
+// the folder wavesrv serves a project's canvases from
 export function canvasDesignDir(cwd: string): string {
     return join(cwd, ".superpowers", "design");
 }

@@ -677,7 +677,7 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 			return "", nil, fmt.Errorf("removing a stale final tree: %w", err)
 		}
 	}
-	if _, err := gitLocked(ctx, owner.ProjectPath, "worktree", "add", "--detach", wt, "HEAD"); err != nil {
+	if _, err := addWorktree(ctx, owner.ProjectPath, "--detach", wt, "HEAD"); err != nil {
 		return "", nil, fmt.Errorf("creating the final tree: %w", err)
 	}
 	cleanup := func() {

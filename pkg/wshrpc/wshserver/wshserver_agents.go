@@ -9,10 +9,12 @@ import (
 	"log"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
@@ -178,6 +180,39 @@ func (ws *WshServer) GetWindowTokensCommand(ctx context.Context, data wshrpc.Com
 		return nil, fmt.Errorf("summing window tokens: %w", err)
 	}
 	return &wshrpc.CommandGetWindowTokensRtnData{FiveHourTokens: sums[0], WeekTokens: sums[1]}, nil
+}
+
+// AgentControlCommand streams what the engine sends a block's agent session for as long as the caller
+// (`wsh agentctl`, held by the session's mod) stays connected.
+func (ws *WshServer) AgentControlCommand(ctx context.Context, data wshrpc.CommandAgentControlData) chan wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg] {
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg], 1)
+	oref, err := waveobj.ParseORef(data.ORef)
+	if err != nil || oref.OType != waveobj.OType_Block {
+		ch <- wshutil.RespErr[wshrpc.AgentControlMsg](fmt.Errorf("agent control needs a block oref, got %q", data.ORef))
+		close(ch)
+		return ch
+	}
+	msgs, done := agentctl.Register(oref.OID)
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("AgentControlCommand", recover())
+		}()
+		defer close(ch)
+		defer done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case text := <-msgs:
+				select {
+				case ch <- wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg]{Response: wshrpc.AgentControlMsg{Text: text}}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return ch
 }
 
 func (ws *WshServer) StreamAgentTranscriptCommand(ctx context.Context, data wshrpc.CommandStreamAgentTranscriptData) chan wshrpc.RespOrErrorUnion[wshrpc.AgentTranscriptUpdate] {

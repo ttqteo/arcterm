@@ -10,6 +10,8 @@ import { pollCanvasOnce, type CanvasIO, type HttpStatus } from "./canvaspoller";
 import type { CanvasState } from "./canvasstore";
 
 const NOW = 50_000;
+const BASE = "http://127.0.0.1:5005/canvas/tok";
+const STALE_BASE = "http://127.0.0.1:4004/canvas/old";
 
 function state(over: Partial<CanvasState> = {}): CanvasState {
     return {
@@ -20,7 +22,7 @@ function state(over: Partial<CanvasState> = {}): CanvasState {
         board: null,
         all: false,
         boards: [],
-        port: null,
+        base: null,
         status: "probing",
         lastModifiedMs: null,
         lastViewedMs: 0,
@@ -31,25 +33,35 @@ function state(over: Partial<CanvasState> = {}): CanvasState {
     };
 }
 
-type Served = { port: number; files: Record<string, number>; json?: unknown };
+type Served = { files: Record<string, number>; json?: unknown };
 
-// a fake python server: one port serving the topic's files, each with a Last-Modified; every other port refuses
-function fakeIO(served: Served | null, opts: { dirExists?: boolean } = {}): CanvasIO & { urls: string[] } {
+// a fake wavesrv: it serves the design folder under BASE, each file with a Last-Modified; any other base refuses.
+// served null is a wavesrv that refuses to serve the folder at all
+function fakeIO(
+    served: Served | null,
+    opts: { dirExists?: boolean } = {}
+): CanvasIO & { urls: string[]; serves: string[] } {
     const urls: string[] = [];
+    const serves: string[] = [];
     const answer = (url: string): { status: HttpStatus; lastModified: number | null } => {
         urls.push(url);
-        const m = /^http:\/\/127\.0\.0\.1:(\d+)\/t\/project\/(.+)$/.exec(url);
-        if (served == null || m == null || Number(m[1]) !== served.port) {
+        const prefix = `${BASE}/t/project/`;
+        if (served == null || !url.startsWith(prefix)) {
             return { status: "error", lastModified: null };
         }
-        const lm = served.files[m[2]];
+        const lm = served.files[url.slice(prefix.length)];
         return lm == null ? { status: 404, lastModified: null } : { status: 200, lastModified: lm };
     };
     return {
         urls,
+        serves,
         dirExists: async (path) => {
             expect(path).toBe("/p/.superpowers/design/t/project");
             return opts.dirExists ?? true;
+        },
+        serve: async (designDir) => {
+            serves.push(designDir);
+            return served == null ? null : BASE;
         },
         get: async (url) => ({ ...answer(url), json: served?.json }),
         head: async (url) => answer(url),
@@ -67,34 +79,35 @@ const BOARDS_TWO = [
 
 describe("pollCanvasOnce", () => {
     it("reports a deleted canvas folder as removed, without touching the network", async () => {
-        const io = fakeIO({ port: 8766, files: { "Main.dc.html": 1 } }, { dirExists: false });
+        const io = fakeIO({ files: { "Main.dc.html": 1 } }, { dirExists: false });
         expect(await pollCanvasOnce(state(), io, NOW)).toEqual({ status: "removed" });
+        expect(io.urls).toEqual([]);
+        expect(io.serves).toEqual([]);
+    });
+
+    it("is server-down when wavesrv refuses to serve the folder", async () => {
+        const io = fakeIO(null);
+        expect(await pollCanvasOnce(state(), io, NOW)).toEqual({ base: null, status: "server-down" });
         expect(io.urls).toEqual([]);
     });
 
-    it("is server-down when no port in the range answers", async () => {
-        const io = fakeIO(null);
-        expect(await pollCanvasOnce(state(), io, NOW)).toEqual({ status: "server-down" });
-        expect(io.urls).toHaveLength(20);
-    });
-
-    it("finds the serving port, reads the boards and the newest Last-Modified", async () => {
+    it("asks wavesrv to serve the project's design folder, then reads the boards and the newest Last-Modified", async () => {
         const io = fakeIO({
-            port: 8767,
             files: { "Main.dc.html": 1000, "States.dc.html": 3000, "canvas.json": 2000 },
             json: JSON_TWO,
         });
         expect(await pollCanvasOnce(state(), io, NOW)).toEqual({
-            port: 8767,
+            base: BASE,
             status: "ready",
             boards: BOARDS_TWO,
             lastModifiedMs: 3000,
             lastViewedMs: NOW,
         });
+        expect(io.serves).toEqual(["/p/.superpowers/design"]);
     });
 
     it("leaves lastViewedMs alone in terminal mode", async () => {
-        const io = fakeIO({ port: 8766, files: { "Main.dc.html": 1000 } });
+        const io = fakeIO({ files: { "Main.dc.html": 1000 } });
         const patch = await pollCanvasOnce(state({ mode: "terminal" }), io, NOW);
         expect(patch.lastViewedMs).toBeUndefined();
         expect(patch.status).toBe("ready");
@@ -102,35 +115,37 @@ describe("pollCanvasOnce", () => {
 
     it("reloads the boards when any board's Last-Modified moves in canvas mode, since all are on screen", async () => {
         const io = fakeIO({
-            port: 8766,
             files: { "Main.dc.html": 1000, "States.dc.html": 5000, "canvas.json": 500 },
             json: JSON_TWO,
         });
-        const shownMoved = state({ port: 8766, board: "States.dc.html", lastModifiedMs: 1000, reloadKey: 4 });
+        const shownMoved = state({ base: BASE, board: "States.dc.html", lastModifiedMs: 1000, reloadKey: 4 });
         expect((await pollCanvasOnce(shownMoved, io, NOW)).reloadKey).toBe(5);
-        const otherMoved = state({ port: 8766, board: "Main.dc.html", lastModifiedMs: 1000, reloadKey: 4 });
+        const otherMoved = state({ base: BASE, board: "Main.dc.html", lastModifiedMs: 1000, reloadKey: 4 });
         expect((await pollCanvasOnce(otherMoved, io, NOW)).reloadKey).toBe(5);
-        const unchanged = state({ port: 8766, lastModifiedMs: 5000, reloadKey: 4 });
+        const unchanged = state({ base: BASE, lastModifiedMs: 5000, reloadKey: 4 });
         expect((await pollCanvasOnce(unchanged, io, NOW)).reloadKey).toBeUndefined();
-        const inTerminal = state({ port: 8766, board: "States.dc.html", lastModifiedMs: 1000, mode: "terminal" });
+        const inTerminal = state({ base: BASE, board: "States.dc.html", lastModifiedMs: 1000, mode: "terminal" });
         expect((await pollCanvasOnce(inTerminal, io, NOW)).reloadKey).toBeUndefined();
     });
 
     it("does not reload on the first read", async () => {
-        const io = fakeIO({ port: 8766, files: { "Main.dc.html": 1000 } });
-        expect((await pollCanvasOnce(state({ port: 8766 }), io, NOW)).reloadKey).toBeUndefined();
+        const io = fakeIO({ files: { "Main.dc.html": 1000 } });
+        expect((await pollCanvasOnce(state({ base: BASE }), io, NOW)).reloadKey).toBeUndefined();
     });
 
-    it("re-probes when the known port stops answering", async () => {
-        const io = fakeIO({ port: 8770, files: { "Main.dc.html": 1000 } });
-        const patch = await pollCanvasOnce(state({ port: 8766, status: "ready" }), io, NOW);
-        expect(patch.port).toBe(8770);
+    it("drops a base that stopped answering, so the next tick asks wavesrv again", async () => {
+        const io = fakeIO({ files: { "Main.dc.html": 1000 } });
+        const stale = state({ base: STALE_BASE, status: "ready" });
+        expect(await pollCanvasOnce(stale, io, NOW)).toEqual({ base: null, status: "server-down" });
+        const patch = await pollCanvasOnce({ ...stale, base: null }, io, NOW);
+        expect(patch.base).toBe(BASE);
         expect(patch.status).toBe("ready");
     });
 
-    it("keeps a known port and asks only it while it answers", async () => {
-        const io = fakeIO({ port: 8766, files: { "Main.dc.html": 1000 } });
-        await pollCanvasOnce(state({ port: 8766 }), io, NOW);
-        expect(io.urls.every((u) => u.startsWith("http://127.0.0.1:8766/"))).toBe(true);
+    it("keeps a known base and does not ask wavesrv again while it answers", async () => {
+        const io = fakeIO({ files: { "Main.dc.html": 1000 } });
+        await pollCanvasOnce(state({ base: BASE }), io, NOW);
+        expect(io.serves).toEqual([]);
+        expect(io.urls.every((u) => u.startsWith(`${BASE}/`))).toBe(true);
     });
 });

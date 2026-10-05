@@ -23,6 +23,7 @@ import {
 const IDS = ["a1", "a2"];
 const A = { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" };
 const MARK: Mark = { x: 0, y: 0, w: 20, h: 20, note: "n" };
+const BASE = "http://127.0.0.1:5005/canvas/tok";
 const BOARDS = [
     { name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900 },
     { name: "States.dc.html", x: 0, y: 0, w: 1440, h: 900 },
@@ -45,7 +46,7 @@ describe("attachCanvas", () => {
             board: null,
             all: false,
             boards: [],
-            port: null,
+            base: null,
             status: "probing",
             lastModifiedMs: null,
             lastViewedMs: 100,
@@ -63,23 +64,30 @@ describe("attachCanvas", () => {
     it("resets the board and marks for a new topic", () => {
         attachCanvas("a1", { ...A, board: "States.dc.html" }, 100);
         withMarks("a1");
-        updateCanvas("a1", (s) => ({ ...s, port: 8766 }));
+        updateCanvas("a1", (s) => ({ ...s, base: BASE }));
         attachCanvas("a1", { topic: "u", dir: "/p/.superpowers/design/u", projectDir: "/p" }, 200);
         const s = getCanvas("a1");
         expect(s.board).toBeNull();
         expect(s.marks).toEqual([]);
-        expect(s.port).toBeNull();
+        expect(s.base).toBeNull();
     });
 
-    it("keeps the port and the current board for the same topic", () => {
+    it("keeps the base and the current board for the same topic", () => {
         attachCanvas("a1", { ...A, board: "States.dc.html" }, 100);
         withMarks("a1");
-        updateCanvas("a1", (s) => ({ ...s, port: 8766 }));
+        updateCanvas("a1", (s) => ({ ...s, base: BASE }));
         attachCanvas("a1", A, 200);
         const s = getCanvas("a1");
-        expect(s.port).toBe(8766);
+        expect(s.base).toBe(BASE);
         expect(s.board).toBe("States.dc.html");
         expect(s.marks).toEqual([MARK]);
+    });
+
+    it("drops the base when the same topic is re-attached from another project", () => {
+        attachCanvas("a1", A, 100);
+        updateCanvas("a1", (s) => ({ ...s, base: BASE }));
+        attachCanvas("a1", { topic: A.topic, dir: "/q/.superpowers/design/t", projectDir: "/q" }, 200);
+        expect(getCanvas("a1").base).toBeNull();
     });
 });
 

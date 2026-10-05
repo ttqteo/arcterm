@@ -49,6 +49,11 @@ declare global {
         options?: AgentAskOption[];
     };
 
+    // wshrpc.AgentControlMsg
+    type AgentControlMsg = {
+        text: string;
+    };
+
     // baseds.AgentStatusData
     type AgentStatusData = {
         oref: string;
@@ -332,6 +337,11 @@ declare global {
         commit?: string;
         report?: string;
         holdland?: boolean;
+    };
+
+    // wshrpc.CommandAgentControlData
+    type CommandAgentControlData = {
+        oref: string;
     };
 
     // wshrpc.CommandAgentSyncAdoptData

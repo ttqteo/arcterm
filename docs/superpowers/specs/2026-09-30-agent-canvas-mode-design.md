@@ -28,13 +28,14 @@ elements inside the iframe, and persisting a canvas across an Arc restart.
 | 3 | Per-agent canvas state is a jotai atom family keyed by agent id, in memory only. After an Arc restart the agent re-runs reveal. | Chosen by the user: session-only. |
 | 4 | Canvas mode swaps the terminal for the canvas; it doesn't dock. The rail hides; the tree and the header stay, so another agent is one click away; the xterm stays mounted and hidden. | Mockup; the xterm must never remount. The tree first hid too, which made every trip to another agent a round trip through the terminal. |
 | 5 | Each board has its own tab showing it alone, and with two or more boards an All tab draws every board at its canvas.json frame (x, y, w, h). Either way the boards on screen are scaled to fit the pane width, never above 100%, and the toolbar shows the scale. A canvas opens on its first board. | Chosen by the user. All alone read as one design split by a tab header that did not separate anything; one board at a time alone left sibling variants out of sight. |
-| 6 | Server port: probe 8766 upward for the topic's `Main.dc.html`, as the skill does, through `@tauri-apps/plugin-http` **without** Arc's auth key. | The plugin bypasses CORS (python's server sends none). `fetchutil.fetch` adds `X-AuthKey`, which must not reach a third-party local server. |
+| 6 | wavesrv serves the boards (2026-10-04; it replaced probing 8766 upward for a python server the agent started). `CanvasServeCommand(<project>/.superpowers/design)` registers the folder and returns `/canvas/<token>` on wavesrv's web listener; the pane fetches through `@tauri-apps/plugin-http`. | No agent has to start a server, no fixed port can clash, and nothing outlives Arc. The route takes no auth key, because an iframe cannot send one: the token, an HMAC of the folder under a per-process secret, stands in for it. |
 | 7 | Updates come from polling the served files' `Last-Modified` every 3 s, for the focused agent only, while the Agent surface is mounted. | Decided in the goal; one agent is on screen at a time. |
 | 8 | "Canvas folder deleted" comes from disk (`FileInfoCommand` on the canvas dir, not-found), not HTTP. | A 404 can mean a server rooted elsewhere; the disk is the truth. |
 | 9 | Capture: a new Tauri command returns the whole window's PNG bytes from WebView2 `CapturePreview`. The frontend crops to the board rect and writes the file through the existing file RPCs. | No image crate in Rust; the crop needs DOM rects, which only the frontend has. |
-| 10 | Start server: a new Tauri command spawns `python -m http.server <port> --bind 127.0.0.1 --directory <project>/.superpowers/design`, detached and windowless. | Decided in the goal; this resolves the open question on States.dc.html. |
+| 10 | Withdrawn 2026-10-04 with decision 6: the Start server command (`python -m http.server`, detached) is gone. | wavesrv serves the folder, so there is no server to start. |
 | 11 | Run prototype: `CommandCreateRunData.Prototype` → `Run.Prototype`, and at dag submit the run's value replaces the plan's `**Prototype:**`. `wsh runs start --prototype <path>` sets it. | Decided in the goal. |
 | 12 | Keys that change label with state (`c` canvas/terminal, `m` mark/stop marking) are two bindings each, with exclusive `when()`s, so every footer chip has a static label. | `FooterHint.label` is static; the footer shows a chip iff its binding is active. |
+| 13 | Arc attaches a canvas on its own (2026-10-04): the `wsh agent-hook` PostToolUse hook sees a `Write`/`Edit` of `<project>/.superpowers/design/<topic>/project/<Board>.dc.html` and sends the same reveal the skill does, with that agent as caller. A reveal of the topic the caller already has attached leaves no toast. | An agent whose copy of the skill lacked the reveal step never showed a canvas. The hook names the agent that wrote the board, which a folder watcher cannot. Pi and opencode have no such hook and still rely on the skill's reveal. |
 
 ## Address and reveal
 
@@ -72,12 +73,12 @@ Regenerate with `task generate`. The reveal help text lists `canvas:<topic>[/<bo
 type CanvasState = {
     topic: string;
     dir: string;            // absolute: <cwd>/.superpowers/design/<topic>
-    projectDir: string;     // the caller cwd, for the relative feedback path and Start server
+    projectDir: string;     // the caller cwd, for the relative feedback path and the served design folder
     mode: "terminal" | "canvas";
     board: string | null;   // file name; null = first in order
     all: boolean;           // the All tab: every board side by side; a reveal naming a board clears it
     boards: CanvasBoard[];  // { name, w } in canvas.json order; w defaults to 1440
-    port: number | null;
+    base: string | null;    // where wavesrv serves the design folder; null until the poller has asked
     status: "probing" | "ready" | "server-down" | "removed";
     lastModifiedMs: number | null; // newest Last-Modified across boards + canvas.json
     lastViewedMs: number;  // set on entering canvas mode and on every poll while in it
@@ -94,10 +95,10 @@ terminal" from the removed state sets the state to `null`, so the swap control d
 mounted and the focused agent has a canvas, every 3 s (`CANVAS_POLL_MS`):
 
 1. `FileInfoCommand(<dir>/project)`: not-found → `status: "removed"`, stop.
-2. With no port, or after a failed request: probe ports `8766 … 8785` (`CANVAS_PORT_FIRST`,
-   `CANVAS_PORT_COUNT = 20`) with `HEAD /<topic>/project/Main.dc.html`. The first `200` is the
-   port. None → `status: "server-down"`.
-3. `GET /<topic>/project/canvas.json` → `boards` (the model below), then `HEAD` each board →
+2. With no base: `CanvasServeCommand(<projectDir>/.superpowers/design)` → `base` (the web endpoint
+   plus the returned path). A refusal, or a later request that fails, → `base: null`,
+   `status: "server-down"`, and the next tick asks again.
+3. `GET <base>/<topic>/project/canvas.json` → `boards` (the model below), then `HEAD` each board →
    `lastModifiedMs` = newest `Last-Modified`. If that moved past the previous newest while in canvas
    mode, bump `reloadKey`: every board is on screen, so any change reloads them. `status: "ready"`.
 4. In canvas mode, `lastViewedMs = now`.
@@ -116,8 +117,6 @@ mounted and the focused agent has a canvas, every 3 s (`CANVAS_POLL_MS`):
 - `canvasTabs(boards)`: `[ALL_TAB, ...names]` with two or more boards, else the names. `currentTab(s)` and
   `shownBoards(s)`: under All every board, else the selected one alone.
 - `stepTab(tabs, current, delta)`: wraps, All included.
-- `classifyProbe(result)`: `200` → `serving`, network error → `free`, any other status → `taken`.
-  `pickServingPort(results)` / `pickFreePort(results)`.
 - `paneState(state)` → `"removed" | "server-down" | "probing" | "board"`: `removed` wins over
   `server-down`, which wins over `probing`; a `ready` status shows the `board`.
 - `isUnseen(state)`: `mode === "terminal" && lastModifiedMs != null && lastModifiedMs > lastViewedMs`.
@@ -180,10 +179,8 @@ its canvas, or, when that canvas is the one showing, goes back to the terminal. 
   input per mark, remove, Clear, "Send to <agent name>" (disabled with no marks), and the one-line
   explainer. All of it is copied from the mockup.
 - Edge states (States 3 and 4), in place of the board:
-  - **server-down:** `serverDownText(port)`: "Can't reach 127.0.0.1:<port>" for a port that
-    stopped answering, "Nothing serves this canvas on 127.0.0.1:8766–8785" when none ever did; the explainer, and **Start server**
-    (accent). It picks the first `free` port, calls `start_canvas_server`, then re-probes every
-    500 ms for up to 5 s. On failure the message shows the error.
+  - **server-down:** "Arc could not serve this canvas" and the explainer. No button: wavesrv
+    serves the folder, and the poller's next tick retries.
   - **removed:** "<topic> was removed", the explainer, **Back to terminal**. That button clears
     the agent's canvas state, so the control disappears.
 
@@ -242,11 +239,7 @@ footer then matches the mockup exactly (Main.dc.html `hints`).
   `windows = "0.61"` (features `Win32_Foundation`, `Win32_System_Com`,
   `Win32_System_Com_StructuredStorage` and `Win32_System_Memory`, for `CreateStreamOnHGlobal` / `HGLOBAL`) under `cfg(windows)`, pinned to the
   versions already in `Cargo.lock`, so there are no duplicate copies.
-- `start_canvas_server(dir, port)`: `port` in 1024–65535; `dir` must be an existing directory whose
-  path ends in `.superpowers\design` (or `/`). It spawns `python` with exactly the arguments
-  above, with `CREATE_NO_WINDOW | DETACHED_PROCESS` and no inherited stdio. It returns an error
-  (e.g. python not on PATH) rather than failing silently. Unit tests cover the argument validation.
-- Register both in `generate_handler!`.
+- Register it in `generate_handler!`.
 
 ## Go
 
@@ -275,9 +268,8 @@ the assumptions, and the states mapping stay.
 ## Errors
 
 Every failure has a reason on screen: reveal errors go back to the calling agent's `wsh` (the
-existing `revealError`). Pane failures show in the pane (edge states) or in the tray (Send). Start
-server errors show under the button. Poll failures are not toasted; they become the server-down
-state.
+existing `revealError`). Pane failures show in the pane (edge states) or in the tray (Send). Poll
+failures are not toasted; they become the server-down state.
 
 ## Tests
 
@@ -291,7 +283,9 @@ state.
 - Go: `runsStartData` (`--prototype` needs orchestrator), CreateRun rejects a prototype on a
   quick run, and dag submit: the run's prototype replaces the plan's, the plan's is kept when the
   run has none, and it holds across a plan-review resubmit.
-- Rust: `start_canvas_server` validation; a `capture_webview` test is not practical headless.
+- Go: `pkg/canvasserve` (only a design folder registers; an unknown token, a write and a path above
+  the folder are refused) and the hook's `canvasRevealFor`. A `capture_webview` test is not practical
+  headless.
 - CDP `verify:ui` scenario `canvas-swap`: it writes a fixture canvas (`canvas.json` + a trivial
   `Main.dc.html`) under a temp dir, opens a plain terminal tab in the (isolated, agent-less) app,
   waits for it in the roster, and sends `uireveal` with that terminal's block id.

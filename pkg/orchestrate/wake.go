@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -605,8 +606,11 @@ func latestAgentStatus(blockId, tabId string) baseds.AgentStatusData {
 // typeWake pastes the wake and then presses Enter. Bracketed paste keeps a multi-line wake one message
 // instead of relying on how each harness's editor treats a typed newline; the pause mirrors agentask's
 // keystroke pacing, since one combined write races the editor. It runs async so the waker lock is
-// never held across the pause.
+// never held across the pause. A session whose mod holds a control stream is not typed into at all.
 func typeWake(blockId, text string) {
+	if overStream(blockId, text, latestAgentState(blockId, "")) {
+		return
+	}
 	go func() {
 		if text != "" {
 			if err := sendBlockInput(blockId, "\x1b[200~"+text+"\x1b[201~"); err != nil {
@@ -619,6 +623,21 @@ func typeWake(blockId, text string) {
 			log.Printf("wake: submitting in block %s: %v", blockId, err)
 		}
 	}()
+}
+
+// overStream hands text to a session whose mod runs it as a prompt of its own, leaving the composer and
+// whatever the human is typing in it alone, and reports whether nothing is left to type. Only a session
+// at its prompt takes it: the mod's prompt waits for a running turn to end, where typed text reaches the
+// turn itself, which is what a tell to a busy worker is for.
+func overStream(blockId, text, state string) bool {
+	if !agentctl.Has(blockId) {
+		return false
+	}
+	if text == "" {
+		// the retry's Enter alone: a prompt sent over the stream left nothing in the composer to submit
+		return true
+	}
+	return atPrompt(state) && agentctl.Send(blockId, text)
 }
 
 func sendBlockInput(blockId, s string) error {

@@ -220,8 +220,7 @@ fn main() {
             init::fe_log,
             commands::set_window_init_status,
             commands::open_external,
-            canvas::capture_webview,
-            canvas::start_canvas_server
+            canvas::capture_webview
         ])
         .setup(move |app| {
             // seed the static identity fields before wavesrv parsing fills in the endpoints.

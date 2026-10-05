@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -26,9 +28,38 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %v: %w: %s", args, err, dropProgress(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+var gitProgressLine = regexp.MustCompile(`^\s*[A-Za-z ]+:\s+\d+% \(\d+/\d+\)`)
+
+// dropProgress strips git's "Updating files:  7% (1016/13562)" meter from an error's output: a large checkout's
+// meter fills the bounded error detail and cuts off the line that says what failed.
+func dropProgress(out string) string {
+	var kept []string
+	for _, line := range strings.FieldsFunc(out, func(r rune) bool { return r == '\r' || r == '\n' }) {
+		if !gitProgressLine.MatchString(line) {
+			kept = append(kept, strings.TrimSpace(line))
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+// addWorktree runs `git worktree add` in project. A tree nests the checkout under .waveterm\worktrees\<key>\, so on
+// Windows a path that fits under MAX_PATH in the project can pass it in the tree; core.longpaths, set in the repo
+// config rather than per command, lets the worker's own git in the tree reach those paths too.
+func addWorktree(ctx context.Context, project string, args ...string) (string, error) {
+	if runtime.GOOS == "windows" {
+		// a value set at any level, false included, is the user's choice
+		if _, err := git(ctx, project, "config", "--get", "core.longpaths"); err != nil {
+			if _, err := gitLocked(ctx, project, "config", "core.longpaths", "true"); err != nil {
+				return "", fmt.Errorf("enabling long paths: %w", err)
+			}
+		}
+	}
+	return gitLocked(ctx, project, append([]string{"worktree", "add"}, args...)...)
 }
 
 // repoAdminMu serializes the engine's git commands that change a repo's worktree registry and its branches. git does
@@ -67,11 +98,11 @@ func CreateRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 		return "", ErrNotGitRepo
 	}
 	wt := worktreeDir(projectPath, runID)
-	args := []string{"worktree", "add", "-b", "wave/" + runID, wt}
+	args := []string{"-b", "wave/" + runID, wt}
 	if baseCommit != "" {
 		args = append(args, baseCommit)
 	}
-	if _, err := gitLocked(ctx, projectPath, args...); err != nil {
+	if _, err := addWorktree(ctx, projectPath, args...); err != nil {
 		return "", fmt.Errorf("creating worktree: %w", err)
 	}
 	return wt, nil
@@ -199,7 +230,7 @@ func EnsureRunWorktree(ctx context.Context, projectPath, runID, baseCommit strin
 	if _, err := gitLocked(ctx, projectPath, "worktree", "prune"); err != nil {
 		return "", "", false, fmt.Errorf("pruning worktrees: %w", err)
 	}
-	if _, err := gitLocked(ctx, projectPath, "worktree", "add", wt, "wave/"+runID); err != nil {
+	if _, err := addWorktree(ctx, projectPath, wt, "wave/"+runID); err != nil {
 		return "", "", false, fmt.Errorf("checking out worktree from wave/%s: %w", runID, err)
 	}
 	return wt, head, true, nil

@@ -11,16 +11,12 @@ import {
     canvasDir,
     canvasLayout,
     canvasTabs,
-    classifyProbe,
     currentTab,
     fitScale,
     isUnseen,
     paneState,
     parseCanvasPath,
-    pickFreePort,
-    pickServingPort,
     prototypePath,
-    serverDownText,
     shownBoards,
     stepTab,
     updatedAgo,
@@ -42,7 +38,7 @@ function state(over: Partial<CanvasState>): CanvasState {
         board: null,
         all: false,
         boards: [],
-        port: null,
+        base: null,
         status: "ready",
         lastModifiedMs: null,
         lastViewedMs: 0,
@@ -145,16 +141,6 @@ describe("canvasLayout", () => {
     });
 });
 
-describe("serverDownText", () => {
-    it("names the port that stopped answering", () => {
-        expect(serverDownText(8767)).toBe("Can't reach 127.0.0.1:8767");
-    });
-
-    it("names the probed range when no port ever served the canvas", () => {
-        expect(serverDownText(null)).toBe("Nothing serves this canvas on 127.0.0.1:8766–8785");
-    });
-});
-
 describe("boardLabel", () => {
     it("strips the board extension", () => {
         expect(boardLabel("Main.dc.html")).toBe("Main");
@@ -216,31 +202,6 @@ describe("board tabs", () => {
     });
 });
 
-describe("port probing", () => {
-    it("classifies a probe by its answer", () => {
-        expect(classifyProbe({ port: 8766, status: 200 })).toBe("serving");
-        expect(classifyProbe({ port: 8766, status: "error" })).toBe("free");
-        expect(classifyProbe({ port: 8766, status: 404 })).toBe("taken");
-    });
-
-    it("picks the lowest serving and the lowest free port", () => {
-        const rs = [
-            { port: 8769, status: 200 as const },
-            { port: 8768, status: "error" as const },
-            { port: 8766, status: 404 },
-            { port: 8767, status: 200 },
-            { port: 8770, status: "error" as const },
-        ];
-        expect(pickServingPort(rs)).toBe(8767);
-        expect(pickFreePort(rs)).toBe(8768);
-    });
-
-    it("has no port when nothing qualifies", () => {
-        expect(pickServingPort([{ port: 8766, status: 404 }])).toBeNull();
-        expect(pickFreePort([{ port: 8766, status: 200 }])).toBeNull();
-    });
-});
-
 describe("paneState", () => {
     it("shows the board once ready", () => {
         expect(paneState(state({ status: "ready" }))).toBe("board");
@@ -295,7 +256,9 @@ describe("fitScale", () => {
 
 describe("paths", () => {
     it("builds the board url", () => {
-        expect(boardUrl(8766, "t", "Main.dc.html")).toBe("http://127.0.0.1:8766/t/project/Main.dc.html");
+        expect(boardUrl("http://127.0.0.1:5005/canvas/tok", "t", "Main.dc.html")).toBe(
+            "http://127.0.0.1:5005/canvas/tok/t/project/Main.dc.html"
+        );
     });
 
     it("joins the canvas dir with the cwd's own separator", () => {

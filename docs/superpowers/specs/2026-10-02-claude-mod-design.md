@@ -71,6 +71,41 @@ awaited, then returns `next(e)`:
 - A failed `wsh` call is logged with `$.ui.log(..., { to: "debug" })` and dropped; the next
   measurement self-heals, as a dropped statusLine publish does today.
 
+### Idle after a turn with no answer (`turn.complete`)
+
+Added 2026-10-04. `wsh agent-hook` reports idle from the `Stop` settings hook, which Claude does not
+run for a turn that ended without an answer (an interrupt, an API error, a refusal), so the cockpit
+read working until the idle notification. The mod's `turn.complete` hook reports
+`wsh agentstatus --state idle --agent claude` for a main-loop turn whose `reason` is not `answer`
+(`hooks/status-core.ts`, vitest), with the transcript path the latest `classic.UserPromptSubmit`
+named. Answered turns stay with `Stop`; everything else `agent-hook` reports is unchanged (see Out
+of scope). Probed 2026-10-04 on 2.1.289 with an interactive session in a pty and a stub `wsh`: an
+Esc interrupt ran no `Stop` hook and the mod made the idle call; an answered turn ran `Stop` and the
+mod made none. Not yet watched in the cockpit: the agent row turning idle on Esc.
+
+### Prompts from the cockpit (`wsh agentctl`)
+
+Added 2026-10-04. The engine woke a lead by pasting into its terminal and pressing Enter
+(`typeWake`), which lands in the composer the human may be typing in. The mod now holds
+`wsh agentctl` from `session.start` for the session's life: a stream RPC (`AgentControlCommand`)
+that registers the block in `pkg/agentctl` and prints each prompt as one JSON line `{"text"}`. The
+mod runs a line as typing it would (`hooks/control-core.ts`, vitest): a leading slash is
+`$.command.run` (the handoff `/compact`), anything else `$.prompt.submit` with `asUser: true`, so
+the model reads the text bare and not as "The arc plugin sent a message".
+
+`typeWake` sends over the stream when the block has one and its latest state is at the prompt
+(`overStream`), and types otherwise: no stream (pi, an older Claude, a mod that failed to load), or
+a working session, since the mod's prompt waits for the running turn to end where typed text
+reaches the turn itself, which a `dag tell` to a busy worker relies on. The retry's Enter alone is
+dropped for a block with a stream: it would submit the human's draft. The waker is otherwise
+unchanged; it still confirms a wake on the working report.
+
+Probed 2026-10-04 on 2.1.289, the real mod in a pty against a stub `wsh` whose `agentctl` streamed
+lines from a file: the prompt ran with `UserPromptSubmit` and `Stop` fired and the prompt text bare,
+`/compact` ran with `PreCompact` (`manual`), and a draft typed in the composer beforehand was still
+there afterwards. Not covered: the stream RPC end to end against a real `wavesrv`, and
+`steerRunLead` (a child run's notice to its parent lead), which still types.
+
 ### Retiring the statusLine wrapper
 
 Once the mod reports usage, `mergeStatusLine` stops wrapping and unwraps an existing wrapper with
@@ -86,6 +121,22 @@ the settings file.
 Decision (2026-10-02): **the cockpit card is the answer surface for Claude agents.** The hook
 answers the call itself, so Claude's own dialog does not open. The API cannot cancel a dialog once
 `next(e)` opened it, so the two cannot race.
+
+Amended (2026-10-04): **the terminal answers too.** The user is sometimes in the agent's terminal
+rather than the cockpit, so the hook also draws a picker there (`hooks/ask-band.tsx`) and takes
+whichever answer comes first. The mod draws and closes the picker itself, so it can race the card
+where Claude's dialog could not. It opens in a focused pane (`$.ui.open` with `focus` and
+`closeOnEscape`), where the arrows and Enter pick as in Claude's dialog, the first option holds
+the ring, a digit presses its option, and Esc dismisses the question. A pane a mod opens unasked
+is not drawn below 144 terminal columns (`isPlaced: false`); the picker then moves to the band
+above the prompt (`ui.render` on `AbovePrompt`), where a mod cannot take the keyboard, so a bare
+digit in an empty composer is the pick. A multi-select marks options and confirms with `Done`;
+`Other` is an `Input`. Previews stay on the card. A picker answer ends the `wsh ask --wait`
+stream, which kills the child, and the server's waiter cancel takes the card down; a card answer
+clears the picker state and closes the pane.
+The picker's steps are pure (`ask-core.ts`, vitest); the race was checked once with
+`claude plugin test` on a scratch copy (the runner and vitest both claim `*.test.ts`, so no
+engine-level test is checked in). Steps 2 to 5 below describe the card side, unchanged.
 
 1. **Questions the card cannot show go native.** Any question with `kind` `text` or `number`, or with
    no options, means the whole call goes to `next(e)` (the current path, unchanged).

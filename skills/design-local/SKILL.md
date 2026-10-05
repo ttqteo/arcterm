@@ -29,8 +29,12 @@ automatically a visual question.
 ## The loop
 
 1. Write every artboard and `canvas.json` for the change in ONE message, with the Write tool.
-2. Serve on `127.0.0.1`, never `localhost` (on Windows it can resolve to a different listener).
-   Probe from port 8766 up:
+2. Inside Arc (`wsh` is on PATH), run `wsh ui reveal canvas:<topic>` from your terminal. Arc
+   serves the folder itself and attaches the canvas to you on the Agent surface without switching
+   the user to it; they open it when ready, mark it, and send the marks back to you as one line.
+   Start no server. If the command fails or `wsh` is missing, serve the folder yourself, on
+   `127.0.0.1`, never `localhost` (on Windows it can resolve to a different listener). Probe from
+   port 8766 up:
    `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:<port>/<topic>/project/Main.dc.html`.
    - `200`: already served; use this port.
    - `000` (nothing listening): run
@@ -38,19 +42,15 @@ automatically a visual question.
      background and probe again until `200`.
    - Any other code: a stale server with another root holds the port; try the next one.
    One server serves every topic.
-3. If you run inside Arc (`wsh` is on PATH), run `wsh ui reveal canvas:<topic>` from your
-   terminal: it attaches the canvas to you on the Agent surface without switching the user to it;
-   they open it when ready, mark it, and send
-   the marks back to you as one line. If that command fails or `wsh` is missing, list the URLs:
-   tell the user the URL of each artboard you added or changed
-   (`http://127.0.0.1:<port>/<topic>/project/<Name>.dc.html`, `Main.dc.html` first), a line on
-   what each shows, and the assumptions you made. When the brief asks for states, derive the
-   state list from the component and its stores, not the brief, and map each state to the
-   artboard that draws it; name any state left undrawn. End your turn.
-4. On feedback, read the files you will change, edit them in place, and go back to step 3. Small
+3. Tell the user which artboards you added or changed, `Main.dc.html` first, with a line on what
+   each shows and the assumptions you made. Outside Arc, give each one's URL
+   (`http://127.0.0.1:<port>/<topic>/project/<Name>.dc.html`). When the brief asks for states,
+   derive the state list from the component and its stores, not the brief, and map each state to
+   the artboard that draws it; name any state left undrawn. End your turn.
+4. On feedback, read the files you will change, edit them in place, and go back to step 2. Small
    requested changes stay small.
 
-Hand over the URLs and stop. Render, screenshot or re-read the files only when the user asks.
+Hand over and stop. Render, screenshot or re-read the files only when the user asks.
 
 ## Cleaning up
 
@@ -145,3 +145,9 @@ The long form, for pushback on a design call or a specific kind of piece: `refer
 - Accessible as drawn: real `<button>`, `<a href>`, `<input>` + `<label>`; `aria-label` on
   icon-only buttons. Text 4.5:1 (3:1 at 24px+); colors that must be told apart also differ in
   lightness. Touch targets ≥44px.
+- Before handing over, check each artboard for the defaults a model reaches for: only the success
+  state drawn (no loading, empty or error); a second accent, radius rule or theme creeping in;
+  shared parts of side-by-side cards misaligned; an uppercase label over every heading; decorative
+  dots and section numbers; "Oops!" errors, filler verbs and stock names (`Acme`, `John Doe`). The
+  design system overrides any of these. Full list: "AI tells to design past" in
+  `reference/craft.md`; a marketing piece also takes the list under "Landing pages" there.

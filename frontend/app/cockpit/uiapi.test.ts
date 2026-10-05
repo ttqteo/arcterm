@@ -11,6 +11,7 @@ import {
     parseSurfaceAddress,
     resolveAction,
     revealError,
+    revealLeavesTrail,
     revealWaitsForUser,
     selectionFor,
     toUiActions,
@@ -185,6 +186,23 @@ describe("revealWaitsForUser", () => {
         expect(revealWaitsForUser("canvas:dag-activity-rail", undefined)).toBe(true);
         expect(revealWaitsForUser("run:abc", "b1")).toBe(true);
         expect(revealWaitsForUser("surface:files", "b1")).toBe(true);
+    });
+});
+
+describe("revealLeavesTrail", () => {
+    it("announces a canvas the caller did not have attached", () => {
+        expect(revealLeavesTrail("canvas:t", undefined)).toBe(true);
+        expect(revealLeavesTrail("canvas:t", "other")).toBe(true);
+    });
+
+    it("stays quiet when the caller reveals the canvas it already has", () => {
+        expect(revealLeavesTrail("canvas:t", "t")).toBe(false);
+        expect(revealLeavesTrail("canvas:t/States", "t")).toBe(false);
+    });
+
+    it("announces every other move", () => {
+        expect(revealLeavesTrail("run:t", "t")).toBe(true);
+        expect(revealLeavesTrail("agent:t", "t")).toBe(true);
     });
 });
 

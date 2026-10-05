@@ -51,6 +51,52 @@ func TestCreateAndRemoveWorktree(t *testing.T) {
 	}
 }
 
+// A run tree nests the checkout under .waveterm\worktrees\<run id>\, so a file the project checks out fits under
+// MAX_PATH there and not in the tree: run 58942051 failed its landing tree with "unable to create file".
+func TestCreateRunWorktreeChecksOutPathsPastMaxPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("only Windows caps a path at MAX_PATH")
+	}
+	empty := filepath.Join(t.TempDir(), "gitconfig")
+	os.WriteFile(empty, nil, 0o644)
+	t.Setenv("GIT_CONFIG_GLOBAL", empty)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	dir := newGitRepo(t)
+	const maxPath = 260
+	rel := ""
+	for len(dir)+len(rel)+len("\\f.txt") < maxPath-20 {
+		rel = filepath.Join(rel, "segment")
+	}
+	rel = filepath.Join(rel, "f.txt")
+	os.MkdirAll(filepath.Join(dir, filepath.Dir(rel)), 0o755)
+	os.WriteFile(filepath.Join(dir, rel), []byte("deep\n"), 0o644)
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "deep")
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+
+	runID := "58942051-063d-4de2-96f0-7348f22bc389"
+	wt, err := CreateRunWorktree(context.Background(), dir, runID, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, rel)); err != nil {
+		t.Fatalf("tree missing the deep file: %v", err)
+	}
+	// a worker's own git in the tree must see the deep file too, or its `git add -A` stages a deletion
+	if out := gitCmd(t, wt, "status", "--porcelain"); out != "" {
+		t.Fatalf("the fresh tree must be clean, got %q", out)
+	}
+}
+
+func TestDropProgressKeepsTheFailureLine(t *testing.T) {
+	out := "Preparing worktree (new branch 'wave/x')\nUpdating files:   7% (1016/13562)\rUpdating files:   8% (1085/13562)\r" +
+		"Updating files: 100% (13562/13562), done.\nerror: unable to create file a/b.txt: Filename too long\n"
+	want := "Preparing worktree (new branch 'wave/x')\nerror: unable to create file a/b.txt: Filename too long"
+	if got := dropProgress(out); got != want {
+		t.Fatalf("dropProgress = %q, want %q", got, want)
+	}
+}
+
 func TestIsGitRepoFalse(t *testing.T) {
 	if IsGitRepo(t.TempDir()) {
 		t.Fatal("temp dir must not be a git repo")

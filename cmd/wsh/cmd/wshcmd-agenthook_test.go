@@ -78,6 +78,50 @@ func TestDetailForTool(t *testing.T) {
 	}
 }
 
+func TestCanvasRevealFor(t *testing.T) {
+	post := func(tool, path string) ccHookEvent {
+		input, _ := json.Marshal(map[string]string{"file_path": path})
+		return ccHookEvent{HookEventName: "PostToolUse", ToolName: tool, ToolInput: input}
+	}
+	root := t.TempDir()
+	design := filepath.Join(root, ".superpowers", "design")
+	board := filepath.Join(design, "dag-rail", "project", "Main.dc.html")
+	hits := []struct {
+		name    string
+		ev      ccHookEvent
+		address string
+	}{
+		{"write a board", post("Write", board), "canvas:dag-rail"},
+		{"edit a board", post("Edit", board), "canvas:dag-rail"},
+		{"forward slashes", post("Write", root+"/.superpowers/design/t/project/States.dc.html"), "canvas:t"},
+		{"upper-case extension", post("Write", filepath.Join(design, "t", "project", "Main.DC.HTML")), "canvas:t"},
+	}
+	for _, c := range hits {
+		address, cwd, ok := canvasRevealFor(c.ev)
+		if !ok || address != c.address || cwd != root {
+			t.Errorf("%s: got (%q, %q, %v), want (%q, %q, true)", c.name, address, cwd, ok, c.address, root)
+		}
+	}
+	pre := post("Write", board)
+	pre.HookEventName = "PreToolUse"
+	misses := map[string]ccHookEvent{
+		"before the write lands":  pre,
+		"a read":                  post("Read", board),
+		"canvas.json":             post("Write", filepath.Join(design, "t", "project", "canvas.json")),
+		"a board outside project": post("Write", filepath.Join(design, "t", "Main.dc.html")),
+		"a board in a nested dir": post("Write", filepath.Join(design, "t", "project", "sub", "Main.dc.html")),
+		"a board under feedback":  post("Write", filepath.Join(design, "t", "feedback", "Main.dc.html")),
+		"an ordinary source file": post("Write", filepath.Join(root, "src", "main.go")),
+		"a relative path":         post("Write", filepath.Join(".superpowers", "design", "t", "project", "Main.dc.html")),
+		"no file path":            {HookEventName: "PostToolUse", ToolName: "Write"},
+	}
+	for name, ev := range misses {
+		if address, _, ok := canvasRevealFor(ev); ok {
+			t.Errorf("%s: revealed %q", name, address)
+		}
+	}
+}
+
 func TestDetailForToolBashTruncated(t *testing.T) {
 	long := ""
 	for i := 0; i < 100; i++ {

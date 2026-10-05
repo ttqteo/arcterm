@@ -1,12 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Keeps the focused agent's canvas state in step with its folder on disk and the python server serving it.
+// Keeps the focused agent's canvas state in step with its folder on disk, which wavesrv serves.
 // The step is pure over an injected IO so it can be tested; the hook runs it every CANVAS_POLL_MS.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { getWebServerEndpoint } from "@/util/endpoints";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -15,16 +16,12 @@ import {
     boardsFromCanvasJson,
     boardUrl,
     CANVAS_POLL_MS,
-    CANVAS_PORT_COUNT,
-    CANVAS_PORT_FIRST,
+    canvasDesignDir,
     canvasProjectDir,
-    pickServingPort,
     type CanvasBoard,
-    type ProbeResult,
 } from "./canvasmodel";
 import { canvasStateAtom, updateCanvas, type CanvasState } from "./canvasstore";
 
-const PROBE_BOARD = "Main.dc.html";
 const CANVAS_JSON = "canvas.json";
 const HTTP_OK = 200;
 
@@ -32,31 +29,26 @@ export type HttpStatus = number | "error";
 
 export type CanvasIO = {
     dirExists(path: string): Promise<boolean>;
+    // asks wavesrv to serve a project's design folder; the base URL it is served under, or null when it refuses
+    serve(designDir: string): Promise<string | null>;
     get(url: string): Promise<{ status: HttpStatus; lastModified: number | null; json?: unknown }>;
     head(url: string): Promise<{ status: HttpStatus; lastModified: number | null }>;
 };
 
 type ServerRead = { boards: CanvasBoard[]; lastModifiedMs: number | null };
 
-export async function probeCanvasPorts(topic: string, io: CanvasIO): Promise<ProbeResult[]> {
-    const ports = Array.from({ length: CANVAS_PORT_COUNT }, (_, i) => CANVAS_PORT_FIRST + i);
-    return Promise.all(
-        ports.map(async (port) => ({ port, status: (await io.head(boardUrl(port, topic, PROBE_BOARD))).status }))
-    );
-}
-
 function newest(a: number | null, b: number | null): number | null {
     return a == null ? b : b == null ? a : Math.max(a, b);
 }
 
-// null when the server did not answer at all, which is what sends the poll back to probing
-async function readServer(s: CanvasState, io: CanvasIO, port: number): Promise<ServerRead | null> {
-    const res = await io.get(boardUrl(port, s.topic, CANVAS_JSON));
+// null when the server did not answer at all, which is what sends the poll back to asking for a base
+async function readServer(s: CanvasState, io: CanvasIO, base: string): Promise<ServerRead | null> {
+    const res = await io.get(boardUrl(base, s.topic, CANVAS_JSON));
     if (res.status === "error") {
         return null;
     }
     const boards = boardsFromCanvasJson(res.status === HTTP_OK ? res.json : undefined);
-    const heads = await Promise.all(boards.map((b) => io.head(boardUrl(port, s.topic, b.name))));
+    const heads = await Promise.all(boards.map((b) => io.head(boardUrl(base, s.topic, b.name))));
     if (heads.some((h) => h.status === "error")) {
         return null;
     }
@@ -68,17 +60,14 @@ export async function pollCanvasOnce(s: CanvasState, io: CanvasIO, now: number):
     if (!(await io.dirExists(canvasProjectDir(s.dir)))) {
         return { status: "removed" };
     }
-    let port = s.port;
-    let read = port == null ? null : await readServer(s, io, port);
+    const base = s.base ?? (await io.serve(canvasDesignDir(s.projectDir)));
+    const read = base == null ? null : await readServer(s, io, base);
     if (read == null) {
-        port = pickServingPort(await probeCanvasPorts(s.topic, io));
-        read = port == null ? null : await readServer(s, io, port);
-    }
-    if (read == null) {
-        return { status: "server-down" };
+        // the base goes too, so the next tick asks wavesrv again rather than retrying a dead one
+        return { base: null, status: "server-down" };
     }
     const patch: Partial<CanvasState> = {
-        port,
+        base,
         status: "ready",
         boards: read.boards,
         lastModifiedMs: read.lastModifiedMs,
@@ -98,7 +87,7 @@ function lastModifiedOf(res: Response): number | null {
     return Number.isNaN(ms) ? null : ms;
 }
 
-// the canvas server is python's, not Arc's: straight through the http plugin (no CORS, no Arc auth key)
+// the canvas route takes no auth key (a token in the path stands in), so straight through the http plugin (no CORS)
 async function httpFetch(url: string, method: "GET" | "HEAD"): Promise<Response | null> {
     try {
         const { fetch } = await import("@tauri-apps/plugin-http");
@@ -112,6 +101,14 @@ export const tauriCanvasIO: CanvasIO = {
     async dirExists(path) {
         const info = await RpcApi.FileInfoCommand(TabRpcClient, { info: { path } });
         return info != null && !info.notfound;
+    },
+    async serve(designDir) {
+        try {
+            return getWebServerEndpoint() + (await RpcApi.CanvasServeCommand(TabRpcClient, designDir));
+        } catch (e) {
+            console.warn("canvas serve refused", designDir, e);
+            return null;
+        }
     },
     async get(url) {
         const res = await httpFetch(url, "GET");

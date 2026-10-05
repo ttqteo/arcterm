@@ -4,8 +4,7 @@
 // exposed on window). steps are { step, ok, detail }.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9406,8 +9405,7 @@ const radarStartInvestigation = {
 // final-verify boots a fresh store with no agents, so the scenario opens its own plain terminal tab the way
 // launchAgent does (CreateTab, then the terminal meta) and reveals a temp canvas as that terminal's. CreateTab is
 // a wavesrv service call, which the page cannot reach cross-origin, so Node makes it with the page's auth key.
-// No python server serves the canvas, so the pane sits in its server-down state: the swap is under test, not the
-// board.
+// wavesrv serves the fixture board, so the pane shows it; the swap is under test, not the board.
 const CANVAS_TOPIC = "verify-canvas";
 const CANVAS_BOARD = "Main.dc.html";
 const CANVAS_PANE = `document.querySelector("[data-canvas-pane]")`;
@@ -9648,43 +9646,11 @@ const canvasSwap = {
 };
 
 // --- canvas board tabs: each board on its own tab, and All lays them side by side -------------------------
-// Unlike canvas-swap, the boards are under test, so Node serves the canvas on a port the pane probes (the
-// design-local server's range, top first, so a real one on 8766 keeps its port).
+// Unlike canvas-swap, the boards are under test: wavesrv serves them from the fixture's design folder.
 const CANVAS_TABS_TOPIC = "verify-canvas-tabs";
 const CANVAS_TABS = `document.querySelector('[role="tablist"][aria-label="Boards"]')`;
-const CANVAS_TABS_PORTS = Array.from({ length: 20 }, (_, i) => 8785 - i);
-// a probe, a canvas.json read and the board HEADs all land inside one 3s poll tick; two ticks is the margin
+// the serve call, a canvas.json read and the board HEADs all land inside one 3s poll tick; two ticks is the margin
 const CANVAS_TABS_WAIT_MS = 8000;
-
-function listenCanvas(root, port) {
-    const server = createServer((req, res) => {
-        const file = join(root, decodeURIComponent((req.url ?? "/").split("?")[0]));
-        if (!file.startsWith(root) || !existsSync(file)) {
-            res.writeHead(404).end();
-            return;
-        }
-        res.writeHead(200, {
-            "content-type": file.endsWith(".json") ? "application/json" : "text/html",
-            "last-modified": statSync(file).mtime.toUTCString(),
-        });
-        res.end(req.method === "HEAD" ? undefined : readFileSync(file));
-    });
-    return new Promise((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(port, "127.0.0.1", () => resolve(server));
-    });
-}
-
-async function serveCanvas(root) {
-    for (const port of CANVAS_TABS_PORTS) {
-        try {
-            return await listenCanvas(root, port);
-        } catch {
-            // taken: try the next one down
-        }
-    }
-    throw new Error("no free port in the design-local range");
-}
 
 const canvasTabFrames = (h) =>
     h.ev(`(() => ({
@@ -9703,8 +9669,7 @@ const canvasTabsScenario = {
     surface: "agent",
     async arrange(h) {
         const cwd = mkdtempSync(join(tmpdir(), "verify-canvas-tabs-"));
-        const design = join(cwd, ".superpowers", "design");
-        const project = join(design, CANVAS_TABS_TOPIC, "project");
+        const project = join(cwd, ".superpowers", "design", CANVAS_TABS_TOPIC, "project");
         mkdirSync(project, { recursive: true });
         writeFileSync(
             join(project, "canvas.json"),
@@ -9722,7 +9687,6 @@ const canvasTabsScenario = {
         const ctx = { cwd };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
-            ctx.server = await serveCanvas(design);
             await openCanvasTerminal(h, ctx);
         } catch (e) {
             ctx.launchError = String(e?.message ?? e);
@@ -9795,7 +9759,6 @@ const canvasTabsScenario = {
                 waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false])
             );
         }
-        await step("stop the canvas server", () => new Promise((r) => (ctx.server ? ctx.server.close(r) : r())));
         await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
         await step("go home", () => h.goto("cockpit"));
     },

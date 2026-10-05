@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
+	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/runroute"
@@ -711,4 +712,45 @@ func LeadDead(runId string) bool {
 	defer wakes.lock.Unlock()
 	rw := wakes.runs[runId]
 	return rw != nil && rw.dead
+}
+
+func TestWakeGoesOverAnIdleSessionsStream(t *testing.T) {
+	msgs, done := agentctl.Register("stream-idle")
+	defer done()
+	if !overStream("stream-idle", "wake: task 1 done", baseds.AgentState_Idle) {
+		t.Fatalf("an idle session with a stream was left to be typed into")
+	}
+	if got := <-msgs; got != "wake: task 1 done" {
+		t.Fatalf("stream got %q", got)
+	}
+}
+
+// the mod's prompt waits for a running turn to end; typed text reaches the turn, which a tell needs.
+func TestTextForABusySessionIsTypedDespiteItsStream(t *testing.T) {
+	msgs, done := agentctl.Register("stream-busy")
+	defer done()
+	if overStream("stream-busy", "stop and rebase", baseds.AgentState_Working) {
+		t.Fatalf("a working session's text went over the stream")
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("the stream holds %d messages", len(msgs))
+	}
+}
+
+// Enter alone would submit whatever the human is typing in the composer.
+func TestRetryEnterIsNotTypedIntoASessionWithAStream(t *testing.T) {
+	msgs, done := agentctl.Register("stream-retry")
+	defer done()
+	if !overStream("stream-retry", "", baseds.AgentState_Working) {
+		t.Fatalf("the retry's Enter was left to be typed")
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("the retry sent %d messages over the stream", len(msgs))
+	}
+}
+
+func TestSessionWithNoStreamIsTyped(t *testing.T) {
+	if overStream("no-stream", "wake", baseds.AgentState_Idle) || overStream("no-stream", "", baseds.AgentState_Idle) {
+		t.Fatalf("a session with no stream was not left to be typed into")
+	}
 }

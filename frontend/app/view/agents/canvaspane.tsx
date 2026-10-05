@@ -12,10 +12,9 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { newRunPrefillAtom } from "@/app/view/jarvis/newruncontrol";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
-import { invoke } from "@tauri-apps/api/core";
 import { useAtomValue } from "jotai";
 import { SquareDashed, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { addMark, removeMark, setMarkNote, type Box, type Mark } from "./canvasmarks";
@@ -24,28 +23,21 @@ import {
     boardLabel,
     boardUrl,
     buildGoal,
-    CANVAS_PORT_COUNT,
-    CANVAS_PORT_FIRST,
-    canvasDesignDir,
     canvasLayout,
     canvasTabs,
     currentTab,
     paneState,
-    pickFreePort,
     prototypePath,
-    serverDownText,
     shownBoard,
     shownBoards,
     updatedAgo,
     type BoardFrame,
 } from "./canvasmodel";
-import { pollAndMerge, probeCanvasPorts, tauriCanvasIO } from "./canvaspoller";
 import { sendCanvasMarks } from "./canvassend";
 import {
     canvasStateAtom,
     clearMarks,
     detachCanvas,
-    getCanvas,
     selectCanvasBoard,
     selectCanvasTab,
     setMarking,
@@ -58,10 +50,6 @@ export const CANVAS_BTN =
     "flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-edge-mid bg-surface-raised px-[12px] py-[6px] text-[12.5px] font-semibold text-primary hover:border-edge-strong hover:bg-surface-hover";
 export const CANVAS_PRIMARY_BTN =
     "flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[12px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
-
-// start_canvas_server resolves once python spawns, not once it listens
-const START_POLL_MS = 500;
-const START_WAIT_MS = 5000;
 
 // room above a board's frame for its label; the scroll pane's top padding
 const CANVAS_TOP_PAD = 36;
@@ -146,10 +134,10 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                 </button>
                 {!marking ? (
                     <div className="flex items-center gap-[10px]">
-                        {s.port != null ? (
+                        {s.base != null ? (
                             <button
                                 type="button"
-                                onClick={() => getApi().openExternal(boardUrl(s.port!, s.topic, board.name))}
+                                onClick={() => getApi().openExternal(boardUrl(s.base!, s.topic, board.name))}
                                 className={CANVAS_BTN}
                             >
                                 Open in browser
@@ -165,7 +153,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
             </div>
             <div className="flex min-h-0 flex-1 flex-col bg-surface-code">
                 {pane === "server-down" ? (
-                    <ServerDown agent={agent} s={s} />
+                    <ServerDown />
                 ) : pane === "removed" ? (
                     <Removed agent={agent} topic={s.topic} />
                 ) : (
@@ -188,8 +176,8 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                                     selected={f.board.name === board.name}
                                     single={layout.frames.length === 1}
                                     src={
-                                        pane === "board" && s.port != null
-                                            ? boardUrl(s.port, s.topic, f.board.name)
+                                        pane === "board" && s.base != null
+                                            ? boardUrl(s.base, s.topic, f.board.name)
                                             : null
                                     }
                                     reloadKey={s.reloadKey}
@@ -434,67 +422,17 @@ function EdgeState({ children }: { children: ReactNode }) {
 
 const EXPLAINER = "max-w-[440px] text-[13px] leading-[1.5] text-secondary";
 
-function ServerDown({ agent, s }: { agent: AgentVM; s: CanvasState }) {
-    const [busy, setBusy] = useState(false);
-    const [message, setMessage] = useState<string | null>(null);
-    const alive = useRef(true);
-    useEffect(
-        () => () => {
-            alive.current = false;
-        },
-        []
-    );
-
-    const start = async () => {
-        setBusy(true);
-        setMessage(null);
-        try {
-            const port = pickFreePort(await probeCanvasPorts(s.topic, tauriCanvasIO));
-            if (port == null) {
-                const last = CANVAS_PORT_FIRST + CANVAS_PORT_COUNT - 1;
-                throw new Error(`No free port in ${CANVAS_PORT_FIRST}–${last}`);
-            }
-            await invoke("start_canvas_server", { dir: canvasDesignDir(s.projectDir), port });
-            for (let waited = 0; waited < START_WAIT_MS && alive.current; waited += START_POLL_MS) {
-                await new Promise((r) => setTimeout(r, START_POLL_MS));
-                await pollAndMerge(agent.id);
-                if (getCanvas(agent.id)?.status === "ready") {
-                    return;
-                }
-            }
-            if (alive.current) {
-                setMessage(`Started, but nothing answered on ${port}`);
-            }
-        } catch (e) {
-            if (alive.current) {
-                setMessage(e instanceof Error ? e.message : String(e));
-            }
-        } finally {
-            if (alive.current) {
-                setBusy(false);
-            }
-        }
-    };
-
+// wavesrv serves the canvas itself, so this is a refusal or a dropped request, and the poller's next tick retries
+function ServerDown() {
     return (
         <EdgeState>
             <span className="flex items-center gap-[8px] text-[14px] font-semibold text-primary">
                 <span className="h-[7px] w-[7px] rounded-full bg-error" />
-                {serverDownText(s.port)}
+                Arc could not serve this canvas
             </span>
             <span className={EXPLAINER}>
-                The canvas files are on disk, but nothing is serving them. Start the server, or press{" "}
-                <span className="font-mono">c</span> and ask the agent to.
+                The canvas files are on disk, but Arc got no answer serving them. It tries again every few seconds.
             </span>
-            <button
-                type="button"
-                disabled={busy}
-                onClick={() => void start()}
-                className={cn("mt-[4px]", CANVAS_PRIMARY_BTN)}
-            >
-                {busy ? "Starting…" : "Start server"}
-            </button>
-            {message != null ? <span className="max-w-[440px] text-[12px] text-error">{message}</span> : null}
         </EdgeState>
     );
 }
