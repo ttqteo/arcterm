@@ -540,7 +540,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        uploads: () => <UploadsSection blockId={agent.blockId} />,
+        uploads: () => <UploadsSection blockId={agent.blockId} now={now} />,
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (

@@ -1,17 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The details rail's Uploads section: the Attach button, then what was uploaded into this agent's terminal. Keyed by
-// the agent's terminal block id (uploadsstore.ts). The section opens at 0 (emptyOpenable, agentrailsections.ts), so
-// Attach is reachable before the first upload.
+// The details rail's Uploads section: the Attach button, then what was uploaded into this agent's terminal (the list
+// is uploadslist.tsx). Keyed by the agent's terminal block id (uploadsstore.ts). The section is closed at 0 but stays
+// openable (emptyOpenable, agentrailsections.ts), so Attach is reachable before the first upload.
 
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Plus } from "lucide-react";
 import { pickAndAttach } from "./uploadsingest";
+import { UploadsList } from "./uploadslist";
 import { uploadsAtom } from "./uploadsstore";
 
-export function UploadsSection({ blockId }: { blockId: string | undefined }) {
+export function UploadsSection({ blockId, now }: { blockId: string | undefined; now: number }) {
     const records = useAtomValue(uploadsAtom(blockId ?? ""));
     return (
         <div data-rail-uploads className="flex flex-col gap-[8px]">
@@ -34,11 +35,15 @@ export function UploadsSection({ blockId }: { blockId: string | undefined }) {
                 <Plus size={12} aria-hidden />
                 Attach
             </button>
-            {records.length === 0 ? (
+            {records.length > 0 ? (
+                <UploadsList records={records} now={now} />
+            ) : (
                 <div className="text-[11.5px] text-muted">
-                    Paste an image or drop files on the terminal, or attach them here.
+                    {blockId
+                        ? "Paste an image or drop files on the terminal, or attach them here."
+                        : "This agent has no terminal to paste into or attach to."}
                 </div>
-            ) : null}
+            )}
         </div>
     );
 }
