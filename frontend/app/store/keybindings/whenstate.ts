@@ -67,7 +67,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     codeTreeFocusedAtom, // buildCodeBindings: inTree
     listNavAtom, // buildListNavBindings: active
     renamingRowAtom, // buildAgentBindings: subagent:back
-    focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back
+    focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:leave-center
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
 ];
 

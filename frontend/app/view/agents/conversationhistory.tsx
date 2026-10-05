@@ -258,8 +258,10 @@ export function ConversationHistory({
     };
 
     // publish the "All activity" + row order for global j/k list-nav. cursor==selection. Refs keep the
-    // controller stable while reading this render's rows, so it isn't re-registered on every roster tick.
-    const navIds = useMemo(() => ["all", ...groups.flatMap((g) => g.items.map((r) => r.key))], [groups]);
+    // controller stable while reading this render's rows, so it isn't re-registered on every roster tick; the ids are
+    // keyed by content, since groupByRecency hands back fresh arrays every render.
+    const navIdsKey = ["all", ...groups.flatMap((g) => g.items.map((r) => r.key))].join("\n");
+    const navIds = useMemo(() => navIdsKey.split("\n"), [navIdsKey]);
     const selectRef = useRef(select);
     selectRef.current = select;
     const actRef = useRef<() => void>(() => {});
@@ -279,7 +281,11 @@ export function ConversationHistory({
         }),
         [navSurface, navIds, cursorId]
     );
-    useSurfaceListNav(listNav);
+    // The Agent surface stays mounted, hidden, with its centre mode kept, so History can be mounted while another
+    // surface is showing. Publish only while this surface is: a hidden History would otherwise take listNavAtom
+    // from the visible surface's own list (Radar, Usage, Diff, Brief), whose j/k then go dead.
+    const onSurface = useAtomValue(model.surfaceAtom) === navSurface;
+    useSurfaceListNav(onSurface ? listNav : null);
 
     const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));
     const detailKind = selRun ? "run" : selSession ? "solo" : "feed";

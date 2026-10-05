@@ -857,9 +857,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "Escape",
             group: "Agent",
             label: "Back to the terminal (from History or a session)",
-            paletteHidden: true, // a posture: Escape while reading
             // exclusive with agent:back (which needs the centre at rest) and with subagent:back (which needs a focused
-            // subagent), so Escape never means two things
+            // subagent), so Escape never means two things. Deliberately not gated on noCanvas(): the focused agent's
+            // canvas or review can still be on while History covers the terminal, and Escape must leave History then
+            // too. The palette lists it only while it applies (buildCommandItems filters on when()).
             when: (ctx) =>
                 navigateStrict(ctx) &&
                 ctx.surface === "agent" &&
@@ -932,7 +933,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // not show two rows with one label; the parenthetical is what distinguishes this door
             label: "Toggle terminal fullscreen (works inside the terminal)",
             paletteHidden: true, // duplicates agent:fullscreen, which already has a palette row
-            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && noCanvas(),
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest() && noCanvas(),
             run: () => globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom)),
         },
         {
@@ -1002,10 +1003,17 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "Ctrl:Enter",
             group: "Agent",
             label: "Send the marks to the agent",
-            // live inside a note input on purpose: the last note is where the user finishes
+            // live inside a note input on purpose: the last note is where the user finishes; it stands down in
+            // History and a session, which cover the canvas without leaving canvas mode
             when: (ctx) => {
                 const s = focusedCanvasMode(model);
-                return ctx.surface === "agent" && !ctx.modalOpen && s?.marking === true && s.marks.length > 0;
+                return (
+                    ctx.surface === "agent" &&
+                    !ctx.modalOpen &&
+                    centerAtRest() &&
+                    s?.marking === true &&
+                    s.marks.length > 0
+                );
             },
             run: () => clickThrough("[data-canvas-send]"),
         },

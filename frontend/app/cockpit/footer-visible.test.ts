@@ -10,6 +10,7 @@ import {
 } from "@/app/store/keybindings/bindings";
 import { listNavAtom } from "@/app/store/keybindings/listnav";
 import type { Binding, KeyContext, SurfaceKey } from "@/app/store/keybindings/types";
+import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { attachCanvas, detachCanvas, setCanvasMode, setMarking, updateCanvas } from "@/app/view/agents/canvasstore";
 import type { OpenTarget } from "@/app/view/jarvis/address";
 import { atom, type PrimitiveAtom } from "jotai";
@@ -71,6 +72,7 @@ describe("agent canvas mode chips", () => {
 
     afterEach(() => {
         detachCanvas("a1");
+        globalStore.set(centerModeAtom, "terminal");
     });
 
     it("terminal mode with a canvas offers c canvas between full and back", () => {
@@ -102,6 +104,19 @@ describe("agent canvas mode chips", () => {
         setMarking("a1", true);
         updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
         expect(chips()).toEqual(["↑↓ move", "Ctrl:Tab cycle", "Ctrl:Enter send", "m stop marking", "c terminal", ...globals()]);
+    });
+
+    it("History and a session offer only esc terminal and cycle: F11 and send stand down, even mid-marking", () => {
+        for (const mode of ["history", "session"] as const) {
+            globalStore.set(centerModeAtom, mode);
+            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab cycle", ...globals()]);
+            setCanvasMode("a1", "canvas", 1);
+            setMarking("a1", true);
+            updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
+            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab cycle", ...globals()]);
+            setMarking("a1", false);
+            setCanvasMode("a1", "terminal", 2);
+        }
     });
 });
 

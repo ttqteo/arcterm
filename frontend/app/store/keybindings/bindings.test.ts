@@ -1099,23 +1099,65 @@ describe("final shots viewer bindings", () => {
 
 describe("Agent centre modes", () => {
     const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
-    const find = (id: string) => buildAgentBindings(stubModel()).find((b) => b.id === id)!;
+    const typing: KeyContext = { ...agentCtx, editable: true };
+    const find = (id: string, model: any = stubModel()) => buildAgentBindings(model).find((b) => b.id === id)!;
+    const CENTER_MODES = ["history", "session"] as const;
 
     afterEach(() => {
         globalStore.set(centerModeAtom, "terminal");
         globalStore.set(focusSubagentAtom, null);
+        detachCanvas("a1");
+        syncDocReview("a1", undefined);
     });
+
+    // a1 focused with a ready canvas, still in terminal mode
+    const focusedWithCanvas = () => {
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        updateCanvas("a1", (s) => ({
+            ...s,
+            status: "ready",
+            boards: [{ name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900 }],
+        }));
+        return stubModel("a1");
+    };
 
     it("keeps the agent keys live on the terminal and stands them down while History or a session is open", () => {
         const next = find("agent:next-j");
         const rail = find("agent:toggle-rail");
         expect(next.when!(agentCtx)).toBe(true);
         expect(rail.when!(agentCtx)).toBe(true);
-        for (const mode of ["history", "session"] as const) {
+        for (const mode of CENTER_MODES) {
             globalStore.set(centerModeAtom, mode);
             expect(next.when!(agentCtx)).toBe(false);
             expect(rail.when!(agentCtx)).toBe(false);
         }
+    });
+
+    it("stands the F11 chord down while History or a session is open, and keeps it live in the terminal", () => {
+        const f11 = find("agent:fullscreen-chord");
+        expect(f11.when!(agentCtx)).toBe(true);
+        expect(f11.when!(typing)).toBe(true);
+        for (const mode of CENTER_MODES) {
+            globalStore.set(centerModeAtom, mode);
+            expect(f11.when!(agentCtx)).toBe(false);
+            expect(f11.when!(typing)).toBe(false);
+        }
+    });
+
+    it("stands the canvas send down while History or a session is open, and keeps it live in a note input", () => {
+        const model = focusedWithCanvas();
+        setAgentView("a1", "canvas", 1);
+        setMarking("a1", true);
+        updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
+        const send = find("agent:canvas-send", model);
+        expect(send.when!(typing)).toBe(true);
+        for (const mode of CENTER_MODES) {
+            globalStore.set(centerModeAtom, mode);
+            expect(send.when!(agentCtx)).toBe(false);
+            expect(send.when!(typing)).toBe(false);
+        }
+        globalStore.set(centerModeAtom, "terminal");
+        expect(send.when!(typing)).toBe(true);
     });
 
     it("gives Escape to the terminal while History or a session is open, and to the Cockpit otherwise", () => {
@@ -1124,7 +1166,7 @@ describe("Agent centre modes", () => {
         expect(leave.keys).toBe("Escape");
         expect(back.when!(agentCtx)).toBe(true);
         expect(leave.when!(agentCtx)).toBe(false);
-        for (const mode of ["history", "session"] as const) {
+        for (const mode of CENTER_MODES) {
             globalStore.set(centerModeAtom, mode);
             expect(back.when!(agentCtx)).toBe(false);
             expect(leave.when!(agentCtx)).toBe(true);
@@ -1138,9 +1180,32 @@ describe("Agent centre modes", () => {
         expect(find("subagent:back").when!(agentCtx)).toBe(true);
     });
 
-    it("leaves Escape inside a text field to the field", () => {
+    it("leaves Escape inside a text field to the field, and to an open modal", () => {
         globalStore.set(centerModeAtom, "history");
-        expect(find("agent:leave-center").when!({ ...agentCtx, editable: true })).toBe(false);
+        const leave = find("agent:leave-center");
+        expect(leave.when!({ ...agentCtx, editable: true })).toBe(false);
+        expect(leave.when!({ ...agentCtx, modalOpen: true })).toBe(false);
+        expect(leave.when!(agentCtx)).toBe(true);
+    });
+
+    it("still leaves History or a session while the focused agent's canvas or review is on", () => {
+        const model = focusedWithCanvas();
+        const leave = find("agent:leave-center", model);
+        const back = find("agent:back", model);
+        for (const mode of CENTER_MODES) {
+            globalStore.set(centerModeAtom, mode);
+            setAgentView("a1", "canvas", 1);
+            expect(getCanvas("a1")!.mode).toBe("canvas");
+            expect(leave.when!(agentCtx)).toBe(true);
+            expect(back.when!(agentCtx)).toBe(false);
+            syncDocReview("a1", docAsk("/r/paper/main.tex"));
+            setAgentView("a1", "review", 2);
+            expect(getDocReview("a1")!.mode).toBe("review");
+            expect(leave.when!(agentCtx)).toBe(true);
+            expect(back.when!(agentCtx)).toBe(false);
+            setAgentView("a1", "terminal", 3);
+            syncDocReview("a1", undefined);
+        }
     });
 
     it("returns to the terminal when run", () => {
@@ -1151,6 +1216,8 @@ describe("Agent centre modes", () => {
 });
 
 describe("g s: Conversation History", () => {
+    afterEach(() => globalStore.set(centerModeAtom, "terminal"));
+
     it("opens History in the Agent surface and leaves g a on the Agent surface itself", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const bindings = buildGlobalBindings(model);
@@ -1160,6 +1227,5 @@ describe("g s: Conversation History", () => {
         history.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(globalStore.get(centerModeAtom)).toBe("history");
-        globalStore.set(centerModeAtom, "terminal");
     });
 });
