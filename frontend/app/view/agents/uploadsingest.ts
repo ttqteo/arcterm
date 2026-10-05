@@ -9,15 +9,28 @@
 // worth testing live in uploadfile.ts and uploadsstore.ts.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { localFileUrl } from "@/app/view/jarvis/localimage";
 import { focusTerm, pasteIntoTerm } from "@/app/view/term/termpaste";
 import { createTempFileFromFile } from "@/app/view/term/termutil";
+import { getWebServerEndpoint } from "@/util/endpoints";
+import { fetch } from "@/util/fetchutil";
 import { fireAndForget, sleep } from "@/util/util";
-import { rejectionToast, UploadError, type Rejection } from "./uploadfile";
-import { makeRecord, pastesAsIs, pasteTextFor, recordUpload, type UploadKind } from "./uploadsstore";
+import { rejectionToast, THUMB_SOURCE_LIMIT_BYTES, UploadError, type Rejection } from "./uploadfile";
+import {
+    baseName,
+    makeRecord,
+    pastesAsIs,
+    pasteTextFor,
+    planInserts,
+    recordUpload,
+    type UploadKind,
+} from "./uploadsstore";
 import { makeThumbnail } from "./uploadthumb";
 
 // the gap pasteHandler leaves between pasted images: two pastes back to back can reach a TUI as one
 const PASTE_GAP_MS = 150;
+// how long an attached image's picture may take to read back; a file on a slow share must not hold up its record
+const THUMB_FETCH_TIMEOUT_MS = 10_000;
 const nonce = () => Math.random().toString(36).slice(2, 8);
 
 // termwrap.ts's pasteHandler has already written the image to a temp file and pasted its path
@@ -99,4 +112,94 @@ export async function ingestFiles(
     if (unreachable) {
         warnUnreachable();
     }
+}
+
+// An attached image is the user's own file, so its picture is read back through wavesrv, the way the lightbox reads
+// it (jarvis/localimage.ts). Best effort, like makeThumbnail: a file that is missing, too big or too slow gives null.
+async function thumbnailForPath(path: string): Promise<string | null> {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), THUMB_FETCH_TIMEOUT_MS);
+    try {
+        const resp = await fetch(localFileUrl(getWebServerEndpoint(), path), { signal: abort.signal });
+        if (!resp.ok || Number(resp.headers.get("content-length") ?? 0) > THUMB_SOURCE_LIMIT_BYTES) {
+            // the body is never read, so let go of it
+            await resp.body?.cancel();
+            return null;
+        }
+        return await makeThumbnail(await resp.blob());
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function warnNotAttached(names: readonly string[]): void {
+    pushToast({
+        title: names.length === 1 ? `Couldn't attach “${names[0]}”` : `${names.length} files weren't attached`,
+        message:
+            names.length === 1
+                ? "Its path can't be pasted into the terminal."
+                : "Their paths can't be pasted into the terminal.",
+        level: "warn",
+    });
+}
+
+// Attach: the picked files keep their own paths, so there is no copy and no size cap. Same policy as ingestFiles: a
+// file is recorded only once its path is in the terminal, and when the terminal cannot take a paste the rest of
+// the files are left alone.
+export async function attachPaths(blockId: string, paths: readonly string[]): Promise<void> {
+    // a path with a control character would be pasted as a different file, so it is not attached
+    const failed = paths.filter((path) => !pastesAsIs(path)).map(baseName);
+    const plan = planInserts(
+        paths.filter((path) => pastesAsIs(path)),
+        "attach",
+        Date.now(),
+        nonce
+    );
+    let inserted = 0;
+    let unreachable = false;
+    for (const { record, text } of plan) {
+        try {
+            if (!(await deliver(blockId, text))) {
+                unreachable = true;
+                break;
+            }
+        } catch (err) {
+            console.error("uploads: could not attach", record.path, err);
+            failed.push(record.name);
+            continue;
+        }
+        const thumb = record.kind === "image" ? await thumbnailForPath(record.path) : null;
+        recordUpload(blockId, record, thumb);
+        inserted++;
+    }
+    if (inserted > 0) {
+        focusTerm(blockId);
+    }
+    if (failed.length > 0) {
+        warnNotAttached(failed);
+    }
+    if (unreachable) {
+        warnUnreachable();
+    }
+}
+
+// the Uploads section's Attach button: a native file picker, then each picked file's path pasted into the terminal
+export async function pickAndAttach(blockId: string): Promise<void> {
+    let paths: string[];
+    try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const picked: string | string[] | null = await open({
+            multiple: true,
+            directory: false,
+            title: "Attach files",
+        });
+        paths = Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+    } catch (err) {
+        console.error("uploads: file picker failed", err);
+        pushToast({ title: "Couldn't open the file picker", message: String(err), level: "error" });
+        return;
+    }
+    await attachPaths(blockId, paths);
 }

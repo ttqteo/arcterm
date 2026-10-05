@@ -47,6 +47,7 @@ import { TerminalsSection, useRailTerminals } from "./terminalsrail";
 import { TokenUsageSection } from "./tokenusagesection";
 import type { BackgroundTask } from "./transcriptprojection";
 import { loadSessionUsage } from "./transcriptusagestore";
+import { uploadsAtom } from "./uploadsstore";
 
 const GAUGE_FILL: Record<"ok" | "warn" | "hot", string> = {
     ok: "bg-accent",
@@ -283,6 +284,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const ctxPct = usage?.contextpct;
     const tools = toolChips(summarizeActions(recentActions(entries, 0)).byVerb);
     const railState = useAtomValue(railStateAtom);
+    // an agent's uploads are keyed by its terminal block (uploadsstore.ts); one with no terminal has none
+    const uploads = useAtomValue(uploadsAtom(agent.blockId ?? ""));
     const cacheStatus = useAtomValue(agentCacheStatusAtom);
     const now = useAtomValue(model.nowAtom);
     const role = lineage.roles[agent.id];
@@ -357,7 +360,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         subagents: subs.length,
         files: fileCount,
         artifacts: artifacts.rows.length,
-        uploads: 0, // no upload records exist yet; the Uploads work feeds this
+        uploads: uploads.length,
         bgTasks: bgTasks.length,
         terminals: terminalsView.rows.length,
         terminalsOther: terminalsView.other,
@@ -537,7 +540,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        uploads: () => <UploadsSection />,
+        uploads: () => <UploadsSection blockId={agent.blockId} />,
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (

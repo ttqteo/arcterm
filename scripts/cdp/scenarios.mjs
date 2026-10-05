@@ -12137,17 +12137,17 @@ const agentRailSections = {
             const s = ${railSection("uploads")};
             const attach = s?.querySelector("button[data-rail-attach]");
             return s
-                ? { open: s.dataset.open, empty: s.querySelector("[data-rail-uploads]") != null, attachDisabled: attach != null && attach.disabled }
+                ? { open: s.dataset.open, empty: s.querySelector("[data-rail-uploads]") != null, attachEnabled: attach != null && !attach.disabled }
                 : null;
         })()`);
         rec(
-            "4. Uploads is a counted 0 that opens to an empty state and a disabled Attach",
+            "4. Uploads is a counted 0 that opens to an empty state and an enabled Attach",
             uploadsBefore?.count === 0 &&
                 uploadsBefore.open === "false" &&
                 uploadsBefore.expandable === true &&
                 uploadsAfter?.open === "true" &&
                 uploadsAfter.empty === true &&
-                uploadsAfter.attachDisabled === true,
+                uploadsAfter.attachEnabled === true,
             JSON.stringify({ uploadsBefore, uploadsAfter })
         );
 
