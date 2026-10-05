@@ -343,7 +343,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
         subagents: subs.length,
         files: fileCount,
+        artifacts: 0,
+        uploads: 0, // no upload records exist yet; the Uploads work feeds this
         bgTasks: bgTasks.length,
+        terminals: 0,
+        terminalsOther: 0,
         tools: tools.length,
         hasRun: role != null && roleRun != null,
     });
@@ -352,7 +356,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         needs: "Needs you",
         subagents: "Subagents",
         files: "Files changed",
+        artifacts: "Artifacts",
+        uploads: "Uploads",
         bgtasks: "Background tasks",
+        terminals: "Terminals",
         tools: "Tools used",
         run: role?.kind === "worker" ? "Task" : "Run",
         details: "Details",
@@ -363,7 +370,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         needs: RAIL_ICON.bell,
         subagents: RAIL_ICON.subagents,
         files: RAIL_ICON.files,
+        artifacts: RAIL_ICON.artifacts,
+        uploads: RAIL_ICON.attach,
         bgtasks: RAIL_ICON.terminal,
+        terminals: RAIL_ICON.terminal,
         tools: RAIL_ICON.tools,
         run: RAIL_ICON.autonomy,
         details: RAIL_ICON.info,
@@ -483,6 +493,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     </div>
                 </>
             ),
+        artifacts: () => null,
+        uploads: () => null,
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (
@@ -490,6 +502,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
+        terminals: () => null,
         tools: () => (
             <div className="flex flex-wrap gap-[7px]">
                 {tools.map((t) => (

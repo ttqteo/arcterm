@@ -12,6 +12,8 @@ import {
     Folder,
     GitBranch,
     Info,
+    LayoutTemplate,
+    Paperclip,
     Settings,
     SquareTerminal,
     Users,
@@ -34,4 +36,6 @@ export const RAIL_ICON: Record<string, ReactNode> = {
     bell: <Bell {...iconProps} />,
     terminal: <SquareTerminal {...iconProps} />,
     folder: <Folder {...iconProps} />,
+    artifacts: <LayoutTemplate {...iconProps} />,
+    attach: <Paperclip {...iconProps} />,
 };
