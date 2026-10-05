@@ -150,6 +150,36 @@ fn assign_kill_on_close_job(child: &Child) -> Option<JobHandle> {
     }
 }
 
+// Tauri builds the window icon from only the first frame of icon.ico, as a flat bitmap that Windows
+// then rescales for every size it draws, so the taskbar showed the pixel-art mark smeared. Load the
+// icons from the exe's own multi-frame icon resource instead (tauri-build embeds icon.ico as resource
+// 32512), the way native apps do: a resource-backed icon lets Windows draw the frame made for each size.
+#[cfg(windows)]
+fn use_resource_window_icons(hwnd: isize) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        LoadImageW, SendMessageW, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXICON,
+        SM_CXSMICON, WM_SETICON,
+    };
+    const ICON_RESOURCE_ID: usize = 32512;
+
+    unsafe {
+        let hwnd = hwnd as HWND;
+        let module = GetModuleHandleW(std::ptr::null());
+        let dpi = GetDpiForWindow(hwnd);
+        for (which, metric) in [(ICON_BIG, SM_CXICON), (ICON_SMALL, SM_CXSMICON)] {
+            let size = GetSystemMetricsForDpi(metric, dpi);
+            let name = ICON_RESOURCE_ID as *const u16;
+            let icon = LoadImageW(module, name, IMAGE_ICON, size, size, LR_DEFAULTCOLOR);
+            if !icon.is_null() {
+                SendMessageW(hwnd, WM_SETICON, which as usize, icon as isize);
+            }
+        }
+    }
+}
+
 // The bundle ships wsh version-named (e.g. wsh-0.14.5-windows.x64.exe), not a plain
 // wsh.exe — find it by pattern in {app_path}/bin.
 fn find_wsh_binary(bin_dir: &std::path::Path) -> Option<PathBuf> {
@@ -223,6 +253,11 @@ fn main() {
             canvas::capture_webview
         ])
         .setup(move |app| {
+            // the config window already exists here (Tauri builds it before running setup)
+            #[cfg(windows)]
+            if let Some(hwnd) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
+                use_resource_window_icons(hwnd.0 as isize);
+            }
             // seed the static identity fields before wavesrv parsing fills in the endpoints.
             {
                 let state = app.state::<InitState>();
