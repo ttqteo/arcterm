@@ -14,7 +14,6 @@ export const SURFACE_LABEL = {
     jarvis: "Jarvis",
     agent: "Agent",
     radar: "Radar",
-    sessions: "Sessions",
     files: "Diff",
     usage: "Usage",
     code: "Code",

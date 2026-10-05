@@ -32,6 +32,8 @@ The **Cockpit** gives you an overview; **Agent** opens the selected agent's term
 
 The terminal is interactive—not just a transcript viewer. You can talk directly to a worker while keeping its run and task context in view.
 
+Past conversations live in the same place: each project in the **Agent** sidebar lists its recent sessions under its live agents, an ended session opens as a readable transcript with **Resume**, and **Conversation History** shows them all.
+
 ### Answer decisions where they arise
 
 **Jarvis** is the briefing and coordination surface: initiatives, runs, and work waiting on you. Open a run to see its task states, questions, timeline, and controls.
@@ -62,13 +64,12 @@ _History → files → diff, without leaving the cockpit._
 
 ### The rest of the workspace
 
-| Surface      | What it is for                                                |
-| ------------ | ------------------------------------------------------------- |
-| **Code**     | Browse and edit project files.                                |
-| **Sessions** | Browse recorded agent sessions.                               |
-| **Radar**    | Inspect repository findings and turn them into work.          |
-| **Usage**    | Inspect token usage and estimated API-equivalent cost.        |
-| **Setup**    | Manage shared instructions and skills across agent harnesses. |
+| Surface   | What it is for                                                |
+| --------- | ------------------------------------------------------------- |
+| **Code**  | Browse and edit project files.                                |
+| **Radar** | Inspect repository findings and turn them into work.          |
+| **Usage** | Inspect token usage and estimated API-equivalent cost.        |
+| **Setup** | Manage shared instructions and skills across agent harnesses. |
 
 Search and commands are available through `Ctrl+P`; `Ctrl+N` opens **New agent**. See the [keyboard shortcuts](docs/keyboard-shortcuts.md) for surface navigation and context-specific controls.
 

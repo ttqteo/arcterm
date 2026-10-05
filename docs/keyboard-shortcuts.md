@@ -24,7 +24,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`1`…`8` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Code, Diff, Sessions, Radar, Usage |
+| `Ctrl`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Code, Diff, Radar, Usage |
 | `Ctrl`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Ctrl`+`N` | New agent |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next / previous agent |
@@ -32,7 +32,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `.` | Focus the selected row (the cockpit narrows to that agent) |
 | `Shift`+`.` | Clear focus — back to Global |
 
-Setup and Settings have no `Ctrl`+number slot — the nine positions are bound to `SURFACE_ORDER`
+Setup and Settings have no `Ctrl`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `g` `.` and Settings with `g` `,`.
 
 ## Go-to surface — leader `g` (Navigate posture)
@@ -43,7 +43,7 @@ Setup and Settings have no `Ctrl`+number slot — the nine positions are bound t
 | `g` `a` | Agent |
 | `g` `c` | Jarvis — channels, records, recall |
 | `g` `r` | Radar |
-| `g` `s` | Sessions |
+| `g` `s` | Conversation History (in the Agent surface) |
 | `g` `f` | Files |
 | `g` `u` | Usage |
 | `g` `b` | Code — browse source |
@@ -82,7 +82,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 | `j` / `k` (or `↓` / `↑`) | Move the cursor within the active region |
 | `Enter` | Open / activate the item under the cursor |
 | `Space` | Peek the item under the cursor in the avatar popup, without leaving the surface (see Peek below) |
-| `Esc` | On a deep surface (Jarvis, Radar, Sessions, Files, Usage, Code), return to the Cockpit. In a composer or text field, leave Type posture first. |
+| `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), return to the Cockpit. In a composer or text field, leave Type posture first. |
 
 ## Peek (the avatar popup's item view)
 
@@ -125,8 +125,16 @@ A link inside an item view does a full open, even with `Ctrl` held.
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
-| `Esc` | Back to Cockpit, or exit fullscreen first |
+| `Esc` | Back to Cockpit, or exit fullscreen first; from Conversation History or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
+
+### Agent: Conversation History
+
+Opened with `g` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
+that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
+`Ctrl`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
+`Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. `Ctrl`+`Tab` still cycles agents and brings the
+terminal back. An ended session opened from the sidebar reads the same way: `Esc` leaves it.
 
 ### Agent: canvas mode
 

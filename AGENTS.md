@@ -104,7 +104,9 @@ before working in an area you don't already know.
 - **Frontend — React 19 + Vite + Tailwind 4 + jotai (`frontend/`)** — `frontend/tauri/main.tsx` is the
   sole shipping entry. The cockpit is **one window with N surfaces, not tabs**. Surface keys are not
   their labels: `files` renders as "Diff"; the order is
-  `SURFACE_ORDER` in `frontend/app/view/agents/agents.tsx`.
+  `SURFACE_ORDER` in `frontend/app/view/agents/agents.tsx`. Past conversations are not a surface: Conversation History and an
+  ended session's transcript are centre modes of Agent (`centerModeAtom`, `view/agents/agentcenter.ts`; open them with
+  `showHistory` / `showSession`, and `showTerminal` whenever a route chooses an agent).
 
 Load-bearing rules:
 
