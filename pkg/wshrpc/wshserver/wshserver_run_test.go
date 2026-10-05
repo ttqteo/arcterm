@@ -271,18 +271,7 @@ func TestChildRunPlanPreservesInheritedStrategy(t *testing.T) {
 // are deterministic without launching CLIs or tabs. Restores prior values on cleanup.
 func stubRunServer(t *testing.T, validRuntime string, spawnErr error, captured ...*runroute.Capability) {
 	t.Helper()
-	oldValidate := validateHarness
-	validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
-		if op != harness.OperationRunWorker {
-			t.Fatalf("CreateRun validated with operation %q, want run-worker", op)
-		}
-		spec, ok := harness.Lookup(runtime)
-		if !ok || runtime != validRuntime {
-			return harness.ValidateInstalled(runtime, op)
-		}
-		return spec, nil
-	}
-	t.Cleanup(func() { validateHarness = oldValidate })
+	stubHarnessInstalled(t, validRuntime)
 
 	oldSpawn := jarvis.SpawnRunWorker
 	jarvis.SpawnRunWorker = func(_ context.Context, cap runroute.Capability, _, _, _, _ string, _ jarvis.RunWorkerOptions) (string, error) {
@@ -302,6 +291,31 @@ func stubRunServer(t *testing.T, validRuntime string, spawnErr error, captured .
 	oldSeal := sealAsync
 	sealAsync = func(func()) {}
 	t.Cleanup(func() { sealAsync = oldSeal })
+}
+
+// stubHarnessInstalled makes validRuntime pass both run-worker harness checks, the handlers' and the
+// engine's, whether or not its CLI is on this machine's PATH; any other runtime is validated for real.
+func stubHarnessInstalled(t *testing.T, validRuntime string) {
+	t.Helper()
+	oldValidate := validateHarness
+	validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
+		if op != harness.OperationRunWorker {
+			t.Fatalf("validated with operation %q, want run-worker", op)
+		}
+		spec, ok := harness.Lookup(runtime)
+		if !ok || runtime != validRuntime {
+			return harness.ValidateInstalled(runtime, op)
+		}
+		return spec, nil
+	}
+	t.Cleanup(func() { validateHarness = oldValidate })
+	t.Cleanup(orchestrate.SetValidateWorkerHarnessForTest(func(runtime string) error {
+		if runtime == validRuntime {
+			return nil
+		}
+		_, err := harness.ValidateInstalled(runtime, harness.OperationRunWorker)
+		return err
+	}))
 }
 
 // New Run creation requires an explicit, validated runtime: an empty runtime is rejected before the

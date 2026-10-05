@@ -31,6 +31,7 @@ func TestSpawnRunWorkers_ConcurrentSpawnsOnce(t *testing.T) {
 	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
 		t.Fatalf("AppendRun: %v", err)
 	}
+	stubHarnessInstalled(t, "pi")
 
 	var calls int32
 	var spawnedWith runroute.Capability
@@ -84,6 +85,7 @@ func TestSpawnRunWorkers_RecordsTheWorkersSessionId(t *testing.T) {
 	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
 		t.Fatalf("AppendRun: %v", err)
 	}
+	stubHarnessInstalled(t, "pi")
 	var launchedWith string
 	origSpawn := jarvis.SpawnRunWorker
 	jarvis.SpawnRunWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
@@ -118,6 +120,7 @@ func TestSpawnRunWorkers_RecordsEveryLeadSession(t *testing.T) {
 	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
 		t.Fatalf("AppendRun: %v", err)
 	}
+	stubHarnessInstalled(t, "pi")
 	var launched []string
 	origSpawn := jarvis.SpawnRunWorker
 	jarvis.SpawnRunWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
