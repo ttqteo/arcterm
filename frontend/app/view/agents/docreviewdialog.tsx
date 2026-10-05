@@ -30,25 +30,28 @@ import { useFileText } from "./usefiletext";
 // a doc review is always the ask's only question
 const QI = 0;
 
-const COPY: Record<
-    DocReviewKind,
-    { eyebrow: string; title: string; list: string; approve: string; placeholder: string }
-> = {
-    spec: {
-        eyebrow: "Spec review",
-        title: "Review the spec before I write the plan",
-        list: "Decisions in it",
-        approve: "Approve",
-        placeholder: "What to change in the spec",
-    },
-    plan: {
-        eyebrow: "Plan review · round 2 failed",
-        title: "The plan review failed twice. Proceed with these fixes?",
-        list: "Findings",
-        approve: "Accept all and proceed",
-        placeholder: "Which finding to handle differently, and how",
-    },
-};
+// A Doc review has its own view in place of the agent's terminal; the dialog serves Spec review and Plan review.
+type DialogKind = Exclude<DocReviewKind, "doc">;
+type DialogReview = DocReview & { kind: DialogKind };
+const isDialogReview = (r: DocReview | null): r is DialogReview => r != null && r.kind !== "doc";
+
+const COPY: Record<DialogKind, { eyebrow: string; title: string; list: string; approve: string; placeholder: string }> =
+    {
+        spec: {
+            eyebrow: "Spec review",
+            title: "Review the spec before I write the plan",
+            list: "Decisions in it",
+            approve: "Approve",
+            placeholder: "What to change in the spec",
+        },
+        plan: {
+            eyebrow: "Plan review · round 2 failed",
+            title: "The plan review failed twice. Proceed with these fixes?",
+            list: "Findings",
+            approve: "Accept all and proceed",
+            placeholder: "Which finding to handle differently, and how",
+        },
+    };
 
 const REQUEST_SENT = "Request changes, with your note";
 
@@ -84,12 +87,13 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
     const selections = useAtomValue(model.answerSelAtom);
     const texts = useAtomValue(model.answerTextAtom);
     const agent = id != null ? agents.find((a) => a.id === id) : undefined;
-    const review = parseDocReview(agent?.ask);
+    const parsed = parseDocReview(agent?.ask);
+    const review = isDialogReview(parsed) ? parsed : null;
     const askId = agent?.ask?.askId;
     const [requesting, setRequesting] = useState(false);
     const [note, setNote] = useState("");
 
-    // the ask was answered or cleared (or the agent is gone): nothing left to review
+    // the ask was answered or cleared (or the agent is gone, or it is a Doc review): nothing left for the dialog
     useEffect(() => {
         if (id != null && review == null) {
             closeDialog();
@@ -180,7 +184,7 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
     );
 }
 
-function Header({ agent, review }: { agent: AgentVM; review: DocReview }) {
+function Header({ agent, review }: { agent: AgentVM; review: DialogReview }) {
     const copy = COPY[review.kind];
     return (
         <div
@@ -277,7 +281,7 @@ function DocumentPane({ path, onOpen }: { path: string; onOpen: () => void }) {
     );
 }
 
-function AskPane({ review }: { review: DocReview }) {
+function AskPane({ review }: { review: DialogReview }) {
     const numbered = review.kind === "spec";
     return (
         <div className="flex w-[380px] flex-none flex-col bg-surface-raised">
@@ -307,7 +311,7 @@ function AskPane({ review }: { review: DocReview }) {
 }
 
 function Footer(p: {
-    review: DocReview;
+    review: DialogReview;
     approveLabel: string;
     sentLabel: string | null;
     requesting: boolean;

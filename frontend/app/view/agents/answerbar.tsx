@@ -50,6 +50,7 @@ export const cleanLabel = (label: string) => label.replace(/\s*\(recommended\)\s
 const REVIEW_ITEM_NOUN: Record<DocReviewKind, [string, string]> = {
     spec: ["decision", "decisions"],
     plan: ["finding", "findings"],
+    doc: ["point", "points"],
 };
 
 // A doc-review ask in a card, in place of its question text: the document's full text belongs in the dialog.

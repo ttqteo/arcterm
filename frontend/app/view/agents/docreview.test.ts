@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentAsk, AgentVM } from "./agentsviewmodel";
-import { parseDocReview, shouldAutoOpen } from "./docreview";
+import { focusItem, parseDocReview, shouldAutoOpen } from "./docreview";
 
 const OPTIONS = [{ label: "Approve" }, { label: "Request changes" }];
 
@@ -84,6 +84,102 @@ describe("parseDocReview", () => {
         const r = parseDocReview(ask("Spec review", "/r/s.md", [{ label: "Approve" }, { label: "Later" }]));
         expect(r?.requestIndex).toBe(-1);
         expect(r?.approveIndex).toBe(0);
+    });
+});
+
+describe("parseDocReview — Doc review", () => {
+    it("reads a .tex file as latex", () => {
+        const q =
+            "D:\\thesis\\paper\\venue2027\\main.tex\nRewrote §3.2 around XYZ determinism.\nPages: 8\n- §3.2 Method overview: rewritten\n- §5.1: numbers aligned with number_audit.md";
+        expect(parseDocReview(ask("Doc review", q))).toEqual({
+            kind: "doc",
+            path: "D:\\thesis\\paper\\venue2027\\main.tex",
+            doc: "latex",
+            intro: ["Rewrote §3.2 around XYZ determinism."],
+            items: ["§3.2 Method overview: rewritten", "§5.1: numbers aligned with number_audit.md"],
+            approveIndex: 0,
+            requestIndex: 1,
+            pageLimit: 8,
+        });
+    });
+    it("reads a .md file as markdown, with no page limit", () => {
+        const r = parseDocReview(ask("Doc review", "/notes/seminar.md\n- 5.: tightened"));
+        expect(r?.kind).toBe("doc");
+        expect(r?.doc).toBe("markdown");
+        expect(r?.items).toEqual(["5.: tightened"]);
+        expect(r).not.toHaveProperty("pageLimit");
+    });
+    it("tolerates header case and a backticked or upper-case path", () => {
+        expect(parseDocReview(ask(" doc REVIEW", "`/r/Main.TEX`"))?.doc).toBe("latex");
+    });
+    it("takes a Pages line out of the intro", () => {
+        const r = parseDocReview(ask("Doc review", "/r/main.tex\nDone.\npages: 12\nAlso this.\n- one"));
+        expect(r?.pageLimit).toBe(12);
+        expect(r?.intro).toEqual(["Done.", "Also this."]);
+        expect(r?.items).toEqual(["one"]);
+    });
+    it("finds a Pages line after the focus items", () => {
+        const r = parseDocReview(ask("Doc review", "/r/main.tex\n- one\nPages: 8"));
+        expect(r?.pageLimit).toBe(8);
+        expect(r?.items).toEqual(["one"]);
+    });
+    it("keeps a Pages line that is not a page count as intro text", () => {
+        for (const line of ["Pages: x", "Pages: 8 or so", "Pages: 0", "Pages: -3", "Pages:"]) {
+            const r = parseDocReview(ask("Doc review", `/r/main.tex\n${line}\n- one`));
+            expect(r?.pageLimit).toBeUndefined();
+            expect(r?.intro).toEqual([line]);
+        }
+    });
+    it("leaves a Pages line in a Spec review as intro text", () => {
+        const r = parseDocReview(ask("Spec review", "/r/spec.md\nPages: 8\n- one"));
+        expect(r?.pageLimit).toBeUndefined();
+        expect(r?.intro).toEqual(["Pages: 8"]);
+    });
+    it("refuses a canvas board or any other extension", () => {
+        expect(parseDocReview(ask("Doc review", "/r/Main.dc.html\n- one"))).toBeNull();
+        expect(parseDocReview(ask("Doc review", "/r/board.html"))).toBeNull();
+        expect(parseDocReview(ask("Doc review", "/r/paper.pdf"))).toBeNull();
+        expect(parseDocReview(ask("Doc review", "/r/main.tex.bak"))).toBeNull();
+        expect(parseDocReview(ask("Doc review", "Review the paper please"))).toBeNull();
+    });
+    it("refuses a .tex under Spec review or Plan review", () => {
+        expect(parseDocReview(ask("Spec review", "/r/main.tex\n- one"))).toBeNull();
+        expect(parseDocReview(ask("Plan review", "/r/main.tex\n- one"))).toBeNull();
+    });
+    it("still reads a .md and a canvas board under Spec review and Plan review", () => {
+        expect(parseDocReview(ask("Spec review", "/r/s.md"))?.doc).toBe("markdown");
+        expect(parseDocReview(ask("Plan review", "/r/p.md"))?.doc).toBe("markdown");
+        expect(parseDocReview(ask("Spec review", "/r/Main.dc.html"))?.doc).toBe("canvas");
+        expect(parseDocReview(ask("Plan review", "/r/Main.dc.html"))?.doc).toBe("canvas");
+    });
+    it("finds the approve and request options", () => {
+        const r = parseDocReview(
+            ask("Doc review", "/r/main.tex", [{ label: "Request changes" }, { label: "Approve" }])
+        );
+        expect(r?.requestIndex).toBe(0);
+        expect(r?.approveIndex).toBe(1);
+    });
+});
+
+describe("focusItem", () => {
+    it("splits a numbered line into its number and text", () => {
+        expect(focusItem("2: §5.2 ¶2 accounts for the other 6")).toEqual({
+            n: 2,
+            text: "§5.2 ¶2 accounts for the other 6",
+        });
+        expect(focusItem("1: done X")).toEqual({ n: 1, text: "done X" });
+        expect(focusItem("12:   spaced")).toEqual({ n: 12, text: "spaced" });
+    });
+    it("leaves any other line a plain chip", () => {
+        expect(focusItem("§5.2: rewritten")).toEqual({ n: null, text: "§5.2: rewritten" });
+        expect(focusItem("§3.2 Method overview: rewritten")).toEqual({
+            n: null,
+            text: "§3.2 Method overview: rewritten",
+        });
+        expect(focusItem("5.: tightened")).toEqual({ n: null, text: "5.: tightened" });
+        expect(focusItem("10:30 pm deadline")).toEqual({ n: null, text: "10:30 pm deadline" });
+        expect(focusItem("1:")).toEqual({ n: null, text: "1:" });
+        expect(focusItem("")).toEqual({ n: null, text: "" });
     });
 });
 
