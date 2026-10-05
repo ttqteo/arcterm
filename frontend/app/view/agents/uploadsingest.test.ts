@@ -220,6 +220,8 @@ describe("attachPaths", () => {
             ["b c.png", "C:\\x\\b c.png", "image", "attach"],
             ["a.txt", "C:\\x\\a.txt", "file", "attach"],
         ]);
+        // once, after the last paste
+        expect(mocks.focus).toHaveBeenCalledTimes(1);
         expect(mocks.focus).toHaveBeenCalledWith(BLOCK);
         expect(mocks.toast).not.toHaveBeenCalled();
     });
@@ -235,7 +237,7 @@ describe("attachPaths", () => {
         expect(globalStore.get(uploadThumbsAtom)).toEqual({ "C:\\x\\b c.png": "data:image/png;base64,THUMB" });
     });
 
-    it("pastes before it reads the thumbnail, so a slow read never holds the path back", async () => {
+    it("pastes a path before it reads the picture of that file", async () => {
         const order: string[] = [];
         mocks.paste.mockImplementation(() => {
             order.push("paste");
@@ -395,6 +397,30 @@ describe("pickAndAttach", () => {
         expect(mocks.paste).not.toHaveBeenCalled();
         expect(mocks.focus).not.toHaveBeenCalled();
         expect(mocks.toast).not.toHaveBeenCalled();
+    });
+
+    it("opens one dialog when Attach is clicked twice before the first one closes", async () => {
+        let close!: (picked: string[]) => void;
+        mocks.open.mockReturnValue(
+            new Promise<string[]>((resolve) => {
+                close = resolve;
+            })
+        );
+        const first = pickAndAttach(BLOCK);
+        await vi.waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+        const second = pickAndAttach(BLOCK);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mocks.open).toHaveBeenCalledTimes(1);
+
+        close(["C:\\x\\a.txt"]);
+        await vi.runAllTimersAsync();
+        await Promise.all([first, second]);
+        expect(mocks.paste).toHaveBeenCalledTimes(1);
+
+        // the dialog is free again once it has closed
+        mocks.open.mockResolvedValue(null);
+        await pick();
+        expect(mocks.open).toHaveBeenCalledTimes(2);
     });
 
     it("tells the user when the dialog cannot open", async () => {

@@ -185,8 +185,17 @@ export async function attachPaths(blockId: string, paths: readonly string[]): Pr
     }
 }
 
+// True while the native file dialog is open, so a second click on Attach (the dialog takes a moment to appear) does
+// not open another and paste the files twice. Module state, not component state: the section can unmount and
+// remount while the dialog is up, and the button it comes back with must still know.
+let picking = false;
+
 // the Uploads section's Attach button: a native file picker, then each picked file's path pasted into the terminal
 export async function pickAndAttach(blockId: string): Promise<void> {
+    if (picking) {
+        return;
+    }
+    picking = true;
     let paths: string[];
     try {
         const { open } = await import("@tauri-apps/plugin-dialog");
@@ -200,6 +209,8 @@ export async function pickAndAttach(blockId: string): Promise<void> {
         console.error("uploads: file picker failed", err);
         pushToast({ title: "Couldn't open the file picker", message: String(err), level: "error" });
         return;
+    } finally {
+        picking = false;
     }
     await attachPaths(blockId, paths);
 }
