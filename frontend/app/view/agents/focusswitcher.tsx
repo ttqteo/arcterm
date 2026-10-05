@@ -216,7 +216,7 @@ export function FocusSwitcher({ model }: { model: AgentsViewModel }) {
                     <div className="flex flex-col gap-1 px-3.5 pb-2.5 pt-3">
                         <span className={cn(REGION_LABEL, "text-muted")}>Focus on</span>
                         <span className="text-[12px] leading-[1.45] text-ink-mid">
-                            Cockpit and Sessions hide everything outside it. Agent, Diff and Code open on it.
+                            Cockpit and History hide everything outside it. Agent, Diff and Code open on it.
                         </span>
                     </div>
                     <label className="mx-2.5 mb-1.5 flex items-center gap-2 rounded-[8px] border border-edge-strong bg-surface px-2.5 py-[7px] text-muted focus-within:border-accent/60">

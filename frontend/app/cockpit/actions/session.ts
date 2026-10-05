@@ -1,12 +1,12 @@
-import { globalStore } from "@/app/store/jotaiStore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
+import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { overlayLive, sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
 import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
 import { sessionPrimary, sessionSelection } from "@/app/view/agents/sessionsruns";
 import type { ThingKindDef } from "./types";
 
-// the session as the Sessions surface builds it, with the roster agent a live one is running in
+// the session as Conversation History builds it, with the roster agent a live one is running in
 export interface SessionThing {
     session: LiveSession;
     agent?: AgentVM;
@@ -25,17 +25,14 @@ export const SESSION_KIND: ThingKindDef<SessionThing> = {
         },
         {
             id: "session:open",
-            label: "Open in Sessions",
+            label: "Open session",
             group: "open",
             applies: () => true,
-            // the Sessions surface has no router target, so this writes its own selection as its list does
+            // a session reads in the Agent surface's centre; one a run launched reads in History, where the run detail is.
+            // Neither has a router target, so this writes the selection as the sidebar's rows and History's list do
             run: (t, { model }) => {
                 const to = sessionSelection(t.session);
-                globalStore.set(model.sessionsSelAtom, to.sel);
-                if (to.member != null) {
-                    globalStore.set(model.sessionsMemberAtom, to.member);
-                }
-                globalStore.set(model.surfaceAtom, "sessions");
+                showSession(model, to.sel, to.member);
             },
         },
         {

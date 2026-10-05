@@ -268,7 +268,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     };
     const q = nav.query.trim();
 
-    // Lazy-load the sessions archive on first open (as SessionsSurface does).
+    // Lazy-load the sessions archive on first open (the Agent sidebar and History load it on their own).
     useEffect(() => {
         if (open && !loadedRef.current) {
             loadedRef.current = true;
@@ -359,9 +359,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 meta: fi.subtitle,
                 verb: "Focus",
                 echo:
-                    fi.key === "focus-exit"
-                        ? "Shows everything again"
-                        : `Narrows Cockpit and Sessions to “${fi.title}”`,
+                    fi.key === "focus-exit" ? "Shows everything again" : `Narrows Cockpit and History to “${fi.title}”`,
                 run: fi.run,
             })),
         [spaces, activeSpace, model]

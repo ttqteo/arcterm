@@ -1,4 +1,6 @@
-import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { globalStore } from "@/app/store/jotaiStore";
+import { centerModeAtom } from "@/app/view/agents/agentcenter";
+import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
 import { atom, createStore } from "jotai";
@@ -41,8 +43,33 @@ describe("session actions", () => {
         expect(action("session:stop").applies(thing(mk({ live: true, liveId: "tab-gone" })))).toBe(false);
         expect(action("session:stop").destructive).toBe(true);
     });
-    it("open in Sessions always applies", () => {
+    it("open session always applies", () => {
         expect(action("session:open").applies(thing(mk({ resumecommand: "" })))).toBe(true);
+    });
+    it("open session reads a solo session in the Agent surface's centre", () => {
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("cockpit"),
+            sessionsSelAtom: atom("all"),
+            sessionsMemberAtom: atom("lead"),
+        } as unknown as AgentsViewModel;
+        globalStore.set(centerModeAtom, "terminal");
+        action("session:open").run(thing(mk({ id: "s9", runtime: "pi" })), { model });
+        expect(globalStore.get(model.sessionsSelAtom)).toBe("pi:s9");
+        expect(globalStore.get(centerModeAtom)).toBe("session");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        globalStore.set(centerModeAtom, "terminal");
+    });
+    it("open session sends a run's session to History with its member in view", () => {
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("cockpit"),
+            sessionsSelAtom: atom("all"),
+            sessionsMemberAtom: atom("lead"),
+        } as unknown as AgentsViewModel;
+        action("session:open").run(thing(mk({ runid: "r1", role: "worker", taskid: "t-2" })), { model });
+        expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
+        expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
+        expect(globalStore.get(centerModeAtom)).toBe("history");
+        globalStore.set(centerModeAtom, "terminal");
     });
 });
 
