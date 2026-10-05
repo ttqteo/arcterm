@@ -21,7 +21,7 @@ import { setupRosterSeededLatch } from "./liveagents";
 import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
 import { NavRail } from "./navrail";
 import { RadarSurface } from "./radarsurface";
-import { SessionsSurface } from "./sessionssurface";
+import { ConversationHistory } from "./conversationhistory";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
 import { UsageSurface } from "./usagesurface";
@@ -133,7 +133,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
                         ) : surface === "files" ? (
                             <FilesSurface model={model} />
                         ) : surface === "sessions" ? (
-                            <SessionsSurface model={model} />
+                            <ConversationHistory model={model} navSurface="sessions" />
                         ) : surface === "usage" ? (
                             <UsageSurface model={model} />
                         ) : surface === "code" ? (

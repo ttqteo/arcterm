@@ -8,9 +8,8 @@
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Crosshair } from "lucide-react";
-import type { SurfaceKey } from "./agents";
 import type { FocusBannerCopy } from "./focusscope";
-import { concealSurface, exitFocus, focusRestoredAtom, revealSurface } from "./focusstore";
+import { concealSurface, exitFocus, focusRestoredAtom, revealSurface, type RevealKey } from "./focusstore";
 import { divergenceText, type DivergenceScope, type SubjectDecision } from "./focussubject";
 
 const BANNER_BUTTON =
@@ -21,7 +20,7 @@ export function FocusBanner({
     copy,
     revealed,
 }: {
-    surface: SurfaceKey;
+    surface: RevealKey;
     copy: FocusBannerCopy;
     revealed: boolean;
 }) {

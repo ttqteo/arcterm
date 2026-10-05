@@ -42,7 +42,9 @@ export const persistedFocusAtom = atomWithStorage<ActiveFocus | null>("cockpit.f
 // the resolved scope bundle for the active focus; null when Global or while a resolve is in flight.
 export const focusScopeAtom = atom<SpaceScope | null>(null) as PrimitiveAtom<SpaceScope | null>;
 // which scoped surfaces the user clicked "Show all" on; reset on every switch.
-export const focusRevealAtom = atom<Set<SurfaceKey>>(new Set<SurfaceKey>());
+// a surface, or the Agent surface's Conversation History pane, which is scoped on its own
+export type RevealKey = SurfaceKey | "history";
+export const focusRevealAtom = atom<Set<RevealKey>>(new Set<RevealKey>());
 // true while the focus on screen is the one restored at launch, so the banner can say why a filter
 // is on that the user did not set this session. Any explicit enter or exit clears it.
 export const focusRestoredAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
@@ -66,7 +68,7 @@ function sameRef(a: FocusRef | undefined, b: FocusRef | undefined): boolean {
 export function enterFocus(focus: ActiveFocus): void {
     globalStore.set(activeFocusAtom, focus);
     globalStore.set(focusRestoredAtom, false);
-    globalStore.set(focusRevealAtom, new Set<SurfaceKey>());
+    globalStore.set(focusRevealAtom, new Set<RevealKey>());
     globalStore.set(focusScopeAtom, null);
     fireAndForget(async () => {
         const scope = await RpcApi.ResolveFocusScopeCommand(TabRpcClient, focus.ref);
@@ -82,7 +84,7 @@ export function exitFocus(): void {
     globalStore.set(activeFocusAtom, null);
     globalStore.set(focusRestoredAtom, false);
     globalStore.set(focusScopeAtom, null);
-    globalStore.set(focusRevealAtom, new Set<SurfaceKey>());
+    globalStore.set(focusRevealAtom, new Set<RevealKey>());
     globalStore.set(persistedFocusAtom, null);
 }
 
@@ -136,13 +138,13 @@ export function reresolveFocus(surface: SurfaceKey): void {
     });
 }
 
-export function revealSurface(key: SurfaceKey): void {
+export function revealSurface(key: RevealKey): void {
     const next = new Set(globalStore.get(focusRevealAtom));
     next.add(key);
     globalStore.set(focusRevealAtom, next);
 }
 
-export function concealSurface(key: SurfaceKey): void {
+export function concealSurface(key: RevealKey): void {
     const next = new Set(globalStore.get(focusRevealAtom));
     next.delete(key);
     globalStore.set(focusRevealAtom, next);

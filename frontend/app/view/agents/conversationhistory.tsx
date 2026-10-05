@@ -1,11 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Merged Sessions surface (absorbs the old Activity tab). Master-detail: a recency-grouped list with a pinned
-// "All activity" entry. An orchestrator run is one entry, with a row under it only for the members that need
-// you; its detail lists the lead and every task and reads the one in view. Every other session is its own
-// entry. Live agents are overlaid (matched by transcript path) so the primary action is Jump (live) or Resume
-// (ended). @theme tokens only — no hardcoded colors.
+// Conversation History: the old Sessions surface's master-detail, now the Agent surface's `history` centre mode
+// (agentcenter.ts). A recency-grouped list with a pinned "All activity" entry. An orchestrator run is one entry, with
+// a row under it only for the members that need you; its detail lists the lead and every task and reads the one in
+// view. Every other session is its own entry. Live agents are overlaid (matched by transcript path) so the primary
+// action is Jump (live) or Resume (ended). @theme tokens only — no hardcoded colors.
 
 import { cardVariants, MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
@@ -15,10 +15,11 @@ import * as WOS from "@/app/store/wos";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
-import { Activity, Check, Workflow } from "lucide-react";
+import { Activity, ArrowLeft, Check, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
-import type { AgentsViewModel } from "./agents";
+import { showTerminal } from "./agentcenter";
+import type { AgentsViewModel, SurfaceKey } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { FocusBanner } from "./focusbanner";
@@ -111,7 +112,15 @@ function memberLiveSession(m: RunMember, runId: string, roster: AgentVM[]): Live
     return agent ? rosterSession(agent) : undefined;
 }
 
-export function SessionsSurface({ model }: { model: AgentsViewModel }) {
+// navSurface is the surface whose keys the list cursor answers on. History lives in the Agent surface; the prop exists only
+// for the Sessions surface the shell still renders this for until it is removed.
+export function ConversationHistory({
+    model,
+    navSurface = "agent",
+}: {
+    model: AgentsViewModel;
+    navSurface?: SurfaceKey;
+}) {
     const base = useAtomValue(sessionsArchiveAtom);
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
@@ -122,7 +131,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
     const projectFilter = useAtomValue(model.projectFilterAtom);
     const activeSpace = useAtomValue(activeFocusAtom);
     const spaceScope = useAtomValue(focusScopeAtom);
-    const spaceRevealed = useAtomValue(focusRevealAtom).has("sessions");
+    const spaceRevealed = useAtomValue(focusRevealAtom).has("history");
     const digests = useAtomValue(runDigestsAtom);
 
     useEffect(() => {
@@ -262,13 +271,13 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
     const cursorId = viewRunId ? runSelKey(viewRunId) : sel;
     const listNav = useMemo<ListNavController>(
         () => ({
-            surface: "sessions",
+            surface: navSurface,
             navigableIds: navIds,
             cursorId,
             setCursor: (id) => selectRef.current(id),
             activate: () => actRef.current(),
         }),
-        [navIds, cursorId]
+        [navSurface, navIds, cursorId]
     );
     useSurfaceListNav(listNav);
 
@@ -277,9 +286,20 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
 
     return (
         <MotionConfig reducedMotion="user">
-            <div className="flex h-full min-h-0 flex-col bg-background">
+            <div data-agent-history className="flex h-full min-h-0 flex-col bg-background">
+                {navSurface === "agent" ? (
+                    <button
+                        type="button"
+                        data-history-close
+                        onClick={showTerminal}
+                        className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary"
+                    >
+                        <ArrowLeft size={13} aria-hidden />
+                        Back to terminal
+                    </button>
+                ) : null}
                 <SurfaceHeader
-                    title="Sessions"
+                    title="Conversation History"
                     badge={
                         liveCount > 0 ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary">
@@ -319,7 +339,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
 
                 {activeSpace != null ? (
                     <FocusBanner
-                        surface="sessions"
+                        surface="history"
                         copy={focusBannerCopy(
                             activeSpace.label,
                             spaceInScope,
@@ -370,7 +390,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
                                     body={`No live session belongs to ${activeSpace.label}. The focus hides all ${projectScoped.length}.`}
                                     action={{
                                         label: `Show all ${projectScoped.length}`,
-                                        onClick: () => revealSurface("sessions"),
+                                        onClick: () => revealSurface("history"),
                                     }}
                                     secondaryAction={{ label: "Clear focus", onClick: exitFocus }}
                                 />
