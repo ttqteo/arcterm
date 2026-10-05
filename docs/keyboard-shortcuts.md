@@ -27,7 +27,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Ctrl`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Code, Diff, Radar, Usage |
 | `Ctrl`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Ctrl`+`N` | New agent |
-| `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next / previous agent |
+| `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |
 | `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
 | `.` | Focus the selected row (the cockpit narrows to that agent) |
 | `Shift`+`.` | Clear focus — back to Global |
@@ -135,6 +135,29 @@ that act on the focused agent stand down while either is open: `j` / `k`, the ar
 `Ctrl`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. `Ctrl`+`Tab` still cycles agents and brings the
 terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
+
+### Agent: terminal grid
+
+Drag a live agent from the tree onto a terminal to split the view (up to four cells), or right-click its row and pick
+**Open in split**. The palette has it too, which is the route from the keyboard: `Ctrl`+`P`, the agent, `→`, **Open in
+split**. A split needs an agent with no cell yet and a grid with room; otherwise the menu item is disabled and the
+palette action just opens the agent. Each cell has a bar you can drag to rearrange it; the `×` on it takes the agent out
+of the grid and leaves it running. The header and the details rail follow the focused cell; click a cell to focus it.
+
+Moving between agents with the keyboard follows one rule: if the agent already has a cell, that cell takes focus;
+otherwise the agent replaces the focused cell and the others stay put. So stepping through more agents than there are
+cells keeps changing which of them show.
+
+| Keys | Action |
+|---|---|
+| `Ctrl`+`Tab` | Next agent, by the rule above; works from inside a terminal |
+| `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above. It goes forward, not back |
+| `j` / `→`, `k` / `←` | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
+
+Canvas mode, a review, the subagent view, Conversation History, an ended session's or a done worker's transcript, and a
+terminal focused from the rail's Terminals section each show one thing in place of the grid; the grid comes back as it
+was.
 
 ### Agent: canvas mode
 

@@ -269,6 +269,17 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             globalStore.set(model.focusIdAtom, target.id);
         }
     };
+    // A click or a focus inside a cell makes it the focused one; the header, the rail and the tree follow focusIdAtom.
+    // The x on the bar is left out: it removes its own cell, so focusing that cell first would, on one that is not
+    // focused, hand focus to a neighbour instead of keeping it where it was.
+    const focusCell = (id: string, e: { target: EventTarget }) => {
+        if (e.target instanceof Element && e.target.closest("[data-agent-cell-remove]") != null) {
+            return;
+        }
+        if (globalStore.get(model.focusIdAtom) !== id) {
+            globalStore.set(model.focusIdAtom, id);
+        }
+    };
 
     if (!agent) {
         if (holdForGrid || rosterLoadPhase(seeded, agents.length) === "loading") {
@@ -336,6 +347,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                             data-agent-cell={slot?.index}
                                             data-agent-focused={cell?.focused && multi ? "true" : undefined}
                                             style={cell != null ? placementStyle(cell.placement) : undefined}
+                                            onMouseDownCapture={(e) => focusCell(a.id, e)}
+                                            onFocus={(e) => focusCell(a.id, e)}
                                             className={cn(
                                                 "relative isolate min-h-0 min-w-0",
                                                 cell != null ? "flex flex-col" : "hidden",
