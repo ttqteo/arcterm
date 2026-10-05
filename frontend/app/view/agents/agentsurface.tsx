@@ -9,8 +9,8 @@
 // stack is up to four of them in a 2x2 CSS grid (agentgrid.ts, gridstore.ts): focusIdAtom stays the single
 // selection, and the surface reconciles the saved grid against it, so every route that selects an agent
 // obeys one rule. With no explicit focus it defaults (resolveShownAgent, cockpitsurfacemodel.ts; handoff
-// dc.html:1790 `focusAgent = …find(fid) || list[0]`) — never the cockpit grid; only a zero-agent roster shows an
-// empty state. The center is not always the terminal: centerModeAtom (agentcenter.ts) swaps it for one
+// dc.html:1790 `focusAgent = …find(fid) || list[0]`) — never the cockpit's card grid; only a zero-agent roster
+// shows an empty state. The center is not always the terminal: centerModeAtom (agentcenter.ts) swaps it for one
 // ended session's transcript or Conversation History, the terminal stack staying mounted but hidden, and
 // with no agent those two still get the tree beside them (the empty state is only for the terminal mode).
 // Routing is shell-side (this file is imported only by cockpitshell.tsx) so agents.tsx
@@ -47,7 +47,7 @@ import { EndedTranscript } from "./endedtranscript";
 import { DivergenceBanner } from "./focusbanner";
 import { subjectDecision } from "./focussubject";
 import { GridCellBar } from "./gridcellbar";
-import { agentGridAtom, eligibleIds, removeFromGrid } from "./gridstore";
+import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
 import { SessionPane } from "./sessionpane";
 import { terminalFullscreenAtom } from "./railstore";
@@ -245,7 +245,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         );
         (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
     }, [removals]);
-    const removeCell = (id: string) => {
+    const onRemoveCell = (id: string) => {
+        if (!currentGrid(model).ids.includes(id)) {
+            return;
+        }
         removeFromGrid(model, id);
         setRemovals((n) => n + 1);
     };
@@ -345,7 +348,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 <GridCellBar
                                                     agent={a}
                                                     focused={cell.focused}
-                                                    onRemove={() => removeCell(a.id)}
+                                                    onRemove={() => onRemoveCell(a.id)}
                                                 />
                                             ) : null}
                                             <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />

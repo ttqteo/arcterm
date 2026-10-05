@@ -148,6 +148,10 @@ describe("resolveShownAgent", () => {
             hold: false,
         });
     });
+    it("lets a focused agent beat the hold, even while the roster loads and none of the saved cells has arrived", () => {
+        const held = { grid: grid(["x", "y"]), eligible: new Set(["a"]), seeded: false };
+        expect(resolveShownAgent(input({ ...held, focused: b }))).toEqual({ agent: b, hold: false });
+    });
     it("resumes on the grid's focused cell rather than the roster's first agent", () => {
         expect(resolveShownAgent(input({ grid: grid(["a", "b"], "b") })).agent).toBe(b);
     });
