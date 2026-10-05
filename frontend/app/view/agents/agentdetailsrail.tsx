@@ -26,8 +26,9 @@ import {
 import { bgTaskStatusLabel, planAgentRail, type AgentRailSectionId, type BgTaskLabel } from "./agentrailsections";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
+import { setAgentView } from "./agentview";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
-import { canvasStateAtom, selectCanvasTab, setCanvasMode } from "./canvasstore";
+import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
 import { capFiles, statusColor } from "./gitstatus";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
@@ -331,7 +332,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     // a board's row opens the agent's canvas on that board alone (its own tab, not the All view)
     const openArtifact = (board: string) => {
         selectCanvasTab(agent.id, board);
-        setCanvasMode(agent.id, "canvas", Date.now());
+        setAgentView(agent.id, "canvas", Date.now());
     };
 
     const age = formatAgeShort(displayAgeMs(agent, now));
@@ -505,19 +506,23 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: () => (
             <div className="flex flex-col gap-[7px]">
                 <div className="flex min-w-0 items-center gap-[6px]">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
+                    <span
+                        title={artifacts.topic}
+                        className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted"
+                    >
                         {artifacts.topic}
                     </span>
                     {artifacts.unseen ? (
                         <span
+                            role="img"
                             aria-label="updated since you last looked"
                             className="h-[5px] w-[5px] shrink-0 rounded-full bg-accent"
                         />
                     ) : null}
                 </div>
-                {artifacts.rows.map((r) => (
+                {artifacts.rows.map((r, i) => (
                     <button
-                        key={r.name}
+                        key={`${r.name}:${i}`}
                         type="button"
                         title={r.title}
                         onClick={() => openArtifact(r.name)}

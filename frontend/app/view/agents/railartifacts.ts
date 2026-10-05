@@ -19,12 +19,13 @@ export interface ArtifactsView {
     rows: ArtifactRow[];
 }
 
-const NONE: ArtifactsView = { topic: "", unseen: false, rows: [] };
+// fresh each time, so a caller that mutates the result can't change what the next one sees
+const none = (): ArtifactsView => ({ topic: "", unseen: false, rows: [] });
 
 export function artifactsView(s: CanvasState | null): ArtifactsView {
     // a removed folder keeps the boards the poller last read, but there is nothing left to open
     if (s == null || s.status === "removed") {
-        return NONE;
+        return none();
     }
     return {
         topic: s.topic,

@@ -59,6 +59,13 @@ describe("artifactsView", () => {
         expect(artifactsView(canvas({ boards, status: "probing" })).rows).toHaveLength(1);
         expect(artifactsView(canvas({ boards, status: "server-down" })).rows).toHaveLength(1);
     });
+    it("a freshly attached canvas has the topic but no boards yet", () => {
+        expect(artifactsView(canvas({ boards: [], status: "probing" }))).toEqual({
+            topic: "login-flow",
+            unseen: false,
+            rows: [],
+        });
+    });
     it("flags a canvas updated since it was last looked at, only while the terminal shows", () => {
         expect(artifactsView(canvas({ lastModifiedMs: 20, lastViewedMs: 10 })).unseen).toBe(true);
         expect(artifactsView(canvas({ lastModifiedMs: 5, lastViewedMs: 10 })).unseen).toBe(false);
