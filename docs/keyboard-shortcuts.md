@@ -152,7 +152,7 @@ cells keeps changing which of them show.
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal; the new agent's terminal takes the keyboard when it is showing |
+| `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal, and typing follows to the new cell when more than one cell is showing |
 | `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above |
 | `j` / `k` (or `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
