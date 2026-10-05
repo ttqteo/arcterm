@@ -7,7 +7,10 @@
 // not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. With no
 // explicit focus it defaults to the first agent in order (handoff dc.html:1790
 // `focusAgent = …find(fid) || list[0]`) — never the cockpit grid; only a zero-agent roster shows an
-// empty state. Routing is shell-side (this file is imported only by cockpitshell.tsx) so agents.tsx
+// empty state. The center is not always the terminal: centerModeAtom (agentcenter.ts) swaps it for one
+// ended session's transcript or Conversation History, the terminal stack staying mounted but hidden, and
+// with no agent those two still get the tree beside them (the empty state is only for the terminal mode).
+// Routing is shell-side (this file is imported only by cockpitshell.tsx) so agents.tsx
 // never imports CockpitFocusPane, keeping the agents -> focus-pane -> blockregistry -> agents eval
 // cycle broken.
 
@@ -127,17 +130,18 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
 
     // History and a session's transcript cover the terminal as canvas mode does, and a hidden xterm can still hold focus
     // and eat the surface's keys (Esc, j/k): leaving the terminal pulls focus to the wrapper, and returning to it hands
-    // focus back to the focused agent's xterm
+    // focus back to the focused agent's xterm, or to the wrapper when that xterm is not showing (canvas, subagent
+    // interior, ended worker, no block), so it never drops to <body>
     const lastCenter = useRef<CenterMode>(centerMode);
     useEffect(() => {
         const prev = lastCenter.current;
         lastCenter.current = centerMode;
         if (centerMode !== "terminal" && prev === "terminal") {
             wrapRef.current?.focus();
-        } else if (centerMode === "terminal" && prev !== "terminal" && agent != null && !canvasMode) {
-            wrapRef.current
-                ?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`)
-                ?.focus();
+        } else if (centerMode === "terminal" && prev !== "terminal" && agent != null) {
+            const wrap = wrapRef.current;
+            const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
+            (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
         }
     }, [centerMode]);
 

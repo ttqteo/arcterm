@@ -70,7 +70,7 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                     type="button"
                     data-hero-history
                     onClick={() => showHistory(model)}
-                    className="mt-3 cursor-pointer text-[12.5px] font-semibold text-accent-soft hover:underline"
+                    className="mt-3 cursor-pointer rounded-[6px] text-[12.5px] font-semibold text-accent-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     Conversation History
                 </button>
