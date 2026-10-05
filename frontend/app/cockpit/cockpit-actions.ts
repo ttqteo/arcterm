@@ -106,7 +106,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
     }
     // Terminals launch in the background: leave the user where they are (no focus/surface change). The
-    // terminal appears under the Agent tree's "Terminals" group and starts when first opened. Agents
+    // terminal appears in the details rail's Terminals section and starts when first opened. Agents
     // foreground into the Agent surface so their booting terminal mounts (which starts the process).
     if (!isTerminal) {
         globalStore.set(model.focusIdAtom, tabId);

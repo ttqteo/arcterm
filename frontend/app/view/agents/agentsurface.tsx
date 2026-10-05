@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Agent (Focus) surface: AgentTree | center [| AgentDetailsRail]. The rail is toggleable
-// (railVisibleAtom, default off, `d` key) so the surface is normally 2 panes, 3 with the rail open.
+// (railVisibleAtom, default off, `d` key) so the surface is normally 2 panes, 3 with the rail open; a focused
+// terminal's rail is TerminalRail, the Terminals section alone.
 // The center is the focused agent's live Claude Code terminal (CockpitFocusPane) — the real TUI,
 // not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. With no
 // explicit focus it defaults to the first agent in order (handoff dc.html:1790
@@ -45,9 +46,11 @@ import { subjectDecision } from "./focussubject";
 import { rosterSeededAtom } from "./liveagents";
 import { SessionPane } from "./sessionpane";
 import { terminalFullscreenAtom } from "./railstore";
+import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
+import { TerminalRail } from "./terminalsrail";
 import { useSessionsScan } from "./usesessionsscan";
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
@@ -185,7 +188,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const filter = useAtomValue(model.projectFilterAtom);
     const decision = subjectDecision(agent ? projectOf(agent) : null, filter === "all" ? null : filter);
     const rejoin = () => {
-        const target = agents.find((a) => projectOf(a) === filter);
+        const target = projectFocusTarget(agents, terminals, filter);
         if (target != null) {
             globalStore.set(model.focusIdAtom, target.id);
         }
@@ -263,8 +266,14 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     ) : null}
                     {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
                 </div>
-                {!fullscreen && centerMode === "terminal" && swapped == null && agent.kind !== "terminal" ? (
-                    <AgentDetailsRail model={model} agent={agent} />
+                {/* a focused terminal has no details of its own, but the rail's Terminals section is the only way to
+                    reach the next one, so it gets that section alone */}
+                {!fullscreen && centerMode === "terminal" && swapped == null ? (
+                    agent.kind === "terminal" ? (
+                        <TerminalRail model={model} agent={agent} />
+                    ) : (
+                        <AgentDetailsRail model={model} agent={agent} />
+                    )
                 ) : null}
             </div>
         </MotionConfig>

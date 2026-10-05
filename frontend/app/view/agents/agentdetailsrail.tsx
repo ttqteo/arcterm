@@ -42,6 +42,7 @@ import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrails
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
+import { TerminalsSection, useRailTerminals } from "./terminalsrail";
 import { TokenUsageSection } from "./tokenusagesection";
 import type { BackgroundTask } from "./transcriptprojection";
 import { loadSessionUsage } from "./transcriptusagestore";
@@ -294,6 +295,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const endedWorker = useAtomValue(model.endedWorkerAtom);
     const ended = endedWorker?.agent.id === agent.id ? endedWorker : undefined;
     const artifacts = artifactsView(useAtomValue(canvasStateAtom(agent.id)));
+    const terminalsView = useRailTerminals(model, agent);
 
     useEffect(() => {
         fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
@@ -356,8 +358,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: artifacts.rows.length,
         uploads: 0, // no upload records exist yet; the Uploads work feeds this
         bgTasks: bgTasks.length,
-        terminals: 0,
-        terminalsOther: 0,
+        terminals: terminalsView.rows.length,
+        terminalsOther: terminalsView.other,
         tools: tools.length,
         hasRun: role != null && roleRun != null,
     });
@@ -542,7 +544,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        terminals: () => null,
+        terminals: () => <TerminalsSection model={model} view={terminalsView} />,
         tools: () => (
             <div className="flex flex-wrap gap-[7px]">
                 {tools.map((t) => (

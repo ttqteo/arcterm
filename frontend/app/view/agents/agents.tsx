@@ -48,8 +48,8 @@ export class AgentsViewModel implements ViewModel {
     lineageAtom: Atom<Lineage>; // which agents lead an orchestrator run and which work its tasks
     endedWorkerAtom: Atom<EndedWorker | undefined>; // the done task's worker in focus, read from its transcript
     baseRosterAtom: Atom<AgentVM[]>; // un-overlaid roster (dev mock or live) — read by the prune effect
-    // Background terminals launched via New Agent: kept separate from the agent roster (own tree group
-    // + focus pane). Always live (reads the workspace session sidebar), independent of the dev mock roster.
+    // Background terminals launched via New Agent: kept separate from the agent roster (listed in the details
+    // rail's Terminals section, with their own focus pane). Always live (reads the workspace session sidebar), independent of the dev mock roster.
     terminalsAtom: Atom<AgentVM[]> = liveTerminalsAtom;
     pendingLaunchesAtom = atom<PendingLaunch[]>([]) as PrimitiveAtom<PendingLaunch[]>;
 

@@ -3,7 +3,8 @@
 //
 // Which terminals the details rail's Terminals section lists. A terminal belongs to the project it was launched in
 // (session:project); the rail shows the focused item's project's, and a toggle shows the rest, so a project that
-// has terminals but no agent is never unreachable. A terminal that names no project shows everywhere. Pure.
+// has terminals but no agent is never unreachable (projectFocusTarget is the project banner's half of that). A terminal
+// that names no project shows everywhere. Pure.
 
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 
@@ -25,4 +26,10 @@ export function railTerminals(terminals: AgentVM[], project: string, showAll: bo
     });
     const other = terminals.length - mine.length;
     return showAll ? { rows: terminals, other, scoped: false } : { rows: mine, other, scoped: true };
+}
+
+// Where the Agent surface's "Show the project" button goes: the project's first agent, else its first terminal. A
+// project can have terminals and no agent, and the button must not be dead for it.
+export function projectFocusTarget(agents: AgentVM[], terminals: AgentVM[], project: string): AgentVM | undefined {
+    return agents.find((a) => projectOf(a) === project) ?? terminals.find((t) => projectOf(t) === project);
 }

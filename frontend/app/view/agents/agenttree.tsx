@@ -25,18 +25,18 @@ import {
     Pencil,
     Play,
     Plus,
-    SquareTerminal,
     Workflow,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
+import { RenameBox, startRowRename } from "./rowrename";
 import { renamingRowAtom } from "./rowrenameatom";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
@@ -49,7 +49,7 @@ import {
 import { projectsAtom } from "./projectsstore";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
 import { runSessionPrimary } from "./sessionsdetail";
-import { duplicateSession, renameSession, sessionCustomLabel } from "./session-models/sessionsidebarmodel";
+import { duplicateSession } from "./session-models/sessionsidebarmodel";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
@@ -82,12 +82,7 @@ import {
     getSubagentExpandAtom,
     toggleSubagentExpand,
 } from "./session-models/agentstatusstore";
-import {
-    labelChanged,
-    subagentExpanded,
-    visibleSubagents,
-    type SubagentState,
-} from "./session-models/sessionviewmodel";
+import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
 import { StatusDot } from "./statusdot";
 import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
@@ -98,18 +93,6 @@ const SUB_COLOR: Record<SubagentState, string> = {
     failure: "var(--color-error)",
     done: "var(--color-muted)",
 };
-
-function startRowRename(tabId: string): void {
-    globalStore.set(renamingRowAtom, tabId);
-}
-
-// Scoped to one row on purpose: starting a rename on a second row has already moved the atom, and the
-// first box unmounting must not then cancel the box that replaced it.
-function endRowRename(tabId: string): void {
-    if (globalStore.get(renamingRowAtom) === tabId) {
-        globalStore.set(renamingRowAtom, null);
-    }
-}
 
 // how many times "Show more" was pressed under each project (five more ended sessions per press). Sidebar UI state in a
 // module-level atom, so it outlives the tree's re-renders and unmounts; it is not persisted
@@ -127,54 +110,6 @@ function useSelectedRowId(model: AgentsViewModel): string | undefined {
     const focusId = useAtomValue(model.focusIdAtom);
     const mode = useAtomValue(centerModeAtom);
     return mode === "terminal" ? focusId : undefined;
-}
-
-// The inline rename editor, shared by both row kinds — a session is a tab either way, so both rename
-// through the same `session:label` meta. Mounted in place of the row's name while renaming, which is
-// why the seed is read on mount: this component's whole lifetime IS the edit.
-function RenameBox({ tabId }: { tabId: string }) {
-    const [initial] = useState(() => sessionCustomLabel(tabId));
-    const [draft, setDraft] = useState(initial);
-    // Enter and blur both mean commit and Escape means cancel, but removing a focused input also
-    // fires blur — so without this latch, cancelling would immediately commit the draft it discarded.
-    const settled = useRef(false);
-    const finish = (save: boolean) => {
-        if (settled.current) {
-            return;
-        }
-        settled.current = true;
-        if (save && labelChanged(draft, initial)) {
-            renameSession(tabId, draft);
-        }
-        endRowRename(tabId);
-    };
-    // The row can vanish under an open box — its session closed, or the agent exited — and React does
-    // not deliver blur to an unmounting input. Without this the atom would keep naming a dead tab and
-    // the Escape guard in bindings.ts would go on yielding to a box nobody can see.
-    useEffect(() => () => endRowRename(tabId), [tabId]);
-    return (
-        <input
-            autoFocus
-            value={draft}
-            // the row itself is a click target (select/focus); a click meant for the caret is not one
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                    e.preventDefault();
-                    finish(true);
-                }
-                if (e.key === "Escape") {
-                    e.preventDefault();
-                    finish(false);
-                }
-            }}
-            onBlur={() => finish(true)}
-            placeholder="Name this session"
-            aria-label="Session name"
-            className="w-full min-w-0 rounded-[5px] border border-accent bg-surface px-[5px] text-[13px] font-medium text-primary focus:outline-none"
-        />
-    );
 }
 
 const PULSE = "pulse-dot";
@@ -773,62 +708,6 @@ function FoldRow({
     );
 }
 
-// A background terminal row: no agent chrome (no status dot / model / subagents) — just a glyph +
-// name that focuses the terminal's block in the surface's focus pane.
-function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
-    const focusId = useSelectedRowId(model);
-    const selected = focusId === terminal.id;
-    const renaming = useAtomValue(renamingRowAtom) === terminal.id;
-    const select = () => selectAgentRow(model, terminal.id);
-    // The same actions an agent row offers, minus the agent-only wording: a terminal duplicates into a
-    // fresh shell in the same cwd (buildDuplicateBlockMeta copies only launch keys). Rename matters
-    // more here than on an agent row — a terminal has no ai-title to name it, so without a rename it
-    // is stuck forever on the launch-time label it shares with every other shell in the repo.
-    const onContextMenu = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [
-            { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(terminal.id) },
-            { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, terminal.id) },
-            {
-                label: "Copy name",
-                icon: <Copy size={15} />,
-                click: () => void navigator.clipboard.writeText(terminal.name),
-            },
-            { type: "separator" },
-            {
-                label: "Close terminal",
-                icon: <X size={15} />,
-                danger: true,
-                click: () => confirmCloseSession(terminal),
-            },
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
-    };
-    return (
-        <div
-            onClick={select}
-            onContextMenu={onContextMenu}
-            className={cn(
-                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
-                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
-            )}
-        >
-            <Slot>
-                <SquareTerminal size={13} aria-hidden className="text-muted" />
-            </Slot>
-            <div className="min-w-0 flex-1">
-                {renaming ? (
-                    <RenameBox tabId={terminal.id} />
-                ) : (
-                    <div className={cn("truncate text-[13px]", selected ? "text-primary" : "text-secondary")}>
-                        {terminal.name}
-                    </div>
-                )}
-            </div>
-            <CanvasTag model={model} id={terminal.id} />
-        </div>
-    );
-}
-
 // An ended session under its project: its first prompt and how long ago it last moved. A click reads its transcript in
 // the centre, where Resume lives. It is not a live row, so it carries no state dot; the title is the prompt on one line
 // and the row's tooltip holds all of it.
@@ -902,7 +781,6 @@ function MoreSessionsRow({ project, hidden }: { project: string; hidden: number 
 // returning within the ~400ms tween shows the whole list shrinking back into place.
 export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
-    const terminals = useAtomValue(model.terminalsAtom);
     const order = useAtomValue(model.orderAtom);
     const lineage = useAtomValue(model.lineageAtom);
     const folds = useAtomValue(treeFoldsAtom);
@@ -925,8 +803,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     useSubagentTracking(agents);
 
     // no-cascade guard (single constant key — the surface has one roster): mounting or switching to the
-    // surface seeds silently, so only agents/terminals that arrive after mount fade in. See motiontokens.ts.
-    const rowIds = [...agents.map((a) => a.id), ...terminals.map((t) => t.id)];
+    // surface seeds silently, so only agents that arrive after mount fade in. See motiontokens.ts.
+    const rowIds = agents.map((a) => a.id);
     const entranceRef = useRef(initialEntranceState());
     const { animate: entranceIds } = computeEntrances(entranceRef.current, "agents", rowIds);
     const idsKey = rowIds.join(",");
@@ -1118,30 +996,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                             </motion.div>
                         );
                     })}
-                    {terminals.length > 0 ? (
-                        <motion.div
-                            key="terminals-header"
-                            layout="position"
-                            className="flex items-center gap-[7px] px-[8px] pb-[4px] pt-[14px]"
-                        >
-                            <SquareTerminal size={14} aria-hidden className="shrink-0 text-muted" />
-                            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">Terminals</span>
-                            <span className="text-[11px] tabular-nums text-ink-faint">{terminals.length}</span>
-                        </motion.div>
-                    ) : null}
-                    {terminals.map((t) => (
-                        <motion.div
-                            key={t.id}
-                            layout="position"
-                            className="pl-[14px]"
-                            variants={cardVariants}
-                            initial={entranceIds.has(t.id) ? "initial" : false}
-                            animate="animate"
-                            exit="exit"
-                        >
-                            <TerminalRow model={model} terminal={t} />
-                        </motion.div>
-                    ))}
                 </AnimatePresence>
             </div>
         </div>
