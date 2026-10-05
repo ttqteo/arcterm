@@ -11,6 +11,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom } from "jotai";
+import { showTerminal } from "../agentcenter";
 import type { AgentsViewModel } from "../agents";
 import type { PendingLaunch } from "../agentsviewmodel";
 import { getAgentStatusAtom, getSubagentExpandAtom } from "./agentstatusstore";
@@ -314,5 +315,6 @@ export function duplicateSession(model: AgentsViewModel, sourceTabId: string) {
         // Focus into the Agent surface so the clone's terminal mounts and its controller starts.
         globalStore.set(model.focusIdAtom, newTabId);
         globalStore.set(model.surfaceAtom, "agent");
+        showTerminal();
     });
 }

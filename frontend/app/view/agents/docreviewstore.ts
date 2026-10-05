@@ -11,6 +11,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { useEffect } from "react";
+import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentAsk, AgentVM } from "./agentsviewmodel";
 import { getCanvas, setCanvasMode } from "./canvasstore";
@@ -159,6 +160,7 @@ export function openReview(model: AgentsViewModel, agentId: string): void {
     syncDocReview(agentId, agent.ask);
     globalStore.set(model.focusIdAtom, agentId);
     globalStore.set(model.surfaceAtom, "agent");
+    showTerminal();
     setDocReviewMode(agentId, "review", Date.now());
 }
 

@@ -4,6 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
+import { centerModeAtom } from "./agentcenter";
 import type { SurfaceKey } from "./agents";
 import type { AgentAsk, AgentVM } from "./agentsviewmodel";
 import { attachCanvas, detachCanvas, getCanvas, setCanvasMode } from "./canvasstore";
@@ -167,6 +168,13 @@ describe("openReview", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(getDocReview("a1")).toMatchObject({ askId: "k1", mode: "review" });
         expect(globalStore.get(docReviewAtom)).toBeNull();
+    });
+
+    it("on a Doc review: brings the centre column back from History or a session to the terminal", () => {
+        const model = stubModel([agentVM("a1", docAsk("k1"))]);
+        globalStore.set(centerModeAtom, "history");
+        openReview(model, "a1");
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 
     it("puts a showing canvas back to the terminal", () => {
