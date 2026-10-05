@@ -6893,6 +6893,25 @@ const agentTreeRail = {
 const QUICK_RETURN_DWELL_MS = 250;
 const QUICK_RETURN_SAMPLE_MS = 600;
 
+// the sidebar's session rows arrive after a scan that starts when the surface is entered: wait until the tree has stopped growing
+// before sampling it, or rows sliding aside for them read as a slide on return
+const settleTree = (h) =>
+    h.ev(`(async () => {
+        const count = () => document.querySelectorAll("[data-agent-tree] .overflow-y-auto > div").length;
+        let last = count();
+        const t0 = performance.now();
+        let since = t0;
+        while (performance.now() - since < 900 && performance.now() - t0 < 8000) {
+            await new Promise((r) => setTimeout(r, 100));
+            const n = count();
+            if (n !== last) {
+                last = n;
+                since = performance.now();
+            }
+        }
+        return last;
+    })()`);
+
 const agentTreeQuickReturn = {
     name: "agent-tree-quick-return",
     surface: "agent",
@@ -6900,6 +6919,7 @@ const agentTreeQuickReturn = {
         return {};
     },
     async assert(h) {
+        await settleTree(h);
         const rows = await h.ev(`document.querySelectorAll("[data-agent-tree] .overflow-y-auto > div").length`);
         if (rows < 2) {
             return [
@@ -6941,6 +6961,502 @@ const agentTreeQuickReturn = {
         ];
     },
     async teardown() {},
+};
+
+// The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's ended sessions
+// under each project, Show more, the session pane with Resume, Conversation History, Esc back to the terminal, `g s`, History's list cursor
+// leaving with the surface, and a rail with no Sessions item (Radar on Ctrl+6). One live fixture agent gives the tree a project to hang
+// sessions under; GetSessionsActivity is answered in-page (see installAhMock). Resume is asserted present, never clicked: it would start a
+// real agent. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
+const AH_LIVE_ID = "fx-ah-live";
+const AH_PROJECT = "waveterm";
+const AH_GHOST = "ah-ghost";
+const AH_ANSWER = "history seed answer";
+const AH_MOCK_KEY = "__arcAgentHistoryMock";
+const AH_FOCUS_KEY = "cockpit.focus.last";
+const AH_SCAN_GAP_MS = 5400; // the sidebar rescans on re-entry at most every 5s (agentsidebarmodel.ts scanDue)
+const AH_TERMINAL = `document.querySelector('[data-agent-terminal="${AH_LIVE_ID}"]')`;
+
+const ahNap = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// polls a page expression to truthy; resolves to its last value
+const ahWait = (h, expr, ms = 6000) =>
+    h.ev(`(async () => {
+        const t0 = performance.now();
+        for (;;) {
+            const v = !!(${expr});
+            if (v || performance.now() - t0 > ${ms}) return v;
+            await new Promise((r) => setTimeout(r, 150));
+        }
+    })()`);
+
+// a keydown where the user's focus is, so the dispatcher's window-capture listener sees it as a keypress
+const ahKey = (h, key, code, mods = {}) =>
+    h.ev(
+        `(document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", ${JSON.stringify({ key, code, ...mods, bubbles: true, cancelable: true })}))`
+    );
+
+const ahTurn = (type, content) => JSON.stringify({ type, message: { role: type, content } }) + "\n";
+
+// Reloads and waits for the new document's nav rail. A bare wait for the nav can be answered by the old document before the
+// navigation commits, and an in-page mock installed there would be lost, so the old document carries a mark the new one lacks.
+async function ahReload(h) {
+    await h.ev("window.__arcAhReloading = true");
+    await h.ev("location.reload()");
+    for (let i = 0; i < 120; i++) {
+        await ahNap(500);
+        const ready = await h.ev(`!window.__arcAhReloading && !!document.querySelector("nav button")`).catch(() => false);
+        if (ready) return true;
+    }
+    return false;
+}
+
+// ended solo sessions ah-1 (newest) .. ah-7 under AH_PROJECT, one more page than the sidebar shows at first; ah-live is the live
+// fixture agent's own transcript (matched by normalized path, so it must not list as ended); ah-run was launched by a run (excluded
+// from the sidebar); ah-g1 belongs to a project with no live agent
+function ahSessions(cwd, livePath, now) {
+    const base = {
+        runtime: "claude",
+        projectpath: "C:/ah/waveterm",
+        projectname: AH_PROJECT,
+        branch: "main",
+        model: "opus",
+        tokenstotal: 1200,
+        status: "done",
+        startedts: now - 3_600_000,
+        durationms: 60_000,
+        events: [],
+    };
+    const solo = (n) => ({
+        ...base,
+        id: `ah-${n}`,
+        task: `history seed ${n}`,
+        lastactivets: now - n * 600_000,
+        resumecommand: `claude --resume ah-${n}`,
+        transcriptpath: join(cwd, `ah-${n}.jsonl`),
+    });
+    return [
+        ...[1, 2, 3, 4, 5, 6, 7].map(solo),
+        {
+            ...base,
+            id: "ah-live",
+            task: "ah live prompt",
+            lastactivets: now - 30_000,
+            resumecommand: "claude --resume ah-live",
+            // the same file the fixture agent reports, spelled differently: forward slashes, lower case
+            transcriptpath: livePath.replace(/\\/g, "/").toLowerCase(),
+        },
+        {
+            ...base,
+            id: "ah-run",
+            task: "ah run worker",
+            lastactivets: now - 45_000,
+            resumecommand: "claude --resume ah-run",
+            transcriptpath: join(cwd, "ah-run.jsonl"),
+            runid: "ah-run-1",
+            channelid: "ah-ch",
+            taskid: "t-1",
+            role: "worker",
+        },
+        {
+            ...base,
+            id: "ah-g1",
+            projectname: AH_GHOST,
+            projectpath: "C:/ah/ghost",
+            task: "ghost prompt",
+            lastactivets: now - 120_000,
+            resumecommand: "claude --resume ah-g1",
+            transcriptpath: join(cwd, "ah-g1.jsonl"),
+        },
+    ];
+}
+
+// The app's own module for one file name, at the URL the dev server served it: a dynamic import of that URL is the instance the app
+// runs. Resource timing first (setup-fixtures.mjs finds wshclientapi.ts the same way); its buffer holds 250 entries, fewer than the
+// modules a dev page loads, so the frame's resource tree is the fallback. null when neither lists it.
+async function ahModuleUrl(h, file) {
+    const pattern = `/${file}\\.ts(\\?|$)`;
+    const timed = await h.ev(`(() => {
+        const re = new RegExp(${JSON.stringify(pattern)});
+        const hits = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => re.test(n));
+        return hits.length ? hits[hits.length - 1] : null;
+    })()`);
+    if (timed) return timed;
+    try {
+        const tree = await h.cdp("Page.getResourceTree");
+        const re = new RegExp(pattern);
+        const hits = (tree?.frameTree?.resources ?? []).map((r) => r.url).filter((u) => re.test(u));
+        return hits.length ? hits[hits.length - 1] : null;
+    } catch {
+        return null;
+    }
+}
+
+// answers getsessionsactivity with the seeded sessions (counting calls) and delegates every other command to what was there
+async function installAhMock(h, sessions) {
+    const url = await ahModuleUrl(h, "wshclientapi");
+    if (!url) return "no-module-url";
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(url)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${AH_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const state = { calls: 0 };
+        const sessions = ${JSON.stringify(sessions)};
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getsessionsactivity") {
+                    state.calls++;
+                    return Promise.resolve({ sessions });
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${AH_MOCK_KEY} = { api, prev, mock, state };
+        api.setMockRpcClient(mock);
+        const probe = await api.GetSessionsActivityCommand(window.TabRpcClient, { windowdays: 30, limit: 100 });
+        state.calls = 0;
+        return (probe.sessions ?? []).some((s) => s.id === "ah-1") ? "ok" : "not-intercepted";
+    })()`);
+}
+
+const removeAhMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${AH_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${AH_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// The surface that owns the page's list cursor (listnav.ts), read from the app's own jotai store: { surface } (null when none is
+// published) or { error }. The one atom this harness reads (the header says asserts do not): the cursor has no DOM trace, and what
+// it breaks, j/k on another surface's list, needs that surface to hold data.
+async function ahListNavSurface(h) {
+    try {
+        const storeUrl = await ahModuleUrl(h, "jotaiStore");
+        const navUrl = await ahModuleUrl(h, "listnav");
+        if (!storeUrl || !navUrl) return { error: "the dev server's jotaiStore.ts and listnav.ts urls are not in the page's resources" };
+        const surface = await h.ev(`(async () => {
+            const { globalStore } = await import(${JSON.stringify(storeUrl)});
+            const { listNavAtom } = await import(${JSON.stringify(navUrl)});
+            return globalStore.get(listNavAtom)?.surface ?? null;
+        })()`);
+        return { surface };
+    } catch (e) {
+        return { error: String(e?.message ?? e) };
+    }
+}
+
+// the ended-session rows of one project, and whether it offers Show more
+const ahRows = (h, project) =>
+    h.ev(`(() => ({
+        keys: [...document.querySelectorAll('[data-agent-session-row][data-agent-session-project=${JSON.stringify(project)}]')]
+            .map((r) => r.getAttribute("data-agent-session-row")),
+        more: document.querySelector('[data-agent-sessions-more=${JSON.stringify(project)}]') != null,
+    }))()`);
+
+const ahMockCalls = (h) => h.ev(`window.${AH_MOCK_KEY}?.state.calls ?? -1`);
+
+const agentHistory = {
+    name: "agent-history",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-agent-history-"));
+        const ctx = {
+            cwd,
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+            prevFocus: await h.ev(`localStorage.getItem(${JSON.stringify(AH_FOCUS_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const livePath = join(cwd, "live.jsonl");
+            writeFileSync(livePath, ahTurn("user", "live prompt"));
+            // ah-1's transcript is what the session pane reads
+            writeFileSync(
+                join(cwd, "ah-1.jsonl"),
+                ahTurn("user", "history seed 1") + ahTurn("assistant", [{ type: "text", text: AH_ANSWER }])
+            );
+            const sessions = ahSessions(cwd, livePath, Date.now());
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: AH_LIVE_ID,
+                            name: "ah live",
+                            project: AH_PROJECT,
+                            task: "verify agent history",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            blockId: "fx-blk-ah-live",
+                            transcriptPath: livePath,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
+            // History lists through the active Space (a persisted focus), which would hide the seeded sessions
+            await h.ev(`localStorage.removeItem(${JSON.stringify(AH_FOCUS_KEY)})`);
+            // the fixture roster is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.mock = await installAhMock(h, sessions);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            rec(
+                "0. the fixture agent, the transcripts and the sessions mock are in place",
+                ctx.arrangeError == null && ctx.mock === "ok",
+                ctx.arrangeError ?? `mock=${ctx.mock}`
+            );
+
+            // the runner has entered Agent, which starts the scan; if the rows are not there, enter again once the scan gap has passed
+            let loaded = await ahWait(h, `document.querySelectorAll('[data-agent-session-row]').length > 0`, 8000);
+            if (!loaded) {
+                await h.goto("cockpit");
+                await ahNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                loaded = await ahWait(h, `document.querySelectorAll('[data-agent-session-row]').length > 0`, 8000);
+            }
+            rec("1. the first scan filled the sidebar's session rows", loaded === true, `loaded=${loaded}`);
+
+            const head = await h.ev(`(() => {
+                const tree = document.querySelector("[data-agent-tree]");
+                return tree ? [...tree.querySelectorAll("button")].slice(0, 2).map((b) => b.textContent.trim()) : null;
+            })()`);
+            rec(
+                "2. the tree opens with New agent, then Conversation History",
+                JSON.stringify(head) === JSON.stringify(["New agent", "Conversation History"]),
+                JSON.stringify(head)
+            );
+
+            const first = await ahRows(h, AH_PROJECT);
+            rec(
+                "3. the live project lists five ended sessions newest first, not the live agent's own session nor a run's, and offers Show more",
+                JSON.stringify(first.keys) === JSON.stringify(["ah-1", "ah-2", "ah-3", "ah-4", "ah-5"].map((id) => `claude:${id}`)) &&
+                    first.more === true,
+                JSON.stringify(first)
+            );
+
+            const ghost = await h.ev(`(() => ({
+                rows: document.querySelectorAll('[data-agent-session-project="${AH_GHOST}"]').length,
+                folder: [...document.querySelectorAll("[data-agent-tree] button[aria-expanded]")]
+                    .some((b) => (b.textContent || "").includes(${JSON.stringify(AH_GHOST)})),
+            }))()`);
+            rec(
+                "4. a project with ended sessions and no live agent is a folder of its own",
+                ghost.rows === 1 && ghost.folder === true,
+                JSON.stringify(ghost)
+            );
+
+            const age = await h.ev(
+                `document.querySelector('[data-agent-session-row="claude:ah-1"] [data-agent-session-age]')?.textContent?.trim() ?? null`
+            );
+            rec("5. a row carries its relative time (ah-1 moved 10 minutes ago)", /^\d+m$/.test(age ?? ""), `age=${age}`);
+
+            await h.ev(`document.querySelector('[data-agent-sessions-more=${JSON.stringify(AH_PROJECT)}]')?.click()`);
+            // the Show more row leaves with a short exit animation
+            await ahWait(
+                h,
+                `document.querySelectorAll('[data-agent-session-row][data-agent-session-project=${JSON.stringify(AH_PROJECT)}]').length === 7 &&
+                    !document.querySelector('[data-agent-sessions-more=${JSON.stringify(AH_PROJECT)}]')`,
+                4000
+            );
+            const all = await ahRows(h, AH_PROJECT);
+            rec(
+                "6. Show more lists the other two and the button goes",
+                all.keys.length === 7 && all.more === false,
+                JSON.stringify(all)
+            );
+
+            await h.ev(`document.querySelector('[data-agent-session-row="claude:ah-1"]')?.click()`);
+            const sessionShown = await ahWait(h, `document.querySelector('[data-agent-session]')`);
+            const answered = await ahWait(
+                h,
+                `document.querySelector('[data-agent-session]')?.textContent?.includes(${JSON.stringify(AH_ANSWER)})`
+            );
+            const pane = await h.ev(`(() => {
+                const t = ${AH_TERMINAL};
+                return {
+                    resume: [...(document.querySelector("[data-agent-session]")?.querySelectorAll("button") ?? [])]
+                        .some((b) => /^Resume/.test((b.textContent || "").trim())),
+                    terminalMounted: t != null,
+                    terminalVisible: t?.checkVisibility() ?? null,
+                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
+                    selected: document.querySelector('[data-agent-session-row="claude:ah-1"]')?.className.includes("bg-surface-selected") ?? false,
+                };
+            })()`);
+            rec(
+                "7. clicking an ended session reads its transcript with Resume, over a terminal that stays mounted but hidden, with no rail",
+                sessionShown &&
+                    answered === true &&
+                    pane.resume &&
+                    pane.terminalMounted &&
+                    pane.terminalVisible === false &&
+                    !pane.rail &&
+                    pane.selected,
+                JSON.stringify({ sessionShown: !!sessionShown, answered, ...pane })
+            );
+            await h.shot("cdp-shots/agent-history-session.png");
+
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(500);
+            const back = await h.ev(`(() => {
+                const t = ${AH_TERMINAL};
+                return {
+                    session: document.querySelector("[data-agent-session]") != null,
+                    terminalVisible: t?.checkVisibility() ?? null,
+                    // the rail's own selector, so its absence under the session and History (steps 7 and 9) means something
+                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
+                };
+            })()`);
+            rec(
+                "8. Esc returns from the session to the terminal and its rail",
+                back.session === false && back.terminalVisible === true && back.rail === true,
+                JSON.stringify(back)
+            );
+
+            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+            await ahNap(800);
+            const hist = await h.ev(`(() => {
+                const root = document.querySelector("[data-agent-history]");
+                return {
+                    open: root != null,
+                    title: root?.querySelector("h1")?.textContent ?? null,
+                    feed: root?.textContent?.includes("All activity") ?? false,
+                    oldest: root?.textContent?.includes("history seed 7") ?? false,
+                    rail: document.querySelector('aside[aria-label="Agent details"]') != null,
+                    terminalVisible: ${AH_TERMINAL}?.checkVisibility() ?? null,
+                    current: document.querySelector("[data-agent-history-open]")?.getAttribute("aria-current") === "true",
+                };
+            })()`);
+            rec(
+                "9. Conversation History lists every session (beyond the sidebar's rows), marks its button current, hides the rail, and keeps the terminal mounted",
+                hist.open &&
+                    hist.title === "Conversation History" &&
+                    hist.feed &&
+                    hist.oldest &&
+                    hist.current &&
+                    !hist.rail &&
+                    hist.terminalVisible === false,
+                JSON.stringify(hist)
+            );
+            await h.shot("cdp-shots/agent-history-history.png");
+
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(500);
+            const closed = await h.ev(`document.querySelector("[data-agent-history]") == null`);
+            rec("10. Esc closes History", closed === true, `closed=${closed}`);
+
+            // Ctrl+g is the leader alias that works wherever focus is, even if the terminal took it back
+            await ahKey(h, "g", "KeyG", { ctrlKey: true });
+            await ahNap(150);
+            await ahKey(h, "s", "KeyS");
+            const viaLeader = await ahWait(h, `document.querySelector("[data-agent-history]")`, 3000);
+            rec("11. g s opens Conversation History in the Agent surface", !!viaLeader, `history=${!!viaLeader}`);
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(400);
+
+            const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`);
+            await ahKey(h, "6", "Digit6", { ctrlKey: true });
+            await ahNap(800);
+            const afterChord = await h.activeSurfaceLabel();
+            rec(
+                "12. the rail has seven surfaces and no Sessions, and Ctrl+6 opens Radar",
+                !nav.includes("Sessions") &&
+                    JSON.stringify(nav.slice(0, 7)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Code", "Diff", "Radar", "Usage"]) &&
+                    afterChord === "Radar",
+                JSON.stringify({ nav, afterChord })
+            );
+
+            // coming back after the scan gap rescans (the mock counts the calls); away from the surface nothing scans
+            const before = await ahMockCalls(h);
+            await h.goto("cockpit");
+            await ahNap(AH_SCAN_GAP_MS);
+            const away = await ahMockCalls(h);
+            await h.goto("agent");
+            await ahNap(1500);
+            const after = await ahMockCalls(h);
+            rec(
+                "13. entering the Agent surface again rescans, and nothing polls in between",
+                before >= 0 && away === before && after > away,
+                `calls ${before} -> ${away} -> ${after}`
+            );
+
+            // History stays open under a hidden Agent surface, and its list cursor must go with the surface: left published
+            // (surface "agent") it would take j/k from the list of whichever surface shows
+            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+            const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
+            await ahNap(300);
+            const owner = await ahListNavSurface(h);
+            await ahKey(h, "6", "Digit6", { ctrlKey: true });
+            await ahNap(800);
+            const elsewhere = await h.activeSurfaceLabel();
+            const withdrawn = await ahListNavSurface(h);
+            await h.goto("agent");
+            const kept = await h.ev(`document.querySelector("[data-agent-history]") != null`);
+            const republished = await ahListNavSurface(h);
+            const probeError = [owner, withdrawn, republished].find((r) => r.error != null)?.error;
+            steps.push(
+                probeError != null
+                    ? skipStep("14. History's list cursor is withdrawn while another surface shows, and is back with the surface", probeError)
+                    : {
+                          step: "14. History's list cursor is withdrawn while another surface shows, and is back with the surface",
+                          ok:
+                              reopened === true &&
+                              owner.surface === "agent" &&
+                              elsewhere === "Radar" &&
+                              withdrawn.surface !== "agent" &&
+                              kept === true &&
+                              republished.surface === "agent",
+                          detail: JSON.stringify({
+                              reopened,
+                              onAgent: owner.surface,
+                              elsewhere,
+                              onRadar: withdrawn.surface,
+                              historyKept: kept,
+                              backOnAgent: republished.surface,
+                          }),
+                      }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agent-history teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the sessions mock", () => removeAhMock(h));
+        if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
+        await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
+        await step("restore the persisted focus", () => h.ev(restoreStorageKey(AH_FOCUS_KEY, ctx.prevFocus)));
+        await step("reload onto the live roster", () => ahReload(h));
+        await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
 };
 
 // A lead's Spec review ask opens as the review dialog over whatever agent is focused (git show a4b5bd4f:
@@ -11534,6 +12050,7 @@ export const SCENARIOS = [
     narrationFeed,
     agentTreeRail,
     agentTreeQuickReturn,
+    agentHistory,
     docReview,
     docReviewCanvas,
     docReviewMode,
