@@ -9,7 +9,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowLeft, ArrowUpRight, ChevronLeft } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChevronLeft, LayoutTemplate } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
@@ -27,11 +27,14 @@ import { bgTaskStatusLabel, planAgentRail, type AgentRailSectionId, type BgTaskL
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
+import { canvasStateAtom, selectCanvasTab, setCanvasMode } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
 import { capFiles, statusColor } from "./gitstatus";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
 import { prettyModel } from "./modellabel";
+import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
+import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
@@ -289,6 +292,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     );
     const endedWorker = useAtomValue(model.endedWorkerAtom);
     const ended = endedWorker?.agent.id === agent.id ? endedWorker : undefined;
+    const artifacts = artifactsView(useAtomValue(canvasStateAtom(agent.id)));
 
     useEffect(() => {
         fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
@@ -324,6 +328,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         openDiff(model, agentDiffScope(agent.id, agent.name), railState?.cwd && path ? path : undefined);
     };
     const drive = (data: string) => driveAgent(agent.blockId, data);
+    // a board's row opens the agent's canvas on that board alone (its own tab, not the All view)
+    const openArtifact = (board: string) => {
+        selectCanvasTab(agent.id, board);
+        setCanvasMode(agent.id, "canvas", Date.now());
+    };
 
     const age = formatAgeShort(displayAgeMs(agent, now));
     const isClaude = (agent.agent || "claude") === "claude";
@@ -343,7 +352,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
         subagents: subs.length,
         files: fileCount,
-        artifacts: 0,
+        artifacts: artifacts.rows.length,
         uploads: 0, // no upload records exist yet; the Uploads work feeds this
         bgTasks: bgTasks.length,
         terminals: 0,
@@ -493,7 +502,33 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     </div>
                 </>
             ),
-        artifacts: () => null,
+        artifacts: () => (
+            <div className="flex flex-col gap-[7px]">
+                <div className="flex min-w-0 items-center gap-[6px]">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
+                        {artifacts.topic}
+                    </span>
+                    {artifacts.unseen ? (
+                        <span
+                            aria-label="updated since you last looked"
+                            className="h-[5px] w-[5px] shrink-0 rounded-full bg-accent"
+                        />
+                    ) : null}
+                </div>
+                {artifacts.rows.map((r) => (
+                    <button
+                        key={r.name}
+                        type="button"
+                        title={r.title}
+                        onClick={() => openArtifact(r.name)}
+                        className={cn(RAIL_ROW, RAIL_ROW_ACTION)}
+                    >
+                        <LayoutTemplate size={13} aria-hidden className="shrink-0 text-muted" />
+                        <span className="min-w-0 flex-1 truncate">{r.label}</span>
+                    </button>
+                ))}
+            </div>
+        ),
         uploads: () => null,
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
