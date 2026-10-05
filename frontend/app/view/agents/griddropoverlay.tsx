@@ -19,6 +19,8 @@ interface OverlayProps {
     ids: readonly string[]; // every cell of the grid the surface drew, in order (what the overlay shows; a drop re-reads the grid)
 }
 
+const FOCUS_DELAY_MS = 120; // let the xterm become visible
+
 // The drop leaves DOM focus on the row that was dragged; hand it to the cell that took the agent so typing goes there.
 function focusCellSoon(id: string): void {
     window.setTimeout(() => {
@@ -26,7 +28,7 @@ function focusCellSoon(id: string): void {
         if (term?.checkVisibility()) {
             term.focus({ preventScroll: true });
         }
-    }, 120);
+    }, FOCUS_DELAY_MS);
 }
 
 export function GridDropOverlay(props: OverlayProps) {

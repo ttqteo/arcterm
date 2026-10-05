@@ -15,37 +15,48 @@ interface DragSource {
 }
 
 let disarm: (() => void) | null = null;
+let armedAt = 0;
+let pending: ReturnType<typeof setTimeout> | null = null;
 const FAILSAFE_GRACE_MS = 300;
 
 // A drag whose source unmounts mid-drag (its agent exits) never fires dragend, which would leave the overlays up
 // for good. dragend and drop reach window last (bubbling, after React's own handlers, so the overlay's onDrop has
-// already run); pointermove and keydown only arrive once the drag is over, and are ignored for a moment after it
-// starts so a stray one cannot end it at once.
+// already run). pointermove and keydown mean the drag is over only once the grace period since the latest begin has
+// passed (a stray one right after the start must not end it), and a pointermove only when no button is held: a
+// native drag holds the primary button down, so a pointer event that does arrive during one is not the end of it.
 function armFailsafe(): void {
+    armedAt = performance.now();
     if (typeof window === "undefined" || disarm != null) {
         return;
     }
-    const armedAt = performance.now();
     const stop = () => endAgentDrag();
-    const stopLate = () => {
+    const late = () => {
         if (performance.now() - armedAt > FAILSAFE_GRACE_MS) {
             endAgentDrag();
         }
     };
+    const onMove = (e: PointerEvent) => {
+        if (e.buttons === 0) {
+            late();
+        }
+    };
+    const onKey = late;
     window.addEventListener("dragend", stop);
     window.addEventListener("drop", stop);
-    window.addEventListener("pointermove", stopLate, true);
-    window.addEventListener("keydown", stopLate, true);
+    window.addEventListener("pointermove", onMove, { capture: true });
+    window.addEventListener("keydown", onKey, { capture: true });
     disarm = () => {
         window.removeEventListener("dragend", stop);
         window.removeEventListener("drop", stop);
-        window.removeEventListener("pointermove", stopLate, true);
-        window.removeEventListener("keydown", stopLate, true);
+        window.removeEventListener("pointermove", onMove, { capture: true });
+        window.removeEventListener("keydown", onKey, { capture: true });
         disarm = null;
     };
 }
 
-// onDragStart of anything that can be dropped on the grid.
+// onDragStart of anything that can be dropped on the grid. The drag data is only writable here, so it is set at once;
+// the atom, which mounts the drop overlays, waits a tick: Chromium can cancel a drag the instant it starts when the
+// page changes inside dragstart.
 export function beginAgentDrag(e: DragSource, id: string): void {
     const dt = e.dataTransfer;
     if (dt == null) {
@@ -53,11 +64,22 @@ export function beginAgentDrag(e: DragSource, id: string): void {
     }
     dt.setData(AGENT_DRAG_MIME, id);
     dt.effectAllowed = "move";
-    globalStore.set(agentDragAtom, { id });
     armFailsafe();
+    if (pending != null) {
+        clearTimeout(pending);
+    }
+    pending = setTimeout(() => {
+        pending = null;
+        globalStore.set(agentDragAtom, { id });
+    }, 0);
 }
 
+// The timer goes first, so a dragend that beats it is not undone by it.
 export function endAgentDrag(): void {
+    if (pending != null) {
+        clearTimeout(pending);
+        pending = null;
+    }
     globalStore.set(agentDragAtom, null);
     disarm?.();
 }

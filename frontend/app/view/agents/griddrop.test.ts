@@ -57,12 +57,20 @@ describe("zoneFromPoint", () => {
         expect(at(0.5, -3)).toBe("top");
         expect(at(0.5, 5)).toBe("bottom");
     });
-    it("a rect with no area, or a non-finite point, is the centre", () => {
+    it("a rect with no area, or a NaN coordinate, is the centre", () => {
         expect(zoneFromPoint({ left: 0, top: 0, width: 0, height: 100 }, 5, 5)).toBe("center");
         expect(zoneFromPoint({ left: 0, top: 0, width: 100, height: 0 }, 5, 5)).toBe("center");
         expect(zoneFromPoint({ left: 0, top: 0, width: -10, height: 100 }, 5, 5)).toBe("center");
-        expect(zoneFromPoint(rect, Number.NaN, 100)).toBe("center");
-        expect(zoneFromPoint(rect, 200, Number.NaN)).toBe("center");
+        // the other coordinate is 1px from an edge, so a NaN read as "clamped" or "the middle" would not give the centre
+        expect(zoneFromPoint(rect, Number.NaN, rect.top + 1)).toBe("center");
+        expect(zoneFromPoint(rect, rect.left + 1, Number.NaN)).toBe("center");
+        expect(zoneFromPoint(rect, Number.NaN, Number.NaN)).toBe("center");
+    });
+    it("an infinite coordinate clamps to that edge", () => {
+        expect(zoneFromPoint(rect, Infinity, rect.top + 100)).toBe("right");
+        expect(zoneFromPoint(rect, -Infinity, rect.top + 100)).toBe("left");
+        expect(zoneFromPoint(rect, rect.left + 200, Infinity)).toBe("bottom");
+        expect(zoneFromPoint(rect, rect.left + 200, -Infinity)).toBe("top");
     });
 });
 

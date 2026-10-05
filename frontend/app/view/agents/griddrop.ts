@@ -24,12 +24,12 @@ export function isAgentDrag(types: ArrayLike<string> | null | undefined): boolea
     return types != null && Array.from(types).includes(AGENT_DRAG_MIME);
 }
 
-const clamp01 = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5);
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 // The zone of `rect` that (x, y) is in. Distances are fractions of the cell's own width and height, so a wide
 // cell and a tall one both keep a quarter. In a corner the nearer edge wins; on a tie the horizontal edge does.
 export function zoneFromPoint(rect: Rect, x: number, y: number): DropZone {
-    if (!(rect.width > 0) || !(rect.height > 0)) {
+    if (!(rect.width > 0) || !(rect.height > 0) || Number.isNaN(x) || Number.isNaN(y)) {
         return "center";
     }
     const u = clamp01((x - rect.left) / rect.width);
@@ -77,12 +77,7 @@ export function resolveDrop(
     return { index, zone: allowedZones(ids.length).includes(zone) ? zone : "center" };
 }
 
-export interface ZoneBox {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-}
+export type ZoneBox = Rect;
 
 // The highlight for a zone, as percentages of the cell: an edge previews the half the agent will take.
 const ZONE_BOX: Record<DropZone, ZoneBox> = {
