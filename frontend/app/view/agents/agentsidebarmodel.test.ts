@@ -154,6 +154,94 @@ describe("endedSessionsByProject", () => {
     });
 });
 
+// The tree files a live agent under projectOf(agent): the registered project name it was launched into
+// (session:project), else the last hyphen segment of its transcript folder. The scan names a session by the last
+// segment of its cwd. Both are for one project, so the ended sessions must be filed where the live agents are.
+describe("endedSessionsByProject project keys", () => {
+    const groupsOf = (rows: SidebarRow[]) => rows.filter((r) => r.kind === "group").map((r) => label(r));
+    const sidebar = (agents: AgentVM[], ended: Map<string, EndedSessionRow[]>) =>
+        buildSidebarRows(treeOf(agents), ended, new Set(), {});
+
+    it("files a session under the registered project its path belongs to, not under its folder's name", () => {
+        const launched = agent("a", undefined, "Arc");
+        const ended = endedSessionsByProject(
+            [session("s", { projectpath: "D:\\projects\\arcterm", projectname: "arcterm" })],
+            [launched],
+            { Arc: { path: "d:/projects/arcterm/" } }
+        );
+        expect([...ended.keys()]).toEqual(["Arc"]);
+        // one folder, holding the live agent and then its ended session
+        const rows = sidebar([launched], ended);
+        expect(groupsOf(rows)).toEqual(["group:Arc"]);
+        expect(labels(rows)).toEqual(["group:Arc", "parent", "session:s"]);
+    });
+
+    it("gives a registered project with only ended sessions its registered name", () => {
+        const ended = endedSessionsByProject(
+            [session("s", { projectpath: "/work/arcterm", projectname: "arcterm" })],
+            [],
+            { Arc: { path: "/work/arcterm" } }
+        );
+        expect([...ended.keys()]).toEqual(["Arc"]);
+    });
+
+    it("ignores a registered project with no path, and a session with no path", () => {
+        const ended = endedSessionsByProject([session("s", { projectpath: "", projectname: "loom" })], [], {
+            Arc: {},
+            Odd: { path: "" },
+        });
+        expect([...ended.keys()]).toEqual(["loom"]);
+    });
+
+    it("files a session in a live agent's transcript folder under that agent's project", () => {
+        // an agent started in a terminal has no session:project, so its key is the lossy last hyphen segment
+        const external = {
+            ...agent("a", "C:\\Users\\U\\.claude\\projects\\D--projects-arcterm-fork\\live.jsonl"),
+            project: undefined,
+        };
+        expect(sidebar([external], new Map()).filter((r) => r.kind === "group")).toMatchObject([{ project: "fork" }]);
+        const ended = endedSessionsByProject(
+            [
+                session("s", {
+                    projectpath: "D:\\projects\\arcterm-fork",
+                    projectname: "arcterm-fork",
+                    transcriptpath: "c:/users/u/.claude/projects/d--projects-arcterm-fork/old.jsonl",
+                }),
+            ],
+            [external],
+            // the registered name would say otherwise, but the live agent's folder is where the eye is
+            { "arc fork": { path: "D:\\projects\\arcterm-fork" } }
+        );
+        expect([...ended.keys()]).toEqual(["fork"]);
+        expect(groupsOf(sidebar([external], ended))).toEqual(["group:fork"]);
+    });
+
+    it("does not read two sessions as one project because their transcripts share a date folder", () => {
+        // codex writes one folder per day, whatever the project
+        const codexAgent = agent("a", "/home/u/.codex/sessions/2026/10/05/rollout-live.jsonl", "waveterm");
+        const ended = endedSessionsByProject(
+            [
+                session("s", {
+                    runtime: "codex",
+                    projectname: "loom",
+                    transcriptpath: "/home/u/.codex/sessions/2026/10/05/rollout-old.jsonl",
+                }),
+            ],
+            [codexAgent]
+        );
+        expect([...ended.keys()]).toEqual(["loom"]);
+    });
+
+    it("falls back to the scan's folder name for a project that is neither registered nor live", () => {
+        const ended = endedSessionsByProject(
+            [session("s", { projectpath: "/elsewhere/loom", projectname: "loom" })],
+            [agent("a")],
+            { Arc: { path: "/work/arcterm" } }
+        );
+        expect([...ended.keys()]).toEqual(["loom"]);
+    });
+});
+
 describe("buildSidebarRows", () => {
     const noPages = {};
     const noneCollapsed = new Set<string>();

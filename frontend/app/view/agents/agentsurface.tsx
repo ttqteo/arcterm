@@ -48,6 +48,7 @@ import { terminalFullscreenAtom } from "./railstore";
 import { isEndedWorkerId } from "./runlineage";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
+import { useSessionsScan } from "./usesessionsscan";
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     const focusId = useAtomValue(model.focusIdAtom);
@@ -95,6 +96,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // review as its dialog, a Doc review in the terminal's place (openReview makes its state first, so this
     // effect, which runs before the shell's roster sync, still lands in review mode)
     const surface = useAtomValue(model.surfaceAtom);
+    // the sidebar's ended sessions: scanned after first paint on arriving here and when an agent exits, never at boot
+    useSessionsScan(surface === "agent", agents);
     const askId = agent?.ask?.askId;
     useEffect(() => {
         const opened = globalStore.get(autoOpenedAskIdsAtom);

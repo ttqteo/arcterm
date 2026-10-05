@@ -8,7 +8,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { atom, useAtomValue } from "jotai";
 import {
     ArrowRight,
     ArrowUpRight,
@@ -20,27 +20,35 @@ import {
     ExternalLink,
     Folder,
     FolderOpen,
+    History as HistoryIcon,
+    MessageSquare,
     Pencil,
+    Play,
     Plus,
     SquareTerminal,
     Workflow,
     X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
-import {
-    buildAgentTree,
-    foldCollapsedProjects,
-    stageSubline,
-    treeAgentCount,
-    type StageOutcome,
-} from "./agenttreemodel";
+import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { renamingRowAtom } from "./rowrenameatom";
+import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
+import {
+    buildSidebarRows,
+    endedSessionsByProject,
+    sessionAgeLabel,
+    showMore,
+    type EndedSessionRow,
+} from "./agentsidebarmodel";
+import { projectsAtom } from "./projectsstore";
+import { sessionsArchiveAtom } from "./sessionsarchivestore";
+import { runSessionPrimary } from "./sessionsdetail";
 import { duplicateSession, renameSession, sessionCustomLabel } from "./session-models/sessionsidebarmodel";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
@@ -101,6 +109,24 @@ function endRowRename(tabId: string): void {
     if (globalStore.get(renamingRowAtom) === tabId) {
         globalStore.set(renamingRowAtom, null);
     }
+}
+
+// how many times "Show more" was pressed under each project (five more ended sessions per press); session-scoped, and
+// module-level so it survives the tree re-rendering
+const sessionPagesAtom = atom<Record<string, number>>({});
+
+// choosing an agent's row brings its terminal back from a session or History
+function selectAgentRow(model: AgentsViewModel, id: string): void {
+    globalStore.set(model.focusIdAtom, id);
+    globalStore.set(model.focusReplyAtom, false);
+    showTerminal();
+}
+
+// the row that reads as selected: the focused agent's, unless the centre is showing a session or History instead
+function useSelectedRowId(model: AgentsViewModel): string | undefined {
+    const focusId = useAtomValue(model.focusIdAtom);
+    const mode = useAtomValue(centerModeAtom);
+    return mode === "terminal" ? focusId : undefined;
 }
 
 // The inline rename editor, shared by both row kinds — a session is a tab either way, so both rename
@@ -205,7 +231,7 @@ function FoldChip({
 // one showing. The click must not reach the row, which would only focus the agent in whatever mode it was left
 function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
     const canvas = useAtomValue(canvasStateAtom(id));
-    const showing = useAtomValue(model.focusIdAtom) === id && canvas?.mode === "canvas";
+    const showing = useSelectedRowId(model) === id && canvas?.mode === "canvas";
     if (canvas == null) {
         return null;
     }
@@ -216,6 +242,7 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
             onClick={(e) => {
                 e.stopPropagation();
                 globalStore.set(model.focusIdAtom, id);
+                showTerminal();
                 setAgentView(id, showing ? "terminal" : "canvas", Date.now());
             }}
             title={showing ? "Back to the terminal" : "Show the canvas"}
@@ -323,7 +350,7 @@ function ParentRow({
     agent: AgentVM;
     lead?: { run: RunInfo; open: boolean; live: number };
 }) {
-    const focusId = useAtomValue(model.focusIdAtom);
+    const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
     // drop children that finished (success/done) so a completed fan-out doesn't linger in the tree
@@ -339,10 +366,7 @@ function ParentRow({
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
 
-    const select = () => {
-        globalStore.set(model.focusIdAtom, agent.id);
-        globalStore.set(model.focusReplyAtom, false);
-    };
+    const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(agent.id) },
@@ -457,6 +481,7 @@ function ParentRow({
                                         return;
                                     }
                                     globalStore.set(model.focusIdAtom, agent.id);
+                                    showTerminal();
                                     globalStore.set(focusSubagentAtom, {
                                         parentId: agent.id,
                                         agentId: s.id,
@@ -567,7 +592,7 @@ function WorkerRow({
     nested?: boolean;
     extras?: { count: number; open: boolean };
 }) {
-    const focusId = useAtomValue(model.focusIdAtom);
+    const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     // the task's state and question belong to its worker's row, not to the tabs nested under it
     const done = !nested && task.state === "done";
@@ -594,8 +619,7 @@ function WorkerRow({
         if (focusKey == null) {
             return;
         }
-        globalStore.set(model.focusIdAtom, focusKey);
-        globalStore.set(model.focusReplyAtom, false);
+        selectAgentRow(model, focusKey);
     };
     const onContextMenu = (e: React.MouseEvent) => {
         if (agent == null) {
@@ -683,13 +707,10 @@ function StageRow({
     stageRole: string;
     outcome?: StageOutcome;
 }) {
-    const focusId = useAtomValue(model.focusIdAtom);
+    const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const selected = focusId === agent.id;
-    const select = () => {
-        globalStore.set(model.focusIdAtom, agent.id);
-        globalStore.set(model.focusReplyAtom, false);
-    };
+    const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
@@ -755,13 +776,10 @@ function FoldRow({
 // A background terminal row: no agent chrome (no status dot / model / subagents) — just a glyph +
 // name that focuses the terminal's block in the surface's focus pane.
 function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
-    const focusId = useAtomValue(model.focusIdAtom);
+    const focusId = useSelectedRowId(model);
     const selected = focusId === terminal.id;
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
-    const select = () => {
-        globalStore.set(model.focusIdAtom, terminal.id);
-        globalStore.set(model.focusReplyAtom, false);
-    };
+    const select = () => selectAgentRow(model, terminal.id);
     // The same actions an agent row offers, minus the agent-only wording: a terminal duplicates into a
     // fresh shell in the same cwd (buildDuplicateBlockMeta copies only launch keys). Rename matters
     // more here than on an agent row — a terminal has no ai-title to name it, so without a rename it
@@ -811,6 +829,73 @@ function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: Ag
     );
 }
 
+// An ended session under its project: its first prompt and how long ago it last moved. A click reads its transcript in
+// the centre, where Resume lives. It is not a live row, so it carries no state dot; the title is the prompt on one line
+// and the row's tooltip holds all of it.
+function SessionRow({ model, row }: { model: AgentsViewModel; row: EndedSessionRow }) {
+    const now = useAtomValue(model.nowAtom);
+    const mode = useAtomValue(centerModeAtom);
+    const sel = useAtomValue(model.sessionsSelAtom);
+    const selected = mode === "session" && sel === row.key;
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [];
+        if (row.session.resumecommand) {
+            items.push({
+                label: "Resume",
+                icon: <Play size={15} />,
+                click: () => runSessionPrimary(model, row.session),
+            });
+        }
+        items.push({
+            label: "Copy title",
+            icon: <Copy size={15} />,
+            click: () => void navigator.clipboard.writeText(row.title),
+        });
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    return (
+        <div
+            data-agent-session-row={row.key}
+            data-agent-session-project={row.project}
+            onClick={() => showSession(model, row.key)}
+            onContextMenu={onContextMenu}
+            title={row.tooltip}
+            className={cn(
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <Slot>
+                <MessageSquare size={12} aria-hidden className="text-ink-faint" />
+            </Slot>
+            <div className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-muted")}>
+                {row.title}
+            </div>
+            <span data-agent-session-age className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                {sessionAgeLabel(row.lastactivets, now)}
+            </span>
+        </div>
+    );
+}
+
+// Five more ended sessions under a project, with how many are still hidden
+function MoreSessionsRow({ project, hidden }: { project: string; hidden: number }) {
+    return (
+        <button
+            type="button"
+            data-agent-sessions-more={project}
+            onClick={() => globalStore.set(sessionPagesAtom, (pages) => showMore(pages, project))}
+            className="relative flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
+        >
+            <Slot>
+                <ChevronDown size={11} aria-hidden />
+            </Slot>
+            Show more
+            <span className="ml-auto tabular-nums text-ink-faint">{hidden}</span>
+        </button>
+    );
+}
+
 // memo: a surface switch re-renders AgentSurface in the same commit that flips it to display:none, and a
 // render there has motion measure every layout="position" row at (0,0) and start sliding it there, so
 // returning within the ~400ms tween shows the whole list shrinking back into place.
@@ -822,11 +907,17 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const folds = useAtomValue(treeFoldsAtom);
     const focusId = useAtomValue(model.focusIdAtom);
     const collapsedList = useAtomValue(collapsedProjectsAtom);
+    const archive = useAtomValue(sessionsArchiveAtom);
+    const registered = useAtomValue(projectsAtom);
+    const pages = useAtomValue(sessionPagesAtom);
+    const center = useAtomValue(centerModeAtom);
     const collapsed = new Set(collapsedList);
     const rows = buildAgentTree(agents, order, lineage, folds, focusId);
-    // every project is a folder row; the count comes off the unfolded rows so a collapsed project still counts
-    const total = treeAgentCount(rows);
-    const visibleRows = foldCollapsedProjects(rows, collapsed);
+    // every project is a folder: its live agents, then its ended sessions (agentsidebarmodel.ts), filed under the
+    // project name the agents use. A collapsed project hides both; the archive is null until the post-paint scan
+    // lands, so the first paint is the agents alone
+    const ended = useMemo(() => endedSessionsByProject(archive, agents, registered), [archive, agents, registered]);
+    const visibleRows = buildSidebarRows(rows, ended, collapsed, pages);
 
     useRunDigests(Object.values(lineage.runs));
 
@@ -845,7 +936,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
 
     return (
         <div data-agent-tree className="flex w-[248px] shrink-0 flex-col border-r border-border bg-surface">
-            <div className="px-[8px] pt-[10px]">
+            <div className="flex flex-col gap-[4px] px-[8px] pb-[4px] pt-[10px]">
                 <button
                     type="button"
                     onClick={() => globalStore.set(model.newAgentOpenAtom, true)}
@@ -854,10 +945,19 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                     <Plus size={14} aria-hidden />
                     New agent
                 </button>
-            </div>
-            <div className="flex items-center justify-between px-[12px] pb-[4px] pt-[14px]">
-                <h3 className="text-[12px] font-medium text-muted">Agents</h3>
-                <span className="text-[11px] tabular-nums text-ink-faint">{total}</span>
+                <button
+                    type="button"
+                    data-agent-history-open
+                    aria-pressed={center === "history"}
+                    onClick={() => showHistory(model)}
+                    className={cn(
+                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px] hover:bg-surface-hover hover:text-primary",
+                        center === "history" ? "bg-surface-selected text-primary" : "text-secondary"
+                    )}
+                >
+                    <HistoryIcon size={14} aria-hidden />
+                    Conversation History
+                </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
                 <AnimatePresence mode="popLayout" initial={false}>
@@ -894,6 +994,27 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         </span>
                                         {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
                                     </button>
+                                </motion.div>
+                            );
+                        }
+                        if (r.kind === "session" || r.kind === "more") {
+                            // no entrance animation (initial={false}): the rows arrive after the post-paint scan, and the
+                            // rows already on screen must not be seen to move for them
+                            return (
+                                <motion.div
+                                    key={r.kind === "session" ? `ended-${r.key}` : `more-${r.project}`}
+                                    layout="position"
+                                    className="pl-[14px]"
+                                    variants={cardVariants}
+                                    initial={false}
+                                    animate="animate"
+                                    exit="exit"
+                                >
+                                    {r.kind === "session" ? (
+                                        <SessionRow model={model} row={r} />
+                                    ) : (
+                                        <MoreSessionsRow project={r.project} hidden={r.hidden} />
+                                    )}
                                 </motion.div>
                             );
                         }

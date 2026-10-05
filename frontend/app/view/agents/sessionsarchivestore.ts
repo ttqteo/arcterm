@@ -21,9 +21,13 @@ export const sessionsArchiveAtom = atom<SessionActivity[] | null>(null) as Primi
 export const sessionsErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 
 let loading = false;
+// a refresh asked for while a scan is running (an agent just exited) would be dropped, and the scan under way may have
+// read the transcripts before that session ended: it runs once more when this one finishes
+let again = false;
 
 export async function loadSessionsArchive(): Promise<void> {
     if (loading) {
+        again = true;
         return;
     }
     loading = true;
@@ -38,6 +42,10 @@ export async function loadSessionsArchive(): Promise<void> {
         globalStore.set(sessionsArchiveAtom, (prev) => prev ?? []);
     } finally {
         loading = false;
+        if (again) {
+            again = false;
+            void loadSessionsArchive();
+        }
     }
 }
 

@@ -1,17 +1,23 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { globalStore } from "@/app/store/jotaiStore";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     filterByProject,
     filterByStatus,
     groupByRecency,
+    loadSessionsArchive,
     mergedFeed,
     overlayLive,
     resolveSelectedSession,
+    sessionsArchiveAtom,
     totalEvents,
 } from "./sessionsarchivestore";
+
+vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { GetSessionsActivityCommand: vi.fn() } }));
 
 const ev = (type: string, ts: number, text = ""): SessionEvent => ({ type, ts, text });
 
@@ -122,5 +128,31 @@ describe("mergedFeed + totalEvents", () => {
         expect(feed[0].ts).toBe(20);
         expect(feed[0].sessionTitle).toBe("B task");
         expect(totalEvents(list)).toBe(2);
+    });
+});
+
+describe("loadSessionsArchive", () => {
+    it("runs once more when a refresh was asked for during a scan, however many were", async () => {
+        const scan = vi.mocked(RpcApi.GetSessionsActivityCommand);
+        scan.mockReset();
+        let finishFirst!: () => void;
+        scan.mockImplementationOnce(
+            () => new Promise((resolve) => (finishFirst = () => resolve({ sessions: [] }))) as ReturnType<typeof scan>
+        );
+        scan.mockResolvedValue({ sessions: [mk()] });
+
+        const first = loadSessionsArchive();
+        // an agent exits mid-scan: the scan under way may have read its transcript before it ended
+        await loadSessionsArchive();
+        await loadSessionsArchive();
+        expect(scan).toHaveBeenCalledTimes(1);
+
+        finishFirst();
+        await first;
+        expect(scan).toHaveBeenCalledTimes(2);
+        await vi.waitFor(() => expect(globalStore.get(sessionsArchiveAtom)).toHaveLength(1));
+        // nothing was asked for during the second scan, so it does not go round again
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(scan).toHaveBeenCalledTimes(2);
     });
 });
