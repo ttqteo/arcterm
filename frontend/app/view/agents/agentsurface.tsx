@@ -47,6 +47,7 @@ import { EndedTranscript } from "./endedtranscript";
 import { DivergenceBanner } from "./focusbanner";
 import { subjectDecision } from "./focussubject";
 import { GridCellBar } from "./gridcellbar";
+import { GridDropOverlay } from "./griddropoverlay";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
 import { SessionPane } from "./sessionpane";
@@ -352,6 +353,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 />
                                             ) : null}
                                             <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                            {/* Drop zones, only while an agent is dragged. Not before the roster is seeded
+                                                (a drop prunes against the roster as it is), and not on a cell the saved
+                                                grid does not hold (a terminal shown alone): a drop is an index into the grid. */}
+                                            {cell != null && seeded && reconciled.ids.includes(a.id) ? (
+                                                <GridDropOverlay model={model} id={a.id} ids={reconciled.ids} />
+                                            ) : null}
                                         </div>
                                     );
                                 })}

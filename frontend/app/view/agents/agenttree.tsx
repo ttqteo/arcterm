@@ -15,6 +15,7 @@ import {
     Check,
     ChevronDown,
     ChevronRight,
+    Columns2,
     Copy,
     CopyPlus,
     ExternalLink,
@@ -31,6 +32,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
+import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
@@ -53,7 +55,9 @@ import { duplicateSession } from "./session-models/sessionsidebarmodel";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
+import { canOpenInSplit, openInSplit } from "./gridstore";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
+import { rosterSeededAtom } from "./liveagents";
 import { collapsedProjectsAtom, toggleProject } from "./projectfoldstore";
 import {
     endedWorkerId,
@@ -110,6 +114,41 @@ function useSelectedRowId(model: AgentsViewModel): string | undefined {
     const focusId = useAtomValue(model.focusIdAtom);
     const mode = useAtomValue(centerModeAtom);
     return mode === "terminal" ? focusId : undefined;
+}
+
+// A live agent's row is the drag source for the grid: dropped on a cell of the Agent surface it splits the view.
+// A row with no terminal to show (a done worker, a launch with no block yet) is not draggable.
+function dragSource(agent: AgentVM | undefined, enabled: boolean): React.HTMLAttributes<HTMLDivElement> {
+    if (agent == null || !enabled || agent.blockId == null) {
+        return {};
+    }
+    return {
+        draggable: true,
+        onDragStart: (e) => beginAgentDrag(e, agent.id),
+        onDragEnd: endAgentDrag,
+    };
+}
+
+// "Open in split" adds the agent as a new cell beside the focused one. Disabled when it already has a cell, the grid
+// is full or the roster is not seeded yet (a grid operation prunes against the roster as it is); empty for an agent
+// with no terminal. The palette has the same action (cockpit/actions/agent.ts).
+function splitMenuItem(model: AgentsViewModel, agent: AgentVM): ContextMenuItem[] {
+    if (agent.blockId == null) {
+        return [];
+    }
+    return [
+        {
+            label: "Open in split",
+            icon: <Columns2 size={15} />,
+            enabled: globalStore.get(rosterSeededAtom) && canOpenInSplit(model, agent.id),
+            // plain focus when it can no longer be split (the grid changed after the menu opened)
+            click: () => {
+                if (!openInSplit(model, agent.id)) {
+                    model.openTerminal(agent.id);
+                }
+            },
+        },
+    ];
 }
 
 const PULSE = "pulse-dot";
@@ -306,6 +345,7 @@ function ParentRow({
         const items: ContextMenuItem[] = [
             { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(agent.id) },
             { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, agent.id) },
+            ...splitMenuItem(model, agent),
             {
                 label: "Copy name",
                 icon: <Copy size={15} />,
@@ -340,6 +380,8 @@ function ParentRow({
             <div
                 onClick={select}
                 onContextMenu={onContextMenu}
+                data-agent-row={agent.id}
+                {...dragSource(agent, !renaming)}
                 className={cn(
                     "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
                     // selection is the one filled row; an asking agent says so in words, not in a tint
@@ -560,7 +602,10 @@ function WorkerRow({
         if (agent == null) {
             return;
         }
+        const split = ended ? [] : splitMenuItem(model, agent);
         const items: ContextMenuItem[] = [
+            ...split,
+            ...(split.length > 0 ? [{ type: "separator" as const }] : []),
             { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
@@ -570,6 +615,8 @@ function WorkerRow({
         <div
             onClick={select}
             onContextMenu={onContextMenu}
+            data-agent-row={agent?.id}
+            {...dragSource(agent, !ended)}
             className={cn(
                 "relative flex items-center gap-[9px] rounded-[6px] py-[7px] pr-[11px] transition-colors duration-[140ms]",
                 nested ? "pl-[45px]" : "pl-[28px]",
@@ -647,7 +694,10 @@ function StageRow({
     const selected = focusId === agent.id;
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
+        const split = splitMenuItem(model, agent);
         const items: ContextMenuItem[] = [
+            ...split,
+            ...(split.length > 0 ? [{ type: "separator" as const }] : []),
             { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
@@ -656,6 +706,8 @@ function StageRow({
         <div
             onClick={select}
             onContextMenu={onContextMenu}
+            data-agent-row={agent.id}
+            {...dragSource(agent, true)}
             className={cn(
                 "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[7px] pl-[28px] pr-[11px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
