@@ -7,13 +7,15 @@
 // What each row shows is uploadsstore.ts's rowState; the section around it (heading, Attach) is railuploads.tsx.
 
 import { ModalShell } from "@/app/modals/modalshell";
+import { globalStore } from "@/app/store/jotaiStore";
 import { useLocalImage } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { FileText, Image as ImageIcon, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatAge, formatAgo } from "./agentsviewmodel";
+import { uploadsLightboxOpenAtom } from "./uploadslightboxatom";
 import { rowState, uploadThumbsAtom, type UploadRecord } from "./uploadsstore";
 
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -144,6 +146,15 @@ export function UploadsList({ records, now }: { records: readonly UploadRecord[]
     // the shell animates out after `open` clears, so `shown` keeps the record it was showing until the next one opens
     const [shown, setShown] = useState<UploadRecord | null>(null);
     const close = useCallback(() => setOpen(false), []);
+    // the key dispatcher counts the lightbox as a modal while this is set (uploadslightboxatom.ts); the cleanup runs on
+    // close and when the list unmounts with the lightbox open, so the flag cannot stay set
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        globalStore.set(uploadsLightboxOpenAtom, true);
+        return () => globalStore.set(uploadsLightboxOpenAtom, false);
+    }, [open]);
     return (
         <div data-uploads-list="" className="flex flex-col gap-[7px]">
             {records.map((r) => (
@@ -166,7 +177,8 @@ export function UploadsList({ records, now }: { records: readonly UploadRecord[]
                     align="center"
                     className="flex max-h-full w-[min(92vw,1000px)] flex-col"
                 >
-                    {shown != null ? <LightboxBody record={shown} onClose={close} /> : null}
+                    {/* keyed: a record opened during the exit animation must not show its name over the old image */}
+                    {shown != null ? <LightboxBody key={shown.id} record={shown} onClose={close} /> : null}
                 </ModalShell>,
                 document.body
             )}

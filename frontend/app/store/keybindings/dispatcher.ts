@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
@@ -88,6 +89,9 @@ export function deriveKeyContext(): KeyContext {
         globalStore.get(petPeekOpenAtom) ||
         // the Final check viewer over the run sheet: its arrows and Escape are its own, not the Brief's list
         globalStore.get(finalShotsViewerOpenAtom) ||
+        // the Agent rail's Uploads lightbox is a ModalShell too, but one the dispatcher cannot see (component state);
+        // uncounted, Escape left the surface with the lightbox still up, and j/k, the arrows, d and f acted behind it
+        globalStore.get(uploadsLightboxOpenAtom) ||
         globalStore.get(modalsModel.modalsAtom).length > 0;
     return {
         surface,

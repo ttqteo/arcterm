@@ -5,12 +5,19 @@ import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { atom } from "jotai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildFinalShotsBindings, buildGlobalBindings, buildJarvisBindings, buildListNavBindings } from "./bindings";
+import {
+    buildAgentBindings,
+    buildFinalShotsBindings,
+    buildGlobalBindings,
+    buildJarvisBindings,
+    buildListNavBindings,
+} from "./bindings";
 import { deriveKeyContext, focusClaimed, initKeybindingDispatcher, isEditableTarget } from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
@@ -23,6 +30,22 @@ function el(tagName: string, opts?: { contentEditable?: boolean; inMonaco?: bool
         isContentEditable: opts?.contentEditable ?? false,
         closest: (sel: string) => (opts?.inMonaco && sel === ".monaco-editor" ? ({} as Element) : null),
     } as unknown as Element;
+}
+
+function ev(key: string): WaveKeyboardEvent {
+    return {
+        key,
+        code: "",
+        type: "keydown",
+        control: false,
+        shift: false,
+        cmd: false,
+        option: false,
+        meta: false,
+        alt: false,
+        location: 0,
+        repeat: false,
+    } as WaveKeyboardEvent;
 }
 
 describe("isEditableTarget", () => {
@@ -84,6 +107,7 @@ describe("deriveKeyContext", () => {
         globalStore.set(dagModalStateAtom, null);
         globalStore.set(docReviewAtom, null);
         globalStore.set(petPeekOpenAtom, false);
+        globalStore.set(uploadsLightboxOpenAtom, false);
         vi.unstubAllGlobals();
     });
 
@@ -169,6 +193,82 @@ describe("deriveKeyContext", () => {
         expect(deriveKeyContext().modalOpen).toBe(true);
         unbind();
     });
+
+    // the Uploads lightbox is a ModalShell driven by component state, so only this atom tells the dispatcher
+    it("counts the Uploads lightbox as a modal on every surface", () => {
+        const unbind = bindModel("agent");
+        expect(deriveKeyContext().modalOpen).toBe(false);
+        globalStore.set(uploadsLightboxOpenAtom, true);
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        globalStore.set(uploadsLightboxOpenAtom, false);
+        expect(deriveKeyContext().modalOpen).toBe(false);
+        unbind();
+    });
+});
+
+describe("the Uploads lightbox over the Agent surface", () => {
+    afterEach(() => {
+        globalStore.set(uploadsLightboxOpenAtom, false);
+        vi.unstubAllGlobals();
+    });
+
+    // The dispatcher runs on window capture, ahead of ModalShell's own Escape listener, and focus sits on the dialog panel
+    // (not a field), so with the lightbox uncounted agent:back took Escape and left for the Cockpit with the lightbox
+    // still up, and j/k, the arrows, d and f acted on the agent behind it.
+    function setup() {
+        vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+        vi.stubGlobal("document", { activeElement: null });
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            paletteOpenAtom: atom(false),
+            newAgentOpenAtom: atom(false),
+            newRunOpenAtom: atom(false),
+            newInitiativeOpenAtom: atom(false),
+            newProjectOpenAtom: atom(false),
+            focusIdAtom: atom<string | undefined>(undefined),
+        } as unknown as AgentsViewModel;
+        const bindings = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        const unbind = initKeybindingDispatcher(model);
+        const picked = (key: string) => {
+            const r = matchBinding(ev(key), deriveKeyContext(), bindings);
+            return r.kind === "run" ? r.binding.id : r.kind;
+        };
+        return { picked, unbind };
+    }
+
+    const AGENT_KEYS: Record<string, string> = {
+        Escape: "agent:back",
+        ArrowLeft: "agent:prev",
+        ArrowRight: "agent:next",
+        k: "agent:prev-k",
+        j: "agent:next-j",
+        d: "agent:toggle-rail",
+        f: "agent:fullscreen",
+        r: "agent:review",
+        F11: "agent:fullscreen-chord",
+    };
+
+    it("leaves Escape and the agent keys to the dialog while it is open", () => {
+        const { picked, unbind } = setup();
+        globalStore.set(uploadsLightboxOpenAtom, true);
+        for (const key of Object.keys(AGENT_KEYS)) {
+            expect(picked(key), key).toBe("none");
+        }
+        unbind();
+    });
+
+    it("gives the keys back to the agent once it is closed", () => {
+        const { picked, unbind } = setup();
+        for (const [key, id] of Object.entries(AGENT_KEYS)) {
+            expect(picked(key), key).toBe(id);
+        }
+        globalStore.set(uploadsLightboxOpenAtom, true);
+        globalStore.set(uploadsLightboxOpenAtom, false);
+        for (const [key, id] of Object.entries(AGENT_KEYS)) {
+            expect(picked(key), key).toBe(id);
+        }
+        unbind();
+    });
 });
 
 describe("the Final check viewer over the Jarvis surface", () => {
@@ -177,22 +277,6 @@ describe("the Final check viewer over the Jarvis surface", () => {
         globalStore.set(listNavAtom, null);
         vi.unstubAllGlobals();
     });
-
-    function ev(key: string): WaveKeyboardEvent {
-        return {
-            key,
-            code: "",
-            type: "keydown",
-            control: false,
-            shift: false,
-            cmd: false,
-            option: false,
-            meta: false,
-            alt: false,
-            location: 0,
-            repeat: false,
-        } as WaveKeyboardEvent;
-    }
 
     // the Jarvis list's cursor and the Brief's Escape-home, registered first as the surface mounts before the
     // viewer; matchBinding runs the first active binding for a key, so without the viewer counting as a modal
