@@ -216,9 +216,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // that is another cell's xterm, typing would still go to the old agent while the header names the new one, so hand
     // focus to the new agent's xterm. Only from inside a terminal: from the tree, the wrapper or a note field there is
     // nothing to hand over, and focusing an xterm there would turn the next j/k/arrow into typing.
-    // Only with several cells showing: the old xterm is then still visible and keeps receiving keystrokes. With one cell
-    // the old pane is hidden, so nothing is misrouted, and an outside write (wsh ui, a notification) must not redirect
-    // the user's typing into a different agent mid-keystroke.
+    // Only with several cells showing: the old xterm is then still visible and keeps receiving keystrokes. With one
+    // cell the old pane is hidden, so nothing is misrouted, and an outside write (wsh ui, a notification) must not
+    // redirect the user's typing into a different agent mid-keystroke.
     // data-agent-terminal is on the cell wrappers only, so `from` is always a cell of this surface.
     useEffect(() => {
         const wrap = wrapRef.current;
