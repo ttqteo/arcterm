@@ -206,6 +206,12 @@ describe("parseStored", () => {
         expect(parseStored(raw).b1[0]).toEqual(rec());
         expect(JSON.stringify(parseStored(raw))).not.toContain("data:image");
     });
+    it("skips a __proto__ key, which would otherwise swap the map's prototype", () => {
+        const raw = `{"__proto__": ${JSON.stringify([rec()])}, "b1": ${JSON.stringify([rec({ id: "k" })])}}`;
+        const out = parseStored(raw);
+        expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+        expect(Object.keys(out)).toEqual(["b1"]);
+    });
     it("caps one owner's list and the number of owners", () => {
         const many = Array.from({ length: MAX_RECORDS_PER_OWNER + 10 }, (_, i) =>
             rec({ id: `r${i}`, path: `/p/${i}` })
@@ -295,10 +301,50 @@ describe("recordUpload", () => {
         }
         expect(globalStore.get(uploadThumbsAtom)).toEqual({});
     });
+    it("keeps the earlier thumbnail when a path is recorded again without one", () => {
+        recordUpload("b1", rec({ id: "a" }), "t1");
+        recordUpload("b1", rec({ id: "b", source: "attach" }));
+        expect(globalStore.get(uploadThumbsAtom)).toEqual({ [rec().path]: "t1" });
+    });
     it("lists a repeated path once", () => {
         recordUpload("b1", rec({ id: "a" }));
         recordUpload("b1", rec({ id: "b", source: "attach" }));
         expect(globalStore.get(uploadsAtom("b1")).map((r) => r.id)).toEqual(["b"]);
+    });
+    it("leaves another owner's list, and its subscribers, untouched", () => {
+        recordUpload("b2", rec({ id: "other", path: "/p/other" }));
+        const listed = globalStore.get(uploadsAtom("b2"));
+        const empty = globalStore.get(uploadsAtom("b3"));
+        const seen: string[] = [];
+        const unsubs = [
+            globalStore.sub(uploadsAtom("b2"), () => seen.push("b2")),
+            globalStore.sub(uploadsAtom("b3"), () => seen.push("b3")),
+        ];
+        recordUpload("b1", rec());
+        unsubs.forEach((unsub) => unsub());
+        expect(globalStore.get(uploadsAtom("b2"))).toBe(listed);
+        expect(globalStore.get(uploadsAtom("b3"))).toBe(empty);
+        expect(seen).toEqual([]);
+    });
+    it("keeps at most MAX_OWNERS owners, dropping the one with the oldest records and its thumbnail", () => {
+        recordUpload("o0", rec({ id: "o0", path: "/p/o0.png", ts: NOW }), "t0");
+        for (let i = 1; i <= MAX_OWNERS; i++) {
+            recordUpload(`o${i}`, rec({ id: `o${i}`, path: `/p/o${i}`, ts: NOW + i }));
+        }
+        const map = globalStore.get(uploadsMapAtom);
+        expect(Object.keys(map)).toHaveLength(MAX_OWNERS);
+        expect(map.o0).toBeUndefined();
+        expect(map[`o${MAX_OWNERS}`]).toHaveLength(1);
+        expect(Object.keys(parseStored(store[UPLOADS_STORAGE_KEY]))).toHaveLength(MAX_OWNERS);
+        expect(globalStore.get(uploadThumbsAtom)).toEqual({});
+    });
+    it("takes an owner named like an Object.prototype member", () => {
+        expect(globalStore.get(uploadsAtom("toString"))).toEqual([]);
+        expect(globalStore.get(uploadsAtom("constructor"))).toEqual([]);
+        expect(() => recordUpload("constructor", rec())).not.toThrow();
+        expect(globalStore.get(uploadsAtom("constructor"))).toEqual([rec()]);
+        expect(globalStore.get(uploadsAtom("toString"))).toEqual([]);
+        expect(parseStored(store[UPLOADS_STORAGE_KEY])).toEqual({ constructor: [rec()] });
     });
     it("still works in memory when storage is unavailable", () => {
         delete (globalThis as any).localStorage;
@@ -328,5 +374,26 @@ describe("module load", () => {
         const fresh = await import("./uploadsstore");
         const { globalStore: freshStore } = await import("@/app/store/jotaiStore");
         expect(freshStore.get(fresh.uploadsAtom("b9"))).toEqual([rec({ id: "old" })]);
+    });
+    it("loads with no localStorage at all", async () => {
+        delete (globalThis as any).localStorage;
+        vi.resetModules();
+        const fresh = await import("./uploadsstore");
+        const { globalStore: freshStore } = await import("@/app/store/jotaiStore");
+        expect(freshStore.get(fresh.uploadsMapAtom)).toEqual({});
+    });
+    it("loads when reaching localStorage throws", async () => {
+        Object.defineProperty(globalThis, "localStorage", {
+            configurable: true,
+            get() {
+                throw new Error("denied");
+            },
+        });
+        vi.resetModules();
+        const fresh = await import("./uploadsstore");
+        const { globalStore: freshStore } = await import("@/app/store/jotaiStore");
+        expect(freshStore.get(fresh.uploadsMapAtom)).toEqual({});
+        expect(() => fresh.recordUpload("b1", rec())).not.toThrow();
+        expect(freshStore.get(fresh.uploadsAtom("b1"))).toEqual([rec()]);
     });
 });

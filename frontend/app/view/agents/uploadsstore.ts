@@ -32,7 +32,8 @@ export interface UploadRecord {
 export type UploadsByOwner = Record<string, UploadRecord[]>;
 
 export const UPLOADS_STORAGE_KEY = "agent.uploads";
-// tempAttachRetention on the server; a record older than this is a temp copy that has been swept
+// tempAttachRetention on the server; a record older than this is a temp copy that has been, or is about to be, swept
+// (the server sweep runs at startup and every 4h)
 export const TEMP_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const MAX_RECORDS_PER_OWNER = 50;
 export const MAX_OWNERS = 40;
@@ -73,9 +74,10 @@ export function isExpired(record: UploadRecord, now: number): boolean {
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/g;
 
-// A path goes into the prompt as typed text. Double-quoted when it has a space, the way a terminal quotes a
-// dropped file and the form Claude Code unwraps; control characters are dropped, since terminal.paste turns a
-// newline into Enter.
+// A path goes into the prompt as typed text. Double-quoted when it has any whitespace (the test is \s, not just a
+// space), the way a terminal quotes a dropped file and the form Claude Code unwraps. Control characters are dropped,
+// since terminal.paste turns a newline into Enter; the regex covers the C0 controls and DEL only, not C1 or U+2028.
+// So the pasted text can differ from the recorded `path` when a name held one: the record keeps the real path.
 export function quotePath(path: string): string {
     const clean = path.replace(CONTROL_CHARS, "");
     return /\s/.test(clean) ? `"${clean}"` : clean;
@@ -178,7 +180,8 @@ export function parseStored(raw: string | null | undefined): UploadsByOwner {
     }
     const out: UploadsByOwner = {};
     for (const [owner, list] of Object.entries(parsed as Record<string, unknown>)) {
-        if (!Array.isArray(list)) {
+        // assigning out["__proto__"] would swap the map's prototype instead of adding an owner
+        if (owner === "__proto__" || !Array.isArray(list)) {
             continue;
         }
         const records = list
@@ -199,7 +202,8 @@ export function serialize(map: UploadsByOwner): string {
 export interface UploadRowState {
     expired: boolean;
     icon: "thumb" | "image" | "file";
-    enlargeable: boolean; // an image whose file is still there
+    // an image not past the temp retention; an attached one is never checked, the lightbox reports it gone
+    enlargeable: boolean;
 }
 
 export function rowState(record: UploadRecord, now: number, hasThumb: boolean): UploadRowState {
@@ -257,16 +261,22 @@ export const uploadsMapAtom = atom<UploadsByOwner>(readStored()) as PrimitiveAto
 // path -> a data URL of the downscaled image; memory only, never persisted
 export const uploadThumbsAtom = atom<Record<string, string>>({}) as PrimitiveAtom<Record<string, string>>;
 
-const NONE: UploadRecord[] = [];
+const EMPTY: UploadRecord[] = [];
+
+// own keys only: an owner named "constructor" or "toString" must not read an Object.prototype member
+function ownerList(map: UploadsByOwner, owner: string): UploadRecord[] | undefined {
+    return Object.prototype.hasOwnProperty.call(map, owner) ? map[owner] : undefined;
+}
 
 // one agent's uploads, by its terminal block id
-export const uploadsAtom = atomFamily((owner: string) => atom((get) => get(uploadsMapAtom)[owner] ?? NONE));
+export const uploadsAtom = atomFamily((owner: string) => atom((get) => ownerList(get(uploadsMapAtom), owner) ?? EMPTY));
 
 export function recordUpload(owner: string, record: UploadRecord, thumb?: string | null): void {
     const prev = globalStore.get(uploadsMapAtom);
-    const next = pruneOwners({ ...prev, [owner]: addRecord(prev[owner] ?? [], record) });
+    const next = pruneOwners({ ...prev, [owner]: addRecord(ownerList(prev, owner) ?? [], record) });
     globalStore.set(uploadsMapAtom, next);
     writeStored(next);
+    // a path recorded again without a thumbnail keeps the one it already has: it is the same file
     globalStore.set(uploadThumbsAtom, (thumbs) =>
         pruneThumbs(thumb ? { ...thumbs, [record.path]: thumb } : thumbs, next)
     );
