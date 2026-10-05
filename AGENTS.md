@@ -125,8 +125,9 @@ Load-bearing rules:
   `hidden`), and only agents can be cells. Re-parenting a pane or rendering the stack conditionally remounts the xterm
   and replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
   `min-w-0 min-h-0`, and nothing animating a cell's size.
-- **`focusIdAtom` stays the one "selected agent"; the grid has no focus input of its own.** `AgentSurface` reconciles the
-  saved grid against it, so every route that selects an agent obeys one rule.
+- **`focusIdAtom` stays the one "selected agent".** `AgentSurface` reconciles the saved grid against it, so every route
+  that selects an agent obeys one rule; the grid never overrides a focused agent, it is only the fallback when nothing is
+  in focus.
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`
   (`openAddress` for a string, `openTarget` for an id): it loads the target, writes the destination's
   selection, then switches surface. Don't hand-roll set-selection-then-`surfaceAtom`.

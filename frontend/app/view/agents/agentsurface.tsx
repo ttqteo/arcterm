@@ -222,17 +222,17 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     };
 
-    // Whatever writes focusIdAtom (Ctrl+Tab, a notification, openref, the palette) leaves DOM focus where it was. When
-    // that is another cell's xterm, typing would still go to the old agent while the header names the new one, so hand
-    // focus to the new agent's xterm. Only from inside a terminal: from the tree, the wrapper or a note field there is
-    // nothing to hand over, and focusing an xterm there would turn the next j/k/arrow into typing.
-    // Only with several cells showing: the old xterm is then still visible and keeps receiving keystrokes. With one
-    // cell the old pane is hidden, so nothing is misrouted, and an outside write (wsh ui, a notification) must not
-    // redirect the user's typing into a different agent mid-keystroke.
+    // Ctrl+Tab, a notification or an openref write changes focusIdAtom but leaves DOM focus where it was. When that is
+    // inside a different cell's xterm, typing would still go to the old agent while the header names the new one, so
+    // hand focus to the new agent's xterm; in a multi-cell grid an outside write does redirect typing to the newly
+    // selected agent, which is accepted. Only from inside a terminal: from the tree, the wrapper or a note field there
+    // is nothing to hand over, and focusing an xterm there would turn the next j/k/arrow into typing.
+    // Gated to several cells showing: the old xterm is then still visible and keeps receiving keystrokes. With one cell
+    // the old pane is hidden, so nothing is misrouted, and an outside write (wsh ui, a notification) must not move the
+    // user's typing into a different agent mid-keystroke.
     // data-agent-terminal is on the cell wrappers only, so `from` is always a cell of this surface.
-    // This runs when the selected agent changes, so it cannot see a modal that closes later: a palette thing-action
-    // writes focusIdAtom in one commit and closes in the next, and ModalShell restores focus then. focusCell hands
-    // that one over (below).
+    // Palette picks are not handled here: a thing-action writes focusIdAtom in one commit and the palette closes in the
+    // next, where ModalShell restores focus and this does not re-run. focusCell hands that restore over (below).
     useEffect(() => {
         if (!multi || agent == null) {
             return;
