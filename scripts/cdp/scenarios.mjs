@@ -6567,7 +6567,7 @@ async function arrangeTreeRail(h, ctx) {
     });
     // a queued task folds away, so t-1 has a worker row only once it dispatches
     await waitForDispatch(h, ctx, "t-1");
-    // the rail is off by default and persisted, and the fixture roster is read once at boot
+    // the rail is persisted, and the fixture roster is read once at boot
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
     // measure the defaults: sections at their default open state, every project expanded
     await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
@@ -6796,10 +6796,10 @@ const agentTreeRail = {
                 size: s.querySelector("h3") ? getComputedStyle(s.querySelector("h3")).fontSize : null,
             }));
         })()`);
-        const order = ["subagents", "files", "bgtasks", "tools", "details", "usage"];
+        const order = ["subagents", "files", "artifacts", "uploads", "bgtasks", "terminals", "tools", "details", "usage"];
         const seen = (sections ?? []).map((s) => s.id).filter((id) => order.includes(id));
         rec(
-            "10. the lead's rail lists Subagents, Files changed, Background tasks, Tools used, Details, Token usage in order",
+            "10. the lead's rail lists Subagents, Files changed, Artifacts, Uploads, Background tasks, Terminals, Tools used, Details, Token usage in order",
             JSON.stringify(seen) === JSON.stringify(order),
             JSON.stringify(sections)
         );
@@ -11930,6 +11930,301 @@ const canvasTabsScenario = {
     },
 };
 
+// --- the details rail's sections: Artifacts, Uploads and Terminals, in the order the spec gives ---------------------
+// docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md, decision 6. The roster is one dev fixture agent;
+// the terminals are two real plain tabs in two projects; the agent owns a temp canvas with two boards. Uploads is the
+// placeholder this stage ships, so its Attach button is asserted disabled; the uploads work enables it.
+const RAIL_SECTIONS_AGENT_ID = "fx-rail-sections";
+const RAIL_SECTIONS_AGENT_BLOCK = "fx-blk-rail-sections";
+const RAIL_SECTIONS_PROJECT_A = "verify-rail-a";
+const RAIL_SECTIONS_PROJECT_B = "verify-rail-b";
+const RAIL_SECTIONS_TOPIC = "verify-rail-sections";
+const RAIL_SECTIONS_ORDER = [
+    "subagents",
+    "files",
+    "artifacts",
+    "uploads",
+    "bgtasks",
+    "terminals",
+    "tools",
+    "details",
+    "usage",
+];
+const RAIL_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const RAIL_SECTION_IDS = `(() => {
+    const rail = ${RAIL_ASIDE};
+    return rail ? [...rail.querySelectorAll("[data-rail-section]")].map((s) => s.dataset.railSection) : null;
+})()`;
+const railSection = (id) => `${RAIL_ASIDE}?.querySelector('[data-rail-section="${id}"]')`;
+// the number after a section's label (the heading is the label, then the count span, then an icon with no text)
+const railCount = (id) => `(() => {
+    const t = ${railSection(id)}?.querySelector("h3")?.textContent ?? "";
+    const m = /(\\d+)$/.exec(t.trim());
+    return m ? Number(m[1]) : null;
+})()`;
+const railTerminalIds = `[...document.querySelectorAll('aside[aria-label="Agent details"] [data-rail-terminal]')]
+    .map((r) => r.getAttribute("data-rail-terminal"))`;
+
+// a plain terminal tab in a project, the way launchAgent makes one (CreateTab, then the terminal meta). It is tracked
+// on ctx as soon as the tab exists, so a failure in the calls after it still lets teardown close it
+async function openRailTerminal(h, ctx, project) {
+    const tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, project, false]);
+    const terminal = { tabId, blockId: null, project };
+    ctx.terminals.push(terminal);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+    terminal.blockId = tab?.blockids?.[0] ?? null;
+    if (!terminal.blockId) throw new Error(`the new tab ${tabId} has no block`);
+    // the shell starts in ~, not the temp dir, for the reason openCanvasTerminal gives
+    await h.rpc("setmeta", {
+        oref: `block:${terminal.blockId}`,
+        meta: { view: "term", controller: "shell", "cmd:cwd": "~" },
+    });
+    await h.rpc("setmeta", { oref: `tab:${tabId}`, meta: { "session:project": project } });
+}
+
+async function arrangeRailSections(h, ctx) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    for (const project of [RAIL_SECTIONS_PROJECT_A, RAIL_SECTIONS_PROJECT_B]) {
+        await openRailTerminal(h, ctx, project);
+    }
+    mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                {
+                    id: RAIL_SECTIONS_AGENT_ID,
+                    name: "rail sections agent",
+                    project: RAIL_SECTIONS_PROJECT_A,
+                    task: "verify the rail sections",
+                    state: "idle",
+                    agent: "claude",
+                    model: "opus",
+                    idleSince: Date.now() - 60_000,
+                    blockId: RAIL_SECTIONS_AGENT_BLOCK,
+                },
+            ],
+            null,
+            2
+        )
+    );
+    ctx.wroteFixture = true;
+    // the rail is persisted and the fixture roster is read once at boot, so both need a reload. The sections are
+    // cleared so each starts at its default open state
+    await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+    if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+    await h.goto("agent");
+    ctx.inRoster = await polishWaitFor(
+        h,
+        `!!document.querySelector('[data-agent-terminal="${RAIL_SECTIONS_AGENT_ID}"]')`,
+        15000
+    );
+    if (!ctx.inRoster) return;
+    // the surface mounts a pane for every agent and terminal that has a block, so this is the roster holding them
+    ctx.terminalsListed = await polishWaitFor(
+        h,
+        `${JSON.stringify(ctx.terminals.map((t) => t.tabId))}.every((id) => !!document.querySelector('[data-agent-terminal="' + id + '"]'))`,
+        CANVAS_ROSTER_WAIT_MS
+    );
+    if (!ctx.terminalsListed) return;
+    await h.rpc("uireveal", { address: `agent:${RAIL_SECTIONS_AGENT_ID}` }, UI_ROUTE);
+    await h.rpc(
+        "uireveal",
+        { address: `canvas:${RAIL_SECTIONS_TOPIC}`, callerblockid: RAIL_SECTIONS_AGENT_BLOCK, callercwd: ctx.cwd },
+        UI_ROUTE
+    );
+    // the poller reads canvas.json on its next tick (3s)
+    ctx.boards = await polishWaitFor(h, `(${railCount("artifacts")}) === 2`, 12000);
+}
+
+const agentRailSections = {
+    name: "agent-rail-sections",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-rail-sections-"));
+        const project = join(cwd, ".superpowers", "design", RAIL_SECTIONS_TOPIC, "project");
+        mkdirSync(project, { recursive: true });
+        writeFileSync(
+            join(project, "canvas.json"),
+            JSON.stringify({
+                boards: {
+                    "Main.dc.html": { x: 0, y: 0, w: 640, h: 480 },
+                    "Cards.dc.html": { x: 720, y: 0, w: 640, h: 480 },
+                },
+                order: ["Main.dc.html", "Cards.dc.html"],
+            })
+        );
+        for (const name of ["Main", "Cards"]) {
+            writeFileSync(join(project, `${name}.dc.html`), `<!doctype html><title>${name}</title><p>${name} board</p>`);
+        }
+        const ctx = {
+            cwd,
+            terminals: [],
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await arrangeRailSections(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.terminalsListed === true;
+        const railUp = arranged && (await polishWaitFor(h, `!!${railSection("subagents")}`, 8000));
+        rec(
+            "0. the fixture agent is focused, both terminals are in the roster and its rail is showing",
+            railUp,
+            ctx.arrangeError ??
+                JSON.stringify({ inRoster: ctx.inRoster, terminalsListed: ctx.terminalsListed, railUp })
+        );
+        if (!railUp) return steps;
+        const [termA, termB] = ctx.terminals;
+
+        const ids = await h.ev(RAIL_SECTION_IDS);
+        rec(
+            "1. the rail lists Subagents, Files, Artifacts, Uploads, Background tasks, Terminals, Tools, Details, Token usage in order",
+            JSON.stringify(ids) === JSON.stringify(RAIL_SECTIONS_ORDER),
+            JSON.stringify(ids)
+        );
+        await h.shot("cdp-shots/agent-rail-sections.png");
+
+        const artifactRows = await h.ev(
+            `[...(${railSection("artifacts")}?.querySelectorAll("button") ?? [])]
+                .filter((b) => !b.closest("h3")).map((b) => (b.textContent || "").trim())`
+        );
+        const artifactsOpen = await h.ev(`${railSection("artifacts")}?.dataset.open`);
+        rec(
+            "2. Artifacts counts the canvas's boards, open, and lists them",
+            ctx.boards === true &&
+                artifactsOpen === "true" &&
+                JSON.stringify(artifactRows) === JSON.stringify(["Main", "Cards"]),
+            JSON.stringify({ boards: ctx.boards, artifactsOpen, artifactRows })
+        );
+
+        await h.ev(
+            `[...(${railSection("artifacts")}?.querySelectorAll("button") ?? [])].find((b) => (b.textContent || "").trim() === "Cards")?.click()`
+        );
+        const paneUp = await polishWaitFor(h, `!!${CANVAS_PANE}`, 3000);
+        const shown = await canvasTabFrames(h);
+        rec(
+            "3. a board's row opens the canvas on that board alone",
+            paneUp && JSON.stringify(shown.frames) === JSON.stringify(["Cards.dc.html"]),
+            JSON.stringify({ paneUp, ...shown })
+        );
+        await h.shot("cdp-shots/agent-rail-sections-canvas.png");
+        // the rail hides in canvas mode; the header swap brings the terminal, and the rail, back
+        await clickCanvasSwap(h, "Terminal");
+        await polishWaitFor(h, `!!${railSection("uploads")}`, 4000);
+
+        const uploadsBefore = await h.ev(`(() => {
+            const s = ${railSection("uploads")};
+            return s
+                ? { open: s.dataset.open, count: ${railCount("uploads")}, expandable: s.querySelector("h3 button")?.disabled === false }
+                : null;
+        })()`);
+        await h.ev(`${railSection("uploads")}?.querySelector("h3 button")?.click()`);
+        await polishNap(300);
+        const uploadsAfter = await h.ev(`(() => {
+            const s = ${railSection("uploads")};
+            const attach = s?.querySelector("button[data-rail-attach]");
+            return s
+                ? { open: s.dataset.open, empty: s.querySelector("[data-rail-uploads]") != null, attachDisabled: attach != null && attach.disabled }
+                : null;
+        })()`);
+        rec(
+            "4. Uploads is a counted 0 that opens to an empty state and a disabled Attach",
+            uploadsBefore?.count === 0 &&
+                uploadsBefore.open === "false" &&
+                uploadsBefore.expandable === true &&
+                uploadsAfter?.open === "true" &&
+                uploadsAfter.empty === true &&
+                uploadsAfter.attachDisabled === true,
+            JSON.stringify({ uploadsBefore, uploadsAfter })
+        );
+
+        const scoped = await h.ev(railTerminalIds);
+        const scopedCount = await h.ev(railCount("terminals"));
+        const widened = await h.ev(`(async () => {
+            const b = [...(${railSection("terminals")}?.querySelectorAll("button") ?? [])]
+                .find((x) => /^Show \\d+ from other projects$/.test((x.textContent || "").trim()));
+            if (!b) return null;
+            b.click();
+            await new Promise((r) => setTimeout(r, 400));
+            return ${railTerminalIds};
+        })()`);
+        rec(
+            "5. Terminals lists the agent's project's terminals, and Show N from other projects adds the rest",
+            scoped.includes(termA.tabId) &&
+                !scoped.includes(termB.tabId) &&
+                scopedCount === scoped.length &&
+                Array.isArray(widened) &&
+                widened.includes(termA.tabId) &&
+                widened.includes(termB.tabId),
+            JSON.stringify({ scoped, scopedCount, widened })
+        );
+
+        const swept = await h.ev(polishSweep(RAIL_ASIDE));
+        rec("6. nothing in the open rail is under 10.5px", sweptOk(swept), JSON.stringify(swept));
+
+        // a row is a focusable button (the keyboard acts on it as a click does), so read that before the click
+        const rowKind = await h.ev(`(() => {
+            const r = document.querySelector('[data-rail-terminal="${termA.tabId}"]');
+            return r ? { role: r.getAttribute("role"), tabIndex: r.tabIndex } : null;
+        })()`);
+        await h.ev(`document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.click()`);
+        const focused = await polishWaitFor(
+            h,
+            `(() => {
+                const t = document.querySelector('[data-agent-terminal="${termA.tabId}"]');
+                return !!t && !t.classList.contains("hidden");
+            })()`,
+            4000
+        );
+        await polishNap(600);
+        const narrowed = await h.ev(RAIL_SECTION_IDS);
+        const current = await h.ev(
+            `document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.getAttribute("aria-current")`
+        );
+        rec(
+            "7. a Terminals row is a button that focuses that terminal, and the rail narrows to Terminals alone",
+            rowKind?.role === "button" &&
+                rowKind.tabIndex === 0 &&
+                focused &&
+                JSON.stringify(narrowed) === JSON.stringify(["terminals"]) &&
+                current === "true",
+            JSON.stringify({ rowKind, focused, narrowed, current })
+        );
+        await h.shot("cdp-shots/agent-rail-sections-terminal.png");
+
+        const treeLists = await h.ev(
+            `[...document.querySelectorAll("[data-agent-tree] span")].some((s) => (s.textContent || "").trim() === "Terminals")`
+        );
+        rec("8. the Agent tree has no Terminals group", treeLists === false, `treeLists=${treeLists}`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "agent-rail-sections", {
+            what: "close the terminals and restore the rail preferences",
+            fn: async () => {
+                for (const t of ctx.terminals ?? []) {
+                    await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]).catch(() => {});
+                }
+                await h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail));
+                await h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections));
+            },
+        });
+    },
+};
+
 // The Cockpit's j/k/n/Enter are the container's own onKeyDown (usecockpitkeyboard.ts), so they work only
 // while focus is inside it. Arriving from the Agent surface left focus on <body> (the palette's restore
 // target, the xterm, is display:none by then) or on the nav button, and every Cockpit key was dead until a
@@ -12152,4 +12447,5 @@ export const SCENARIOS = [
     modelPicks,
     canvasSwap,
     canvasTabsScenario,
+    agentRailSections,
 ];
