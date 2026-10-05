@@ -11,6 +11,7 @@ import {
     canOpenInSplit,
     currentGrid,
     dropAgentOnGrid,
+    eligibleIds,
     openInSplit,
     removeFromGrid,
     type GridModel,
@@ -35,6 +36,21 @@ describe("agentGridAtom", () => {
     it("reads back a repaired grid, not whatever was written", () => {
         globalStore.set(agentGridAtom, { ids: ["a", "a", "b"], focused: "gone" });
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b"], "a"));
+    });
+});
+
+describe("eligibleIds", () => {
+    it("keeps the agents that have a terminal, in order, and drops the rest", () => {
+        const agents = [
+            { id: "a", blockId: "blk-a" },
+            { id: "p" },
+            { id: "q", blockId: undefined },
+            { id: "b", blockId: "blk-b" },
+        ];
+        expect([...eligibleIds(agents)]).toEqual(["a", "b"]);
+    });
+    it("is empty for an empty roster", () => {
+        expect(eligibleIds([]).size).toBe(0);
     });
 });
 
@@ -92,6 +108,21 @@ describe("dropAgentOnGrid", () => {
         dropAgentOnGrid(m, "b", 0, "right");
         expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
+    it("writes the surface's focus before the grid, so a subscriber never sees the new grid with the old focus", () => {
+        const m = model(["a", "b"], "a");
+        const focusWhenGridChanged: (string | undefined)[] = [];
+        // subscribe first and seed second: mounting a subscriber on a storage atom re-reads storage, which in the
+        // node environment (no localStorage) resets the stored value
+        const unsub = globalStore.sub(agentGridAtom, () => focusWhenGridChanged.push(globalStore.get(m.focusIdAtom)));
+        try {
+            globalStore.set(agentGridAtom, g(["a"]));
+            focusWhenGridChanged.length = 0;
+            dropAgentOnGrid(m, "b", 0, "right");
+            expect(focusWhenGridChanged).toEqual(["b"]);
+        } finally {
+            unsub();
+        }
+    });
 });
 
 describe("removeFromGrid", () => {
@@ -108,6 +139,16 @@ describe("removeFromGrid", () => {
         removeFromGrid(m, "c");
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b"], "a"));
         expect(globalStore.get(m.focusIdAtom)).toBe("a");
+    });
+    it("leaves the grid, the focus and the centre alone for an agent that has no cell", () => {
+        const m = model(["a", "b", "c"], "a");
+        globalStore.set(agentGridAtom, g(["a", "b"], "a"));
+        globalStore.set(centerModeAtom, "history");
+        removeFromGrid(m, "c"); // live, but not a cell
+        removeFromGrid(m, "ghost");
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b"], "a"));
+        expect(globalStore.get(m.focusIdAtom)).toBe("a");
+        expect(globalStore.get(centerModeAtom)).toBe("history");
     });
 });
 

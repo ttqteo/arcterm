@@ -41,18 +41,20 @@ export interface GridModel {
     agentsAtom: Atom<ReadonlyArray<{ id: string; blockId?: string }>>;
 }
 
-// Live agents with a terminal: the only agents that can be cells.
+// The agents that can be cells: those with a terminal. The one place that rule lives (the surface reuses it).
+export function eligibleIds(agents: ReadonlyArray<{ id: string; blockId?: string }>): Set<string> {
+    return new Set(agents.filter((a) => a.blockId != null).map((a) => a.id));
+}
+
 function liveIds(model: GridModel): Set<string> {
-    return new Set(
-        globalStore
-            .get(model.agentsAtom)
-            .filter((a) => a.blockId != null)
-            .map((a) => a.id)
-    );
+    return eligibleIds(globalStore.get(model.agentsAtom));
 }
 
 // The grid as the surface would show it right now: the stored one pruned against the live roster, with the
 // agent in focus applied. Operations start from this, never from the raw stored value.
+// `seeded: true` assumes the operations run on a fully loaded roster, which holds: they are user actions on rows
+// and cells that are already on screen. Before the roster is seeded they would prune the cells whose agents have
+// not arrived yet (the surface itself passes the real flag to reconcileGrid and waits).
 export function currentGrid(model: GridModel): GridState {
     return reconcileGrid(globalStore.get(agentGridAtom), {
         focusId: globalStore.get(model.focusIdAtom),
@@ -61,9 +63,11 @@ export function currentGrid(model: GridModel): GridState {
     });
 }
 
-// Focus first, then the grid: until focusIdAtom names the new focused cell, the surface would read the old
-// focused agent as "not in the grid" and put it back in a cell. Choosing an agent also puts the terminal back
-// over History or a transcript (showTerminal), as every route that writes focusIdAtom does.
+// Focus first, then the grid: a reader that sees the grid change while focusIdAtom still names the old focused
+// agent would read that agent as "not in the grid" and put it back in a cell. Within one JS turn only a
+// synchronous store subscriber could observe the gap, so this order costs nothing and is simply the safe one.
+// Choosing an agent also puts the terminal back over History or a transcript (showTerminal), as every route that
+// writes focusIdAtom does.
 function commit(model: GridModel, next: GridState): void {
     if (next.focused != null) {
         globalStore.set(model.focusIdAtom, next.focused);
@@ -72,7 +76,8 @@ function commit(model: GridModel, next: GridState): void {
     globalStore.set(agentGridAtom, next);
 }
 
-// A drop on the cell at `targetIndex` of the current grid (drop overlay). The dropped agent is focused.
+// A drop on the cell at `targetIndex` of the current grid (drop overlay): an index into the grid as currentGrid
+// sees it, which is the grid the surface draws. The dropped agent is focused.
 export function dropAgentOnGrid(model: GridModel, id: string, targetIndex: number, zone: DropZone): void {
     if (!liveIds(model).has(id)) {
         return;
@@ -80,9 +85,14 @@ export function dropAgentOnGrid(model: GridModel, id: string, targetIndex: numbe
     commit(model, addCell(currentGrid(model), id, targetIndex, zone));
 }
 
-// The x on a cell's bar: the agent keeps running, it just has no cell.
+// The x on a cell's bar: the agent keeps running, it just has no cell. An agent with no cell is left alone, so
+// the call neither moves focus nor changes what the centre shows.
 export function removeFromGrid(model: GridModel, id: string): void {
-    commit(model, removeCell(currentGrid(model), id));
+    const s = currentGrid(model);
+    if (!s.ids.includes(id)) {
+        return;
+    }
+    commit(model, removeCell(s, id));
 }
 
 export function canOpenInSplit(model: GridModel, id: string): boolean {
