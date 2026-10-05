@@ -50,6 +50,7 @@ type WshRpcInterface interface {
 	VaultCommands
 	UiCommands
 	StreamCommands
+	DocCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }

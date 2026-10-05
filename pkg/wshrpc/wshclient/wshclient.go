@@ -276,6 +276,12 @@ func DetachDossierEdgeCommand(w *wshutil.WshRpc, data wshrpc.CommandDossierEdgeD
 	return err
 }
 
+// command "doccompile", wshserver.DocCompileCommand
+func DocCompileCommand(w *wshutil.WshRpc, data wshrpc.CommandDocCompileData, opts *wshrpc.RpcOpts) (*wshrpc.CommandDocCompileRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandDocCompileRtnData](w, "doccompile", data, opts)
+	return resp, err
+}
+
 // command "effortcreate", wshserver.EffortCreateCommand
 func EffortCreateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortCreateData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortCreateRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortCreateRtnData](w, "effortcreate", data, opts)

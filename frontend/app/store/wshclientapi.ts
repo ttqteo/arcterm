@@ -282,6 +282,12 @@ export class RpcApiType {
         return client.wshRpcCall("detachdossieredge", data, opts);
     }
 
+    // command "doccompile" [call]
+    DocCompileCommand(client: WshClient, data: CommandDocCompileData, opts?: RpcOpts): Promise<CommandDocCompileRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "doccompile", data, opts);
+        return client.wshRpcCall("doccompile", data, opts);
+    }
+
     // command "effortcreate" [call]
     EffortCreateCommand(client: WshClient, data: CommandEffortCreateData, opts?: RpcOpts): Promise<CommandEffortCreateRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortcreate", data, opts);

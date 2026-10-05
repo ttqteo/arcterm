@@ -650,6 +650,23 @@ declare global {
         name: string;
     };
 
+    // wshrpc.CommandDocCompileData
+    type CommandDocCompileData = {
+        path: string;
+    };
+
+    // wshrpc.CommandDocCompileRtnData
+    type CommandDocCompileRtnData = {
+        rootpath: string;
+        pdfpath?: string;
+        ok: boolean;
+        engine: string;
+        durationms: number;
+        pages: number;
+        logtail?: string;
+        firsterror?: string;
+    };
+
     // wshrpc.CommandDossierEdgeData
     type CommandDossierEdgeData = {
         dossierid: string;
