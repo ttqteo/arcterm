@@ -78,7 +78,7 @@ export function TaskModelPick({ group, owner, task }: { group: TaskGroup; owner:
     return (
         <div data-model-pick={row.id} className="flex flex-col gap-1 border-t border-border pt-1.5">
             <div className="flex items-center gap-2.5">
-                <span className="flex-none font-mono text-[10.5px] text-ink-mid">model</span>
+                <span className="flex-none text-[10.5px] text-ink-mid">model</span>
                 {row.waiting ? (
                     <div
                         role="group"
@@ -89,7 +89,7 @@ export function TaskModelPick({ group, owner, task }: { group: TaskGroup; owner:
                         <ToggleButton on={row.model === "lead"} label={lead} onClick={() => setModel("lead")} />
                     </div>
                 ) : (
-                    <span className="flex flex-none items-center gap-1.5 font-mono text-[10.5px] text-success">
+                    <span className="flex flex-none items-center gap-1.5 text-[10.5px] text-success">
                         <span className="size-[7px] rounded-full bg-success pulse-dot" />
                         running on {row.runningModel}
                     </span>
@@ -98,7 +98,7 @@ export function TaskModelPick({ group, owner, task }: { group: TaskGroup; owner:
                     {row.reason ? `Plan reviewer: ${row.reason}` : ""}
                 </span>
                 <span
-                    className={cn("flex-none font-mono text-[10.5px]", row.changed ? "text-accent-soft" : "text-muted")}
+                    className={cn("flex-none text-[10.5px]", row.changed ? "text-accent-soft" : "text-muted")}
                 >
                     {!row.waiting ? "" : row.changed ? "you changed it" : "waiting"}
                 </span>
@@ -120,7 +120,7 @@ function ToggleButton({ on, label, onClick }: { on: boolean; label: string; onCl
             aria-pressed={on}
             onClick={on ? undefined : onClick}
             className={cn(
-                "cursor-pointer rounded-[5px] px-2 py-0.5 font-mono text-[10.5px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                "cursor-pointer rounded-[5px] px-2 py-0.5 text-[10.5px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
                 on ? "bg-accentbg text-accent-soft" : "text-ink-mid hover:text-ink-hi"
             )}
         >

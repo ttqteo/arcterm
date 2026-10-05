@@ -97,8 +97,6 @@ typography:
     fontFamily: "Inter, system-ui, sans-serif"
   font-mono:
     fontFamily: "JetBrains Mono, monospace"
-  font-markdown:
-    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Noto Sans, Helvetica, Arial, sans-serif"
   text-xxs:
     fontSize: 10px
   text-xxxs:
@@ -173,8 +171,8 @@ The blue accent (`#5e9cff`) is used sparingly (the primary CTA, focus, links
 and the running state) so it still reads as a signal. Status is semantic and
 never color-alone: amber = asking, green = working, red = error.
 
-Typography pairs **Inter** (UI voice) with **JetBrains Mono**
-(technical data, terminal, code). Motion is functional-first: it exists only
+Typography is **Inter** throughout the UI, with **JetBrains Mono** reserved for
+terminal, code and verbatim technical strings. Motion is functional-first: it exists only
 to make state changes more legible, honors `prefers-reduced-motion`, and draws
 exclusively from shared motion tokens.
 
@@ -293,13 +291,18 @@ default stays on Midnight.
 
 ## Typography
 
-- **`font-sans` — Inter** (bundled) for all UI. Falls back to
-  `system-ui, sans-serif`.
+- **`font-sans` — Inter** (bundled) for all UI: labels, headings, badges,
+  buttons, names, and every number, count, cost, duration and timestamp. It is
+  the body default, so most elements carry no font class at all. Falls back to
+  `system-ui, sans-serif`. Rendered markdown uses it too.
 - **`font-mono` — JetBrains Mono** (the variable full-charset file
-  `public/fonts/jetbrains-mono-variable.woff2`) for terminal, code, keys, and
-  technical data. It is also the terminal default.
-- **`font-markdown`** — system UI stack for rendered markdown (GitHub-like
-  reading experience).
+  `public/fonts/jetbrains-mono-variable.woff2`) only for text a person would copy
+  into a shell or editor: terminal output, code and diffs, file paths, git
+  branches and SHAs, commands and flags, run/session ids, and keycaps. It is also
+  the terminal default. Never use it for labels, badges, metrics or meta text.
+- **Numbers** in Inter get `tabular-nums` wherever they align or update (usage
+  meters, token and cost tables, durations, timestamps, diff stats) so columns do
+  not jitter.
 
 Fonts are registered via `FontFace` in `frontend/util/fontutil.ts`
 (`loadFonts()` at boot). The settings font picker offers Inter / Hanken

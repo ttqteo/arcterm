@@ -42,7 +42,7 @@ function EdgeChip({ tag }: { tag: AmbientTag }) {
                 style={{ borderTopStyle: line.style, borderTopWidth: line.weightPx, borderTopColor: "currentColor" }}
             />
             <span className="truncate text-[11.5px] font-semibold text-secondary">{tag.label}</span>
-            <span className="flex-none font-mono text-[9.5px] text-muted">{edgeLabel(tag)}</span>
+            <span className="flex-none text-[9.5px] text-muted">{edgeLabel(tag)}</span>
         </span>
     );
 }
@@ -99,7 +99,7 @@ export function RecordBand({
                     />
                 ) : (
                     <>
-                        <span className="font-mono text-[11px] text-muted">No record attributed to this run</span>
+                        <span className="text-[11px] text-muted">No record attributed to this run</span>
                         <div className="flex-1" />
                         <button
                             type="button"
@@ -131,7 +131,7 @@ export function RecordBand({
                             expanded panel below already lists the others as clickable rows. Deliberately
                             not flex-wrap — a band that changes height on selection pushes the thread. */}
                     <EdgeChip tag={band.primary} />
-                    <span className="flex-none font-mono text-[10.5px] text-muted">+{band.others.length} more</span>
+                    <span className="flex-none text-[10.5px] tabular-nums text-muted">+{band.others.length} more</span>
                     <div className="flex-1" />
                     <span className="flex-none text-[11px] font-semibold text-muted">
                         {open ? "Collapse" : "Expand"}
@@ -147,7 +147,7 @@ export function RecordBand({
                         Selected directly from Records — no run beneath it
                     </span>
                     <div className="flex-1" />
-                    <span className="flex-none font-mono text-[11px] text-muted">the subject itself</span>
+                    <span className="flex-none text-[11px] text-muted">the subject itself</span>
                 </>
             )}
         </>
@@ -222,7 +222,7 @@ export function RecordBand({
                                             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                                         >
                                             <EdgeChip tag={e} />
-                                            <span className="font-mono text-[10.5px] text-muted">open this record</span>
+                                            <span className="text-[10.5px] text-muted">open this record</span>
                                         </button>
                                         {runORef != null ? (
                                             <EdgeControls

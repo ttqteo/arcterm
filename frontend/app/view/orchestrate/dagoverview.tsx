@@ -80,7 +80,7 @@ export function DagOverview({
                 <span aria-live="polite" className={health.tone + " text-[13px] font-bold"}>
                     {health.text}
                 </span>
-                <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10.5px] text-muted">
+                <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] tabular-nums text-muted">
                     <span>{counts ? `${counts.done}/${counts.total} done` : "…"}</span>
                     {shapeText ? <span>{shapeText}</span> : null}
                     {elapsed ? <span>{formatElapsed(elapsed)}</span> : null}
@@ -104,7 +104,7 @@ export function DagOverview({
 
             {/* next engine move */}
             {nextMove ? (
-                <div className="border-b border-edge-mid px-3.5 py-2 font-mono text-[11px] text-secondary">
+                <div className="border-b border-edge-mid px-3.5 py-2 text-[11px] text-secondary">
                     <span className="mr-1.5 text-muted">next:</span>
                     {nextMove}
                 </div>
@@ -126,7 +126,7 @@ export function DagOverview({
 }
 
 function EmptyRow({ text }: { text: string }) {
-    return <div className="py-1 font-mono text-[11px] text-muted">{text}</div>;
+    return <div className="py-1 text-[11px] text-muted">{text}</div>;
 }
 
 // orderedWorkerRows renders each task as a worker row in exception-first order (spec 6.1). Rows never
@@ -201,7 +201,7 @@ function WorkerRow({
             <div className="min-w-0 flex-1">
                 {/* task identity, rendered identically in every worker state: a dispatched row used to
                     show only the agent, leaving the reader to infer which task it was executing */}
-                <div className="flex min-w-0 items-center gap-2 font-mono text-[11px] text-secondary">
+                <div className="flex min-w-0 items-center gap-2 text-[11px] text-secondary">
                     <span className="min-w-0 truncate">{task.label || task.id}</span>
                 </div>
                 {worker.state === "dispatched" && worker.agent ? (
@@ -212,7 +212,7 @@ function WorkerRow({
                 ) : activityText == null && worker.agent ? (
                     <ActivityLine agent={worker.agent} nowAtom={nav.model.nowAtom} right={null} className="mt-0.5" />
                 ) : (
-                    <div className="mt-0.5 font-mono text-[10.5px] text-muted">{activityText}</div>
+                    <div className="mt-0.5 text-[10.5px] tabular-nums text-muted">{activityText}</div>
                 )}
                 {recovery ? <RecoveryLine summary={recovery} task={task} nav={nav} /> : null}
             </div>
@@ -226,7 +226,7 @@ function WorkerRow({
 function VerifyLine({ taskId, td, nowAtom }: { taskId: string; td?: DagTaskDigest; nowAtom: Atom<number> }) {
     const now = useAtomValue(nowAtom);
     return (
-        <div data-task-verify={taskId} className="mt-0.5 truncate font-mono text-[10.5px] text-success-soft">
+        <div data-task-verify={taskId} className="mt-0.5 truncate text-[10.5px] tabular-nums text-success-soft">
             {verifyRowLine(td, now)}
         </div>
     );
@@ -241,7 +241,7 @@ function RecoveryLine({ summary, task, nav }: { summary: RecoverySummary; task: 
             type="button"
             onClick={() => openDagTask(nav.channelId, nav.runId, nav.dagOref, task.id)}
             title="Show this task's lifecycle history"
-            className="mt-0.5 flex cursor-pointer items-center gap-1 font-mono text-[10px] text-muted hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="mt-0.5 flex cursor-pointer items-center gap-1 text-[10px] tabular-nums text-muted hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
             <span className="min-w-0 truncate">{recoveryText(summary, task.state)}</span>
             <span aria-hidden="true">↗</span>
@@ -266,7 +266,7 @@ function TaskRowSignal({
     return (
         <div className="flex shrink-0 items-center gap-1.5">
             {actions.length > 0 ? (
-                <span className="rounded-[5px] border border-edge-mid px-1.5 py-0.5 font-mono text-[9.5px] text-ink-mid">
+                <span className="rounded-[5px] border border-edge-mid px-1.5 py-0.5 text-[9.5px] text-ink-mid">
                     {actions.join("/")}
                 </span>
             ) : null}
@@ -275,13 +275,13 @@ function TaskRowSignal({
                     type="button"
                     data-peek
                     onClick={(e) => openTaskWorker(worker, nav.model, e)}
-                    className="cursor-pointer rounded-[5px] border border-accent/50 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-accent-soft hover:border-accent"
+                    className="cursor-pointer rounded-[5px] border border-accent/50 px-1.5 py-0.5 text-[9.5px] font-semibold text-accent-soft hover:border-accent"
                 >
                     Open in Agent ↗
                 </button>
             ) : worker.state === "unavailable" ? (
                 <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-[9.5px] text-muted">
+                    <span className="text-[9.5px] text-muted">
                         {task.runid ? (digestStale ? "Refreshing status" : "Worker session unavailable") : "Not dispatched yet"}
                     </span>
                     {task.runid ? (
@@ -289,7 +289,7 @@ function TaskRowSignal({
                             type="button"
                             data-peek
                             onClick={(e) => openTaskWorker(worker, nav.model, e)}
-                            className="cursor-pointer rounded-[5px] border border-edge-mid px-1.5 py-0.5 font-mono text-[9.5px] text-secondary hover:border-edge-strong"
+                            className="cursor-pointer rounded-[5px] border border-edge-mid px-1.5 py-0.5 text-[9.5px] text-secondary hover:border-edge-strong"
                         >
                             View child run
                         </button>
@@ -309,7 +309,7 @@ function Queue({ digest, group, nav }: { digest: DagStatusDigest; group: TaskGro
     }
     return (
         <div className="border-b border-edge-mid px-3.5 py-2">
-            <div className="mb-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[.09em] text-muted">
+            <div className="mb-1.5 text-[9.5px] font-semibold uppercase tracking-[.09em] text-muted">
                 Needs attention
             </div>
             <div className="flex flex-col gap-1">
@@ -335,7 +335,7 @@ function QueueRow({ entry, nav }: { entry: QueueEntry; nav: NavContext }) {
             type="button"
             onClick={go}
             title={openWorker ? "Open the worker" : "Show this task in the DAG"}
-            className="flex w-full cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-left font-mono text-[11px] text-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="flex w-full cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] text-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
             <span className="shrink-0 truncate font-semibold text-primary">{entry.label}</span>

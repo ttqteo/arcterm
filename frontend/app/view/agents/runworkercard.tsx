@@ -77,17 +77,17 @@ export function RunWorkerCard({
                 <span title={rt.label} className="shrink-0">
                     <RuntimeMark
                         runtime={agent.agent}
-                        className={cn("shrink-0 font-mono text-[10px] leading-none", rt.text)}
+                        className={cn("shrink-0 text-[10px] leading-none", rt.text)}
                     />
                 </span>
-                <b className="shrink-0 font-mono text-[13px] font-semibold text-primary">{agent.name}</b>
+                <b className="shrink-0 text-[13px] font-semibold text-primary">{agent.name}</b>
                 {agent.model ? (
-                    <span className="shrink-0 rounded-[5px] border border-edge-mid bg-surface-raised px-1.5 py-px font-mono text-[9.5px] text-muted">
+                    <span className="shrink-0 rounded-[5px] border border-edge-mid bg-surface-raised px-1.5 py-px text-[9.5px] text-muted">
                         {agent.model}
                     </span>
                 ) : null}
                 <div className="min-w-[6px] flex-1" />
-                <span className="shrink-0 font-mono text-[10.5px] text-muted">
+                <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
                     {formatAge(displayAgeMs(agent, now))}
                 </span>
                 <button
@@ -97,11 +97,11 @@ export function RunWorkerCard({
                         jumpToAgent(model, agent.id);
                     }}
                     title="Open worker terminal"
-                    className="shrink-0 font-mono text-[10.5px] text-accent hover:text-accent-soft"
+                    className="shrink-0 text-[10.5px] text-accent hover:text-accent-soft"
                 >
                     open ↗
                 </button>
-                <span className="shrink-0 font-mono text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
+                <span className="shrink-0 text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
             </div>
 
             {/* streaming flow bar — a subtle accent sweep while the worker actively narrates */}
@@ -117,7 +117,7 @@ export function RunWorkerCard({
                     {quiet ? (
                         <div className="flex items-center gap-2 px-3 pb-1 pt-2">
                             <span className="h-1.5 w-1.5 shrink-0 rounded-full border border-muted" />
-                            <span className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[1.4] text-muted">
+                            <span className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] tabular-nums text-muted">
                                 Still working — no new output for {quietSecs}s
                             </span>
                         </div>
@@ -128,7 +128,7 @@ export function RunWorkerCard({
                             ) : null}
                             <span
                                 title={current}
-                                className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[1.4] text-success-soft"
+                                className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] text-success-soft"
                             >
                                 {current}
                             </span>
@@ -156,14 +156,14 @@ export function RunWorkerCard({
                     {prog ? (
                         <div className="border-t border-edge-mid px-3 py-2">
                             <div className="mb-1 flex items-center gap-2">
-                                <span className="font-mono text-xxxs font-bold uppercase tracking-[0.08em] text-muted">
+                                <span className="text-xxxs font-bold uppercase tracking-[0.08em] text-muted">
                                     Task
                                 </span>
                                 <div className="flex-1" />
-                                <span className="font-mono text-[10px] text-secondary">
+                                <span className="text-[10px] tabular-nums text-secondary">
                                     {prog.done}/{prog.total}
                                 </span>
-                                <span className="font-mono text-[10px] font-bold text-success">{prog.pct}%</span>
+                                <span className="text-[10px] font-bold tabular-nums text-success">{prog.pct}%</span>
                             </div>
                             <Meter pct={prog.pct} fill="bg-success" height={5} radius={3} track="bg-edge-faint" />
                         </div>
@@ -174,7 +174,7 @@ export function RunWorkerCard({
                 <div className="flex items-center gap-2 px-3 pb-2.5 pt-0.5">
                     <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{current ?? "…"}</span>
                     {prog ? (
-                        <span className="shrink-0 font-mono text-[10px] font-bold text-success">{prog.pct}%</span>
+                        <span className="shrink-0 text-[10px] font-bold tabular-nums text-success">{prog.pct}%</span>
                     ) : null}
                 </div>
             )}
@@ -202,9 +202,9 @@ export function PhaseHistory({ tabIds }: { tabIds: string[] }) {
                 onClick={() => setOpen((o) => !o)}
                 className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 hover:bg-surface-hover"
             >
-                <span className="shrink-0 font-mono text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
-                <span className="font-mono text-xxxs font-bold uppercase tracking-[0.08em] text-muted">History</span>
-                <span className="text-[11px] text-secondary">
+                <span className="shrink-0 text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
+                <span className="text-xxxs font-bold uppercase tracking-[0.08em] text-muted">History</span>
+                <span className="text-[11px] tabular-nums text-secondary">
                     {entries.length} step{entries.length === 1 ? "" : "s"}
                 </span>
             </button>
@@ -231,11 +231,11 @@ export function RunRollup({ agent, now }: { agent: AgentVM; now: number }) {
     return (
         <div className="mb-4 flex items-center gap-2.5 rounded-[10px] border border-accent/25 bg-background px-3.5 py-2.5">
             <StatusDot state={agent.state} quiet={quiet} pulse={!quiet} className="!h-[7px] !w-[7px]" />
-            <span className="shrink-0 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-accent-soft">
+            <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-accent-soft">
                 now
             </span>
             <span className="min-w-0 flex-1 truncate text-[12.5px] text-secondary">{current}</span>
-            <span className="shrink-0 font-mono text-[10.5px] text-muted">
+            <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
                 {agent.name} · {formatAge(displayAgeMs(agent, now))}
             </span>
         </div>

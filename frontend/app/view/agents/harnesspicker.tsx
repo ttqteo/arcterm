@@ -143,7 +143,7 @@ export function HarnessPicker({ operation, placement = "top-start", className, o
             >
                 <span className="min-w-0 flex-1 truncate text-left">{face.label}</span>
                 {pref.saving ? (
-                    <span className="font-mono text-[10.5px] font-normal text-muted">saving</span>
+                    <span className="text-[10.5px] font-normal text-muted">saving</span>
                 ) : (
                     <ChevronDown size={12} className={cn("flex-none text-muted", open && "rotate-180")} />
                 )}
@@ -208,7 +208,7 @@ export function HarnessPicker({ operation, placement = "top-start", className, o
                                 </button>
                             ))}
                             {pref.error != null ? (
-                                <div className="mt-1 border-t border-border px-[9px] pb-1 pt-2 font-mono text-[10.5px] text-error">
+                                <div className="mt-1 border-t border-border px-[9px] pb-1 pt-2 text-[10.5px] text-error">
                                     saving failed: {pref.error}
                                 </div>
                             ) : null}

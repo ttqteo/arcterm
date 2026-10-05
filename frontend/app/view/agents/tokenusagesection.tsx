@@ -66,19 +66,19 @@ export function TokenUsageSection() {
             {/* headline pair */}
             <div className="mb-[15px] flex items-end justify-between">
                 <div>
-                    <div className="font-mono text-[22px] font-bold leading-none text-primary">{fmt(totalTokens)}</div>
-                    <div className="mt-[4px] font-mono text-[10.5px] text-muted">total tokens</div>
+                    <div className="text-[22px] font-bold leading-none tabular-nums text-primary">{fmt(totalTokens)}</div>
+                    <div className="mt-[4px] text-[10.5px] text-muted">total tokens</div>
                 </div>
                 <div className="text-right">
-                    <div className="font-mono text-[22px] font-bold leading-none text-success">{headlineUsd}</div>
-                    <div className="mt-[4px] font-mono text-[10.5px] text-muted">{headlineCaption}</div>
+                    <div className="text-[22px] font-bold leading-none tabular-nums text-success">{headlineUsd}</div>
+                    <div className="mt-[4px] text-[10.5px] text-muted">{headlineCaption}</div>
                 </div>
             </div>
 
             {/* tokens bar */}
             <div className="mb-[6px] flex items-baseline justify-between">
                 <SubLabel>Tokens</SubLabel>
-                <span className="font-mono text-[11px] text-secondary">{fmt(totalTokens)}</span>
+                <span className="text-[11px] tabular-nums text-secondary">{fmt(totalTokens)}</span>
             </div>
             <StackedMeter
                 height={11}
@@ -100,7 +100,7 @@ export function TokenUsageSection() {
                         {/* spend bar */}
                         <div className="mb-[6px] mt-[13px] flex items-baseline justify-between">
                             <SubLabel>≈ Spend</SubLabel>
-                            <span className="font-mono text-[11px] text-secondary">{usd(totalSpendUsd)}</span>
+                            <span className="text-[11px] tabular-nums text-secondary">{usd(totalSpendUsd)}</span>
                         </div>
                         <StackedMeter
                             height={11}
@@ -130,11 +130,11 @@ export function TokenUsageSection() {
                                 >
                                     <span className={cn("h-[9px] w-[9px] flex-none rounded-[3px]", CLASS_FILL[c.cls])} />
                                     <span className="min-w-0 flex-1 text-[12px] text-secondary">{c.label}</span>
-                                    <span className="w-[52px] text-right font-mono text-[11.5px] text-secondary">{fmt(c.tokens)}</span>
-                                    <span className="w-[40px] text-right font-mono text-[10.5px] text-muted">
+                                    <span className="w-[52px] text-right text-[11.5px] tabular-nums text-secondary">{fmt(c.tokens)}</span>
+                                    <span className="w-[40px] text-right text-[10.5px] tabular-nums text-muted">
                                         {pctStr(totalTokens > 0 ? (c.tokens / totalTokens) * 100 : 0)}
                                     </span>
-                                    <span className="w-[48px] text-right font-mono text-[11.5px] text-muted">{usd(c.spendUsd)}</span>
+                                    <span className="w-[48px] text-right text-[11.5px] tabular-nums text-muted">{usd(c.spendUsd)}</span>
                                 </div>
                             ))}
                         </div>
@@ -143,17 +143,17 @@ export function TokenUsageSection() {
                         <div className="mb-[11px] mt-[16px] flex items-center gap-[8px]">
                             <SubLabel>By model</SubLabel>
                             <div className="h-px flex-1 bg-edge-faint" />
-                            <span className="font-mono text-[10.5px] text-muted">{single ? "1 model" : `${models.length} models`}</span>
+                            <span className="text-[10.5px] tabular-nums text-muted">{single ? "1 model" : `${models.length} models`}</span>
                         </div>
                         <div className="flex flex-col gap-[11px]">
                             {models.map((m) => (
                                 <div key={m.model}>
                                     <div className="mb-[6px] flex items-center gap-[8px]">
-                                        <span className="min-w-0 flex-1 truncate font-mono text-[12px] font-semibold text-secondary" title={m.model}>
+                                        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-secondary" title={m.model}>
                                             {prettyModel(m.model)}
                                         </span>
-                                        <span className="font-mono text-[11px] text-muted">{fmt(m.tokens)}</span>
-                                        <span className="w-[48px] text-right font-mono text-[11px] text-muted">{usd(m.spendUsd)}</span>
+                                        <span className="text-[11px] tabular-nums text-muted">{fmt(m.tokens)}</span>
+                                        <span className="w-[48px] text-right text-[11px] tabular-nums text-muted">{usd(m.spendUsd)}</span>
                                     </div>
                                     {single ? null : (
                                         <StackedMeter
@@ -171,7 +171,7 @@ export function TokenUsageSection() {
                             ))}
                         </div>
 
-                        <p className="mt-[13px] font-mono text-[10.5px] leading-[1.5] text-muted">
+                        <p className="mt-[13px] text-[10.5px] leading-[1.5] text-muted">
                             Priced per class from a bundled table. Subagents run in separate transcripts — see Subagents.
                         </p>
                     </motion.div>
@@ -180,7 +180,7 @@ export function TokenUsageSection() {
             <button
                 type="button"
                 onClick={() => setBreakdown((v) => !v)}
-                className="-ml-[6px] mt-[8px] inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
+                className="-ml-[6px] mt-[8px] inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
             >
                 {breakdown ? "Hide breakdown" : "Show breakdown"}
                 {breakdown ? <ChevronUp size={11} aria-hidden /> : <ChevronDown size={11} aria-hidden />}

@@ -64,11 +64,11 @@ function AggregateRowView({
                 <SkeletonLine className="h-[8px] w-[80px]" />
             ) : (
                 <>
-                    <span className="font-mono text-[10.5px] text-ink-mid">
+                    <span className="text-[10.5px] tabular-nums text-ink-mid">
                         {row.files} {row.files === 1 ? "file" : "files"}
                     </span>
-                    <span className="font-mono text-[10.5px] font-semibold text-diff-added">+{row.adds}</span>
-                    <span className="font-mono text-[10.5px] font-semibold text-diff-removed">−{row.dels}</span>
+                    <span className="text-[10.5px] font-semibold tabular-nums text-diff-added">+{row.adds}</span>
+                    <span className="text-[10.5px] font-semibold tabular-nums text-diff-removed">−{row.dels}</span>
                 </>
             )}
         </button>
@@ -114,7 +114,7 @@ function CommitRowView({
             >
                 {row.subject}
             </span>
-            <span className="flex-none text-right font-mono text-[10.5px] text-muted">{row.when}</span>
+            <span className="flex-none text-right text-[10.5px] tabular-nums text-muted">{row.when}</span>
         </button>
     );
 }
@@ -143,7 +143,7 @@ export function CompareColumn({
         <div data-compare-column className="flex min-h-0 flex-1 flex-col">
             <div className="flex h-[40px] flex-none items-center gap-[9px] border-b border-edge-faint pl-[14px] pr-[8px]">
                 <SubLabel>Compare</SubLabel>
-                <span className="min-w-0 truncate font-mono text-[10.5px] text-muted">
+                <span className="min-w-0 truncate text-[10.5px] tabular-nums text-muted">
                     {splitLabel(mergeBase, mergeBaseTs, Date.now())}
                 </span>
                 <div className="flex-1" />

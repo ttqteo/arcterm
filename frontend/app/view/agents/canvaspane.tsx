@@ -56,7 +56,7 @@ const CANVAS_TOP_PAD = 36;
 const LABEL_OFFSET = 22;
 
 const MARK_CHIP =
-    "h-[20px] w-[20px] rounded-full bg-accent text-center font-mono text-[11px] font-bold leading-[20px] text-background";
+    "h-[20px] w-[20px] rounded-full bg-accent text-center text-[11px] font-bold tabular-nums leading-[20px] text-background";
 
 // New run opens as an orchestrator run on the agent's project, with this canvas as the run's prototype
 function openBuildRun(model: AgentsViewModel, agent: AgentVM, s: CanvasState): void {
@@ -100,7 +100,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
     return (
         <div data-canvas-pane className="flex min-h-0 flex-1 flex-col">
             <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint bg-surface px-[22px] py-[8px]">
-                <span className="font-mono text-[12px] font-semibold text-secondary">{s.topic}</span>
+                <span className="text-[12px] font-semibold text-secondary">{s.topic}</span>
                 {s.boards.length > 0 ? (
                     <Segmented
                         role="tablist"
@@ -115,7 +115,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                     />
                 ) : null}
                 <div className="flex-1" />
-                {pane === "board" ? <span className="font-mono text-[10.5px] text-muted">{meta}</span> : null}
+                {pane === "board" ? <span className="text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
                 <button
                     type="button"
                     title={`Mark parts of the board (${formatChordString("m")})`}
@@ -227,7 +227,7 @@ function BoardFrameView({
                 onClick={onSelect}
                 title={board.title ?? label}
                 className={cn(
-                    "absolute flex cursor-pointer items-baseline gap-[8px] truncate text-left font-mono text-[11px]",
+                    "absolute flex cursor-pointer items-baseline gap-[8px] truncate text-left text-[11px]",
                     selected ? "text-accent-soft" : "text-muted hover:text-secondary"
                 )}
                 style={{ left: frame.left, top: frame.top - LABEL_OFFSET, maxWidth: frame.width }}

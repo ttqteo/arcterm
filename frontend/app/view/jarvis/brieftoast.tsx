@@ -27,7 +27,7 @@ export function BriefToastView() {
                     type="button"
                     data-jarvis-toast-undo
                     onClick={toast.undo}
-                    className="cursor-pointer rounded-[6px] border border-edge-mid px-[9px] py-[3px] font-mono text-[10.5px] font-semibold text-accent-soft hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="cursor-pointer rounded-[6px] border border-edge-mid px-[9px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     Undo
                 </button>

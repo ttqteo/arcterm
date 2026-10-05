@@ -1395,7 +1395,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                                 >
                                     <span>{s.label}</span>
                                     {count > 0 ? (
-                                        <span className="font-mono text-[10.5px] font-bold text-asking">{count}</span>
+                                        <span className="text-[10.5px] font-bold tabular-nums text-asking">{count}</span>
                                     ) : null}
                                 </button>
                             );
@@ -1439,7 +1439,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             ))
                         )}
                         {nav.scope === "files" && fileIndex?.truncated ? (
-                            <div className="px-2.5 pt-2 font-mono text-[10.5px] text-muted">
+                            <div className="px-2.5 pt-2 text-[10.5px] text-muted">
                                 Index truncated: searching the first 20,000 files only.
                             </div>
                         ) : null}
@@ -1458,7 +1458,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                             <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">
                                 {selected?.echo ?? "Nothing to run"}
                             </span>
-                            <span className="flex shrink-0 items-center gap-3 font-mono text-[10.5px] text-muted">
+                            <span className="flex shrink-0 items-center gap-3 text-[10.5px] text-muted">
                                 <span>↑↓ move</span>
                                 <span>{nav.actions != null ? "← back" : "Tab scope"}</span>
                                 <span>esc close</span>

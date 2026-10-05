@@ -125,7 +125,7 @@ function SectionRule({ label, meta, accent = false }: { label: string; meta?: st
         <div className="mb-3 flex items-center gap-2.5">
             <h3 className={cn(REGION_LABEL, accent ? "text-accent-soft" : "text-muted")}>{label}</h3>
             <div className="h-px flex-1 bg-edge-faint" />
-            {meta != null ? <span className="font-mono text-[10.5px] text-muted">{meta}</span> : null}
+            {meta != null ? <span className="text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
         </div>
     );
 }
@@ -133,9 +133,9 @@ function SectionRule({ label, meta, accent = false }: { label: string; meta?: st
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
     return (
         <div className="rounded-[11px] border border-border bg-surface-raised px-4 py-[14px]">
-            <div className="mb-2 font-mono text-[10.5px] text-muted">{label}</div>
-            <div className="mb-1.5 font-mono text-[21px] font-bold text-primary">{value}</div>
-            {sub ? <div className="font-mono text-[10.5px] text-muted">{sub}</div> : null}
+            <div className="mb-2 text-[10.5px] text-muted">{label}</div>
+            <div className="mb-1.5 text-[21px] font-bold tabular-nums text-primary">{value}</div>
+            {sub ? <div className="text-[10.5px] tabular-nums text-muted">{sub}</div> : null}
         </div>
     );
 }
@@ -167,20 +167,20 @@ function LimitCard({
             className="rounded-[11px] border border-border bg-surface-raised px-[15px] py-[13px]"
         >
             <div className="mb-2 flex items-baseline justify-between">
-                <span className="font-mono text-[10.5px] font-semibold text-ink-mid">{title}</span>
-                <span className={cn("font-mono text-[13px] font-bold", has ? LEVEL_TEXT[level] : "text-muted")}>
+                <span className="text-[10.5px] font-semibold text-ink-mid">{title}</span>
+                <span className={cn("text-[13px] font-bold tabular-nums", has ? LEVEL_TEXT[level] : "text-muted")}>
                     {has ? Math.round(w.pct!) + "%" : "—"}
                 </span>
             </div>
             <Meter pct={w.pct ?? 0} fill={has ? LEVEL_FILL[level] : "bg-edge-strong"} height={7} radius={4} />
-            <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10.5px] text-muted">
+            <div className="mt-1.5 flex justify-between gap-2 text-[10.5px] tabular-nums text-muted">
                 <span className="truncate">{used ?? (has ? "in window" : "no reading")}</span>
                 <span className="flex-none whitespace-nowrap">
                     {w.reset ? "resets " + formatReset(w.reset, now) : "—"}
                 </span>
             </div>
             {projectedExhaustion != null ? (
-                <div className="mt-1 font-mono text-[10.5px] text-warning">
+                <div className="mt-1 text-[10.5px] tabular-nums text-warning">
                     ~100% by {formatProjectedDate(projectedExhaustion)}
                 </div>
             ) : null}
@@ -218,13 +218,13 @@ function RailRow({
                     {providerLabel(row.harness)}
                 </span>
                 <span
-                    className="flex-none rounded-[4px] px-1.5 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.06em]"
+                    className="flex-none rounded-[4px] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tabular-nums tracking-[0.06em]"
                     style={{ color: st.color, backgroundColor: PILL_TINT }}
                 >
                     {st.label}
                 </span>
             </span>
-            <span className="flex items-center gap-2 font-mono text-[10.5px] text-muted">
+            <span className="flex items-center gap-2 text-[10.5px] tabular-nums text-muted">
                 <span className="text-secondary">{fmt(row.tokens)} tok</span>
                 <span className="text-muted">·</span>
                 <span>≈ {usd(row.spendUsd)}</span>
@@ -265,14 +265,14 @@ function UsageRail({
                 onClick={() => onSelect(ALL)}
                 className={cn("mb-3.5 flex w-full items-center gap-[11px]", ROW_BASE, sel === ALL ? ROW_ON : ROW_OFF)}
             >
-                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] border border-accent bg-accentbg font-mono text-[14px] font-semibold text-accent-soft">
+                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] border border-accent bg-accentbg text-[14px] font-semibold text-accent-soft">
                     Σ
                 </span>
                 <span className="min-w-0 flex-1">
                     <span className="block text-[13px] font-semibold text-primary">All providers</span>
-                    <span className="block font-mono text-[11px] text-muted">every transcript in window</span>
+                    <span className="block text-[11px] text-muted">every transcript in window</span>
                 </span>
-                <span className="flex-none rounded-full bg-surface-hover px-2 py-0.5 font-mono text-[11px] text-secondary">
+                <span className="flex-none rounded-full bg-surface-hover px-2 py-0.5 text-[11px] tabular-nums text-secondary">
                     {fmt(totalTokens)}
                 </span>
             </button>
@@ -311,8 +311,8 @@ function SplitCard({ split, scope }: { split: ClassUsage[]; scope: string }) {
             </p>
 
             <div className="mb-[7px] flex items-baseline justify-between">
-                <span className="font-mono text-[10.5px] font-semibold text-ink-mid">Tokens</span>
-                <span className="font-mono text-[12px] font-bold text-primary">{fmt(tokTotal)}</span>
+                <span className="text-[10.5px] font-semibold text-ink-mid">Tokens</span>
+                <span className="text-[12px] font-bold tabular-nums text-primary">{fmt(tokTotal)}</span>
             </div>
             <StackedMeter
                 className="mb-4"
@@ -323,10 +323,10 @@ function SplitCard({ split, scope }: { split: ClassUsage[]; scope: string }) {
             />
 
             <div className="mb-[7px] flex items-baseline justify-between">
-                <span className="font-mono text-[10.5px] font-semibold text-ink-mid">
+                <span className="text-[10.5px] font-semibold text-ink-mid">
                     Spend <span className="font-medium text-muted">≈ API-equiv</span>
                 </span>
-                <span className="font-mono text-[12px] font-bold text-primary">{usd(spdTotal)}</span>
+                <span className="text-[12px] font-bold tabular-nums text-primary">{usd(spdTotal)}</span>
             </div>
             <StackedMeter
                 className="mb-[18px]"
@@ -343,13 +343,13 @@ function SplitCard({ split, scope }: { split: ClassUsage[]; scope: string }) {
                             <span className={cn("h-[9px] w-[9px] flex-none rounded-[3px]", CLASS_FILL[c.cls])} />
                             <span className="text-[11.5px] font-semibold text-secondary">{c.label}</span>
                         </div>
-                        <div className="mb-[3px] flex justify-between font-mono text-[10.5px] text-muted">
+                        <div className="mb-[3px] flex justify-between text-[10.5px] tabular-nums text-muted">
                             <span>tokens</span>
                             <span className="text-secondary">
                                 {fmt(c.tokens)} · {pctStr(tokTotal > 0 ? (c.tokens / tokTotal) * 100 : 0)}
                             </span>
                         </div>
-                        <div className="flex justify-between font-mono text-[10.5px] text-muted">
+                        <div className="flex justify-between text-[10.5px] tabular-nums text-muted">
                             <span>spend</span>
                             <span className="text-secondary">
                                 {usd(c.spendUsd)} · {pctStr(spdTotal > 0 ? (c.spendUsd / spdTotal) * 100 : 0)}
@@ -374,12 +374,12 @@ function ModelGroup({ p }: { p: ProviderUsage }) {
                         {/* the provider prefix is what tells Pi's openai-codex/gpt-5.5 from Codex's
                             openai/gpt-5.5 — same model id, different upstream bucket */}
                         <span
-                            className="min-w-0 truncate font-mono text-[11.5px] text-secondary"
+                            className="min-w-0 truncate text-[11.5px] tabular-nums text-secondary"
                             title={`${p.provider}/${m.model}`}
                         >
                             {m.model === "Other" ? m.model : `${p.provider}/${m.model}`}
                         </span>
-                        <span className="flex-none font-mono text-[10.5px] text-muted">
+                        <span className="flex-none text-[10.5px] tabular-nums text-muted">
                             {fmt(m.tokens)} · <span className="font-semibold text-secondary">{pctStr(m.pct)}</span>
                         </span>
                     </div>
@@ -412,7 +412,7 @@ function DetailHeader({
         <div className="mb-5 flex items-start gap-3.5 border-b border-edge-faint pb-4">
             <span
                 className={cn(
-                    "flex h-[42px] w-[42px] flex-none items-center justify-center rounded-[11px] border font-mono text-[15px] font-semibold",
+                    "flex h-[42px] w-[42px] flex-none items-center justify-center rounded-[11px] border text-[15px] font-semibold",
                     all ? "border-accent bg-accentbg text-accent-soft" : cn(meta.line, meta.softBg, meta.text)
                 )}
             >
@@ -424,7 +424,7 @@ function DetailHeader({
                         {all ? "All providers" : providerLabel(sel)}
                     </h2>
                     <span
-                        className="rounded-[5px] px-1.5 py-[3px] font-mono text-[10.5px] font-bold uppercase tracking-[0.06em]"
+                        className="rounded-[5px] px-1.5 py-[3px] text-[10.5px] font-bold uppercase tabular-nums tracking-[0.06em]"
                         style={{
                             color: all ? "var(--color-accent-soft)" : (st?.color ?? "var(--color-muted)"),
                             backgroundColor: PILL_TINT,
@@ -433,7 +433,7 @@ function DetailHeader({
                         {all ? "Aggregate" : (st?.label ?? "No reading")}
                     </span>
                 </div>
-                <div className="flex flex-wrap gap-x-2.5 gap-y-1 font-mono text-[11px] text-muted">
+                <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[11px] tabular-nums text-muted">
                     <span>
                         {"tokens "}
                         <span className="text-secondary">{fmt(stats.totals.tokensWindow)}</span>
@@ -594,7 +594,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                     title="Usage"
                     badge={
                         reporting > 0 ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-sm border border-accent bg-accentbg px-2 py-[3px] font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-accent-soft">
+                            <span className="inline-flex items-center gap-1.5 rounded-sm border border-accent bg-accentbg px-2 py-[3px] text-[10.5px] font-semibold uppercase tabular-nums tracking-[0.08em] text-accent-soft">
                                 <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                                 {reporting} reporting
                             </span>
@@ -656,7 +656,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                 />
                             </div>
                         ) : (
-                            <p className="mb-6 rounded-[11px] border border-border bg-surface px-4 py-3 font-mono text-[11px] leading-[1.55] text-muted">
+                            <p className="mb-6 rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
                                 No quota reading{all ? "" : ` for ${providerLabel(sel)}`}. Windows are known only while
                                 an agent that publishes them runs; the last snapshot is kept per provider, and rolls to
                                 empty once its window passes. History below is unaffected.

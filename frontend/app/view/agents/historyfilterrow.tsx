@@ -20,11 +20,14 @@ function FilterChip({
     label,
     value,
     placeholder,
+    mono,
     onChange,
 }: {
     label: string;
     value: string;
     placeholder: string;
+    // the value is a path, not a name: set it in mono
+    mono?: boolean;
     onChange: (v: string) => void;
 }) {
     const [editing, setEditing] = useState(false);
@@ -32,9 +35,7 @@ function FilterChip({
     if (editing) {
         return (
             <span className="flex items-center gap-[7px] rounded-[7px] border border-accent/30 bg-accentbg px-[9px] py-[4px]">
-                <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">
-                    {label}
-                </span>
+                <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">{label}</span>
                 <input
                     autoFocus
                     value={value}
@@ -46,7 +47,10 @@ function FilterChip({
                             setEditing(false);
                         }
                     }}
-                    className="w-[150px] bg-transparent font-mono text-[11.5px] text-ink-hi outline-none placeholder:text-muted"
+                    className={cn(
+                        "w-[150px] bg-transparent text-[11.5px] text-ink-hi outline-none placeholder:text-muted",
+                        mono && "font-mono"
+                    )}
                 />
             </span>
         );
@@ -59,10 +63,10 @@ function FilterChip({
             )}
         >
             <button onClick={() => setEditing(true)} className="flex items-center gap-[7px]">
-                <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">
-                    {label}
+                <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">{label}</span>
+                <span className={cn("max-w-[170px] truncate text-[11.5px]", on && mono && "font-mono")}>
+                    {on ? value : placeholder}
                 </span>
-                <span className="max-w-[170px] truncate font-mono text-[11.5px]">{on ? value : placeholder}</span>
             </button>
             {on ? (
                 <button
@@ -82,7 +86,7 @@ export function HistoryFilterRow() {
     return (
         <div className="flex flex-none items-center gap-[8px] px-[12px] pb-[10px]">
             <div className="flex min-w-0 flex-1 items-center gap-[8px] rounded-[8px] border border-edge-mid bg-surface px-[10px] py-[5px] focus-within:border-accent/30">
-                <span className="flex-none font-mono text-[11px] font-semibold text-muted">/</span>
+                <span className="flex-none text-[11px] font-semibold text-muted">/</span>
                 <input
                     data-history-filter
                     value={filters.text}
@@ -95,7 +99,7 @@ export function HistoryFilterRow() {
                             (e.target as HTMLInputElement).blur();
                         }
                     }}
-                    className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-ink-hi outline-none placeholder:text-muted"
+                    className="min-w-0 flex-1 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-muted"
                 />
             </div>
             <FilterChip
@@ -108,6 +112,7 @@ export function HistoryFilterRow() {
                 label="path"
                 value={filters.path}
                 placeholder="any"
+                mono
                 onChange={(v) => setHistoryFilter({ path: v })}
             />
         </div>

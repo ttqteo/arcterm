@@ -42,7 +42,7 @@ function SummaryChips({ tasks }: { tasks: TaskNode[] }) {
 }
 
 const ROUTE_CHIP =
-    "flex-none rounded-[5px] border border-edge-mid px-[7px] py-0.5 font-mono text-[10.5px] text-ink-mid";
+    "flex-none rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid";
 
 // graph header: the owning run's goal, the summary chips, the workers and reviewers routes, the derived status
 // pill, cancel. No back button: the modal header above it already closes, and a second close one row down read
@@ -68,19 +68,19 @@ export function DagGraphHeader({ group, owner }: { group: TaskGroup; owner: Run 
                 <div className="truncate text-[15px] font-bold tracking-[-0.01em] text-primary">
                     {group.title || "orchestration dag"}
                 </div>
-                <div className="font-mono text-[10.5px] text-ink-mid">
+                <div className="text-[10.5px] tabular-nums text-ink-mid">
                     parallelism {group.parallelism} · {done}/{group.tasks.length} done
                     {spent ? ` · ${usageText(spent, usage.sealed)}` : ""}
                 </div>
                 {spent ? (
-                    <div className="truncate font-mono text-[10.5px] text-ink-mid">{modelsText(spent)}</div>
+                    <div className="truncate text-[10.5px] tabular-nums text-ink-mid">{modelsText(spent)}</div>
                 ) : null}
             </div>
             <SummaryChips tasks={group.tasks} />
             <span className={ROUTE_CHIP}>{workersChip(group, owner)}</span>
             <span className={ROUTE_CHIP}>{reviewersChip(group, owner)}</span>
             <span
-                className={`rounded-[5px] border px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide ${tone}`}
+                className={`rounded-[5px] border px-2 py-0.5 text-[10.5px] uppercase tracking-wide ${tone}`}
             >
                 {label}
             </span>

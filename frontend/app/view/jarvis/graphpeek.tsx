@@ -160,7 +160,7 @@ export function GraphPeek({
                 <Waypoints size={14} className="flex-none text-accent-soft" />
                 <span className={cn(REGION_LABEL, "text-accent-soft")}>graph</span>
                 {/* the count only: a task node's label is its record's whole objective, up to 10k characters */}
-                <span className="font-mono text-[10.5px] text-muted">{merged.nodes.length} nodes</span>
+                <span className="text-[10.5px] tabular-nums text-muted">{merged.nodes.length} nodes</span>
                 <div className="flex-1" />
                 {/* no legend here: the canvas draws one in its bottom-left, sitting with the nodes it
                     labels. Two legends disagreed on case and order for the same four kinds. */}
@@ -221,7 +221,7 @@ export function GraphPeek({
                                 >
                                     <span
                                         className={cn(
-                                            "min-w-10 flex-none font-mono text-[10.5px]",
+                                            "min-w-10 flex-none text-[10.5px]",
                                             KIND_TONE[n.kind] ?? "text-muted"
                                         )}
                                     >
@@ -233,7 +233,7 @@ export function GraphPeek({
                                 </button>
                             ))}
                             {matches.length > MAX_MATCHES ? (
-                                <span className="px-2 font-mono text-[10.5px] text-muted">
+                                <span className="px-2 text-[10.5px] tabular-nums text-muted">
                                     +{matches.length - MAX_MATCHES} more · narrow the filter
                                 </span>
                             ) : null}
@@ -247,14 +247,14 @@ export function GraphPeek({
                                 <span className="flex gap-2">
                                     <span
                                         className={cn(
-                                            "font-mono text-[10.5px] font-semibold",
+                                            "text-[10.5px] font-semibold",
                                             KIND_TONE[node.kind] ?? "text-muted"
                                         )}
                                     >
                                         {node.kind}
                                     </span>
                                     {node.status ? (
-                                        <span className="font-mono text-[10.5px] text-muted">{node.status}</span>
+                                        <span className="text-[10.5px] text-muted">{node.status}</span>
                                     ) : null}
                                 </span>
                                 {/* clamped: a task's label is its record's whole objective, which pushed Edges and
@@ -286,7 +286,7 @@ export function GraphPeek({
                                                 <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">
                                                     {merged.nodes.find((n) => n.id === other)?.label ?? other}
                                                 </span>
-                                                <span className="flex-none font-mono text-[10.5px] text-muted">
+                                                <span className="flex-none text-[10.5px] text-muted">
                                                     {l.kind === "attribution" ? `${l.state} · ${l.bucket}` : "wikilink"}
                                                 </span>
                                             </div>

@@ -191,7 +191,7 @@ function FoldChip({
             }}
             aria-label={open ? ariaHide : ariaShow}
             aria-expanded={open}
-            className="inline-flex h-[18px] flex-none items-center gap-[3px] rounded-[5px] border border-edge-mid bg-surface-hover pl-[3px] pr-[6px] font-mono text-[10.5px] font-semibold text-ink-mid hover:border-accent hover:text-accent-soft"
+            className="inline-flex h-[18px] flex-none items-center gap-[3px] rounded-[5px] border border-edge-mid bg-surface-hover pl-[3px] pr-[6px] text-[10.5px] font-semibold tabular-nums text-ink-mid hover:border-accent hover:text-accent-soft"
         >
             {open ? <ChevronDown size={10} aria-hidden /> : <ChevronRight size={10} aria-hidden />}
             {label}
@@ -218,7 +218,7 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
             }}
             title={showing ? "Back to the terminal" : "Show the canvas"}
             className={cn(
-                "flex flex-none cursor-pointer items-center gap-[4px] rounded-[5px] border px-[6px] py-[1px] font-mono text-[10.5px] font-semibold text-accent-soft",
+                "flex flex-none cursor-pointer items-center gap-[4px] rounded-[5px] border px-[6px] py-[1px] text-[10.5px] font-semibold text-accent-soft",
                 showing ? "border-accent bg-accentbg" : "border-edge-mid hover:border-edge-strong"
             )}
         >
@@ -231,7 +231,7 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
 }
 
 function AskingBadge({ n }: { n: number }) {
-    return <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-warning">{n} asking</span>;
+    return <span className="whitespace-nowrap text-[11px] font-semibold tabular-nums text-warning">{n} asking</span>;
 }
 
 // TaskStripBar is a run's per-task strip under its second line: a segment per task, or one bar for a long plan.
@@ -276,7 +276,7 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
         // a finished bounded run's lead row reading planning for good, the same misreading of an absent
         // dag the engine had in ShouldCloseOrchestratorLead.
         return (
-            <div className="mt-[3px] flex min-w-0 font-mono text-[10.5px]">
+            <div className="mt-[3px] flex min-w-0 text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
@@ -293,7 +293,7 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
     const progress = dagProgressLabel(run, leadless ?? false);
     return (
         <>
-            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] font-mono text-[10.5px]">
+            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 <FoldChip
                     label={chip}
                     open={open}
@@ -428,15 +428,15 @@ function ParentRow({
                             globalStore.set(docReviewAtom, agent.id);
                         }}
                         title={`Open the ${review.kind} review`}
-                        className="flex cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] font-mono text-[10.5px] font-semibold text-warning hover:border-warning"
+                        className="flex cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] text-[10.5px] font-semibold text-warning hover:border-warning"
                     >
                         review
                         <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                     </button>
                 ) : asking ? (
-                    <span className="font-mono text-[10.5px] font-semibold text-warning">asking</span>
+                    <span className="text-[10.5px] font-semibold text-warning">asking</span>
                 ) : (
-                    <span className="whitespace-nowrap font-mono text-[11px] text-ink-faint">
+                    <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
                         {formatAgeShort(displayAgeMs(agent, now))}
                     </span>
                 )}
@@ -474,7 +474,7 @@ function ParentRow({
                                     />
                                 </Slot>
                                 <div className="min-w-0 flex-1">
-                                    <div className="truncate font-mono text-[11.5px] font-medium text-secondary">
+                                    <div className="truncate text-[11.5px] font-medium text-secondary">
                                         {s.type || "subagent"}
                                     </div>
                                     <div className="mt-[3px] truncate font-mono text-[10.5px] text-muted">
@@ -483,7 +483,7 @@ function ParentRow({
                                 </div>
                                 {/* the dot carries a live child's state; only a failure is worth the words */}
                                 {s.state === "failure" ? (
-                                    <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold text-error">
+                                    <span className="whitespace-nowrap text-[10.5px] font-semibold text-error">
                                         failed
                                     </span>
                                 ) : null}
@@ -642,19 +642,19 @@ function WorkerRow({
                             ariaHide="Hide reviewer and earlier sessions"
                         />
                     ) : null}
-                    <span className={cn("truncate font-mono text-[10.5px]", asksYou ? "text-warning" : "text-muted")}>
+                    <span className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}>
                         {sub}
                     </span>
                 </div>
             </div>
             {agent != null ? <CanvasTag model={model} id={agent.id} /> : null}
             {ask?.owner === "lead" ? (
-                <span className="flex items-center gap-[3px] whitespace-nowrap font-mono text-[10.5px] font-medium text-muted">
+                <span className="flex items-center gap-[3px] whitespace-nowrap text-[10.5px] font-medium text-muted">
                     <ArrowRight size={10} aria-hidden />
                     lead
                 </span>
             ) : asksYou ? (
-                <span className="whitespace-nowrap font-mono text-[10.5px] font-semibold text-warning">asking</span>
+                <span className="whitespace-nowrap text-[10.5px] font-semibold text-warning">asking</span>
             ) : null}
         </div>
     );
@@ -714,7 +714,7 @@ function StageRow({
             </Slot>
             <div className="min-w-0 flex-1">
                 <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel(stageRole)}</div>
-                <div className="mt-[3px] truncate font-mono text-[10.5px] text-muted">
+                <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
                     {stageSubline(outcome, formatAgeShort(displayAgeMs(agent, now)))}
                 </div>
             </div>
@@ -737,7 +737,7 @@ function FoldRow({
     return (
         <div
             onClick={onToggle}
-            className="relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] font-mono text-[10.5px] text-ink-mid hover:bg-surface-hover hover:text-secondary"
+            className="relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[6px] pl-[28px] pr-[11px] text-[10.5px] tabular-nums text-ink-mid hover:bg-surface-hover hover:text-secondary"
         >
             <Guides depth={1} />
             <Slot>{glyph}</Slot>
@@ -854,7 +854,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
             </div>
             <div className="flex items-center justify-between px-[12px] pb-[4px] pt-[14px]">
                 <h3 className="text-[12px] font-medium text-muted">Agents</h3>
-                <span className="font-mono text-[11px] text-ink-faint">{total}</span>
+                <span className="text-[11px] tabular-nums text-ink-faint">{total}</span>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
                 <AnimatePresence mode="popLayout" initial={false}>
@@ -998,7 +998,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                         >
                             <SquareTerminal size={14} aria-hidden className="shrink-0 text-muted" />
                             <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">Terminals</span>
-                            <span className="font-mono text-[11px] text-ink-faint">{terminals.length}</span>
+                            <span className="text-[11px] tabular-nums text-ink-faint">{terminals.length}</span>
                         </motion.div>
                     ) : null}
                     {terminals.map((t) => (

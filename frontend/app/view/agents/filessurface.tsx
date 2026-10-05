@@ -499,7 +499,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                     clock is part of reading the comparison. Absent until one has
                                     happened — "just now" on an unfetched session would be a lie. */}
                                 {fetchState.at > 0 ? (
-                                    <span className="font-mono text-[10.5px] text-muted">
+                                    <span className="text-[10.5px] tabular-nums text-muted">
                                         fetched {formatAge(Date.now() - fetchState.at * 1000)} ago
                                     </span>
                                 ) : null}
@@ -509,7 +509,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                         {scope ? (
                             <span
                                 data-files-range-summary
-                                className="min-w-0 truncate font-mono text-[11.5px] text-ink-faint"
+                                className="min-w-0 truncate text-[11.5px] tabular-nums text-ink-faint"
                             >
                                 {summaryLine({
                                     range: scope.range,

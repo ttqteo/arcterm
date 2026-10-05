@@ -78,7 +78,7 @@ export function ProjectSwitcher({ model, variant }: { model: AgentsViewModel; va
                                 <span className="flex-1 truncate text-[13px] font-medium text-secondary">
                                     All projects
                                 </span>
-                                <span className="font-mono text-[11px] text-muted">{agents.length}</span>
+                                <span className="text-[11px] tabular-nums text-muted">{agents.length}</span>
                                 <span className="w-5 shrink-0" />
                             </button>
                             {projects.map((p) => (
@@ -105,11 +105,11 @@ export function ProjectSwitcher({ model, variant }: { model: AgentsViewModel; va
                                             {p.name}
                                         </span>
                                         {p.askingCount > 0 ? (
-                                            <span className="font-mono text-[10.5px] font-semibold text-warning">
+                                            <span className="text-[10.5px] font-semibold tabular-nums text-warning">
                                                 {p.askingCount}
                                             </span>
                                         ) : null}
-                                        <span className="font-mono text-[11px] text-muted">{p.agentCount}</span>
+                                        <span className="text-[11px] tabular-nums text-muted">{p.agentCount}</span>
                                     </button>
                                     {confirming === p.name ? (
                                         <span className="flex shrink-0 items-center gap-1">

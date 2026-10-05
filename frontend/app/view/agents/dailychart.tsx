@@ -147,7 +147,7 @@ export function DailyChart({
         <div className="mb-4 rounded-[14px] border border-border bg-surface-raised px-[22px] pb-5 pt-[18px]">
             <div className="mb-5 flex flex-wrap items-center gap-3">
                 <h3 className="text-[15px] font-bold tracking-[-0.01em] text-primary">Daily</h3>
-                <span className="font-mono text-[11px] text-muted">
+                <span className="text-[11px] text-muted">
                     {win === "7d"
                         ? "last 7 days"
                         : view.length === rows.length
@@ -159,7 +159,7 @@ export function DailyChart({
                     {harnesses.map((h) => (
                         <span
                             key={h}
-                            className="flex items-center gap-[5px] font-mono text-[10.5px] text-secondary"
+                            className="flex items-center gap-[5px] text-[10.5px] text-secondary"
                         >
                             <span className="h-[9px] w-[9px] rounded-[2px]" style={{ background: harnessMeta(h).color }} />
                             {harnessMeta(h).label}
@@ -177,7 +177,7 @@ export function DailyChart({
             </div>
 
             {rows.length === 0 ? (
-                <div className="py-8 text-center font-mono text-[12px] text-muted">No activity in range.</div>
+                <div className="py-8 text-center text-[12px] text-muted">No activity in range.</div>
             ) : (
                 <div ref={hostRef} className="relative w-full">
                     <svg ref={containerRef} width={width} height={CHART_H + MARGIN.top + MARGIN.bottom}>
@@ -191,7 +191,8 @@ export function DailyChart({
                                 tickLabelProps={() => ({
                                     fill: "var(--color-muted)",
                                     fontSize: 10.5,
-                                    fontFamily: "var(--font-mono)",
+                                    fontFamily: "var(--font-sans)",
+                                    fontVariantNumeric: "tabular-nums",
                                     textAnchor: "end",
                                     dx: -4,
                                     dy: 3,
@@ -206,7 +207,8 @@ export function DailyChart({
                                 tickLabelProps={() => ({
                                     fill: "var(--color-muted)",
                                     fontSize: 10.5,
-                                    fontFamily: "var(--font-mono)",
+                                    fontFamily: "var(--font-sans)",
+                                    fontVariantNumeric: "tabular-nums",
                                     textAnchor: "middle",
                                     dy: 2,
                                 })}
@@ -343,11 +345,11 @@ export function DailyChart({
                             top={tooltipTop}
                             className="!rounded-[7px] !border !border-border !bg-surface-raised !px-[10px] !py-[7px] !shadow-lg"
                         >
-                            <div className="mb-[5px] font-mono text-[10.5px] font-semibold text-primary">
+                            <div className="mb-[5px] text-[10.5px] font-semibold text-primary">
                                 {tooltipData.day}
                             </div>
                             {harnesses.map((h) => (
-                                <div key={h} className="flex items-center gap-[6px] font-mono text-[10.5px]">
+                                <div key={h} className="flex items-center gap-[6px] text-[10.5px] tabular-nums">
                                     <span
                                         className="h-[8px] w-[8px] flex-none rounded-[2px]"
                                         style={{ background: harnessMeta(h).color }}
@@ -356,7 +358,7 @@ export function DailyChart({
                                     <span className="ml-auto pl-3 text-secondary">{axisFmt(tooltipData.values[h] ?? 0)}</span>
                                 </div>
                             ))}
-                            <div className="mt-[5px] flex items-center gap-[6px] border-t border-border pt-[5px] font-mono text-[10.5px]">
+                            <div className="mt-[5px] flex items-center gap-[6px] border-t border-border pt-[5px] text-[10.5px] tabular-nums">
                                 <span className="text-muted">total</span>
                                 <span className="ml-auto pl-3 font-semibold text-primary">
                                     {axisFmt(tooltipData.total)}

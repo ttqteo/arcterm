@@ -43,7 +43,7 @@ import {
 } from "./runsettings";
 import { configLine, configNote } from "./runsheetmodel";
 
-const META_ROW = "flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-[10.5px]";
+const META_ROW = "flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[10.5px] tabular-nums";
 const FIELD = "rounded-[7px] border border-border bg-background px-2 py-1 text-[11.5px] text-ink-hi";
 export const SHEET_BTN =
     "cursor-pointer rounded-[7px] border border-border bg-surface-raised px-2.5 py-1 text-[11px] font-semibold text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
@@ -78,7 +78,7 @@ export function SheetShell({
             <header className="flex flex-none items-center gap-2.5 border-b border-edge-faint px-4 py-2.5">
                 <span className={cn(REGION_LABEL, "text-accent-soft")}>{label}</span>
                 <span className="min-w-0 truncate text-[13.5px] font-semibold text-ink-hi">{title}</span>
-                {meta ? <span className="min-w-0 truncate font-mono text-[10.5px] text-muted">{meta}</span> : null}
+                {meta ? <span className="min-w-0 truncate text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
                 <span className="flex-1" />
                 {actions}
                 <button type="button" aria-label="Close detail sheet" onClick={onClose} className={SHEET_BTN}>
@@ -237,7 +237,7 @@ function LoadedConfig({
                         value={draft.parallelism}
                         disabled={busy}
                         onChange={(e) => setDraft({ ...draft, parallelism: Number(e.target.value) })}
-                        className={cn(FIELD, "w-[72px] font-mono text-[12px]")}
+                        className={cn(FIELD, "w-[72px] text-[12px] tabular-nums")}
                     />
                     <span className="text-[10.5px] text-muted">1 through {MAX_PARALLELISM}</span>
                 </label>
@@ -327,7 +327,7 @@ function LoadedConfig({
                         type="button"
                         aria-expanded={open}
                         onClick={() => setOpen((o) => !o)}
-                        className="cursor-pointer font-mono text-[10.5px] text-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        className="cursor-pointer text-[10.5px] text-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                     >
                         {open ? "done" : "adjust"}
                     </button>
@@ -347,7 +347,7 @@ function LoadedConfig({
                 <span
                     title={configLine(run, shown, notSaved)}
                     className={cn(
-                        "min-w-0 flex-1 truncate font-mono text-[10.5px]",
+                        "min-w-0 flex-1 truncate text-[10.5px] tabular-nums",
                         notSaved ? "text-error" : "text-muted"
                     )}
                 >

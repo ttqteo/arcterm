@@ -396,7 +396,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                             face.kind === "channel" && face.body === "run" ? (
                                 <>
                                     {pos.total > 0 ? (
-                                        <span className="font-mono text-[10.5px] text-muted">
+                                        <span className="text-[10.5px] tabular-nums text-muted">
                                             {pos.n} / {pos.total}
                                         </span>
                                     ) : null}

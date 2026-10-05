@@ -232,7 +232,7 @@ export function RadarFindingDetail({
                             <span className={cn("text-[12.5px] font-semibold", INVESTIGATION_TEXT[iv.tone])}>
                                 {iv.label}
                             </span>
-                            <span className="min-w-0 truncate whitespace-pre font-mono text-[11.5px] text-ink-mid">
+                            <span className="min-w-0 truncate whitespace-pre text-[11.5px] tabular-nums text-ink-mid">
                                 {investigationDetail(inv, now)}
                             </span>
                             <span className="flex-1" />
@@ -325,7 +325,7 @@ export function RadarFindingDetail({
                         <div className="flex flex-col gap-2">
                             <div className="flex items-baseline gap-2.5">
                                 <h3 className={LABEL}>Evidence</h3>
-                                <span className="font-mono text-[11px] text-muted">
+                                <span className="text-[11px] tabular-nums text-muted">
                                     {plural(findingSignalCount(finding), "signal")} from{" "}
                                     {plural(findingSourceCount(finding, report), "collector")}
                                 </span>
@@ -335,7 +335,7 @@ export function RadarFindingDetail({
                                     {evidence.map((s) => (
                                         <div key={s.id} className="flex flex-col gap-[9px] bg-background px-3.5 py-2.5">
                                             <div className="grid grid-cols-[52px_92px_minmax(0,1fr)_auto] items-baseline gap-3">
-                                                <span className="font-mono text-[11px] text-muted">
+                                                <span className="text-[11px] tabular-nums text-muted">
                                                     {formatDate(s.observedts)}
                                                 </span>
                                                 <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.04em] text-ink-mid">
@@ -367,7 +367,7 @@ export function RadarFindingDetail({
                             <div className="flex flex-col gap-2">
                                 <div className="flex items-baseline gap-2.5">
                                     <h3 className={LABEL}>Affected files</h3>
-                                    <span className="font-mono text-[11px] text-muted">{finding.files.length}</span>
+                                    <span className="text-[11px] tabular-nums text-muted">{finding.files.length}</span>
                                 </div>
                                 <div className="flex flex-col gap-px overflow-hidden rounded-[10px] border border-edge-mid bg-edge-faint">
                                     {finding.files.map((f) => (

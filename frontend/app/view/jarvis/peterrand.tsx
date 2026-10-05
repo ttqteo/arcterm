@@ -35,7 +35,7 @@ function ErrandReply({ errand }: { errand: PetErrandState }) {
     const status = REPLY_STATUS[errand.status];
     return (
         <div className="rounded-[8px] border border-border bg-surface px-[9px] py-[7px]">
-            <div className="mb-[3px] flex items-center gap-1.5 font-mono text-[9.5px] text-muted">
+            <div className="mb-[3px] flex items-center gap-1.5 text-[9.5px] text-muted">
                 <span className={cn("h-[5px] w-[5px] flex-none rounded-full", status.dot)} />
                 {errand.runtime} · {status.word}
             </div>
@@ -45,7 +45,7 @@ function ErrandReply({ errand }: { errand: PetErrandState }) {
                 ) : (
                     <>
                         <MarkdownMessage text={errand.text} />
-                        {errand.status === "streaming" ? <span className="font-mono text-accent">▍</span> : null}
+                        {errand.status === "streaming" ? <span className="text-accent">▍</span> : null}
                     </>
                 )}
             </div>
@@ -150,7 +150,7 @@ export function PetErrand({
                         value={dest?.oid ?? ""}
                         onChange={(event) => onPick(event.target.value)}
                         className={cn(
-                            "h-6 min-w-0 flex-none truncate rounded-[7px] border border-border bg-surface px-2 font-mono text-[10.5px] text-ink-mid hover:border-edge-mid hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            "h-6 min-w-0 flex-none truncate rounded-[7px] border border-border bg-surface px-2 text-[10.5px] text-ink-mid hover:border-edge-mid hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                             compact ? "max-w-[142px]" : "max-w-[240px]"
                         )}
                     >

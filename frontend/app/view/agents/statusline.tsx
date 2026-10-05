@@ -45,14 +45,14 @@ export function StatusLine({
             <span title={rt.label} className="shrink-0">
                 <RuntimeMark
                     runtime={agent.agent}
-                    className={cn("shrink-0 font-mono text-[10.5px] leading-none", rt.text)}
+                    className={cn("shrink-0 text-[10.5px] leading-none", rt.text)}
                 />
             </span>
             <b className="min-w-[30px] flex-1 truncate font-sans text-[13.5px] font-semibold text-primary">
                 {agent.name}
             </b>
             {project ? (
-                <span className="shrink-0 rounded-[5px] border border-edge-mid bg-surface-raised px-1.5 py-px font-mono text-[10.5px] text-muted">
+                <span className="shrink-0 rounded-[5px] border border-edge-mid bg-surface-raised px-1.5 py-px text-[10.5px] text-muted">
                     {project}
                 </span>
             ) : null}
@@ -88,7 +88,7 @@ export function ActivityLine({
         return (
             <div className={cn("flex items-center gap-2", className)}>
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[1.4] text-warning">
+                <span className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] tabular-nums text-warning">
                     quiet · no output {Math.floor(silentMs / 60_000)}m
                 </span>
                 {onNudge ? (
@@ -113,7 +113,7 @@ export function ActivityLine({
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success pulse-dot" />
             <span
                 title={agent.activity}
-                className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[1.4] text-success-soft"
+                className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] text-success-soft"
             >
                 {agent.activity}
             </span>

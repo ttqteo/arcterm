@@ -3,7 +3,7 @@
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { modalsModel } from "@/app/store/modalmodel";
-import { MONO_FAINT } from "@/app/view/jarvis/briefstyle";
+import { FAINT_TEXT } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { ArrowUpRight, Ban, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Layers, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -41,7 +41,7 @@ function ExitChip({ exit }: { exit: number }) {
     return (
         <span
             className={cn(
-                "rounded-[4px] px-[7px] py-px font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em]",
+                "rounded-[4px] px-[7px] py-px text-[10.5px] font-semibold uppercase tabular-nums tracking-[0.06em]",
                 exit ? "bg-error/15 text-error" : "bg-success/15 text-success"
             )}
         >
@@ -93,7 +93,7 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                         <span className="min-w-0 flex-1 truncate text-secondary">{g.code}</span>
                     </div>
                 ))}
-                {detail.more ? <div className={cn("pt-1.5", MONO_FAINT)}>{detail.more}</div> : null}
+                {detail.more ? <div className={cn("pt-1.5", FAINT_TEXT)}>{detail.more}</div> : null}
             </div>
         );
     }
@@ -176,15 +176,15 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                     <div className="flex items-center gap-2.5 bg-surface px-[11px] py-[7px]">
                         <span
                             className={cn(
-                                "flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] font-mono text-[10.5px] font-bold",
+                                "flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-[10.5px] font-bold",
                                 f.badge === "A" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
                             )}
                         >
                             {f.badge}
                         </span>
                         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-hi">{f.path}</span>
-                        <span className="font-mono text-[10.5px] font-bold text-diff-added">+{f.adds}</span>
-                        <span className="font-mono text-[10.5px] font-bold text-diff-removed">−{f.dels}</span>
+                        <span className="text-[10.5px] font-bold tabular-nums text-diff-added">+{f.adds}</span>
+                        <span className="text-[10.5px] font-bold tabular-nums text-diff-removed">−{f.dels}</span>
                     </div>
                     <div className={cn("bg-surface-code py-1", modal && "overflow-x-auto")}>
                         <div className={modal ? "min-w-min" : undefined}>
@@ -261,13 +261,13 @@ function ToolLine({ action }: { action: AgentActionEntry }) {
                 <span className={VERB}>{action.verb}</span>
                 <span className={TARGET}>{action.target}</span>
                 {action.summary ? (
-                    <span className={cn("shrink-0 font-mono text-[10.5px]", ok ? "text-muted" : "text-error")}>
+                    <span className={cn("shrink-0 text-[10.5px] tabular-nums", ok ? "text-muted" : "text-error")}>
                         {action.summary}
                     </span>
                 ) : null}
                 <div className="min-w-[6px] flex-1" />
                 {action.durationMs ? (
-                    <span className={cn("shrink-0", MONO_FAINT)}>{formatDuration(action.durationMs)}</span>
+                    <span className={cn("shrink-0", FAINT_TEXT)}>{formatDuration(action.durationMs)}</span>
                 ) : null}
                 {detail ? <Affordance toModal={toModal} open={open} /> : null}
             </div>
@@ -292,7 +292,7 @@ function ToolLine({ action }: { action: AgentActionEntry }) {
                                 type="button"
                                 aria-label="Open full view"
                                 onClick={() => modalsModel.pushModal("AgentToolDetailModal", { action })}
-                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-[5px] px-1.5 py-[3px] font-mono text-[10.5px] text-ink-mid hover:bg-lane hover:text-primary"
+                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-[5px] px-1.5 py-[3px] text-[10.5px] text-ink-mid hover:bg-lane hover:text-primary"
                             >
                                 <ArrowUpRight size={12} strokeWidth={2.2} aria-hidden />
                                 Open full view
@@ -346,7 +346,7 @@ function CompactionDivider({
         <div className="mt-3.5">
             <button type="button" disabled={!canExpand} onClick={() => setOpen((v) => !v)} className={cn("flex w-full items-center gap-2.5", canExpand ? "cursor-pointer" : "cursor-default")}>
                 <span className="h-px flex-1 bg-edge-mid" />
-                <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 font-mono text-[10.5px] leading-[1.6]">
+                <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-accent/30 bg-accent/[0.07] px-2.5 py-0.5 text-[10.5px] tabular-nums leading-[1.6]">
                     <span className="font-semibold uppercase tracking-[0.1em] text-accent-soft">Compacted</span>
                     {stat ? (
                         <>
@@ -382,7 +382,7 @@ function CompactionDivider({
                         exit="exit"
                         className="my-2 overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code px-3.5 py-3"
                     >
-                        <div className="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
+                        <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted">
                             Summary — kept context
                         </div>
                         <MarkdownMessage text={summary} />
@@ -409,8 +409,8 @@ function EditBurstRow({ files, adds, dels }: { files: EditFile[]; adds: number; 
                 <StatusSquare ok />
                 <span className={VERB}>edited</span>
                 <span className={TARGET}>{action.target}</span>
-                <span className="shrink-0 font-mono text-[10.5px] text-diff-added">+{adds}</span>
-                <span className="shrink-0 font-mono text-[10.5px] text-diff-removed">−{dels}</span>
+                <span className="shrink-0 text-[10.5px] tabular-nums text-diff-added">+{adds}</span>
+                <span className="shrink-0 text-[10.5px] tabular-nums text-diff-removed">−{dels}</span>
                 <div className="min-w-[6px] flex-1" />
                 <Affordance toModal={toModal} open={open} />
             </div>
@@ -438,7 +438,7 @@ function InterruptedDivider() {
     return (
         <div className="mt-3 flex items-center gap-2.5">
             <span className="h-px flex-1 bg-edge-mid" />
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-edge-strong bg-surface px-2.5 py-0.5 font-mono text-[10.5px] font-semibold uppercase leading-[1.6] tracking-[0.1em] text-ink-mid">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-edge-strong bg-surface px-2.5 py-0.5 text-[10.5px] font-semibold uppercase leading-[1.6] tracking-[0.1em] text-ink-mid">
                 <Ban size={10} strokeWidth={2.4} aria-hidden />
                 Interrupted
             </span>
@@ -457,7 +457,7 @@ function TaskNotificationRow({ summary, status, result }: { summary: string; sta
         <div className="mt-2 flex gap-2.5">
             <span
                 className={cn(
-                    "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border font-mono text-[12px]",
+                    "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border text-[12px]",
                     ok ? "border-success/30 bg-success/[0.12] text-success" : "border-warning/30 bg-warning/[0.12] text-warning"
                 )}
             >
@@ -473,14 +473,14 @@ function TaskNotificationRow({ summary, status, result }: { summary: string; sta
                         canExpand ? "cursor-pointer hover:border-edge-strong" : "cursor-default"
                     )}
                 >
-                    <span className="shrink-0 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-mid">
+                    <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-mid">
                         Task
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-secondary">{summary || "Subagent finished"}</span>
                     {status ? (
                         <span
                             className={cn(
-                                "shrink-0 rounded-[4px] px-1.5 py-px font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em]",
+                                "shrink-0 rounded-[4px] px-1.5 py-px text-[10.5px] font-semibold uppercase tracking-[0.06em]",
                                 ok ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
                             )}
                         >
@@ -593,7 +593,7 @@ export function NarrationTimeline({
                             transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
                         >
                             <div className="max-w-[90%] rounded-[11px_11px_4px_11px] border border-accent/25 bg-accent/10 px-2.5 py-1.5">
-                                <div className="mb-0.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
+                                <div className="mb-0.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                                     You
                                 </div>
                                 <p className="text-[13px] leading-[1.5] text-primary">{item.text}</p>
@@ -684,7 +684,7 @@ export function NarrationTimeline({
                         type="button"
                         data-fold
                         onClick={() => expand(item.startIndex)}
-                        className="my-1 flex w-full cursor-pointer items-center gap-2 rounded-[6px] border border-edge-mid px-[5px] py-[3px] text-left font-mono hover:bg-surface-hover"
+                        className="my-1 flex w-full cursor-pointer items-center gap-2 rounded-[6px] border border-edge-mid px-[5px] py-[3px] text-left tabular-nums hover:bg-surface-hover"
                     >
                         <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-accent/[0.12] text-accent-soft">
                             <Layers size={11} strokeWidth={2.2} aria-hidden />

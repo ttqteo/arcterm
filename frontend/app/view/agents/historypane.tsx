@@ -76,7 +76,9 @@ function SlowNotice({ loading }: { loading: boolean }) {
             <Clock size={14} className="flex-none text-warning" />
             <div className="min-w-0 flex-1">
                 <div className="text-[12.5px] font-semibold text-ink-hi">Still reading history</div>
-                <div className="font-mono text-[11px] text-muted">git log has been running for {secs}s</div>
+                <div className="text-[11px] tabular-nums text-muted">
+                    <span className="font-mono">git log</span> has been running for {secs}s
+                </div>
             </div>
             <button
                 onClick={() => retryHistory()}
@@ -157,7 +159,7 @@ function Row({
                 </span>
             ))}
             {overflow > 0 ? (
-                <span className="flex-none rounded-[4px] border border-edge-mid bg-surface-raised px-[6px] py-[1px] font-mono text-[10.5px] font-semibold text-muted">
+                <span className="flex-none rounded-[4px] border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-semibold tabular-nums text-muted">
                     +{overflow}
                 </span>
             ) : null}
@@ -184,7 +186,7 @@ function Row({
                     {row.author}
                 </span>
             ) : null}
-            <span className="w-[42px] flex-none text-right font-mono text-[10.5px] text-muted">{row.when}</span>
+            <span className="w-[42px] flex-none text-right text-[10.5px] tabular-nums text-muted">{row.when}</span>
         </button>
     );
 }
@@ -193,7 +195,7 @@ function Divider({ label }: { label: string }) {
     return (
         // z-20 keeps the band above the graph gutter, which sits at z-10 so rows cannot erase it
         <div className="relative z-20 flex items-center gap-[9px] py-[6px] pl-[14px] pr-[12px]" style={{ height: 30 }}>
-            <span className="flex-none rounded-[5px] border border-accent/30 bg-accentbg px-[7px] py-[2px] font-mono text-xxxs font-bold uppercase tracking-[0.1em] text-accent-soft">
+            <span className="flex-none rounded-[5px] border border-accent/30 bg-accentbg px-[7px] py-[2px] text-xxxs font-bold uppercase tracking-[0.1em] text-accent-soft">
                 {label}
             </span>
             <div className="h-px flex-1 bg-accent/30" />
@@ -277,14 +279,14 @@ export function HistoryPane({
             <div className="flex flex-none items-center gap-[9px] px-[14px] pb-[8px] pt-[10px]">
                 <SubLabel>History</SubLabel>
                 {filtered ? (
-                    <span data-filter-count className="font-mono text-[10.5px] font-semibold text-accent-soft">
+                    <span data-filter-count className="text-[10.5px] font-semibold tabular-nums text-accent-soft">
                         {countLabel}
                     </span>
                 ) : (
-                    <span className="font-mono text-[10.5px] text-muted">{countLabel}</span>
+                    <span className="text-[10.5px] tabular-nums text-muted">{countLabel}</span>
                 )}
                 {graphOn && geom.foldedCount > 0 ? (
-                    <span className="rounded-[5px] border border-edge-mid bg-surface-raised px-[7px] py-[2px] font-mono text-[10.5px] font-semibold text-graphlane-fold">
+                    <span className="rounded-[5px] border border-edge-mid bg-surface-raised px-[7px] py-[2px] text-[10.5px] font-semibold tabular-nums text-graphlane-fold">
                         {laneCount(laned)} lanes · {geom.foldedCount} folded
                     </span>
                 ) : null}
@@ -354,7 +356,7 @@ export function HistoryPane({
                                 Couldn’t load more commits — retry
                             </button>
                         ) : appendState === "loading" ? (
-                            <div className="flex h-[34px] items-center px-[14px] font-mono text-[11px] text-muted">
+                            <div className="flex h-[34px] items-center px-[14px] text-[11px] tabular-nums text-muted">
                                 {`loading commits ${rows.length + 1}–${rows.length + HISTORY_PAGE_SIZE}…`}
                             </div>
                         ) : null}

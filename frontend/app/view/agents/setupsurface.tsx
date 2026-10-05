@@ -94,7 +94,7 @@ function HarnessMark({ runtime }: { runtime: string }) {
     return (
         <span
             className={cn(
-                "flex flex-none items-center justify-center rounded-[5px] border font-mono text-[10.5px] font-bold",
+                "flex flex-none items-center justify-center rounded-[5px] border text-[10.5px] font-bold",
                 meta.line,
                 meta.text,
                 "h-5 w-5"
@@ -280,8 +280,8 @@ function LineEditor({
     const n = Math.max(1, ed.draft.split("\n").length);
     return (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-edge-mid bg-surface-code focus-within:ring-2 focus-within:ring-accent/25">
-            <div className="flex h-[30px] flex-none items-center gap-2.5 border-b border-edge-faint px-3 font-mono text-[11px] text-muted">
-                <span title={path} className="min-w-0 truncate">
+            <div className="flex h-[30px] flex-none items-center gap-2.5 border-b border-edge-faint px-3 text-[11px] tabular-nums text-muted">
+                <span title={path} className="min-w-0 truncate font-mono">
                     {path}
                 </span>
                 <span className="flex-1" />

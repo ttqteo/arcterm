@@ -54,7 +54,7 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
                 >
                     {section.label}
                     {header.count != null ? (
-                        <span className="font-mono text-[11px] text-ink-faint">{header.count}</span>
+                        <span className="text-[11px] tabular-nums text-ink-faint">{header.count}</span>
                     ) : null}
                     <ChevronRight
                         size={12}
@@ -177,7 +177,7 @@ export function CollapsibleRail({
                                 )}
                             >
                                 {title != null ? (
-                                    <span className="font-mono text-[9.5px] font-bold uppercase tracking-[.12em] text-muted">
+                                    <span className="text-[9.5px] font-bold uppercase tracking-[.12em] text-muted">
                                         {title}
                                     </span>
                                 ) : null}

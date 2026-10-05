@@ -25,9 +25,7 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                 className="flex items-center gap-2 border-b border-edge-faint bg-surface px-[11px] py-[7px]"
             >
                 {lang ? (
-                    <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-accent">
-                        {lang}
-                    </span>
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-accent">{lang}</span>
                 ) : null}
                 {path ? <span className="font-mono text-[10.5px] text-muted">{path}</span> : null}
                 <div className="flex-1" />
@@ -59,7 +57,7 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
 
 function cnCopy(copied: boolean): string {
     return (
-        "flex items-center gap-[5px] rounded-sm border border-edge-mid px-2 py-[3px] font-mono " +
+        "flex items-center gap-[5px] rounded-sm border border-edge-mid px-2 py-[3px] " +
         "text-[9.5px] tracking-[0.03em] hover:border-edge-strong " +
         (copied ? "text-success" : "text-muted")
     );

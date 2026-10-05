@@ -67,7 +67,7 @@ function FocusRow({
                 {hasSecondLine ? (
                     <span className="flex items-baseline gap-2">
                         <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{row.detail}</span>
-                        {row.meta ? <span className="font-mono text-[10.5px] text-muted">{row.meta}</span> : null}
+                        {row.meta ? <span className="text-[10.5px] tabular-nums text-muted">{row.meta}</span> : null}
                     </span>
                 ) : null}
             </span>
@@ -267,7 +267,7 @@ export function FocusSwitcher({ model }: { model: AgentsViewModel }) {
                                     <div className="flex items-center gap-1.5 px-2 pb-1 pt-2.5 text-muted">
                                         <Icon size={12} strokeWidth={1.8} />
                                         <span className={REGION_LABEL}>{s.title}</span>
-                                        <span className="font-mono text-[10.5px]">{s.rows.length}</span>
+                                        <span className="text-[10.5px] tabular-nums">{s.rows.length}</span>
                                     </div>
                                     {s.rows.map((r) => (
                                         <FocusRow
@@ -290,15 +290,15 @@ export function FocusSwitcher({ model }: { model: AgentsViewModel }) {
                             </div>
                         ) : null}
                     </div>
-                    <div className="flex items-center gap-3.5 border-t border-edge-mid px-3.5 py-2 font-mono text-[10.5px] text-muted">
+                    <div className="flex items-center gap-3.5 border-t border-edge-mid px-3.5 py-2 text-[10.5px] text-muted">
                         <span>
-                            <span className="text-ink-mid">↑↓</span> move
+                            <span className="font-mono text-ink-mid">↑↓</span> move
                         </span>
                         <span>
-                            <span className="text-ink-mid">Enter</span> focus
+                            <span className="font-mono text-ink-mid">Enter</span> focus
                         </span>
                         <span>
-                            <span className="text-ink-mid">Esc</span> close
+                            <span className="font-mono text-ink-mid">Esc</span> close
                         </span>
                     </div>
                 </div>

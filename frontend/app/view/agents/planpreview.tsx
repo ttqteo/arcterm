@@ -63,10 +63,10 @@ export function PlanPreview({ path, onEditorReady }: { path: string; onEditorRea
         <div className="border-b border-asking/20">
             <div className="flex w-full items-center gap-2 px-3.5 py-2">
                 <button type="button" onClick={() => setOverride(!open)} className="flex min-w-0 flex-1 items-center gap-2 hover:opacity-80">
-                    <span className="font-mono text-xxxs text-asking">{open ? "▼" : "▶"}</span>
-                    <span className="font-mono text-[9px] font-semibold uppercase tracking-[.1em] text-asking">Plan</span>
-                    <span className="truncate font-mono text-[10.5px] text-muted">
-                        {filename}
+                    <span className="text-xxxs text-asking">{open ? "▼" : "▶"}</span>
+                    <span className="text-[9px] font-semibold uppercase tracking-[.1em] text-asking">Plan</span>
+                    <span className="truncate text-[10.5px] tabular-nums text-muted">
+                        <span className="font-mono">{filename}</span>
                         {load.status === "ok" ? ` · ${load.lines} lines` : ""}
                     </span>
                 </button>
@@ -77,7 +77,7 @@ export function PlanPreview({ path, onEditorReady }: { path: string; onEditorRea
                             setDraft(load.text);
                             setEditing(true);
                         }}
-                        className="flex-none rounded-sm border border-edge-mid px-2 py-0.5 font-mono text-[10px] text-ink-mid hover:border-edge-strong"
+                        className="flex-none rounded-sm border border-edge-mid px-2 py-0.5 text-[10px] text-ink-mid hover:border-edge-strong"
                     >
                         Edit
                     </button>
@@ -86,7 +86,7 @@ export function PlanPreview({ path, onEditorReady }: { path: string; onEditorRea
                     <button
                         type="button"
                         onClick={() => fireAndForget(save)}
-                        className="flex-none rounded-sm border border-accent/50 bg-accentbg/40 px-2 py-0.5 font-mono text-[10px] text-accent-soft hover:bg-accentbg/60"
+                        className="flex-none rounded-sm border border-accent/50 bg-accentbg/40 px-2 py-0.5 text-[10px] text-accent-soft hover:bg-accentbg/60"
                     >
                         Save
                     </button>

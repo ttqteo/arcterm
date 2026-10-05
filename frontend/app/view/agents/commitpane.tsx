@@ -47,11 +47,11 @@ function CommitHeader({ row }: { row: HistoryRow }) {
                     <Copy size={13} />
                 </button>
                 <div className="flex-1" />
-                <span className="font-mono text-[11px] text-muted">{formatAgo(Date.now() - row.ts)}</span>
+                <span className="text-[11px] tabular-nums text-muted">{formatAgo(Date.now() - row.ts)}</span>
             </div>
             <div className="mb-[8px] text-[14px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
             <div className="flex items-center gap-[8px]">
-                <span className="flex h-[20px] w-[20px] items-center justify-center rounded-full bg-surface-raised font-mono text-[10.5px] font-bold text-ink-mid">
+                <span className="flex h-[20px] w-[20px] items-center justify-center rounded-full bg-surface-raised text-[10.5px] font-bold text-ink-mid">
                     {initials(row.author)}
                 </span>
                 <span className="text-[12px] text-ink-mid">{row.author}</span>
@@ -108,8 +108,8 @@ export function CommitPane({
                     {count} {count === 1 ? "file" : "files"}
                 </SubLabel>
                 <div className="flex-1" />
-                <span className="font-mono text-[11px] font-semibold text-diff-added">+{changes?.adds ?? 0}</span>
-                <span className="font-mono text-[11px] font-semibold text-diff-removed">−{changes?.dels ?? 0}</span>
+                <span className="text-[11px] font-semibold tabular-nums text-diff-added">+{changes?.adds ?? 0}</span>
+                <span className="text-[11px] font-semibold tabular-nums text-diff-removed">−{changes?.dels ?? 0}</span>
                 <TreeModeToggle />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-[8px] pb-[20px]">

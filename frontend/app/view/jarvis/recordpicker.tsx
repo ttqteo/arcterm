@@ -41,7 +41,7 @@ export function RecordPicker({ onPick, onCancel }: { onPick: (dossierId: string)
                     ))}
                 </div>
             ) : matches.length === 0 ? (
-                <span className="font-mono text-[11px] text-muted">No record matches</span>
+                <span className="text-[11px] text-muted">No record matches</span>
             ) : (
                 matches.map((r) => (
                     <button

@@ -60,15 +60,15 @@ export function CodeChangedPane({ model }: { model: AgentsViewModel }) {
                         }}
                         className="flex cursor-pointer items-center gap-2 px-3 py-[3px] text-[11.5px] hover:bg-accent/10"
                     >
-                        <span title={g.label} className={`w-[10px] flex-none font-mono text-[10.5px] ${g.className}`}>
+                        <span title={g.label} className={`w-[10px] flex-none text-[10.5px] ${g.className}`}>
                             {g.letter}
                         </span>
                         <span className="min-w-0 flex-1 truncate">
                             <span className="text-muted">{dir}</span>
                             <span className="text-secondary">{name}</span>
                         </span>
-                        <span className="flex-none font-mono text-[10.5px] text-diff-added">+{s.adds}</span>
-                        <span className="flex-none font-mono text-[10.5px] text-diff-removed">-{s.dels}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-diff-added">+{s.adds}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-diff-removed">-{s.dels}</span>
                     </div>
                 );
             })}

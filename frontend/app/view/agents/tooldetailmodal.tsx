@@ -19,12 +19,12 @@ export function AgentToolDetailModal({ action }: { action: AgentActionEntry }) {
             <div className="px-4 pt-5 pb-4">
                 <div className="flex w-full items-center gap-2.5 border-b border-edge-faint pb-3">
                     <span className={ok ? "text-success" : "text-error"}>{ok ? "✓" : "✗"}</span>
-                    <span className="font-mono text-xxxs font-bold uppercase tracking-[0.06em] text-feed-label">
+                    <span className="text-xxxs font-bold uppercase tracking-[0.06em] text-feed-label">
                         {action.verb}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-primary">{action.target}</span>
                     {action.durationMs ? (
-                        <span className="font-mono text-[11px] text-muted">{formatDuration(action.durationMs)}</span>
+                        <span className="text-[11px] tabular-nums text-muted">{formatDuration(action.durationMs)}</span>
                     ) : null}
                     <button
                         type="button"

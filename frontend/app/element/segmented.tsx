@@ -43,7 +43,7 @@ export function Segmented<T extends string>({
                     title={o.title}
                     onClick={() => onChange(o.key)}
                     className={cn(
-                        "cursor-pointer rounded-sm border-0 px-[12px] py-[5px] font-mono text-[11px] font-semibold",
+                        "cursor-pointer rounded-sm border-0 px-[12px] py-[5px] text-[11px] font-semibold",
                         typeof o.label !== "string" && "flex items-center gap-[6px]",
                         value === o.key ? "bg-accentbg text-primary" : "bg-transparent text-muted"
                     )}

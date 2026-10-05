@@ -198,7 +198,7 @@ function SendToAgent({ model, rel, projectName }: { model: AgentsViewModel; rel:
                             className="flex w-full cursor-pointer items-center justify-between rounded-[6px] px-2 py-1 text-left text-[11.5px] text-secondary hover:bg-accent/10 hover:text-primary"
                         >
                             <span className="min-w-0 truncate">{t.name}</span>
-                            <span className="flex-none pl-2 font-mono text-[10px] text-muted">{t.state}</span>
+                            <span className="flex-none pl-2 text-[10px] text-muted">{t.state}</span>
                         </button>
                     ))
                 )}

@@ -327,7 +327,7 @@ function SectionIndex({
                         <div className="flex items-center gap-2.5 px-1 pb-2">
                             <span className={cn(REGION_LABEL, "text-accent-soft")}>{g.label}</span>
                             <span className="h-px flex-1 bg-edge-faint" />
-                            <span className="font-mono text-[10.5px] text-muted">{g.sections.length}</span>
+                            <span className="text-[10.5px] tabular-nums text-muted">{g.sections.length}</span>
                         </div>
                         <div className="flex flex-col gap-[2px]">
                             {g.sections.map((s) => {
@@ -357,14 +357,14 @@ function SectionIndex({
                                         {n > 0 ? (
                                             <span
                                                 className={cn(
-                                                    "flex-none rounded-sm px-1.5 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.06em]",
+                                                    "flex-none rounded-sm px-1.5 py-0.5 text-[10.5px] font-bold uppercase tabular-nums tracking-[0.06em]",
                                                     on ? "bg-accentbg text-accent" : "bg-accentbg/70 text-accent-soft"
                                                 )}
                                             >
                                                 {n} changed
                                             </span>
                                         ) : null}
-                                        <span className="flex-none font-mono text-[10.5px] text-muted">
+                                        <span className="flex-none text-[10.5px] tabular-nums text-muted">
                                             {countLabel(s.rows.length)}
                                         </span>
                                     </button>
@@ -384,7 +384,7 @@ function SectionIndex({
 
 function Legend({ scope, text }: { scope: "synced" | "local"; text: string }) {
     return (
-        <div className="flex items-center gap-[7px] font-mono text-[10.5px] text-muted">
+        <div className="flex items-center gap-[7px] text-[10.5px] text-muted">
             <ScopeDot scope={scope} />
             {text}
         </div>
@@ -413,7 +413,7 @@ function SettingRow({ id, stacked, children }: { id: string; stacked?: boolean; 
             <div className="flex items-center gap-2">
                 <span className="text-[13.5px] font-semibold text-primary">{def.title}</span>
                 {changed ? (
-                    <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-accent">
+                    <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-accent">
                         <span className="h-[5px] w-[5px] rounded-full bg-accent" />
                         changed
                     </span>
@@ -544,7 +544,7 @@ function Stepper({ value, onStep, ariaLabel }: { value: number; onStep: (dir: -1
             >
                 −
             </button>
-            <div className="min-w-[52px] px-2 text-center font-mono text-[12px] text-primary">{value}</div>
+            <div className="min-w-[52px] px-2 text-center text-[12px] tabular-nums text-primary">{value}</div>
             <button
                 type="button"
                 aria-label={`Increase ${ariaLabel}`}
@@ -746,7 +746,7 @@ function AppearanceSection() {
                         title="Custom hex"
                         className="relative flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-sm border border-edge-mid"
                     >
-                        <span className="pointer-events-none absolute font-mono text-[12px] font-bold text-muted">
+                        <span className="pointer-events-none absolute text-[12px] font-bold text-muted">
                             +
                         </span>
                         <input
@@ -1044,7 +1044,7 @@ function MemorySection() {
                 <CommitText value={status?.remoteurl ?? ""} placeholder="git@host:you/vault.git" onCommit={setRemote} />
             </SettingRow>
             {remoteError ? <Note tone="error">{remoteError}</Note> : null}
-            {statusLine ? <div className="px-1 pb-2 font-mono text-[11.5px] text-muted">{statusLine}</div> : null}
+            {statusLine ? <div className="px-1 pb-2 text-[11.5px] tabular-nums text-muted">{statusLine}</div> : null}
         </div>
     );
 }
@@ -1132,7 +1132,7 @@ function HeadlessAISection() {
     const modelRow = (id: string, value: string, placeholder: string, key: string) => (
         <SettingRow id={id}>
             {!isOpenRouter ? (
-                <span className="font-mono text-[10.5px] tracking-[0.02em] text-muted">openrouter only</span>
+                <span className="text-[10.5px] tracking-[0.02em] text-muted">openrouter only</span>
             ) : null}
             <CommitText
                 value={value}
@@ -1264,7 +1264,7 @@ function AboutSection() {
                 <Mono warn={version.mismatch}>{version.server}</Mono>
             </SettingRow>
             <SettingRow id="about.buildtime">
-                <Mono>{formatBuildTime(version.buildTime)}</Mono>
+                <span className="text-[12.5px] tabular-nums text-secondary">{formatBuildTime(version.buildTime)}</span>
             </SettingRow>
             <SettingRow id="about.platform">
                 <Mono>{version.platform}</Mono>

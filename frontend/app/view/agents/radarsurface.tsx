@@ -85,7 +85,7 @@ function ScopeSelector({ scope, onSelect }: { scope: RadarScope | null; onSelect
                 <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink-hi">
                     {scope?.name ?? "Select project"}
                 </span>
-                <span className="font-mono text-[10.5px] text-muted">project</span>
+                <span className="text-[10.5px] text-muted">project</span>
                 <ChevronDown className="h-3 w-3 text-muted" />
             </button>
             {open ? <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} /> : null}
@@ -147,7 +147,7 @@ function LensTabs({ report, lens, onPick }: { report: RadarReport; lens: LensKey
                         {t.label}
                         <span
                             className={cn(
-                                "font-mono text-[10.5px] font-medium",
+                                "text-[10.5px] font-medium tabular-nums",
                                 t.failed ? "text-warning" : on ? "text-accent-soft" : "text-muted"
                             )}
                         >
@@ -176,7 +176,7 @@ function CoveragePopover({ report }: { report: RadarReport }) {
                 className="flex items-center gap-[7px] rounded-[7px] border border-edge-mid bg-surface px-2.5 py-[5px] text-[11.5px] font-semibold text-ink-mid hover:border-edge-strong"
             >
                 <span className={cn("h-1.5 w-1.5 rounded-full", done === ran.length ? "bg-success" : "bg-warning")} />
-                <span className="font-mono font-medium">
+                <span className="font-medium tabular-nums">
                     {done}/{ran.length}
                 </span>
                 collectors
@@ -197,11 +197,11 @@ function CoveragePopover({ report }: { report: RadarReport }) {
                         ) : (
                             <X className="h-[13px] w-[13px] text-error" strokeWidth={2.4} />
                         )}
-                        <span className="font-mono text-[11.5px] text-ink-hi">{r.name}</span>
+                        <span className="text-[11.5px] text-ink-hi">{r.name}</span>
                         <span className="truncate text-xs text-muted">{r.examines}</span>
                         <span
                             className={cn(
-                                "font-mono text-[10.5px] uppercase tracking-[0.06em]",
+                                "text-[10.5px] uppercase tracking-[0.06em]",
                                 r.cell === "failed" ? "text-error" : "text-muted"
                             )}
                         >
@@ -223,7 +223,7 @@ function HealthLineText({ line }: { line: HealthLine }) {
                     {line.collectors.map((c, i) => (
                         <span key={c}>
                             {i > 0 ? (i === line.collectors.length - 1 ? " and " : ", ") : null}
-                            <span className="font-mono text-[11.5px] text-ink-hi">{c}</span>
+                            <span className="text-[11.5px] text-ink-hi">{c}</span>
                         </span>
                     ))}{" "}
                     {line.collectors.length === 1 ? "collector" : "collectors"} did not finish. Findings that rely on
@@ -394,7 +394,7 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
                         ) : null}
                     </div>
                     {isResults && report ? (
-                        <div className="pb-[11px] font-mono text-[11.5px] text-muted">
+                        <div className="pb-[11px] text-[11.5px] tabular-nums text-muted">
                             {scanMetaLine(report, Date.now())}
                         </div>
                     ) : (

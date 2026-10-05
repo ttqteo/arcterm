@@ -25,7 +25,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { Check, ChevronDown, ChevronUp, Waypoints } from "lucide-react";
 import { useEffect, useState } from "react";
 import { buildRecordPeek, type PeekRunRow, type PeekStatusRow } from "./briefpeek";
-import { MONO_FAINT, MONO_META, REGION_LABEL, SMALL_BTN } from "./briefstyle";
+import { FAINT_TEXT, META_TEXT, REGION_LABEL, SMALL_BTN } from "./briefstyle";
 import { fleetForRecord } from "./fleetscope";
 import { briefGraphRecordAtom, briefPeekRecordAtom, graphPeekOpenAtom } from "./jarvisstore";
 import {
@@ -63,7 +63,7 @@ export const RUN_TONE: Record<RunStatusTone, string> = {
 
 // LINK_BTN's type and hover without its border: a link inside the body, not a control beside it
 const BODY_LINK =
-    "inline-flex cursor-pointer items-center gap-1 self-start font-mono text-[10.5px] text-accent-soft hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+    "inline-flex cursor-pointer items-center gap-1 self-start text-[10.5px] text-accent-soft hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 // The body's host. The Brief's modal is a destination, so its run links peek on Ctrl+click; the avatar popup is
 // itself a peek, and a link inside one is a plain open (depth 1).
@@ -76,7 +76,7 @@ function StatusRow({ row, onPick }: { row: PeekStatusRow; onPick: (status: strin
             <span className={cn("inline-flex w-3 flex-none", fg)}>
                 {row.current ? <Check size={12} strokeWidth={2.4} className="translate-y-px" /> : null}
             </span>
-            <span className={cn("w-[58px] flex-none font-mono text-[11px] font-semibold", fg)}>{row.label}</span>
+            <span className={cn("w-[58px] flex-none text-[11px] font-semibold", fg)}>{row.label}</span>
             <span className="min-w-0 flex-1 text-[11.5px] leading-[1.45] text-muted">{row.note}</span>
         </>
     );
@@ -130,10 +130,8 @@ function RunRowView({ row, model, place }: { row: PeekRunRow; model: AgentsViewM
         >
             <span className="flex-none font-mono text-[10.5px] font-semibold text-accent-soft">{row.shortId}</span>
             <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-mid">{row.headline}</span>
-            <span className="flex-none whitespace-nowrap font-mono text-[10.5px] text-muted">{row.meta}</span>
-            <span
-                className={cn("flex-none whitespace-nowrap font-mono text-[10.5px] font-semibold", RUN_TONE[row.tone])}
-            >
+            <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">{row.meta}</span>
+            <span className={cn("flex-none whitespace-nowrap text-[10.5px] font-semibold", RUN_TONE[row.tone])}>
                 {row.state}
             </span>
         </button>
@@ -264,7 +262,7 @@ export function RecordPeekBody({
                 </span>
                 {peek != null ? (
                     <>
-                        <span className={cn("flex-none", MONO_FAINT)}>{peek.updatedLabel}</span>
+                        <span className={cn("flex-none", FAINT_TEXT)}>{peek.updatedLabel}</span>
                         <button
                             type="button"
                             data-jarvis-peek-status-toggle
@@ -272,7 +270,7 @@ export function RecordPeekBody({
                             aria-expanded={pickerOpen}
                             onClick={() => setPickerOpen((v) => !v)}
                             className={cn(
-                                "inline-flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border border-border bg-surface-raised py-0.5 pl-2 pr-1.5 font-mono text-[10.5px] font-semibold hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                "inline-flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border border-border bg-surface-raised py-0.5 pl-2 pr-1.5 text-[10.5px] font-semibold hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                 STATUS_FG[peek.statusLabel] ?? "text-muted"
                             )}
                         >
@@ -332,10 +330,10 @@ export function RecordPeekBody({
                         <div className="flex items-center gap-2.5 border-b border-edge-faint px-3 py-2">
                             <span className={cn(REGION_LABEL, "text-ink-mid")}>Fleet · on this record</span>
                             <span className="h-px flex-1 bg-edge-faint" />
-                            <span className={cn("flex-none", MONO_FAINT)}>{peek.fleetMeta}</span>
+                            <span className={cn("flex-none", FAINT_TEXT)}>{peek.fleetMeta}</span>
                         </div>
                         {peek.runs.length === 0 ? (
-                            <div className="px-3 py-2.5 font-mono text-[11px] text-muted">{peek.runsAbsent}</div>
+                            <div className="px-3 py-2.5 text-[11px] text-muted">{peek.runsAbsent}</div>
                         ) : (
                             peek.runs.map((row) => <RunRowView key={row.runId} row={row} model={model} place={place} />)
                         )}
@@ -343,7 +341,7 @@ export function RecordPeekBody({
                     <div className="flex flex-wrap items-center gap-2">
                         {/* a label, not a button: the peek reports the count and the Brief owns the log,
                             so this states it and stops there. */}
-                        <span className={cn("rounded-[6px] border border-edge-faint px-[9px] py-[3px]", MONO_META)}>
+                        <span className={cn("rounded-[6px] border border-edge-faint px-[9px] py-[3px]", META_TEXT)}>
                             {peek.logLine}
                         </span>
                         <span className="flex-1" />

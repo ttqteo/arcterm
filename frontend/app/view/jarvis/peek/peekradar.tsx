@@ -22,7 +22,7 @@ function Header({ title, severity }: { title: string; severity?: string }) {
             {severity ? (
                 <span
                     className={cn(
-                        "flex-none rounded px-[7px] py-px font-mono text-[10.5px] font-semibold",
+                        "flex-none rounded px-[7px] py-px text-[10.5px] font-semibold",
                         severityPill(severity)
                     )}
                 >
@@ -62,7 +62,7 @@ function FindingBody({
                     <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
                         <span className={cn(REGION_LABEL, "text-ink-mid")}>Evidence</span>
                         <span className="h-px flex-1 bg-border" />
-                        <span className="flex-none font-mono text-[10.5px] text-muted">
+                        <span className="flex-none text-[10.5px] tabular-nums text-muted">
                             {evidence.length} {evidence.length === 1 ? "place" : "places"}
                         </span>
                     </div>

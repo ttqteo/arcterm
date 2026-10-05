@@ -74,11 +74,15 @@ export function AggregatePane({
                     {formSentence(form, base, head, mergeBase)}
                 </p>
                 <div className="mt-[10px] flex items-center gap-[10px]">
-                    <span className="font-mono text-[11px] font-semibold text-muted">
+                    <span className="text-[11px] font-semibold tabular-nums text-muted">
                         {count} {count === 1 ? "file" : "files"}
                     </span>
-                    <span className="font-mono text-[11px] font-semibold text-diff-added">+{changes?.adds ?? 0}</span>
-                    <span className="font-mono text-[11px] font-semibold text-diff-removed">−{changes?.dels ?? 0}</span>
+                    <span className="text-[11px] font-semibold tabular-nums text-diff-added">
+                        +{changes?.adds ?? 0}
+                    </span>
+                    <span className="text-[11px] font-semibold tabular-nums text-diff-removed">
+                        −{changes?.dels ?? 0}
+                    </span>
                     <div className="flex-1" />
                     <TreeModeToggle />
                 </div>

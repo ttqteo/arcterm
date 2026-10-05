@@ -39,10 +39,10 @@ function DecisionCardRow({ card }: { card: DecisionCard }) {
             )}
         >
             <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted">
-                <span className="font-mono">{fmtDate(card.created)}</span>
-                <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">{card.actor}</span>
+                <span className="tabular-nums">{fmtDate(card.created)}</span>
+                <span className="rounded bg-surface-hover px-1.5 py-0.5">{card.actor}</span>
                 {card.status !== "active" ? (
-                    <span className="rounded bg-warning/12 px-1.5 py-0.5 font-mono text-warning">{card.status}</span>
+                    <span className="rounded bg-warning/12 px-1.5 py-0.5 text-warning">{card.status}</span>
                 ) : null}
             </div>
             <div className="whitespace-pre-wrap text-[13px] leading-[1.55] text-secondary">{card.rationale}</div>

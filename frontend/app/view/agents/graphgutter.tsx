@@ -51,7 +51,14 @@ export function GraphGutter({ geom, selectedIndex = -1 }: { geom: GraphGeometry;
                         fill={FOLD_TOKEN}
                         opacity={0.13}
                     />
-                    <text x={geom.foldX} y={11} fill={FOLD_TOKEN} fontSize={8} fontWeight={600} className="font-mono">
+                    <text
+                        x={geom.foldX}
+                        y={11}
+                        fill={FOLD_TOKEN}
+                        fontSize={8}
+                        fontWeight={600}
+                        className="tabular-nums"
+                    >
                         +{geom.foldedCount}
                     </text>
                 </>

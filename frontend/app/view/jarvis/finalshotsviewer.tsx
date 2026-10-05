@@ -507,7 +507,7 @@ function StepsDrawer({ scenario }: { scenario: ShotScenario }) {
                         <div key={i} className="flex gap-2.5 border-b border-edge-mid py-[9px]">
                             <span
                                 className={cn(
-                                    "h-fit w-10 flex-none rounded border py-0.5 text-center font-mono text-[10.5px] tracking-[.04em]",
+                                    "h-fit w-10 flex-none rounded border py-0.5 text-center text-[10.5px] tracking-[.04em]",
                                     badge.cls
                                 )}
                             >

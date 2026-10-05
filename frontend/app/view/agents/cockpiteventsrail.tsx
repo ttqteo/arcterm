@@ -111,14 +111,14 @@ export function CockpitEventsRail({
                 </span>
                 <div className="flex min-w-0 flex-col gap-[3px]">
                     <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="inline-flex min-w-0 items-center gap-[5px] font-mono text-[11.5px] font-semibold text-secondary">
+                        <span className="inline-flex min-w-0 items-center gap-[5px] text-[11.5px] font-semibold text-secondary">
                             {e.group != null ? (
                                 <Workflow size={11} aria-hidden className="shrink-0 text-muted" />
                             ) : null}
                             <span className="truncate">{e.who}</span>
                         </span>
                         {tag ? (
-                            <span className="shrink-0 rounded-[4px] border border-edge-mid px-[5px] font-mono text-[10.5px] text-muted">
+                            <span className="shrink-0 rounded-[4px] border border-edge-mid px-[5px] text-[10.5px] text-muted">
                                 {tag}
                             </span>
                         ) : null}
@@ -141,7 +141,7 @@ export function CockpitEventsRail({
                     ) : null}
                 </div>
                 <div className="flex flex-col items-end gap-1.5 pt-px">
-                    <span className="font-mono text-[10.5px] text-muted">{formatAgeShort(now - e.ts)}</span>
+                    <span className="text-[10.5px] tabular-nums text-muted">{formatAgeShort(now - e.ts)}</span>
                     {isNew ? <span className="h-1.5 w-1.5 rounded-full bg-accent" /> : null}
                 </div>
             </div>

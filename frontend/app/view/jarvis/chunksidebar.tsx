@@ -69,11 +69,12 @@ function RunRecord({ dag }: { dag: EvidenceDag | undefined }) {
                         "whitespace-pre-wrap break-words",
                         row.kind === "task" && "pt-1 font-mono text-[11px] text-ink-hi",
                         row.kind === "section" && "pl-3 text-[12px] leading-[1.5] text-secondary",
-                        row.kind === "run" && "pt-1 font-mono text-[11px] text-ink-mid"
+                        row.kind === "run" && "pt-1 text-[11px] tabular-nums text-ink-mid",
+                        row.kind === "run" && row.label === "left behind" && "font-mono"
                     )}
                 >
                     {row.kind !== "task" && row.label != null ? (
-                        <span className="font-mono text-[10.5px] text-muted">{row.label}: </span>
+                        <span className="text-[10.5px] text-muted">{row.label}: </span>
                     ) : null}
                     {row.text}
                 </div>
@@ -159,7 +160,7 @@ export function ChunkSidebar({
         >
             <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-[13px] py-[9px]">
                 <span className={cn(REGION_LABEL, "text-ink-mid")}>Chunk</span>
-                <span className="font-mono text-[10.5px] text-muted">
+                <span className="text-[10.5px] tabular-nums text-muted">
                     {position.n} / {position.total}
                 </span>
                 <div className="flex gap-1">
@@ -191,7 +192,7 @@ export function ChunkSidebar({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="flex flex-col gap-1.5 px-[18px] pb-3.5 pt-[15px]">
-                    <div className="flex flex-wrap items-center gap-[7px] font-mono text-[10.5px] uppercase tracking-[.06em] text-ink-mid">
+                    <div className="flex flex-wrap items-center gap-[7px] text-[10.5px] uppercase tracking-[.06em] text-ink-mid">
                         <span>{initiative}</span>
                         {flat ? null : (
                             <>
@@ -219,7 +220,7 @@ export function ChunkSidebar({
                             data-peek
                             onClick={onActivity}
                             className={cn(
-                                "inline-flex flex-none cursor-pointer items-center gap-1 font-mono text-[10.5px] text-accent-soft hover:underline",
+                                "inline-flex flex-none cursor-pointer items-center gap-1 text-[10.5px] text-accent-soft hover:underline",
                                 FOCUS
                             )}
                         >
@@ -251,9 +252,7 @@ export function ChunkSidebar({
                                     )}
                                 >
                                     <ToneIcon tone={tone} className={on ? undefined : "text-ink-mid"} />
-                                    <span
-                                        className={cn("font-mono text-[10.5px]", on ? TONE_FG[tone] : "text-ink-mid")}
-                                    >
+                                    <span className={cn("text-[10.5px]", on ? TONE_FG[tone] : "text-ink-mid")}>
                                         {s}
                                     </span>
                                 </button>
@@ -264,7 +263,7 @@ export function ChunkSidebar({
                 <div className="border-t border-edge-faint px-[18px] pb-[18px] pt-3">
                     <div className="mb-2 flex items-center gap-2">
                         <span className={cn(REGION_LABEL, "text-ink-mid")}>Notes</span>
-                        <span className="font-mono text-[10.5px] text-muted">
+                        <span className="text-[10.5px] tabular-nums text-muted">
                             {cards.length} {cards.length === 1 ? "note" : "notes"}
                         </span>
                     </div>
@@ -294,7 +293,7 @@ export function ChunkSidebar({
                                             FOCUS
                                         )}
                                     >
-                                        <span className="flex w-full items-center gap-[7px] font-mono text-[10.5px] text-ink-mid">
+                                        <span className="flex w-full items-center gap-[7px] text-[10.5px] tabular-nums text-ink-mid">
                                             {c.who !== "" ? (
                                                 <span className={c.who === "you" ? "text-accent-soft" : "text-success"}>
                                                     {c.who}
@@ -349,7 +348,7 @@ export function ChunkSidebar({
                                                 className="w-full resize-y rounded-[7px] border border-accent/60 bg-background px-2.5 py-2 text-[12.5px] leading-[1.6] text-primary outline-none"
                                             />
                                             <div className="flex items-center gap-1.5">
-                                                <span className="flex-1 font-mono text-[10.5px] text-muted">
+                                                <span className="flex-1 text-[10.5px] text-muted">
                                                     ctrl+enter save · esc cancel
                                                 </span>
                                                 <button
@@ -382,7 +381,7 @@ export function ChunkSidebar({
                                                 data-jarvis-note-edit
                                                 onClick={() => setEditing({ key: c.key, text: c.entry.text })}
                                                 className={cn(
-                                                    "cursor-pointer font-mono text-[10.5px] text-muted hover:text-accent-soft",
+                                                    "cursor-pointer text-[10.5px] text-muted hover:text-accent-soft",
                                                     FOCUS
                                                 )}
                                             >
@@ -393,7 +392,7 @@ export function ChunkSidebar({
                                                 data-jarvis-note-delete
                                                 onClick={() => onDeleteNote(c.entry)}
                                                 className={cn(
-                                                    "cursor-pointer font-mono text-[10.5px] text-muted hover:text-error",
+                                                    "cursor-pointer text-[10.5px] text-muted hover:text-error",
                                                     FOCUS
                                                 )}
                                             >
@@ -411,7 +410,7 @@ export function ChunkSidebar({
                                                 data-peek
                                                 onClick={(e) => onOpenSession(c, e)}
                                                 className={cn(
-                                                    "inline-flex cursor-pointer items-center gap-1 font-mono text-[10.5px] text-accent-soft hover:underline",
+                                                    "inline-flex cursor-pointer items-center gap-1 text-[10.5px] text-accent-soft hover:underline",
                                                     FOCUS
                                                 )}
                                             >
@@ -446,7 +445,7 @@ export function ChunkSidebar({
                         className="w-full resize-none bg-transparent text-[12.5px] leading-[1.6] text-primary outline-none"
                     />
                     <div className="flex items-center gap-2">
-                        <span className="flex-1 font-mono text-[10.5px] text-muted">ctrl+enter to add</span>
+                        <span className="flex-1 text-[10.5px] text-muted">ctrl+enter to add</span>
                         <button
                             type="button"
                             disabled={draft.trim() === ""}

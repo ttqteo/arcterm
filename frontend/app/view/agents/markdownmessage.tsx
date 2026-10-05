@@ -59,7 +59,7 @@ function renderMd(text: string) {
 function InsightCallout({ text }: { text: string }) {
     return (
         <div data-insight className="my-2.5 rounded-[8px] border border-accent/25 bg-accent/[0.05] px-3 py-2">
-            <div className="mb-1 flex items-center gap-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
+            <div className="mb-1 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                 <Lightbulb size={11} strokeWidth={2.2} aria-hidden />
                 Insight
             </div>

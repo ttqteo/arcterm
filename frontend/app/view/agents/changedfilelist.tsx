@@ -40,7 +40,7 @@ export function TreeModeToggle() {
         <button
             onClick={() => globalStore.set(treeModeAtom, !tree)}
             title={tree ? "Show a flat path list" : "Group files by directory"}
-            className="flex-none rounded border border-edge-mid px-[6px] py-[1px] font-mono text-[10.5px] text-muted hover:text-foreground"
+            className="flex-none rounded border border-edge-mid px-[6px] py-[1px] text-[10.5px] text-muted hover:text-foreground"
         >
             {tree ? "tree" : "flat"}
         </button>
@@ -71,12 +71,7 @@ function FileRow({
                 selected && "bg-surface-selected"
             )}
         >
-            <span
-                className={cn(
-                    "w-[13px] flex-none text-center font-mono text-[10.5px] font-bold",
-                    statusColor(change.status)
-                )}
-            >
+            <span className={cn("w-[13px] flex-none text-center text-[10.5px] font-bold", statusColor(change.status))}>
                 {change.status}
             </span>
             <span
@@ -87,8 +82,8 @@ function FileRow({
             >
                 {label}
             </span>
-            <span className="flex-none font-mono text-[10.5px] font-semibold text-diff-added">+{change.adds}</span>
-            <span className="flex-none font-mono text-[10.5px] font-semibold text-diff-removed">−{change.dels}</span>
+            <span className="flex-none text-[10.5px] font-semibold tabular-nums text-diff-added">+{change.adds}</span>
+            <span className="flex-none text-[10.5px] font-semibold tabular-nums text-diff-removed">−{change.dels}</span>
         </button>
     );
 }
@@ -109,9 +104,9 @@ function DirRow({ row, collapsed, onToggle }: { row: FileTreeRow; collapsed: boo
             <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-ink-mid">
                 {row.label}
             </span>
-            <span className="flex-none font-mono text-[10.5px] text-muted">{row.files}</span>
-            <span className="flex-none font-mono text-[10.5px] text-diff-added">+{row.adds}</span>
-            <span className="flex-none font-mono text-[10.5px] text-diff-removed">−{row.dels}</span>
+            <span className="flex-none text-[10.5px] tabular-nums text-muted">{row.files}</span>
+            <span className="flex-none text-[10.5px] tabular-nums text-diff-added">+{row.adds}</span>
+            <span className="flex-none text-[10.5px] tabular-nums text-diff-removed">−{row.dels}</span>
         </button>
     );
 }

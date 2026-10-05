@@ -69,7 +69,7 @@ export const TONE_FG: Record<ChunkTone, string> = {
 export const STATUSES = ["pending", "active", "blocked", "deferred", "skipped", "done"];
 
 const SMALL_BUTTON =
-    "cursor-pointer rounded-[6px] border border-border px-2 py-[3px] font-mono text-[10.5px] text-ink-mid hover:border-edge-strong hover:text-ink-hi";
+    "cursor-pointer rounded-[6px] border border-border px-2 py-[3px] text-[10.5px] text-ink-mid hover:border-edge-strong hover:text-ink-hi";
 
 const stageHeadClass = (first: boolean) =>
     cn(
@@ -266,7 +266,7 @@ export function InitiativeDetail({
                                     </button>
                                 )}
                                 <StageBar done={row.done} total={row.total} />
-                                <span className="w-7 flex-none font-mono text-[10.5px] text-ink-mid">
+                                <span className="w-7 flex-none text-[10.5px] tabular-nums text-ink-mid">
                                     {row.fraction}
                                 </span>
                                 <button
@@ -355,7 +355,7 @@ export function InitiativeDetail({
                                     </span>
                                 )}
                                 {row.notes > 0 ? (
-                                    <span className="flex-none font-mono text-[10.5px] text-ink-mid">
+                                    <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
                                         {row.notes} {row.notes === 1 ? "note" : "notes"}
                                     </span>
                                 ) : null}
@@ -469,7 +469,7 @@ export function InitiativeDetail({
                             {newStage.name}
                         </span>
                         <StageBar done={0} total={0} />
-                        <span className="w-7 flex-none font-mono text-[10.5px] text-ink-mid">0/0</span>
+                        <span className="w-7 flex-none text-[10.5px] tabular-nums text-ink-mid">0/0</span>
                     </div>
                     <AddChunkRow
                         stage={newStage.name}
@@ -519,7 +519,7 @@ function Menu({ className, children }: { className: string; children: React.Reac
 
 function MenuHead({ children }: { children: React.ReactNode }) {
     return (
-        <div className="px-[7px] pb-[5px] pt-1 font-mono text-[10.5px] font-bold uppercase tracking-[.1em] text-ink-mid">
+        <div className="px-[7px] pb-[5px] pt-1 text-[10.5px] font-bold uppercase tracking-[.1em] text-ink-mid">
             {children}
         </div>
     );
@@ -705,14 +705,14 @@ function TrackerFooter({
         </button>
     );
     return (
-        <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-edge-faint px-1.5 pt-2.5 font-mono text-[10.5px] text-ink-mid">
+        <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-edge-faint px-1.5 pt-2.5 text-[10.5px] tabular-nums text-ink-mid">
             {/* the id is what you paste into a prompt or a `wsh effort` call, and a span is the one
                 thing you cannot lift out of a row you can click */}
             <button
                 type="button"
                 title="copy this initiative's id"
                 onClick={() => void navigator.clipboard?.writeText(edits.oid)}
-                className={cn("cursor-pointer hover:text-ink-hi", FOCUS)}
+                className={cn("cursor-pointer font-mono hover:text-ink-hi", FOCUS)}
             >
                 {edits.oid.slice(0, 8)}
             </button>
@@ -729,7 +729,7 @@ function TrackerFooter({
                         type="button"
                         onClick={() => onConfirm(false)}
                         className={cn(
-                            "cursor-pointer rounded-[5px] border border-edge-mid bg-surface-raised px-2 py-0.5 font-mono text-[10.5px] text-secondary hover:text-primary",
+                            "cursor-pointer rounded-[5px] border border-edge-mid bg-surface-raised px-2 py-0.5 text-[10.5px] text-secondary hover:text-primary",
                             FOCUS
                         )}
                     >

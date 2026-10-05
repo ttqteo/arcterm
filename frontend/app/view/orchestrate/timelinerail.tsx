@@ -126,7 +126,7 @@ export function TimelineRail({ channelId, runId, layout }: TimelineRailProps) {
                                     onClick={() => setFilter(f.id)}
                                     aria-pressed={filter === f.id}
                                     className={cn(
-                                        "flex cursor-pointer items-center gap-1.5 rounded-[5px] px-2 py-0.5 font-mono text-[10.5px] tracking-[0.04em] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+                                        "flex cursor-pointer items-center gap-1.5 rounded-[5px] px-2 py-0.5 text-[10.5px] tabular-nums tracking-[0.04em] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
                                         filter === f.id
                                             ? "bg-accent/12 text-accent-soft"
                                             : "text-ink-mid hover:text-ink-hi"
@@ -223,7 +223,7 @@ function RailHeader({
                     {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 </button>
             )}
-            <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-mid">Lifecycle</span>
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-mid">Lifecycle</span>
             <span className="text-[11.5px] text-secondary">{count} events</span>
             <StatusPill status={status} onRetry={onRetry} />
         </div>
@@ -313,7 +313,7 @@ function ActivityStrip({
                     <line x1="100%" x2="100%" y1={0} y2={STRIP_H} stroke="var(--color-accent)" />
                 </svg>
             </div>
-            <div className="mt-1 flex justify-between font-mono text-[10.5px] text-muted">
+            <div className="mt-1 flex justify-between text-[10.5px] tabular-nums text-muted">
                 <span>{tsLabel(start)}</span>
                 <span>{spanMin} min</span>
                 <span>now {tsLabel(nowMs)}</span>
@@ -328,7 +328,7 @@ function NowMarker({ nowMs }: { nowMs: number }) {
             <span className="flex w-5 flex-none justify-center">
                 <span className="size-2 rounded-full bg-accent pulse-dot" />
             </span>
-            <span className="font-mono text-[10.5px] text-accent-soft">now · {tsLabel(nowMs)}</span>
+            <span className="text-[10.5px] tabular-nums text-accent-soft">now · {tsLabel(nowMs)}</span>
         </div>
     );
 }
@@ -340,7 +340,7 @@ function GapRow({ minutes }: { minutes: number }) {
                 <span className="size-[5px] rounded-full bg-edge-mid" />
             </span>
             <span className="flex-1 border-t border-dashed border-edge-mid" />
-            <span className="font-mono text-[10.5px] text-muted">{minutes} min quiet</span>
+            <span className="text-[10.5px] tabular-nums text-muted">{minutes} min quiet</span>
             <span className="flex-1 border-t border-dashed border-edge-mid" />
         </div>
     );
@@ -489,7 +489,7 @@ function GroupRow({
                                 {group.taskId}
                             </span>
                         )}
-                        <span className="ml-auto flex-none font-mono text-[10.5px] text-ink-mid">
+                        <span className="ml-auto flex-none text-[10.5px] tabular-nums text-ink-mid">
                             {groupTime(group)}
                         </span>
                     </span>
@@ -499,7 +499,7 @@ function GroupRow({
                                 <span
                                     key={e.id}
                                     className={cn(
-                                        "rounded bg-pill px-1.5 font-mono text-[10.5px] leading-4",
+                                        "rounded bg-pill px-1.5 text-[10.5px] leading-4",
                                         toneFor(e.kind)
                                     )}
                                 >
@@ -511,7 +511,7 @@ function GroupRow({
                     {snippet && (
                         <span
                             className={cn(
-                                "block truncate font-mono text-[10.5px]",
+                                "block truncate text-[10.5px]",
                                 group.attention ? "text-warning-soft" : "text-ink-mid"
                             )}
                         >
@@ -553,7 +553,7 @@ function GroupDetail({
                 const detail = eventDetail(e);
                 return (
                     <div key={e.id} className="flex flex-col gap-0.5">
-                        <div className="flex gap-1.5 font-mono text-[10.5px]">
+                        <div className="flex gap-1.5 text-[10.5px] tabular-nums">
                             <span className="text-muted">{tsLabel(e.ts)}</span>
                             <span className={toneFor(e.kind)}>{eventTitle(e)}</span>
                         </div>

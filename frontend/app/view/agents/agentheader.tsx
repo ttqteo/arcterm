@@ -170,7 +170,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             )}
             <div className="min-w-0">
                 <div className="flex items-center gap-[9px]">
-                    <span className="min-w-0 truncate font-mono text-[15px] font-semibold text-foreground">
+                    <span className="min-w-0 truncate text-[15px] font-semibold text-foreground">
                         {lineage?.kind === "lead" ? (
                             <Workflow
                                 size={13}
@@ -182,7 +182,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     </span>
                     <span
                         className={cn(
-                            "inline-flex items-center gap-[5px] whitespace-nowrap rounded-[5px] border px-[8px] py-[2px] font-mono text-[10.5px] font-semibold",
+                            "inline-flex items-center gap-[5px] whitespace-nowrap rounded-[5px] border px-[8px] py-[2px] text-[10.5px] font-semibold",
                             rt.text,
                             rt.softBg,
                             rt.line
@@ -193,7 +193,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     </span>
                     <span
                         className={cn(
-                            "rounded-[5px] border px-[7px] py-[1px] font-mono text-[10.5px] font-medium opacity-85 transition-colors duration-[140ms]",
+                            "rounded-[5px] border px-[7px] py-[1px] text-[10.5px] font-medium opacity-85 transition-colors duration-[140ms]",
                             settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
                         )}
                         style={{ color: stateColor, borderColor: stateColor }}
@@ -201,7 +201,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         {stateText}
                     </span>
                     {agent.model ? (
-                        <span className="rounded-[5px] border border-edge-mid px-[7px] py-[1px] font-mono text-[10.5px] font-medium text-muted">
+                        <span className="rounded-[5px] border border-edge-mid px-[7px] py-[1px] text-[10.5px] font-medium text-muted">
                             {agent.model}
                         </span>
                     ) : null}
@@ -209,7 +209,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <span
                             title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
                             className={cn(
-                                "font-mono text-[10.5px] font-semibold",
+                                "text-[10.5px] font-semibold tabular-nums",
                                 CTX_TEXT[contextLevel(agent.usage.contextpct, agent.usage.contextmax)]
                             )}
                         >
@@ -218,10 +218,15 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         </span>
                     ) : null}
                 </div>
-                <div className="mt-[2px] whitespace-nowrap font-mono text-[11px] font-medium text-muted">
+                <div className="mt-[2px] whitespace-nowrap text-[11px] font-medium text-muted">
                     {project || "—"}
                     {agent.effortId != null ? <InitiativeLink model={model} agent={agent} /> : null}
-                    {lineage?.kind === "lead" ? <> · orchestrator run {lineage.runId.slice(0, 8)}</> : null}
+                    {lineage?.kind === "lead" ? (
+                        <>
+                            {" "}
+                            · orchestrator run <span className="font-mono">{lineage.runId.slice(0, 8)}</span>
+                        </>
+                    ) : null}
                     {lineage?.kind === "worker" || lineage?.kind === "stage" ? (
                         <>
                             {" · "}
@@ -248,7 +253,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         type="button"
                         onClick={() => globalStore.set(docReviewAtom, agent.id)}
                         title={`Show the review (${formatChordString("r")})`}
-                        className="flex cursor-pointer items-center gap-[7px] rounded-[7px] border border-warning/45 bg-askingbg px-[11px] py-[6px] font-mono text-[11px] font-semibold text-warning hover:border-warning"
+                        className="flex cursor-pointer items-center gap-[7px] rounded-[7px] border border-warning/45 bg-askingbg px-[11px] py-[6px] text-[11px] font-semibold text-warning hover:border-warning"
                     >
                         <span className="h-[6px] w-[6px] rounded-full bg-warning" aria-hidden />
                         {DOC_REVIEW_HEADERS[review.kind]}

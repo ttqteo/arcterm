@@ -129,7 +129,7 @@ export function RunComposer({
             data-jarvis-brief-band="composer"
             className="flex flex-col gap-1.5 border-t border-edge-faint px-4 pb-3 pt-2.5"
         >
-            <div className="flex items-center gap-2 font-mono text-[10.5px]">
+            <div className="flex items-center gap-2 text-[10.5px]">
                 <span className="text-success">{orchestrator ? "lead" : target.workerName}</span>
                 <span data-jarvis-brief-composer="scope" className="text-muted">
                     {labels.scope}

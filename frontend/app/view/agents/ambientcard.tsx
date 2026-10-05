@@ -12,7 +12,7 @@ import { cn } from "@/util/util";
 
 // The ambient surface treatment: recessed panel, never the emphasis of the row it sits in.
 export const AMBIENT_BOX = "rounded-[9px] border border-border bg-surface px-3 py-2";
-export const AMBIENT_EYEBROW = "font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-muted";
+export const AMBIENT_EYEBROW = "text-[9px] font-semibold uppercase tracking-[.08em] text-muted";
 
 type AmbientCardProps = {
     eyebrow: React.ReactNode;

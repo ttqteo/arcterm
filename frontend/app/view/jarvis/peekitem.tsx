@@ -59,7 +59,7 @@ function LoadingBody({ item }: { item: PeekItem }) {
     return (
         <div data-pet-peek-skeleton className="flex flex-col">
             <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-3">
-                <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                     {kindNoun(item.target.kind)}
                 </span>
                 <span className="h-3 w-[170px] rounded-[4px] bg-surface-selected" />

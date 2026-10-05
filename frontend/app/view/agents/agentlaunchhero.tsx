@@ -68,7 +68,7 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
 
                 {sessions != null && sessions.length > 0 ? (
                     <div className="mt-6 w-full overflow-hidden rounded-lg border border-border bg-surface text-left">
-                        <div className="flex items-center gap-2 px-[14px] pb-[9px] pt-[11px] font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted">
+                        <div className="flex items-center gap-2 px-[14px] pb-[9px] pt-[11px] text-[10px] font-semibold uppercase tabular-nums tracking-[.1em] text-muted">
                             <span>Recent sessions</span>
                             <span className="opacity-60">{sessions.length}</span>
                             <div className="flex-1" />
@@ -86,11 +86,12 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                                     <div className="truncate text-[12.5px] font-semibold text-primary">
                                         {s.task || "(untitled session)"}
                                     </div>
-                                    <div className="mt-[2px] truncate font-mono text-[10.5px] text-muted">
-                                        {s.projectname} · {s.branch || "—"} · {s.model || "—"} · {formatTokens(s.tokenstotal)} tok
+                                    <div className="mt-[2px] truncate text-[10.5px] tabular-nums text-muted">
+                                        {s.projectname} · <span className="font-mono">{s.branch || "—"}</span> ·{" "}
+                                        <span className="font-mono">{s.model || "—"}</span> · {formatTokens(s.tokenstotal)} tok
                                     </div>
                                 </div>
-                                <span className="shrink-0 font-mono text-[10.5px] text-muted">
+                                <span className="shrink-0 text-[10.5px] tabular-nums text-muted">
                                     {formatAge(now - s.lastactivets)}
                                 </span>
                             </button>

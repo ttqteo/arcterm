@@ -60,9 +60,9 @@ export function UsageMeters({
                         {multi && m.first ? (
                             <span className={cn("h-1.5 w-1.5 rounded-full", providerDot(m.provider))} />
                         ) : null}
-                        <span className="font-mono text-[10.5px] text-muted">{m.short}</span>
+                        <span className="text-[10.5px] text-muted">{m.short}</span>
                         <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={5} radius={3} className="w-11" />
-                        <span className={cn("font-mono text-[11px] font-semibold", LEVEL_TXT[lvl])}>
+                        <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
                             {Math.round(m.pct)}%
                         </span>
                     </Fragment>

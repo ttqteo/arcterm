@@ -43,7 +43,7 @@ export function PeekNoteBody({ target }: { model: AgentsViewModel; target: PeekT
             <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-3">
                 <span className={cn(REGION_LABEL, "text-accent-soft")}>{kindNoun("note")}</span>
                 <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-primary">{note.title}</span>
-                {meta ? <span className="flex-none font-mono text-[10.5px] text-muted">{meta}</span> : null}
+                {meta ? <span className="flex-none text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
             </div>
             <div className="px-3.5 py-3">
                 <MarkdownMessage text={note.body} className="text-[13px] leading-[1.6] text-secondary" />

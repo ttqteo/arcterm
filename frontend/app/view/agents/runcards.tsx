@@ -176,8 +176,8 @@ export function BlockedCard({
     return (
         <div className="relative mt-3 max-w-[760px] overflow-hidden rounded-lg border border-error/40 bg-error/10 px-4 py-3">
             <div className="mb-2 flex items-center gap-2">
-                <span className="font-mono text-[12px] font-bold text-error">!</span>
-                <span className="font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-error">
+                <span className="text-[12px] font-bold text-error">!</span>
+                <span className="text-[9px] font-semibold uppercase tracking-[.08em] text-error">
                     Blocked · worker stopped
                 </span>
             </div>
@@ -239,7 +239,7 @@ export function TriageChip({ triage }: { triage: PhaseTriage }) {
     const tone = quick ? "text-success border-success/40 bg-success/10" : "text-asking border-asking/40 bg-warning/10";
     return (
         <div className={"mt-2 inline-flex max-w-[760px] items-center gap-2 rounded border px-2.5 py-1.5 " + tone}>
-            <span className="font-mono text-[9px] font-semibold uppercase tracking-[.08em]">
+            <span className="text-[9px] font-semibold uppercase tracking-[.08em]">
                 Triage · {triage.verdict}
             </span>
             {triage.note ? <span className="text-[11.5px] leading-[1.4] text-secondary">{triage.note}</span> : null}

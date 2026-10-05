@@ -41,7 +41,7 @@ const RUNTIMES: { id: Runtime; name: string }[] = [
     { id: "terminal", name: "Terminal" },
 ];
 
-const LABEL = "font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted";
+const LABEL = "text-[10px] font-semibold uppercase tracking-[0.1em] text-muted";
 
 export function NewAgentModal({ model }: { model: AgentsViewModel }) {
     const open = useAtomValue(model.newAgentOpenAtom);
@@ -248,7 +248,7 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
                                             ) : (
                                                 <RuntimeMark
                                                     runtime={r.id}
-                                                    className="font-mono text-[12px] font-bold text-accent-soft"
+                                                    className="text-[12px] font-bold text-accent-soft"
                                                     imageClassName="h-4 w-4 rounded-[3px]"
                                                 />
                                             )}

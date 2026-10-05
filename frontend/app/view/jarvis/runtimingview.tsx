@@ -54,7 +54,7 @@ function TimingBody({ view }: { view: RunTimingView }) {
                     className={cn("flex-none text-ink-mid transition-transform", open && "rotate-90")}
                 />
                 <span className="text-[12px] font-semibold">Timing</span>
-                <span className="ml-auto font-mono text-[11px] text-secondary">{view.header}</span>
+                <span className="ml-auto text-[11px] tabular-nums text-secondary">{view.header}</span>
             </button>
             {view.summary.length > 0 ? (
                 <div className="flex flex-col gap-[5px] pb-3 pl-[22px]">
@@ -68,7 +68,7 @@ function TimingBody({ view }: { view: RunTimingView }) {
             ) : null}
             {open ? (
                 <div className="flex flex-col gap-3 pb-3.5">
-                    <div className="ml-[144px] mr-[54px] flex justify-between font-mono text-[10.5px] text-ink-mid">
+                    <div className="ml-[144px] mr-[54px] flex justify-between text-[10.5px] tabular-nums text-ink-mid">
                         {view.axis.map((label, i) => (
                             <span key={i}>{label}</span>
                         ))}
@@ -83,7 +83,7 @@ function TimingBody({ view }: { view: RunTimingView }) {
                                         style={{ left: `${row.left}%`, width: `${row.width}%` }}
                                     />
                                 </div>
-                                <span className="w-[42px] flex-none text-right font-mono text-[10.5px] text-secondary">
+                                <span className="w-[42px] flex-none text-right text-[10.5px] tabular-nums text-secondary">
                                     {row.duration}
                                 </span>
                             </div>

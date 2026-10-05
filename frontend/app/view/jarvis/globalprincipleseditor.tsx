@@ -88,7 +88,7 @@ export function GlobalPrinciplesEditor({
                         <div key={p.id} className="flex items-start gap-2 py-2 pr-2.5 pl-1.5">
                             <span
                                 aria-hidden="true"
-                                className="w-[18px] flex-none pt-2 text-right font-mono text-[11px] text-ink-faint"
+                                className="w-[18px] flex-none pt-2 text-right text-[11px] tabular-nums text-ink-faint"
                             >
                                 {num}
                             </span>

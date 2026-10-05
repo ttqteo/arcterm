@@ -122,7 +122,7 @@ export function RadarFindingsList({
                                 )}
                                 <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[meta.tone])} />
                                 <span className={cn(REGION_LABEL, TONE_TEXT[meta.tone])}>{meta.label}</span>
-                                <span className="font-mono text-[10.5px] text-muted">{items.length}</span>
+                                <span className="text-[10.5px] tabular-nums text-muted">{items.length}</span>
                                 <span className="flex-1" />
                                 <span className="text-[11px] text-muted">{meta.hint}</span>
                             </button>

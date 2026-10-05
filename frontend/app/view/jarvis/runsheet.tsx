@@ -69,11 +69,11 @@ import { RunTimingSection } from "./runtimingview";
 import { STAGE_PROSE } from "./stagemeasure";
 
 const LINK =
-    "cursor-pointer font-mono text-[10.5px] text-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
+    "cursor-pointer text-[10.5px] text-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
 const DOCK_BTN = cn(SHEET_BTN, "bg-transparent px-3 py-1.5 text-[11.5px]");
 const DOCK_ACCENT = cn(DOCK_BTN, "border-accent/50 bg-accent/12 text-accent-soft");
 const ROW_BTN =
-    "inline-flex h-[22px] flex-none cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] font-mono text-[10.5px] text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
+    "inline-flex h-[22px] flex-none cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] text-[10.5px] text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
 
 const TONE_TEXT: Record<SheetTone, string> = {
     success: "text-success",
@@ -243,11 +243,11 @@ function FinalCheckRow({ group, entry, onOpen }: { group: TaskGroup; entry: Fina
                     className={cn("flex-none text-ink-mid transition-transform", open && "rotate-90")}
                 />
                 <span className="flex-none text-[12px] font-semibold">Final check</span>
-                <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] text-secondary">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-[10.5px] tabular-nums text-secondary">
                     <span className={cn("size-1.5 flex-none rounded-full", FINAL_TONE_BG[entry.tone])} />
                     <span className="truncate">{entry.head}</span>
                 </span>
-                <span className="ml-auto flex-none font-mono text-[11px] text-secondary">{entry.right}</span>
+                <span className="ml-auto flex-none text-[11px] tabular-nums text-secondary">{entry.right}</span>
             </button>
             {open ? (
                 <div className="flex flex-col gap-2 pb-3 pl-[22px]">
@@ -399,7 +399,7 @@ function Reading({
                     type="button"
                     title="Open this chunk"
                     onClick={() => revealChunk?.(effort.oref, ref.chunklabel)}
-                    className="inline-flex max-w-full cursor-pointer items-center gap-1 self-start font-mono text-[10.5px] text-ink-mid hover:text-accent-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                    className="inline-flex max-w-full cursor-pointer items-center gap-1 self-start text-[10.5px] text-ink-mid hover:text-accent-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 >
                     <CornerDownRight size={11} aria-hidden className="flex-none text-muted" />
                     <span className="truncate">
@@ -495,7 +495,7 @@ function Tasks({
         <div>
             <div className="flex items-center gap-2.5 pb-2 pt-4">
                 <SectionLabel>tasks</SectionLabel>
-                <span className="min-w-0 truncate font-mono text-[10.5px] text-muted">
+                <span className="min-w-0 truncate text-[10.5px] tabular-nums text-muted">
                     {taskSectionMeta(run, digest)}
                 </span>
                 <span className="flex-1" />
@@ -523,7 +523,7 @@ function Tasks({
                                 <span className="flex w-5 flex-none justify-center">
                                     <span className="size-2 pulse-dot rounded-full bg-accent" />
                                 </span>
-                                <span className="font-mono text-[10.5px] text-accent-soft">
+                                <span className="text-[10.5px] tabular-nums text-accent-soft">
                                     now · {tsLabel(ctx.now)}
                                 </span>
                             </div>
@@ -569,7 +569,7 @@ function Tasks({
                 <EmptyTasks ctx={ctx} dag={dag} />
             )}
             {status.next != null ? (
-                <div className="pb-1 pt-[13px] font-mono text-[11px] leading-[1.5] text-muted">
+                <div className="pb-1 pt-[13px] text-[11px] leading-[1.5] text-muted">
                     <span className="text-muted">next: </span>
                     {status.next}
                 </div>
@@ -585,7 +585,7 @@ function SheetGapRow({ minutes }: { minutes: number }) {
                 <span className="size-[5px] rounded-full bg-edge-mid" />
             </span>
             <span className="flex-1 border-t border-dashed border-edge-mid" />
-            <span className="font-mono text-[10.5px] text-ink-faint">{minutes} min quiet</span>
+            <span className="text-[10.5px] tabular-nums text-ink-faint">{minutes} min quiet</span>
             <span className="flex-1 border-t border-dashed border-edge-mid" />
         </div>
     );
@@ -611,7 +611,7 @@ function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
                     {group.taskId}
                 </span>
             ) : null}
-            <span className="ml-auto flex-none font-mono text-[10.5px] text-ink-mid">{groupTime(group)}</span>
+            <span className="ml-auto flex-none text-[10.5px] tabular-nums text-ink-mid">{groupTime(group)}</span>
         </>
     );
     const rowClass = "relative flex w-full items-center gap-2 rounded-[6px] py-[3px] pl-[5px] pr-1.5 text-left";
@@ -707,15 +707,16 @@ function TaskRow({
             <div className="flex min-w-0 flex-col gap-[3px]">
                 <span className="text-[12.5px] leading-[1.35] text-ink-hi">{row.label}</span>
                 {row.meta ? (
-                    <span title={row.meta} className={cn("truncate font-mono text-[10.5px]", TONE_TEXT[row.metaTone])}>
+                    <span
+                        title={row.meta}
+                        className={cn("truncate text-[10.5px] tabular-nums", TONE_TEXT[row.metaTone])}
+                    >
                         {row.meta}
                     </span>
                 ) : null}
             </div>
             <div className="flex items-center gap-2">
-                <span className={cn("font-mono text-[10.5px] font-semibold", TONE_TEXT[row.stateTone])}>
-                    {row.state}
-                </span>
+                <span className={cn("text-[10.5px] font-semibold", TONE_TEXT[row.stateTone])}>{row.state}</span>
                 {row.action != null ? (
                     <button type="button" onClick={act} className={ROW_BTN}>
                         {ROW_ACTION_LABEL[row.action]}
@@ -759,10 +760,10 @@ function AttentionRow({ ctx, entry }: { ctx: SheetCtx; entry: QueueEntry }) {
             className="flex w-full cursor-pointer items-center gap-[9px] rounded-[8px] border border-warning/30 bg-warning/12 px-[11px] py-2 text-left hover:border-warning focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
             <span className="h-1.5 w-1.5 flex-none rounded-full bg-warning" />
-            <span className="flex-none font-mono text-[11px] font-medium text-ink-hi">{entry.label}</span>
+            <span className="flex-none text-[11px] font-medium text-ink-hi">{entry.label}</span>
             <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">{entry.detail}</span>
             {entry.actions.length > 0 ? (
-                <span className="flex-none rounded-[5px] border border-warning/45 px-[7px] py-px font-mono text-[10.5px] text-warning-soft">
+                <span className="flex-none rounded-[5px] border border-warning/45 px-[7px] py-px text-[10.5px] text-warning-soft">
                     {entry.actions.join("/")}
                 </span>
             ) : null}
@@ -899,7 +900,7 @@ function Evidence({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }) {
                               className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 border-b border-edge-faint py-[9px] text-left hover:bg-surface-hover"
                           >
                               <span className="truncate font-mono text-[11.5px] text-ink-hi">{f.path}</span>
-                              <span className="font-mono text-[10.5px]">
+                              <span className="text-[10.5px] tabular-nums">
                                   <span className="text-diff-added">+{f.add}</span>{" "}
                                   <span className="text-diff-removed">−{f.del}</span>
                               </span>
@@ -909,12 +910,12 @@ function Evidence({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }) {
                     <span className="text-[12px] text-muted">Nothing landed in the repository.</span>
                 ) : null}
                 {commits.length === 0 && files.length > 8 ? (
-                    <span className="font-mono text-[10.5px] text-muted">+{files.length - 8} more files</span>
+                    <span className="text-[10.5px] tabular-nums text-muted">+{files.length - 8} more files</span>
                 ) : null}
             </div>
             <div className="flex flex-col gap-[7px]">
                 <SectionLabel>sealed evidence</SectionLabel>
-                <div className="flex flex-col font-mono text-[11px] leading-[1.6] text-secondary">
+                <div className="flex flex-col text-[11px] leading-[1.6] tabular-nums text-secondary">
                     {lines.map((l) => (
                         <span key={l}>{l}</span>
                     ))}

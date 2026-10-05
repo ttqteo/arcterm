@@ -10,7 +10,7 @@ import { atom, useAtomValue, type Atom } from "jotai";
 import { runAtom } from "../agents/channelsstore";
 import { InlineMarkdown } from "../agents/inlinemarkdown";
 import { ActivityLine } from "../agents/statusline";
-import { MONO_META } from "../jarvis/briefstyle";
+import { META_TEXT } from "../jarvis/briefstyle";
 import { glyphKind, kindOf, wordOf, type EdgeStyle, type GlyphKind, type NodeKind } from "./dagcanvas";
 import { descriptionLead } from "./dagdescription";
 import type { TaskBrief } from "./dagdigest";
@@ -141,7 +141,7 @@ export function DagCardNode({ data }: NodeProps) {
                         {view.label}
                     </span>
                 </div>
-                <div className={`flex items-center gap-1.5 leading-[14px] ${MONO_META}`}>
+                <div className={`flex items-center gap-1.5 leading-[14px] ${META_TEXT}`}>
                     <span className="min-w-0 flex-1 truncate">
                         {task.id} · <span className={look.word}>{word}</span> · {fact}
                     </span>
@@ -164,7 +164,7 @@ export function LaneBandNode({ data }: NodeProps) {
             style={{ width: rect.w, height: rect.h }}
             className={`pointer-events-none rounded-2xl border border-dashed border-edge-mid ${dimmed ? "opacity-40" : ""}`}
         >
-            <div className="px-2.5 py-[5px] font-mono text-[10.5px] text-muted">lane · one merge</div>
+            <div className="px-2.5 py-[5px] text-[10.5px] text-muted">lane · one merge</div>
         </div>
     );
 }
@@ -243,7 +243,7 @@ function TaskPeekCard({
             {peek.rows.map((row, i) => (
                 <div
                     key={i}
-                    className={`font-mono text-[10.5px] leading-[14px] ${
+                    className={`text-[10.5px] leading-[14px] tabular-nums ${
                         row.tone === "warning" ? "text-warning" : "text-muted"
                     }`}
                 >
@@ -252,7 +252,7 @@ function TaskPeekCard({
             ))}
             {peek.verify ? (
                 <div data-dag-peek-verify={task.id} className="flex flex-col gap-[3px]">
-                    <div className={MONO_META}>{peek.verify.heading}</div>
+                    <div className={META_TEXT}>{peek.verify.heading}</div>
                     {peek.verify.tail ? (
                         <pre
                             className={`m-0 max-h-[110px] overflow-auto whitespace-pre-wrap break-all rounded-md border border-edge-mid bg-surface-code px-2 py-1.5 font-mono text-[10.5px] leading-[14px] ${
@@ -264,7 +264,7 @@ function TaskPeekCard({
                     ) : null}
                 </div>
             ) : null}
-            <div className="font-mono text-[10.5px] leading-[14px] text-muted">
+            <div className="text-[10.5px] leading-[14px] text-muted">
                 {more
                     ? "click to select and read the full description · double-click opens its worker"
                     : "click to select · double-click to open its worker"}

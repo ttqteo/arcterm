@@ -22,7 +22,7 @@ import { KeyCap } from "./keycap";
 
 const PANEL = "z-[1000] min-w-[200px] rounded-[8px] border border-edge-mid bg-surface-raised p-1 shadow-lg";
 const ITEM =
-    "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 font-mono text-[12.5px] text-secondary";
+    "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-secondary";
 const ITEM_ACTIVE = "bg-accent/12 text-primary";
 const ITEM_DANGER = "text-error";
 const ITEM_DANGER_ACTIVE = "bg-error/10 text-error";
@@ -79,7 +79,7 @@ function MenuLevel({
                     return (
                         <div
                             key={i}
-                            className="px-2.5 pb-1 pt-2 font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-muted"
+                            className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.06em] text-muted"
                         >
                             {item.label}
                         </div>

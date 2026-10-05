@@ -61,7 +61,7 @@ export function DocReviewSummary({ agentId, review }: { agentId: string; review:
         <div className="flex items-center gap-2.5 rounded-[7px] border border-edge-mid bg-background px-2.5 py-2">
             <FileText size={15} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />
             <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-[10.5px] text-muted">
+                <div className="truncate text-[10.5px] tabular-nums text-muted">
                     <span className="font-bold uppercase tracking-[0.1em] text-warning">
                         {DOC_REVIEW_HEADERS[review.kind]}
                     </span>{" "}
@@ -159,7 +159,7 @@ function QuestionGroup({
                                 {isRecommended ? (
                                     <span
                                         className={cn(
-                                            "shrink-0 rounded-[5px] px-1.5 font-mono text-[10.5px] font-semibold",
+                                            "shrink-0 rounded-[5px] px-1.5 text-[10.5px] font-semibold",
                                             accent.pill
                                         )}
                                     >

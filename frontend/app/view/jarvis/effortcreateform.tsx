@@ -42,7 +42,7 @@ export function parseChunkLines(text: string): ParsedChunkLine[] {
 
 const inputCls =
     "w-full rounded-[7px] border border-edge-mid bg-background px-2.5 py-1.5 text-[12px] text-primary placeholder:text-muted outline-none focus:border-accent/60";
-const fieldLabel = "font-mono text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
+const fieldLabel = "text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
 
 export function EffortCreateForm({
     onClose,
@@ -142,13 +142,13 @@ export function EffortCreateForm({
             className="flex w-[min(580px,93vw)] flex-col"
         >
             <div className="flex shrink-0 items-center gap-[11px] border-b border-border px-[18px] py-[15px]">
-                <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accentbg font-mono text-[10.5px] font-bold text-accent-soft">
+                <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accentbg text-[10.5px] font-bold text-accent-soft">
                     ✦
                 </div>
                 <span className="flex-1 text-[15px] font-semibold text-primary">
                     {edit != null ? "Edit initiative" : "New initiative"}
                 </span>
-                <span className="rounded-[5px] border border-edge-mid px-[7px] py-0.5 font-mono text-[10.5px] text-ink-mid">
+                <span className="rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid">
                     ctrl+⏎ to save
                 </span>
             </div>
@@ -200,7 +200,7 @@ export function EffortCreateForm({
                     <div className="flex flex-col gap-1.5">
                         <div className="flex items-baseline gap-2">
                             <span className={fieldLabel}>Chunks · one per line</span>
-                            <span className="font-mono text-[10.5px] text-muted">Stage: chunk to group</span>
+                            <span className="text-[10.5px] text-muted">Stage: chunk to group</span>
                         </div>
                         <textarea
                             value={text}
@@ -209,20 +209,23 @@ export function EffortCreateForm({
                                 "Phase 1: WAF posture scan\nPhase 1: Rule diff vs prod\nPhase 2: N1 box upgrade"
                             }
                             spellCheck={false}
-                            className="min-h-[110px] w-full resize-y rounded-[7px] border border-edge-mid bg-background px-2.5 py-2 font-mono text-[11px] leading-[1.7] text-primary placeholder:text-muted outline-none focus:border-accent/60"
+                            className="min-h-[110px] w-full resize-y rounded-[7px] border border-edge-mid bg-background px-2.5 py-2 text-[11px] leading-[1.7] text-primary placeholder:text-muted outline-none focus:border-accent/60"
                         />
                         {lines.length > 0 ? (
                             <>
                                 <div className="flex items-center gap-2">
                                     <span
-                                        className={cn("font-mono text-[10.5px]", dupes ? "text-error" : "text-ink-mid")}
+                                        className={cn(
+                                            "text-[10.5px] tabular-nums",
+                                            dupes ? "text-error" : "text-ink-mid"
+                                        )}
                                     >
                                         {dupes
                                             ? "duplicate chunk labels"
                                             : `${lines.length} chunks · ${stages} stage${stages === 1 ? "" : "s"} · ${ticked} done`}
                                     </span>
                                     <span className="flex-1" />
-                                    <span className="font-mono text-[10.5px] text-muted">tick what's already done</span>
+                                    <span className="text-[10.5px] text-muted">tick what's already done</span>
                                 </div>
                                 <div className="flex max-h-[170px] flex-col overflow-y-auto rounded-[7px] border border-edge-faint bg-surface px-2 py-1.5">
                                     {lines.map((l, i) => (
@@ -254,14 +257,14 @@ export function EffortCreateForm({
                                                 </span>
                                                 <span
                                                     className={cn(
-                                                        "min-w-0 flex-1 truncate font-mono text-[11.5px]",
+                                                        "min-w-0 flex-1 truncate text-[11.5px]",
                                                         l.checked ? "text-ink-mid line-through" : "text-primary"
                                                     )}
                                                 >
                                                     {l.label}
                                                 </span>
                                                 {isDupe(l, i) ? (
-                                                    <span className="flex-none font-mono text-[10.5px] text-error">
+                                                    <span className="flex-none text-[10.5px] text-error">
                                                         duplicate
                                                     </span>
                                                 ) : null}
@@ -282,7 +285,7 @@ export function EffortCreateForm({
                 {error != null ? (
                     <span className="min-w-0 flex-1 truncate text-[11px] text-error">{error}</span>
                 ) : (
-                    <span className="flex-1 font-mono text-[10.5px] text-ink-mid">
+                    <span className="flex-1 text-[10.5px] text-ink-mid">
                         {edit != null ? "changes apply immediately" : "ticked lines save as already done"}
                     </span>
                 )}
@@ -308,7 +311,7 @@ export function EffortCreateForm({
 
 function StageHeader({ label }: { label: string }) {
     return (
-        <div className="px-1 pb-0.5 pt-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[.08em] text-ink-mid">
+        <div className="px-1 pb-0.5 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.08em] text-ink-mid">
             {label}
         </div>
     );

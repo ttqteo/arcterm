@@ -132,11 +132,11 @@ export function AutonomyLadder() {
                 >
                     <div data-jarvis-autonomy="panel">
                         <div className="flex items-baseline gap-2 px-[9px] pb-1.5 pt-1">
-                            <span className="flex-none font-mono text-[9px] font-semibold uppercase tracking-[.09em] text-muted">
+                            <span className="flex-none text-[9px] font-semibold uppercase tracking-[.09em] text-muted">
                                 Autonomy
                             </span>
                             {/* the backend tier is per-channel, so the panel says how far a pick reaches */}
-                            <span className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-muted">
+                            <span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted">
                                 {rows.length === 1 ? "the one project" : `all ${rows.length} projects`}
                             </span>
                         </div>
@@ -173,7 +173,7 @@ export function AutonomyLadder() {
                                         </span>
                                     </span>
                                     {active ? (
-                                        <span className="flex-none pt-[3px] font-mono text-[11px] text-accent">✓</span>
+                                        <span className="flex-none pt-[3px] text-[11px] text-accent">✓</span>
                                     ) : null}
                                 </button>
                             );

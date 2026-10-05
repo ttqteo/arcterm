@@ -48,11 +48,11 @@ export function PeekEffortBody({ target }: { model: AgentsViewModel; target: Pee
     return (
         <div className="flex flex-col">
             <div className="flex items-center gap-2.5 px-3.5 py-3">
-                <span className="flex-none font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
+                <span className="flex-none text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                     Initiative
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink-hi">{m.title}</span>
-                <span className="flex-none rounded-[6px] border border-border bg-surface-raised px-2 py-[2px] font-mono text-[10.5px] font-semibold text-accent-soft">
+                <span className="flex-none rounded-[6px] border border-border bg-surface-raised px-2 py-[2px] text-[10.5px] font-semibold text-accent-soft">
                     {m.status}
                 </span>
             </div>
@@ -62,7 +62,7 @@ export function PeekEffortBody({ target }: { model: AgentsViewModel; target: Pee
                     <div className="flex items-baseline gap-2">
                         <span className="text-[12.5px] font-semibold text-secondary">{m.progress}</span>
                         <span className="flex-1" />
-                        {m.project ? <span className="font-mono text-[10.5px] text-muted">{m.project}</span> : null}
+                        {m.project ? <span className="text-[10.5px] text-muted">{m.project}</span> : null}
                     </div>
                     {m.segments.length > 0 ? (
                         <div
@@ -79,7 +79,7 @@ export function PeekEffortBody({ target }: { model: AgentsViewModel; target: Pee
                 {m.doneLine || m.remaining.length > 0 ? (
                     <div className="flex flex-col overflow-hidden rounded-[9px] border border-border bg-surface-code">
                         <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
-                            <span className="flex-none font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-mid">
+                            <span className="flex-none text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-mid">
                                 Chunks
                             </span>
                             <span className="h-px flex-1 bg-border" />
@@ -95,13 +95,13 @@ export function PeekEffortBody({ target }: { model: AgentsViewModel; target: Pee
                                 key={c.n}
                                 className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 border-t border-border px-3 py-[7px] first:border-t-0"
                             >
-                                <span className="font-mono text-[10.5px] text-muted">{c.n}</span>
+                                <span className="text-[10.5px] tabular-nums text-muted">{c.n}</span>
                                 <span
                                     className={cn("truncate text-[12.5px]", c.active ? "text-ink-hi" : "text-ink-mid")}
                                 >
                                     {c.label}
                                 </span>
-                                <span className={cn("font-mono text-[10.5px]", TONE_FG[c.tone])}>{c.status}</span>
+                                <span className={cn("text-[10.5px]", TONE_FG[c.tone])}>{c.status}</span>
                             </div>
                         ))}
                     </div>

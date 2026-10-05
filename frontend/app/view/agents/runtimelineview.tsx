@@ -35,9 +35,9 @@ export function RunTimeline({ channel, run }: { channel: Channel; run: Run }) {
                 onClick={() => setOpen((o) => !o)}
                 className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 hover:bg-surface-hover"
             >
-                <span className="shrink-0 font-mono text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
-                <span className="font-mono text-xxxs font-bold uppercase tracking-[0.08em] text-muted">Timeline</span>
-                <span className="text-[11px] text-secondary">{eventsCount(groups)} events</span>
+                <span className="shrink-0 text-xxxs text-edge-strong">{open ? "▼" : "▶"}</span>
+                <span className="text-xxxs font-bold uppercase tracking-[0.08em] text-muted">Timeline</span>
+                <span className="text-[11px] tabular-nums text-secondary">{eventsCount(groups)} events</span>
                 <span className="ml-auto text-[9px] text-success">● live</span>
             </button>
             <div className="max-h-[300px] overflow-y-auto border-t border-edge-mid px-3 py-2">
@@ -59,7 +59,7 @@ export function eventsCount(groups: RunTimelineGroup[]): number {
 export function GroupSection({ group, channel, run }: { group: RunTimelineGroup; channel: Channel; run: Run }) {
     return (
         <div>
-            <div className="px-1 pt-2 pb-1 font-mono text-xxxs font-bold uppercase tracking-[0.1em] text-edge-strong">
+            <div className="px-1 pt-2 pb-1 text-xxxs font-bold uppercase tracking-[0.1em] text-edge-strong">
                 {group.title}
             </div>
             {group.events.map((e) => (
@@ -88,14 +88,14 @@ function EventRow({
             <div
                 onClick={onClick}
                 style={onClick ? { cursor: "pointer" } : undefined}
-                className="flex items-center gap-2 rounded px-1 py-0.5 font-mono text-[11px] text-secondary hover:bg-surface-hover"
+                className="flex items-center gap-2 rounded px-1 py-0.5 text-[11px] text-secondary hover:bg-surface-hover"
             >
-                <span className="shrink-0 text-xxxs text-edge-strong">{tsLabel(event.ts)}</span>
+                <span className="shrink-0 text-xxxs tabular-nums text-edge-strong">{tsLabel(event.ts)}</span>
                 <span className={"shrink-0 text-[10px] " + toneFor(event.kind)}>●</span>
                 <span className="truncate">{eventText(event)}</span>
                 {artifacts.length > 0 && (
                     <span
-                        className="ml-auto shrink-0 cursor-pointer border-b border-dotted border-edge-strong text-[10px] text-accent-soft hover:text-accent"
+                        className="ml-auto shrink-0 cursor-pointer border-b border-dotted border-edge-strong font-mono text-[10px] text-accent-soft hover:text-accent"
                         onClick={(e) => {
                             e.stopPropagation(); // the row's own click target must not steal the artifact link
                             openArtifact(runTree(run), artifacts[0]);

@@ -136,7 +136,7 @@ export function GitFailurePanel({ failure, onRetry }: { failure: GitFailure; onR
                     <span className="min-w-0 flex-1 select-text truncate font-mono text-[11.5px] text-ink-mid">
                         {failure.command}
                     </span>
-                    <span className="flex-none rounded-[5px] border border-error/25 bg-error/12 px-[7px] py-[2px] font-mono text-[10.5px] font-semibold text-error">
+                    <span className="flex-none rounded-[5px] border border-error/25 bg-error/12 px-[7px] py-[2px] text-[10.5px] font-semibold tabular-nums text-error">
                         {exitLabel(failure)}
                     </span>
                     <button

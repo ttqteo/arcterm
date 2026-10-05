@@ -54,14 +54,14 @@ function StatCell({
 }) {
     return (
         <div className="border-r border-border px-4 py-3 last:border-r-0">
-            <div className="mb-1.5 font-mono text-[9px] font-semibold uppercase tracking-[.09em] text-muted">
+            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[.09em] text-muted">
                 {label}
             </div>
             <div className="flex items-center gap-1.5">
                 {dot ? <span className="h-[7px] w-[7px] rounded-full bg-success" /> : null}
                 <span className={"text-[15px] font-bold " + (valueClass ?? "text-primary")}>{value}</span>
             </div>
-            {sub ? <div className="mt-0.5 font-mono text-[10.5px] text-muted">{sub}</div> : null}
+            {sub ? <div className="mt-0.5 text-[10.5px] tabular-nums text-muted">{sub}</div> : null}
         </div>
     );
 }
@@ -70,7 +70,7 @@ function Section({ label, right, children }: { label: string; right?: ReactNode;
     return (
         <div className="border-b border-border px-[18px] py-4">
             <div className="mb-2.5 flex items-center gap-2.5">
-                <div className="font-mono text-[9px] font-semibold uppercase tracking-[.09em] text-muted">{label}</div>
+                <div className="text-[9px] font-semibold uppercase tracking-[.09em] text-muted">{label}</div>
                 <div className="flex-1" />
                 {right}
             </div>
@@ -98,10 +98,10 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                     <div className={cn(STAGE_GUTTER, "flex items-center gap-3 py-[13px]")}>
                         {/* uncapped: the goal here is a single truncated heading line, not prose */}
                         <div className="min-w-0">
-                            <div className="flex items-center gap-2 font-mono text-[11px] text-muted">
+                            <div className="flex items-center gap-2 text-[11px] text-muted">
                                 <span className="text-ink-mid">{channelProjectLabel(channel, projects)}</span>
                                 <span>/</span>
-                                <span>run {runShortId(run.id)}</span>
+                                <span className="font-mono">run {runShortId(run.id)}</span>
                             </div>
                             <div className="mt-0.5 truncate text-[16px] font-bold tracking-[-.01em] text-primary">
                                 {run.goal}
@@ -110,7 +110,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                         <div className="flex-1" />
                         <div className="flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-[5px]">
                             <span className="text-[12px] text-success">✓</span>
-                            <span className="font-mono text-[11px] font-bold uppercase tracking-[.02em] text-success">
+                            <span className="text-[11px] font-bold uppercase tracking-[.02em] text-success">
                                 Done
                             </span>
                         </div>
@@ -133,17 +133,17 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                             {/* sealed header */}
                             <div className="flex items-center gap-3 border-b border-accent/20 bg-accentbg px-[18px] py-3.5">
                                 <span className="text-[13px] text-accent">🔒</span>
-                                <span className="font-mono text-[10px] font-semibold uppercase tracking-[.11em] text-accent-soft">
+                                <span className="text-[10px] font-semibold uppercase tracking-[.11em] text-accent-soft">
                                     Evidence snapshot
                                 </span>
-                                <span className="rounded-[5px] border border-accent/25 bg-accentbg px-[7px] py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[.06em] text-accent-soft">
+                                <span className="rounded-[5px] border border-accent/25 bg-accentbg px-[7px] py-0.5 text-[9px] font-semibold uppercase tracking-[.06em] text-accent-soft">
                                     Immutable
                                 </span>
                                 <div className="flex-1" />
-                                <span className="font-mono text-[10.5px] text-muted">
+                                <span className="text-[10.5px] tabular-nums text-muted">
                                     sealed {fmtClock(ev.capturedts)}
                                 </span>
-                                <span className="font-mono text-[10.5px] text-ink-faint">·</span>
+                                <span className="text-[10.5px] text-ink-faint">·</span>
                                 <span className="font-mono text-[10.5px] text-muted">{ev.hash}</span>
                             </div>
 
@@ -170,7 +170,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                 {ev.summary ? (
                                     <div className="min-w-0 flex-1">
                                         <div className="mb-1.5 flex items-center gap-2">
-                                            <span className="rounded border border-edge-mid bg-background px-1.5 font-mono text-[9px] font-semibold uppercase tracking-[.07em] text-ink-mid">
+                                            <span className="rounded border border-edge-mid bg-background px-1.5 text-[9px] font-semibold uppercase tracking-[.07em] text-ink-mid">
                                                 final response
                                             </span>
                                         </div>
@@ -194,13 +194,13 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                 label="Files touched"
                                 right={
                                     <>
-                                        <span className="font-mono text-[10px] text-ink-faint">
+                                        <span className="text-[10px] text-ink-faint">
                                             git diff since run baseline
                                         </span>
-                                        <span className="font-mono text-[11px] font-semibold text-diff-added">
+                                        <span className="text-[11px] font-semibold tabular-nums text-diff-added">
                                             +{ev.addtotal}
                                         </span>
-                                        <span className="font-mono text-[11px] font-semibold text-diff-removed">
+                                        <span className="text-[11px] font-semibold tabular-nums text-diff-removed">
                                             −{ev.deltotal}
                                         </span>
                                     </>
@@ -216,7 +216,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                         >
                                             <span
                                                 className={
-                                                    "w-[15px] text-center font-mono text-[11px] font-bold " +
+                                                    "w-[15px] text-center text-[11px] font-bold " +
                                                     statColor(f.stat)
                                                 }
                                             >
@@ -225,10 +225,10 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-secondary">
                                                 {f.path}
                                             </span>
-                                            <span className="w-[34px] text-right font-mono text-[10.5px] font-semibold text-diff-added">
+                                            <span className="w-[34px] text-right text-[10.5px] font-semibold tabular-nums text-diff-added">
                                                 +{f.add}
                                             </span>
-                                            <span className="w-[30px] text-right font-mono text-[10.5px] font-semibold text-diff-removed">
+                                            <span className="w-[30px] text-right text-[10.5px] font-semibold tabular-nums text-diff-removed">
                                                 −{f.del}
                                             </span>
                                         </button>
@@ -241,13 +241,13 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                 label="Verification"
                                 right={
                                     <>
-                                        <span className="font-mono text-[10px] font-semibold text-success">
+                                        <span className="text-[10px] font-semibold tabular-nums text-success">
                                             {counts.pass} pass
                                         </span>
-                                        <span className="font-mono text-[10px] font-semibold text-error">
+                                        <span className="text-[10px] font-semibold tabular-nums text-error">
                                             {counts.fail} fail
                                         </span>
-                                        <span className="font-mono text-[10px] font-semibold text-warning">
+                                        <span className="text-[10px] font-semibold tabular-nums text-warning">
                                             {counts.unknown} unknown
                                         </span>
                                     </>
@@ -266,7 +266,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             >
                                                 <span
                                                     className={
-                                                        "flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[5px] font-mono text-[10px] font-bold " +
+                                                        "flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[5px] text-[10px] font-bold " +
                                                         tone.badgeClass
                                                     }
                                                 >
@@ -288,7 +288,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                                 ) : null}
                                                 <span
                                                     className={
-                                                        "font-mono text-[9px] font-semibold uppercase tracking-[.06em] " +
+                                                        "text-[9px] font-semibold uppercase tracking-[.06em] " +
                                                         tone.labelClass
                                                     }
                                                 >
@@ -316,7 +316,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                         >
                                             <span
                                                 className={
-                                                    "rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase " +
+                                                    "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase " +
                                                     artifactKindClass(a.kind)
                                                 }
                                             >
@@ -324,7 +324,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             </span>
                                             <span className="font-mono text-[12px] text-secondary">{a.path}</span>
                                             {a.size ? (
-                                                <span className="font-mono text-[10px] text-muted">
+                                                <span className="text-[10px] tabular-nums text-muted">
                                                     {fmtBytes(a.size)}
                                                 </span>
                                             ) : null}
@@ -344,7 +344,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                     className="flex items-center gap-2.5 rounded-[9px] bg-accent px-4 py-2.5 text-[12.5px] font-bold text-background hover:bg-accent/90"
                                 >
                                     <span className="text-[12px]">⑂</span>Open repository diff
-                                    <span className="font-mono text-[10.5px] text-background/60">
+                                    <span className="text-[10.5px] tabular-nums text-background/60">
                                         +{ev.addtotal} −{ev.deltotal}
                                     </span>
                                 </button>
@@ -356,11 +356,11 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
 
                         {/* phase history */}
                         <div className="mx-0.5 mb-3.5 mt-[26px] flex items-center gap-3">
-                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[.11em] text-muted">
+                            <span className="text-[10px] font-semibold uppercase tracking-[.11em] text-muted">
                                 Phase history
                             </span>
                             <div className="h-px flex-1 bg-border" />
-                            <span className="font-mono text-[11px] text-muted">
+                            <span className="text-[11px] tabular-nums text-muted">
                                 {nodes.length} phases · all complete
                             </span>
                         </div>
@@ -370,7 +370,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                     <div className="flex w-[38px] flex-none flex-col items-center">
                                         <div
                                             className={
-                                                "flex h-[26px] w-[26px] flex-none items-center justify-center border-[1.5px] border-success/50 bg-success/15 font-mono text-[11px] font-bold text-success " +
+                                                "flex h-[26px] w-[26px] flex-none items-center justify-center border-[1.5px] border-success/50 bg-success/15 text-[11px] font-bold tabular-nums text-success " +
                                                 (n.isGate || n.isBoundary ? "rounded-lg" : "rounded-full")
                                             }
                                         >
@@ -384,7 +384,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             {n.tag ? (
                                                 <span
                                                     className={
-                                                        "rounded border px-1.5 py-px font-mono text-xxxs font-semibold uppercase tracking-[.07em] " +
+                                                        "rounded border px-1.5 py-px text-xxxs font-semibold uppercase tracking-[.07em] " +
                                                         (n.isGate
                                                             ? "border-warning/30 bg-warning/10 text-warning"
                                                             : "border-accent/25 bg-accentbg text-accent-soft")
@@ -394,7 +394,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                                 </span>
                                             ) : null}
                                             <div className="flex-1" />
-                                            <span className="font-mono text-[10.5px] text-muted">{n.timeLabel}</span>
+                                            <span className="text-[10.5px] tabular-nums text-muted">{n.timeLabel}</span>
                                         </div>
                                         <div className="mt-0.5 font-mono text-[11px] text-muted">{n.detail}</div>
                                         {n.artifacts.map((art) => (
@@ -403,7 +403,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                                 onClick={() => openPath(runTree(run), art)}
                                                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-edge-mid bg-background px-2.5 py-1.5 hover:border-edge-strong"
                                             >
-                                                <span className="rounded bg-success/15 px-1.5 py-px font-mono text-xxxs font-bold text-success">
+                                                <span className="rounded bg-success/15 px-1.5 py-px text-xxxs font-bold text-success">
                                                     OUT
                                                 </span>
                                                 <span className="font-mono text-[11.5px] text-ink-mid">{art}</span>

@@ -97,7 +97,7 @@ function StatusPill({ status, land, survivorCount = 0 }: { status: string; land?
     return (
         <span
             className={
-                "inline-flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-[.08em] " +
+                "inline-flex items-center gap-1.5 text-[9px] font-semibold uppercase tabular-nums tracking-[.08em] " +
                 toneClass
             }
         >
@@ -113,7 +113,7 @@ export function CompactStepper({ run, expanded, onToggle }: { run: Run; expanded
             <button type="button" onClick={onToggle} className="w-3.5 flex-none text-[11px] text-muted">
                 {expanded ? "▾" : "▸"}
             </button>
-            <span className="flex-none font-mono text-[9px] font-semibold uppercase tracking-[.1em] text-muted">
+            <span className="flex-none text-[9px] font-semibold uppercase tracking-[.1em] text-muted">
                 Playbook
             </span>
             <div className="relative flex flex-1 justify-between">
@@ -123,7 +123,7 @@ export function CompactStepper({ run, expanded, onToggle }: { run: Run; expanded
                         <div key={i} className="flex flex-1 flex-col items-center gap-1.5 text-center">
                             <div
                                 className={
-                                    "flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border border-current font-mono text-xxxs font-bold " +
+                                    "flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border border-current text-xxxs font-bold " +
                                     (PHASE_TONE_CLASS[v.tone] ?? "text-muted")
                                 }
                             >
@@ -181,7 +181,7 @@ export function RunHeader({
                         <span
                             data-testid="run-runtime"
                             data-run-legacy={runtimeView.legacy ? "true" : "false"}
-                            className="inline-flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-[.08em] text-muted"
+                            className="inline-flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[.08em] text-muted"
                         >
                             <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
                             {runtimeView.label}
@@ -296,8 +296,8 @@ function DispatchedAgents({ model, leadId }: { model: AgentsViewModel; leadId: s
     return (
         <div className="mt-3 overflow-hidden rounded-[10px] border border-edge-mid bg-background">
             <div className="flex items-center gap-2 border-b border-edge-mid px-3 py-2">
-                <span className="font-mono text-xxxs font-bold uppercase tracking-[0.1em] text-muted">Dispatched</span>
-                <span className="font-mono text-[10px] text-secondary">{subs.length}</span>
+                <span className="text-xxxs font-bold uppercase tracking-[0.1em] text-muted">Dispatched</span>
+                <span className="text-[10px] tabular-nums text-secondary">{subs.length}</span>
             </div>
             <div className="sc max-h-[220px] overflow-y-auto py-1">
                 {subs.map((s) => {
@@ -311,7 +311,7 @@ function DispatchedAgents({ model, leadId }: { model: AgentsViewModel; leadId: s
                                 (s.transcriptPath ? "cursor-pointer hover:bg-surface-hover" : "")
                             }
                         >
-                            <span className="font-mono text-[11px] font-semibold text-edge-strong">↳</span>
+                            <span className="text-[11px] font-semibold text-edge-strong">↳</span>
                             <span
                                 className={
                                     "h-2 w-2 flex-none rounded-full bg-current " +
@@ -320,14 +320,14 @@ function DispatchedAgents({ model, leadId }: { model: AgentsViewModel; leadId: s
                                 }
                             />
                             <div className="min-w-0 flex-1">
-                                <div className="truncate font-mono text-[11.5px] font-semibold text-secondary">
+                                <div className="truncate text-[11.5px] font-semibold text-secondary">
                                     {s.type || "subagent"}
                                 </div>
                                 {s.model ? (
                                     <div className="truncate font-mono text-[9.5px] text-muted">{s.model}</div>
                                 ) : null}
                             </div>
-                            <span className={"shrink-0 whitespace-nowrap font-mono text-[9.5px] font-medium " + tone}>
+                            <span className={"shrink-0 whitespace-nowrap text-[9.5px] font-medium " + tone}>
                                 {s.state}
                             </span>
                         </div>
@@ -467,7 +467,7 @@ function PhaseNode({ tone, icon, done, notLast, idx }: { tone: string; icon: str
         <div data-phase-id={idx} className="flex w-9 flex-none flex-col items-center">
             <div
                 className={
-                    "flex h-9 w-9 flex-none items-center justify-center rounded-[10px] border border-current font-mono text-[14px] font-bold " +
+                    "flex h-9 w-9 flex-none items-center justify-center rounded-[10px] border border-current text-[14px] font-bold " +
                     (PHASE_TONE_CLASS[tone] ?? "text-muted") +
                     (settling ? " animate-[settle_0.5s_ease-out] motion-reduce:animate-none" : "")
                 }
@@ -517,7 +517,7 @@ export function PhaseRail({
                         {thread.showBoundary ? (
                             <div className="my-2 flex items-center gap-3">
                                 <div className="h-px flex-1 bg-[repeating-linear-gradient(90deg,var(--color-edge-mid)_0_5px,transparent_5px_10px)]" />
-                                <span className="font-mono text-[9.5px] font-semibold text-muted">
+                                <span className="text-[9.5px] font-semibold text-muted">
                                     context cleared → fresh worker
                                 </span>
                                 <div className="h-px flex-1 bg-[repeating-linear-gradient(90deg,var(--color-edge-mid)_0_5px,transparent_5px_10px)]" />
@@ -530,7 +530,7 @@ export function PhaseRail({
                                     <span className="text-[14px] font-bold text-primary">{p.kind}</span>
                                     <span
                                         className={
-                                            "font-mono text-[9px] font-semibold uppercase tracking-[.06em] " +
+                                            "text-[9px] font-semibold uppercase tracking-[.06em] " +
                                             (PHASE_TONE_CLASS[v.tone] ?? "text-muted")
                                         }
                                     >

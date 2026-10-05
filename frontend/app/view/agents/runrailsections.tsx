@@ -80,13 +80,13 @@ const RUN_STATUS: Record<string, { text: string; tone: string }> = {
 const ACTIVITY_MAX = 8;
 
 const LINK =
-    "-ml-[6px] w-fit cursor-pointer rounded-[7px] px-[6px] py-[3px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover";
+    "-ml-[6px] w-fit cursor-pointer rounded-[7px] px-[6px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover";
 
 function FactRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div className="flex items-baseline gap-[12px] border-b border-edge-faint py-[5px] last:border-b-0">
             <span className="flex-none text-[12.5px] text-muted">{label}</span>
-            <span className="min-w-0 flex-1 truncate text-right font-mono text-[12px] font-medium text-secondary">
+            <span className="min-w-0 flex-1 truncate text-right text-[12px] font-medium tabular-nums text-secondary">
                 {children}
             </span>
         </div>
@@ -173,14 +173,14 @@ function NeedsYouCard({
     const more = ask.questions.length - 1;
     return (
         <div className="rounded-[9px] border border-warning/45 bg-warning/[0.06] px-[11px] py-[9px]">
-            <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap font-mono text-[10.5px] text-muted">
+            <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap text-[10.5px] text-muted">
                 <span className="h-[7px] w-[7px] flex-none pulse-dot rounded-full bg-warning" />
-                <b className="font-semibold text-primary">{ask.taskid}</b>
+                <b className="font-mono font-semibold text-primary">{ask.taskid}</b>
                 <span className="truncate text-warning">waiting on you</span>
             </div>
             {first?.header ? <SubLabel className="mt-[6px] inline-block">{first.header}</SubLabel> : null}
             <div className="mt-[2px] line-clamp-2 text-[12.5px] leading-[1.45] text-primary">{first?.question}</div>
-            <div className="mt-[7px] flex items-center gap-[10px] font-mono text-[10.5px]">
+            <div className="mt-[7px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
                 {more > 0 ? <span className="text-muted">+{more} more</span> : null}
                 <div className="flex-1" />
                 <button
@@ -211,7 +211,7 @@ export function NeedsYouSection({ model, run, asks }: { model: AgentsViewModel; 
                     <div className="pb-[24px]">
                         <div className="flex items-center justify-between">
                             <SectionLabel className="text-warning">Needs you</SectionLabel>
-                            <span className="rounded-[20px] bg-warning/[0.12] px-[8px] py-[1px] font-mono text-[11px] font-semibold text-warning">
+                            <span className="rounded-[20px] bg-warning/[0.12] px-[8px] py-[1px] text-[11px] font-semibold tabular-nums text-warning">
                                 {asks.length}
                             </span>
                         </div>
@@ -256,15 +256,15 @@ function LeadAskCard({ model, run, ask }: { model: AgentsViewModel; run: RunInfo
     const first = ask.questions[0];
     return (
         <div className="rounded-[9px] border border-edge-mid bg-surface-raised px-[11px] py-[9px]">
-            <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap font-mono text-[10.5px] text-muted">
+            <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                 <span className="h-[7px] w-[7px] flex-none pulse-dot rounded-full bg-warning" />
-                <b className="font-semibold text-primary">{ask.taskid}</b>
+                <b className="font-mono font-semibold text-primary">{ask.taskid}</b>
                 <span className="truncate">{leadAnswering(ask, now)}</span>
             </div>
             {first?.header ? <SubLabel className="mt-[6px] inline-block">{first.header}</SubLabel> : null}
             <div className="mt-[2px] text-[12.5px] leading-[1.45] text-primary">{first?.question}</div>
             {ask.questions.length > 1 ? (
-                <div className="mt-[2px] font-mono text-[10.5px] text-muted">+{ask.questions.length - 1} more</div>
+                <div className="mt-[2px] text-[10.5px] tabular-nums text-muted">+{ask.questions.length - 1} more</div>
             ) : null}
             {error ? <div className="mt-[6px] text-[11px] text-warning">{error}</div> : null}
             <div className="mt-[7px] flex justify-end">
@@ -272,7 +272,7 @@ function LeadAskCard({ model, run, ask }: { model: AgentsViewModel; run: RunInfo
                     type="button"
                     onClick={() => takeOverChildAsk(run.channelId, run.runId, ask)}
                     title="Answer it yourself; the lead leaves it to you"
-                    className="cursor-pointer whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface px-[9px] py-[3px] font-mono text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary"
+                    className="cursor-pointer whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface px-[9px] py-[3px] text-[10.5px] font-semibold text-secondary hover:border-edge-strong hover:text-primary"
                 >
                     Take over
                 </button>
@@ -287,7 +287,7 @@ function LaneAsk({ model, run, ask }: { model: AgentsViewModel; run: RunInfo; as
     const error = useAtomValue(childAskErrorAtom)[childAskKey(ask)];
     return (
         <div className="mb-[6px] ml-[35px] mr-[6px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[7px]">
-            <div className="flex items-baseline gap-[8px] font-mono text-[10.5px] text-muted">
+            <div className="flex items-baseline gap-[8px] text-[10.5px] tabular-nums text-muted">
                 <span className="min-w-0 flex-1 truncate">
                     {ask.deadline
                         ? `asked the lead · ${formatLeft(Math.max(0, ask.deadline - now))}`
@@ -338,13 +338,13 @@ function Lanes({ model, run, leadAsks }: { model: AgentsViewModel; run: RunInfo;
                                 agent && "cursor-pointer"
                             )}
                         >
-                            <span className="flex h-[20px] w-[20px] items-center justify-center rounded-[5px] border border-edge-mid font-mono text-[10.5px] font-semibold text-ink-mid">
+                            <span className="flex h-[20px] w-[20px] items-center justify-center rounded-[5px] border border-edge-mid text-[10.5px] font-semibold tabular-nums text-ink-mid">
                                 {r.key}
                             </span>
                             <div className="min-w-0">
                                 <div
                                     className={cn(
-                                        "truncate font-mono text-[11.5px] font-medium",
+                                        "truncate text-[11.5px] font-medium",
                                         r.state === "pending" ? "text-ink-mid" : "text-ink-hi"
                                     )}
                                 >
@@ -356,7 +356,7 @@ function Lanes({ model, run, leadAsks }: { model: AgentsViewModel; run: RunInfo;
                             </div>
                             <span
                                 className={cn(
-                                    "flex items-center gap-[5px] whitespace-nowrap font-mono text-[10.5px] font-medium",
+                                    "flex items-center gap-[5px] whitespace-nowrap text-[10.5px] font-medium tabular-nums",
                                     LANE_TEXT[r.state]
                                 )}
                             >
@@ -394,8 +394,8 @@ function Activity({ model, run }: { model: AgentsViewModel; run: RunInfo }) {
     const [newest, ...older] = log;
     const more = older.length;
     const row = (l: (typeof log)[number]) => (
-        <div key={l.id} className="flex gap-[9px] font-mono text-[11px] leading-[1.45] text-secondary">
-            <span className="flex-none text-muted">{tsLabel(l.ts)}</span>
+        <div key={l.id} className="flex gap-[9px] text-[11px] leading-[1.45] text-secondary">
+            <span className="flex-none tabular-nums text-muted">{tsLabel(l.ts)}</span>
             <span className="min-w-0">{l.text}</span>
         </div>
     );
@@ -408,7 +408,7 @@ function Activity({ model, run }: { model: AgentsViewModel; run: RunInfo }) {
                     <button
                         type="button"
                         onClick={() => setOpen((v) => !v)}
-                        className="inline-flex cursor-pointer items-center gap-[3px] rounded-[6px] px-[6px] py-[2px] font-mono text-[10.5px] font-semibold text-muted hover:bg-surface-hover hover:text-secondary"
+                        className="inline-flex cursor-pointer items-center gap-[3px] rounded-[6px] px-[6px] py-[2px] text-[10.5px] font-semibold tabular-nums text-muted hover:bg-surface-hover hover:text-secondary"
                     >
                         {open ? "less" : `+${more} more`}
                     </button>
@@ -418,7 +418,7 @@ function Activity({ model, run }: { model: AgentsViewModel; run: RunInfo }) {
                         type="button"
                         data-peek
                         onClick={(e) => openRunDag(model, run, undefined, e)}
-                        className="inline-flex cursor-pointer items-center gap-[3px] rounded-[6px] px-[6px] py-[2px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
+                        className="inline-flex cursor-pointer items-center gap-[3px] rounded-[6px] px-[6px] py-[2px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
                     >
                         timeline
                         <ArrowUpRight size={11} aria-hidden />
@@ -494,7 +494,7 @@ export function RunSection({ model, run, asks }: { model: AgentsViewModel; run: 
             <div className="flex items-baseline justify-between gap-[8px]">
                 <SectionLabel>Run</SectionLabel>
                 {run.dag ? (
-                    <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-muted">
+                    <span className="whitespace-nowrap text-[11px] font-semibold tabular-nums text-muted">
                         {done}/{total}
                         {elapsed ? ` · ${formatElapsed(elapsed)}` : ""}
                     </span>
@@ -502,7 +502,7 @@ export function RunSection({ model, run, asks }: { model: AgentsViewModel; run: 
             </div>
             {run.dag == null ? (
                 // an absent dag is not "planning": a bounded run never submits one, so the run says where it is
-                <div className="font-mono text-[11px] text-muted">
+                <div className="text-[11px] text-muted">
                     {runStatusView(run.status ?? "planning").label} · no plan submitted
                 </div>
             ) : (

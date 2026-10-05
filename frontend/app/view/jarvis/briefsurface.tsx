@@ -97,7 +97,7 @@ import {
 } from "./briefrows";
 import { DeltaRowView, InitiativeRow, RunRowView, ShippedRowView, WaitingRow } from "./briefrowviews";
 import { BriefSheet } from "./briefsheet";
-import { LINK_BTN, MONO_FAINT, REGION_LABEL, SMALL_BTN } from "./briefstyle";
+import { FAINT_TEXT, LINK_BTN, REGION_LABEL, SMALL_BTN } from "./briefstyle";
 import { BriefToastView } from "./brieftoast";
 import { briefUndo, chunkKey, effortKey, noteKey, pendingDeleteKeysAtom } from "./briefundo";
 import { ChunkSidebar } from "./chunksidebar";
@@ -218,10 +218,10 @@ function RegionHead({
                 {label}
             </span>
             {count != null ? (
-                <span className="flex-none font-mono text-[10.5px] font-medium tabular-nums text-ink-mid">{count}</span>
+                <span className="flex-none text-[10.5px] font-medium tabular-nums text-ink-mid">{count}</span>
             ) : null}
             <span className="h-px min-w-3 flex-1 bg-edge-faint" />
-            <span className={cn("flex-none", MONO_FAINT)}>{only ? "showing only this · press to show all" : meta}</span>
+            <span className={cn("flex-none", FAINT_TEXT)}>{only ? "showing only this · press to show all" : meta}</span>
         </button>
     );
 }
@@ -242,7 +242,7 @@ function RunKindToggle({ value, onChange }: { value: RunKindFilter; onChange: (v
                     aria-pressed={value === k}
                     onClick={() => onChange(k)}
                     className={cn(
-                        "cursor-pointer rounded-[5px] border px-1.5 py-px font-mono text-[10.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        "cursor-pointer rounded-[5px] border px-1.5 py-px text-[10.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                         value === k
                             ? "border-edge-strong text-ink-hi"
                             : "border-transparent text-muted hover:text-ink-hi"
@@ -298,7 +298,7 @@ function Region({
             {empty ? (
                 <div className="flex items-center gap-[11px] rounded-[10px] border border-dashed border-edge-strong bg-surface px-4 py-3">
                     {region.ok ? (
-                        <span aria-hidden className="flex-none font-mono text-[12px] font-bold text-success">
+                        <span aria-hidden className="flex-none text-[12px] font-bold text-success">
                             ✓
                         </span>
                     ) : null}
@@ -349,7 +349,7 @@ function QueueSummaryView({
             <span className={cn("self-stretch rounded-[2px]", error ? "bg-error" : "bg-asking")} />
             <span className="min-w-0">
                 <span className="block truncate text-[13px] font-semibold text-ink-hi">{summary.title}</span>
-                <span className="mt-0.5 block truncate font-mono text-[10.5px] text-ink-mid">{summary.detail}</span>
+                <span className="mt-0.5 block truncate text-[10.5px] tabular-nums text-ink-mid">{summary.detail}</span>
             </span>
             <button
                 type="button"
@@ -357,7 +357,7 @@ function QueueSummaryView({
                 aria-controls="jarvis-attention-details"
                 onClick={onToggle}
                 data-jarvis-brief-attention-summary
-                className="flex-none cursor-pointer rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 py-1 font-mono text-[10.5px] font-semibold text-ink-mid hover:border-edge-strong hover:bg-surface-hover hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex-none cursor-pointer rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 py-1 text-[10.5px] font-semibold text-ink-mid hover:border-edge-strong hover:bg-surface-hover hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
                 {expanded ? "Hide" : `Review ${count}`}
             </button>
@@ -370,9 +370,7 @@ const keyOf = (line: BriefLine) => line.id.slice(line.id.indexOf(":") + 1);
 
 // a filter that matched nothing in a region leaves a sentence, not a heading over an empty frame
 function NoMatch() {
-    return (
-        <span className="px-[11px] py-1 font-mono text-[10.5px] text-ink-faint">Nothing here matches the filter.</span>
-    );
+    return <span className="px-[11px] py-1 text-[10.5px] text-ink-faint">Nothing here matches the filter.</span>;
 }
 
 // An initiative's name and its id are the two things you carry out of the Brief — into a prompt, a
@@ -1237,12 +1235,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     return (
         <div data-jarvis-region="brief" className="absolute inset-0 flex flex-col bg-background">
             <header className="flex h-[54px] flex-none items-center gap-2.5 border-b border-edge-faint bg-surface px-[22px]">
-                <span aria-hidden className="font-mono text-[12px] font-semibold text-accent-soft">
+                <span aria-hidden className="text-[12px] font-semibold text-accent-soft">
                     ◈
                 </span>
                 <span className="flex-none text-[15px] font-bold tracking-[-.01em] text-ink-hi">Jarvis</span>
                 {projectCount > 0 ? (
-                    <span className="whitespace-nowrap font-mono text-[10.5px] text-ink-mid">
+                    <span className="whitespace-nowrap text-[10.5px] tabular-nums text-ink-mid">
                         all work · {projectCount} {projectCount === 1 ? "project" : "projects"}
                     </span>
                 ) : null}
@@ -1252,7 +1250,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                     <span
                         data-jarvis-brief-band="waiting"
                         className={cn(
-                            "flex flex-none items-center gap-[7px] rounded-[6px] border px-2.5 py-[3px] font-mono text-[10.5px] font-bold uppercase tracking-[.06em] transition-colors duration-[140ms]",
+                            "flex flex-none items-center gap-[7px] rounded-[6px] border px-2.5 py-[3px] text-[10.5px] font-bold uppercase tracking-[.06em] transition-colors duration-[140ms]",
                             queue.length === 0
                                 ? "border-success/30 bg-success/15 text-success"
                                 : "border-asking/30 bg-asking/15 text-asking"
@@ -1275,7 +1273,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 ) : null}
                 <span
                     data-jarvis-brief-band="fleet"
-                    className="flex-none whitespace-nowrap font-mono text-[10.5px] text-ink-mid"
+                    className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-ink-mid"
                 >
                     {fleet.line}
                 </span>
@@ -1308,7 +1306,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                     />
                     {filtering ? (
                         <>
-                            <span className="flex-none whitespace-nowrap font-mono text-[10.5px] text-muted">
+                            <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                                 {view.visible.length} {view.visible.length === 1 ? "hit" : "hits"}
                             </span>
                             <button
@@ -1354,7 +1352,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                         animate="animate"
                         exit="exit"
                         data-jarvis-brief-band="stale"
-                        className="flex flex-none items-center gap-2 overflow-hidden border-b border-edge-faint px-[22px] py-1 font-mono text-[10.5px] text-error"
+                        className="flex flex-none items-center gap-2 overflow-hidden border-b border-edge-faint px-[22px] py-1 text-[10.5px] text-error"
                     >
                         <X size={12} aria-hidden className="flex-none" />
                         refresh failed — showing the previous snapshot
@@ -1444,7 +1442,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                     type="button"
                                                     data-jarvis-queue-ack-all
                                                     onClick={ackAll}
-                                                    className={cn(SMALL_BTN, "flex-none font-mono")}
+                                                    className={cn(SMALL_BTN, "flex-none")}
                                                 >
                                                     Acknowledge {ackable.length} unverified
                                                 </button>
@@ -1752,7 +1750,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                         <div className="flex items-center gap-[9px]">
                                             <span className={cn(REGION_LABEL, "text-ink-mid")}>Behind you</span>
                                             <span className="h-px min-w-3 flex-1 bg-edge-faint" />
-                                            <span className={MONO_FAINT}>
+                                            <span className={FAINT_TEXT}>
                                                 {sinceLabel(
                                                     cursorTs,
                                                     snapshot?.queryStartedAt ?? Date.now(),
@@ -1767,7 +1765,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                         const undo = markBriefingSeen();
                                                         briefUndo.notify("Marked seen", undo);
                                                     }}
-                                                    className="cursor-pointer font-mono text-[10.5px] text-accent-soft hover:underline"
+                                                    className="cursor-pointer text-[10.5px] text-accent-soft hover:underline"
                                                 >
                                                     mark seen
                                                 </button>
@@ -1783,7 +1781,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 .filter((g) => g.label !== SHIPPED_LABEL)
                                                 .map((g) => (
                                                     <div key={g.label} className="flex flex-col">
-                                                        <div className="px-[11px] pb-0.5 pt-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
+                                                        <div className="px-[11px] pb-0.5 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
                                                             {g.label}
                                                         </div>
                                                         {g.lines.map((l) => (
@@ -1805,9 +1803,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 expanded={behindOpen}
                                                 onToggle={() => toggleRegion("behind")}
                                             />
-                                            <div className="flex items-center gap-2 px-[11px] pb-0.5 pt-3 font-mono text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
+                                            <div className="flex items-center gap-2 px-[11px] pb-0.5 pt-3 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
                                                 <span>{SHIPPED_LABEL}</span>
-                                                <span className="font-normal tracking-[.04em]">
+                                                <span className="font-normal tracking-[.04em] tabular-nums">
                                                     {shippedAll.length}
                                                 </span>
                                             </div>
@@ -1836,7 +1834,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                     type="button"
                                                     data-jarvis-brief-shipped-more
                                                     onClick={() => setShippedOpen(!shippedOpen)}
-                                                    className="cursor-pointer self-start px-[11px] py-[7px] font-mono text-[10.5px] text-accent-soft hover:underline"
+                                                    className="cursor-pointer self-start px-[11px] py-[7px] text-[10.5px] text-accent-soft hover:underline"
                                                 >
                                                     {shippedOpen
                                                         ? "show less"

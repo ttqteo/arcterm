@@ -88,6 +88,8 @@ function useThemeColors() {
             edgeSemantic: c("--color-graph-semantic"),
             ring: c("--color-foreground"),
             bg: c("--color-background"),
+            // ctx.font can't take var() either
+            font: s.getPropertyValue("--font-sans").trim() || "Inter, system-ui, sans-serif",
         };
     }, []);
 }
@@ -360,7 +362,7 @@ export function JarvisGraph() {
             if (la > 0.05) {
                 const title = truncateTitle(node.label);
                 const fs = 12.5 / scale;
-                ctx.font = `600 ${fs}px ui-monospace, monospace`;
+                ctx.font = `600 ${fs}px ${colors.font}`;
                 const tw = ctx.measureText(title).width;
                 const padX = 4 / scale;
                 const lx = node.x! + ext + 4 / scale;
@@ -538,7 +540,7 @@ export function JarvisGraph() {
                             className="h-[8px] w-[8px]"
                             style={{ background: colors.fill(k), borderRadius: k === "run" ? 0 : 9999 }}
                         />
-                        <span className="font-mono text-[10.5px] capitalize text-ink-mid">{k}</span>
+                        <span className="text-[10.5px] capitalize text-ink-mid">{k}</span>
                     </div>
                 ))}
             </div>

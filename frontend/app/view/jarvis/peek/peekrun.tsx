@@ -18,7 +18,7 @@ import { useAtomValue } from "jotai";
 import { Check, X } from "lucide-react";
 import { Fragment, useEffect } from "react";
 import { RUN_TONE } from "../briefpeekview";
-import { MONO_FAINT, REGION_LABEL } from "../briefstyle";
+import { FAINT_TEXT, REGION_LABEL } from "../briefstyle";
 import { reportPeekFacts, type PeekTarget } from "../peekstore";
 import { runGraphRef } from "../runsheetmodel";
 import {
@@ -63,7 +63,7 @@ function PhaseCell({ phase }: { phase: PeekPhase }) {
             data-peek-run-phase={phase.label}
             className="flex min-w-0 flex-col gap-1 rounded-[8px] border border-edge-mid px-2.5 py-2"
         >
-            <span className="font-mono text-[10px] uppercase tracking-[.06em] text-muted">{phase.label}</span>
+            <span className="text-[10px] uppercase tracking-[.06em] text-muted">{phase.label}</span>
             <span className={cn("flex min-w-0 items-center gap-1.5 text-[12px] font-semibold", TONE_TEXT[phase.tone])}>
                 <ToneMark tone={phase.tone} size={11} />
                 <span className="truncate">{phase.state}</span>
@@ -80,7 +80,7 @@ function TaskRowView({ row }: { row: PeekTaskRow }) {
             <span aria-label={row.state} className={cn("flex justify-center", TONE_TEXT[row.mark])}>
                 <ToneMark tone={row.mark} size={12} />
             </span>
-            <span className="text-right font-mono text-[10.5px] text-muted">{row.tokens}</span>
+            <span className="text-right text-[10.5px] tabular-nums text-muted">{row.tokens}</span>
         </div>
     );
 }
@@ -94,7 +94,7 @@ function RunPeekView({ view }: { view: PeekRunView }) {
                 <span
                     data-peek-run-status={view.status.label}
                     className={cn(
-                        "inline-flex flex-none items-center gap-[5px] rounded-[6px] border border-border bg-surface-raised px-2 py-0.5 font-mono text-[10.5px] font-semibold",
+                        "inline-flex flex-none items-center gap-[5px] rounded-[6px] border border-border bg-surface-raised px-2 py-0.5 text-[10.5px] font-semibold",
                         RUN_TONE[view.status.tone]
                     )}
                 >
@@ -103,7 +103,7 @@ function RunPeekView({ view }: { view: PeekRunView }) {
                 </span>
             </div>
             <div className="flex flex-col gap-3.5 px-[18px] py-[15px]">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[10.5px] text-ink-mid">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10.5px] tabular-nums text-ink-mid">
                     {view.meta.map((m, i) => (
                         <Fragment key={i}>
                             {i > 0 ? <span className="text-ink-faint">·</span> : null}
@@ -145,11 +145,11 @@ function RunPeekView({ view }: { view: PeekRunView }) {
                             <span className={cn(REGION_LABEL, "text-ink-mid")}>Tasks</span>
                             <span className="h-px flex-1 bg-edge-faint" />
                             {view.commits != null ? (
-                                <span className={cn("flex-none", MONO_FAINT)}>{view.commits}</span>
+                                <span className={cn("flex-none", FAINT_TEXT)}>{view.commits}</span>
                             ) : null}
                         </div>
                         {view.tasks.length === 0 ? (
-                            <div className="px-3 py-2.5 font-mono text-[11px] text-muted">The plan has no tasks.</div>
+                            <div className="px-3 py-2.5 text-[11px] text-muted">The plan has no tasks.</div>
                         ) : (
                             <div className="grid grid-cols-2 py-[3px]">
                                 {view.tasks.map((t) => (

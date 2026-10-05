@@ -84,7 +84,7 @@ function DetailLine({
             <span
                 title={title}
                 dir={clipStart ? "rtl" : undefined}
-                className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px] font-medium text-secondary"
+                className="min-w-0 flex-1 truncate text-left text-[11.5px] font-medium tabular-nums text-secondary"
             >
                 {clipStart ? <bdi dir="ltr">{children}</bdi> : children}
             </span>
@@ -93,7 +93,7 @@ function DetailLine({
 }
 
 const RESET_BTN =
-    "flex-none cursor-pointer rounded-[6px] px-[6px] py-[2px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover";
+    "flex-none cursor-pointer rounded-[6px] px-[6px] py-[2px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover";
 
 // onReset, when given, offers Compact and Clear under the note: they shrink what every turn re-reads
 function ContextLine({ pct, max, onReset }: { pct: number; max?: number; onReset?: (cmd: string) => void }) {
@@ -104,11 +104,11 @@ function ContextLine({ pct, max, onReset }: { pct: number; max?: number; onReset
             <div title={note || undefined} className="flex min-w-0 items-center gap-[10px]">
                 <span className="w-[52px] shrink-0 text-[12px] text-muted">Context</span>
                 <Meter pct={pct} fill={GAUGE_FILL[level]} height={5} radius={3} track="bg-border" className="flex-1" />
-                <span className={cn("w-[34px] text-right font-mono text-[11.5px] font-semibold", GAUGE_TEXT[level])}>
+                <span className={cn("w-[34px] text-right text-[11.5px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
                     {Math.round(pct)}%
                 </span>
             </div>
-            {note ? <div className="pl-[62px] font-mono text-[10.5px] text-muted">{note}</div> : null}
+            {note ? <div className="pl-[62px] text-[10.5px] tabular-nums text-muted">{note}</div> : null}
             {onReset ? (
                 <div className="flex gap-[4px] pl-[56px]">
                     <button
@@ -154,7 +154,7 @@ function RailStrip({ needs, ctxPct, ctxMax }: { needs: number; ctxPct?: number; 
                             initial="initial"
                             animate="animate"
                             exit="exit"
-                            className="absolute -right-[8px] -top-[6px] flex h-[16px] min-w-[16px] items-center justify-center rounded-[8px] border-2 border-surface bg-warning px-[3px] font-mono text-[10.5px] font-bold leading-none text-on-warning"
+                            className="absolute -right-[8px] -top-[6px] flex h-[16px] min-w-[16px] items-center justify-center rounded-[8px] border-2 border-surface bg-warning px-[3px] text-[10.5px] font-bold tabular-nums leading-none text-on-warning"
                         >
                             {needs}
                         </motion.span>
@@ -173,7 +173,7 @@ function RailStrip({ needs, ctxPct, ctxMax }: { needs: number; ctxPct?: number; 
                         />
                     </span>
                     <span
-                        className={cn("font-mono text-[10.5px] font-semibold", GAUGE_TEXT[level])}
+                        className={cn("text-[10.5px] font-semibold tabular-nums", GAUGE_TEXT[level])}
                         style={{ transition: tween(["color"]) }}
                     >
                         {Math.round(ctxPct)}%
@@ -200,13 +200,13 @@ function FileRow({
     const body = (
         <>
             <span className={cn("flex-none font-bold", statusColor(status))}>{status}</span>
-            <span className="min-w-0 flex-1 truncate">{path}</span>
-            <span className="flex-none text-[10.5px] text-diff-added">+{adds}</span>
-            {dels > 0 ? <span className="flex-none text-[10.5px] text-diff-removed">−{dels}</span> : null}
+            <span className="min-w-0 flex-1 truncate font-mono">{path}</span>
+            <span className="flex-none text-[10.5px] tabular-nums text-diff-added">+{adds}</span>
+            {dels > 0 ? <span className="flex-none text-[10.5px] tabular-nums text-diff-removed">−{dels}</span> : null}
         </>
     );
     const cls =
-        "flex items-center gap-[8px] rounded-sm px-[5px] py-[3px] text-left font-mono text-[11.5px] font-medium text-secondary";
+        "flex items-center gap-[8px] rounded-sm px-[5px] py-[3px] text-left text-[11.5px] font-medium text-secondary";
     if (!onClick) {
         return <div className={cls}>{body}</div>;
     }
@@ -237,8 +237,8 @@ function BackgroundTaskRow({ task, live }: { task: BackgroundTask; live: boolean
             className="flex items-center gap-[10px] rounded-[8px] bg-surface-raised px-[11px] py-[8px]"
         >
             <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", BG_DOT[label])} />
-            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-secondary">{task.label}</span>
-            <span className="whitespace-nowrap font-mono text-[10.5px] text-muted">{label}</span>
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">{task.label}</span>
+            <span className="whitespace-nowrap text-[10.5px] text-muted">{label}</span>
         </div>
     );
 }
@@ -257,7 +257,7 @@ function SealedFiles({ files }: { files: EvidenceFile[] }) {
                     <FileRow key={f.path} status={f.status} path={f.path} adds={f.adds} dels={f.dels} />
                 ))}
             </div>
-            <div className="mt-[8px] font-mono text-[10.5px] text-muted">{filesSummary(changes)}</div>
+            <div className="mt-[8px] text-[10.5px] tabular-nums text-muted">{filesSummary(changes)}</div>
         </>
     );
 }
@@ -379,14 +379,9 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         className="h-[7px] w-[7px] shrink-0 rounded-full"
                         style={{ background: SUB_COLOR[subVM?.state ?? "done"] }}
                     />
-                    <span className="min-w-0 truncate font-mono text-[14px] font-semibold text-primary">
-                        {sub?.label}
-                    </span>
+                    <span className="min-w-0 truncate text-[14px] font-semibold text-primary">{sub?.label}</span>
                     {subVM ? (
-                        <span
-                            className="ml-auto font-mono text-[10.5px] font-semibold"
-                            style={{ color: SUB_COLOR[subVM.state] }}
-                        >
+                        <span className="ml-auto text-[10.5px] font-semibold" style={{ color: SUB_COLOR[subVM.state] }}>
                             {subVM.state === "failure" ? "failed" : subVM.state}
                         </span>
                     ) : null}
@@ -394,7 +389,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 <button
                     type="button"
                     onClick={() => globalStore.set(focusSubagentAtom, null)}
-                    className="-ml-[6px] inline-flex w-fit cursor-pointer items-center gap-[4px] rounded-[7px] px-[6px] py-[3px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
+                    className="-ml-[6px] inline-flex w-fit cursor-pointer items-center gap-[4px] rounded-[7px] px-[6px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
                 >
                     <ArrowLeft size={11} aria-hidden />
                     back to {agent.name}
@@ -431,13 +426,13 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 style={{ background: SUB_COLOR[s.state] }}
                             />
                             <div className="min-w-0 flex-1">
-                                <div className="truncate font-mono text-[11.5px] font-semibold text-secondary">
+                                <div className="truncate text-[11.5px] font-semibold text-secondary">
                                     {s.type || "subagent"}
                                 </div>
                                 <div className="truncate font-mono text-[10.5px] text-muted">{s.model ?? ""}</div>
                             </div>
                             <span
-                                className="whitespace-nowrap font-mono text-[10.5px] font-semibold"
+                                className="whitespace-nowrap text-[10.5px] font-semibold"
                                 style={{ color: SUB_COLOR[s.state] }}
                             >
                                 {s.state === "failure" ? "failed" : s.state}
@@ -474,7 +469,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                             />
                         ))}
                     </div>
-                    <div className="mt-[8px] flex items-center gap-[10px] font-mono text-[10.5px]">
+                    <div className="mt-[8px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
                         <span className="text-muted">{filesSummary(changes)}</span>
                         <span className="flex-1" />
                         <button
@@ -500,7 +495,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 {tools.map((t) => (
                     <span
                         key={t.verb}
-                        className="flex items-baseline gap-[5px] rounded-sm border border-edge-mid bg-surface-raised px-[9px] py-[4px] font-mono text-[11px] font-medium"
+                        className="flex items-baseline gap-[5px] rounded-sm border border-edge-mid bg-surface-raised px-[9px] py-[4px] text-[11px] font-medium tabular-nums"
                     >
                         <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
                         <span className="text-[10.5px] text-muted">×{t.count}</span>
@@ -527,11 +522,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <>
                         <DetailLine label="Project">{agentProject(lineage, agents, agent) || "—"}</DetailLine>
                         <DetailLine label="Branch" title={branch || undefined}>
-                            {branch || "—"}
+                            <span className="font-mono">{branch || "—"}</span>
                         </DetailLine>
                         {worktree ? (
                             <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
-                                {worktree}
+                                <span className="font-mono">{worktree}</span>
                             </DetailLine>
                         ) : null}
                         <DetailLine
@@ -595,9 +590,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             footer={
                 action ? (
                     <div className="flex items-center gap-[10px]">
-                        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
-                            {action.hint}
-                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">{action.hint}</span>
                         {action.kind === "resume" ? (
                             <button
                                 type="button"

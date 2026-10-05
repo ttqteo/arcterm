@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { stepPick } from "./newrun";
 import { homeFromInfo, pickerSections, projectWhere, recentNames } from "./projectpicker";
 
-const GROUP_LABEL = "px-3 pb-0.5 pt-2 font-mono text-[10px] uppercase tracking-[.08em] text-muted";
+const GROUP_LABEL = "px-3 pb-0.5 pt-2 text-[10px] uppercase tracking-[.08em] text-muted";
 
 export function ProjectPicker({
     projects,
@@ -224,7 +224,7 @@ export function ProjectPicker({
                             <span className="px-3 py-1.5 text-[12px] text-muted">No project matches.</span>
                         ) : null}
                     </div>
-                    <div className="flex items-center gap-3.5 border-t border-border px-3 py-1.5 font-mono text-[10px] text-muted">
+                    <div className="flex items-center gap-3.5 border-t border-border px-3 py-1.5 text-[10px] text-muted">
                         <span>↑↓ move</span>
                         <span>⏎ pick</span>
                         <span>esc close</span>

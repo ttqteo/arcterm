@@ -36,7 +36,7 @@ export function SubagentInterior({ sub, parentName }: { sub: FocusSubagent; pare
             animate={{ opacity: 1 }}
             transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
         >
-            <div className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-2 font-mono text-[11px]">
+            <div className="flex shrink-0 items-center gap-2 border-b border-edge-mid bg-surface px-3 py-2 text-[11px]">
                 <button type="button" onClick={back} title="Back to parent (Esc)" className="cursor-pointer text-muted hover:text-primary">
                     ◂ {parentName}
                 </button>

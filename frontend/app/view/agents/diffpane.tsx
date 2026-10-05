@@ -153,10 +153,10 @@ export function DiffPane({
                     </span>
                     <span className="flex-none font-semibold text-ink-hi">{file}</span>
                 </span>
-                <span className="flex-none font-mono text-[11px] font-bold text-diff-added">+{adds}</span>
-                <span className="flex-none font-mono text-[11px] font-bold text-diff-removed">−{dels}</span>
+                <span className="flex-none text-[11px] font-bold tabular-nums text-diff-added">+{adds}</span>
+                <span className="flex-none text-[11px] font-bold tabular-nums text-diff-removed">−{dels}</span>
                 {empty?.kind === "toolarge" && pair != null ? (
-                    <span className="flex-none font-mono text-[11px] text-muted">{fmtBytes(pair.size)}</span>
+                    <span className="flex-none text-[11px] tabular-nums text-muted">{fmtBytes(pair.size)}</span>
                 ) : null}
                 <div className="flex-1" />
                 {navPos != null && navPos.total > 0 ? (
@@ -169,7 +169,7 @@ export function DiffPane({
                         >
                             <ChevronUp size={14} />
                         </button>
-                        <span className="text-center font-mono text-[11px] text-muted">
+                        <span className="text-center text-[11px] tabular-nums text-muted">
                             {layout.labelled ? "change " : ""}
                             {navPos.index}/{navPos.total}
                         </span>

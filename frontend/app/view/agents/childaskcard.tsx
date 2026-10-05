@@ -65,7 +65,7 @@ export function ChildAskCard({ channelId, runId }: { channelId: string; runId: s
                 <MessageCircleQuestion size={13} aria-hidden className="flex-none text-warning" />
                 <span className={cn(REGION_LABEL, "text-warning")}>Questions for you</span>
                 <div className="flex-1" />
-                <span className="font-mono text-[10.5px] text-muted">{asks.length} waiting</span>
+                <span className="text-[10.5px] tabular-nums text-muted">{asks.length} waiting</span>
             </div>
             <div className="flex flex-col gap-2 px-3.5 py-3">
                 {asks.map((a) => {

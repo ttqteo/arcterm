@@ -58,7 +58,7 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
     const missing = childRunId == null || paths[childRunId] === "";
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <div className="mx-[22px] mt-[12px] flex flex-none items-center gap-[10px] rounded-[6px] border border-edge-mid bg-surface-raised px-[12px] py-[8px] font-mono text-[11px] text-muted">
+            <div className="mx-[22px] mt-[12px] flex flex-none items-center gap-[10px] rounded-[6px] border border-edge-mid bg-surface-raised px-[12px] py-[8px] text-[11px] text-muted">
                 <span>●</span>
                 <span className="min-w-0 flex-1 truncate">
                     {task ? endedLine(task, run?.digest) : "Session ended · read-only transcript"}

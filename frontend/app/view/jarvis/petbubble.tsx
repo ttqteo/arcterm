@@ -48,7 +48,7 @@ export function EventLabel({ event, className }: { event: PetEvent; className?: 
     return (
         <span
             className={cn(
-                "inline-flex items-center gap-1.5 font-mono font-semibold uppercase tracking-[.09em]",
+                "inline-flex items-center gap-1.5 font-semibold uppercase tracking-[.09em]",
                 tone.label,
                 className
             )}

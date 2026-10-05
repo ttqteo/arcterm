@@ -70,7 +70,7 @@ function CollectorList() {
                     key={c.name}
                     className="grid grid-cols-[84px_minmax(0,1fr)] items-baseline gap-3 bg-background px-3.5 py-2"
                 >
-                    <span className="font-mono text-[11.5px] text-ink-hi">{c.name}</span>
+                    <span className="text-[11.5px] text-ink-hi">{c.name}</span>
                     <span className="text-[12.5px] text-muted">{c.examines}</span>
                 </div>
             ))}
@@ -97,7 +97,7 @@ function ScanProgress({ title, rows, since }: { title: string; rows: CoverageRow
         <CollectorTable>
             <div className="flex items-center gap-2.5 bg-surface px-3.5 py-2">
                 <SubLabel className="flex-1">{title}</SubLabel>
-                <span className="font-mono text-[11px] text-ink-mid">
+                <span className="text-[11px] tabular-nums text-ink-mid">
                     {done} of {rows.length} done
                     {since ? <Elapsed since={since} /> : null}
                 </span>
@@ -108,13 +108,13 @@ function ScanProgress({ title, rows, since }: { title: string; rows: CoverageRow
                     className="grid grid-cols-[14px_84px_minmax(0,1fr)_72px] items-center gap-3 bg-background px-3.5 py-2"
                 >
                     <CellGlyph cell={r.cell} />
-                    <span className={cn("font-mono text-[11.5px]", r.cell === "queued" ? "text-muted" : "text-ink-hi")}>
+                    <span className={cn("text-[11.5px]", r.cell === "queued" ? "text-muted" : "text-ink-hi")}>
                         {r.name}
                     </span>
                     <span className="truncate text-[12.5px] text-muted">{r.examines}</span>
                     <span
                         className={cn(
-                            "text-right font-mono text-[10.5px] uppercase tracking-[0.06em]",
+                            "text-right text-[10.5px] uppercase tracking-[0.06em]",
                             STATUS_TONE[r.cell]
                         )}
                     >
@@ -134,13 +134,13 @@ function FailureFacts({ report }: { report: RadarReport }) {
     const fact = (label: string, value: string, tone: string) => (
         <div className="flex items-baseline gap-2.5">
             <span className={cn(REGION_LABEL, "w-16 text-muted")}>{label}</span>
-            <span className={cn("font-mono text-xs", tone)}>{value}</span>
+            <span className={cn("text-xs", tone)}>{value}</span>
         </div>
     );
     return (
         <div className="flex flex-col gap-1.5 rounded-[10px] border border-edge-mid bg-surface-code px-3.5 py-2.5 text-left">
-            {fact("Error", error, "text-error-soft")}
-            {fact("Kept", `${kept} of ${rows.length} collectors${payload}`, "text-ink-mid")}
+            {fact("Error", error, "font-mono text-error-soft")}
+            {fact("Kept", `${kept} of ${rows.length} collectors${payload}`, "tabular-nums text-ink-mid")}
         </div>
     );
 }

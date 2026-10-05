@@ -64,7 +64,7 @@ export function StatusMark({ status, className }: { status: Status; className?: 
     const st = STATUS_STYLE[status.key];
     return (
         <span
-            className={cn("inline-flex flex-none items-center gap-[5px] font-mono text-[10.5px]", className)}
+            className={cn("inline-flex flex-none items-center gap-[5px] text-[10.5px] tabular-nums", className)}
             style={{ color: st.color }}
         >
             {st.mark === "pulse" || st.mark === "dot" ? (
@@ -159,11 +159,11 @@ function ViewToggle({ model, className }: { model: AgentsViewModel; className?: 
 
 function Meta({ items, className }: { items: { k: string; v: string }[]; className?: string }) {
     return (
-        <div className={cn("flex flex-wrap items-center gap-3.5 font-mono text-[11px]", className)}>
+        <div className={cn("flex flex-wrap items-center gap-3.5 text-[11px] tabular-nums", className)}>
             {items.map((m) => (
                 <span key={m.k}>
                     <span className="text-muted">{m.k} </span>
-                    <span className="text-secondary">{m.v}</span>
+                    <span className={cn("text-secondary", m.k === "branch" && "font-mono")}>{m.v}</span>
                 </span>
             ))}
         </div>
@@ -216,7 +216,7 @@ function ActivityList({ events }: { events: SessionEvent[] }) {
                     key={i}
                     className="grid grid-cols-[44px_8px_minmax(0,1fr)] gap-x-3.5 border-b border-edge-faint py-2.5"
                 >
-                    <span className="pt-0.5 font-mono text-[10.5px] text-muted">{clock(e.ts)}</span>
+                    <span className="pt-0.5 text-[10.5px] tabular-nums text-muted">{clock(e.ts)}</span>
                     <span
                         className="mt-[7px] h-[7px] w-[7px] rounded-full"
                         style={{ backgroundColor: eventColor(e.type) }}
@@ -224,7 +224,7 @@ function ActivityList({ events }: { events: SessionEvent[] }) {
                     <span className="min-w-0">
                         <span className="block text-[13px] leading-[1.5] text-secondary">{e.text}</span>
                         <span
-                            className="mt-0.5 block font-mono text-[10.5px] uppercase tracking-[0.06em]"
+                            className="mt-0.5 block text-[10.5px] uppercase tracking-[0.06em]"
                             style={{ color: eventColor(e.type) }}
                         >
                             {e.type}
@@ -300,7 +300,7 @@ function RuntimeTile({ runtime }: { runtime: string }) {
     return (
         <span
             className={cn(
-                "flex h-[42px] w-[42px] flex-none items-center justify-center rounded-[10px] border font-mono text-[15px]",
+                "flex h-[42px] w-[42px] flex-none items-center justify-center rounded-[10px] border text-[15px]",
                 rt.text,
                 rt.softBg,
                 rt.line
@@ -370,7 +370,7 @@ function MemberRow({
                 current ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <span className={cn("text-center font-mono text-[10.5px]", isLead ? rt.text : "text-muted")}>
+            <span className={cn("text-center text-[10.5px] tabular-nums", isLead ? rt.text : "text-muted")}>
                 {isLead ? rt.glyph : member.num}
             </span>
             <span
@@ -382,10 +382,10 @@ function MemberRow({
                 {member.label}
             </span>
             <StatusMark status={member.status} />
-            <span className="text-right font-mono text-[10.5px] text-muted">
+            <span className="text-right text-[10.5px] tabular-nums text-muted">
                 {member.tokens > 0 ? formatTokens(member.tokens) : "—"}
             </span>
-            <span className="text-right font-mono text-[10.5px] text-muted">
+            <span className="text-right text-[10.5px] tabular-nums text-muted">
                 {member.durationMs > 0 ? formatAgeShort(member.durationMs) : "—"}
             </span>
         </button>
@@ -473,7 +473,7 @@ export function RunDetail({
                     <div className="flex items-center gap-2.5 pb-1.5">
                         <h3 className={cn(REGION_LABEL, "text-muted")}>In this run</h3>
                         <div className="h-px flex-1 bg-edge-faint" />
-                        <span className="font-mono text-[10.5px] text-muted">
+                        <span className="text-[10.5px] tabular-nums text-muted">
                             {view.total > 0 ? `${view.landed}/${view.total} landed` : "planning"}
                         </span>
                     </div>

@@ -44,7 +44,7 @@ export function AmbientTags({ oref, links }: AmbientRef) {
                     key={t.taskId}
                     title={tagTitle(t)}
                     className={cn(
-                        "rounded-[4px] border px-1.5 py-px font-mono text-[9px] uppercase tracking-[.06em]",
+                        "rounded-[4px] border px-1.5 py-px text-[9px] uppercase tracking-[.06em]",
                         t.state === "informing" ? "border-dashed" : "border-solid",
                         chipTone(t)
                     )}

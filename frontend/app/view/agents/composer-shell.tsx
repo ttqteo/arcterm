@@ -87,7 +87,7 @@ export function ComposerShell({
             >
                 {isDragging ? (
                     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-surface-raised/80">
-                        <span className="font-mono text-[12px] font-semibold text-accent-soft">Drop files to attach</span>
+                        <span className="text-[12px] font-semibold text-accent-soft">Drop files to attach</span>
                     </div>
                 ) : null}
                 {attachments}

@@ -303,7 +303,7 @@ function StatusMark({ s }: { s: CodeStatus | undefined }) {
     }
     const g = statusGlyph(s.status);
     return (
-        <span data-code-status={g.letter} title={g.label} className={cn("font-mono text-[10.5px]", g.className)}>
+        <span data-code-status={g.letter} title={g.label} className={cn("text-[10.5px]", g.className)}>
             {g.letter}
         </span>
     );

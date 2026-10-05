@@ -84,7 +84,7 @@ import { ProjectPicker } from "./projectpickerview";
 // the window clears it once read.
 export const newRunPrefillAtom = atom<NewRunPrefill | null>(null) as PrimitiveAtom<NewRunPrefill | null>;
 
-const FIELD_LABEL = "font-mono text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
+const FIELD_LABEL = "text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
 const CANCEL_BTN =
     "cursor-pointer rounded-[7px] border border-border bg-surface-raised px-3.5 py-1.5 text-[11.5px] font-semibold text-secondary hover:text-primary";
 // RoutePicker caps its trigger for the inline rows it usually sits in; a Models row gives it the column
@@ -205,10 +205,10 @@ function PlanTable({ result, workers }: { result: CommandDagPlanPreviewRtnData; 
                 {result.title ? (
                     <span className="min-w-0 truncate text-[14px] font-semibold text-ink-hi">{result.title}</span>
                 ) : null}
-                <span className="flex-none font-mono text-[10.5px] text-ink-mid">{planShapeText(result.shape)}</span>
+                <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">{planShapeText(result.shape)}</span>
                 <span
                     className={cn(
-                        "ml-auto flex-none font-mono text-[10.5px]",
+                        "ml-auto flex-none text-[10.5px] tabular-nums",
                         mix.accent ? "text-accent-soft" : "text-ink-mid"
                     )}
                 >
@@ -216,7 +216,7 @@ function PlanTable({ result, workers }: { result: CommandDagPlanPreviewRtnData; 
                 </span>
             </div>
             {planWarnings(result.shape, result.verify).map((warning) => (
-                <span key={warning} className="font-mono text-[10.5px] text-warning">
+                <span key={warning} className="text-[10.5px] text-warning">
                     {warning}
                 </span>
             ))}
@@ -224,7 +224,7 @@ function PlanTable({ result, workers }: { result: CommandDagPlanPreviewRtnData; 
                 <div
                     className={cn(
                         PLAN_GRID,
-                        "sticky top-0 border-b border-border bg-surface py-1.5 font-mono text-[10px] uppercase tracking-[.08em] text-muted"
+                        "sticky top-0 border-b border-border bg-surface py-1.5 text-[10px] uppercase tracking-[.08em] text-muted"
                     )}
                 >
                     <span>task</span>
@@ -240,12 +240,9 @@ function PlanTable({ result, workers }: { result: CommandDagPlanPreviewRtnData; 
                     >
                         <span className="font-mono text-[10.5px] text-muted">{row.id}</span>
                         <span className="truncate text-[12px] text-ink-hi">{row.title}</span>
-                        <span className="font-mono text-[10.5px] text-ink-mid">{row.lane}</span>
+                        <span className="text-[10.5px] tabular-nums text-ink-mid">{row.lane}</span>
                         <span className="truncate font-mono text-[10.5px] text-muted">{row.needs}</span>
-                        <span
-                            title={row.model}
-                            className={cn("truncate font-mono text-[10.5px]", MODEL_TONE[row.tone])}
-                        >
+                        <span title={row.model} className={cn("truncate text-[10.5px]", MODEL_TONE[row.tone])}>
                             {row.model}
                         </span>
                     </div>
@@ -439,11 +436,11 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
                 data-new-run-window
                 className="flex shrink-0 items-center gap-[11px] border-b border-border px-[18px] py-[15px]"
             >
-                <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accentbg font-mono text-[10.5px] font-bold text-accent-soft">
+                <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accentbg text-[10.5px] font-bold text-accent-soft">
                     ▸
                 </div>
                 <span className="flex-1 text-[15px] font-semibold text-primary">New run</span>
-                <span className="rounded-[5px] border border-edge-mid px-[7px] py-0.5 font-mono text-[10.5px] text-ink-mid">
+                <span className="rounded-[5px] border border-edge-mid px-[7px] py-0.5 text-[10.5px] text-ink-mid">
                     ctrl+⏎ to start
                 </span>
             </div>
@@ -505,11 +502,8 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
                             )}
                             {orchestrator && prototype !== "" ? (
                                 <div className="flex items-center gap-1.5">
-                                    <span
-                                        title={prototype}
-                                        className="min-w-0 truncate font-mono text-[11px] text-muted"
-                                    >
-                                        Prototype · {prototype}
+                                    <span title={prototype} className="min-w-0 truncate text-[11px] text-muted">
+                                        Prototype · <span className="font-mono">{prototype}</span>
                                     </span>
                                     <button
                                         type="button"
@@ -527,7 +521,7 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
                         {error != null ? (
                             <span className="min-w-0 flex-1 truncate text-[11px] text-error">{error}</span>
                         ) : (
-                            <span className="flex-1 truncate font-mono text-[10.5px] text-ink-mid">
+                            <span className="flex-1 truncate text-[10.5px] tabular-nums text-ink-mid">
                                 {/* the blocker first whenever there is one: a disabled Start run that
                                     named the shape instead of saying "Write the goal" read as a dead
                                     button, which is what a silent click on it looks like */}

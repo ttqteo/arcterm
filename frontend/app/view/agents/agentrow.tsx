@@ -53,7 +53,7 @@ const CTL_BOX =
 
 // the header's count chips (subagents, tasks, diff); each adds its own hover
 const CHIP =
-    "flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] font-mono text-[10.5px] font-semibold text-ink-mid";
+    "flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] text-[10.5px] font-semibold tabular-nums text-ink-mid";
 
 const SUB_COLOR: Record<SubagentState, string> = {
     working: "var(--color-accent)",
@@ -101,7 +101,7 @@ function TaskPopover({
         <div onClick={(e) => e.stopPropagation()}>
             <div className="mb-2.5 flex items-center gap-2">
                 <SubLabel>Task list</SubLabel>
-                <span className="rounded-[5px] border border-edge-mid bg-surface px-1.5 py-px font-mono text-[10.5px] text-secondary">
+                <span className="rounded-[5px] border border-edge-mid bg-surface px-1.5 py-px text-[10.5px] tabular-nums text-secondary">
                     {done}/{total}
                 </span>
                 <div className="flex-1" />
@@ -130,7 +130,7 @@ function TaskPopover({
                         </span>
                         <span
                             className={cn(
-                                "font-mono text-[11.5px] leading-[1.5]",
+                                "text-[11.5px] leading-[1.5]",
                                 t.done ? "text-muted line-through" : "text-secondary"
                             )}
                         >
@@ -171,13 +171,10 @@ function FanoutBadge({ subs, onOpen }: { subs: SubagentVM[]; onOpen: () => void 
                                 className="h-[7px] w-[7px] shrink-0 rounded-full"
                                 style={{ background: SUB_COLOR[s.state] }}
                             />
-                            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-secondary">
+                            <span className="min-w-0 flex-1 truncate text-[10.5px] text-secondary">
                                 {s.type || "subagent"}
                             </span>
-                            <span
-                                className="font-mono text-[10.5px] font-semibold"
-                                style={{ color: SUB_COLOR[s.state] }}
-                            >
+                            <span className="text-[10.5px] font-semibold" style={{ color: SUB_COLOR[s.state] }}>
                                 {s.state === "failure" ? "failed" : s.state}
                             </span>
                         </div>
@@ -436,7 +433,7 @@ export const AgentRow = memo(function AgentRow({
                 >
                     <Check size={12} aria-hidden className="shrink-0 text-accent-soft" />
                     <span className={cn(REGION_LABEL, "text-accent-soft")}>Finished</span>
-                    <span className="min-w-0 flex-1 font-mono text-[10.5px] text-muted">
+                    <span className="min-w-0 flex-1 text-[10.5px] tabular-nums text-muted">
                         <FinishedAge agent={agent} nowAtom={nowAtom} />
                     </span>
                     {diff ? (
@@ -446,7 +443,7 @@ export const AgentRow = memo(function AgentRow({
                             className="flex h-[23px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border border-accent/45 bg-transparent px-[9px] text-[11.5px] font-semibold text-accent-soft hover:bg-accent/10"
                         >
                             Review changes
-                            <span className="font-mono text-[10.5px]">
+                            <span className="text-[10.5px] tabular-nums">
                                 <span className="text-diff-added">+{diff.adds}</span>{" "}
                                 <span className="text-diff-removed">−{diff.dels}</span>
                             </span>

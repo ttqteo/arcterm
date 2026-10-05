@@ -48,14 +48,14 @@ export function IdleSection({ agents, onOpen }: { agents: AgentVM[]; onOpen: (id
                                         <span className="h-2 w-2 shrink-0 rounded-full bg-muted" />
                                         <b className="shrink-0 text-[12px] text-secondary">{a.name}</b>
                                         {project ? (
-                                            <span className="shrink-0 rounded-[5px] border border-edge-mid bg-surface-raised px-1.5 py-px font-mono text-[10.5px] text-muted">
+                                            <span className="shrink-0 rounded-[5px] border border-edge-mid bg-surface-raised px-1.5 py-px text-[10.5px] text-muted">
                                                 {project}
                                             </span>
                                         ) : null}
                                         <span className="min-w-0 flex-1 truncate text-[12px] text-muted">
                                             {a.activity}
                                         </span>
-                                        <span className="ml-auto shrink-0 font-mono text-[10.5px] text-muted">
+                                        <span className="ml-auto shrink-0 text-[10.5px] tabular-nums text-muted">
                                             {formatAge(a.activeMs)} idle
                                         </span>
                                     </div>

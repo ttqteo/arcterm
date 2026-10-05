@@ -189,10 +189,8 @@ function Header({ agent, review }: { agent: AgentVM; review: DocReview }) {
         >
             <div className="flex items-center gap-2">
                 <span className="h-[7px] w-[7px] rounded-full bg-warning" aria-hidden />
-                <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-warning">
-                    {copy.eyebrow}
-                </span>
-                <span className="truncate font-mono text-[10.5px] text-muted">· waiting on you · {agent.name}</span>
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-warning">{copy.eyebrow}</span>
+                <span className="truncate text-[10.5px] text-muted">· waiting on you · {agent.name}</span>
                 <div className="flex-1" />
                 <button
                     type="button"
@@ -284,7 +282,7 @@ function AskPane({ review }: { review: DocReview }) {
     return (
         <div className="flex w-[380px] flex-none flex-col bg-surface-raised">
             <div className="sc flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-5 pb-5 pt-4">
-                <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
+                <div className="text-[10.5px] font-bold uppercase tabular-nums tracking-[0.1em] text-muted">
                     {COPY[review.kind].list} · {review.items.length}
                 </div>
                 {review.intro.length > 0 ? (
@@ -296,7 +294,9 @@ function AskPane({ review }: { review: DocReview }) {
                 <ol className={cn("m-0 flex list-none flex-col p-0", numbered ? "gap-2.5" : "gap-3")}>
                     {review.items.map((item, i) => (
                         <li key={i} className={cn(numbered && "grid grid-cols-[22px_minmax(0,1fr)]")}>
-                            {numbered ? <span className="pt-0.5 font-mono text-[11px] text-muted">{i + 1}</span> : null}
+                            {numbered ? (
+                                <span className="pt-0.5 text-[11px] tabular-nums text-muted">{i + 1}</span>
+                            ) : null}
                             <MarkdownMessage text={item} className="text-[13px] leading-[1.5] text-secondary" />
                         </li>
                     ))}

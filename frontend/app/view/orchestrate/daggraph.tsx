@@ -344,7 +344,7 @@ function DagGraphInner({ oref, owner, harnesses }: { oref: string; owner: Run; h
     return (
         <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-background">
             <DagGraphHeader group={group} owner={owner} />
-            <div className="flex flex-none items-center gap-[18px] border-b border-border bg-surface px-4 py-1.5 font-mono text-[10.5px] text-ink-mid">
+            <div className="flex flex-none items-center gap-[18px] border-b border-border bg-surface px-4 py-1.5 text-[10.5px] tabular-nums text-ink-mid">
                 <span>
                     Run route · {owner.runtime || "unavailable"} / {owner.model || "default"}
                 </span>
@@ -454,7 +454,7 @@ function ZoomCluster({ onFit }: { onFit: () => void }) {
     const { zoomIn, zoomOut } = useReactFlow();
     return (
         <div className="flex flex-col overflow-hidden rounded-[7px] border border-edge-mid bg-surface-raised">
-            <div className="border-b border-edge-mid py-1 text-center font-mono text-[10.5px] text-ink-mid">
+            <div className="border-b border-edge-mid py-1 text-center text-[10.5px] tabular-nums text-ink-mid">
                 {Math.round(zoom * 100)}%
             </div>
             <button type="button" onClick={onFit} aria-label="Fit graph" title="Fit graph (f)" className={ZOOM_BTN}>

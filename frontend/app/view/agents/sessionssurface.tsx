@@ -282,7 +282,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
                     title="Sessions"
                     badge={
                         liveCount > 0 ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-pill px-[9px] py-[3px] font-mono text-[10.5px] text-secondary">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary">
                                 <span className="h-1.5 w-1.5 pulse-dot rounded-full bg-working" />
                                 {liveCount} {liveCount === 1 ? "agent" : "agents"} live
                             </span>
@@ -309,7 +309,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
                                 >
                                     {f.label}
                                     {f.key === "needs" && needsCount > 0 ? (
-                                        <span className="font-mono text-[10.5px] text-asking">{needsCount}</span>
+                                        <span className="text-[10.5px] tabular-nums text-asking">{needsCount}</span>
                                     ) : null}
                                 </button>
                             ))}
@@ -352,7 +352,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
                         >
                             <Activity size={14} strokeWidth={1.8} className="flex-none text-ink-mid" aria-hidden />
                             <span className="flex-1 text-[12.5px] font-semibold text-secondary">All activity</span>
-                            <span className="font-mono text-[10.5px] text-muted">
+                            <span className="text-[10.5px] tabular-nums text-muted">
                                 {totalEvents(scopedSessions)} events
                             </span>
                         </button>
@@ -392,7 +392,7 @@ export function SessionsSurface({ model }: { model: AgentsViewModel }) {
                                     <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-3">
                                         <span className={cn(REGION_LABEL, "text-muted")}>{g.label}</span>
                                         <div className="h-px flex-1 bg-edge-faint" />
-                                        <span className="font-mono text-[10.5px] text-muted">{g.items.length}</span>
+                                        <span className="text-[10.5px] tabular-nums text-muted">{g.items.length}</span>
                                     </div>
                                     <AnimatePresence initial={false} mode="popLayout">
                                         {g.items.map((r) =>
@@ -500,7 +500,7 @@ function RunCard({
                     <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary">{view.title}</span>
                     <StatusMark status={head} />
                 </span>
-                <span className="flex w-full items-center gap-2 font-mono text-[10.5px] text-muted">
+                <span className="flex w-full items-center gap-2 text-[10.5px] tabular-nums text-muted">
                     {view.segs.length > 0 ? (
                         <span className="flex gap-[3px]" aria-hidden="true">
                             {view.segs.map((k, i) => (
@@ -545,7 +545,7 @@ function RunCard({
                         >
                             <span
                                 className={cn(
-                                    "text-center font-mono text-[10.5px]",
+                                    "text-center text-[10.5px] tabular-nums",
                                     m.key === LEAD_MEMBER ? rt.text : "text-muted"
                                 )}
                             >
@@ -593,12 +593,12 @@ function SoloCard({
                 </span>
                 <StatusMark status={soloStatus(session, now)} />
             </span>
-            <span className="flex w-full items-center gap-2 font-mono text-[10.5px] text-muted">
+            <span className="flex w-full items-center gap-2 text-[10.5px] tabular-nums text-muted">
                 <span className={rt.text}>{rt.glyph}</span>
                 <span className="min-w-0 truncate text-secondary" title={session.projectname}>
                     {session.projectname}
                 </span>
-                <span className="min-w-0 truncate" title={session.branch || undefined}>
+                <span className="min-w-0 truncate font-mono" title={session.branch || undefined}>
                     {session.branch || "—"}
                 </span>
                 <span className="flex-1" />
@@ -627,7 +627,7 @@ function MergedFeed({
             <div className="mb-1.5 flex items-center gap-2.5">
                 <h2 className={cn(REGION_LABEL, "text-muted")}>All activity</h2>
                 <div className="h-px flex-1 bg-edge-faint" />
-                <span className="font-mono text-[10.5px] text-muted">{feed.length} events</span>
+                <span className="text-[10.5px] tabular-nums text-muted">{feed.length} events</span>
             </div>
             {feed.length === 0 ? (
                 <div className="mt-8 text-center text-[13px] text-muted">No recent activity.</div>
@@ -646,7 +646,7 @@ function MergedFeed({
                             />
                             <span className="min-w-0">
                                 <span className="block text-[13px] leading-[1.5] text-secondary">{e.text}</span>
-                                <span className="mt-[3px] flex items-center gap-2 whitespace-nowrap font-mono text-[10.5px]">
+                                <span className="mt-[3px] flex items-center gap-2 whitespace-nowrap text-[10.5px]">
                                     <span
                                         className="flex-none uppercase tracking-[0.06em]"
                                         style={{ color: eventColor(e.type) }}
@@ -656,7 +656,7 @@ function MergedFeed({
                                     <span className="min-w-0 truncate text-muted">{e.sessionTitle}</span>
                                 </span>
                             </span>
-                            <span className="pt-0.5 font-mono text-[10.5px] text-muted">
+                            <span className="pt-0.5 text-[10.5px] tabular-nums text-muted">
                                 {now - e.ts < 60_000 ? "now" : formatAge(now - e.ts)}
                             </span>
                         </button>

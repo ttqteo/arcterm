@@ -65,7 +65,7 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
                 </div>
                 <div className="flex flex-col gap-[15px] px-[18px] py-4">
                     <div>
-                        <div className="mb-[9px] font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted">
+                        <div className="mb-[9px] text-[10px] font-semibold uppercase tracking-[0.1em] text-muted">
                             Name
                         </div>
                         <input
@@ -77,7 +77,7 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
                         />
                     </div>
                     <div>
-                        <div className="mb-[9px] font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-muted">
+                        <div className="mb-[9px] text-[10px] font-semibold uppercase tracking-[0.1em] text-muted">
                             Local path
                         </div>
                         <div className="flex items-center gap-2">

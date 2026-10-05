@@ -3,7 +3,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { MONO_META } from "@/app/view/jarvis/briefstyle";
+import { META_TEXT } from "@/app/view/jarvis/briefstyle";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { useEffect, useState } from "react";
 import type { AgentsViewModel } from "../agents/agents";
@@ -76,24 +76,24 @@ export function DagDetailRail({
         <div className="flex flex-none flex-col gap-1.5 border-t border-border bg-lane px-4 py-2.5">
             <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                    <div className={MONO_META}>
+                    <div className={META_TEXT}>
                         {view.id} · {view.state}
                         {view.gate ? " · gate" : ""}
                     </div>
                     <div className="truncate text-[13px] font-semibold text-ink-hi">{view.label}</div>
                     <div
-                        className="truncate font-mono text-[10.5px] text-secondary"
+                        className="truncate text-[10.5px] tabular-nums text-secondary"
                         data-dag-node-route={`${view.route.source}:${view.route.runtime}:${view.route.model}`}
                     >
                         <span className="text-ink-mid">worker</span> · {routeSourceLabel(view.route.source)} ·{" "}
                         {view.route.runtime} / {view.route.model || "default"} · {view.route.resolvedModel}
                         {view.meta ? ` · ${view.meta}` : ""}
                     </div>
-                    <div className="truncate font-mono text-[10.5px] text-secondary">
+                    <div className="truncate text-[10.5px] tabular-nums text-secondary">
                         <span className="text-ink-mid">review</span> · {view.reviewLine}
                     </div>
                     {spent ? (
-                        <div className="truncate font-mono text-[10.5px] text-secondary">
+                        <div className="truncate text-[10.5px] tabular-nums text-secondary">
                             <span className="text-ink-mid">tokens</span> · {usageText(spent, usage.sealed)} ·{" "}
                             {modelsText(spent)}
                         </div>
@@ -224,7 +224,7 @@ function SelectedTaskWorker({
     const worker: TaskWorkerView = resolveTaskWorker({ id: taskNode.id, runid: taskNode.runid }, childRun, agents);
     if (worker.state === "pending") {
         return (
-            <div className={`flex items-center gap-1.5 ${MONO_META}`}>
+            <div className={`flex items-center gap-1.5 ${META_TEXT}`}>
                 <span className="h-1.5 w-1.5 rounded-full bg-edge-strong" />
                 Not dispatched yet
             </div>
@@ -240,7 +240,7 @@ function SelectedTaskWorker({
                         e.stopPropagation();
                         openFromGraph(worker, model);
                     }}
-                    className="flex-none cursor-pointer rounded-[5px] border border-accent/50 px-1.5 py-0.5 font-mono text-[10.5px] font-bold text-accent-soft hover:border-accent"
+                    className="flex-none cursor-pointer rounded-[5px] border border-accent/50 px-1.5 py-0.5 text-[10.5px] font-bold text-accent-soft hover:border-accent"
                 >
                     Open in Agent ↗
                 </button>
@@ -248,7 +248,7 @@ function SelectedTaskWorker({
         );
     }
     return (
-        <div className={`flex min-w-0 items-center gap-2 ${MONO_META}`}>
+        <div className={`flex min-w-0 items-center gap-2 ${META_TEXT}`}>
             <span className="shrink-0">Worker session unavailable</span>
             <div className="flex-1" />
             <button
@@ -257,7 +257,7 @@ function SelectedTaskWorker({
                     e.stopPropagation();
                     openFromGraph(worker, model);
                 }}
-                className="flex-none cursor-pointer rounded-[5px] border border-edge-mid px-1.5 py-0.5 font-mono text-[10.5px] text-secondary hover:border-edge-strong"
+                className="flex-none cursor-pointer rounded-[5px] border border-edge-mid px-1.5 py-0.5 text-[10.5px] text-secondary hover:border-edge-strong"
             >
                 View child run
             </button>

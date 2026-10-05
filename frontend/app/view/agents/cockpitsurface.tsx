@@ -563,7 +563,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                                 <RollingCount
                                     value={count}
                                     className={cn(
-                                        "font-mono text-[17px] font-semibold",
+                                        "text-[17px] font-semibold",
                                         count > 0 || chip === key ? TAB_TONE[key].text : "text-muted"
                                     )}
                                 />

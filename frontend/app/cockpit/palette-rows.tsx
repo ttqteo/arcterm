@@ -119,7 +119,7 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 }
 
 function VerbHint({ verb }: { verb: string }) {
-    return <span className="shrink-0 font-mono text-[10.5px] text-accent-soft">{verb} ⏎</span>;
+    return <span className="shrink-0 text-[10.5px] text-accent-soft">{verb} ⏎</span>;
 }
 
 interface RowProps {
@@ -158,7 +158,7 @@ function RichRow({ it, idx, active, onHover, onFire }: RowProps) {
             <span className={cn("shrink-0 text-[13px] font-medium", active ? "text-primary" : "text-secondary")}>
                 {it.title}
             </span>
-            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">{it.desc}</span>
+            <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">{it.desc}</span>
             {!active && it.chord ? <Chord keys={it.chord} /> : null}
             {active ? <VerbHint verb={it.verb} /> : null}
         </button>
@@ -243,7 +243,7 @@ function PlainRow({ it, idx, active, query, onHover, onFire, onActions }: RowPro
             {it.status ? (
                 <span
                     className={cn(
-                        "flex shrink-0 items-center gap-[5px] font-mono text-[10.5px]",
+                        "flex shrink-0 items-center gap-[5px] text-[10.5px]",
                         TONE_TEXT[it.status.tone]
                     )}
                 >
@@ -264,12 +264,12 @@ function PlainRow({ it, idx, active, query, onHover, onFire, onActions }: RowPro
                 </span>
             ) : null}
             {it.archived ? (
-                <span className="shrink-0 rounded-[5px] border border-edge-mid px-1.5 py-px font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted">
+                <span className="shrink-0 rounded-[5px] border border-edge-mid px-1.5 py-px text-[10.5px] uppercase tracking-[0.08em] text-muted">
                     archived
                 </span>
             ) : null}
             {it.meta ? (
-                <span className="max-w-[190px] shrink-0 truncate font-mono text-[10.5px] text-muted">{it.meta}</span>
+                <span className="max-w-[190px] shrink-0 truncate text-[10.5px] tabular-nums text-muted">{it.meta}</span>
             ) : null}
             {it.chord ? <Chord keys={it.chord} /> : null}
             {active ? <VerbHint verb={it.verb} /> : null}
@@ -282,7 +282,7 @@ function PlainRow({ it, idx, active, query, onHover, onFire, onActions }: RowPro
 function ActionsHint({ count, active, onOpen }: { count: number; active: boolean; onOpen: () => void }) {
     if (!active) {
         return (
-            <span aria-hidden className="shrink-0 font-mono text-[12px] text-ink-faint">
+            <span aria-hidden className="shrink-0 text-[12px] text-ink-faint">
                 ›
             </span>
         );
@@ -294,7 +294,7 @@ function ActionsHint({ count, active, onOpen }: { count: number; active: boolean
                 e.stopPropagation();
                 onOpen();
             }}
-            className="shrink-0 cursor-pointer rounded-[5px] border border-accent-700 px-1.5 py-px font-mono text-[10.5px] text-accent-soft"
+            className="shrink-0 cursor-pointer rounded-[5px] border border-accent-700 px-1.5 py-px text-[10.5px] text-accent-soft"
         >
             → {count} actions
         </span>
@@ -346,7 +346,7 @@ export function PaletteGroupView({ group, indexOf, selected, query, onHover, onF
             ) : null}
             {rows}
             {group.overflow > 0 ? (
-                <div className="py-0.5 pl-[34px] pr-2.5 font-mono text-[10.5px] text-muted">
+                <div className="py-0.5 pl-[34px] pr-2.5 text-[10.5px] tabular-nums text-muted">
                     +{group.overflow} more{group.more ? ` · ${group.more}` : ", keep typing"}
                 </div>
             ) : null}

@@ -13,7 +13,7 @@ import { useState } from "react";
 import { briefUndo } from "./briefundo";
 import { parseRunReport, type ReportItem } from "./runreport";
 
-const LINK = "cursor-pointer font-mono text-[10.5px] text-accent-soft hover:text-accent";
+const LINK = "cursor-pointer text-[10.5px] text-accent-soft hover:text-accent";
 const DOT: Record<ReportItem["dot"], string> = {
     ok: "bg-success",
     warn: "bg-asking",
@@ -32,7 +32,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
         <div data-jarvis-run-report className={cn("flex flex-col", compact ? "gap-2.5" : "gap-3.5 pt-4")}>
             <div className="flex items-center gap-2.5">
                 <SectionLabel>run report</SectionLabel>
-                <span className="min-w-0 truncate font-mono text-[10.5px] text-muted">{report.title}</span>
+                <span className="min-w-0 truncate text-[10.5px] text-muted">{report.title}</span>
                 <span className="flex-1" />
                 <button type="button" onClick={() => setRaw(!raw)} className={cn(LINK, "flex-none")}>
                     {raw ? "structured" : "raw markdown"}
@@ -49,7 +49,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                 </button>
             </div>
             {report.lead !== "" ? (
-                <div className="break-words font-mono text-[11px] leading-[1.55] text-secondary">{report.lead}</div>
+                <div className="break-words text-[11px] leading-[1.55] text-secondary">{report.lead}</div>
             ) : null}
             {raw ? (
                 <pre className="m-0 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] border border-border bg-surface px-[13px] py-3 font-mono text-[11px] leading-[1.6] text-secondary">
@@ -61,7 +61,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                         <div key={sec.heading} className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-2 pb-1">
                                 <SectionLabel>{sec.heading}</SectionLabel>
-                                <span className="font-mono text-[10.5px] text-muted">{sec.count}</span>
+                                <span className="text-[10.5px] tabular-nums text-muted">{sec.count}</span>
                             </div>
                             {sec.items.map((it, n) => (
                                 <div

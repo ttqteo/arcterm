@@ -193,7 +193,7 @@ export function LeadCard(p: LeadCardProps) {
                         </b>
                         <span
                             title="A lead starts at the run's first judgment event"
-                            className="shrink-0 font-mono text-[10.5px] text-muted"
+                            className="shrink-0 text-[10.5px] text-muted"
                         >
                             no lead
                         </span>
@@ -203,7 +203,7 @@ export function LeadCard(p: LeadCardProps) {
                 {vm.askCount > 0 ? (
                     <span
                         title="Questions answered in this card; n cycles them"
-                        className="shrink-0 rounded-[5px] bg-askingbg px-[7px] py-px font-mono text-[10.5px] font-semibold text-warning"
+                        className="shrink-0 rounded-[5px] bg-askingbg px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-warning"
                     >
                         {vm.askCount} asking you
                     </span>
@@ -216,7 +216,7 @@ export function LeadCard(p: LeadCardProps) {
                             p.onOpenDiff(lead.id);
                         }}
                         title="Review changes in Diff"
-                        className="flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] font-mono text-[10.5px] font-semibold hover:border-accent hover:bg-accent/10"
+                        className="flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-[5px] border border-edge-mid px-[7px] text-[10.5px] font-semibold tabular-nums hover:border-accent hover:bg-accent/10"
                     >
                         <span className="text-diff-added">+{diff.adds}</span>
                         <span className="text-diff-removed">−{diff.dels}</span>
@@ -284,7 +284,7 @@ export function LeadCard(p: LeadCardProps) {
                     >
                         {vm.activity}
                     </span>
-                    <span className="shrink-0 font-mono text-[10.5px]">
+                    <span className="shrink-0 text-[10.5px] tabular-nums">
                         {[vm.progress.total > 0 ? `${vm.progress.done}/${vm.progress.total}` : "", vm.elapsed, vm.cost]
                             .filter(Boolean)
                             .join(" · ")}
@@ -302,7 +302,7 @@ export function LeadCard(p: LeadCardProps) {
                     {p.leadDown ? (
                         <div className="mb-1.5 mt-0.5 flex flex-wrap items-center gap-2.5 rounded-[7px] border border-error/35 bg-error/[0.08] px-2.5 py-2">
                             <div className="min-w-[180px] flex-1">
-                                <div className="font-mono text-[11.5px] font-semibold text-error">Lead wake failed</div>
+                                <div className="text-[11.5px] font-semibold text-error">Lead wake failed</div>
                                 <div className="text-[11.5px] leading-[1.45] text-secondary">
                                     Its judgment events and held questions come to you until you relaunch it.
                                 </div>
@@ -373,7 +373,7 @@ export function LeadCard(p: LeadCardProps) {
                                                 key={f.round}
                                                 className="grid grid-cols-[58px_minmax(0,1fr)] items-baseline gap-x-2"
                                             >
-                                                <span className="font-mono text-[10.5px] font-semibold text-error">
+                                                <span className="text-[10.5px] font-semibold tabular-nums text-error">
                                                     Round {f.round}
                                                 </span>
                                                 <span className="text-[12px] leading-[1.45] text-secondary">
@@ -491,7 +491,7 @@ export function LeadCard(p: LeadCardProps) {
             >
                 <span
                     title={vm.settingsTitle}
-                    className="min-w-[120px] flex-1 truncate font-mono text-[10.5px] text-muted"
+                    className="min-w-[120px] flex-1 truncate text-[10.5px] tabular-nums text-muted"
                 >
                     {vm.settings}
                 </span>
@@ -534,7 +534,7 @@ export function LeadCard(p: LeadCardProps) {
                         >
                             −
                         </button>
-                        <span className="min-w-[14px] text-center font-mono text-[12px] font-semibold text-primary">
+                        <span className="min-w-[14px] text-center text-[12px] font-semibold tabular-nums text-primary">
                             {parValue}
                         </span>
                         <button
@@ -578,7 +578,7 @@ export function LeadCard(p: LeadCardProps) {
                         </button>
                     </div>
                 ) : null}
-                {error ? <div className="w-full font-mono text-[11px] text-error">{error}</div> : null}
+                {error ? <div className="w-full text-[11px] text-error">{error}</div> : null}
             </div>
         </motion.div>
     );
@@ -653,7 +653,7 @@ function TaskRow({
                 </span>
                 <span
                     className={cn(
-                        "inline-flex items-center whitespace-nowrap font-mono text-[10.5px]",
+                        "inline-flex items-center whitespace-nowrap text-[10.5px] tabular-nums",
                         row.needsYou ? "text-warning" : row.tone === "err" ? "text-error" : "text-muted"
                     )}
                 >
@@ -818,7 +818,7 @@ function LeadPane({
             <span className="min-w-0 flex-1 truncate text-[12px] text-ink-mid">
                 {latestMessageText(entries) ?? lead.activity ?? ""}
             </span>
-            {age ? <span className="shrink-0 font-mono text-[10.5px] text-muted">{age}</span> : null}
+            {age ? <span className="shrink-0 text-[10.5px] tabular-nums text-muted">{age}</span> : null}
             <span className="shrink-0 px-2 text-[11px] font-semibold text-ink-mid">Show</span>
         </button>
     );

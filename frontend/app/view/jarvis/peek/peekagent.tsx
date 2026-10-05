@@ -60,7 +60,7 @@ function useAgentGit(agent: AgentVM | undefined): GitView | null {
     return git;
 }
 
-const KEY = "pt-[2px] font-mono text-[10.5px] text-muted";
+const KEY = "pt-[2px] text-[10.5px] text-muted";
 
 export function PeekAgentBody({ model, target }: { model: AgentsViewModel; target: PeekTarget }) {
     const agents = useAtomValue(model.agentsAtom);
@@ -89,11 +89,11 @@ export function PeekAgentBody({ model, target }: { model: AgentsViewModel; targe
     return (
         <div className="flex flex-col">
             <div className="flex items-center gap-2.5 px-3.5 py-3">
-                <span className="flex-none font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
+                <span className="flex-none text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                     Agent
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink-hi">{agent.name}</span>
-                <span className="inline-flex flex-none items-center gap-1.5 rounded-[6px] border border-border bg-surface-raised px-2 py-[2px] font-mono text-[10.5px] font-semibold text-ink-mid">
+                <span className="inline-flex flex-none items-center gap-1.5 rounded-[6px] border border-border bg-surface-raised px-2 py-[2px] text-[10.5px] font-semibold tabular-nums text-ink-mid">
                     <span className={cn("h-1.5 w-1.5 rounded-full", STATE_DOT[agent.state])} />
                     {agent.state}
                     {age ? ` · ${age}` : ""}
@@ -110,23 +110,25 @@ export function PeekAgentBody({ model, target }: { model: AgentsViewModel; targe
                 {files.length > 0 ? (
                     <div className="flex flex-col overflow-hidden rounded-[9px] border border-border bg-surface-code">
                         <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
-                            <span className="flex-none font-mono text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-mid">
+                            <span className="flex-none text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-mid">
                                 Changed files
                             </span>
                             <span className="h-px flex-1 bg-border" />
-                            <span className="flex-none font-mono text-[10.5px] text-muted">
+                            <span className="flex-none text-[10.5px] tabular-nums text-muted">
                                 {changedFilesSummary(files)}
                             </span>
                         </div>
                         {shown.map((f) => (
                             <div
                                 key={f.path}
-                                className="grid grid-cols-[14px_minmax(0,1fr)_auto_auto] items-center gap-2.5 px-3 py-1.5 font-mono"
+                                className="grid grid-cols-[14px_minmax(0,1fr)_auto_auto] items-center gap-2.5 px-3 py-1.5"
                             >
-                                <span className={cn("text-[10.5px] font-bold", statusColor(f.status))}>{f.status}</span>
-                                <span className="truncate text-[11.5px] text-secondary">{f.path}</span>
-                                <span className="text-[10.5px] text-diff-added">+{f.adds}</span>
-                                <span className="text-[10.5px] text-diff-removed">−{f.dels}</span>
+                                <span className={cn("font-mono text-[10.5px] font-bold", statusColor(f.status))}>
+                                    {f.status}
+                                </span>
+                                <span className="truncate font-mono text-[11.5px] text-secondary">{f.path}</span>
+                                <span className="text-[10.5px] tabular-nums text-diff-added">+{f.adds}</span>
+                                <span className="text-[10.5px] tabular-nums text-diff-removed">−{f.dels}</span>
                             </div>
                         ))}
                     </div>

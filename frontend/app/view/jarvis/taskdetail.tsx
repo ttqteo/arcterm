@@ -69,7 +69,7 @@ function StatusControl({ dossierId, status }: { dossierId: string; status: strin
                         key={next}
                         type="button"
                         onClick={() => apply(next)}
-                        className="cursor-pointer rounded border border-border px-2 py-0.5 font-mono text-[11px] text-secondary hover:bg-surface-hover"
+                        className="cursor-pointer rounded border border-border px-2 py-0.5 text-[11px] text-secondary hover:bg-surface-hover"
                     >
                         → {next}
                     </button>
@@ -135,7 +135,7 @@ export function TaskDetail({
                     <span
                         data-record-status={detail.status}
                         className={cn(
-                            "rounded px-1.5 py-0.5 font-mono font-semibold",
+                            "rounded px-1.5 py-0.5 font-semibold",
                             STATUS_TONE[detail.status] ?? "bg-surface-hover text-ink-mid"
                         )}
                     >

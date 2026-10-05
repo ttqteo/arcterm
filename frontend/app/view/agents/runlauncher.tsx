@@ -50,7 +50,7 @@ import {
     workerRouteAtom,
 } from "./runconfigstore";
 
-export const EYEBROW = "font-mono text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
+export const EYEBROW = "text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
 
 // One selectable card treatment for both pickers, so the shape and the start read as the same kind of
 // choice. Tokens only — a literal colour here would opt the launcher out of every runtime theme.
@@ -99,7 +99,7 @@ export function ShapeCards({ showParallelism }: { showParallelism: boolean }) {
                 </div>
                 {showParallelism ? (
                     <div className="ml-auto flex items-center gap-1.5">
-                        <span className="font-mono text-[10.5px] text-ink-mid">workers</span>
+                        <span className="text-[10.5px] text-ink-mid">workers</span>
                         <WorkerStepper value={par} onStep={stepParallelism} />
                     </div>
                 ) : null}
@@ -124,7 +124,7 @@ function StartSection({ projectPath }: { projectPath: string }) {
                         aria-pressed={start === option}
                         onClick={() => setStart(option)}
                         className={cn(
-                            "cursor-pointer rounded-[7px] border px-3 py-1.5 font-mono text-[11.5px] font-semibold",
+                            "cursor-pointer rounded-[7px] border px-3 py-1.5 text-[11.5px] font-semibold",
                             pickTone(start === option)
                         )}
                     >
@@ -198,7 +198,7 @@ function PlanPathField({ projectPath }: { projectPath: string }) {
             ) : current?.result != null ? (
                 <span
                     data-jarvis-plan-preview="ready"
-                    className="flex flex-wrap gap-x-2 font-mono text-[10.5px] text-secondary"
+                    className="flex flex-wrap gap-x-2 text-[10.5px] tabular-nums text-secondary"
                 >
                     {current.result.title ? <span>{current.result.title}</span> : null}
                     <span>{planShapeText(current.result.shape)}</span>
@@ -245,7 +245,7 @@ export function WorkerStepper({
             <span
                 aria-live="polite"
                 className={cn(
-                    "min-w-4 text-center font-mono text-[12px]",
+                    "min-w-4 text-center text-[12px] tabular-nums",
                     value == null ? "text-ink-mid" : "text-primary"
                 )}
             >
@@ -334,7 +334,7 @@ export function RunLauncher({ projectPath }: { projectPath: string }) {
         <div className="sc min-h-0 flex-1 overflow-y-auto px-4 pb-2 pt-4">
             <div className="flex w-full flex-col gap-5">
                 <div className="flex flex-col gap-1">
-                    <span className="font-mono text-[9.5px] font-bold uppercase tracking-[.13em] text-feed-label">
+                    <span className="text-[9.5px] font-bold uppercase tracking-[.13em] text-feed-label">
                         how it should run
                     </span>
                     <span className="text-[11.5px] leading-[1.5] text-muted">

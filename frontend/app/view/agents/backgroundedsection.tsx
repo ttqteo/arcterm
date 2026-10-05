@@ -48,7 +48,7 @@ export function BackgroundedSection({ agents, onRestore }: { agents: AgentVM[]; 
                                 <span className="min-w-0 flex-1 truncate text-[12px] text-muted">
                                     {a.task || a.activity || ""}
                                 </span>
-                                <span className="ml-auto shrink-0 font-mono text-[10.5px] text-muted">
+                                <span className="ml-auto shrink-0 text-[10.5px] tabular-nums text-muted">
                                     {formatAge(a.activeMs)}
                                 </span>
                             </motion.div>

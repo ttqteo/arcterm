@@ -769,7 +769,7 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
                         setOpen(true);
                     }}
                     className={cn(
-                        "flex size-9 flex-none cursor-pointer items-center justify-center self-start rounded-[6px] font-mono text-[14px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                        "flex size-9 flex-none cursor-pointer items-center justify-center self-start rounded-[6px] text-[14px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
                         !compact && "hidden"
                     )}
                 >

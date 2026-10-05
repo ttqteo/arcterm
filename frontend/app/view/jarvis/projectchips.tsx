@@ -77,7 +77,7 @@ export function ProjectChips({
                                 ) : null}
                                 <span className="min-w-0 flex-1 truncate">{name}</span>
                                 {columns === 2 && name === recent ? (
-                                    <span className="flex-none font-mono text-[10.5px] text-muted">last used</span>
+                                    <span className="flex-none text-[10.5px] text-muted">last used</span>
                                 ) : null}
                             </button>
                         );

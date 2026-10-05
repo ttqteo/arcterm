@@ -19,7 +19,7 @@ import { useAtomValue } from "jotai";
 import { ChevronRight } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { briefingStateAtom } from "./briefingstore";
-import { MONO_FAINT, REGION_LABEL } from "./briefstyle";
+import { FAINT_TEXT, REGION_LABEL } from "./briefstyle";
 import {
     codeSegments,
     effortFeed,
@@ -37,7 +37,7 @@ import { openOrPeekAddress } from "./openref";
 import { STAGE_SCROLLER } from "./stagemeasure";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-const TIME = cn("w-[38px] flex-none", MONO_FAINT);
+const TIME = cn("w-[38px] flex-none", FAINT_TEXT);
 const ROW_HOVER = "rounded-[6px] hover:bg-surface-hover";
 
 // pending is the bar's empty track, so it draws no fill of its own; deferred is parked work, so it takes a
@@ -111,7 +111,7 @@ function MarkPill({ tone }: { tone: ChunkTone }) {
     return (
         <span
             className={cn(
-                "mr-1.5 inline-flex items-center gap-1 rounded-full bg-pill pl-[3px] pr-1.5 align-[1px] font-mono text-[10.5px] font-semibold leading-[17px]",
+                "mr-1.5 inline-flex items-center gap-1 rounded-full bg-pill pl-[3px] pr-1.5 align-[1px] text-[10.5px] font-semibold leading-[17px]",
                 TONE_FG[tone]
             )}
         >
@@ -132,7 +132,7 @@ function Progress({ facts }: { facts: EffortFacts }) {
                 <span className="text-[13px] font-semibold text-ink-hi">
                     {done} of {counted} done
                 </span>
-                {skipped > 0 ? <span className={MONO_FAINT}>{skipped} skipped, not counted</span> : null}
+                {skipped > 0 ? <span className={FAINT_TEXT}>{skipped} skipped, not counted</span> : null}
             </div>
             <div
                 role="img"
@@ -147,7 +147,7 @@ function Progress({ facts }: { facts: EffortFacts }) {
                 {segments.map((s) => (
                     <span
                         key={s.tone}
-                        className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-ink-mid"
+                        className="inline-flex items-center gap-1.5 text-[10.5px] tabular-nums text-ink-mid"
                     >
                         <span className={cn("box-border h-2 w-2 rounded-[2px] border", SWATCH[s.tone])} />
                         {s.n} {s.tone}
@@ -168,7 +168,7 @@ function NextCard({ facts }: { facts: EffortFacts }) {
             <div className="flex items-baseline gap-2.5">
                 <span className={cn(REGION_LABEL, "text-accent-soft")}>Next</span>
                 {next?.stage ? (
-                    <span className={cn("min-w-0 flex-1 truncate", MONO_FAINT)}>stage · {next.stage}</span>
+                    <span className={cn("min-w-0 flex-1 truncate", FAINT_TEXT)}>stage · {next.stage}</span>
                 ) : null}
             </div>
             {next != null ? (
@@ -216,12 +216,12 @@ function ChildInitiatives({
                         />
                     </span>
                     {/* wide enough for "34 of 41", so the columns line up down the list */}
-                    <span className={cn("w-[52px] flex-none", MONO_FAINT)}>
+                    <span className={cn("w-[52px] flex-none", FAINT_TEXT)}>
                         {k.done} of {k.total}
                     </span>
                     <span
                         className={cn(
-                            "inline-flex flex-none items-center gap-[5px] font-mono text-[10.5px] font-semibold",
+                            "inline-flex flex-none items-center gap-[5px] text-[10.5px] font-semibold",
                             TONE_FG[k.tone]
                         )}
                     >
@@ -271,10 +271,8 @@ function FeedGroupLine({
                 >
                     <Tone tone={row.tone} />
                     <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink-hi">{row.chunk}</span>
-                    {row.added !== "" ? <span className={cn("flex-none", MONO_FAINT)}>added {row.added}</span> : null}
-                    <span className={cn("flex-none font-mono text-[10.5px] font-semibold", TONE_FG[row.tone])}>
-                        {row.status}
-                    </span>
+                    {row.added !== "" ? <span className={cn("flex-none", FAINT_TEXT)}>added {row.added}</span> : null}
+                    <span className={cn("flex-none text-[10.5px] font-semibold", TONE_FG[row.tone])}>{row.status}</span>
                 </button>
             );
         case "note":
@@ -326,7 +324,7 @@ function FeedGroupLine({
                         {row.mark != null ? (
                             <MarkPill tone={row.mark} />
                         ) : (
-                            <span className={MONO_FAINT}>{row.text}</span>
+                            <span className={FAINT_TEXT}>{row.text}</span>
                         )}
                     </span>
                 </div>
@@ -348,20 +346,20 @@ function NotesFeed({ feed }: { feed: FeedEntry[] }) {
         <section data-jarvis-effort-section="notes" className="flex flex-col">
             <div className="flex items-baseline gap-2.5 pb-1">
                 <SectionLabel>Notes</SectionLabel>
-                <span className={MONO_FAINT}>
+                <span className={FAINT_TEXT}>
                     {feed.length === 0 ? "none yet" : `${plural(notes, "note")} · newest first`}
                 </span>
             </div>
             {only != null ? (
                 <div className="mb-0.5 mt-1 flex items-center gap-2 rounded-lg bg-pill py-1.5 pl-2.5 pr-2">
-                    <span className={cn("flex-none", MONO_FAINT)}>only</span>
+                    <span className={cn("flex-none", FAINT_TEXT)}>only</span>
                     <Tone tone={only.tone} />
                     <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink-hi">{only.chunk}</span>
                     <button
                         type="button"
                         onClick={() => narrow(null)}
                         className={cn(
-                            "flex-none cursor-pointer px-1 py-0.5 font-mono text-[10.5px] text-accent hover:text-accenthover",
+                            "flex-none cursor-pointer px-1 py-0.5 text-[10.5px] text-accent hover:text-accenthover",
                             FOCUS
                         )}
                     >
@@ -387,7 +385,7 @@ function NotesFeed({ feed }: { feed: FeedEntry[] }) {
                     onClick={() => setLimit(limit + FEED_PAGE)}
                     className={cn(
                         // lines up with the entry text, past the rail indent and the time column
-                        "ml-[70px] mt-2.5 cursor-pointer self-start rounded-[6px] border border-border px-2.5 py-1 font-mono text-[10.5px] text-ink-mid hover:text-ink-hi",
+                        "ml-[70px] mt-2.5 cursor-pointer self-start rounded-[6px] border border-border px-2.5 py-1 text-[10.5px] text-ink-mid hover:text-ink-hi",
                         FOCUS
                     )}
                 >
@@ -471,7 +469,7 @@ export function EffortDetailView({ model }: { model: AgentsViewModel }) {
                             <h1 className="m-0 text-pretty text-[19px] font-semibold leading-[1.3] tracking-[-.01em] text-ink-hi">
                                 {effort.title}
                             </h1>
-                            <div className="flex flex-wrap gap-x-3.5 gap-y-1 font-mono text-[10.5px] text-ink-mid">
+                            <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[10.5px] tabular-nums text-ink-mid">
                                 {[...facts.meta, ["updated", formatAge(Date.now() - effort.updatedts) + " ago"]].map(
                                     ([k, v], i) => (
                                         <span key={k + ":" + i}>

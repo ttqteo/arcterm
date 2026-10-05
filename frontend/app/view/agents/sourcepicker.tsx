@@ -82,7 +82,7 @@ export function SourcePicker({
                 ) : currentProject ? (
                     <Folder size={13} className="flex-none text-muted" />
                 ) : null}
-                <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px] text-ink-mid">{label}</span>
+                <span className="min-w-0 flex-1 truncate text-left text-[12px] text-ink-mid">{label}</span>
                 {hasAny ? <ChevronDown size={12} className="flex-none text-muted" /> : null}
             </button>
             {open && hasAny ? <div className="fixed inset-0 z-10" onClick={close} /> : null}
@@ -105,7 +105,7 @@ export function SourcePicker({
                         }}
                         placeholder="Filter agents and projects"
                         aria-label="Filter sources"
-                        className="min-w-0 flex-1 bg-transparent font-mono text-[11.5px] text-ink-hi outline-none placeholder:text-ink-faint"
+                        className="min-w-0 flex-1 bg-transparent text-[11.5px] text-ink-hi outline-none placeholder:text-ink-faint"
                     />
                 </label>
                 <div className="max-h-[280px] overflow-y-auto">
@@ -123,7 +123,7 @@ export function SourcePicker({
                                 className={rowClass(current)}
                             >
                                 <StatusDot state={a.state} className="!h-[7px] !w-[7px]" />
-                                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{a.name}</span>
+                                <span className="min-w-0 flex-1 truncate text-[12px]">{a.name}</span>
                                 <span className="flex-none text-[10.5px] text-muted">{a.state}</span>
                                 <CurrentMark current={current} />
                             </button>
@@ -148,7 +148,7 @@ export function SourcePicker({
                                 className={rowClass(current)}
                             >
                                 <Folder size={12} className="flex-none text-muted" />
-                                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{p.name}</span>
+                                <span className="min-w-0 flex-1 truncate text-[12px]">{p.name}</span>
                                 {parent != null ? (
                                     <span className="flex-none text-[10.5px] text-muted">worktree · {parent}</span>
                                 ) : null}
