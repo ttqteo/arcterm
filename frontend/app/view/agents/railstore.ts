@@ -26,11 +26,16 @@ export interface RailGitState {
     worktree?: string;
 }
 
-// First persisted FE pref in frontend/app: rail is global + off by default (localStorage key
-// "agent.rail.visible"). Keep persisted prefs to this one atom for now.
-export const DEFAULT_RAIL_VISIBLE = false;
+// First persisted FE pref in frontend/app: the rail is global and on by default (localStorage key
+// "agent.rail.visible"). A stored value, on or off, wins over the default: it was off by default until 2026-10, so a
+// stored "false" is a choice, and a profile that never toggled it just gets the new default. getOnInit reads the
+// stored value when the atom is created, so a user who closed the rail does not see it open for the render before
+// storage arrives.
+export const DEFAULT_RAIL_VISIBLE = true;
 
-export const railVisibleAtom = atomWithStorage("agent.rail.visible", DEFAULT_RAIL_VISIBLE);
+export const railVisibleAtom = atomWithStorage("agent.rail.visible", DEFAULT_RAIL_VISIBLE, undefined, {
+    getOnInit: true,
+});
 
 // Terminal-fullscreen toggle for the Agent surface: when on, the AgentTree (and the rail) are
 // hidden so the focused agent's live terminal fills the surface. Session-scoped UI, not persisted.

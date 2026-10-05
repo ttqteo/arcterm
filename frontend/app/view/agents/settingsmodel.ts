@@ -144,7 +144,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                 {
                     id: "general.rail",
                     title: "Show details rail by default",
-                    desc: "The per-agent git/details rail on the Agent surface.",
+                    desc: "The per-agent rail on the Agent surface: changed files, artifacts, uploads and terminals. On unless you turn it off.",
                     key: "agent.rail.visible",
                     scope: "local",
                 },

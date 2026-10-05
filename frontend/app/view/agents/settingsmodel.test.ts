@@ -36,6 +36,20 @@ describe("vault sync rows", () => {
     });
 });
 
+describe("details rail row", () => {
+    it("is a local pref on agent.rail.visible whose copy says the rail is on unless turned off", () => {
+        const row = sections()
+            .find((s) => s.id === "general")!
+            .rows.find((r) => r.id === "general.rail")!;
+        expect(row.key).toBe("agent.rail.visible");
+        expect(row.scope).toBe("local");
+        expect(row.title).toBe("Show details rail by default");
+        expect(row.desc).toBe(
+            "The per-agent rail on the Agent surface: changed files, artifacts, uploads and terminals. On unless you turn it off."
+        );
+    });
+});
+
 describe("vaultStatusLine", () => {
     it("says nothing until the status loads", () => {
         expect(vaultStatusLine(null)).toBe("");
