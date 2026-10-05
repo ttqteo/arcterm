@@ -32,8 +32,8 @@ repository with three files dirty in the working tree. Nothing is mocked.
 
 | Gesture | Effect |
 |---|---|
-| Nav rail → **Diff** | The sixth item in the rail |
-| `Ctrl`+`6` | Jump by position (`SURFACE_ORDER` index 5) |
+| Nav rail → **Diff** | The fifth item in the rail |
+| `Ctrl`+`5` | Jump by position (`SURFACE_ORDER` index 4) |
 | `g` `f` | Chord: go → Diff |
 | `]` / `[` | Cycle to the next / previous surface |
 

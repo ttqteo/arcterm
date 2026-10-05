@@ -483,7 +483,7 @@ the row. Both banner and panel go away once every listed task has started; the c
 
 ### The run sheet
 
-Open a run from **Waiting on you**, **Sessions**, or right after **Start run**. Top to bottom:
+Open a run from **Waiting on you**, **Conversation History**, or right after **Start run**. Top to bottom:
 
 - **Verb** and subtext: Planning, Starting, Executing, Waiting on you, Landing, Blocked, Done, Cancelled.
 - **Meter** (one segment per task) and chips: elapsed, worker minutes, landed, answered, forwarded,

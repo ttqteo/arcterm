@@ -134,7 +134,7 @@ Opened with `g` `s` or the sidebar's Conversation History button. History and an
 that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
 `Ctrl`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. `Ctrl`+`Tab` still cycles agents and brings the
-terminal back. An ended session opened from the sidebar reads the same way: `Esc` leaves it.
+terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
 
 ### Agent: canvas mode
 
