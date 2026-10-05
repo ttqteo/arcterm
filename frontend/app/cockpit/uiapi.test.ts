@@ -115,6 +115,16 @@ describe("parseSurfaceAddress", () => {
         const r = parseSurfaceAddress("surface:nope");
         expect(r != null && "error" in r && r.error).toMatch(/^unknown surface "nope"; one of cockpit, /);
     });
+
+    it("takes surface:history, and its old name sessions, to Conversation History in the Agent surface", () => {
+        expect(parseSurfaceAddress("surface:history")).toEqual({ surface: "agent", center: "history" });
+        expect(parseSurfaceAddress("surface:sessions")).toEqual({ surface: "agent", center: "history" });
+    });
+
+    it("lists history among the valid surfaces in its error", () => {
+        const r = parseSurfaceAddress("surface:nope");
+        expect(r != null && "error" in r && r.error).toMatch(/, history$/);
+    });
 });
 
 describe("revealError", () => {

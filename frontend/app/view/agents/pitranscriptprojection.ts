@@ -483,7 +483,7 @@ export function extractPiTasks(lines: string[]): CardTask[] | undefined {
 }
 
 /** Pure: the session's display title — the latest session_info.name on the active branch, else the
- *  first active user text. Mirrors the backend's piBranchMeta so the Sessions surface and history
+ *  first active user text. Mirrors the backend's piBranchMeta so Conversation History and the history
  *  scan agree on what a Pi session is called. */
 export function extractPiTitle(lines: string[]): string | undefined {
     const records = parseRecords(lines);

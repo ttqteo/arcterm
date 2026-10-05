@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Sessions surface's right pane: a run (its lead and tasks, and the session of the one in view) or a single
+// Conversation History's right pane: a run (its lead and tasks, and the session of the one in view) or a single
 // session, each read as its transcript or its lifecycle events. @theme tokens only.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";

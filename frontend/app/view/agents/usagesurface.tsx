@@ -70,7 +70,7 @@ const LEVEL_TEXT: Record<"ok" | "warn" | "hot", string> = {
 const MODEL_SEQ = ["bg-accent-200", "bg-accent-400", "bg-accent-600", "bg-accent-800"];
 const MAX_MODEL_ROWS = MODEL_SEQ.length;
 
-// Selected/idle treatment for a rail row, matching the Sessions rail (the surface this body is
+// Selected/idle treatment for a rail row, matching Conversation History's list (the pane this body is
 // modeled on) rather than minting a second selection vocabulary for one surface.
 const ROW_BASE =
     "cursor-pointer rounded-[11px] border px-[13px] py-[11px] text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";

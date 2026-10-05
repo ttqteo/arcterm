@@ -109,8 +109,8 @@ describe("surface switch [ / ]", () => {
         next.run(ctx()); // cockpit -> jarvis
         expect(globalStore.get(model.surfaceAtom)).toBe("jarvis");
 
-        globalStore.set(model.surfaceAtom, "sessions");
-        next.run(ctx()); // sessions -> radar (radar is in SURFACE_ORDER)
+        globalStore.set(model.surfaceAtom, "files");
+        next.run(ctx()); // files (Diff) -> radar (radar follows it in SURFACE_ORDER)
         expect(globalStore.get(model.surfaceAtom)).toBe("radar");
 
         globalStore.set(model.surfaceAtom, SURFACE_ORDER[SURFACE_ORDER.length - 1]);
@@ -119,6 +119,26 @@ describe("surface switch [ / ]", () => {
 
         prev.run(ctx()); // wrap back to last
         expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[SURFACE_ORDER.length - 1]);
+    });
+
+    it("binds Ctrl+1..7 to SURFACE_ORDER, so Radar is Ctrl+6 and Usage is Ctrl+7", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
+        const chords = buildGlobalBindings(model).filter(
+            (b) => /^Ctrl:\d$/.test(b.keys) && b.id.startsWith("surface:")
+        );
+        expect(chords.map((b) => b.keys)).toEqual([
+            "Ctrl:1",
+            "Ctrl:2",
+            "Ctrl:3",
+            "Ctrl:4",
+            "Ctrl:5",
+            "Ctrl:6",
+            "Ctrl:7",
+        ]);
+        chords.find((b) => b.keys === "Ctrl:6")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("radar");
+        chords.find((b) => b.keys === "Ctrl:7")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("usage");
     });
 
     it("enters the cycle gracefully from a surface not in SURFACE_ORDER (settings)", () => {

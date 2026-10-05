@@ -13,6 +13,7 @@ import { bindingsAtom } from "@/app/store/keybindings/store";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcResponseHelper, WshClient } from "@/app/store/wshclient";
 import { DefaultRouter } from "@/app/store/wshrpcutil";
+import { showHistory } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { getCanvas } from "@/app/view/agents/canvasstore";
 import { currentReportIdAtom } from "@/app/view/agents/radarstore";
@@ -68,7 +69,11 @@ class CockpitUiClient extends WshClient {
             if ("error" in surfaceTarget) {
                 throw new Error(surfaceTarget.error);
             }
-            globalStore.set(this.model.surfaceAtom, surfaceTarget.surface);
+            if (surfaceTarget.center === "history") {
+                showHistory(this.model);
+            } else {
+                globalStore.set(this.model.surfaceAtom, surfaceTarget.surface);
+            }
             this.trail(data.callerblockid, data.address);
             return "";
         }

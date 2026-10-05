@@ -75,17 +75,7 @@ function b(id: string, keys = "j"): Binding {
 }
 
 // A representative sample of contexts the dispatcher can be in.
-const SURFACES: SurfaceKey[] = [
-    "cockpit",
-    "agent",
-    "jarvis",
-    "radar",
-    "sessions",
-    "files",
-    "usage",
-    "code",
-    "settings",
-];
+const SURFACES: SurfaceKey[] = ["cockpit", "agent", "jarvis", "radar", "files", "usage", "code", "settings"];
 function contexts(): KeyContext[] {
     const out: KeyContext[] = [];
     for (const surface of SURFACES) {

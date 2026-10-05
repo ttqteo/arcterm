@@ -126,7 +126,7 @@ const navigateStrict = (ctx: KeyContext) => !ctx.editable && !ctx.modalOpen;
 
 // Deep (non-home) surfaces whose Escape returns to the Cockpit. Excludes cockpit (already home), agent
 // (owns Escape via buildAgentBindings: exit fullscreen / back), and settings.
-const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "radar", "sessions", "files", "usage", "code"]);
+const ESC_HOME_SURFACES = new Set<SurfaceKey>(["jarvis", "radar", "files", "usage", "code"]);
 
 // A key that clicks a control the surface already draws, rather than duplicating what the control knows.
 // No control on screen lets the key pass.

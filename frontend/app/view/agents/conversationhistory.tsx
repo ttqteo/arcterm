@@ -19,7 +19,7 @@ import { Activity, ArrowLeft, Check, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
 import { showTerminal } from "./agentcenter";
-import type { AgentsViewModel, SurfaceKey } from "./agents";
+import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { FocusBanner } from "./focusbanner";
@@ -112,15 +112,7 @@ function memberLiveSession(m: RunMember, runId: string, roster: AgentVM[]): Live
     return agent ? rosterSession(agent) : undefined;
 }
 
-// navSurface is the surface whose keys the list cursor answers on. History lives in the Agent surface; the prop
-// exists only for the Sessions surface the shell still renders this for until it is removed.
-export function ConversationHistory({
-    model,
-    navSurface = "agent",
-}: {
-    model: AgentsViewModel;
-    navSurface?: SurfaceKey;
-}) {
+export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const base = useAtomValue(sessionsArchiveAtom);
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
@@ -273,18 +265,18 @@ export function ConversationHistory({
     const cursorId = viewRunId ? runSelKey(viewRunId) : sel;
     const listNav = useMemo<ListNavController>(
         () => ({
-            surface: navSurface,
+            surface: "agent",
             navigableIds: navIds,
             cursorId,
             setCursor: (id) => selectRef.current(id),
             activate: () => actRef.current(),
         }),
-        [navSurface, navIds, cursorId]
+        [navIds, cursorId]
     );
     // The Agent surface stays mounted, hidden, with its centre mode kept, so History can be mounted while another
     // surface is showing. Publish only while this surface is: a hidden History would otherwise take listNavAtom
     // from the visible surface's own list (Radar, Usage, Diff, Brief), whose j/k then go dead.
-    const onSurface = useAtomValue(model.surfaceAtom) === navSurface;
+    const onSurface = useAtomValue(model.surfaceAtom) === "agent";
     useSurfaceListNav(onSurface ? listNav : null);
 
     const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));
@@ -293,17 +285,15 @@ export function ConversationHistory({
     return (
         <MotionConfig reducedMotion="user">
             <div data-agent-history className="flex h-full min-h-0 flex-col bg-background">
-                {navSurface === "agent" ? (
-                    <button
-                        type="button"
-                        data-agent-history-close
-                        onClick={showTerminal}
-                        className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        <ArrowLeft size={13} aria-hidden />
-                        Back to terminal
-                    </button>
-                ) : null}
+                <button
+                    type="button"
+                    data-agent-history-close
+                    onClick={showTerminal}
+                    className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <ArrowLeft size={13} aria-hidden />
+                    Back to terminal
+                </button>
                 <SurfaceHeader
                     title="Conversation History"
                     badge={

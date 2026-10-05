@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     coerceFontSize,
     coerceScrollback,
+    coerceStartupSurface,
     coerceTransparency,
     startupSurfaceOptions,
     vaultPathError,
@@ -62,4 +63,15 @@ describe("vaultPathError", () => {
     it("rejects a missing path", () => expect(vaultPathError({ notfound: true })).toBe("Folder not found"));
     it("rejects a file (not a directory)", () => expect(vaultPathError({ isdir: false })).toBe("Not a folder"));
     it("rejects when isdir is absent", () => expect(vaultPathError({})).toBe("Not a folder"));
+});
+
+describe("coerceStartupSurface", () => {
+    it("sends a stored sessions or activity startup surface to the Agent surface", () => {
+        expect(coerceStartupSurface("sessions")).toBe("agent");
+        expect(coerceStartupSurface("activity")).toBe("agent");
+    });
+    it("leaves a current surface alone", () => {
+        expect(coerceStartupSurface("radar")).toBe("radar");
+        expect(coerceStartupSurface("cockpit")).toBe("cockpit");
+    });
 });

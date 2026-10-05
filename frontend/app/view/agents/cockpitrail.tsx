@@ -4,9 +4,9 @@
 // The cockpit's right rail: the Events rail. Plan usage sits in the header (UsageMeters).
 
 import { CollapsibleRail } from "@/app/element/collapsiblerail";
+import { SquareStack } from "lucide-react";
 import type { AgentsViewModel } from "./agents";
 import { CockpitEventsRail } from "./cockpiteventsrail";
-import { ICON } from "./navrail";
 import type { Lineage } from "./runlineage";
 
 export function CockpitRail({
@@ -30,7 +30,7 @@ export function CockpitRail({
                 {
                     id: "events",
                     label: "Events",
-                    icon: ICON.sessions,
+                    icon: <SquareStack size={20} strokeWidth={1.8} aria-hidden />,
                     content: (
                         <CockpitEventsRail
                             model={model}

@@ -3,18 +3,7 @@
 
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import {
-    Bot,
-    Brain,
-    FileCode2,
-    FileCog,
-    Gauge,
-    GitCompare,
-    LayoutDashboard,
-    Radar,
-    Settings,
-    SquareStack,
-} from "lucide-react";
+import { Bot, Brain, FileCode2, FileCog, Gauge, GitCompare, LayoutDashboard, Radar, Settings } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { attentionAtom, splitAttention } from "./attentionstore";
@@ -28,7 +17,6 @@ export const ICON: Record<SurfaceKey, ReactNode> = {
     jarvis: <Brain {...iconProps} />,
     agent: <Bot {...iconProps} />,
     radar: <Radar {...iconProps} />,
-    sessions: <SquareStack {...iconProps} />,
     files: <GitCompare {...iconProps} />,
     usage: <Gauge {...iconProps} />,
     code: <FileCode2 {...iconProps} />,
@@ -42,7 +30,6 @@ export const ITEMS: { key: SurfaceKey; label: string }[] = [
     { key: "agent", label: "Agent" },
     { key: "code", label: "Code" },
     { key: "files", label: "Diff" },
-    { key: "sessions", label: "Sessions" },
     { key: "radar", label: "Radar" },
     { key: "usage", label: "Usage" },
 ];

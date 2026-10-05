@@ -27,30 +27,12 @@ import { endedWorkerAtomFor, lineageAtomFor, type EndedWorker } from "./runlinea
 import { usageBucketsAtom } from "./usagestore";
 import { aggregateBuckets, type HarnessFilter } from "./usagestats";
 
-export type SurfaceKey =
-    | "cockpit"
-    | "jarvis"
-    | "agent"
-    | "radar"
-    | "sessions"
-    | "files"
-    | "usage"
-    | "code"
-    | "setup"
-    | "settings";
+export type SurfaceKey = "cockpit" | "jarvis" | "agent" | "radar" | "files" | "usage" | "code" | "setup" | "settings";
 
-// Ordered to match the NavRail (navrail.tsx ITEMS) so Ctrl+1..8 line up with what the user sees. All 8
-// entries are chorded — there is no unchorded remainder.
-export const SURFACE_ORDER: SurfaceKey[] = [
-    "cockpit",
-    "jarvis",
-    "agent",
-    "code",
-    "files",
-    "sessions",
-    "radar",
-    "usage",
-];
+// Ordered to match the NavRail (navrail.tsx ITEMS) so Ctrl+1..7 line up with what the user sees. All 7
+// entries are chorded — there is no unchorded remainder. Conversation History is not a surface: it is a centre
+// mode of "agent" (agentcenter.ts).
+export const SURFACE_ORDER: SurfaceKey[] = ["cockpit", "jarvis", "agent", "code", "files", "radar", "usage"];
 
 export type ChipFilter = "all" | "asking" | "working" | "idle";
 
@@ -107,14 +89,14 @@ export class AgentsViewModel implements ViewModel {
     focusReplyAtom = atom(false);
     railOpenAtom = atom(true);
     chipFilterAtom = atom<ChipFilter>("all");
-    // Sessions surface: status filter chip (All / Live / Needs you / Done). Default "all".
+    // Conversation History: status filter chip (All / Live / Needs you / Done). Default "all".
     sessionsStatusFilterAtom = atom<SessionStatusFilter>("all");
-    // Sessions surface: selected left-list entry. "all" = merged feed; "run:<id>" = an orchestrator run;
+    // Conversation History: selected left-list entry. "all" = merged feed; "run:<id>" = an orchestrator run;
     // else "${runtime}:${id}".
     sessionsSelAtom = atom<string>("all");
-    // Sessions surface: the member of the selected run in view, "lead" or a task id.
+    // Conversation History: the member of the selected run in view, "lead" or a task id.
     sessionsMemberAtom = atom<string>("lead");
-    // Sessions surface: a session reads as its transcript or its short list of lifecycle events.
+    // Conversation History: a session reads as its transcript or its short list of lifecycle events.
     sessionsViewAtom = atom<"transcript" | "activity">("transcript");
     // Usage surface: harness filter chip (All / Claude Code / Codex / OpenCode). Lives here rather
     // than surface-local state so it survives the surface unmounting on nav-rail switch.

@@ -7,14 +7,14 @@ import { ITEMS } from "./navrail";
 
 describe("radar navigation", () => {
     it("adds radar without dropping any existing surface", () => {
-        for (const key of ["cockpit", "agent", "jarvis", "sessions", "files", "usage"]) {
+        for (const key of ["cockpit", "agent", "jarvis", "files", "usage"]) {
             expect(SURFACE_ORDER).toContain(key);
         }
         expect(SURFACE_ORDER).toContain("radar");
     });
 
-    it("places radar between sessions and usage", () => {
-        expect(SURFACE_ORDER.indexOf("radar")).toBe(SURFACE_ORDER.indexOf("sessions") + 1);
+    it("places radar between diff and usage", () => {
+        expect(SURFACE_ORDER.indexOf("radar")).toBe(SURFACE_ORDER.indexOf("files") + 1);
         expect(SURFACE_ORDER.indexOf("usage")).toBe(SURFACE_ORDER.indexOf("radar") + 1);
     });
 

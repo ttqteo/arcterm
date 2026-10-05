@@ -18,7 +18,6 @@ export const SURFACE_CONTEXT = {
     jarvis: { project: "subject", space: "unsupported" },
     agent: { project: "subject", space: "subject" },
     radar: { project: "subject", space: "unsupported" },
-    sessions: { project: "filter", space: "filter" },
     files: { project: "subject", space: "subject" },
     usage: { project: "unsupported", space: "unsupported" },
     code: { project: "subject", space: "subject" },

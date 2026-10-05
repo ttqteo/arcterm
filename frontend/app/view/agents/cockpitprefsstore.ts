@@ -12,10 +12,11 @@ export const DEFAULT_STARTUP_SURFACE: SurfaceKey = "cockpit";
 
 export const startupSurfaceAtom = atomWithStorage<SurfaceKey>("cockpit.startup.surface", DEFAULT_STARTUP_SURFACE);
 
-// A persisted "activity" (the retired surface) coerces to "sessions" — its successor. Callers that seed
-// surfaceAtom from the stored value must route through this so a stale key never renders a blank surface.
-export function coerceStartupSurface(k: SurfaceKey | "activity"): SurfaceKey {
-    return (k as string) === "activity" ? "sessions" : (k as SurfaceKey);
+// A persisted "activity" or "sessions" (retired surfaces: Activity folded into Sessions, Sessions into Agent's Conversation
+// History) coerces to "agent". Callers that seed surfaceAtom from the stored value must route through this so a stale key
+// never renders a blank surface.
+export function coerceStartupSurface(k: SurfaceKey | "activity" | "sessions"): SurfaceKey {
+    return (k as string) === "activity" || (k as string) === "sessions" ? "agent" : (k as SurfaceKey);
 }
 
 // Surfaces offered as a startup choice: the numbered workflow set minus "agent" (it needs a live

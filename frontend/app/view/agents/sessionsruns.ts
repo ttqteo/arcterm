@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pure run grouping for the Sessions surface. A session an orchestrator run launched (the backend stamps its
+// Pure run grouping for Conversation History. A session an orchestrator run launched (the backend stamps its
 // run, task and role) folds into one entry for that run; the entry lists the lead, every task of the run's
 // dag and its stage sessions, and surfaces only the members that need you. No React, no Wave runtime.
 
@@ -348,8 +348,8 @@ export function memberOfSession(s: Pick<SessionActivity, "role" | "taskid">): st
     return s.role === "lead" || !s.taskid ? LEAD_MEMBER : s.taskid;
 }
 
-// sessionSelection is where opening a session lands on the Sessions surface: its run with it in view, else
-// its own entry
+// sessionSelection is where opening a session lands in the Agent surface: its run with it in view (Conversation
+// History), else its own entry (the session pane)
 export function sessionSelection(s: Pick<SessionActivity, "runtime" | "id" | "runid" | "role" | "taskid">): {
     sel: string;
     member?: string;

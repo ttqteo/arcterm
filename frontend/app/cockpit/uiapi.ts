@@ -94,16 +94,23 @@ export function resolveAction(
     return { item };
 }
 
-// null = not a surface address; the shared router (openAddress) owns every other kind
-export function parseSurfaceAddress(address: string): { surface: SurfaceKey } | { error: string } | null {
+// null = not a surface address; the shared router (openAddress) owns every other kind. Conversation History is a mode of the
+// Agent surface rather than a surface, so its address names the Agent surface and the mode; "sessions" is the old name of
+// the surface it replaced, kept so a worker following an old instruction still lands somewhere sensible.
+export function parseSurfaceAddress(
+    address: string
+): { surface: SurfaceKey; center?: "history" } | { error: string } | null {
     if (!address.startsWith(SURFACE_PREFIX)) {
         return null;
     }
-    const key = address.slice(SURFACE_PREFIX.length) as SurfaceKey;
-    if (!SURFACES.includes(key)) {
-        return { error: `unknown surface "${key}"; one of ${SURFACES.join(", ")}` };
+    const key = address.slice(SURFACE_PREFIX.length);
+    if (key === "history" || key === "sessions") {
+        return { surface: "agent", center: "history" };
     }
-    return { surface: key };
+    if (!SURFACES.includes(key as SurfaceKey)) {
+        return { error: `unknown surface "${key}"; one of ${[...SURFACES, "history"].join(", ")}` };
+    }
+    return { surface: key as SurfaceKey };
 }
 
 // the router's messages are written for a toast at the user; these two need rewording for the worker

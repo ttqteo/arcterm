@@ -2,9 +2,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Sessions surface store: the loaded SessionActivity[] from GetSessionsActivity (one Go parser feeds
-// summary + per-session lifecycle events), a pure live-roster overlay, and pure grouping/filter/feed
-// helpers. Replaces the retired Activity FE extraction stack (activitystore/activityevents/discovery).
+// Sessions archive store, read by Conversation History, the Agent sidebar's ended sessions and the session pane: the
+// loaded SessionActivity[] from GetSessionsActivity (one Go parser feeds summary + per-session lifecycle events), a
+// pure live-roster overlay, and pure grouping/filter/feed helpers. Replaces the retired Activity FE extraction stack
+// (activitystore/activityevents/discovery).
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";

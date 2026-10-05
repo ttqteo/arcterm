@@ -10,7 +10,6 @@ const ALL_SURFACES: SurfaceKey[] = [
     "jarvis",
     "agent",
     "radar",
-    "sessions",
     "files",
     "usage",
     "code",
@@ -29,7 +28,6 @@ describe("surface context capabilities", () => {
             jarvis: { project: "subject", space: "unsupported" },
             agent: { project: "subject", space: "subject" },
             radar: { project: "subject", space: "unsupported" },
-            sessions: { project: "filter", space: "filter" },
             files: { project: "subject", space: "subject" },
             usage: { project: "unsupported", space: "unsupported" },
             code: { project: "subject", space: "subject" },
@@ -39,7 +37,7 @@ describe("surface context capabilities", () => {
     });
 
     it("does not describe the project control as a filter on unsupported or explicit-subject surfaces", () => {
-        expect(projectControlCopy("sessions", "waveterm")).toEqual({
+        expect(projectControlCopy("cockpit", "waveterm")).toEqual({
             label: "waveterm",
             title: "Filter this surface by project",
         });
