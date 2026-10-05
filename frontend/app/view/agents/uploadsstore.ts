@@ -83,6 +83,12 @@ export function quotePath(path: string): string {
     return /\s/.test(clean) ? `"${clean}"` : clean;
 }
 
+// false when quotePath would change the path, i.e. it holds a control character, so the terminal would be given a
+// different file than the one on disk (CONTROL_CHARS is global, which .replace is safe with)
+export function pastesAsIs(path: string): boolean {
+    return path.replace(CONTROL_CHARS, "") === path;
+}
+
 // the trailing space is for the next word; Claude Code trims a pasted path before it looks for an image
 export function pasteTextFor(path: string): string {
     return `${quotePath(path)} `;

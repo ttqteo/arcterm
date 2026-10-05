@@ -14,12 +14,15 @@ vi.mock("@/app/view/term/termpaste", () => ({ pasteIntoTerm: mocks.paste, focusT
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: mocks.toast }));
 vi.mock("./uploadthumb", () => ({ makeThumbnail: mocks.thumb }));
 
-import { UploadError } from "./uploadfile";
+import { MAX_UPLOAD_LABEL, UploadError } from "./uploadfile";
 import { ingestFiles } from "./uploadsingest";
 import { uploadsAtom, uploadsMapAtom, uploadThumbsAtom } from "./uploadsstore";
 
 const BLOCK = "blk-1";
 let errorSpy: { mockRestore(): void };
+// ingestFiles keeps a module-level clock of the next free paste slot, which outlives a test: every test starts its fake
+// clock well past anything the one before reserved
+let clock = 1_800_000_000_000;
 const file = (name: string, type = "") => new File([new Uint8Array([1])], name, { type });
 
 // the 150 ms gap between pastes is a real timer; run it on the fake clock
@@ -31,6 +34,8 @@ async function drop(...args: Parameters<typeof ingestFiles>) {
 
 beforeEach(() => {
     vi.useFakeTimers();
+    clock += 60_000;
+    vi.setSystemTime(clock);
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     globalStore.set(uploadsMapAtom, {});
     globalStore.set(uploadThumbsAtom, {});
@@ -81,7 +86,37 @@ describe("ingestFiles", () => {
         expect(globalStore.get(uploadsAtom(BLOCK))).toEqual([]);
         expect(mocks.focus).not.toHaveBeenCalled();
         expect(mocks.toast).toHaveBeenCalledTimes(1);
+        expect(mocks.toast.mock.calls[0][0]).toEqual({
+            title: "No terminal to insert into",
+            message: "This agent's terminal is not open or not ready for input. Try again in a moment.",
+            level: "warn",
+        });
+    });
+
+    it("keeps what already went in when the terminal stops taking pastes partway", async () => {
+        mocks.paste.mockImplementationOnce(() => true).mockImplementationOnce(() => false);
+        await drop(BLOCK, [file("a.txt"), file("b.txt"), file("c.txt")], []);
+
+        expect(mocks.createTemp).toHaveBeenCalledTimes(2);
+        expect(globalStore.get(uploadsAtom(BLOCK)).map((r) => r.name)).toEqual(["a.txt"]);
+        expect(mocks.focus).toHaveBeenCalledWith(BLOCK);
+        expect(mocks.toast).toHaveBeenCalledTimes(1);
         expect(mocks.toast.mock.calls[0][0]).toMatchObject({ title: "No terminal to insert into", level: "warn" });
+    });
+
+    it("keeps pastes 150 ms apart when two drops are in flight at once", async () => {
+        const times: number[] = [];
+        mocks.paste.mockImplementation(() => {
+            times.push(Date.now());
+            return true;
+        });
+        const first = ingestFiles(BLOCK, [file("a.txt")], []);
+        const second = ingestFiles("blk-2", [file("b.txt")], []);
+        await vi.runAllTimersAsync();
+        await Promise.all([first, second]);
+
+        expect(times).toHaveLength(2);
+        expect(times[1] - times[0]).toBeGreaterThanOrEqual(150);
     });
 
     it("turns a paste that throws into the failed-copy toast and goes on with the next file", async () => {
@@ -118,7 +153,7 @@ describe("ingestFiles", () => {
         expect(mocks.toast).toHaveBeenCalledTimes(1);
         const toast = mocks.toast.mock.calls[0][0];
         expect(toast.title).toBe("2 items weren't added");
-        expect(toast.message).toMatch(/1 over 3\.5 MB, 1 folder/);
+        expect(toast.message).toContain(`1 over ${MAX_UPLOAD_LABEL}, 1 folder`);
     });
 
     it("does not focus the terminal when nothing went in", async () => {

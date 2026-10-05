@@ -56,10 +56,11 @@ export function checkUploadFile(f: { size: number }): UploadRejection | null {
 
 // A temp copy keeps the file's own name (WriteTempFileCommand gives every file its own directory, so names cannot
 // collide), cleaned for the OS: Windows refuses < > : " | ? * and control characters and the device names, and
-// drops trailing dots and spaces.
+// drops trailing dots and spaces. DEL is replaced too: Windows allows it, but the path is pasted into a terminal,
+// which quotePath (uploadsstore.ts) strips of control characters, so a DEL would paste as a different file.
 const MAX_NAME_CHARS = 120;
 // eslint-disable-next-line no-control-regex
-const WINDOWS_ILLEGAL = /[<>:"|?*\x00-\x1f]/g;
+const WINDOWS_ILLEGAL = /[<>:"|?*\x00-\x1f\x7f]/g;
 const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
 const TRAILING_DOTS_AND_SPACES = /[\s.]+$/;

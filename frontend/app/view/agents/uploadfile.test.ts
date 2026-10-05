@@ -70,6 +70,7 @@ describe("sanitizeFileName", () => {
     it("replaces what Windows refuses", () => {
         expect(sanitizeFileName("we:ird*name?.txt")).toBe("we_ird_name_.txt");
         expect(sanitizeFileName("tab\there.txt")).toBe("tab_here.txt");
+        expect(sanitizeFileName("del\x7fhere.txt")).toBe("del_here.txt");
     });
     it("trims trailing dots and spaces and falls back when nothing is left", () => {
         expect(sanitizeFileName("x. ")).toBe("x");

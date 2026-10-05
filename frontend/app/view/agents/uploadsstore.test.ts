@@ -9,6 +9,7 @@ import {
     MAX_OWNERS,
     MAX_RECORDS_PER_OWNER,
     parseStored,
+    pastesAsIs,
     pasteTextFor,
     planInserts,
     pruneOwners,
@@ -107,6 +108,18 @@ describe("quotePath and pasteTextFor", () => {
         expect(pasteTextFor("/tmp/a.png")).toBe("/tmp/a.png ");
         expect(pasteTextFor("/tmp/a b.png")).toBe('"/tmp/a b.png" ');
         expect(pasteTextFor("/tmp/a.png")).not.toMatch(/[\r\n]/);
+    });
+});
+
+describe("pastesAsIs", () => {
+    it("takes a plain path and a path with a space", () => {
+        expect(pastesAsIs("/tmp/a.png")).toBe(true);
+        expect(pastesAsIs("C:\\Users\\Jo Doe\\a.png")).toBe(true);
+    });
+    it("refuses a path quotePath would change: a newline, a tab or DEL", () => {
+        expect(pastesAsIs("/tmp/a\nb.txt")).toBe(false);
+        expect(pastesAsIs("/tmp/a\tb.txt")).toBe(false);
+        expect(pastesAsIs("/tmp/a\x7fb.txt")).toBe(false);
     });
 });
 

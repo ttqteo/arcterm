@@ -76,8 +76,8 @@ export function CockpitFocusPane({ blockId, tabId }: { blockId: string; tabId: s
                         data-upload-drop=""
                         className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center border border-accent bg-accentbg"
                     >
-                        <span className="rounded-[8px] bg-surface px-[12px] py-[6px] text-[12px] font-medium text-accent-soft">
-                            Drop to add to this agent
+                        <span className="rounded-[8px] bg-surface px-[12px] py-[6px] text-[12px] font-semibold text-accent-soft">
+                            Drop to paste the file path
                         </span>
                     </div>
                 ) : null}

@@ -11,14 +11,13 @@
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { focusTerm, pasteIntoTerm } from "@/app/view/term/termpaste";
 import { createTempFileFromFile } from "@/app/view/term/termutil";
-import { fireAndForget } from "@/util/util";
+import { fireAndForget, sleep } from "@/util/util";
 import { rejectionToast, UploadError, type Rejection } from "./uploadfile";
-import { makeRecord, pasteTextFor, recordUpload, type UploadKind } from "./uploadsstore";
+import { makeRecord, pastesAsIs, pasteTextFor, recordUpload, type UploadKind } from "./uploadsstore";
 import { makeThumbnail } from "./uploadthumb";
 
 // the gap pasteHandler leaves between pasted images: two pastes back to back can reach a TUI as one
 const PASTE_GAP_MS = 150;
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const nonce = () => Math.random().toString(36).slice(2, 8);
 
 // termwrap.ts's pasteHandler has already written the image to a temp file and pasted its path
@@ -31,24 +30,26 @@ export function recordPastedImage(blockId: string, path: string, image: Blob): v
     });
 }
 
-// the second and later pastes of one batch wait a beat; false when the terminal is not mounted or not ready for input
-async function deliver(blockId: string, text: string, notFirst: boolean): Promise<boolean> {
-    if (notFirst) {
-        await sleep(PASTE_GAP_MS);
+// When the next paste may go in. Every paste takes the next free slot, PASTE_GAP_MS after the one before it, whichever
+// call it belongs to, so two drops at once stay apart too. Module state: it carries across vitest tests.
+let nextPasteAt = 0;
+
+// Pastes text into the block's terminal at its slot; false when the terminal is not mounted or not ready for input
+// (nothing was pasted).
+export async function deliver(blockId: string, text: string): Promise<boolean> {
+    const now = Date.now();
+    const at = Math.max(now, nextPasteAt);
+    nextPasteAt = at + PASTE_GAP_MS; // reserved before the first await, so a concurrent caller sees it
+    if (at > now) {
+        await sleep(at - now);
     }
     return pasteIntoTerm(blockId, text);
-}
-
-// pasteTextFor drops the control characters of a path (terminal.paste would turn a newline into Enter), so a path that
-// held one is pasted as a different file: only a path that goes in as it is can be added
-function pastesAsIs(path: string, text: string): boolean {
-    return text === `${path} ` || text === `"${path}" `;
 }
 
 function warnUnreachable(): void {
     pushToast({
         title: "No terminal to insert into",
-        message: "This agent's terminal is not open or not ready for input, so the remaining files were not added.",
+        message: "This agent's terminal is not open or not ready for input. Try again in a moment.",
         level: "warn",
     });
 }
@@ -68,13 +69,13 @@ export async function ingestFiles(
     for (const file of files) {
         try {
             const path = await createTempFileFromFile(file);
-            const text = pasteTextFor(path);
-            if (!pastesAsIs(path, text)) {
+            // a path with a control character would be pasted as a different file, so it is not added
+            if (!pastesAsIs(path)) {
                 throw new UploadError("error", file.name);
             }
             const kind: UploadKind | undefined = file.type.startsWith("image/") ? "image" : undefined;
             const record = makeRecord({ path, source: "drop", now: Date.now(), nonce: nonce(), kind });
-            if (!(await deliver(blockId, text, inserted > 0))) {
+            if (!(await deliver(blockId, pasteTextFor(path)))) {
                 unreachable = true;
                 break;
             }
