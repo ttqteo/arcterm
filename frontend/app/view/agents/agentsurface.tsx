@@ -31,7 +31,8 @@ import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
 import { rosterLoadPhase } from "./cockpitsurfacemodel";
-import { autoOpenedAskIdsAtom, docReviewAtom, shouldAutoOpen } from "./docreview";
+import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
+import { openReview } from "./docreviewstore";
 import { EndedTranscript } from "./endedtranscript";
 import { DivergenceBanner } from "./focusbanner";
 import { subjectDecision } from "./focussubject";
@@ -77,7 +78,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [agent?.id, focusSub]);
 
-    // a lead's Spec/Plan review opens by itself once per ask, only while you are on that lead and not typing
+    // a review opens by itself once per ask, only while you are on that agent and not typing: a lead's Spec/Plan
+    // review as its dialog, a Doc review in the terminal's place (openReview makes its state first, so this
+    // effect, which runs before the shell's roster sync, still lands in review mode)
     const surface = useAtomValue(model.surfaceAtom);
     const askId = agent?.ask?.askId;
     useEffect(() => {
@@ -86,7 +89,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         if (!shouldAutoOpen({ surface, focusedId: focusId, agent, opened, editable })) {
             return;
         }
-        globalStore.set(docReviewAtom, agent.id);
+        openReview(model, agent.id);
         globalStore.set(autoOpenedAskIdsAtom, new Set(opened).add(askId));
     }, [surface, focusId, agent?.id, askId]);
 

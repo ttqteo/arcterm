@@ -15,8 +15,9 @@ import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "../agents/agents";
+import { setAgentView } from "../agents/agentview";
 import { canvasDir, canvasProjectDir } from "../agents/canvasmodel";
-import { attachCanvas, canvasOwner, getCanvas, selectCanvasBoard, setCanvasMode } from "../agents/canvasstore";
+import { attachCanvas, canvasOwner, getCanvas, selectCanvasBoard } from "../agents/canvasstore";
 import { jumpToAgent } from "../agents/channelsprimitives";
 import { selectChannel } from "../agents/channelsstore";
 import { initRadarScope, radarScopeAtom, radarSelectedIdAtom, scopeOfReport, selectReport } from "../agents/radarstore";
@@ -414,7 +415,7 @@ function selectCanvas(model: AgentsViewModel, target: CanvasTarget, landing: Can
         if (board != null && board !== getCanvas(landing.owner)?.board) {
             selectCanvasBoard(landing.owner, board);
         }
-        setCanvasMode(landing.owner, "canvas", Date.now());
+        setAgentView(landing.owner, "canvas", Date.now());
         jumpToAgent(model, landing.owner);
         return OK;
     }

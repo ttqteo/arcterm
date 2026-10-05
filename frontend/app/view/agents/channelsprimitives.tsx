@@ -28,6 +28,7 @@ export function AskRow({ model, agent }: { model: AgentsViewModel; agent: AgentV
     return (
         <div className="rounded-[9px] border border-edge-mid bg-lane p-3">
             <AnswerBar
+                model={model}
                 agent={agent}
                 selections={answerSel[agent.id] ?? {}}
                 texts={answerText[agent.id] ?? {}}

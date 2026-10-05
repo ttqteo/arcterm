@@ -417,6 +417,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const renderAgent = (a: AgentVM, share: CardShare) => (
         <AgentRow
             key={a.id}
+            model={model}
             agent={a}
             nowAtom={model.nowAtom}
             share={share}

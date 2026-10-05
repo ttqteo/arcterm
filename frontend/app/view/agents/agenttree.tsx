@@ -37,12 +37,14 @@ import {
     treeAgentCount,
     type StageOutcome,
 } from "./agenttreemodel";
+import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
-import { canvasStateAtom, setCanvasMode } from "./canvasstore";
+import { canvasStateAtom } from "./canvasstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { duplicateSession, renameSession, sessionCustomLabel } from "./session-models/sessionsidebarmodel";
 import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
-import { docReviewAtom, parseDocReview } from "./docreview";
+import { parseDocReview } from "./docreview";
+import { openReview } from "./docreviewstore";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
 import { collapsedProjectsAtom, toggleProject } from "./projectfoldstore";
 import {
@@ -214,7 +216,7 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
             onClick={(e) => {
                 e.stopPropagation();
                 globalStore.set(model.focusIdAtom, id);
-                setCanvasMode(id, showing ? "terminal" : "canvas", Date.now());
+                setAgentView(id, showing ? "terminal" : "canvas", Date.now());
             }}
             title={showing ? "Back to the terminal" : "Show the canvas"}
             className={cn(
@@ -420,12 +422,13 @@ function ParentRow({
                 <CanvasTag model={model} id={agent.id} />
                 {/* a row names its state only when it wants something; the dot already says working or idle */}
                 {review ? (
-                    // opens the dialog over whatever agent is focused, so the click must not reach the row
+                    // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
+                    // focuses its agent in review mode itself, so the click must not reach the row either way
                     <button
                         type="button"
                         onClick={(e) => {
                             e.stopPropagation();
-                            globalStore.set(docReviewAtom, agent.id);
+                            openReview(model, agent.id);
                         }}
                         title={`Open the ${review.kind} review`}
                         className="flex cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] text-[10.5px] font-semibold text-warning hover:border-warning"

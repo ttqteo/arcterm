@@ -14,6 +14,7 @@ import { initHarnessPreference, loadHarnesses } from "./harnessstore";
 import { CodeSurface } from "@/app/view/code/codesurface";
 import { CockpitSurface } from "./cockpitsurface";
 import { DocReviewDialog } from "./docreviewdialog";
+import { useDocReviewSync } from "./docreviewstore";
 import { FilesSurface } from "./filessurface";
 import { reresolveFocus } from "./focusstore";
 import { setupRosterSeededLatch } from "./liveagents";
@@ -96,6 +97,8 @@ function useResetAnswerDraftsOnAskChange(model: AgentsViewModel) {
 export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     usePrunePendingLaunches(model);
     useResetAnswerDraftsOnAskChange(model);
+    // a Doc review's state follows its ask from here, so one answered or cleared on any surface clears it
+    useDocReviewSync(model);
     useHarnessPreference();
     // prime the channel snapshot at boot so the nav-rail needs-you badge + Cockpit counters dedup
     // correctly even before the Channels surface is first opened.

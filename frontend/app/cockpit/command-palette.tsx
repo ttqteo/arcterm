@@ -19,7 +19,7 @@ import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { sendChannelMessage } from "@/app/view/agents/channelactions";
 import { activeChannelAtom, channelsAtom, primeChannels } from "@/app/view/agents/channelsstore";
-import { docReviewAtom } from "@/app/view/agents/docreview";
+import { openReview } from "@/app/view/agents/docreviewstore";
 import { activeFocusAtom, enterFocusFor, exitFocus, focusesAtom, loadFocuses } from "@/app/view/agents/focusstore";
 import type { Runtime } from "@/app/view/agents/launch";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
@@ -521,9 +521,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 model.openTerminal(t.agentId);
                 break;
             case "review":
-                // as the Agent surface's Review binding: the agent, with its review dialog open
+                // as the Agent surface's Review binding: the agent, with its review open (a Spec or Plan
+                // review's dialog, or a Doc review in the terminal's place)
                 model.openTerminal(t.agentId);
-                globalStore.set(docReviewAtom, t.agentId);
+                openReview(model, t.agentId);
                 break;
             case "dag":
                 // openRunDag reads only the dag's oid off the run's dag

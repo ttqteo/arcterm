@@ -23,9 +23,11 @@ import { confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
-import { canvasStateAtom, setCanvasMode } from "./canvasstore";
+import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
+import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
@@ -122,7 +124,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // m4: one-shot settle on the state pill when the focused agent reaches idle
     const settling = useSettle(!ended && agent.state === "idle");
     const review = parseDocReview(agent.ask);
-    const reviewOpen = useAtomValue(docReviewAtom) != null;
+    const dialogOpen = useAtomValue(docReviewAtom) != null;
+    const docReviewShown = useAtomValue(docReviewStateAtom(agent.id))?.mode === "review";
+    // the dialog is open, or the Doc review already shows in the terminal's place
+    const reviewOpen = dialogOpen || docReviewShown;
 
     // Esc cancels the current Claude turn — same PTY-write path as the composer (ControllerInputCommand).
     const interrupt = () => interruptAgent(blockId);
@@ -251,7 +256,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 {review && !reviewOpen ? (
                     <button
                         type="button"
-                        onClick={() => globalStore.set(docReviewAtom, agent.id)}
+                        onClick={() => openReview(model, agent.id)}
                         title={`Show the review (${formatChordString("r")})`}
                         className="flex cursor-pointer items-center gap-[7px] rounded-[7px] border border-warning/45 bg-askingbg px-[11px] py-[6px] text-[11px] font-semibold text-warning hover:border-warning"
                     >
@@ -283,7 +288,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 title: `Canvas (${formatChordString("c")})`,
                             },
                         ]}
-                        onChange={(m) => setCanvasMode(agent.id, m, Date.now())}
+                        onChange={(m) => setAgentView(agent.id, m, Date.now())}
                     />
                 ) : null}
                 {blockId != null ? (

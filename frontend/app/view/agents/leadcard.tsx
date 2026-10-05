@@ -139,6 +139,7 @@ export function LeadCard(p: LeadCardProps) {
 
     const answerBarFor = (agent: AgentVM, className: string) => (
         <AnswerBar
+            model={model}
             agent={agent}
             selections={answerSel[agent.id] ?? {}}
             texts={answerText[agent.id] ?? {}}
@@ -330,7 +331,7 @@ export function LeadCard(p: LeadCardProps) {
                     {leadAsking && lead ? (
                         <div onClick={(e) => e.stopPropagation()} className="mb-2 flex flex-col gap-2">
                             {review ? (
-                                <DocReviewSummary agentId={lead.id} review={review} />
+                                <DocReviewSummary model={model} agentId={lead.id} review={review} />
                             ) : question ? (
                                 <p className="m-0 whitespace-pre-line text-[14px] font-semibold leading-[1.45] text-primary">
                                     {question}

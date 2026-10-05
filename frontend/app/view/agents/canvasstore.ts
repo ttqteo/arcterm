@@ -100,6 +100,8 @@ export function canvasOwner(topic: string): string | null {
     return null;
 }
 
+// The canvas alone. A switch the user makes goes through setAgentView (agentview.ts), which keeps the canvas and the
+// Doc review exclusive; this module doesn't know about the review.
 export function setCanvasMode(agentId: string, mode: "terminal" | "canvas", now: number): void {
     updateCanvas(agentId, (s) =>
         mode === "canvas" ? { ...s, mode, lastViewedMs: now } : { ...s, mode, marking: false, marks: [] }

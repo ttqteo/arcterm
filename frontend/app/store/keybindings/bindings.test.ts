@@ -15,8 +15,10 @@ import {
     setMarking,
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
+import { setAgentView } from "@/app/view/agents/agentview";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import { getDocReview, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { graphOnAtom, historyFiltersAtom, historyScrollAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -51,6 +53,17 @@ vi.mock("@/app/view/jarvis/openref", async (orig) => ({
 // the canvas guards read the focused agent id from the model
 const stubModel = (focusId?: string): any => ({
     focusIdAtom: atom<string | undefined>(focusId) as PrimitiveAtom<string | undefined>,
+});
+
+const docAsk = (path: string) => ({
+    askId: `doc:${path}`,
+    questions: [
+        {
+            header: "Doc review",
+            question: `${path}\n- §3.2: rewritten`,
+            options: [{ label: "Approve" }, { label: "Request changes" }],
+        },
+    ],
 });
 
 const ctx = (surface: SurfaceKey = "cockpit"): KeyContext => ({
@@ -670,14 +683,25 @@ describe("agent:review", () => {
     const modelFocusing = (id: string) =>
         ({
             focusIdAtom: atom<string>(id),
+            surfaceAtom: atom<SurfaceKey>("agent"),
             agentsAtom: atom([
                 { id: "lead", state: "asking", ask: reviewAsk },
                 { id: "worker", state: "asking", ask: plainAsk },
+                { id: "writer", state: "asking", ask: docAsk("/r/paper/main.tex") },
             ]),
         }) as any;
     const review = (model: any) => buildAgentBindings(model).find((b) => b.id === "agent:review")!;
 
-    afterEach(() => globalStore.set(docReviewAtom, null));
+    afterEach(() => {
+        globalStore.set(docReviewAtom, null);
+        syncDocReview("writer", undefined);
+    });
+
+    it("opens a Doc review as the review view, not the dialog", () => {
+        expect(review(modelFocusing("writer")).run(ctx("agent"))).not.toBe(false);
+        expect(getDocReview("writer")?.mode).toBe("review");
+        expect(globalStore.get(docReviewAtom)).toBeNull();
+    });
 
     it("is r on the Agent surface, off while typing", () => {
         const b = review(modelFocusing("lead"));
@@ -855,6 +879,146 @@ describe("agent canvas mode keys", () => {
         expect(active("surface:next")).toBe(true);
         expect(active("agent:canvas-close")).toBe(false);
         expect(getCanvas("a1")!.mode).toBe("canvas");
+    });
+});
+
+describe("agent review mode keys", () => {
+    const nav: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const typing: KeyContext = { ...nav, editable: true };
+    let model: any;
+    const all = () => [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+    const find = (id: string) => all().find((b) => b.id === id)!;
+    const active = (id: string, c: KeyContext = nav) => find(id).when!(c);
+    const onKey = (keys: string, c: KeyContext = nav) =>
+        all()
+            .filter((b) => b.keys === keys && (b.when?.(c) ?? true))
+            .map((b) => b.id);
+    const focusWith = (ask: any) => {
+        model = {
+            focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            agentsAtom: atom([{ id: "a1", name: "paper-writer", state: "asking", ask }]),
+        };
+        syncDocReview("a1", ask);
+    };
+
+    beforeEach(() => focusWith(docAsk("/r/paper/main.tex")));
+
+    afterEach(() => {
+        syncDocReview("a1", undefined);
+        detachCanvas("a1");
+        globalStore.set(docReviewAtom, null);
+        vi.unstubAllGlobals();
+    });
+
+    it("r resolves to exactly one binding in each mode, and goes both ways", () => {
+        expect(onKey("r")).toEqual(["agent:review"]);
+        find("agent:review").run(nav);
+        expect(getDocReview("a1")!.mode).toBe("review");
+        expect(onKey("r")).toEqual(["agent:review-close"]);
+        find("agent:review-close").run(nav);
+        expect(getDocReview("a1")!.mode).toBe("terminal");
+        expect(onKey("r")).toEqual(["agent:review"]);
+
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        setAgentView("a1", "canvas", 1);
+        expect(onKey("r")).toEqual(["agent:review"]);
+        find("agent:review").run(nav);
+        expect(getDocReview("a1")!.mode).toBe("review");
+        expect(getCanvas("a1")!.mode).toBe("terminal");
+        expect(onKey("r")).toEqual(["agent:review-close"]);
+    });
+
+    it("in review mode: [ ], c and Ctrl+Enter are the review's; the surface switch, canvas, rail, fullscreen and back keys stand down", () => {
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        setAgentView("a1", "review", 1);
+        expect(onKey("[")).toEqual(["agent:review-prev"]);
+        expect(onKey("]")).toEqual(["agent:review-next"]);
+        expect(onKey("c")).toEqual(["agent:review-comment"]);
+        expect(onKey("Ctrl:Enter")).toEqual(["agent:review-send"]);
+        for (const id of ["agent:prev", "agent:next", "agent:prev-k", "agent:next-j"]) {
+            expect(active(id), id).toBe(true);
+        }
+        for (const id of [
+            "surface:next",
+            "surface:prev",
+            "agent:canvas-open",
+            "agent:toggle-rail",
+            "agent:fullscreen",
+            "agent:fullscreen-chord",
+            "agent:back",
+        ]) {
+            expect(active(id), id).toBe(false);
+        }
+    });
+
+    it("[ ] step the LaTeX tabs", () => {
+        setAgentView("a1", "review", 1);
+        find("agent:review-next").run(nav);
+        expect(getDocReview("a1")!.tab).toBe("pdf");
+        find("agent:review-prev").run(nav);
+        expect(getDocReview("a1")!.tab).toBe("changes");
+    });
+
+    it("a markdown note has no tabs: [ ] do nothing, and the surface switch still stands down", () => {
+        focusWith(docAsk("/r/notes/next_step.md"));
+        setAgentView("a1", "review", 1);
+        expect(onKey("[")).toEqual([]);
+        expect(onKey("]")).toEqual([]);
+        expect(onKey("c")).toEqual(["agent:review-comment"]);
+    });
+
+    it("in terminal mode the review keys stand down", () => {
+        for (const id of ["agent:review-close", "agent:review-prev", "agent:review-next", "agent:review-comment"]) {
+            expect(active(id), id).toBe(false);
+        }
+        expect(active("agent:review-send", typing)).toBe(false);
+        expect(active("surface:next")).toBe(true);
+    });
+
+    it("in canvas mode the review keys stand down and the canvas keeps its own", () => {
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" }, 0);
+        expect(onKey("c")).toEqual(["agent:canvas-open"]);
+        find("agent:canvas-open").run(nav);
+        expect(getCanvas("a1")!.mode).toBe("canvas");
+        expect(getDocReview("a1")!.mode).toBe("terminal");
+        expect(onKey("c")).toEqual(["agent:canvas-close"]);
+        for (const id of ["agent:review-close", "agent:review-comment", "agent:review-prev", "agent:review-send"]) {
+            expect(active(id), id).toBe(false);
+        }
+    });
+
+    it("c clicks the Comment button, and lets the key pass with none on screen", () => {
+        setAgentView("a1", "review", 1);
+        const click = vi.fn();
+        vi.stubGlobal("document", {
+            querySelector: (sel: string) => (sel === "[data-doc-review-comment]" ? { click } : null),
+        });
+        find("agent:review-comment").run(nav);
+        expect(click).toHaveBeenCalledOnce();
+        vi.stubGlobal("document", { querySelector: () => null });
+        expect(find("agent:review-comment").run(nav)).toBe(false);
+    });
+
+    it("Ctrl+Enter clicks the accent answer, live in the note input; a draft comment keeps its own Ctrl+Enter", () => {
+        setAgentView("a1", "review", 1);
+        expect(active("agent:review-send", typing)).toBe(true);
+        expect(active("agent:review-send", { ...nav, modalOpen: true })).toBe(false);
+        expect(active("agent:review-send", { ...nav, surface: "cockpit" })).toBe(false);
+
+        const click = vi.fn();
+        const note = { closest: () => null };
+        vi.stubGlobal("document", {
+            activeElement: note,
+            querySelector: (sel: string) => (sel === "[data-doc-review-send]" ? { click } : null),
+        });
+        find("agent:review-send").run(typing);
+        expect(click).toHaveBeenCalledOnce();
+
+        const draft = { closest: (sel: string) => (sel === "[data-doc-review-draft]" ? {} : null) };
+        vi.stubGlobal("document", { activeElement: draft, querySelector: () => ({ click }) });
+        expect(find("agent:review-send").run(typing)).toBe(false);
+        expect(click).toHaveBeenCalledOnce();
     });
 });
 

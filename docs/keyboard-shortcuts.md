@@ -124,7 +124,7 @@ A link inside an item view does a full open, even with `Ctrl` held.
 | `j` / `k` (or `←` / `→`) | Previous / next agent |
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
-| `r` | Review: open the focused lead's Spec review or Plan review dialog |
+| `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `Esc` | Back to Cockpit, or exit fullscreen first |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 
@@ -138,6 +138,17 @@ A link inside an item view does a full open, even with `Ctrl` held.
 | `[` / `]` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Ctrl`+`Enter` | Send the marks to the agent (from mark mode) |
+
+### Agent: review mode
+
+Review mode shows the focused agent's `Doc review` in place of its terminal; `r` enters it while the agent asks one. As in canvas mode, `[` / `]`, `c`, `d`, `f`, `F11` and `Esc` do not do their usual jobs there, and the agent keys still move between agents. The canvas and the review never show at once: showing one puts the other back.
+
+| Keys | Action |
+|---|---|
+| `r` | Back to the terminal |
+| `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
+| `c` | Comment on the selected text |
+| `Ctrl`+`Enter` | Send the review: Request changes when there is a comment or a note, else Approve. Inside a comment being written it adds that comment instead |
 
 ### Jarvis
 

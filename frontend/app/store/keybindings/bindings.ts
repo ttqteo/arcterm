@@ -8,14 +8,9 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { answerDigitTarget, canSubmitAsk, moveCursor, projectOf, type AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { setAgentView } from "@/app/view/agents/agentview";
 import { paneState } from "@/app/view/agents/canvasmodel";
-import {
-    focusedCanvas,
-    focusedCanvasMode,
-    setCanvasMode,
-    setMarking,
-    stepCanvasBoard,
-} from "@/app/view/agents/canvasstore";
+import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { enterFocusFor, exitFocus } from "@/app/view/agents/focusstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
@@ -23,7 +18,8 @@ import { compareOnAtom, compareSelectionAtom, leaveCompare, swapCompareRefs } fr
 import { historyCollapsedAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
 import { ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
-import { docReviewAtom, parseDocReview } from "@/app/view/agents/docreview";
+import { parseDocReview } from "@/app/view/agents/docreview";
+import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
 import {
     clearHistoryFilters,
@@ -139,10 +135,13 @@ const clickThrough = (selector: string): boolean | void => {
     el.click();
 };
 
-// `[` `]` belong to the boards in canvas mode, so the surface switch stands down while the focused agent shows
-// its canvas. The agent switches stay live: the tree stays on screen beside the canvas.
-const inAgentCanvas = (model: AgentsViewModel, ctx: KeyContext) =>
-    ctx.surface === "agent" && focusedCanvasMode(model) != null;
+// The focused agent shows its canvas or its Doc review in place of the terminal.
+const terminalSwapped = (model: AgentsViewModel) =>
+    focusedCanvasMode(model) != null || focusedDocReview(model)?.mode === "review";
+
+// `[` `]` belong to the boards in canvas mode and to the tabs in review mode, so the surface switch stands down
+// while the focused agent shows either. The agent switches stay live: the tree stays on screen beside them.
+const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) => ctx.surface === "agent" && terminalSwapped(model);
 
 // Spec §5 (agent-tab-fixes): the second Ctrl+C closes the *focused* session — agent or plain
 // terminal alike (the UI labels both "terminal": "Close terminal — ends the agent"). Returns null
@@ -225,7 +224,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "]",
             group: "Navigation",
             label: "Next surface",
-            when: (ctx) => navigate(ctx) && !inAgentCanvas(model, ctx),
+            when: (ctx) => navigate(ctx) && !inAgentSwap(model, ctx),
             run: () => cycleSurface(1),
         },
         {
@@ -233,7 +232,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "[",
             group: "Navigation",
             label: "Previous surface",
-            when: (ctx) => navigate(ctx) && !inAgentCanvas(model, ctx),
+            when: (ctx) => navigate(ctx) && !inAgentSwap(model, ctx),
             run: () => cycleSurface(-1),
         },
         {
@@ -790,12 +789,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
         return agent != null && parseDocReview(agent.ask) != null ? agent.id : null;
     };
-    // canvas mode hides the rail, the terminal and the other agents, so their keys stand down there
-    const noCanvas = () => focusedCanvasMode(model) == null;
+    // canvas and review mode hide the rail and the terminal, so their keys stand down there
+    const noCanvas = () => !terminalSwapped(model);
     const nav = (ctx: KeyContext) => agentNav(ctx) && noCanvas();
     const canvas = () => focusedCanvas(model);
     const inCanvas = (ctx: KeyContext) => agentNav(ctx) && canvas()?.mode === "canvas";
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
+    const docReview = () => focusedDocReview(model);
+    const inReview = (ctx: KeyContext) => agentNav(ctx) && docReview()?.mode === "review";
     const focusId = () => globalStore.get(model.focusIdAtom);
     return [
         {
@@ -872,17 +873,18 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "r",
             group: "Agent",
             label: "Review",
-            // the focused agent lives in model atoms, which a when() cannot read (whenstate.ts watches
-            // module atoms only), so run() checks it and lets the key pass when there is nothing to review.
-            // Hidden from the palette for the same reason: its row would be dead on most agents.
+            // the focused agent's ask lives in model atoms, which a when() cannot read (whenstate.ts watches
+            // module atoms and the focused agent's canvas and review only), so run() checks it and lets the key
+            // pass when there is nothing to review. Hidden from the palette for the same reason: its row would be
+            // dead on most agents. In review mode r goes back to the terminal (agent:review-close).
             paletteHidden: true,
-            when: agentNav,
+            when: (ctx) => agentNav(ctx) && docReview()?.mode !== "review",
             run: () => {
                 const id = reviewableId();
                 if (id == null) {
                     return false;
                 }
-                globalStore.set(docReviewAtom, id);
+                openReview(model, id);
             },
         },
         {
@@ -913,14 +915,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             },
         },
         // c and m change meaning with the canvas's state, so each is two bindings with exclusive when()s
-        // and every footer chip keeps a static label
+        // and every footer chip keeps a static label; in review mode c is the review's
         {
             id: "agent:canvas-open",
             keys: "c",
             group: "Agent",
             label: "Show the agent's canvas",
-            when: (ctx) => agentNav(ctx) && canvas()?.mode === "terminal",
-            run: () => setCanvasMode(focusId(), "canvas", Date.now()),
+            when: (ctx) => agentNav(ctx) && canvas()?.mode === "terminal" && docReview()?.mode !== "review",
+            run: () => setAgentView(focusId(), "canvas", Date.now()),
         },
         {
             id: "agent:canvas-close",
@@ -928,7 +930,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             group: "Agent",
             label: "Back to the terminal",
             when: inCanvas,
-            run: () => setCanvasMode(focusId(), "terminal", Date.now()),
+            run: () => setAgentView(focusId(), "terminal", Date.now()),
         },
         {
             id: "agent:canvas-prev",
@@ -973,6 +975,55 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 return ctx.surface === "agent" && !ctx.modalOpen && s?.marking === true && s.marks.length > 0;
             },
             run: () => clickThrough("[data-canvas-send]"),
+        },
+        // a Doc review shown in the terminal's place; each key is live only in review mode, so it never shares a
+        // key with the canvas's or the terminal's own
+        {
+            id: "agent:review-close",
+            keys: "r",
+            group: "Agent",
+            label: "Back to the terminal",
+            when: inReview,
+            run: () => setAgentView(focusId(), "terminal", Date.now()),
+        },
+        {
+            id: "agent:review-prev",
+            keys: "[",
+            group: "Agent",
+            label: "Previous tab",
+            when: (ctx) => inReview(ctx) && docReview()!.doc === "latex",
+            run: () => stepDocReviewTab(focusId(), -1),
+        },
+        {
+            id: "agent:review-next",
+            keys: "]",
+            group: "Agent",
+            label: "Next tab",
+            when: (ctx) => inReview(ctx) && docReview()!.doc === "latex",
+            run: () => stepDocReviewTab(focusId(), 1),
+        },
+        {
+            id: "agent:review-comment",
+            keys: "c",
+            group: "Agent",
+            label: "Comment on the selection",
+            when: inReview,
+            run: () => clickThrough("[data-doc-review-comment]"),
+        },
+        {
+            id: "agent:review-send",
+            keys: "Ctrl:Enter",
+            group: "Agent",
+            label: "Send the review to the agent",
+            // live inside the general note on purpose, as canvas-send is in a mark's note; a draft comment's own
+            // Ctrl+Enter adds that comment, so the key passes to it
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && docReview()?.mode === "review",
+            run: () => {
+                if ((document.activeElement as HTMLElement | null)?.closest?.("[data-doc-review-draft]") != null) {
+                    return false;
+                }
+                return clickThrough("[data-doc-review-send]");
+            },
         },
     ];
 }

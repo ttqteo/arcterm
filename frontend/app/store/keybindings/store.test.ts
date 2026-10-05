@@ -4,6 +4,7 @@
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { setAgentView } from "@/app/view/agents/agentview";
 import {
     attachCanvas,
     canvasStateAtom,
@@ -13,6 +14,7 @@ import {
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
+import { docReviewStateAtom, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -55,6 +57,17 @@ function withCanvas(): any {
     }));
     return stubModel("a1");
 }
+
+const docAsk = (path: string) => ({
+    askId: `doc:${path}`,
+    questions: [
+        {
+            header: "Doc review",
+            question: `${path}\n- §3.2: rewritten`,
+            options: [{ label: "Approve" }, { label: "Request changes" }],
+        },
+    ],
+});
 
 function b(id: string, keys = "j"): Binding {
     return { id, keys, group: "g", label: id, run: () => {} };
@@ -153,6 +166,28 @@ describe("keybinding conflict invariant", () => {
             setMarking("a1", true);
             expect(() => assertNoConflicts(all)).not.toThrow();
         } finally {
+            detachCanvas("a1");
+        }
+    });
+
+    // r, c, [, ] and Ctrl+Enter change hands again in review mode, with a canvas beside it or not
+    it("global + list-nav + agent bindings do not conflict in any review state", () => {
+        const model = withCanvas();
+        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        try {
+            for (const path of ["/r/paper/main.tex", "/r/notes/n.md"]) {
+                syncDocReview("a1", docAsk(path));
+                expect(() => assertNoConflicts(all)).not.toThrow();
+                setAgentView("a1", "review", 1);
+                expect(() => assertNoConflicts(all)).not.toThrow();
+                setAgentView("a1", "canvas", 2);
+                setMarking("a1", true);
+                expect(() => assertNoConflicts(all)).not.toThrow();
+                syncDocReview("a1", undefined);
+                setAgentView("a1", "terminal", 3);
+            }
+        } finally {
+            syncDocReview("a1", undefined);
             detachCanvas("a1");
         }
     });
@@ -383,8 +418,13 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             detachCanvas("a1");
         }
 
-        // the focus id and the focused agent's canvas atom are watched by watchFocusedCanvas, not listed
-        const registered = new Set<unknown>([...PREDICATE_ATOMS, model.focusIdAtom, canvasStateAtom("a1")]);
+        // the focus id and the focused agent's canvas and review atoms are watched by watchFocusedAgent, not listed
+        const registered = new Set<unknown>([
+            ...PREDICATE_ATOMS,
+            model.focusIdAtom,
+            canvasStateAtom("a1"),
+            docReviewStateAtom("a1"),
+        ]);
         const missing = [...seen].filter((a) => !registered.has(a));
         const unused = PREDICATE_ATOMS.filter((a) => !seen.has(a));
         expect(missing).toEqual([]); // a when() predicate reads an atom whenstate.ts doesn't watch

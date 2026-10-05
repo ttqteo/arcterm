@@ -28,6 +28,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
+import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
@@ -76,22 +77,30 @@ for (const predicateAtom of PREDICATE_ATOMS) {
     globalStore.sub(predicateAtom, bumpWhenVersion);
 }
 
-// The canvas predicates (buildAgentBindings, and the surface/agent switches in buildGlobalBindings) read the
-// focused agent's canvasStateAtom: one atom per agent, picked by a model-owned focus id, so it can't be a
-// static PREDICATE_ATOMS entry. This follows the focus and re-subscribes; the completeness test counts these
-// two atoms as watched here. Returns the unsubscribe.
-export function watchFocusedCanvas(model: AgentsViewModel): () => void {
-    let unsubCanvas = () => {};
+// The canvas and review predicates (buildAgentBindings, and the surface/agent switches in buildGlobalBindings)
+// read the focused agent's canvasStateAtom and docReviewStateAtom: one atom per agent, picked by a model-owned
+// focus id, so neither can be a static PREDICATE_ATOMS entry. This follows the focus and re-subscribes; the
+// completeness test counts these three atoms as watched here. Returns the unsubscribe.
+export function watchFocusedAgent(model: AgentsViewModel): () => void {
+    let unsubAgent = () => {};
     const follow = () => {
-        unsubCanvas();
+        unsubAgent();
         const id = globalStore.get(model.focusIdAtom);
-        unsubCanvas = id ? globalStore.sub(canvasStateAtom(id), bumpWhenVersion) : () => {};
+        if (id) {
+            const unsubs = [
+                globalStore.sub(canvasStateAtom(id), bumpWhenVersion),
+                globalStore.sub(docReviewStateAtom(id), bumpWhenVersion),
+            ];
+            unsubAgent = () => unsubs.forEach((u) => u());
+        } else {
+            unsubAgent = () => {};
+        }
         bumpWhenVersion();
     };
     const unsubFocus = globalStore.sub(model.focusIdAtom, follow);
     follow();
     return () => {
         unsubFocus();
-        unsubCanvas();
+        unsubAgent();
     };
 }

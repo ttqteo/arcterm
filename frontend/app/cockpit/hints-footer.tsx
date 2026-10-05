@@ -10,7 +10,7 @@
 import { deriveKeyContext } from "@/app/store/keybindings/dispatcher";
 import { activeLeaderAtom } from "@/app/store/keybindings/leaderatom";
 import { bindingsAtom } from "@/app/store/keybindings/store";
-import { watchFocusedCanvas, whenVersionAtom } from "@/app/store/keybindings/whenstate";
+import { watchFocusedAgent, whenVersionAtom } from "@/app/store/keybindings/whenstate";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
@@ -58,7 +58,7 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
     // subscribe-only: some when(ctx) predicates read state ctx doesn't carry (see whenstate.ts), so
     // this is what tells React to recompute chips below when that state changes.
     useAtomValue(whenVersionAtom);
-    useEffect(() => watchFocusedCanvas(model), [model]);
+    useEffect(() => watchFocusedAgent(model), [model]);
     // `editable` reads document.activeElement (not atom-tracked); recompute on focus moves.
     const [, recomputeOnFocus] = useState(0);
     useEffect(() => {

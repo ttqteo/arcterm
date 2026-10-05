@@ -10,6 +10,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { attachCanvas, detachCanvas, setCanvasMode } from "@/app/view/agents/canvasstore";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
+import { setDocReviewMode, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -21,7 +22,7 @@ import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
 import { listNavAtom } from "./listnav";
-import { watchFocusedCanvas, whenVersionAtom } from "./whenstate";
+import { watchFocusedAgent, whenVersionAtom } from "./whenstate";
 
 afterEach(() => {
     globalStore.set(diffScopeAtom, null);
@@ -126,7 +127,7 @@ describe("whenVersionAtom", () => {
     });
 });
 
-describe("watchFocusedCanvas", () => {
+describe("watchFocusedAgent", () => {
     const A = { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p" };
 
     afterEach(() => {
@@ -138,7 +139,7 @@ describe("watchFocusedCanvas", () => {
         const model = { focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined> } as any;
         attachCanvas("a1", A, 0);
         attachCanvas("a2", A, 0);
-        const stop = watchFocusedCanvas(model);
+        const stop = watchFocusedAgent(model);
         try {
             let before = globalStore.get(whenVersionAtom);
             setCanvasMode("a1", "canvas", 1);
@@ -164,5 +165,29 @@ describe("watchFocusedCanvas", () => {
         setCanvasMode("a2", "canvas", 3);
         globalStore.set(model.focusIdAtom, "a1");
         expect(globalStore.get(whenVersionAtom)).toBe(before);
+    });
+
+    it("bumps on the focused agent's review changes, and not on another agent's", () => {
+        const model = { focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined> } as any;
+        const docAsk = (askId: string) => ({
+            askId,
+            questions: [{ header: "Doc review", question: "/r/main.tex", options: [{ label: "Approve" }] }],
+        });
+        const stop = watchFocusedAgent(model);
+        try {
+            let before = globalStore.get(whenVersionAtom);
+            syncDocReview("a1", docAsk("k1"));
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+            before = globalStore.get(whenVersionAtom);
+            setDocReviewMode("a1", "review", 1);
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+            before = globalStore.get(whenVersionAtom);
+            syncDocReview("a2", docAsk("k2"));
+            expect(globalStore.get(whenVersionAtom)).toBe(before);
+        } finally {
+            stop();
+            syncDocReview("a1", undefined);
+            syncDocReview("a2", undefined);
+        }
     });
 });

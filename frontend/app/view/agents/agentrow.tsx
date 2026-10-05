@@ -25,6 +25,7 @@ import {
     tasksLabel,
     type AgentRowMenuItem,
 } from "./agentrowmodel";
+import type { AgentsViewModel } from "./agents";
 import {
     displayAgeMs,
     formatAge,
@@ -189,6 +190,7 @@ function FanoutBadge({ subs, onOpen }: { subs: SubagentVM[]; onOpen: () => void 
 // orchestrator overview (statusline.tsx); AgentRow composes them with its own controls.
 
 export const AgentRow = memo(function AgentRow({
+    model,
     agent,
     nowAtom,
     isCursor,
@@ -212,6 +214,7 @@ export const AgentRow = memo(function AgentRow({
     pulse,
     share,
 }: {
+    model: AgentsViewModel;
     agent: AgentVM;
     nowAtom: Atom<number>;
     isCursor: boolean;
@@ -415,7 +418,7 @@ export const AgentRow = memo(function AgentRow({
                     ) : null}
                     {review ? (
                         <div className="shrink-0 border-b border-edge-mid px-3.5 py-2.5">
-                            <DocReviewSummary agentId={agent.id} review={review} />
+                            <DocReviewSummary model={model} agentId={agent.id} review={review} />
                         </div>
                     ) : question ? (
                         <p className="shrink-0 whitespace-pre-line border-b border-edge-mid px-3.5 py-2.5 text-[14px] font-semibold leading-[1.5] text-primary">

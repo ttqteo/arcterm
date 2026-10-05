@@ -1,13 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { ArrowUpRight, Check, FileText, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import type { AgentsViewModel } from "./agents";
 import { answerHint, nextUnansweredQuestion, type AgentAskQuestion, type AgentVM } from "./agentsviewmodel";
 import { activePreview, previewMode } from "./answerbarpreview";
-import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
+import { DOC_REVIEW_HEADERS, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
+import { openReview } from "./docreviewstore";
 import { MarkdownMessage } from "./markdownmessage";
 
 // The answer surface tracks the agent's status, mirroring the handoff (Wave-answer.dc.html: the
@@ -53,8 +54,18 @@ const REVIEW_ITEM_NOUN: Record<DocReviewKind, [string, string]> = {
     doc: ["point", "points"],
 };
 
-// A doc-review ask in a card, in place of its question text: the document's full text belongs in the dialog.
-export function DocReviewSummary({ agentId, review }: { agentId: string; review: DocReview }) {
+// A doc-review ask in a card, in place of its question text: the document's full text belongs in the dialog, or
+// for a Doc review in the review view. Review opens it through openReview; with no model (a run's child-ask card,
+// whose agent is not in the roster) there is nothing to open, so the button is left out.
+export function DocReviewSummary({
+    model,
+    agentId,
+    review,
+}: {
+    model: AgentsViewModel | undefined;
+    agentId: string;
+    review: DocReview;
+}) {
     const file = review.path.split(/[\\/]/).pop() ?? review.path;
     const n = review.items.length;
     const [one, many] = REVIEW_ITEM_NOUN[review.kind];
@@ -72,17 +83,19 @@ export function DocReviewSummary({ agentId, review }: { agentId: string; review:
                     {file}
                 </div>
             </div>
-            <button
-                type="button"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    globalStore.set(docReviewAtom, agentId);
-                }}
-                className="inline-flex h-[25px] shrink-0 cursor-pointer items-center gap-[5px] rounded-[6px] border border-accent/45 bg-transparent px-2.5 text-[11.5px] font-semibold text-accent-soft hover:bg-accent/10"
-            >
-                Review
-                <ArrowUpRight size={11} aria-hidden />
-            </button>
+            {model != null ? (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        openReview(model, agentId);
+                    }}
+                    className="inline-flex h-[25px] shrink-0 cursor-pointer items-center gap-[5px] rounded-[6px] border border-accent/45 bg-transparent px-2.5 text-[11.5px] font-semibold text-accent-soft hover:bg-accent/10"
+                >
+                    Review
+                    <ArrowUpRight size={11} aria-hidden />
+                </button>
+            ) : null}
         </div>
     );
 }
@@ -287,8 +300,10 @@ function QuestionGroup({
 
 // Answer surface for an asking agent. Selection state is owned by the parent (so the keyboard triage
 // keymap and mouse clicks write the same place). Mouse: single-select submits on click, multi-select
-// waits for the parent's submit (Enter). When `sent`, shows a confirmation in place.
+// waits for the parent's submit (Enter). When `sent`, shows a confirmation in place. `model` lets a
+// doc-review summary open its review; a caller whose agent is not in the roster leaves it out.
 export function AnswerBar({
+    model,
     agent,
     selections,
     texts,
@@ -304,6 +319,7 @@ export function AnswerBar({
     showHint = true,
     className,
 }: {
+    model?: AgentsViewModel;
     agent: AgentVM;
     selections: Record<number, Set<number>>;
     texts?: Record<number, string>;
@@ -378,7 +394,7 @@ export function AnswerBar({
             accent={accent}
             numbered={numbered}
             hideQuestion={hideQuestion}
-            summary={review ? <DocReviewSummary agentId={agent.id} review={review} /> : undefined}
+            summary={review ? <DocReviewSummary model={model} agentId={agent.id} review={review} /> : undefined}
             selections={selections[qi] ?? new Set()}
             text={texts?.[qi]}
             onText={onText ? (value: string) => onText(qi, value) : undefined}
