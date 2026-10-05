@@ -28,7 +28,8 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
     const loadError = useAtomValue(sessionsErrorAtom);
     const roster = useAtomValue(model.agentsAtom);
     // the archive is scanned on entering the surface, but this pane can open before that scan has landed (or without
-    // one); the scan guards against concurrent loads, and a failure still ends the skeleton (archive null -> [])
+    // one); a call made while a scan is running is folded into it (which then runs once more), and a failure still ends
+    // the skeleton (archive null -> [])
     const archiveMissing = archive == null;
     useEffect(() => {
         if (archiveMissing) {

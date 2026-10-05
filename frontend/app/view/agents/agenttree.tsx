@@ -111,8 +111,8 @@ function endRowRename(tabId: string): void {
     }
 }
 
-// how many times "Show more" was pressed under each project (five more ended sessions per press); session-scoped, and
-// module-level so it survives the tree re-rendering
+// how many times "Show more" was pressed under each project (five more ended sessions per press). Sidebar UI state in a
+// module-level atom, so it outlives the tree's re-renders and unmounts; it is not persisted
 const sessionPagesAtom = atom<Record<string, number>>({});
 
 // choosing an agent's row brings its terminal back from a session or History
@@ -884,6 +884,7 @@ function MoreSessionsRow({ project, hidden }: { project: string; hidden: number 
         <button
             type="button"
             data-agent-sessions-more={project}
+            aria-label={`Show more sessions in ${project}`}
             onClick={() => globalStore.set(sessionPagesAtom, (pages) => showMore(pages, project))}
             className="relative flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
         >
@@ -948,11 +949,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 <button
                     type="button"
                     data-agent-history-open
-                    aria-pressed={center === "history"}
+                    aria-current={center === "history" ? "true" : undefined}
                     onClick={() => showHistory(model)}
                     className={cn(
-                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px] hover:bg-surface-hover hover:text-primary",
-                        center === "history" ? "bg-surface-selected text-primary" : "text-secondary"
+                        "flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] px-[10px] py-[7px] text-[13px]",
+                        center === "history"
+                            ? "bg-surface-selected text-primary"
+                            : "text-secondary hover:bg-surface-hover hover:text-primary"
                     )}
                 >
                     <HistoryIcon size={14} aria-hidden />
@@ -998,8 +1001,9 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                             );
                         }
                         if (r.kind === "session" || r.kind === "more") {
-                            // no entrance animation (initial={false}): the rows arrive after the post-paint scan, and the
-                            // rows already on screen must not be seen to move for them
+                            // initial={false} only drops these rows' own entrance animation, since they arrive after the
+                            // post-paint scan; the rows below them keep layout="position" and slide down when the first
+                            // scan lands
                             return (
                                 <motion.div
                                     key={r.kind === "session" ? `ended-${r.key}` : `more-${r.project}`}

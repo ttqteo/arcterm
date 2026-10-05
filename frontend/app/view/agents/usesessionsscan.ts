@@ -4,7 +4,7 @@
 // The sidebar's ended sessions come from a 30-day scan over four runtimes' transcript folders (GetSessionsActivity), so it
 // never runs at boot: AgentSurface is mounted from the first render, and the scan waits for the Agent surface to be showing
 // and for a first paint. It re-runs on each arrival and when an agent leaves the roster (its session just ended), within the
-// gaps scanDue allows. No timer: nothing here polls.
+// gaps scanDue allows. No interval: nothing here polls.
 
 import { fireAndForget } from "@/util/util";
 import { useEffect, useRef } from "react";
@@ -28,7 +28,11 @@ function afterPaint(run: () => void): () => void {
 
 export function useSessionsScan(onAgentSurface: boolean, agents: AgentVM[]): void {
     const lastAt = useRef(0);
-    const ids = useRef<Set<string>>(new Set(agents.map((a) => a.id)));
+    // the roster's ids as of the last render, seeded on the first (a lazy init: a ref's initial value is built every render)
+    const ids = useRef<Set<string> | null>(null);
+    if (ids.current == null) {
+        ids.current = new Set(agents.map((a) => a.id));
+    }
     // the scan waiting for its frame. It is cancelled only by being replaced or by unmounting, never by an effect re-running:
     // a roster change in the frame after an exit must not drop that exit's scan
     const pending = useRef<() => void>(() => {});

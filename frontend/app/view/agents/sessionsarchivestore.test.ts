@@ -14,6 +14,7 @@ import {
     overlayLive,
     resolveSelectedSession,
     sessionsArchiveAtom,
+    sessionsErrorAtom,
     totalEvents,
 } from "./sessionsarchivestore";
 
@@ -154,5 +155,28 @@ describe("loadSessionsArchive", () => {
         // nothing was asked for during the second scan, so it does not go round again
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(scan).toHaveBeenCalledTimes(2);
+    });
+
+    it("runs once more after a failed scan too, keeping the last good data and flagging the error", async () => {
+        const scan = vi.mocked(RpcApi.GetSessionsActivityCommand);
+        scan.mockReset();
+        const good = [mk({ id: "good" })];
+        globalStore.set(sessionsArchiveAtom, good);
+        globalStore.set(sessionsErrorAtom, false);
+        let failFirst!: () => void;
+        const firstScan = new Promise<never>((_, reject) => (failFirst = () => reject(new Error("scan failed"))));
+        scan.mockImplementationOnce(() => firstScan);
+        scan.mockRejectedValue(new Error("scan failed"));
+
+        const first = loadSessionsArchive();
+        await loadSessionsArchive();
+        failFirst();
+        await first;
+        expect(scan).toHaveBeenCalledTimes(2);
+        // the second scan fails as well and nothing was asked for during it: it stops there
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(scan).toHaveBeenCalledTimes(2);
+        expect(globalStore.get(sessionsArchiveAtom)).toBe(good);
+        expect(globalStore.get(sessionsErrorAtom)).toBe(true);
     });
 });
