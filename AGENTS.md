@@ -119,15 +119,14 @@ Load-bearing rules:
   lost, so persist anything survival-worthy in a per-entity jotai atom. Cross-surface concerns live in
   the always-mounted shell, not in a surface.
 - **The Agent surface's terminal stack is one CSS grid parent that is always rendered, never conditionally.** It is a
-  deliberate exception to DESIGN.md's "grid only for card grids": a 2x2 of live terminals (spec decision 8), not a card
-  grid, so don't "fix" it back to flex. Every live agent's `CockpitFocusPane` stays mounted under it with a stable `key`;
-  `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
-  `hidden`). Re-parenting a pane or rendering the stack conditionally remounts the xterm and replays the TUI. Panes
-  refit through `term.tsx`'s ResizeObserver, so the tracks stay `minmax(0, 1fr)` (`grid-cols-2 grid-rows-2`), cells keep
-  `min-w-0 min-h-0`, and nothing animates a cell's size. `focusIdAtom` stays the one selection: `AgentSurface` reconciles
-  the saved grid against it, so every writer (tree click, cell click, `Ctrl+Tab`, arrows, palette, `openref.ts`) gets the
-  same rule. Cells come from dragging a row onto a cell, the row menu's **Open in split**, and the palette's
-  `agent:split` (`cockpit/actions/agent.ts`).
+  deliberate exception to DESIGN.md's "grid only for card grids" (a 2x2 of live terminals, not a card grid): don't "fix"
+  it back to flex. Every agent and terminal that has a block keeps its `CockpitFocusPane` mounted under it with a stable
+  `key`; `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
+  `hidden`), and only agents can be cells. Re-parenting a pane or rendering the stack conditionally remounts the xterm
+  and replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
+  `min-w-0 min-h-0`, and nothing animating a cell's size. `focusIdAtom` stays the one selection: `AgentSurface`
+  reconciles the grid against it, so every route that selects an agent obeys one rule. Cells are added by drag or by
+  **Open in split** (row menu, palette `agent:split`).
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`
   (`openAddress` for a string, `openTarget` for an id): it loads the target, writes the destination's
   selection, then switches surface. Don't hand-roll set-selection-then-`surfaceAtom`.

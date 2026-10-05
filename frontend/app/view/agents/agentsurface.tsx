@@ -212,6 +212,28 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [centerMode]);
 
+    // Ctrl+Tab works from inside a terminal and only writes focusIdAtom. When it lands on another cell, DOM focus is
+    // still in the previous cell's xterm; hand it over so typing goes where the header says. Only from inside a
+    // different cell's terminal: from the tree, the wrapper or a note field there is nothing to hand over, and
+    // focusing an xterm there would turn the next j/k/arrow into typing.
+    useEffect(() => {
+        const wrap = wrapRef.current;
+        if (!multi || agent == null || wrap == null) {
+            return;
+        }
+        const from =
+            document.activeElement instanceof Element
+                ? document.activeElement.closest<HTMLElement>("[data-agent-terminal]")
+                : null;
+        if (from == null || !wrap.contains(from) || from.dataset.agentTerminal === agent.id) {
+            return;
+        }
+        const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
+        if (term?.checkVisibility()) {
+            term.focus({ preventScroll: true });
+        }
+    }, [agent?.id]);
+
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
     // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the review when it
     // shows, else the live terminal, or the wrapper when none is showing (canvas, subagent interior, no terminal).

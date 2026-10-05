@@ -121,7 +121,7 @@ A link inside an item view does a full open, even with `Ctrl` held.
 
 | Keys | Action |
 |---|---|
-| `j` / `k` (or `←` / `→`) | Previous / next agent |
+| `j` / `k` (or `→` / `←`) | Next / previous agent |
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
@@ -141,8 +141,9 @@ terminal back. An ended session opened from the sidebar covers the terminal the 
 Drag a live agent from the tree onto a terminal to split the view (up to four cells), or right-click its row and pick
 **Open in split**. The palette has it too, which is the route from the keyboard: `Ctrl`+`P`, the agent, `→`, **Open in
 split**. A split needs an agent with no cell yet and a grid with room; otherwise the menu item is disabled and the
-palette action just opens the agent. Each cell has a bar you can drag to rearrange it; the `×` on it takes the agent out
-of the grid and leaves it running. The header and the details rail follow the focused cell; click a cell to focus it.
+palette action just opens the agent. Once there are two cells, each has a bar you can drag to rearrange it; the `×` on
+it takes the agent out of the grid and leaves it running. The header and the details rail follow the focused cell; click
+a cell to focus it.
 
 Moving between agents with the keyboard follows one rule: if the agent already has a cell, that cell takes focus;
 otherwise the agent replaces the focused cell and the others stay put. So stepping through more agents than there are
@@ -150,7 +151,7 @@ cells keeps changing which of them show.
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`Tab` | Next agent, by the rule above; works from inside a terminal |
+| `Ctrl`+`Tab` | Next agent, by the rule above; works from inside a terminal, where typing follows to the new cell |
 | `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above. It goes forward, not back |
 | `j` / `→`, `k` / `←` | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |

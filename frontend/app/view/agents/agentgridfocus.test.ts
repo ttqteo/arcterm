@@ -28,6 +28,10 @@ describe("Ctrl+Tab", () => {
     it("onto an agent with no cell replaces the focused cell", () => {
         expect(ctrlTab(g(["a", "b"], "b"))).toEqual(g(["a", "c"], "c"));
     });
+    it("wraps from the last agent to the first by name", () => {
+        expect(ctrlTab(g(["a", "e"], "e")).focused).toBe("a");
+        expect(ctrlTab(g(["a", "e"], "e"))).toEqual(g(["a", "e"], "a"));
+    });
     it("round the whole roster the grid never grows, and focus always lands on the agent stepped to", () => {
         let s = g(["a", "b"], "a");
         for (let i = 0; i < 12; i++) {
@@ -37,6 +41,28 @@ describe("Ctrl+Tab", () => {
             expect(s.focused).toBe(expected);
             expect(s.ids).toContain(s.focused);
         }
+    });
+    it("walks a known sequence of layouts, written out", () => {
+        let s = g(["a", "b"], "a");
+        const trail: GridState[] = [];
+        for (let i = 0; i < 12; i++) {
+            s = ctrlTab(s);
+            trail.push(s);
+        }
+        expect(trail).toEqual([
+            g(["a", "b"], "b"), // b has a cell: focus moves
+            g(["a", "c"], "c"), // c has none: it takes b's cell
+            g(["a", "d"], "d"),
+            g(["a", "e"], "e"),
+            g(["a", "e"], "a"), // wrapped to a, which has a cell
+            g(["b", "e"], "b"), // b takes a's cell
+            g(["c", "e"], "c"),
+            g(["d", "e"], "d"),
+            g(["d", "e"], "e"), // e has a cell
+            g(["d", "a"], "a"), // wrapped to a, which takes e's cell
+            g(["d", "b"], "b"),
+            g(["d", "c"], "c"),
+        ]);
     });
 });
 
