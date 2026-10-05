@@ -3,6 +3,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { checkUploadFile, sanitizeFileName, UploadError } from "@/app/view/agents/uploadfile";
 import * as TermTypes from "@xterm/xterm";
 import base64 from "base64-js";
 
@@ -64,6 +65,12 @@ export async function createTempFileFromBlob(blob: Blob): Promise<string> {
     const random = Math.random().toString(36).substring(2, 8);
     const filename = `waveterm_paste_${timestamp}_${random}.${ext}`;
 
+    return writeTempFile(filename, blob);
+}
+
+// Writes the blob's bytes to a file called `filename` in a fresh temp directory (WriteTempFileCommand makes one
+// per call, so two files with the same name never collide) and returns its path.
+async function writeTempFile(filename: string, blob: Blob): Promise<string> {
     const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as ArrayBuffer);
@@ -73,13 +80,26 @@ export async function createTempFileFromBlob(blob: Blob): Promise<string> {
 
     const base64Data = base64.fromByteArray(new Uint8Array(arrayBuffer));
 
-    // Write image to temp file and get path
-    const tempPath = await RpcApi.WriteTempFileCommand(TabRpcClient, {
+    return RpcApi.WriteTempFileCommand(TabRpcClient, {
         filename,
         data64: base64Data,
     });
+}
 
-    return tempPath;
+/**
+ * Copies any file (one dropped from the OS, which arrives as a blob with no path) to a temporary file that keeps
+ * its own name, and returns the path.
+ *
+ * @param file - The File to copy
+ * @returns The path to the created temporary file
+ * @throws UploadError if the file is over the 5MB cap (checkUploadFile)
+ */
+export async function createTempFileFromFile(file: File): Promise<string> {
+    const rejection = checkUploadFile(file);
+    if (rejection != null) {
+        throw new UploadError(rejection, file.name);
+    }
+    return writeTempFile(sanitizeFileName(file.name), file);
 }
 
 /**
