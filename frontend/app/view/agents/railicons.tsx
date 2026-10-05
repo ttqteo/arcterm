@@ -13,6 +13,7 @@ import {
     GitBranch,
     Info,
     Settings,
+    SquareTerminal,
     Users,
     Wrench,
 } from "lucide-react";
@@ -31,5 +32,6 @@ export const RAIL_ICON: Record<string, ReactNode> = {
     gear: <Settings {...iconProps} />,
     fleet: <Users {...iconProps} />,
     bell: <Bell {...iconProps} />,
+    terminal: <SquareTerminal {...iconProps} />,
     folder: <Folder {...iconProps} />,
 };

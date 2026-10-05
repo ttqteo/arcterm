@@ -1021,3 +1021,226 @@ Hand-format this file (4-space, as it is); never run prettier on it.
     and Fira Code as bundled do not.
 
 - [ ] **Step 3: Commit.** `git commit -m "docs(design): Graphite and Inter as the defaults"`.
+
+---
+
+### Task 10: `foldCollapsedProjects` — collapsible project groups
+
+**Depends on:** none
+
+**Files:**
+- Modify: `frontend/app/view/agents/agenttreemodel.ts` (append after `treeAgentCount`)
+- Test: `frontend/app/view/agents/agenttreemodel.test.ts` (append)
+- Create: `frontend/app/view/agents/projectfoldstore.ts`, `frontend/app/view/agents/projectfoldstore.test.ts`
+
+- [ ] **Step 1: Write the failing tests.** Append to `agenttreemodel.test.ts` (import `foldCollapsedProjects`;
+  build the agents the way the file's existing multi-project test does — check how its `vm` helper sets a
+  project):
+
+  ```ts
+  describe("foldCollapsedProjects", () => {
+      // alpha: a (idle), b (asking); beta: c (idle)
+      const rows = buildAgentTree(/* three agents as above */, ["a", "b", "c"]);
+      it("keeps every row when nothing is collapsed", () => {
+          expect(foldCollapsedProjects(rows, new Set())).toEqual(rows);
+      });
+      it("drops a collapsed project's body but keeps its group row and its attention", () => {
+          const out = foldCollapsedProjects(rows, new Set(["alpha"]));
+          expect(out.map((r) => (r.kind === "group" ? `g:${r.project}` : r.kind))).toEqual([
+              "g:alpha",
+              "g:beta",
+              "parent",
+          ]);
+          expect(out[0]).toMatchObject({ kind: "group", project: "alpha", attn: 1 });
+      });
+  });
+  ```
+
+  `projectfoldstore.test.ts`: `toggleProject` adds a missing name, removes a present one, leaves the others.
+
+- [ ] **Step 2: Run, expect FAIL.** `npx vitest run frontend/app/view/agents/agenttreemodel.test.ts frontend/app/view/agents/projectfoldstore.test.ts`.
+
+- [ ] **Step 3: Implement.** In `agenttreemodel.ts`:
+
+  ```ts
+  /** Pure: the tree with each collapsed project's body rows removed. Its group row stays, carrying the count
+   *  and attention of what it hides, so a collapsed project still says when an agent in it waits on you. */
+  export function foldCollapsedProjects(rows: AgentTreeRow[], collapsed: ReadonlySet<string>): AgentTreeRow[] {
+      if (collapsed.size === 0) {
+          return rows;
+      }
+      const out: AgentTreeRow[] = [];
+      let hiding = false;
+      for (const r of rows) {
+          if (r.kind === "group") {
+              hiding = collapsed.has(r.project);
+              out.push(r);
+          } else if (!hiding) {
+              out.push(r);
+          }
+      }
+      return out;
+  }
+  ```
+
+  `projectfoldstore.ts`:
+
+  ```ts
+  // Copyright 2026, Command Line Inc.
+  // SPDX-License-Identifier: Apache-2.0
+  //
+  // Which project groups the Agent surface's tree has collapsed, by project name. Persisted, like the rail.
+
+  import { atomWithStorage } from "jotai/utils";
+
+  export const collapsedProjectsAtom = atomWithStorage<string[]>("agent.tree.collapsed", []);
+
+  export function toggleProject(list: string[], project: string): string[] {
+      return list.includes(project) ? list.filter((p) => p !== project) : [...list, project];
+  }
+  ```
+
+- [ ] **Step 4: Run, expect PASS.**
+
+- [ ] **Step 5: Commit.** `git commit -m "feat(agents): collapsible project groups in the tree model"`.
+
+---
+
+### Task 11: Restyle the Agent tree after Antigravity's sidebar
+
+**Depends on:** Task 1, Task 10
+
+**Files:**
+- Modify: `frontend/app/view/agents/agenttree.tsx`
+
+Spec decision 9 is the visual spec. Keep the DOM skeleton `agent-tree-rail` reads: each row's `Slot` as its
+first child (the lead's `Workflow` svg in a 14px column), `Guides` as 1px spans, the lead's
+`span.truncate.text-muted` progress, the `[data-agent-tree]` root, the "Hide workers" chip, and the
+`{n} asking` text.
+
+- [ ] **Step 1: Header.** Replace the header block with:
+  - a full-width button — lucide `Plus` (14) + `New agent` —
+    `onClick={() => globalStore.set(model.newAgentOpenAtom, true)}`,
+    `className="flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[7px] text-[13px] text-secondary hover:bg-surface-hover hover:text-primary"`,
+    in a `px-[8px] pt-[10px]` wrapper;
+  - under it a `flex items-center justify-between px-[12px] pb-[4px] pt-[14px]` row:
+    `<h3 className="text-[12px] font-medium text-muted">Agents</h3>` and
+    `<span className="font-mono text-[11px] text-ink-faint">{total}</span>`.
+
+  Drop the header's `border-b`, `headerAttn`, and the single-project suppression (`multiProject`,
+  `visibleRows`): every project gets its group row.
+
+- [ ] **Step 2: Group rows.** `const collapsedList = useAtomValue(collapsedProjectsAtom);`,
+  `const collapsed = new Set(collapsedList);`, and render `foldCollapsedProjects(rows, collapsed)`. A group
+  row's `motion.div` (same key, `layout="position"`) wraps a button:
+
+  ```tsx
+  <button
+      type="button"
+      onClick={() => globalStore.set(collapsedProjectsAtom, toggleProject(collapsedList, r.project))}
+      aria-expanded={!collapsed.has(r.project)}
+      className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
+  >
+      <ChevronRight
+          size={12}
+          aria-hidden
+          className={cn("shrink-0 text-ink-faint transition-transform", !collapsed.has(r.project) && "rotate-90")}
+      />
+      {collapsed.has(r.project) ? (
+          <Folder size={14} aria-hidden className="shrink-0 text-muted" />
+      ) : (
+          <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
+      )}
+      <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{r.project}</span>
+      {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
+  </button>
+  ```
+
+  `AskingBadge` keeps its `{n} asking` text but loses its fill:
+  `whitespace-nowrap font-mono text-[11px] font-semibold text-warning`. Every non-group row's `motion.div`
+  wrapper, and each terminal row's, gets `className="pl-[14px]"`.
+
+- [ ] **Step 3: `ParentRow`.**
+  - Row: `rounded-[6px] px-[10px] py-[6px]` (was `rounded-[9px] px-[11px] py-[9px]`); background
+    `selected ? "bg-surface-selected" : "hover:bg-surface-hover"` — no asking fill.
+  - Name: `text-[13px] text-secondary`, `text-primary` when selected, no `font-medium`.
+  - A non-lead row is one line: delete its second-line `div` (subsChip + branch). Right side, in order:
+    `subsChip` (non-lead only; a lead keeps it beside its name), `CanvasTag`, then the review button or the
+    `asking` word as today, else the age —
+    `<span className="whitespace-nowrap font-mono text-[11px] text-ink-faint">{formatAgeShort(displayAgeMs(agent, now))}</span>`,
+    `const now = useAtomValue(model.nowAtom);`.
+  - Remove `branch`, the `agentBranchesAtom`/`loadAgentBranch` imports and the tree's `loadAgentBranch`
+    effect (nothing else reads them; leave `agentbranchstore.ts` in place).
+  - Subagent reveal rows: `rounded-[6px]`.
+
+- [ ] **Step 4: Other rows.** In `WorkerRow`, `StageRow`, `RunRow`, `FoldRow`, `TerminalRow`: `rounded-[9px]`
+  → `rounded-[6px]`; selected `bg-accentbg` → `bg-surface-selected`; drop the worker's `bg-warning/[0.06]`
+  asking fill. `TerminalRow` takes `ParentRow`'s padding and name style. The Terminals header becomes
+  `SquareTerminal` (14, `text-muted`), `Terminals` in `text-[13px] text-secondary`, and its count in
+  `font-mono text-[11px] text-ink-faint` — no uppercase, no rule line. (`CanvasTag`'s `bg-accentbg` stays: it
+  marks a canvas, not a selection.)
+
+- [ ] **Step 5: Check + tests.** Check command; `npx vitest run frontend/app/view/agents/`; prettier-check
+  `agenttree.tsx`.
+
+- [ ] **Step 6: Commit.** `git commit -m "feat(agents): Antigravity-style agent tree"`.
+
+---
+
+### Task 12: CDP — the restyled tree in `agent-tree-rail`
+
+**Depends on:** Task 8, Task 11
+
+**Files:**
+- Modify: `scripts/cdp/scenarios.mjs` (`agent-tree-rail`)
+
+- [ ] **Step 1: Arrange/teardown.** Save and clear `agent.tree.collapsed` the way Task 8 handles
+  `cockpit.rail.sections` (`prevCollapsed` in `ctx`, `removeItem` before the reload, restore in teardown).
+
+- [ ] **Step 2: New steps** before `return steps;`:
+
+  ```js
+  const tree = await h.ev(`(() => {
+      const tree = ${TREE};
+      if (!tree) return null;
+      const groups = [...tree.querySelectorAll("button[aria-expanded]")];
+      const plain = [...tree.querySelectorAll(".cursor-pointer")].filter(
+          (r) => r.querySelector("span.rounded-full") && !r.querySelector("svg.lucide-workflow")
+      );
+      return {
+          newAgent: [...tree.querySelectorAll("button")].some((b) => b.textContent.trim() === "New agent"),
+          groups: groups.length,
+          folders: groups.filter((g) => g.querySelector("svg.lucide-folder-open, svg.lucide-folder")).length,
+          tallest: Math.max(0, ...plain.map((r) => r.getBoundingClientRect().height)),
+      };
+  })()`);
+  rec(
+      "13. the tree opens with New agent, every project is a folder row, and a plain agent row is one line",
+      tree != null && tree.newAgent && tree.groups >= 2 && tree.folders === tree.groups && tree.tallest > 0 && tree.tallest <= 34,
+      JSON.stringify(tree)
+  );
+  const fold = await h.ev(`(async () => {
+      const tree = ${TREE};
+      const g = tree && tree.querySelector("button[aria-expanded='true']");
+      if (!g) return null;
+      const before = tree.querySelectorAll(".cursor-pointer").length;
+      g.click();
+      await new Promise((r) => setTimeout(r, 600));
+      const after = tree.querySelectorAll(".cursor-pointer").length;
+      g.click();
+      await new Promise((r) => setTimeout(r, 600));
+      return { before, after, back: tree.querySelectorAll(".cursor-pointer").length };
+  })()`);
+  rec(
+      "14. a project row collapses its agents and expands them again",
+      fold != null && fold.after < fold.before && fold.back === fold.before,
+      JSON.stringify(fold)
+  );
+  ```
+
+  Lucide renders `class="lucide lucide-folder-open"`-style classes on its svgs; if this version names them
+  differently, read one in the live DOM and match that.
+
+- [ ] **Step 3: Run** `task verify:ui -- agent-tree-rail` against a live dev app; expect PASS; open the shot.
+
+- [ ] **Step 4: Commit.** `git commit -m "test(cdp): Antigravity-style agent tree"`.

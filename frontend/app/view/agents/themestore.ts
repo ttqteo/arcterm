@@ -8,11 +8,10 @@ import { useAtomValue } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { useLayoutEffect } from "react";
 
-import { activePalette, applyThemeVars, buildThemeVars, type OverrideRole } from "./themes";
+import { activePalette, applyThemeVars, buildThemeVars, DEFAULT_THEME_PRESET, type OverrideRole } from "./themes";
 
-// The selected preset id (see THEMES). Defaults to "midnight" == today's palette. Exported so the
-// Settings surface can mark the row changed and revert it without restating the literal.
-export const DEFAULT_THEME_PRESET = "midnight";
+// Exported so the Settings surface can mark the row changed and revert it without restating the literal.
+export { DEFAULT_THEME_PRESET };
 
 export const themePresetAtom = atomWithStorage<string>("cockpit.theme.preset", DEFAULT_THEME_PRESET);
 
@@ -23,7 +22,7 @@ export const themeOverridesAtom = atomWithStorage<Partial<Record<OverrideRole, s
 );
 
 // Applies the active theme's CSS vars to <html> before paint. atomWithStorage hydrates synchronously
-// from localStorage, so a non-default theme applies without a flash of Midnight. Always writes the full
+// from localStorage, so a non-default theme applies without a flash of the default. Always writes the full
 // themed set, so switching presets needs no stale-key cleanup.
 export function useApplyCockpitTheme(): void {
     const preset = useAtomValue(themePresetAtom);

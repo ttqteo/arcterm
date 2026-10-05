@@ -202,7 +202,7 @@ function NeedsYouCard({
 export function NeedsYouSection({ model, run, asks }: { model: AgentsViewModel; run: RunInfo; asks: DagAskItem[] }) {
     const agents = useAtomValue(model.agentsAtom);
     const lineage = useAtomValue(model.lineageAtom);
-    // it heads the Details section rather than being a rail section of its own, so the space under it grows and
+    // it is a headerless rail section that carries its own bottom padding, so the space under it grows and
     // shrinks with it instead of the rail's section gap snapping
     return (
         <AnimatePresence initial={false}>

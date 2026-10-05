@@ -5,39 +5,40 @@
 
 @theme {
     /* Surfaces (handoff bg ramp) */
-    --color-background: #0c0e11;
-    --color-surface: #0e1116;
-    --color-surface-raised: #13171d;
-    --color-surface-hover: #171c22;
-    --color-surface-code: #0b0d10; /* diff / terminal body (design-system "Code") */
-    --color-surface-selected: #1a222c; /* persistent selected row (design-system "Selected"); distinct from transient surface-hover */
-    --color-panel: rgba(19, 23, 29, 0.6);
-    --color-modalbg: #13171d;
-    --color-lane: #12161b; /* agent-card lane fill (handoff laneBg) */
+    --color-background: #101010;
+    --color-surface: #161616;
+    --color-surface-raised: #1c1c1c;
+    --color-surface-hover: #252525;
+    --color-surface-code: #0c0c0c; /* diff / terminal body (design-system "Code") */
+    --color-surface-selected: #2d2d2d; /* persistent selected row (design-system "Selected"); distinct from transient surface-hover */
+    --color-panel: rgba(28, 28, 28, 0.6);
+    --color-modalbg: #1c1c1c;
+    --color-lane: #141414; /* agent-card lane fill (handoff laneBg) */
 
     /* Text (handoff ink ramp) */
-    --color-foreground: #e6e9ed;
-    --color-white: #e6e9ed;
-    --color-primary: #e6e9ed;
-    --color-secondary: #cfd5db;
-    --color-muted-foreground: #c3cad1;
-    --color-ink-hi: #dfe4ea; /* high-emphasis body/content text (handoff memory surface content) */
-    --color-ink-mid: #9aa3ad; /* mid grey — handoff tool badges + secondary button text */
+    --color-foreground: #d6d6d6;
+    --color-white: #d6d6d6;
+    --color-primary: #d6d6d6;
+    --color-secondary: #cccccc;
+    --color-muted-foreground: #c9c9c9;
+    --color-ink-hi: #e3e3e3; /* high-emphasis body/content text (handoff memory surface content) */
+    --color-ink-mid: #a2a2a2; /* mid grey — handoff tool badges + secondary button text */
     /* The two lowest text tiers were below the contrast they need to be read, and they carry almost all of
        the app's data presentation — ids, status labels, counts, section headings, usually at 9.5-11px.
        Measured against --color-background: muted was 3.92:1 (WCAG AA for text is 4.5:1) and, on a hovered
        row, 3.47:1; ink-faint was 1.90:1. Lifted so muted clears AA on both the background and a hovered row,
-       and ink-faint clears the 3:1 non-text minimum for the separators and gutters it draws. The ramp still
-       steps cleanly: ink-faint 3.54 < muted 5.18 < ink-mid 7.56 < secondary 13.06.
+       and ink-faint clears the 3:1 non-text minimum for the separators and gutters it draws. Against the
+       Graphite background (#101010) the ramp steps cleanly: ink-faint 3.31 < muted 5.81 < secondary 11.85 <
+       text 13.09; muted on a hovered row (#252525) is 4.68.
        Mirrored per theme in view/agents/themes.ts, which overrides both at runtime. */
-    --color-muted: #7f858b;
-    --color-ink-faint: #646a72;
+    --color-muted: #8e8e8e;
+    --color-ink-faint: #666666;
 
     /* Borders (handoff edge) */
-    --color-border: #1c2128;
-    --color-edge-mid: #20262e;
-    --color-edge-strong: #2a313a;
-    --color-edge-faint: #161a20; /* faint dividers — handoff transcript tool-box rows */
+    --color-border: #1f1f1f;
+    --color-edge-mid: #2a2a2a;
+    --color-edge-strong: #3d3d3d;
+    --color-edge-faint: #1a1a1a; /* faint dividers — handoff transcript tool-box rows */
 
     /* Accent (main accent follows pi's cc-dark blue #5e9cff; the ramp keeps the handoff periwinkle anchors #aebfff/#8da3ff/#7c95ff/#5f74e0, rest interpolated) */
     --color-accent-50: #e8ecff;
@@ -63,7 +64,7 @@
     --color-warning: #e6b450;
     --color-asking: #e6b450;
     --color-success: #54c79a;
-    --color-cacheread: #5b6675; /* usage split: cache-read segment (low-value, high-volume) */
+    --color-cacheread: #656565; /* usage split: cache-read segment (low-value, high-volume) */
     /* handoff card-body colors (Wave-cockpit-live.dc.html) */
     --color-on-warning: #1a1306; /* text on the filled needs-you badge */
     --color-askingbg: rgba(
@@ -80,10 +81,10 @@
     --color-success-soft: #bfe6d6; /* working activity line */
     --color-error-soft: #f0a9a4; /* danger CTA label on tinted fill (Canvas-13 confirm dialog) */
     --color-warning-soft: #f0d79f; /* warning accent, lightened */
-    --color-feed-label: #777f89; /* tool-line uppercase tool name */
-    --color-feed-summary: #9aa3ad; /* tool-line summary text */
-    --color-feed-time: #4f565f; /* tool-line faint meta */
-    --color-feed-glyph: #454c55; /* drag handle glyph */
+    --color-feed-label: #7e7e7e; /* tool-line uppercase tool name */
+    --color-feed-summary: #a2a2a2; /* tool-line summary text */
+    --color-feed-time: #555555; /* tool-line faint meta */
+    --color-feed-glyph: #4b4b4b; /* drag handle glyph */
     --color-working: #54c79a;
 
     /* Connection status icon palette (legacy block/connectionbutton; identity, never theme-derived) */
@@ -149,7 +150,7 @@
         0.05
     ); /* pill/chip fill — faint overlay for memory-type badges (neutral, like hover/highlightbg) */
 
-    --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+    --font-sans: "Inter", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", monospace;
     --font-markdown:
         -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji",
@@ -203,6 +204,8 @@
     --color-syntax-comment: #6b7178;
     --color-syntax-punct: #8b939d;
     --color-syntax-ident: #cdd3da;
+    /* inline code in markdown + transcript narration (Antigravity's warm gold); theme-agnostic like syntax */
+    --color-code-inline: #d7b981;
 
     /* git diff added/removed (diff bands, +N/-N counts). Deliberately not success/error: a deleted
        line is not a failure, and the two need tuning independently. Theme-agnostic like syntax. */
@@ -278,13 +281,13 @@ svg [aria-label="tip"] g path {
     height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-    background: #262c34;
+    background: var(--color-edge-mid);
     border-radius: 6px;
     border: 2px solid transparent;
     background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #343c46;
+    background: var(--color-edge-strong);
     background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
@@ -415,9 +418,16 @@ svg [aria-label="tip"] g path {
 }
 .agent-md code {
     font-size: 0.92em;
+    color: var(--color-code-inline);
     background: rgba(255, 255, 255, 0.06);
     padding: 0 3px;
     border-radius: 3px;
+}
+/* Defensive: MarkdownMessage renders fenced code through CodeBlock today, which emits no pre/code. */
+.agent-md pre code {
+    color: inherit;
+    background: transparent;
+    padding: 0;
 }
 .agent-md pre {
     background: rgba(255, 255, 255, 0.05);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { applyFontVars, DEFAULT_MONO, DEFAULT_SANS, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
+import { applyFontVars, DEFAULT_MONO, DEFAULT_SANS, DEFAULT_TERM_FONT, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
 
 describe("font catalog", () => {
     it("sans list has unique ids and includes the default", () => {
@@ -20,6 +20,19 @@ describe("font catalog", () => {
         for (const f of [...SANS_FONTS, ...MONO_FONTS]) {
             expect(f.stack.length).toBeGreaterThan(0);
         }
+    });
+});
+
+describe("defaults", () => {
+    // the bundled Hanken Grotesk, Hack and Fira Code have no Vietnamese; Inter and the variable JetBrains Mono do
+    it("default faces are the Vietnamese-capable ones", () => {
+        expect(DEFAULT_SANS).toBe("inter");
+        expect(DEFAULT_MONO).toBe("jetbrains");
+        expect(DEFAULT_TERM_FONT).toBe("jetbrains");
+    });
+    it("each list leads with its default, so stackOf's fallback is the default", () => {
+        expect(SANS_FONTS[0].id).toBe(DEFAULT_SANS);
+        expect(MONO_FONTS[0].id).toBe(DEFAULT_MONO);
     });
 });
 

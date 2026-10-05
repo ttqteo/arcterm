@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Disk-backed subagent lists per parent agent, plus the "which child interior is open" selection.
+// Also holds each parent's background shell tasks, read from the same transcript tail (no extra RPC).
 // Mirrors cardgitstore.ts: refresh on enter, scheduleSubagents (debounced) on parent-transcript
 // activity, drop on leave. The source of truth is the on-disk subagents/ dir (GetSubagentsCommand);
 // the parent transcript tail supplies the Task spawns that correlate type + outcome onto each file.
@@ -12,7 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { SubagentVM } from "./session-models/sessionviewmodel";
 import { correlateSubagents } from "./subagentcorrelate";
-import { extractSubagentSpawns } from "./transcriptprojection";
+import { extractBackgroundTasks, extractSubagentSpawns, type BackgroundTask } from "./transcriptprojection";
 
 export interface FocusSubagent {
     parentId: string;
@@ -23,6 +24,10 @@ export interface FocusSubagent {
 
 // per parent-agent-id -> its correlated children
 export const subagentsByIdAtom = atom<Record<string, SubagentVM[]>>({}) as PrimitiveAtom<Record<string, SubagentVM[]>>;
+// per parent-agent-id -> its background shell tasks, from the same transcript tail as the subagent spawns
+export const backgroundTasksByIdAtom = atom<Record<string, BackgroundTask[]>>({}) as PrimitiveAtom<
+    Record<string, BackgroundTask[]>
+>;
 // the child interior currently open in the focused view (null = show the parent terminal)
 export const focusSubagentAtom = atom<FocusSubagent | null>(null) as PrimitiveAtom<FocusSubagent | null>;
 
@@ -31,17 +36,17 @@ const DEBOUNCE_MS = 4000; // same cadence as cardgitstore
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const loadSeq = new Map<string, number>();
 
-function setList(id: string, list: SubagentVM[] | null): void {
-    const cur = globalStore.get(subagentsByIdAtom);
+function setIn<T>(a: PrimitiveAtom<Record<string, T[]>>, id: string, list: T[] | null): void {
+    const cur = globalStore.get(a);
     if (list == null || list.length === 0) {
         if (!(id in cur)) {
             return;
         }
         const { [id]: _, ...rest } = cur;
-        globalStore.set(subagentsByIdAtom, rest);
+        globalStore.set(a, rest);
         return;
     }
-    globalStore.set(subagentsByIdAtom, { ...cur, [id]: list });
+    globalStore.set(a, { ...cur, [id]: list });
 }
 
 /** Load the parent's subagent files + tail its transcript, correlate, and store. Guarded so a
@@ -50,7 +55,8 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
     const seq = (loadSeq.get(id) ?? 0) + 1;
     loadSeq.set(id, seq);
     if (!transcriptPath) {
-        setList(id, null);
+        setIn(subagentsByIdAtom, id, null);
+        setIn(backgroundTasksByIdAtom, id, null);
         return;
     }
     try {
@@ -61,15 +67,17 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
         if (loadSeq.get(id) !== seq) {
             return;
         }
+        setIn(backgroundTasksByIdAtom, id, extractBackgroundTasks(tr.lines ?? []));
         const files = subs.subagents ?? [];
         if (files.length === 0) {
-            setList(id, null);
+            setIn(subagentsByIdAtom, id, null);
             return;
         }
-        setList(id, correlateSubagents(extractSubagentSpawns(tr.lines ?? []), files));
+        setIn(subagentsByIdAtom, id, correlateSubagents(extractSubagentSpawns(tr.lines ?? []), files));
     } catch {
         if (loadSeq.get(id) === seq) {
-            setList(id, null);
+            setIn(subagentsByIdAtom, id, null);
+            setIn(backgroundTasksByIdAtom, id, null);
         }
     }
 }
@@ -98,7 +106,8 @@ export function dropSubagents(id: string): void {
         timers.delete(id);
     }
     loadSeq.set(id, (loadSeq.get(id) ?? 0) + 1);
-    setList(id, null);
+    setIn(subagentsByIdAtom, id, null);
+    setIn(backgroundTasksByIdAtom, id, null);
     const fs = globalStore.get(focusSubagentAtom);
     if (fs && fs.parentId === id) {
         globalStore.set(focusSubagentAtom, null);

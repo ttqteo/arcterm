@@ -11,7 +11,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft, ArrowUpRight, ChevronLeft } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
 import {
@@ -23,6 +23,7 @@ import {
     railAction,
     toolChips,
 } from "./agentrailmodel";
+import { bgTaskStatusLabel, planAgentRail, type AgentRailSectionId, type BgTaskLabel } from "./agentrailsections";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
@@ -34,10 +35,11 @@ import { RAIL_ICON } from "./railicons";
 import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
-import { SectionLabel, SubLabel } from "./sectionlabel";
+import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
-import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
+import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { TokenUsageSection } from "./tokenusagesection";
+import type { BackgroundTask } from "./transcriptprojection";
 import { loadSessionUsage } from "./transcriptusagestore";
 
 const GAUGE_FILL: Record<"ok" | "warn" | "hot", string> = {
@@ -219,6 +221,28 @@ function FileRow({
     );
 }
 
+const BG_DOT: Record<BgTaskLabel, string> = {
+    running: "bg-accent",
+    completed: "bg-success",
+    failed: "bg-error",
+    stopped: "bg-muted",
+    unknown: "bg-muted",
+};
+
+function BackgroundTaskRow({ task, live }: { task: BackgroundTask; live: boolean }) {
+    const label = bgTaskStatusLabel(task.status, live);
+    return (
+        <div
+            title={task.command}
+            className="flex items-center gap-[10px] rounded-[8px] bg-surface-raised px-[11px] py-[8px]"
+        >
+            <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", BG_DOT[label])} />
+            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-secondary">{task.label}</span>
+            <span className="whitespace-nowrap font-mono text-[10.5px] text-muted">{label}</span>
+        </div>
+    );
+}
+
 // SealedFiles lists what a done task's run recorded it changed. The worktree is gone, so there is no diff to open.
 function SealedFiles({ files }: { files: EvidenceFile[] }) {
     if (files.length === 0) {
@@ -241,6 +265,7 @@ function SealedFiles({ files }: { files: EvidenceFile[] }) {
 export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const liveEntries = useAtomValue(entriesAtomFor(agent.id));
     const subs = useAtomValue(subagentsByIdAtom)[agent.id] ?? [];
+    const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id] ?? [];
     const focusSub = useAtomValue(focusSubagentAtom);
     const sub = focusSub?.parentId === agent.id ? focusSub : null;
     const subVM = sub ? subs.find((s) => s.id === sub.agentId) : undefined;
@@ -312,290 +337,241 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         ctxPct != null &&
         offersContextReset({ isClaude, state: agent.state, level: contextLevel(ctxPct, usage?.contextmax), live });
 
-    const subHead: RailSection[] =
-        sub != null
-            ? [
-                  {
-                      id: "subagent",
-                      label: "Subagent",
-                      icon: RAIL_ICON.subagents,
-                      content: (
-                          <div className="flex flex-col gap-[6px]">
-                              <SubLabel>Subagent of {agent.name}</SubLabel>
-                              <div className="flex items-center gap-[8px]">
-                                  <span
-                                      className="h-[7px] w-[7px] shrink-0 rounded-full"
-                                      style={{ background: SUB_COLOR[subVM?.state ?? "done"] }}
-                                  />
-                                  <span className="min-w-0 truncate font-mono text-[14px] font-semibold text-primary">
-                                      {sub.label}
-                                  </span>
-                                  {subVM ? (
-                                      <span
-                                          className="ml-auto font-mono text-[10.5px] font-semibold"
-                                          style={{ color: SUB_COLOR[subVM.state] }}
-                                      >
-                                          {subVM.state === "failure" ? "failed" : subVM.state}
-                                      </span>
-                                  ) : null}
-                              </div>
-                              <button
-                                  type="button"
-                                  onClick={() => globalStore.set(focusSubagentAtom, null)}
-                                  className="-ml-[6px] inline-flex w-fit cursor-pointer items-center gap-[4px] rounded-[7px] px-[6px] py-[3px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
-                              >
-                                  <ArrowLeft size={11} aria-hidden />
-                                  back to {agent.name}
-                              </button>
-                          </div>
-                      ),
-                  },
-              ]
-            : [];
-
-    const details: RailSection = {
-        id: "details",
-        label: "Details",
-        icon: RAIL_ICON.info,
-        content: (
-            <div>
-                {/* only the lead's rail: a worker's own question is already on screen, in its terminal's picker */}
-                {!sub && roleRun && role?.kind === "lead" ? (
-                    <NeedsYouSection key={agent.id} model={model} run={roleRun} asks={yours} />
-                ) : null}
-                <div className="mb-[10px]">
-                    <SectionLabel>Details</SectionLabel>
+    const fileCount = ended ? ended.files.length : railState?.isRepo ? changes.length : null;
+    const plan = planAgentRail({
+        inSubagent: sub != null,
+        needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
+        subagents: subs.length,
+        files: fileCount,
+        bgTasks: bgTasks.length,
+        tools: tools.length,
+        hasRun: role != null && roleRun != null,
+    });
+    const LABEL: Record<AgentRailSectionId, string> = {
+        subagent: "Subagent",
+        needs: "Needs you",
+        subagents: "Subagents",
+        files: "Files changed",
+        bgtasks: "Background tasks",
+        tools: "Tools used",
+        run: role?.kind === "worker" ? "Task" : "Run",
+        details: "Details",
+        usage: "Token usage",
+    };
+    const ICON: Record<AgentRailSectionId, ReactNode> = {
+        subagent: RAIL_ICON.subagents,
+        needs: RAIL_ICON.bell,
+        subagents: RAIL_ICON.subagents,
+        files: RAIL_ICON.files,
+        bgtasks: RAIL_ICON.terminal,
+        tools: RAIL_ICON.tools,
+        run: RAIL_ICON.autonomy,
+        details: RAIL_ICON.info,
+        usage: RAIL_ICON.usage,
+    };
+    // thunks: a section the plan leaves out is never built (run would touch a roleRun that may not exist)
+    const CONTENT: Record<AgentRailSectionId, () => ReactNode> = {
+        subagent: () => (
+            <div className="flex flex-col gap-[6px]">
+                <SubLabel>Subagent of {agent.name}</SubLabel>
+                <div className="flex items-center gap-[8px]">
+                    <span
+                        className="h-[7px] w-[7px] shrink-0 rounded-full"
+                        style={{ background: SUB_COLOR[subVM?.state ?? "done"] }}
+                    />
+                    <span className="min-w-0 truncate font-mono text-[14px] font-semibold text-primary">
+                        {sub?.label}
+                    </span>
+                    {subVM ? (
+                        <span
+                            className="ml-auto font-mono text-[10.5px] font-semibold"
+                            style={{ color: SUB_COLOR[subVM.state] }}
+                        >
+                            {subVM.state === "failure" ? "failed" : subVM.state}
+                        </span>
+                    ) : null}
                 </div>
-                <div className="flex flex-col gap-[6px]">
-                    {sub ? (
-                        <>
-                            <DetailLine label="Model">{subVM?.model ? prettyModel(subVM.model) : "—"}</DetailLine>
-                            <DetailLine label="Session">
-                                {subVM == null ? "—" : subVM.state === "failure" ? "failed" : subVM.state}
-                            </DetailLine>
-                        </>
-                    ) : (
-                        <>
-                            <DetailLine label="Project">{agentProject(lineage, agents, agent) || "—"}</DetailLine>
-                            <DetailLine label="Branch" title={branch || undefined}>
-                                {branch || "—"}
-                            </DetailLine>
-                            {worktree ? (
-                                <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
-                                    {worktree}
-                                </DetailLine>
-                            ) : null}
-                            <DetailLine
-                                label="Session"
-                                title={
-                                    cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined
-                                }
-                            >
-                                {ended ? (
-                                    <>ended {age} ago</>
-                                ) : (
-                                    <>
-                                        {agent.state} {age}
-                                    </>
-                                )}
-                                {cacheCountdown !== "—" ? (
-                                    <>
-                                        <span className="text-muted"> · </span>
-                                        cache {cacheCountdown}
-                                    </>
-                                ) : null}
-                            </DetailLine>
-                            {ctxPct != null ? (
-                                <ContextLine
-                                    pct={ctxPct}
-                                    max={usage?.contextmax}
-                                    onReset={offerReset ? drive : undefined}
-                                />
-                            ) : null}
-                        </>
-                    )}
-                </div>
+                <button
+                    type="button"
+                    onClick={() => globalStore.set(focusSubagentAtom, null)}
+                    className="-ml-[6px] inline-flex w-fit cursor-pointer items-center gap-[4px] rounded-[7px] px-[6px] py-[3px] font-mono text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
+                >
+                    <ArrowLeft size={11} aria-hidden />
+                    back to {agent.name}
+                </button>
             </div>
         ),
+        // only the lead's rail: a worker's own question is already on screen, in its terminal's picker
+        needs: () => <NeedsYouSection key={agent.id} model={model} run={roleRun!} asks={yours} />,
+        subagents: () => (
+            <div className="flex flex-col gap-[7px]">
+                {subs.map((s) => {
+                    const path = s.transcriptPath;
+                    return (
+                        <div
+                            key={s.id}
+                            onClick={
+                                path
+                                    ? () =>
+                                          globalStore.set(focusSubagentAtom, {
+                                              parentId: agent.id,
+                                              agentId: s.id,
+                                              transcriptPath: path,
+                                              label: s.type || "subagent",
+                                          })
+                                    : undefined
+                            }
+                            className={cn(
+                                "flex items-center gap-[10px] rounded-[10px] border border-border bg-surface px-[11px] py-[9px]",
+                                path && "cursor-pointer hover:border-edge-strong"
+                            )}
+                        >
+                            <span
+                                className="h-[6px] w-[6px] shrink-0 rounded-full"
+                                style={{ background: SUB_COLOR[s.state] }}
+                            />
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate font-mono text-[11.5px] font-semibold text-secondary">
+                                    {s.type || "subagent"}
+                                </div>
+                                <div className="truncate font-mono text-[10.5px] text-muted">{s.model ?? ""}</div>
+                            </div>
+                            <span
+                                className="whitespace-nowrap font-mono text-[10.5px] font-semibold"
+                                style={{ color: SUB_COLOR[s.state] }}
+                            >
+                                {s.state === "failure" ? "failed" : s.state}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        ),
+        files: () =>
+            ended ? (
+                <SealedFiles files={ended.files} />
+            ) : railState == null ? (
+                <div aria-hidden="true" className="flex flex-col gap-2">
+                    {["w-[80%]", "w-[60%]", "w-[70%]"].map((w, i) => (
+                        <SkeletonLine key={i} className={cn("h-[10px]", w)} />
+                    ))}
+                </div>
+            ) : !railState.isRepo ? (
+                <div className="text-[11.5px] text-muted">Not a git repository</div>
+            ) : shownFiles.length === 0 ? (
+                <div className="text-[11.5px] text-muted">No changes</div>
+            ) : (
+                <>
+                    <div className="flex flex-col gap-[7px]">
+                        {shownFiles.map((f) => (
+                            <FileRow
+                                key={f.path}
+                                status={f.status}
+                                path={f.path}
+                                adds={f.adds}
+                                dels={f.dels}
+                                onClick={() => openFileDiff(f.path)}
+                            />
+                        ))}
+                    </div>
+                    <div className="mt-[8px] flex items-center gap-[10px] font-mono text-[10.5px]">
+                        <span className="text-muted">{filesSummary(changes)}</span>
+                        <span className="flex-1" />
+                        <button
+                            type="button"
+                            onClick={() => openFileDiff()}
+                            className="inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] font-semibold text-accent-soft hover:bg-surface-hover"
+                        >
+                            View diff
+                            <ArrowUpRight size={11} aria-hidden />
+                        </button>
+                    </div>
+                </>
+            ),
+        bgtasks: () => (
+            <div className="flex flex-col gap-[7px]">
+                {bgTasks.map((t) => (
+                    <BackgroundTaskRow key={t.toolUseId} task={t} live={live} />
+                ))}
+            </div>
+        ),
+        tools: () => (
+            <div className="flex flex-wrap gap-[7px]">
+                {tools.map((t) => (
+                    <span
+                        key={t.verb}
+                        className="flex items-baseline gap-[5px] rounded-sm border border-edge-mid bg-surface-raised px-[9px] py-[4px] font-mono text-[11px] font-medium"
+                    >
+                        <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
+                        <span className="text-[10.5px] text-muted">×{t.count}</span>
+                    </span>
+                ))}
+            </div>
+        ),
+        run: () =>
+            role?.kind === "worker" ? (
+                <TaskSection key={agent.id} model={model} run={roleRun!} taskId={role.taskId} asks={asks} />
+            ) : (
+                <RunSection key={agent.id} model={model} run={roleRun!} asks={asks} />
+            ),
+        details: () => (
+            <div className="flex flex-col gap-[6px]">
+                {sub ? (
+                    <>
+                        <DetailLine label="Model">{subVM?.model ? prettyModel(subVM.model) : "—"}</DetailLine>
+                        <DetailLine label="Session">
+                            {subVM == null ? "—" : subVM.state === "failure" ? "failed" : subVM.state}
+                        </DetailLine>
+                    </>
+                ) : (
+                    <>
+                        <DetailLine label="Project">{agentProject(lineage, agents, agent) || "—"}</DetailLine>
+                        <DetailLine label="Branch" title={branch || undefined}>
+                            {branch || "—"}
+                        </DetailLine>
+                        {worktree ? (
+                            <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
+                                {worktree}
+                            </DetailLine>
+                        ) : null}
+                        <DetailLine
+                            label="Session"
+                            title={cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined}
+                        >
+                            {ended ? (
+                                <>ended {age} ago</>
+                            ) : (
+                                <>
+                                    {agent.state} {age}
+                                </>
+                            )}
+                            {cacheCountdown !== "—" ? (
+                                <>
+                                    <span className="text-muted"> · </span>
+                                    cache {cacheCountdown}
+                                </>
+                            ) : null}
+                        </DetailLine>
+                        {ctxPct != null ? (
+                            <ContextLine
+                                pct={ctxPct}
+                                max={usage?.contextmax}
+                                onReset={offerReset ? drive : undefined}
+                            />
+                        ) : null}
+                    </>
+                )}
+            </div>
+        ),
+        usage: () => <TokenUsageSection />,
     };
-
-    const sections: RailSection[] = [
-        ...subHead,
-        details,
-        ...(!sub && role && roleRun
-            ? [
-                  {
-                      id: "run",
-                      label: role.kind === "worker" ? "Task" : "Run",
-                      icon: RAIL_ICON.autonomy,
-                      content:
-                          role.kind === "worker" ? (
-                              <TaskSection
-                                  key={agent.id}
-                                  model={model}
-                                  run={roleRun}
-                                  taskId={role.taskId}
-                                  asks={asks}
-                              />
-                          ) : (
-                              <RunSection key={agent.id} model={model} run={roleRun} asks={asks} />
-                          ),
-                  },
-              ]
-            : []),
-        {
-            id: "usage",
-            label: "Token usage",
-            icon: RAIL_ICON.usage,
-            content: <TokenUsageSection />,
-        },
-        ...(!sub && subs.length > 0
-            ? [
-                  {
-                      id: "subagents",
-                      label: "Subagents",
-                      icon: RAIL_ICON.subagents,
-                      content: (
-                          <div>
-                              <div className="mb-[11px] flex items-center justify-between">
-                                  <SectionLabel>Subagents</SectionLabel>
-                                  <span className="rounded-[20px] bg-accentbg px-[8px] py-[1px] font-mono text-[11px] font-semibold text-accent-soft">
-                                      {subs.length}
-                                  </span>
-                              </div>
-                              <div className="flex flex-col gap-[7px]">
-                                  {subs.map((s) => {
-                                      const path = s.transcriptPath;
-                                      return (
-                                          <div
-                                              key={s.id}
-                                              onClick={
-                                                  path
-                                                      ? () =>
-                                                            globalStore.set(focusSubagentAtom, {
-                                                                parentId: agent.id,
-                                                                agentId: s.id,
-                                                                transcriptPath: path,
-                                                                label: s.type || "subagent",
-                                                            })
-                                                      : undefined
-                                              }
-                                              className={cn(
-                                                  "flex items-center gap-[10px] rounded-[10px] border border-border bg-surface px-[11px] py-[9px]",
-                                                  path && "cursor-pointer hover:border-edge-strong"
-                                              )}
-                                          >
-                                              <span
-                                                  className="h-[6px] w-[6px] shrink-0 rounded-full"
-                                                  style={{ background: SUB_COLOR[s.state] }}
-                                              />
-                                              <div className="min-w-0 flex-1">
-                                                  <div className="truncate font-mono text-[11.5px] font-semibold text-secondary">
-                                                      {s.type || "subagent"}
-                                                  </div>
-                                                  <div className="truncate font-mono text-[10.5px] text-muted">
-                                                      {s.model ?? ""}
-                                                  </div>
-                                              </div>
-                                              <span
-                                                  className="whitespace-nowrap font-mono text-[10.5px] font-semibold"
-                                                  style={{ color: SUB_COLOR[s.state] }}
-                                              >
-                                                  {s.state === "failure" ? "failed" : s.state}
-                                              </span>
-                                          </div>
-                                      );
-                                  })}
-                              </div>
-                          </div>
-                      ),
-                  },
-              ]
-            : []),
-        ...(tools.length > 0
-            ? [
-                  {
-                      id: "tools",
-                      label: "Tools used",
-                      icon: RAIL_ICON.tools,
-                      content: (
-                          <div>
-                              <div className="mb-[11px]">
-                                  <SectionLabel>Tools used</SectionLabel>
-                              </div>
-                              <div className="flex flex-wrap gap-[7px]">
-                                  {tools.map((t) => (
-                                      <span
-                                          key={t.verb}
-                                          className="flex items-baseline gap-[5px] rounded-sm border border-edge-mid bg-surface-raised px-[9px] py-[4px] font-mono text-[11px] font-medium"
-                                      >
-                                          <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
-                                          <span className="text-[10.5px] text-muted">×{t.count}</span>
-                                      </span>
-                                  ))}
-                              </div>
-                          </div>
-                      ),
-                  },
-              ]
-            : []),
-        ...(!sub
-            ? [
-                  {
-                      id: "files",
-                      label: "Files touched",
-                      icon: RAIL_ICON.files,
-                      content: (
-                          <div>
-                              <div className="mb-[11px]">
-                                  <SectionLabel>Files touched</SectionLabel>
-                              </div>
-                              {ended ? (
-                                  <SealedFiles files={ended.files} />
-                              ) : railState == null ? (
-                                  <div aria-hidden="true" className="flex flex-col gap-2">
-                                      {["w-[80%]", "w-[60%]", "w-[70%]"].map((w, i) => (
-                                          <SkeletonLine key={i} className={cn("h-[10px]", w)} />
-                                      ))}
-                                  </div>
-                              ) : !railState.isRepo ? (
-                                  <div className="text-[11.5px] text-muted">Not a git repository</div>
-                              ) : shownFiles.length === 0 ? (
-                                  <div className="text-[11.5px] text-muted">No changes</div>
-                              ) : (
-                                  <>
-                                      <div className="flex flex-col gap-[7px]">
-                                          {shownFiles.map((f) => (
-                                              <FileRow
-                                                  key={f.path}
-                                                  status={f.status}
-                                                  path={f.path}
-                                                  adds={f.adds}
-                                                  dels={f.dels}
-                                                  onClick={() => openFileDiff(f.path)}
-                                              />
-                                          ))}
-                                      </div>
-                                      <div className="mt-[8px] flex items-center gap-[10px] font-mono text-[10.5px]">
-                                          <span className="text-muted">{filesSummary(changes)}</span>
-                                          <span className="flex-1" />
-                                          <button
-                                              type="button"
-                                              onClick={() => openFileDiff()}
-                                              className="inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] font-semibold text-accent-soft hover:bg-surface-hover"
-                                          >
-                                              View diff
-                                              <ArrowUpRight size={11} aria-hidden />
-                                          </button>
-                                      </div>
-                                  </>
-                              )}
-                          </div>
-                      ),
-                  },
-              ]
-            : []),
-    ];
+    const sections: RailSection[] = plan.map((p) => ({
+        id: p.id,
+        label: LABEL[p.id],
+        icon: ICON[p.id],
+        header: p.header,
+        content: CONTENT[p.id](),
+    }));
 
     const stripTitle = [
         "Agent details",

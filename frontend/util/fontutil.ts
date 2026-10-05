@@ -18,24 +18,13 @@ function loadJetBrainsMonoFont() {
         return;
     }
     isJetBrainsMonoLoaded = true;
-    const jbmFontNormal = new FontFace("JetBrains Mono", "url('fonts/jetbrains-mono-v13-latin-regular.woff2')", {
+    // variable font with the full charset (Vietnamese included); the v13 latin files it replaces mapped 222 characters
+    const jbmFont = new FontFace("JetBrains Mono", "url('fonts/jetbrains-mono-variable.woff2')", {
         style: "normal",
-        weight: "400",
+        weight: "100 800",
     });
-    const jbmFont200 = new FontFace("JetBrains Mono", "url('fonts/jetbrains-mono-v13-latin-200.woff2')", {
-        style: "normal",
-        weight: "200",
-    });
-    const jbmFont700 = new FontFace("JetBrains Mono", "url('fonts/jetbrains-mono-v13-latin-700.woff2')", {
-        style: "normal",
-        weight: "700",
-    });
-    addToFontFaceSet(document.fonts, jbmFontNormal);
-    addToFontFaceSet(document.fonts, jbmFont200);
-    addToFontFaceSet(document.fonts, jbmFont700);
-    jbmFontNormal.load();
-    jbmFont200.load();
-    jbmFont700.load();
+    addToFontFaceSet(document.fonts, jbmFont);
+    jbmFont.load();
 }
 
 function loadHackNerdFont() {

@@ -6,9 +6,10 @@ import { Search, useSearch } from "@/app/element/search";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useTabModel } from "@/app/store/tab-model";
-import type { TermViewModel } from "@/app/view/term/term-model";
+import { DEFAULT_TERM_FONT, MONO_FONTS, stackOf } from "@/app/view/agents/fonts";
 import { activePalette, deriveTermTheme } from "@/app/view/agents/themes";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
+import type { TermViewModel } from "@/app/view/term/term-model";
 import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, WOS } from "@/store/global";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";
 import { ISearchOptions } from "@xterm/addon-search";
@@ -138,7 +139,8 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             {
                 theme: termTheme,
                 fontSize: termFontSize,
-                fontFamily: termSettings?.["term:fontfamily"] ?? connFontFamily ?? "Hack",
+                fontFamily:
+                    termSettings?.["term:fontfamily"] ?? connFontFamily ?? stackOf(MONO_FONTS, DEFAULT_TERM_FONT),
                 drawBoldTextInBrightColors: false,
                 fontWeight: "normal",
                 fontWeightBold: "bold",

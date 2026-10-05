@@ -381,3 +381,129 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
     }
     return order.map((id) => spawns.get(id)!);
 }
+
+export type BackgroundTaskStatus = "running" | "completed" | "failed" | "stopped";
+
+export interface BackgroundTask {
+    toolUseId: string;
+    taskId?: string;
+    label: string;
+    command?: string;
+    status: BackgroundTaskStatus;
+}
+
+// the shell tools that take run_in_background (PowerShell is Claude Code's Windows shell tool)
+const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
+
+const BG_ID_TEXT = /running in background with ID: ([A-Za-z0-9_-]+)/;
+
+// <task-notification> status -> ours; "killed" and "stopped" are the same thing to the reader
+const NOTIFIED_STATUS: Record<string, BackgroundTaskStatus> = {
+    running: "running",
+    completed: "completed",
+    failed: "failed",
+    killed: "stopped",
+    stopped: "stopped",
+};
+
+// A notification can arrive as a user message, a queue-operation's content or a queued-command attachment, so
+// every string in the record that carries the tag is read rather than one known field.
+function notificationTexts(rec: any): string[] {
+    const out: string[] = [];
+    const visit = (v: any, depth: number): void => {
+        if (typeof v === "string") {
+            if (v.includes("<task-notification>")) {
+                out.push(v);
+            }
+            return;
+        }
+        if (depth >= 5 || v == null || typeof v !== "object") {
+            return;
+        }
+        for (const k of Object.keys(v)) {
+            visit(v[k], depth + 1);
+        }
+    };
+    visit(rec, 0);
+    return out;
+}
+
+/** Pure: the shell (Bash/PowerShell) commands a Claude transcript ran in the background — started with
+ *  run_in_background, or a foreground command auto-backgrounded at its timeout (its result carries a
+ *  backgroundTaskId) — each with the
+ *  status its <task-notification> (joined by tool-use-id) or a later TaskStop/KillShell gave it. Unresolved
+ *  tasks stay "running"; the caller decides what that means for a session that is no longer live. First-seen
+ *  order. Background subagents are left to extractSubagentSpawns. */
+export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
+    const calls = new Map<string, { label: string; command?: string }>();
+    const tasks = new Map<string, BackgroundTask>();
+    const byTaskId = new Map<string, BackgroundTask>();
+    const startTask = (toolUseId: string): BackgroundTask | undefined => {
+        const existing = tasks.get(toolUseId);
+        const call = calls.get(toolUseId);
+        if (existing || !call) {
+            return existing;
+        }
+        const t: BackgroundTask = { toolUseId, label: call.label, status: "running" };
+        if (call.command !== undefined) {
+            t.command = call.command;
+        }
+        tasks.set(toolUseId, t);
+        return t;
+    };
+    for (const line of lines) {
+        let rec: any;
+        try {
+            rec = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        const content = rec?.message?.content;
+        if (Array.isArray(content)) {
+            for (const block of content) {
+                if (block?.type === "tool_use" && typeof block.id === "string") {
+                    const input = block.input ?? {};
+                    if (SHELL_TOOLS.has(block.name)) {
+                        const command = typeof input.command === "string" ? input.command : undefined;
+                        const desc = typeof input.description === "string" ? input.description.trim() : "";
+                        calls.set(block.id, { label: desc || command || "background command", command });
+                        if (input.run_in_background === true) {
+                            startTask(block.id);
+                        }
+                    } else if (block.name === "TaskStop" || block.name === "KillShell") {
+                        const id = typeof input.task_id === "string" ? input.task_id : input.shell_id;
+                        const t = typeof id === "string" ? byTaskId.get(id) : undefined;
+                        if (t) {
+                            t.status = "stopped";
+                        }
+                    }
+                } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
+                    if (!calls.has(block.tool_use_id)) {
+                        continue;
+                    }
+                    const fromRecord = rec?.toolUseResult?.backgroundTaskId;
+                    const taskId =
+                        typeof fromRecord === "string"
+                            ? fromRecord
+                            : BG_ID_TEXT.exec(toolResultText(block.content))?.[1];
+                    if (taskId) {
+                        const t = startTask(block.tool_use_id)!;
+                        t.taskId = taskId;
+                        byTaskId.set(taskId, t);
+                    }
+                }
+            }
+        }
+        if (line.includes("<task-notification>")) {
+            for (const text of notificationTexts(rec)) {
+                const toolUseId = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(text)?.[1]?.trim();
+                const status = NOTIFIED_STATUS[/<status>([^<]+)<\/status>/.exec(text)?.[1]?.trim() ?? ""];
+                const t = toolUseId ? tasks.get(toolUseId) : undefined;
+                if (t && status) {
+                    t.status = status;
+                }
+            }
+        }
+    }
+    return [...tasks.values()];
+}
