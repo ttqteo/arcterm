@@ -780,7 +780,12 @@ func useRealEngine(t *testing.T) {
 		t.Skip("neither latexmk nor tectonic is on PATH")
 	}
 	old := dataDir
-	data := t.TempDir()
+	// t.TempDir is drive-less ("/tmp/...") when TMP is; pdflatex and latexmk then resolve the -outdir against
+	// different drives. The real data dir always carries a drive, so give the test one too.
+	data, err := filepath.Abs(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	dataDir = func() string { return data }
 	t.Cleanup(func() { dataDir = old })
 }
