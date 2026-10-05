@@ -8,7 +8,8 @@ import { basename, dirname } from "node:path";
 // SurfaceKey -> nav-rail label, mirrored from frontend/app/view/agents/navrail.tsx ITEMS. goto clicks
 // the nav button by label because globalStore/the agents model are NOT exposed on window (boot-core
 // exposes only globalAtoms/globalWS/TabRpcClient) — the nav click is the proven, app-change-free way
-// to switch surfaces. Note: the "files" surface is labelled "Diff".
+// to switch surfaces. (agent-history step 14 in scenarios.mjs is the one place a scenario reads an atom: it imports the
+// app's own modules from the dev server.) Note: the "files" surface is labelled "Diff".
 export const SURFACE_LABEL = {
     cockpit: "Cockpit",
     jarvis: "Jarvis",

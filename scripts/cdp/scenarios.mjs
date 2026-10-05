@@ -1,7 +1,8 @@
 // Verification scenario manifest. Each entry: { name, surface, arrange(h)->ctx, assert(h,ctx)->steps,
 // teardown(h,ctx) }. arrange/assert/teardown run in Node and drive the browser via h (see attach.mjs).
-// Asserts are RPC-based (backend state) or DOM-based (h.ev) — NOT jotai atom reads (globalStore is not
-// exposed on window). steps are { step, ok, detail }.
+// Asserts are RPC-based (backend state) or DOM-based (h.ev); they do not read jotai atoms (globalStore is not exposed on
+// window), with one exception: agent-history step 14 reads listNavAtom, which leaves no DOM trace, by importing the app's own
+// modules from the dev server (see ahResolveModules). steps are { step, ok, detail }.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -6974,6 +6975,7 @@ const AH_GHOST = "ah-ghost";
 const AH_ANSWER = "history seed answer";
 const AH_MOCK_KEY = "__arcAgentHistoryMock";
 const AH_FOCUS_KEY = "cockpit.focus.last";
+const AH_CURSOR_STEP = "14. History's list cursor is withdrawn while another surface shows, and is back with the surface";
 const AH_SCAN_GAP_MS = 5400; // the sidebar rescans on re-entry at most every 5s (agentsidebarmodel.ts scanDue)
 const AH_TERMINAL = `document.querySelector('[data-agent-terminal="${AH_LIVE_ID}"]')`;
 
@@ -7002,7 +7004,11 @@ const ahTurn = (type, content) => JSON.stringify({ type, message: { role: type, 
 // navigation commits, and an in-page mock installed there would be lost, so the old document carries a mark the new one lacks.
 async function ahReload(h) {
     await h.ev("window.__arcAhReloading = true");
-    await h.ev("location.reload()");
+    try {
+        await h.ev("location.reload()");
+    } catch {
+        /* the evaluate is cut off by the navigation it just started (as in polishReload) */
+    }
     for (let i = 0; i < 120; i++) {
         await ahNap(500);
         const ready = await h.ev(`!window.__arcAhReloading && !!document.querySelector("nav button")`).catch(() => false);
@@ -7071,33 +7077,57 @@ function ahSessions(cwd, livePath, now) {
     ];
 }
 
-// The app's own module for one file name, at the URL the dev server served it: a dynamic import of that URL is the instance the app
-// runs. Resource timing first (setup-fixtures.mjs finds wshclientapi.ts the same way); its buffer holds 250 entries, fewer than the
-// modules a dev page loads, so the frame's resource tree is the fallback. null when neither lists it.
-async function ahModuleUrl(h, file) {
-    const pattern = `/${file}\\.ts(\\?|$)`;
-    const timed = await h.ev(`(() => {
-        const re = new RegExp(${JSON.stringify(pattern)});
-        const hits = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => re.test(n));
-        return hits.length ? hits[hits.length - 1] : null;
-    })()`);
-    if (timed) return timed;
+// The urls the dev server serves the app's own modules from, found without resource timing (its buffer holds 250 entries, fewer than an
+// unbundled Vite page loads; setup-fixtures.mjs still finds wshclientapi.ts that way). A dynamic import of such a url is the instance the
+// app runs only if it is the very url the app imported the module by, and Vite writes that url, `?t=<stamp>` included once the module
+// has been hot-updated, into the transformed source of every importer. Files under the Vite root (frontend/tauri) are served
+// root-relative and the rest, frontend/app/**, as /@fs/<absolute path> (vite's normalizeResolvedIdToUrl). So this starts from the one
+// url the page states outright, its entry <script type=module src=".../main.tsx">, reads the url main.tsx imports jotaiStore by, and
+// reads each other module's url out of a known importer of it, found beside the store by path. Runs IN THE PAGE (ahResolveModules
+// sends its source), so it uses nothing from this file. Throws, naming the url, when a source or an import is not where this expects.
+async function ahResolveInPage() {
+    const sourceOf = async (url) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+        return res.text();
+    };
+    // the url `file` is loaded from in an importer's source, as that importer writes it
+    const urlIn = (source, base, file) => {
+        const m = source.match(new RegExp(`["']([^"'\\s]*${file.replace(/\./g, "\\.")}(?:\\?[^"'\\s]*)?)["']`));
+        return m ? new URL(m[1], base).href : null;
+    };
+    const entry = [...document.querySelectorAll('script[type="module"][src]')].find((s) => /\/main\.tsx(\?|$)/.test(s.src));
+    if (!entry) throw new Error("the page has no module script for main.tsx");
+    const store = urlIn(await sourceOf(entry.src), entry.src, "/store/jotaiStore.ts");
+    if (!store) throw new Error(`${entry.src} does not import /store/jotaiStore.ts`);
+    // an importer's own url needs no query: the dev server answers any query with the current source
+    const via = async (importer, file) => {
+        const from = new URL(importer, store).href;
+        const url = urlIn(await sourceOf(from), from, file);
+        if (!url) throw new Error(`${from} does not import ${file}`);
+        return url;
+    };
+    return {
+        store,
+        nav: await via("../view/agents/conversationhistory.tsx", "/keybindings/listnav.ts"),
+        archive: await via("../view/agents/sessionpane.tsx", "/sessionsarchivestore.ts"),
+        api: await via("../view/agents/sessionsarchivestore.ts", "/store/wshclientapi.ts"),
+    };
+}
+
+// { urls: { store, nav, archive, api } } or { error }; resolved once per scenario, after the reload
+async function ahResolveModules(h) {
     try {
-        const tree = await h.cdp("Page.getResourceTree");
-        const re = new RegExp(pattern);
-        const hits = (tree?.frameTree?.resources ?? []).map((r) => r.url).filter((u) => re.test(u));
-        return hits.length ? hits[hits.length - 1] : null;
-    } catch {
-        return null;
+        return { urls: await h.ev(`(${ahResolveInPage.toString()})()`) };
+    } catch (e) {
+        return { error: String(e?.message ?? e) };
     }
 }
 
 // answers getsessionsactivity with the seeded sessions (counting calls) and delegates every other command to what was there
-async function installAhMock(h, sessions) {
-    const url = await ahModuleUrl(h, "wshclientapi");
-    if (!url) return "no-module-url";
+async function installAhMock(h, sessions, apiUrl) {
     return h.ev(`(async () => {
-        const mod = await import(${JSON.stringify(url)});
+        const mod = await import(${JSON.stringify(apiUrl)});
         const api = mod.RpcApi;
         if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
         if (window.${AH_MOCK_KEY}) return "already-installed";
@@ -7133,22 +7163,30 @@ const removeAhMock = (h) =>
         return "restored";
     })()`);
 
-// The surface that owns the page's list cursor (listnav.ts), read from the app's own jotai store: { surface } (null when none is
-// published) or { error }. The one atom this harness reads (the header says asserts do not): the cursor has no DOM trace, and what
-// it breaks, j/k on another surface's list, needs that surface to hold data.
-async function ahListNavSurface(h) {
+// Runs IN THE PAGE (ahListNavSurface sends its source): the surface that owns the list cursor (listnav.ts), read from the app's own
+// jotai store at the urls ahResolveModules found. The sessions archive proves the instances first: the app's own scan has filled
+// sessionsArchiveAtom (null until it has), so only the app's store and atom hold an array there; a duplicate instance of either
+// (a url differing by `?t=`) holds the atom's initial null.
+async function ahReadCursorInPage(urls) {
+    const { globalStore } = await import(urls.store);
+    const { listNavAtom } = await import(urls.nav);
+    const { sessionsArchiveAtom } = await import(urls.archive);
+    const archive = globalStore.get(sessionsArchiveAtom);
+    if (!Array.isArray(archive)) return { instance: false, archive: archive === null ? "null" : typeof archive };
+    return { instance: true, surface: globalStore.get(listNavAtom)?.surface ?? null };
+}
+
+// { surface } (null when no list publishes a cursor) once the page's modules are proven to be the app's own, else { unreachable }
+// naming why. The one atom this harness reads (the header says asserts do not): the cursor has no DOM trace, and what it breaks, j/k
+// on another surface's list, needs that surface to hold data.
+async function ahListNavSurface(h, urls) {
     try {
-        const storeUrl = await ahModuleUrl(h, "jotaiStore");
-        const navUrl = await ahModuleUrl(h, "listnav");
-        if (!storeUrl || !navUrl) return { error: "the dev server's jotaiStore.ts and listnav.ts urls are not in the page's resources" };
-        const surface = await h.ev(`(async () => {
-            const { globalStore } = await import(${JSON.stringify(storeUrl)});
-            const { listNavAtom } = await import(${JSON.stringify(navUrl)});
-            return globalStore.get(listNavAtom)?.surface ?? null;
-        })()`);
-        return { surface };
+        const r = await h.ev(`(${ahReadCursorInPage.toString()})(${JSON.stringify(urls)})`);
+        return r.instance
+            ? { surface: r.surface }
+            : { unreachable: `the sessions archive atom reads ${r.archive} through the imported modules, so they are a different instance from the app's` };
     } catch (e) {
-        return { error: String(e?.message ?? e) };
+        return { unreachable: `importing the app's modules failed: ${String(e?.message ?? e)}` };
     }
 }
 
@@ -7210,7 +7248,10 @@ const agentHistory = {
             await h.ev(`localStorage.removeItem(${JSON.stringify(AH_FOCUS_KEY)})`);
             // the fixture roster is read once at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
-            ctx.mock = await installAhMock(h, sessions);
+            ctx.modules = await ahResolveModules(h);
+            ctx.mock = ctx.modules.urls
+                ? await installAhMock(h, sessions, ctx.modules.urls.api)
+                : `no-module-url (${ctx.modules.error})`;
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -7392,7 +7433,8 @@ const agentHistory = {
             await ahNap(AH_SCAN_GAP_MS);
             const away = await ahMockCalls(h);
             await h.goto("agent");
-            await ahNap(1500);
+            // the scan starts after the next paint
+            await ahWait(h, `window.${AH_MOCK_KEY}?.state.calls > ${away}`, 5000);
             const after = await ahMockCalls(h);
             rec(
                 "13. entering the Agent surface again rescans, and nothing polls in between",
@@ -7401,41 +7443,55 @@ const agentHistory = {
             );
 
             // History stays open under a hidden Agent surface, and its list cursor must go with the surface: left published
-            // (surface "agent") it would take j/k from the list of whichever surface shows
-            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
-            const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
-            await ahNap(300);
-            const owner = await ahListNavSurface(h);
-            await ahKey(h, "6", "Digit6", { ctrlKey: true });
-            await ahNap(800);
-            const elsewhere = await h.activeSurfaceLabel();
-            const withdrawn = await ahListNavSurface(h);
-            await h.goto("agent");
-            const kept = await h.ev(`document.querySelector("[data-agent-history]") != null`);
-            const republished = await ahListNavSurface(h);
-            const probeError = [owner, withdrawn, republished].find((r) => r.error != null)?.error;
-            steps.push(
-                probeError != null
-                    ? skipStep("14. History's list cursor is withdrawn while another surface shows, and is back with the surface", probeError)
-                    : {
-                          step: "14. History's list cursor is withdrawn while another surface shows, and is back with the surface",
-                          ok:
-                              reopened === true &&
-                              owner.surface === "agent" &&
-                              elsewhere === "Radar" &&
-                              withdrawn.surface !== "agent" &&
-                              kept === true &&
-                              republished.surface === "agent",
-                          detail: JSON.stringify({
-                              reopened,
-                              onAgent: owner.surface,
-                              elsewhere,
-                              onRadar: withdrawn.surface,
-                              historyKept: kept,
-                              backOnAgent: republished.surface,
-                          }),
-                      }
-            );
+            // (surface "agent") it would take j/k from the list of whichever surface shows. Not reaching the app's store is a SKIP,
+            // reaching it and reading the wrong owner a FAIL.
+            const modules = ctx.modules ?? { error: "arrange stopped before it resolved them" };
+            if (modules.urls == null) {
+                steps.push(
+                    skipStep(
+                        AH_CURSOR_STEP,
+                        `cannot resolve the app's module urls (${modules.error}). They are read from the dev server's transformed main.tsx and its importers, not from resource timing, whose 250-entry buffer is smaller than an unbundled dev page. Reload the dev app and rerun; if it persists, an import that ahResolveInPage reads was renamed or moved.`
+                    )
+                );
+            } else {
+                await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+                const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
+                await ahNap(300);
+                const owner = await ahListNavSurface(h, modules.urls);
+                await ahKey(h, "6", "Digit6", { ctrlKey: true });
+                await ahNap(800);
+                const elsewhere = await h.activeSurfaceLabel();
+                const withdrawn = await ahListNavSurface(h, modules.urls);
+                await h.goto("agent");
+                const kept = await h.ev(`document.querySelector("[data-agent-history]") != null`);
+                const republished = await ahListNavSurface(h, modules.urls);
+                const unreachable = [owner, withdrawn, republished].find((r) => r.unreachable != null)?.unreachable;
+                steps.push(
+                    unreachable != null
+                        ? skipStep(
+                              AH_CURSOR_STEP,
+                              `${unreachable} (urls tried: ${JSON.stringify(modules.urls)}). A module hot-updated after the page loaded is served from a new ?t= url; reload the dev app and rerun.`
+                          )
+                        : {
+                              step: AH_CURSOR_STEP,
+                              ok:
+                                  reopened === true &&
+                                  owner.surface === "agent" &&
+                                  elsewhere === "Radar" &&
+                                  withdrawn.surface !== "agent" &&
+                                  kept === true &&
+                                  republished.surface === "agent",
+                              detail: JSON.stringify({
+                                  reopened,
+                                  onAgent: owner.surface,
+                                  elsewhere,
+                                  onRadar: withdrawn.surface,
+                                  historyKept: kept,
+                                  backOnAgent: republished.surface,
+                              }),
+                          }
+                );
+            }
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
         }
@@ -7453,7 +7509,9 @@ const agentHistory = {
         if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
         await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
         await step("restore the persisted focus", () => h.ev(restoreStorageKey(AH_FOCUS_KEY, ctx.prevFocus)));
-        await step("reload onto the live roster", () => ahReload(h));
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) console.error("agent-history teardown: the page did not come back after the reload");
+        });
         await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
         await step("leave on the Cockpit", () => h.goto("cockpit"));
     },
