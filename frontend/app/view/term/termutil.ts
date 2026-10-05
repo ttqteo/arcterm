@@ -3,7 +3,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { checkUploadFile, sanitizeFileName, UploadError } from "@/app/view/agents/uploadfile";
+import { checkUploadFile, MAX_UPLOAD_LABEL, sanitizeFileName, UploadError } from "@/app/view/agents/uploadfile";
 import * as TermTypes from "@xterm/xterm";
 import base64 from "base64-js";
 
@@ -46,12 +46,12 @@ export const MIME_TO_EXT: Record<string, string> = {
  *
  * @param blob - The Blob to save
  * @returns The path to the created temporary file
- * @throws Error if blob is too large (>5MB) or data URL is invalid
+ * @throws Error if blob is too large (over MAX_UPLOAD_BYTES, see uploadfile.ts) or its type is not an image
  */
 export async function createTempFileFromBlob(blob: Blob): Promise<string> {
-    // Check size limit (5MB)
-    if (blob.size > 5 * 1024 * 1024) {
-        throw new Error("Image too large (>5MB)");
+    // Check size limit (MAX_UPLOAD_BYTES)
+    if (checkUploadFile(blob) != null) {
+        throw new Error(`Image too large (>${MAX_UPLOAD_LABEL})`);
     }
 
     // Get file extension from MIME type
@@ -68,6 +68,10 @@ export async function createTempFileFromBlob(blob: Blob): Promise<string> {
     return writeTempFile(filename, blob);
 }
 
+// How long the write may take. Without a timeout the call never settles when its message is lost (ws.ts drops one
+// over 5 MiB without a reply), and whoever awaits it waits forever.
+const TempFileWriteTimeoutMs = 30000;
+
 // Writes the blob's bytes to a file called `filename` in a fresh temp directory (WriteTempFileCommand makes one
 // per call, so two files with the same name never collide) and returns its path.
 async function writeTempFile(filename: string, blob: Blob): Promise<string> {
@@ -80,10 +84,14 @@ async function writeTempFile(filename: string, blob: Blob): Promise<string> {
 
     const base64Data = base64.fromByteArray(new Uint8Array(arrayBuffer));
 
-    return RpcApi.WriteTempFileCommand(TabRpcClient, {
-        filename,
-        data64: base64Data,
-    });
+    return RpcApi.WriteTempFileCommand(
+        TabRpcClient,
+        {
+            filename,
+            data64: base64Data,
+        },
+        { timeout: TempFileWriteTimeoutMs }
+    );
 }
 
 /**
@@ -92,14 +100,19 @@ async function writeTempFile(filename: string, blob: Blob): Promise<string> {
  *
  * @param file - The File to copy
  * @returns The path to the created temporary file
- * @throws UploadError if the file is over the 5MB cap (checkUploadFile)
+ * @throws UploadError "too-large" if the file is over MAX_UPLOAD_BYTES (checkUploadFile), "error" if the copy failed
  */
 export async function createTempFileFromFile(file: File): Promise<string> {
     const rejection = checkUploadFile(file);
     if (rejection != null) {
         throw new UploadError(rejection, file.name);
     }
-    return writeTempFile(sanitizeFileName(file.name), file);
+    try {
+        return await writeTempFile(sanitizeFileName(file.name), file);
+    } catch (err) {
+        console.error("Temp file write error:", err);
+        throw new UploadError("error", file.name);
+    }
 }
 
 /**

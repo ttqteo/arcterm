@@ -10,8 +10,12 @@ import { isAgentDrag } from "./griddrop";
 
 const MB = 1024 * 1024;
 
-// the same cap createTempFileFromBlob puts on a pasted image
-export const MAX_UPLOAD_BYTES = 5 * MB;
+// The cap on a file copied to a temp file, and on a pasted image (createTempFileFromBlob). The bytes travel base64
+// (4/3 as big) inside one websocket message, which ws.ts drops without a trace above 5 MiB (MaxWebSocketSendSize).
+// 3.5 MiB is 4,893,356 bytes of base64, 349,524 under that, which leaves room for the JSON envelope and the name.
+export const MAX_UPLOAD_BYTES = 3.5 * MB;
+// the cap as the user reads it, in every message that names it
+export const MAX_UPLOAD_LABEL = `${MAX_UPLOAD_BYTES / MB} MB`;
 export const THUMB_MAX_PX = 96;
 // a bigger source is not decoded just for a 96px picture; its row falls back to the generic icon
 export const THUMB_SOURCE_LIMIT_BYTES = 10 * MB;
@@ -26,10 +30,10 @@ export interface Rejection {
 function rejectionReason(code: UploadRejection, name: string): string {
     switch (code) {
         case "too-large":
-            return `${name} is over ${MAX_UPLOAD_BYTES / MB} MB`;
+            return `${name} is over ${MAX_UPLOAD_LABEL}`;
         case "directory":
             return `${name} is a folder`;
-        default:
+        case "error":
             return `could not copy ${name} to a temporary file`;
     }
 }
@@ -58,27 +62,33 @@ const MAX_NAME_CHARS = 120;
 const WINDOWS_ILLEGAL = /[<>:"|?*\x00-\x1f]/g;
 const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
+const TRAILING_DOTS_AND_SPACES = /[\s.]+$/;
+
 export function sanitizeFileName(name: string): string {
     const base = name.split(/[\\/]/).pop() ?? "";
-    let clean = base
-        .replace(WINDOWS_ILLEGAL, "_")
-        .replace(/[. ]+$/, "")
-        .trim();
-    if (clean === "" || /^\.+$/.test(clean)) {
+    let clean = base.replace(WINDOWS_ILLEGAL, "_").replace(TRAILING_DOTS_AND_SPACES, "").trim();
+    if (clean === "") {
         return "file";
     }
     if (RESERVED_NAME.test(clean)) {
         clean = `_${clean}`;
     }
-    if (clean.length <= MAX_NAME_CHARS) {
+    // counted and cut by code point, so a long name never ends in half of a surrogate pair
+    const chars = Array.from(clean);
+    if (chars.length <= MAX_NAME_CHARS) {
         return clean;
     }
-    const dot = clean.lastIndexOf(".");
-    const ext = dot > 0 && clean.length - dot <= 10 ? clean.slice(dot) : "";
-    return clean.slice(0, MAX_NAME_CHARS - ext.length) + ext;
+    const dot = chars.lastIndexOf(".");
+    const ext = dot > 0 && chars.length - dot <= 10 ? chars.slice(dot).join("") : "";
+    // the cut can land after a dot or a space, which Windows refuses at the end of a name part
+    const stem = chars
+        .slice(0, MAX_NAME_CHARS - Array.from(ext).length)
+        .join("")
+        .replace(TRAILING_DOTS_AND_SPACES, "");
+    return (stem === "" ? "file" : stem) + ext;
 }
 
-// a file drag from the OS: it carries "Files", and never the grid's agent MIME (griddrop.ts, Stage 3)
+// a file drag from the OS: it carries "Files", and never the grid's agent MIME (griddrop.ts)
 export function isFileDrag(types: readonly string[]): boolean {
     return types.includes("Files") && !isAgentDrag(types);
 }
@@ -96,11 +106,15 @@ export interface DroppedFiles {
 }
 
 function classifyFile(file: File, trustedNotFolder: boolean, out: DroppedFiles): void {
-    // a dropped folder arrives as an empty File; without the entry API to say so, an empty typeless one is taken as a folder
+    // a dropped folder arrives as an empty File; without the entry API to say so, an empty typeless one is taken
+    // as a folder
     if (!trustedNotFolder && file.size === 0 && file.type === "") {
         out.rejected.push({ name: file.name, code: "directory" });
-    } else if (checkUploadFile(file) != null) {
-        out.rejected.push({ name: file.name, code: "too-large" });
+        return;
+    }
+    const code = checkUploadFile(file);
+    if (code != null) {
+        out.rejected.push({ name: file.name, code });
     } else {
         out.files.push(file);
     }
@@ -132,9 +146,8 @@ export function collectDroppedFiles(
     return out;
 }
 
-const MAX_MB = MAX_UPLOAD_BYTES / MB;
 const ONE_REJECTION: Record<UploadRejection, string> = {
-    "too-large": `It is over ${MAX_MB} MB. Use + Attach in the Uploads panel to insert its path instead.`,
+    "too-large": `It's over ${MAX_UPLOAD_LABEL}. Use + Attach in the Uploads panel to insert its path instead.`,
     directory: "Folders can't be dropped. Drop the files inside it, or use + Attach.",
     error: "Copying it to a temporary file failed.",
 };
@@ -145,22 +158,26 @@ export function rejectionToast(rejected: readonly Rejection[]): { title: string;
         return null;
     }
     if (rejected.length === 1) {
-        return { title: `Couldn't add ${rejected[0].name}`, message: ONE_REJECTION[rejected[0].code] };
+        return { title: `Couldn't add “${rejected[0].name}”`, message: ONE_REJECTION[rejected[0].code] };
     }
     const count = (code: UploadRejection) => rejected.filter((r) => r.code === code).length;
+    // what went wrong, and only the advice that fits what went wrong
     const parts: string[] = [];
+    const advice: string[] = [];
     if (count("too-large") > 0) {
-        parts.push(`${count("too-large")} over ${MAX_MB} MB`);
+        parts.push(`${count("too-large")} over ${MAX_UPLOAD_LABEL}`);
+        advice.push("Use + Attach to insert large files by path.");
     }
     if (count("directory") > 0) {
         parts.push(`${count("directory")} ${count("directory") === 1 ? "folder" : "folders"}`);
+        advice.push("Folders can't be dropped.");
     }
     if (count("error") > 0) {
         parts.push(`${count("error")} failed to copy`);
     }
     return {
         title: `${rejected.length} items weren't added`,
-        message: `${parts.join(", ")}. Use + Attach to insert large files by path; folders can't be dropped.`,
+        message: [`${parts.join(", ")}.`, ...advice].join(" "),
     };
 }
 
