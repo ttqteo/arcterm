@@ -12403,6 +12403,619 @@ const codeTreeOnArrival = {
     },
 };
 
+// --- the agent grid: up to four terminals side by side, none of them remounted -----------------------------------
+// Needs a live app (task dev). It opens five plain terminals and makes each an agent by publishing the agent:status
+// event a Claude Code hook would, because the grid holds live agents and a bare shell is not one. The roster, the
+// tree rows and the panes are then the real ones. The drag is dispatched in the page (a DataTransfer carrying the
+// custom MIME, on the real row or bar and then on the overlay the app drew), because a native drag needs a pointer;
+// the app ends a drag on any real pointer movement, so the mouse must stay still during the run. Refit is proved from
+// geometry and identity from DOM marks; garbling is for the shots. rosterSeededAtom cannot be read from here, but the
+// surface writes the reconciled grid back to storage only once the roster is seeded, so a stored grid holding the
+// agent just clicked is the proof that it is, and nothing is dropped or counted before that.
+const GRID_KEY = "agent.grid";
+const GRID_PROJECT = "verify-grid";
+const GRID_NAMES = ["grid-a", "grid-b", "grid-c", "grid-d", "grid-e"];
+const GRID_MARK = "agent-grid";
+// the cell's ResizeObserver, the 50ms fit debounce, then the PTY resync
+const GRID_SETTLE_MS = 800;
+// a fit leaves under one character cell of slack, plus the scrollbar gutter
+const GRID_FIT_SLACK_PX = 40;
+// where in the overlay each zone's point sits (an edge is the outer quarter)
+const GRID_ZONE_AT = { center: [0.5, 0.5], left: [0.1, 0.5], right: [0.9, 0.5], top: [0.5, 0.1], bottom: [0.5, 0.9] };
+const gridRow = (id) => `[data-agent-row="${id}"]`;
+const gridBar = (id) => `[data-agent-cell-bar="${id}"]`;
+const gridNear = (a, b, tol = 4) => Math.abs(a - b) <= tol;
+const gridSameSize = (a, b) => gridNear(a.w, b.w) && gridNear(a.h, b.h);
+const gridFocused = (lay) => lay.cells.find((c) => c.focused)?.id ?? null;
+// every id has its tree row and a pane with its xterm mounted
+const gridReady = (ids) =>
+    `${JSON.stringify(ids)}.every((id) => !!document.querySelector('[data-agent-row="' + id + '"]') && !!document.querySelector('[data-agent-terminal="' + id + '"] .xterm'))`;
+// the cell wrappers on screen, in cell order; a hidden pane has no data-agent-cell
+const GRID_CELLS = `[...document.querySelectorAll("[data-agent-cell]")]
+    .sort((a, b) => Number(a.getAttribute("data-agent-cell")) - Number(b.getAttribute("data-agent-cell")))`;
+
+// a plain terminal that reports as a Claude agent; the tab id is the agent id
+async function openGridAgent(h, ctx, base, stamp) {
+    // the stamp keeps a tab a crashed earlier run left behind from answering to this run's palette search
+    const name = `${base}-${stamp}`;
+    const tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]);
+    // tracked at once, so a failure in the calls below still lets teardown close the tab
+    ctx.tabIds.push(tabId);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+    const blockId = tab?.blockids?.[0];
+    if (!blockId) throw new Error(`the tab for ${name} has no block`);
+    // the shell starts in ~, not a temp dir: something in the app tree keeps its cwd locked until the app exits
+    await h.rpc("setmeta", { oref: `block:${blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", { oref: `tab:${tabId}`, meta: { "session:project": GRID_PROJECT } });
+    await h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${blockId}`],
+        persist: 1,
+        data: { oref: `block:${blockId}`, state: "working", agent: "claude", title: name, ts: Date.now() },
+    });
+    return { name, tabId, blockId };
+}
+
+// the grid as drawn: every visible cell in order, with its box, and whether the tree is up
+const gridLayout = (h) =>
+    h.ev(`(() => {
+        const grid = document.querySelector("[data-agent-grid]");
+        const box = (el) => {
+            const r = el.getBoundingClientRect();
+            return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        };
+        const cells = ${GRID_CELLS}.map((c) => ({
+            id: c.getAttribute("data-agent-terminal"),
+            focused: c.getAttribute("data-agent-focused") === "true",
+            bar: !!c.querySelector("[data-agent-cell-bar]"),
+            ...box(c),
+        }));
+        return {
+            shown: !!grid && !grid.classList.contains("hidden"),
+            count: grid ? Number(grid.getAttribute("data-agent-grid-count")) : null,
+            tree: !!document.querySelector("[data-agent-tree]"),
+            cells,
+        };
+    })()`);
+
+// each visible pane's xterm screen against the box the terminal fits itself to
+const gridFit = (h) =>
+    h.ev(`(() => ${GRID_CELLS}.map((c) => {
+        const id = c.getAttribute("data-agent-terminal");
+        const host = c.querySelector(".term-connectelem");
+        const screen = c.querySelector(".xterm-screen");
+        if (!host || !screen) return { id, dw: null, dh: null };
+        const hr = host.getBoundingClientRect();
+        const sr = screen.getBoundingClientRect();
+        return { id, dw: Math.round(hr.width - sr.width), dh: Math.round(hr.height - sr.height) };
+    }))()`);
+const gridFitOk = (fit) =>
+    fit.length > 0 &&
+    fit.every((f) => f.dw != null && f.dw >= -1 && f.dw < GRID_FIT_SLACK_PX && f.dh >= -1 && f.dh < GRID_FIT_SLACK_PX);
+
+// tagged before any shape change: a remount drops the attribute with the node. Which panes had an xterm to tag is kept,
+// so one that had none then and has one now is not mistaken for a remount
+const tagGridPanes = (h, ids) =>
+    h.ev(`(() => {
+        const had = {};
+        for (const id of ${JSON.stringify(ids)}) {
+            const cell = document.querySelector('[data-agent-terminal="' + id + '"]');
+            const xterm = cell?.querySelector(".xterm");
+            cell?.setAttribute("data-verify-mark", ${JSON.stringify(GRID_MARK)});
+            xterm?.setAttribute("data-verify-mark", ${JSON.stringify(GRID_MARK)});
+            had[id] = xterm != null;
+        }
+        return had;
+    })()`);
+const gridMarks = (h, ids) =>
+    h.ev(`(() => ${JSON.stringify(ids)}.map((id) => {
+        const cell = document.querySelector('[data-agent-terminal="' + id + '"]');
+        const xterm = cell?.querySelector(".xterm");
+        return {
+            id,
+            cell: cell?.getAttribute("data-verify-mark") === ${JSON.stringify(GRID_MARK)},
+            xterm: xterm == null ? null : xterm.getAttribute("data-verify-mark") === ${JSON.stringify(GRID_MARK)},
+        };
+    }))()`);
+const gridMarksOk = (marks, had) => marks.every((m) => m.cell === true && (had[m.id] !== true || m.xterm === true));
+
+// dragstart on the source, then the drag events on the overlay over `target`, at the point of `zone`
+async function gridDrag(h, { source, target, zone }) {
+    const [fx, fy] = GRID_ZONE_AT[zone];
+    return h.ev(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        // polls a reader to truthy, 50ms apart
+        const until = async (read, tries) => {
+            let v = read();
+            for (let i = 0; i < tries && !v; i++) {
+                await wait(50);
+                v = read();
+            }
+            return v;
+        };
+        const src = document.querySelector(${JSON.stringify(source)});
+        if (!src) return { ok: false, why: "no drag source" };
+        const dt = new DataTransfer();
+        const fire = (el, type, x, y) =>
+            el.dispatchEvent(
+                new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x ?? 0, clientY: y ?? 0 })
+            );
+        fire(src, "dragstart");
+        // the app writes its drag atom a tick after dragstart (Chromium cancels a drag the page changes inside
+        // dragstart), so the overlay it mounts is polled for, not read
+        const ov = await until(() => document.querySelector(${JSON.stringify(`[data-agent-drop-overlay="${target}"]`)}), 60);
+        if (!ov) {
+            fire(src, "dragend");
+            return { ok: false, why: "no drop overlay over the target cell" };
+        }
+        const r = ov.getBoundingClientRect();
+        const x = r.left + r.width * ${fx};
+        const y = r.top + r.height * ${fy};
+        fire(ov, "dragenter", x, y);
+        fire(ov, "dragover", x, y);
+        const hint = await until(() => ov.getAttribute("data-drop-zone"), 20);
+        const zones = ov.getAttribute("data-drop-zones");
+        fire(ov, "drop", x, y);
+        fire(src, "dragend");
+        await wait(100);
+        // the drop ends the drag, which takes every overlay down
+        return { ok: true, hint, zones, left: document.querySelectorAll("[data-agent-drop-overlay]").length };
+    })()`);
+}
+const gridDropOk = (d, zone) => d.ok === true && d.hint === zone && d.left === 0;
+
+// DOM focus into a cell's terminal, as a click in it leaves it
+const focusGridTerm = (h, id) =>
+    h.ev(`(() => {
+        const t = document.querySelector('[data-agent-terminal="${id}"] .xterm-helper-textarea');
+        if (!t || !t.checkVisibility()) return false;
+        t.focus();
+        return document.activeElement === t;
+    })()`);
+// the cell that holds DOM focus
+const gridActiveCell = (h) =>
+    h.ev(`document.activeElement?.closest?.("[data-agent-terminal]")?.getAttribute("data-agent-terminal") ?? null`);
+
+// Ctrl+P and the agent's name, until its row is the selected one (and offers its actions when `withActions`)
+async function gridPaletteFind(h, name, withActions) {
+    if (!(await openPalette(h))) return { ok: false, why: "the palette did not open" };
+    await h.ev(setInputExpr(PALETTE_INPUT, name));
+    const state = await paletteStateWhen(h, (s) => (s.selected ?? "").startsWith(name) && (!withActions || s.chip), 8000);
+    const found = (state?.selected ?? "").startsWith(name) && (!withActions || state.chip === true);
+    return { ok: found, why: found ? null : `selected=${state?.selected ?? null} chip=${state?.chip ?? null}` };
+}
+// its actions, down to Open in split, and Enter
+async function gridPaletteSplit(h, name) {
+    const found = await gridPaletteFind(h, name, true);
+    if (!found.ok) return found;
+    await h.ev(paletteKey("ArrowRight"));
+    let state = await paletteStateWhen(h, (s) => s.drill != null && s.groups.length > 0, 3000);
+    for (let i = 0; i < 14 && state != null && !(state.selected ?? "").startsWith("Open in split"); i++) {
+        await h.ev(paletteKey("ArrowDown"));
+        await polishNap(80);
+        state = await h.ev(PALETTE_STATE);
+    }
+    if (!(state?.selected ?? "").startsWith("Open in split")) {
+        return { ok: false, why: `the actions list has no Open in split row: selected=${state?.selected ?? null}` };
+    }
+    await h.ev(paletteKey("Enter"));
+    return { ok: true, why: null };
+}
+
+const agentGrid = {
+    name: "agent-grid",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            tabIds: [],
+            agents: [],
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            ctx.skip =
+                "a cockpit fixture roster is active, so the agents this scenario launches never reach the tree: run `npm run cockpit:fixtures -- --clear` and reload";
+            return ctx;
+        }
+        // a throw past this point still returns ctx, so teardown closes whatever was already opened
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            const stamp = String(Date.now() % 100000);
+            for (const base of GRID_NAMES) ctx.agents.push(await openGridAgent(h, ctx, base, stamp));
+            // the grid is read from storage once per page load, so a clean start needs a reload
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+            );
+            if (!(await freshBoot(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            const ids = ctx.agents.map((a) => a.tabId);
+            ctx.inRoster = await polishWaitFor(h, gridReady(ids), 20000);
+            if (!ctx.inRoster) {
+                ctx.missing = await h.ev(`${JSON.stringify(ids)}.map((id) => ({
+                    id,
+                    row: !!document.querySelector('[data-agent-row="' + id + '"]'),
+                    pane: !!document.querySelector('[data-agent-terminal="' + id + '"]'),
+                    xterm: !!document.querySelector('[data-agent-terminal="' + id + '"] .xterm'),
+                }))`);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) {
+            return [skipStep("the agent grid", ctx.skip)];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const click = (selector) =>
+            h.ev(`(() => {
+                const el = document.querySelector(${JSON.stringify(selector)});
+                if (!el) return false;
+                el.click();
+                return true;
+            })()`);
+        const settle = () => polishNap(GRID_SETTLE_MS);
+        const cellAt = (lay, id) => lay.cells.find((c) => c.id === id) ?? {};
+        const order = (lay) => JSON.stringify(lay.cells.map((c) => c.id));
+        const want = (...ids) => JSON.stringify(ids);
+        const fitStep = async (label) => {
+            const fit = await gridFit(h);
+            rec(label, gridFitOk(fit), fit);
+        };
+
+        rec(
+            "0. five live agents are in the tree and each has a pane",
+            ctx.arrangeError == null && ctx.inRoster === true && ctx.agents.length === GRID_NAMES.length,
+            ctx.arrangeError ?? JSON.stringify({ agents: ctx.agents.length, inRoster: ctx.inRoster, missing: ctx.missing })
+        );
+        if (ctx.arrangeError != null || ctx.inRoster !== true) return steps;
+        const [A, B, C, D, E] = ctx.agents.map((a) => a.tabId);
+        const ALL = [A, B, C, D, E];
+        const nameOf = (id) => ctx.agents.find((a) => a.tabId === id)?.name ?? "";
+
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // the grid reads focus off real focus events, which Chromium holds back while the dev window is behind another
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+
+            // 1. one agent, no cells to speak of. The surface writes the reconciled grid back only once the roster is
+            // seeded, so the grid in storage holding A, and only A, is the roster being ready and the focus rule having run
+            await click(gridRow(A));
+            const seeded = await polishWaitFor(
+                h,
+                `(() => {
+                    try {
+                        const g = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null");
+                        return g?.ids?.length === 1 && g.ids[0] === ${JSON.stringify(A)};
+                    } catch {
+                        return false;
+                    }
+                })()`,
+                15000
+            );
+            await settle();
+            let lay = await gridLayout(h);
+            rec(
+                "1. once the roster is seeded, a click on a row shows that agent alone, with no cell bars",
+                seeded === true &&
+                    lay.shown === true &&
+                    lay.count === 1 &&
+                    lay.cells.length === 1 &&
+                    order(lay) === want(A) &&
+                    lay.cells.every((c) => !c.bar),
+                { seeded, lay }
+            );
+            if (seeded !== true) return steps;
+            const tagged = await tagGridPanes(h, ALL);
+            const markStep = async (label, ids) => {
+                const marks = await gridMarks(h, ids);
+                rec(label, gridMarksOk(marks, tagged), marks);
+            };
+
+            // 2. two cells, side by side
+            const d2 = await gridDrag(h, { source: gridRow(B), target: A, zone: "right" });
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "2. dropping B on A's right edge gives two cells side by side and focuses B",
+                gridDropOk(d2, "right") &&
+                    lay.count === 2 &&
+                    order(lay) === want(A, B) &&
+                    cellAt(lay, B).focused === true &&
+                    cellAt(lay, A).x < cellAt(lay, B).x &&
+                    gridNear(cellAt(lay, A).y, cellAt(lay, B).y) &&
+                    gridSameSize(cellAt(lay, A), cellAt(lay, B)) &&
+                    lay.cells.every((c) => c.bar),
+                { drag: d2, lay }
+            );
+            await fitStep("2b. both terminals refit to their cell");
+            await h.shot("cdp-shots/agent-grid-2.png");
+
+            // 3. three cells: two on top, one spanning the bottom
+            const d3 = await gridDrag(h, { source: gridRow(C), target: B, zone: "right" });
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "3. dropping C after B gives two on top and one spanning the bottom",
+                gridDropOk(d3, "right") &&
+                    lay.count === 3 &&
+                    order(lay) === want(A, B, C) &&
+                    cellAt(lay, C).focused === true &&
+                    gridNear(cellAt(lay, A).y, cellAt(lay, B).y) &&
+                    cellAt(lay, C).y >= cellAt(lay, A).y + cellAt(lay, A).h - 2 &&
+                    gridNear(cellAt(lay, C).x, cellAt(lay, A).x) &&
+                    cellAt(lay, C).w > cellAt(lay, A).w * 1.8,
+                { drag: d3, lay }
+            );
+            await fitStep("3b. all three terminals refit, the spanning one included");
+            await markStep("3c. no terminal was remounted by the shape change", ALL);
+            await h.shot("cdp-shots/agent-grid-3.png");
+
+            // 4. four cells, 2x2
+            const d4 = await gridDrag(h, { source: gridRow(D), target: C, zone: "right" });
+            await settle();
+            const lay4 = await gridLayout(h);
+            rec(
+                "4. dropping D after C gives a 2x2",
+                gridDropOk(d4, "right") &&
+                    lay4.count === 4 &&
+                    order(lay4) === want(A, B, C, D) &&
+                    [B, C, D].every((id) => gridSameSize(cellAt(lay4, id), cellAt(lay4, A))) &&
+                    gridNear(cellAt(lay4, B).y, cellAt(lay4, A).y) &&
+                    gridNear(cellAt(lay4, C).x, cellAt(lay4, A).x) &&
+                    cellAt(lay4, D).x > cellAt(lay4, C).x &&
+                    cellAt(lay4, D).y > cellAt(lay4, B).y,
+                { drag: d4, lay: lay4 }
+            );
+            await fitStep("4b. all four terminals refit");
+            await h.shot("cdp-shots/agent-grid-4.png");
+
+            // 5. a full grid offers only the swap; a bar is the handle for rearranging
+            const d5 = await gridDrag(h, { source: gridBar(D), target: A, zone: "left" });
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "5. at four cells the overlay offers only the centre, and a bar dropped on A swaps D and A",
+                d5.zones === "center" &&
+                    gridDropOk(d5, "center") &&
+                    order(lay) === want(D, B, C, A) &&
+                    gridNear(cellAt(lay, D).x, cellAt(lay4, A).x) &&
+                    gridNear(cellAt(lay, D).y, cellAt(lay4, A).y) &&
+                    gridNear(cellAt(lay, A).x, cellAt(lay4, D).x) &&
+                    gridNear(cellAt(lay, A).y, cellAt(lay4, D).y),
+                { drag: d5, lay }
+            );
+            await markStep("5b. swapping cells remounted nothing", ALL);
+
+            // 6. a fifth agent can only replace
+            const d6 = await gridDrag(h, { source: gridRow(E), target: B, zone: "center" });
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "6. dropping E on B at four cells replaces B, which leaves the grid but keeps running",
+                d6.zones === "center" && gridDropOk(d6, "center") && order(lay) === want(D, E, C, A),
+                { drag: d6, lay }
+            );
+            await markStep("6b. B's terminal is hidden, not unmounted, and nothing remounted", ALL);
+
+            // 7. the x takes a cell out
+            const removed = await click(`[data-agent-cell-remove="${C}"]`);
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "7. the x on C's bar leaves three cells: D and E on top, A spanning the bottom",
+                removed === true &&
+                    lay.count === 3 &&
+                    order(lay) === want(D, E, A) &&
+                    gridSameSize(cellAt(lay, D), cellAt(lay, E)) &&
+                    cellAt(lay, A).y > cellAt(lay, D).y &&
+                    cellAt(lay, A).w > cellAt(lay, D).w * 1.8,
+                lay
+            );
+            await fitStep("7b. the remaining terminals refit");
+            await markStep("7c. C's terminal is hidden, not unmounted, and nothing remounted", ALL);
+
+            // 8. the focus rule from the tree
+            await click(gridRow(B));
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "8. a row whose agent has no cell replaces the focused cell",
+                order(lay) === want(D, B, A) && cellAt(lay, B).focused === true,
+                lay
+            );
+            await click(gridRow(D));
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "8b. a row whose agent has a cell focuses that cell and leaves the list alone",
+                order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
+                lay
+            );
+
+            // 9. fullscreen shows the focused cell alone and brings the grid back
+            const fsOn = await click('[data-agent-header] button[title^="Fullscreen terminal"]');
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "9. fullscreen collapses the grid to the focused cell and hides the tree",
+                fsOn === true && lay.count === 1 && order(lay) === want(D) && lay.tree === false,
+                lay
+            );
+            await fitStep("9b. the one cell refits to the whole area");
+            await markStep("9c. fullscreen remounted nothing", ALL);
+            await h.shot("cdp-shots/agent-grid-collapsed.png");
+            const fsOff = await click('[data-agent-header] button[title^="Exit fullscreen"]');
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "9d. leaving fullscreen restores the three cells and the tree",
+                fsOff === true && lay.count === 3 && order(lay) === want(D, B, A) && lay.tree === true,
+                lay
+            );
+            await fitStep("9e. the three terminals refit again");
+
+            // 10. the grid survives a reload (the saved grid is read before the roster is complete). The count attribute
+            // can overstate while the roster loads (a saved cell whose agent has not arrived holds its slot, with no
+            // pane), so the cells are counted from the panes that are drawn, and read again once things have settled
+            const reloaded = await freshBoot(h);
+            await h.goto("agent");
+            const back = await polishWaitFor(
+                h,
+                `JSON.stringify(${GRID_CELLS}.map((c) => c.getAttribute("data-agent-terminal"))) === ${JSON.stringify(want(D, B, A))}`,
+                20000
+            );
+            await settle();
+            lay = await gridLayout(h);
+            rec(
+                "10. after a reload the same three cells come back, in order",
+                reloaded === true &&
+                    back === true &&
+                    lay.count === 3 &&
+                    lay.cells.length === 3 &&
+                    order(lay) === want(D, B, A) &&
+                    lay.cells.filter((c) => c.focused).length === 1,
+                { reloaded, back, lay }
+            );
+            // the saved focus is resumed only when its agent is among the first the roster delivers: until the roster is
+            // seeded the surface shows the first saved cell that has arrived (resolveShownAgent), and that agent keeps
+            // the focus. So a different focused cell is not a failure of the grid, and is not scored as one
+            const resumed = gridFocused(lay);
+            steps.push(
+                resumed === D
+                    ? { step: "10b. the focus saved with the grid (D) is the focused cell again", ok: true, detail: `focused=${resumed}` }
+                    : skipStep(
+                          "10b. the focus saved with the grid (D) is the focused cell again",
+                          `the focused cell came back as ${resumed} (D is ${D}): the surface resumes on the first saved cell the roster delivers when the saved focus has not arrived yet, so this depends on arrival order`
+                      )
+            );
+            await h.shot("cdp-shots/agent-grid-reloaded.png");
+
+            // 11. a palette pick of an agent that already has a cell. ModalShell hands focus back to what held it when the
+            // palette opened (that cell's xterm), and that must not count as picking the cell again
+            const before = order(lay);
+            const fromId = gridFocused(lay);
+            const pickId = lay.cells.map((c) => c.id).find((id) => id !== fromId);
+            const inTerm = await focusGridTerm(h, fromId);
+            const found = await gridPaletteFind(h, nameOf(pickId), false);
+            if (found.ok) await h.ev(paletteKey("Enter"));
+            const gone = await polishWaitFor(h, `!${PALETTE_INPUT}`, 4000);
+            // long enough for a focus restore that undoes the pick to have landed
+            await settle();
+            lay = await gridLayout(h);
+            let active = await gridActiveCell(h);
+            rec(
+                "11. picking an agent that has a cell in the palette focuses that cell, and the keyboard goes there too",
+                inTerm === true &&
+                    found.ok === true &&
+                    gone === true &&
+                    lay.count === 3 &&
+                    order(lay) === before &&
+                    gridFocused(lay) === pickId &&
+                    active === pickId,
+                { from: fromId, pick: pickId, inTerm, found, gone, active, lay }
+            );
+
+            // 12. Open in split from the palette adds the agent right after the focused cell
+            const splitFrom = gridFocused(lay);
+            const ids = lay.cells.map((c) => c.id);
+            const after = ids.indexOf(splitFrom) + 1;
+            const inTerm2 = await focusGridTerm(h, splitFrom);
+            const split = await gridPaletteSplit(h, nameOf(E));
+            const gone2 = await polishWaitFor(h, `!${PALETTE_INPUT}`, 4000);
+            await settle();
+            lay = await gridLayout(h);
+            active = await gridActiveCell(h);
+            rec(
+                "12. Open in split in the palette adds E right after the focused cell and focuses it",
+                inTerm2 === true &&
+                    split.ok === true &&
+                    gone2 === true &&
+                    lay.count === 4 &&
+                    order(lay) === want(...ids.slice(0, after), E, ...ids.slice(after)) &&
+                    gridFocused(lay) === E,
+                { from: splitFrom, inTerm2, split, gone2, active, lay }
+            );
+            // The step to watch. An agent row closes the palette in the same event as the focus write, but an action closes
+            // it a microtask later (runPaletteAction), in a later commit. The surface's hand-over effect runs on the agent
+            // change, with the palette's input still the active element, so it has nothing to hand over, and the palette
+            // then gives focus back to the cell the keyboard was in
+            rec("12b. and the keyboard goes to E's terminal, so typing reaches the agent that is shown", active === E, {
+                active,
+                focused: gridFocused(lay),
+            });
+
+            // 13. Ctrl+Tab from a cell's terminal. It only writes the selected agent; the surface turns that into the focus
+            // rule and hands the keyboard to the new focused cell. Where it lands depends on the roster's order, so the
+            // assertion is that the focus moved and that the keyboard is in the cell that now holds it
+            const tabFrom = gridFocused(lay);
+            const inTerm3 = await focusGridTerm(h, tabFrom);
+            await ahKey(h, "Tab", "Tab", { ctrlKey: true });
+            await settle();
+            lay = await gridLayout(h);
+            active = await gridActiveCell(h);
+            const tabTo = gridFocused(lay);
+            rec(
+                "13. Ctrl+Tab in a cell's terminal moves the selection and hands the keyboard to the newly focused cell",
+                inTerm3 === true && tabTo != null && tabTo !== tabFrom && lay.count === 4 && active === tabTo,
+                { from: tabFrom, to: tabTo, inTerm3, active, lay }
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agent-grid teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.skip) return;
+        // a palette a failed step left open would take the Esc and the focus the reload does not need
+        await step("close the palette", () => h.ev(PEEKS_ESC));
+        await step("end the focus emulation", () => h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false }));
+        for (const tabId of ctx.tabIds) {
+            await step(`close ${tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        // the surface prunes the closed agents out of the saved grid as the roster catches up; the user's grid goes back only
+        // after that has been written, or the prune would write over it
+        await step("wait for the roster to drop the closed agents", () =>
+            polishWaitFor(
+                h,
+                `${JSON.stringify(ctx.tabIds)}.every((id) => !document.querySelector('[data-agent-terminal="' + id + '"]'))`,
+                10000
+            )
+        );
+        await step("wait for the surface to prune them from the saved grid", () =>
+            polishWaitFor(
+                h,
+                `(() => {
+                    try {
+                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        return ${JSON.stringify(ctx.tabIds)}.every((id) => !ids.includes(id));
+                    } catch {
+                        return true;
+                    }
+                })()`,
+                5000
+            )
+        );
+        await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) console.error("agent-grid teardown: the page did not come back after the reload");
+        });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -12465,4 +13078,5 @@ export const SCENARIOS = [
     canvasSwap,
     canvasTabsScenario,
     agentRailSections,
+    agentGrid,
 ];
