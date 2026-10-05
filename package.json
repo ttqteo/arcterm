@@ -74,6 +74,7 @@
         "d3-force-3d": "^3.0.6",
         "debug": "^4.4.3",
         "jotai": "2.9.3",
+        "katex": "^0.16.38",
         "lucide-react": "^0.542.0",
         "mermaid": "^11.12.3",
         "monaco-editor": "^0.55.1",

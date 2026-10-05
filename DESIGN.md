@@ -92,6 +92,8 @@ colors:
   # git diff added/removed lines and +N/-N counts
   diff-added: "#3fb950"
   diff-removed: "#f85149"
+  # the light matte under a note's image in the Doc review view
+  imagematte: "#e9ecef"
 typography:
   font-sans:
     fontFamily: "Inter, system-ui, sans-serif"
@@ -269,6 +271,10 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
   git diff bands, inline diff lines, and every `+N` / `−N` count. They are
   not `success` / `error`: a removed line is not a failure. Theme-agnostic
   like the syntax tokens.
+- **`imagematte` `#e9ecef`** is the light matte a markdown note's image sits on
+  in the Doc review view: a diagram exported with a transparent background and
+  dark ink (Mermaid's default) is unreadable on the dark ground. Theme-agnostic,
+  like the image it frames; not in `themes.ts`.
 - **`--ansi-*`** literals are fallbacks only: `buildThemeVars` in
   `frontend/app/view/agents/themes.ts` derives ANSI + terminal palettes from
   the active theme at runtime so CSS and the live terminal cannot drift. Do

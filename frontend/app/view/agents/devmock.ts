@@ -41,3 +41,15 @@ export async function loadDevMockRoster(): Promise<void> {
         // no fixture served (or the dev server returned index.html) -> stay on the live roster
     }
 }
+
+// A scenario that rewrites the fixture mid-run (a Doc review's next round, an ask cleared) re-reads it without a
+// page reload, which would drop the session state under test.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+    window.__reloadDevMockRoster = loadDevMockRoster;
+}
+
+declare global {
+    interface Window {
+        __reloadDevMockRoster?: () => Promise<void>;
+    }
+}

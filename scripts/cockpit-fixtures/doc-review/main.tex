@@ -1,0 +1,30 @@
+% A sample paper for the doc-review-mode cockpit fixture (scripts/cockpit-fixtures/scenarios.mjs).
+% Edit it locally to see a diff: the review compares the working file against HEAD.
+\documentclass{article}
+\title{A sample paper for the Doc review view}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Agents rewrite sections of a paper, and the author judges each rewrite before the next one starts.
+This sample gives the review view something to read: sections, a citation~\cite{knuth84}, and a little math.
+
+\section{Method}
+
+\subsection{Overview}
+
+Each round, the agent asks for a review of one file and stops.
+The reviewer comments on passages, and the comments go back as one answer.
+A comment quotes the source, so \texttt{wsh ask} and \emph{emphasis} stay as written.
+
+\subsection{Cost}
+
+The diff runs over sentences, so a rewritten paragraph reads as edits, not as one changed line.
+Its cost is $O(nm)$ for $n$ and $m$ sentences, which stays small for a section.
+
+\section{Results}
+
+The view shows only changed sections, and folds the rest into one row per run.
+
+\end{document}

@@ -46,6 +46,12 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:canvas-close"], glyph: "c", label: "terminal" },
         { ids: ["agent:canvas-prev", "agent:canvas-next"], glyph: "[ ]", label: "board" },
         { ids: ["agent:mark-start"], glyph: "m", label: "mark" },
+        // review mode: Ctrl+Enter names the tray's accent answer
+        { ids: ["agent:review-approve"], keys: "Ctrl:Enter", label: "approve" },
+        { ids: ["agent:review-request"], keys: "Ctrl:Enter", label: "request changes" },
+        { ids: ["agent:review-comment"], glyph: "c", label: "comment" },
+        { ids: ["agent:review-close"], glyph: "r", label: "terminal" },
+        { ids: ["agent:review-prev", "agent:review-next"], glyph: "[ ]", label: "tab" },
     ],
     // ↑↓, ⏎ and g g left the footer for room; they still work and are in ? help.
     files: [

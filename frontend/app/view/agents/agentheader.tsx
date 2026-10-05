@@ -22,8 +22,8 @@ import { useEffect } from "react";
 import { confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
-import type { AgentVM } from "./agentsviewmodel";
-import { setAgentView } from "./agentview";
+import { askSentKey, type AgentVM } from "./agentsviewmodel";
+import { setAgentView, type AgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
@@ -125,9 +125,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const settling = useSettle(!ended && agent.state === "idle");
     const review = parseDocReview(agent.ask);
     const dialogOpen = useAtomValue(docReviewAtom) != null;
-    const docReviewShown = useAtomValue(docReviewStateAtom(agent.id))?.mode === "review";
-    // the dialog is open, or the Doc review already shows in the terminal's place
-    const reviewOpen = dialogOpen || docReviewShown;
+    const docReview = useAtomValue(docReviewStateAtom(agent.id));
+    const sent = useAtomValue(model.sentIdsAtom).has(askSentKey(agent) ?? "");
+    // a Doc review switches in the segmented control below; the amber button opens a Spec or Plan review's dialog
+    const showDialogButton = review != null && review.kind !== "doc" && !dialogOpen;
+    const view: AgentView = docReview?.mode === "review" ? "review" : canvas?.mode === "canvas" ? "canvas" : "terminal";
 
     // Esc cancels the current Claude turn — same PTY-write path as the composer (ControllerInputCommand).
     const interrupt = () => interruptAgent(blockId);
@@ -253,7 +255,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             </div>
             <div className="flex-1" />
             <div className="flex items-center gap-[7px]">
-                {review && !reviewOpen ? (
+                {showDialogButton ? (
                     <button
                         type="button"
                         onClick={() => openReview(model, agent.id)}
@@ -265,30 +267,64 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
                     </button>
                 ) : null}
-                {canvas != null ? (
-                    <Segmented
+                {canvas != null || docReview != null ? (
+                    // one control for whatever can stand in the terminal's place: a canvas, a Doc review, or both
+                    <Segmented<AgentView>
                         role="group"
-                        ariaLabel="Show terminal or canvas"
-                        value={canvas.mode}
+                        ariaLabel={
+                            docReview == null
+                                ? "Show terminal or canvas"
+                                : canvas == null
+                                  ? "Show terminal or review"
+                                  : "Show terminal, canvas or review"
+                        }
+                        value={view}
                         options={[
-                            { key: "terminal", label: "Terminal", title: `Terminal (${formatChordString("c")})` },
                             {
-                                key: "canvas",
-                                label: (
-                                    <>
-                                        Canvas
-                                        {isUnseen(canvas) ? (
-                                            <span
-                                                aria-label="updated since you last looked"
-                                                className="h-[6px] w-[6px] rounded-full bg-accent"
-                                            />
-                                        ) : null}
-                                    </>
-                                ),
-                                title: `Canvas (${formatChordString("c")})`,
+                                key: "terminal",
+                                label: "Terminal",
+                                title: `Terminal (${formatChordString(docReview != null ? "r" : "c")})`,
                             },
+                            ...(canvas != null
+                                ? [
+                                      {
+                                          key: "canvas" as const,
+                                          label: (
+                                              <>
+                                                  Canvas
+                                                  {isUnseen(canvas) ? (
+                                                      <span
+                                                          aria-label="updated since you last looked"
+                                                          className="h-[6px] w-[6px] rounded-full bg-accent"
+                                                      />
+                                                  ) : null}
+                                              </>
+                                          ),
+                                          title: `Canvas (${formatChordString("c")})`,
+                                      },
+                                  ]
+                                : []),
+                            ...(docReview != null
+                                ? [
+                                      {
+                                          key: "review" as const,
+                                          label: (
+                                              <>
+                                                  Review
+                                                  {view !== "review" && !sent ? (
+                                                      <span
+                                                          aria-label="waiting on you"
+                                                          className="h-[6px] w-[6px] rounded-full bg-warning"
+                                                      />
+                                                  ) : null}
+                                              </>
+                                          ),
+                                          title: `Review (${formatChordString("r")})`,
+                                      },
+                                  ]
+                                : []),
                         ]}
-                        onChange={(m) => setAgentView(agent.id, m, Date.now())}
+                        onChange={(v) => setAgentView(agent.id, v, Date.now())}
                     />
                 ) : null}
                 {blockId != null ? (

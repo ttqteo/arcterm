@@ -7287,6 +7287,1137 @@ const docReviewCanvas = {
     },
 };
 
+// --- doc-review-mode: an agent's Doc review in place of its terminal (docs/superpowers/specs/2026-10-02-doc-review-
+// mode-design.md, boards under .superpowers/design/doc-review-mode). Arrange builds a git repo one folder below the
+// scenario's own temp folder, so every folder above the repo up to %TEMP% is the scenario's: a paper, a note, the note's
+// images and the file it links, committed, then edited and left uncommitted. The fixture roster's agents ask `Doc
+// review` on them with no transcript, so a first round diffs against HEAD. Their asks have no live block: answering
+// one marks it sent and nothing more. Each step takes a shot; the lettered steps are the plan review's additions, and
+// the PDF tab's steps (18-24) are added after 17. Named doc-review-mode because doc-review tests the Spec/Plan dialog.
+const DRM = "doc-review-mode";
+const DRM_PAPER = { id: "fx-drm-paper", name: "paper-writer", blockId: "fx-blk-drm-paper" };
+const DRM_NOTES = { id: "fx-drm-notes", name: "notes-writer", blockId: "fx-blk-drm-notes" };
+const DRM_GONE = { id: "fx-drm-gone", name: "gone-writer", blockId: "fx-blk-drm-gone" };
+const DRM_PANE = `document.querySelector("[data-doc-review-pane]")`;
+const DRM_SCROLL = `document.querySelector("[data-doc-review-scroll]")`;
+const DRM_HEADER_NAME = `(document.querySelector("[data-agent-header]")?.innerText ?? "").split("\\n")[0].trim()`;
+const DRM_CANVAS_TOPIC = "verify-drm-canvas";
+const DRM_PROJECT = "verify-doc-review-mode";
+// --color-imagematte, --color-success and --color-diff-removed as getComputedStyle reports them
+const DRM_MATTE_RGB = "rgb(233, 236, 239)";
+const DRM_SUCCESS_RGB = "rgb(84, 199, 154)";
+const DRM_REMOVED_RGB = "rgb(248, 81, 73)";
+// a 160x48 PNG with a band across it, so the matte shows a picture
+const DRM_PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwCAIAAAAZy+Y5AAAAd0lEQVR42u3aQQ0AIAwEwapDBJoqjDcOcIIIPk2ZZBXcfC/WPmpcmACwAAuwAAuwAAswYAEWYAEWYAHWM/CYqWoBBgwYMGDAAizAAizAgAEDBgxYgAVYgAUYMGDAgAGrM7Cc7gRYgAVYgAUYsAALsAALsAAL8I9dNU1RCcexkbMAAAAASUVORK5CYII=";
+// dark ink on a transparent ground, Mermaid's default export: what the light matte is for
+const DRM_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="120" viewBox="0 0 480 120"><g fill="none" stroke="#333" stroke-width="2"><rect x="10" y="40" width="120" height="40" rx="6"/><rect x="180" y="40" width="120" height="40" rx="6"/><rect x="350" y="40" width="120" height="40" rx="6"/><path d="M130 60h50M300 60h50"/></g><g font-family="sans-serif" font-size="15" fill="#333" text-anchor="middle"><text x="70" y="65">scan</text><text x="240" y="65">replay</text><text x="410" y="65">audit</text></g></svg>`;
+
+const DRM_TEX_HEAD = String.raw`\documentclass{article}
+\begin{document}
+
+\section{Introduction}
+
+Agents rewrite sections of a paper while the author reads along. Each rewrite waits for the author's verdict before the next one starts.
+
+The review view shows what changed in the prose. It sends the comments back as one answer.
+
+\section{Method}
+
+\subsection{Overview}
+
+Each round, the agent finishes a section and asks for a review of one file. The agent asks through \texttt{wsh ask} and waits for the answer. It stops until the answer comes back.
+
+The diff pairs sentences before it pairs words. An edited sentence shows its changed words in place. A rewritten paragraph reads as edits instead of one changed line.
+
+The baseline is the file at the start of the session. Later rounds diff against what the last review showed.
+
+\subsection{Cost}
+
+The sentence diff is quadratic in the sentences of a section. That stays small because a section holds a few dozen sentences at most. We measured it on every section of the thesis.
+
+The word diff runs only on sentences that changed. It uses the same alignment as the sentence diff.
+
+\section{Evaluation}
+
+We ran the review loop on three papers and forty notes. Each paper went through at least two rounds.
+
+The authors kept their own notes on what each round fixed. Those notes are the ground truth for the results below.
+
+\section{Results}
+
+Most rounds ended with one or two comments. The comments named a passage and said what should change.
+
+Authors approved a section after two rounds on average. The longest section took five rounds.
+
+The review view was faster than reading the raw diff. Authors said the word diff made small edits easy to spot.
+
+A few rounds failed to compile. The PDF tab showed the first error and its line.
+
+\section{Related work}
+
+Code review tools diff by line. Prose review tools track changes by character.
+
+\section{Conclusion}
+
+Reviewing prose by sentence keeps the conversation with the agent short.
+
+\end{document}
+`;
+
+// round 1, against HEAD: +2 −2 · 3 edited, one edited sentence holding \texttt
+const DRM_TEX_R1 = DRM_TEX_HEAD.replace(
+    String.raw`The agent asks through \texttt{wsh ask} and waits for the answer.`,
+    String.raw`The ask names the file, the sections it touched and any page limit. The agent asks through \texttt{wsh ask} and then waits for one structured answer.`
+)
+    .replace(" A rewritten paragraph reads as edits instead of one changed line.", "")
+    .replace("a few dozen sentences at most.", "a few dozen sentences.")
+    .replace(
+        "on average. The longest section took five rounds.",
+        "on average, and none took more than five."
+    )
+    .replace("the first error and its line.", "the first error and its line. Each failure named the macro that broke.");
+
+// round 2, against what round 1 showed: +1 · 2 edited
+const DRM_TEX_R2 = DRM_TEX_R1.replace(
+    "Each round, the agent finishes",
+    "Each round now opens with the null result: the agent finishes"
+)
+    .replace("one or two comments.", "one or two short comments.")
+    .replace("and none took more than five.", "and none took more than five. Two sections needed a third round.");
+
+const DRM_MD_INTRO = `## 1. Bối cảnh
+
+Ghi chú này theo dõi các bước của luận văn. Mỗi bước có đầu ra rõ ràng.
+
+Các số liệu lấy từ bộ dữ liệu 110 ca. Mỗi ca có một bản vá và một mô tả.
+
+## 2. Dữ liệu
+
+Bộ dữ liệu gồm 110 ca từ GitHub Advisory. Mỗi ca đã được kiểm tra thủ công.
+
+Các ca trùng lặp đã bị loại. Danh sách cuối cùng nằm trong thư mục data.
+
+## 3. Phương pháp
+
+Phương pháp gồm ba giai đoạn. Mỗi giai đoạn có kiểm thử riêng.
+
+Giai đoạn đầu dựng số. Giai đoạn sau đọc và giải thích số.
+
+## 4. Kết quả
+
+Kết quả sơ bộ cho thấy 17 trên 29 ca được xác nhận. Phần còn lại cần xem lại.
+
+Các ca bị bỏ sót được ghi trong bảng riêng. Bảng đó sẽ được cập nhật mỗi tuần.
+
+## 5. Kế hoạch — 3 bước
+
+`;
+const DRM_MD_HEAD =
+    DRM_MD_INTRO +
+    `**Bước 1 — tuần 26/07: dựng số tự động.** Tôi viết script \`eda/\`, sinh ra các bảng thống kê. Em chạy, đọc số, phát hiện chỗ vô lý.
+
+![kept](diagrams/kept.png)
+
+![old](diagrams/old.png)
+
+![big](diagrams/big.png)
+
+**Bước 2 — 02/08: code tay.** Mở rộng \`guard_spec.json\` từ 18 lên tập phân tích.
+`;
+// section 5: an edited paragraph, a new list item with a relative and an #anchor link, an added svg; the kept png
+// stays, the old png's line goes, and the big png is over the image cap
+const DRM_MD_R1 =
+    DRM_MD_INTRO +
+    `**Bước 1 — tuần 26/07: dựng số tự động.** Tôi viết script \`eda/\`, sinh ra \`patch_stats.csv\` cho cả 110 ca. Em chạy, đọc số, phát hiện chỗ vô lý.
+
+- Bảng failure taxonomy lấy thẳng từ [misses_audit.md](misses_audit.md), không chạy lại. Xem lại [bối cảnh](#1-bối-cảnh).
+
+![pipeline](diagrams/pipeline.svg)
+
+![kept](diagrams/kept.png)
+
+![big](diagrams/big.png)
+
+**Bước 2 — 02/08: code tay.** Mở rộng \`guard_spec.json\` từ 18 lên tập phân tích.
+`;
+const DRM_AUDIT = "# Misses audit\n\nThe failure taxonomy, one group per miss.\n";
+
+const drmGit = (repo, ...args) =>
+    execFileSync("git", ["-c", "user.email=v@v", "-c", "user.name=v", ...args], { cwd: repo, stdio: "pipe" });
+
+function drmAsk(agent, round, path, lines) {
+    return {
+        askId: `fx-drm-${agent.name}-${round}-${Date.now()}`,
+        oref: `block:${agent.blockId}`,
+        questions: [
+            {
+                header: "Doc review",
+                question: [path, ...lines].join("\n"),
+                options: [{ label: "Approve" }, { label: "Request changes" }],
+            },
+        ],
+    };
+}
+
+// an agent with no ask is working, the way one reads once its ask clears
+function drmAgent(agent, blockedMs, ask) {
+    return {
+        id: agent.id,
+        name: agent.name,
+        project: DRM,
+        task: "write the doc",
+        state: ask ? "asking" : "working",
+        agent: "claude",
+        model: "opus",
+        blockId: agent.blockId,
+        ...(ask ? { blockedMs, ask } : { activeMs: 30_000 }),
+        previousInfo: [{ kind: "message", text: "Wrote the section; asking for a review." }],
+    };
+}
+
+const drmWriteRoster = (ctx, paperAsk) =>
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                drmAgent(DRM_PAPER, 120_000, paperAsk),
+                drmAgent(DRM_NOTES, 90_000, ctx.notesAsk),
+                drmAgent(DRM_GONE, 60_000, ctx.goneAsk),
+            ],
+            null,
+            2
+        )
+    );
+
+// the repo, its two rounds of edits, and the roster; the agent surface opens on gone-writer, so paper-writer's
+// first focus in step 1 is the one that switches it to review
+async function arrangeDocReviewMode(h) {
+    const base = mkdtempSync(join(tmpdir(), "verify-doc-review-mode-"));
+    const repo = join(base, "repo");
+    const ctx = { cwd: base, repo };
+    try {
+        ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`);
+        const notes = join(repo, "notes");
+        mkdirSync(join(repo, "paper"), { recursive: true });
+        mkdirSync(join(notes, "diagrams"), { recursive: true });
+        ctx.tex = join(repo, "paper", "main.tex");
+        ctx.md = join(notes, "next_step.md");
+        writeFileSync(ctx.tex, DRM_TEX_HEAD);
+        writeFileSync(ctx.md, DRM_MD_HEAD);
+        writeFileSync(join(notes, "misses_audit.md"), DRM_AUDIT);
+        writeFileSync(join(notes, "diagrams", "kept.png"), Buffer.from(DRM_PNG, "base64"));
+        writeFileSync(join(notes, "diagrams", "old.png"), Buffer.from(DRM_PNG, "base64"));
+        const big = Buffer.alloc(6 * 1024 * 1024);
+        Buffer.from(DRM_PNG, "base64").copy(big);
+        writeFileSync(join(notes, "diagrams", "big.png"), big);
+        drmGit(repo, "init", "-q");
+        drmGit(repo, "add", ".");
+        drmGit(repo, "commit", "-qm", "seed");
+        writeFileSync(ctx.tex, DRM_TEX_R1);
+        writeFileSync(ctx.md, DRM_MD_R1);
+        writeFileSync(join(notes, "diagrams", "pipeline.svg"), DRM_SVG);
+
+        ctx.paperAsk = drmAsk(DRM_PAPER, 1, ctx.tex, [
+            "Rewrote §2.1 around the review loop and tightened §4.",
+            "Pages: 8",
+            "- §2.1 Overview: rewritten around the review loop",
+            "- §4 Results: numbers aligned with the notes",
+        ]);
+        ctx.notesAsk = drmAsk(DRM_NOTES, 1, ctx.md, [
+            "Cập nhật mục 5: bước 1 ghi rõ các file đầu ra, thêm sơ đồ pipeline và link tới misses_audit.md.",
+            "- 5. Bước 1: viết lại đầu ra",
+            "- 5. thêm sơ đồ pipeline",
+        ]);
+        ctx.goneAsk = drmAsk(DRM_GONE, 1, join(notes, "gone.md"), ["Wrote the gone note.", "- 1. Intro: new"]);
+        // the Code surface shows files of registered projects only, and step 9 opens one of the note's links there
+        await h.rpc("createproject", { name: DRM_PROJECT, path: repo });
+        ctx.project = DRM_PROJECT;
+        await waitForProjectInConfig(h, DRM_PROJECT);
+        mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+        drmWriteRoster(ctx, ctx.paperAsk);
+        ctx.wroteFixture = true;
+        // the fixture roster is read once at boot, and a reload starts the session state under test clean
+        await h.ev("location.reload()");
+        await h.ev(`(async () => {
+            for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        })()`);
+        await h.goto("cockpit");
+        const goneCard = `document.querySelector('[data-cockpit-surface] [data-agent-id="${DRM_GONE.id}"]')`;
+        ctx.rosterLoaded = await docReviewWait(h, goneCard, 15000);
+        await h.ev(`${goneCard}?.querySelector('button[title="Open terminal (T)"]')?.click()`);
+        await docReviewWait(h, `${DRM_HEADER_NAME} === ${JSON.stringify(DRM_GONE.name)}`, 5000);
+    } catch (e) {
+        ctx.arrangeError = String(e?.message ?? e);
+    }
+    return ctx;
+}
+
+// a key where the user's focus is, as a keypress would arrive (the dispatcher listens on window capture)
+const drmKey = (h, key, ctrl = false) =>
+    h.ev(`(() => {
+        const key = ${JSON.stringify(key)};
+        const code = key.length === 1 ? "Key" + key.toUpperCase() : key;
+        (document.activeElement || document.body).dispatchEvent(
+            new KeyboardEvent("keydown", { key, code, ctrlKey: ${ctrl}, bubbles: true, cancelable: true })
+        );
+        return true;
+    })()`);
+
+// back in the terminal its xterm holds focus and would take r or d as typing; leave it the way Shift+Esc does
+const drmLeaveTerminal = (h) =>
+    h.ev(`(() => {
+        document.activeElement?.blur?.();
+        document.querySelector("[data-cockpit-surface-wrap]")?.focus();
+        return true;
+    })()`);
+
+// sets a React-controlled input or textarea the way typing does
+const drmType = (h, selector, text) =>
+    h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(text)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+    })()`);
+
+// selects from the start of one element's text to `endChars` into another's; the pane reads it on selectionchange
+const drmSelect = (h, fromExpr, toExpr, endChars) =>
+    h.ev(`(async () => {
+        const textIn = (el) => {
+            const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            for (let n = w.nextNode(); n; n = w.nextNode()) if (n.data.trim()) return n;
+            return null;
+        };
+        const a = ${fromExpr};
+        const b = ${toExpr};
+        const ta = a && textIn(a);
+        const tb = b && textIn(b);
+        if (!ta || !tb) return false;
+        const r = document.createRange();
+        r.setStart(ta, 0);
+        r.setEnd(tb, Math.min(${endChars}, tb.data.length));
+        const s = getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        await new Promise((res) => setTimeout(res, 250));
+        return true;
+    })()`);
+
+const drmPara = (section, p) => `${DRM_PANE}?.querySelector('[data-section="${section}"][data-p="${p}"]')`;
+
+// focuses an agent through its tree row with nothing editable focused, so a first focus may auto-open its review
+async function drmFocus(h, agent) {
+    await docReviewFocusRow(h, agent.name);
+    return docReviewWait(h, `${DRM_HEADER_NAME} === ${JSON.stringify(agent.name)}`, 3000);
+}
+
+// the review has loaded: its paragraphs, or the line saying the file is gone
+const drmLoaded = (h) =>
+    docReviewWait(h, `${DRM_PANE}?.querySelector("[data-p], [data-doc-review-gone]")`, 8000);
+
+// the footer's chips as glyph + label
+const DRM_FOOTER = `(() => {
+    const palette = [...document.querySelectorAll("span")].find(
+        (s) => s.firstElementChild && s.lastChild?.nodeType === 3 && s.lastChild.data === "palette"
+    );
+    const bar = palette?.parentElement;
+    return bar ? [...bar.children].map((c) => ({ glyph: c.firstElementChild?.textContent ?? "", label: c.lastChild?.textContent ?? "" })) : null;
+})()`;
+
+const DRM_HEADER_GROUP = `document.querySelector('[data-agent-header] [role="group"]')`;
+const drmHeaderOptions = (h) =>
+    h.ev(`[...(${DRM_HEADER_GROUP}?.querySelectorAll("button") ?? [])].map((b) => ({
+        text: (b.textContent || "").trim(),
+        pressed: b.getAttribute("aria-pressed") === "true",
+        dot: !!b.querySelector('[aria-label="waiting on you"]'),
+    }))`);
+const drmClickOption = (h, label) =>
+    h.ev(`(() => {
+        const b = [...(${DRM_HEADER_GROUP}?.querySelectorAll("button") ?? [])].find((x) => (x.textContent || "").trim() === ${JSON.stringify(label)});
+        if (!b) return false;
+        b.click();
+        return true;
+    })()`);
+
+// the element is inside the review's scroller viewport
+const drmInView = (expr) => `(() => {
+    const el = ${expr};
+    const s = ${DRM_SCROLL};
+    if (!el || !s) return false;
+    const r = el.getBoundingClientRect();
+    const b = s.getBoundingClientRect();
+    return r.top >= b.top - 1 && r.top < b.bottom;
+})()`;
+
+const DRM_TRAY = `(() => {
+    const send = ${DRM_PANE}?.querySelector("[data-doc-review-send]");
+    const buttons = [...(${DRM_PANE}?.querySelectorAll("[data-doc-review-tray] button") ?? [])];
+    const request = buttons.find((b) => (b.textContent || "").startsWith("Request changes"));
+    return {
+        accent: send ? (send.textContent || "").replace(/\\s+/g, " ").trim() : null,
+        requestDisabled: request?.disabled ?? null,
+        hint: (${DRM_PANE}?.querySelector("[data-doc-review-tray]")?.innerText ?? "").replace(/\\s+/g, " "),
+        sent: ${DRM_PANE}?.querySelector("[data-doc-review-sent]")?.innerText?.replace(/\\s+/g, " ").trim() ?? null,
+    };
+})()`;
+
+const docReviewMode = {
+    name: DRM,
+    surface: "agent",
+    arrange: arrangeDocReviewMode,
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null || !ctx.rosterLoaded) {
+            return [{ step: "0. the fixture roster loaded", ok: false, detail: ctx.arrangeError ?? "no gone-writer card" }];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const nap = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const shot = (n) => h.shot(`cdp-shots/${DRM}-${n}.png`);
+        // the PDF tab compiles in the background when a .tex review opens; steps 1-17 never shell out to an engine
+        await h.ev(`typeof window.__docCompileFixture === "function" && window.__docCompileFixture({ ok: true, engine: "latexmk", pages: 9 })`);
+
+        // 1. Main
+        const HOST = `document.querySelector('[data-agent-terminal="${DRM_PAPER.id}"]')`;
+        const tagged = await h.ev(`(() => {
+            const t = ${HOST};
+            if (!t) return false;
+            t.setAttribute("data-verify-mark", ${JSON.stringify(DRM)});
+            return true;
+        })()`);
+        const focused1 = await drmFocus(h, DRM_PAPER);
+        const loaded1 = await drmLoaded(h);
+        const main1 = await h.ev(`(() => {
+            const p = ${DRM_PANE};
+            if (!p) return null;
+            const modified = [...p.querySelectorAll('[data-op="modify"]')];
+            const coded = modified.find((s) => [...s.querySelectorAll("code")].some((c) => c.textContent.includes("wsh")));
+            const changedWords = coded ? coded.querySelectorAll('[class*="bg-diff-added"], [class*="line-through"]').length : 0;
+            return {
+                struck: p.querySelectorAll('[data-op="delete"]').length,
+                inserted: p.querySelectorAll('[data-op="insert"]').length,
+                modified: modified.length,
+                codeInEdit: !!coded && getComputedStyle(coded.querySelector("code")).fontFamily.includes("Mono"),
+                changedWords,
+                hostHidden: ${HOST}?.classList.contains("hidden") ?? null,
+            };
+        })()`);
+        const tray1 = await h.ev(DRM_TRAY);
+        await shot("01-main");
+        rec(
+            "1. focusing paper-writer swaps its terminal for the review: struck, inserted and word-edited sentences, the \\texttt token keeps its code style in the edit, Approve is the accent and Request changes is off",
+            tagged &&
+                focused1 &&
+                loaded1 &&
+                main1?.struck === 2 &&
+                main1.inserted === 2 &&
+                main1.modified === 3 &&
+                main1.codeInEdit &&
+                main1.changedWords > 0 &&
+                main1.hostHidden === true &&
+                /^Approve/.test(tray1.accent ?? "") &&
+                tray1.requestDisabled === true,
+            JSON.stringify({ tagged, focused1, loaded1, main1, tray1 })
+        );
+        // the terminal host is hidden, never remounted: back to the terminal and into the review again
+        await drmKey(h, "r");
+        await nap(300);
+        const term1 = await h.ev(`({ pane: !!${DRM_PANE}, visible: !(${HOST}?.classList.contains("hidden") ?? true) })`);
+        await drmLeaveTerminal(h);
+        await drmKey(h, "r");
+        await docReviewWait(h, `!!${DRM_PANE}`, 3000);
+        const same1 = await h.ev(`(() => {
+            const t = ${HOST};
+            return { mark: t?.getAttribute("data-verify-mark") === ${JSON.stringify(DRM)}, connected: !!t?.isConnected, pane: !!${DRM_PANE} };
+        })()`);
+        rec(
+            "1b. r shows the terminal and r again the review; the terminal host is the same node throughout",
+            !term1.pane && term1.visible && same1.mark && same1.connected && same1.pane,
+            JSON.stringify({ term1, same1 })
+        );
+
+        // 2. Main, whole file
+        await drmLoaded(h);
+        const run2 = await h.ev(`[...(${DRM_PANE}?.querySelectorAll("[data-doc-review-unchanged]") ?? [])].map((r) => r.querySelector("span")?.textContent.trim())`);
+        await h.ev(`[...(${DRM_PANE}?.querySelector("[data-doc-review-unchanged]")?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Show whole file")?.click()`);
+        await nap(300);
+        const whole2 = await h.ev(`(() => {
+            const p = ${DRM_PANE};
+            const toggle = [...p.querySelectorAll("button")].find((b) => b.textContent.trim() === "Whole file");
+            return {
+                runs: p.querySelectorAll("[data-doc-review-unchanged]").length,
+                sections: p.querySelectorAll("[data-doc-section]").length,
+                pressed: toggle?.getAttribute("aria-pressed"),
+            };
+        })()`);
+        await shot("02-whole-file");
+        await h.ev(`[...${DRM_PANE}.querySelectorAll("button")].find((b) => b.textContent.trim() === "Whole file")?.click()`);
+        await nap(300);
+        const back2 = await h.ev(`({
+            runs: ${DRM_PANE}.querySelectorAll("[data-doc-review-unchanged]").length,
+            pressed: [...${DRM_PANE}.querySelectorAll("button")].find((b) => b.textContent.trim() === "Whole file")?.getAttribute("aria-pressed"),
+        })`);
+        rec(
+            "2. unchanged runs fold into rows; Show whole file renders every section and presses the toggle; the toggle returns to changed sections",
+            run2.length === 3 &&
+                run2.includes("§1 – §2 · unchanged") &&
+                run2.includes("§3 Evaluation · unchanged") &&
+                whole2.runs === 0 &&
+                whole2.sections === 8 &&
+                whole2.pressed === "true" &&
+                back2.runs === 3 &&
+                back2.pressed === "false",
+            JSON.stringify({ run2, whole2, back2 })
+        );
+
+        // 3. Main, focus chip
+        const before3 = await h.ev(`${DRM_SCROLL}.scrollTop`);
+        const chip3 = await h.ev(`(() => {
+            const b = [...${DRM_PANE}.querySelectorAll("button[data-doc-review-focus]")].find((x) => x.textContent.startsWith("§4"));
+            if (!b) return false;
+            b.click();
+            return true;
+        })()`);
+        await nap(400);
+        const heading3 = `[...${DRM_PANE}.querySelectorAll("[data-doc-section]")].find((x) => x.innerText.startsWith("§4"))`;
+        const after3 = await h.ev(`({ top: ${DRM_SCROLL}.scrollTop, inView: ${drmInView(heading3)} })`);
+        await shot("03-focus-chip");
+        rec(
+            "3. the §4 focus chip scrolls the pane to §4's heading",
+            chip3 && after3.inView && after3.top > before3,
+            JSON.stringify({ chip3, before3, after3 })
+        );
+
+        // 4. States, selection: one sentence, then one that runs into the next paragraph
+        await h.ev(`${DRM_SCROLL}.scrollTop = 0`);
+        const sentence4 = `${DRM_PANE}.querySelector('[data-op="insert"][data-s]')`;
+        await drmSelect(h, sentence4, sentence4, 24);
+        const button4 = await h.ev(`(() => {
+            const b = ${DRM_PANE}.querySelector("[data-doc-review-comment]");
+            const s = getSelection();
+            if (!b || s.rangeCount === 0) return null;
+            return { above: b.getBoundingClientRect().bottom <= s.getRangeAt(0).getBoundingClientRect().top + 2, text: b.textContent.trim() };
+        })()`);
+        await shot("04-selection");
+        await drmSelect(h, `${drmPara(2, 2)}?.querySelector("[data-s]")`, `${drmPara(2, 3)}?.querySelector("[data-s]")`, 12);
+        const cross4 = await h.ev(`!!${DRM_PANE}.querySelector("[data-doc-review-comment]")`);
+        rec(
+            "4. a selection in a changed sentence floats the Comment button above it; one running into the next paragraph still offers it (clipped: see 5)",
+            button4?.above === true && /^Comment/.test(button4.text) && cross4,
+            JSON.stringify({ button4, cross4 })
+        );
+
+        // 5. Main, comment: c opens the draft; Ctrl+Enter in its textarea adds it
+        await drmKey(h, "c");
+        await nap(300);
+        const draft5 = await h.ev(`(() => {
+            const d = ${DRM_PANE}.querySelector("[data-doc-review-draft]");
+            const a = document.activeElement;
+            return d ? { accent: d.className.includes("border-accent"), focused: a?.tagName === "TEXTAREA" && d.contains(a) } : null;
+        })()`);
+        await drmType(h, "[data-doc-review-draft] textarea", "Say why the ask names the page limit.");
+        await h.ev(`document.querySelector("[data-doc-review-draft] textarea")?.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true })
+        )`);
+        await nap(300);
+        const saved5 = await h.ev(`(() => {
+            const cards = [...${DRM_PANE}.querySelectorAll("[data-doc-review-card]:not([data-doc-review-draft])")];
+            const para = ${drmPara(2, 2)};
+            const card = cards[0];
+            return {
+                cards: cards.length,
+                drafts: ${DRM_PANE}.querySelectorAll("[data-doc-review-draft]").length,
+                loc: card?.innerText.split("\\n").slice(0, 3).join(" ") ?? null,
+                level: card && para ? Math.abs(card.getBoundingClientRect().top - para.getBoundingClientRect().top) : null,
+                underlined: !!para?.querySelector('[data-s][class*="border-accent"]'),
+                chip: [...(para?.querySelectorAll("span") ?? [])].some((s) => s.className.includes("rounded-full") && s.textContent.trim() === "1"),
+            };
+        })()`);
+        const tray5 = await h.ev(DRM_TRAY);
+        await shot("05-comment");
+        rec(
+            "5. c opens a draft (accent border, textarea focused); Ctrl+Enter adds it level with its paragraph, clipped to the first paragraph (§2.1 ¶2), underlined with its chip; Request changes is the accent showing 1",
+            draft5?.accent &&
+                draft5.focused &&
+                saved5.cards === 1 &&
+                saved5.drafts === 0 &&
+                (saved5.loc ?? "").includes("§2.1 ¶2") &&
+                saved5.level != null &&
+                saved5.level <= 2 &&
+                saved5.underlined &&
+                saved5.chip &&
+                /^Request changes\s*1\D/.test(tray5.accent ?? ""),
+            JSON.stringify({ draft5, saved5, tray5 })
+        );
+
+        // 5b. Note, comment: the same gesture on a markdown list item
+        const notes5 = await drmFocus(h, DRM_NOTES);
+        await drmLoaded(h);
+        await drmSelect(h, `${drmPara(4, 2)}?.querySelector("[data-s]")`, `${drmPara(4, 2)}?.querySelector("[data-s]")`, 30);
+        await drmKey(h, "c");
+        await nap(300);
+        await drmType(h, "[data-doc-review-draft] textarea", "Ghi số ca của từng nhóm ngay đây.");
+        await h.ev(`document.querySelector("[data-doc-review-draft] textarea")?.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true })
+        )`);
+        await nap(300);
+        const note5 = await h.ev(`(() => {
+            const card = ${DRM_PANE}.querySelector("[data-doc-review-card]:not([data-doc-review-draft])");
+            const para = ${drmPara(4, 2)};
+            return {
+                text: card?.innerText.replace(/\\s+/g, " ") ?? null,
+                underlined: !!para?.querySelector('[data-s][class*="border-accent"]'),
+                chip: [...(para?.querySelectorAll("span") ?? [])].some((s) => s.className.includes("rounded-full") && s.textContent.trim() === "1"),
+            };
+        })()`);
+        const tray5b = await h.ev(DRM_TRAY);
+        await shot("05b-note-comment");
+        rec(
+            "5b. on the note, a comment on section 5's list item reads 5. ¶2 with its quote, underlined and chipped; Request changes is the accent showing 1",
+            notes5 &&
+                (note5.text ?? "").includes("5. ¶2") &&
+                (note5.text ?? "").includes("Bảng failure taxonomy") &&
+                note5.underlined &&
+                note5.chip &&
+                /^Request changes\s*1\D/.test(tray5b.accent ?? ""),
+            JSON.stringify({ notes5, note5, tray5b })
+        );
+        // leaves the note with nothing to send, for step 10's Approve
+        await h.ev(`${DRM_PANE}.querySelector('button[aria-label="Remove comment 1"]')?.click()`);
+
+        // 6. Main, draft and remove
+        await drmFocus(h, DRM_PAPER);
+        await drmLoaded(h);
+        const later6 = `${DRM_PANE}.querySelector('[data-section="5"] [data-s]')`;
+        const openDraft = async () => {
+            await drmSelect(h, later6, later6, 20);
+            await h.ev(`${DRM_PANE}.querySelector("[data-doc-review-comment]")?.click()`);
+            await nap(300);
+        };
+        await openDraft();
+        const hint6 = (await h.ev(DRM_TRAY)).hint;
+        await shot("06-draft");
+        await h.ev(`[...${DRM_PANE}.querySelectorAll("[data-doc-review-draft] button")].find((b) => b.textContent.trim() === "Cancel")?.click()`);
+        await nap(200);
+        const cancelled6 = await h.ev(`({ drafts: ${DRM_PANE}.querySelectorAll("[data-doc-review-draft]").length, hint: ${DRM_TRAY}.hint })`);
+        await openDraft();
+        await drmType(h, "[data-doc-review-draft] textarea", "A second note.");
+        await h.ev(`[...${DRM_PANE}.querySelectorAll("[data-doc-review-draft] button")].find((b) => b.textContent.trim() === "Add comment")?.click()`);
+        await nap(200);
+        const two6 = await h.ev(`${DRM_PANE}.querySelectorAll("[data-doc-review-card]:not([data-doc-review-draft])").length`);
+        await h.ev(`${DRM_PANE}.querySelector('button[aria-label="Remove comment 2"]')?.click()`);
+        await nap(200);
+        const one6 = await h.ev(`({ cards: ${DRM_PANE}.querySelectorAll("[data-doc-review-card]:not([data-doc-review-draft])").length, accent: ${DRM_TRAY}.accent })`);
+        rec(
+            "6. a second draft says 1 comment is not added yet; Cancel drops it; added then removed, the count is back to 1",
+            hint6.includes("1 comment is not added yet.") &&
+                cancelled6.drafts === 0 &&
+                !cancelled6.hint.includes("not added yet") &&
+                two6 === 2 &&
+                one6.cards === 1 &&
+                /^Request changes\s*1\D/.test(one6.accent ?? ""),
+            JSON.stringify({ hint6, cancelled6, two6, one6 })
+        );
+
+        // 7. Narrow: a pane under 720px puts the card under its paragraph and wraps the tray
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
+        await nap(600);
+        await h.ev(`${drmPara(2, 2)}?.scrollIntoView({ block: "start" })`);
+        const narrow7 = await h.ev(`(() => {
+            const para = ${drmPara(2, 2)};
+            const card = ${DRM_PANE}.querySelector("[data-doc-review-card]");
+            const tray = ${DRM_PANE}.querySelector("[data-doc-review-tray]");
+            const label = tray?.querySelector("label");
+            const send = tray?.querySelector("[data-doc-review-send]");
+            return {
+                pane: ${DRM_PANE}.clientWidth,
+                below: card && para ? card.getBoundingClientRect().top >= para.getBoundingClientRect().bottom - 2 : null,
+                column: tray ? getComputedStyle(tray).flexDirection : null,
+                noteOwnRow: label && send ? label.getBoundingClientRect().bottom <= send.getBoundingClientRect().top + 1 : null,
+            };
+        })()`);
+        await shot("07-narrow");
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+        await nap(400);
+        rec(
+            "7. under 720px the comment sits under its paragraph and the general note takes its own row",
+            narrow7.pane < 720 && narrow7.below === true && narrow7.column === "column" && narrow7.noteOwnRow === true,
+            JSON.stringify(narrow7)
+        );
+
+        // 8. Note: no tab control, a link, the added svg on the matte, the folded run
+        await drmFocus(h, DRM_NOTES);
+        await drmLoaded(h);
+        await docReviewWait(h, `${DRM_PANE}?.querySelector('[data-doc-review-image="added"] img')`, 8000);
+        const note8 = await h.ev(`(() => {
+            const p = ${DRM_PANE};
+            const added = p.querySelector('[data-doc-review-image="added"]');
+            const img = added?.querySelector("img");
+            const matte = img?.parentElement;
+            return {
+                tablist: !!p.querySelector('[role="tablist"]'),
+                link: [...p.querySelectorAll("a")].some((a) => a.textContent.trim() === "misses_audit.md"),
+                caption: added?.firstElementChild?.textContent.trim() ?? null,
+                dataUrl: img?.getAttribute("src")?.startsWith("data:image/svg+xml") ?? false,
+                matte: matte ? getComputedStyle(matte).backgroundColor : null,
+                border: matte ? getComputedStyle(matte).borderTopWidth : null,
+                borderClass: matte?.className.includes("border-diff-added") ?? false,
+                run: p.querySelector("[data-doc-review-unchanged] span")?.textContent.trim() ?? null,
+            };
+        })()`);
+        await shot("08-note");
+        rec(
+            "8. the note has no Changes | PDF tabs, renders its link, draws the added svg as a data: image on the light matte with its + image caption and diff-added frame, and folds 1. – 4.",
+            !note8.tablist &&
+                note8.link &&
+                note8.caption === "+ image · diagrams/pipeline.svg" &&
+                note8.dataUrl &&
+                note8.matte === DRM_MATTE_RGB &&
+                note8.border === "1px" &&
+                note8.borderClass &&
+                note8.run === "1. – 4. · unchanged",
+            JSON.stringify(note8)
+        );
+
+        // 8b. Note, chips: each 5. chip scrolls to section 5
+        const chips8 = [];
+        for (const i of [0, 1]) {
+            await h.ev(`${DRM_SCROLL}.scrollTop = ${DRM_SCROLL}.scrollHeight`);
+            await nap(150);
+            const clicked = await h.ev(`(() => {
+                const b = [...${DRM_PANE}.querySelectorAll("button[data-doc-review-focus]")].filter((x) => x.textContent.startsWith("5."))[${i}];
+                if (!b) return false;
+                b.click();
+                return true;
+            })()`);
+            await nap(300);
+            chips8.push({ clicked, inView: await h.ev(drmInView(`${DRM_PANE}.querySelector('[data-doc-section="4"]')`)) });
+        }
+        await shot("08b-note-chips");
+        rec(
+            "8b. each 5. focus chip scrolls section 5's heading into view",
+            chips8.every((c) => c.clicked && c.inView),
+            JSON.stringify(chips8)
+        );
+
+        // 8c. Note, images: unchanged, removed, and over the cap
+        await docReviewWait(h, `${DRM_PANE}?.querySelector("[data-doc-review-image-fallback]")`, 8000);
+        const images8 = await h.ev(`(() => {
+            const p = ${DRM_PANE};
+            const same = [...p.querySelectorAll('[data-doc-review-image="same"]')];
+            const kept = same.find((f) => f.querySelector("img"));
+            const keptMatte = kept?.querySelector("img")?.parentElement;
+            const removed = p.querySelector('[data-doc-review-image="removed"]');
+            const caption = removed?.firstElementChild;
+            const fallback = p.querySelector("[data-doc-review-image-fallback]");
+            return {
+                kept: kept?.querySelector("img")?.getAttribute("src")?.startsWith("data:image/png") ?? false,
+                keptCaption: kept ? /image ·/.test(kept.innerText) : null,
+                keptBorder: keptMatte ? getComputedStyle(keptMatte).borderTopWidth : null,
+                removed: removed?.innerText.trim() ?? null,
+                removedColor: caption ? getComputedStyle(caption).color : null,
+                removedImg: !!removed?.querySelector("img"),
+                fallback: fallback?.innerText.replace(/\\s+/g, " ") ?? null,
+            };
+        })()`);
+        await h.ev(`${DRM_PANE}.querySelector('[data-doc-review-image="removed"]')?.scrollIntoView({ block: "center" })`);
+        await shot("08c-note-images");
+        rec(
+            "8c. the unchanged png has no caption or frame; the removed image is its − image caption in diff-removed with no pixels; the 6 MB png shows its alt text and path",
+            images8.kept &&
+                images8.keptCaption === false &&
+                images8.keptBorder === "0px" &&
+                images8.removed === "− image · diagrams/old.png" &&
+                images8.removedColor === DRM_REMOVED_RGB &&
+                !images8.removedImg &&
+                (images8.fallback ?? "").includes("big") &&
+                (images8.fallback ?? "").includes("big.png"),
+            JSON.stringify(images8)
+        );
+
+        // 9. Note, links: a relative link opens the file on Code; an #anchor scrolls in place
+        await h.ev(`[...${DRM_PANE}.querySelectorAll("a")].find((a) => a.getAttribute("href") === "misses_audit.md")?.click()`);
+        const code9 = await docReviewWait(h, `(document.querySelector("[data-code-path]")?.getAttribute("data-code-path") ?? "").endsWith("misses_audit.md")`, 8000);
+        const surface9 = await h.activeSurfaceLabel();
+        await shot("09-note-link");
+        await h.goto("agent");
+        const back9 = await h.ev(`({ pane: !!${DRM_PANE}, name: ${DRM_HEADER_NAME} })`);
+        const anchor9 = `[...${DRM_PANE}.querySelectorAll("a")].find((a) => a.getAttribute("href") === "#1-bối-cảnh")`;
+        await h.ev(`${anchor9}?.scrollIntoView({ block: "center" })`);
+        await nap(150);
+        const before9 = await h.ev(`${DRM_SCROLL}.scrollTop`);
+        await h.ev(`${anchor9}?.click()`);
+        await nap(500);
+        const after9 = await h.ev(`({ top: ${DRM_SCROLL}.scrollTop, inView: ${drmInView(`${DRM_PANE}.querySelector('[data-doc-section="0"]')`)} })`);
+        const surface9b = await h.activeSurfaceLabel();
+        await shot("09b-note-anchor");
+        rec(
+            "9. the relative link opens misses_audit.md on Code; back on Agent the review is still open; the #anchor scrolls to section 1 in place",
+            code9 &&
+                surface9 === SURFACE_LABEL.code &&
+                back9.pane &&
+                back9.name === DRM_NOTES.name &&
+                after9.top !== before9 &&
+                after9.inView &&
+                surface9b === SURFACE_LABEL.agent,
+            JSON.stringify({ code9, surface9, back9, before9, after9, surface9b })
+        );
+
+        // 10. Note, Approve
+        await h.ev(`${DRM_PANE}.querySelector("[data-doc-review-send]")?.click()`);
+        await docReviewWait(h, `${DRM_PANE}?.querySelector("[data-doc-review-sent]")`, 3000);
+        const tray10 = await h.ev(`({
+            ...${DRM_TRAY},
+            live: [...${DRM_PANE}.querySelectorAll("[data-doc-review-tray] button")].filter((b) => !b.disabled).length,
+        })`);
+        await shot("10-note-approve");
+        rec(
+            "10. Approve with no comments shows Sent: Approve and leaves no tray button to press",
+            (tray10.sent ?? "").startsWith("Sent: Approve") && tray10.live === 0,
+            JSON.stringify(tray10)
+        );
+
+        // 11. Cockpit card: the Review button lands on the agent in review mode
+        await h.goto("cockpit");
+        const card11 = `document.querySelector('[data-cockpit-surface] [data-agent-id="${DRM_PAPER.id}"]')`;
+        // textContent: the eyebrow's CSS upper-cases what innerText would report
+        const summary11 = await h.ev(`${card11}?.textContent.replace(/\\s+/g, " ") ?? null`);
+        await shot("11-cockpit-card");
+        await h.ev(`[...(${card11}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Review")?.click()`);
+        await docReviewWait(h, `${DRM_HEADER_NAME} === ${JSON.stringify(DRM_PAPER.name)} && !!${DRM_PANE}`, 3000);
+        const landed11 = await h.ev(`({ name: ${DRM_HEADER_NAME}, pane: !!${DRM_PANE}, dialog: !!document.querySelector('[role="dialog"]') })`);
+        const surface11 = await h.activeSurfaceLabel();
+        rec(
+            "11. paper-writer's card shows Doc review · 2 points; its Review button lands on the agent in review mode, no dialog",
+            (summary11 ?? "").includes("Doc review · 2 points") &&
+                surface11 === SURFACE_LABEL.agent &&
+                landed11.name === DRM_PAPER.name &&
+                landed11.pane &&
+                !landed11.dialog,
+            JSON.stringify({ summary11, surface11, landed11 })
+        );
+
+        // 12. Palette: the Needs you review row. Attention is server-computed from live asks, and a fixture ask has
+        // no block, so the row's item is injected the way jarvis-peek does; the 10s poll would replace it
+        const injected12 = await h.ev(`(() => {
+            const store = globalThis.__wavePetStore;
+            if (typeof store?.setAttention !== "function") return false;
+            store.setAttention([{ key: "ask:block:${DRM_GONE.blockId}", kind: "ask", source: "${DRM_GONE.name}", text: "Doc review", action: "Answer", waitingsince: Date.now() - 60000, channelid: "", runid: "", phaseidx: 0 }]);
+            return true;
+        })()`);
+        const opened12 = await openPalette(h);
+        await h.ev(`document.querySelector('[data-palette-scope="needs"]')?.click()`);
+        const row12 = `[...(${PALETTE}?.querySelectorAll("button[data-idx]") ?? [])].find((b) => b.textContent.includes(${JSON.stringify(DRM_GONE.name)}))`;
+        const listed12 = await docReviewWait(h, `!!${row12}`, 3000);
+        await shot("12-palette");
+        await h.ev(`${row12}?.click()`);
+        await docReviewWait(h, `${DRM_HEADER_NAME} === ${JSON.stringify(DRM_GONE.name)} && !!${DRM_PANE}`, 3000);
+        // the palette animates out
+        await docReviewWait(h, `!${PALETTE_INPUT}`, 2000);
+        const landed12 = await h.ev(`({ name: ${DRM_HEADER_NAME}, pane: !!${DRM_PANE}, palette: !!${PALETTE_INPUT} })`);
+        rec(
+            "12. the palette's Needs you review row for gone-writer focuses it in review mode",
+            injected12 && opened12 && listed12 && landed12.name === DRM_GONE.name && landed12.pane && !landed12.palette,
+            JSON.stringify({ injected12, opened12, listed12, landed12 })
+        );
+
+        // 13. States, terminal mode: r both ways, the amber dot, and the tree row's review chip
+        await drmFocus(h, DRM_PAPER);
+        await drmLoaded(h);
+        await drmKey(h, "r");
+        await nap(300);
+        const term13 = await h.ev(`({ pane: !!${DRM_PANE}, host: !(${HOST}?.classList.contains("hidden") ?? true) })`);
+        const options13 = await drmHeaderOptions(h);
+        await shot("13-terminal-mode");
+        await drmLeaveTerminal(h);
+        await drmKey(h, "r");
+        const review13 = await docReviewWait(h, `!!${DRM_PANE}`, 3000);
+        await drmKey(h, "r");
+        await nap(300);
+        await drmFocus(h, DRM_NOTES);
+        const chipped13 = await h.ev(`(() => {
+            const b = ${docReviewTreeRow(DRM_PAPER.name)}?.querySelector('button[title="Open the doc review"]');
+            if (!b) return false;
+            b.click();
+            return true;
+        })()`);
+        await docReviewWait(h, `${DRM_HEADER_NAME} === ${JSON.stringify(DRM_PAPER.name)} && !!${DRM_PANE}`, 3000);
+        const landed13 = await h.ev(`({ name: ${DRM_HEADER_NAME}, pane: !!${DRM_PANE}, dialog: !!document.querySelector('[role="dialog"]') })`);
+        rec(
+            "13. r shows the terminal with the amber dot on Review, r returns; from another agent the tree row's review chip lands on paper-writer in review mode, no dialog",
+            !term13.pane &&
+                term13.host &&
+                options13.find((o) => o.text === "Review")?.dot === true &&
+                options13.find((o) => o.text === "Terminal")?.pressed === true &&
+                review13 &&
+                chipped13 &&
+                landed13.name === DRM_PAPER.name &&
+                landed13.pane &&
+                !landed13.dialog,
+            JSON.stringify({ term13, options13, review13, chipped13, landed13 })
+        );
+
+        // 13b. Header with a canvas: one control, three views, canvas and review exclusive
+        const project = join(ctx.repo, ".superpowers", "design", DRM_CANVAS_TOPIC, "project");
+        mkdirSync(project, { recursive: true });
+        writeFileSync(join(project, "canvas.json"), JSON.stringify({ boards: { "Main.dc.html": { w: 1440 } }, order: ["Main.dc.html"] }));
+        writeFileSync(join(project, "Main.dc.html"), "<!doctype html><title>verify doc review canvas</title><p>canvas</p>");
+        let reveal13 = null;
+        try {
+            await h.rpc(
+                "uireveal",
+                { address: `canvas:${DRM_CANVAS_TOPIC}`, callerblockid: DRM_PAPER.blockId, callercwd: ctx.repo },
+                UI_ROUTE
+            );
+        } catch (e) {
+            reveal13 = String(e?.message ?? e);
+        }
+        await docReviewWait(h, `${DRM_HEADER_GROUP}?.querySelectorAll("button").length === 3`, 3000);
+        const group13 = await h.ev(`({ label: ${DRM_HEADER_GROUP}?.getAttribute("aria-label"), groups: document.querySelectorAll('[data-agent-header] [role="group"]').length })`);
+        const three13 = await drmHeaderOptions(h);
+        await drmClickOption(h, "Canvas");
+        await nap(300);
+        const canvas13 = await h.ev(`({ canvas: !!document.querySelector("[data-canvas-pane]"), review: !!${DRM_PANE} })`);
+        await shot("13b-header-canvas");
+        await drmClickOption(h, "Review");
+        await nap(300);
+        const back13 = await h.ev(`({ canvas: !!document.querySelector("[data-canvas-pane]"), review: !!${DRM_PANE} })`);
+        const amber13 = await h.ev(`[...document.querySelectorAll("[data-agent-header] button")].some((b) => b.textContent.trim() === "Doc review")`);
+        rec(
+            "13b. with a canvas the header has one Terminal | Canvas | Review group; Canvas puts the review back and Review the canvas; no amber review button",
+            reveal13 == null &&
+                group13.groups === 1 &&
+                group13.label === "Show terminal, canvas or review" &&
+                JSON.stringify(three13.map((o) => o.text)) === JSON.stringify(["Terminal", "Canvas", "Review"]) &&
+                canvas13.canvas &&
+                !canvas13.review &&
+                back13.review &&
+                !back13.canvas &&
+                !amber13,
+            JSON.stringify({ reveal13, group13, three13, canvas13, back13, amber13 })
+        );
+
+        // 13c. Footer chips per mode
+        const footer13 = await h.ev(DRM_FOOTER);
+        await shot("13c-footer");
+        const labels13 = (footer13 ?? []).map((c) => c.label);
+        await drmFocus(h, DRM_GONE);
+        await drmLoaded(h);
+        const footerGone13 = ((await h.ev(DRM_FOOTER)) ?? []).map((c) => c.label);
+        await drmFocus(h, DRM_PAPER);
+        await drmLoaded(h);
+        rec(
+            "13c. in review mode the footer names Ctrl+Enter's answer (request changes with a comment, approve without) and shows no canvas chips",
+            labels13.includes("request changes") &&
+                !labels13.includes("approve") &&
+                !labels13.some((l) => ["canvas", "board", "mark", "stop marking", "send"].includes(l)) &&
+                !(footer13 ?? []).some((c) => c.glyph === "c" && c.label === "terminal") &&
+                footerGone13.includes("approve") &&
+                !footerGone13.includes("request changes"),
+            JSON.stringify({ footer13, footerGone13 })
+        );
+
+        // 13d. Focus and rail: the review takes focus and hides the rail; the terminal gets both back
+        const RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
+        await drmKey(h, "r");
+        await nap(300);
+        const railWas = await h.ev(`!!${RAIL}`);
+        await drmLeaveTerminal(h);
+        if (!railWas) {
+            await drmKey(h, "d");
+            await nap(300);
+        }
+        await drmKey(h, "r");
+        await docReviewWait(h, `!!${DRM_PANE}`, 3000);
+        await nap(200);
+        const in13 = await h.ev(`({ focus: !!${DRM_PANE}?.contains(document.activeElement), rail: !!${RAIL} })`);
+        await shot("13d-focus");
+        await drmKey(h, "r");
+        await nap(300);
+        const out13 = await h.ev(`(() => {
+            const a = document.activeElement;
+            return {
+                pane: !!${DRM_PANE},
+                focus: !!a && (a.matches("[data-cockpit-surface-wrap]") || !!a.closest('[data-agent-terminal="${DRM_PAPER.id}"]')),
+                rail: !!${RAIL},
+            };
+        })()`);
+        await drmLeaveTerminal(h);
+        if (!railWas) {
+            await drmKey(h, "d");
+            await nap(200);
+        }
+        await drmKey(h, "r");
+        await docReviewWait(h, `!!${DRM_PANE}`, 3000);
+        rec(
+            "13d. entering review moves focus into the pane and hides the details rail; r back to the terminal moves focus there and shows the rail",
+            in13.focus && !in13.rail && !out13.pane && out13.focus && out13.rail,
+            JSON.stringify({ railWas, in13, out13 })
+        );
+
+        // 14. States, gone: the file is missing, and the tray still answers
+        await drmFocus(h, DRM_GONE);
+        await drmLoaded(h);
+        const gone14 = await h.ev(`(() => {
+            const g = ${DRM_PANE}?.querySelector("[data-doc-review-gone]");
+            const send = ${DRM_PANE}?.querySelector("[data-doc-review-send]");
+            return {
+                text: g?.innerText.replace(/\\s+/g, " ") ?? null,
+                tray: !!${DRM_PANE}?.querySelector("[data-doc-review-tray]"),
+                approve: send ? { text: send.textContent.trim(), enabled: !send.disabled } : null,
+            };
+        })()`);
+        await shot("14-gone");
+        rec(
+            "14. a missing file reads Couldn't read gone.md with its path, and Approve is still live",
+            (gone14.text ?? "").startsWith("Couldn't read gone.md") &&
+                (gone14.text ?? "").includes(join(ctx.repo, "notes", "gone.md")) &&
+                gone14.tray &&
+                /^Approve/.test(gone14.approve?.text ?? "") &&
+                gone14.approve.enabled,
+            JSON.stringify(gone14)
+        );
+
+        // 15. States, sent: Ctrl+Enter in the general note sends the accent answer
+        await drmFocus(h, DRM_PAPER);
+        await drmLoaded(h);
+        await h.ev(`${DRM_PANE}?.querySelector("[data-doc-review-note]")?.focus()`);
+        await drmKey(h, "Enter", true);
+        await docReviewWait(h, `${DRM_PANE}?.querySelector("[data-doc-review-sent]")`, 3000);
+        const sent15 = await h.ev(`(() => {
+            const line = ${DRM_PANE}?.querySelector("[data-doc-review-sent]");
+            return {
+                text: line?.innerText.replace(/\\s+/g, " ").trim() ?? null,
+                color: line ? getComputedStyle(line).color : null,
+                remove: !!${DRM_PANE}?.querySelector('button[aria-label^="Remove comment"]'),
+                textarea: !!${DRM_PANE}?.querySelector("textarea"),
+                cards: ${DRM_PANE}?.querySelectorAll("[data-doc-review-card]").length ?? 0,
+            };
+        })()`);
+        await shot("15-sent");
+        rec(
+            "15. Ctrl+Enter in the general note sends Request changes: the tray reads Sent: Request changes, 1 comment in success colour and the card is read-only",
+            (sent15.text ?? "").startsWith("Sent: Request changes, 1 comment") &&
+                sent15.color === DRM_SUCCESS_RGB &&
+                !sent15.remove &&
+                !sent15.textarea &&
+                sent15.cards === 1,
+            JSON.stringify(sent15)
+        );
+
+        // 15b. Ask clears: the agent picked the answer up
+        drmWriteRoster(ctx, null);
+        await h.ev(`window.__reloadDevMockRoster?.()`);
+        await docReviewWait(h, `!${DRM_PANE}`, 5000);
+        const cleared15 = await h.ev(`({
+            pane: !!${DRM_PANE},
+            review: [...document.querySelectorAll("[data-agent-header] button")].some((b) => (b.textContent || "").trim() === "Review"),
+            host: !(${HOST}?.classList.contains("hidden") ?? true),
+        })`);
+        await shot("15b-ask-cleared");
+        rec(
+            "15b. once the ask clears the review state goes and the terminal is back: no pane, no Review option",
+            !cleared15.pane && !cleared15.review && cleared15.host,
+            JSON.stringify(cleared15)
+        );
+
+        // 16. Round2: the next ask diffs against what round 1 showed
+        writeFileSync(ctx.tex, DRM_TEX_R2);
+        ctx.paperAsk2 = drmAsk(DRM_PAPER, 2, ctx.tex, [
+            "Handled your comment on §2.1.",
+            "Pages: 8",
+            "- 1: §2.1 ¶1 now opens with the null result",
+        ]);
+        drmWriteRoster(ctx, ctx.paperAsk2);
+        await h.ev(`window.__reloadDevMockRoster?.()`);
+        // back in the terminal its xterm has focus, so the new ask doesn't pull the user into it; the header's
+        // Review option opens it
+        await docReviewWait(h, `[...(${DRM_HEADER_GROUP}?.querySelectorAll("button") ?? [])].some((b) => b.textContent.trim() === "Review")`, 5000);
+        await drmClickOption(h, "Review");
+        await docReviewWait(h, `${DRM_PANE}?.querySelector("[data-p]")`, 8000);
+        const round16 = await h.ev(`(() => {
+            const p = ${DRM_PANE};
+            if (!p) return null;
+            const meta = [...p.querySelectorAll("span")].find((s) => /against what you reviewed at/.test(s.textContent) && s.children.length > 0);
+            const line = p.querySelector("button[data-doc-review-focus]");
+            return {
+                eyebrow: p.querySelector("[data-doc-review-eyebrow]")?.textContent.trim() ?? null,
+                meta: meta?.textContent.trim() ?? null,
+                comments: [...p.querySelectorAll("span")].find((s) => s.textContent.startsWith("Your comments"))?.textContent.trim() ?? null,
+                inserted: p.querySelectorAll('[data-op="insert"]').length,
+                deleted: p.querySelectorAll('[data-op="delete"]').length,
+                modified: p.querySelectorAll('[data-op="modify"]').length,
+                numbered: line ? { chip: line.firstElementChild?.textContent.trim(), text: line.textContent.trim() } : null,
+            };
+        })()`);
+        // §2.1 ¶1 sits just under the head, so from the top the line scrolls down to it
+        await h.ev(`${DRM_SCROLL}.scrollTop = 0`);
+        await nap(150);
+        const before16 = await h.ev(`${DRM_SCROLL}.scrollTop`);
+        await h.ev(`${DRM_PANE}.querySelector("button[data-doc-review-focus]")?.click()`);
+        await nap(400);
+        const after16 = await h.ev(`({ top: ${DRM_SCROLL}.scrollTop, inView: ${drmInView(drmPara(2, 1))} })`);
+        await shot("16-round2");
+        rec(
+            "16. round 2 reads Doc review · round 2, marks only its own changes (+1 · 2 edited) against what you reviewed, starts with no comments, and its numbered line scrolls to §2.1 ¶1",
+            round16?.eyebrow === "Doc review · round 2" &&
+                /^\+1 · 2 edited · against what you reviewed at \d\d:\d\d$/.test(round16.meta ?? "") &&
+                round16.comments === "Your comments · 0" &&
+                round16.inserted === 1 &&
+                round16.deleted === 0 &&
+                round16.modified === 2 &&
+                round16.numbered?.chip === "1" &&
+                after16.inView &&
+                after16.top > before16,
+            JSON.stringify({ round16, before16, after16 })
+        );
+
+        // 17. Round2, Approve from the general note
+        await h.ev(`${DRM_PANE}?.querySelector("[data-doc-review-note]")?.focus()`);
+        await drmKey(h, "Enter", true);
+        await docReviewWait(h, `${DRM_PANE}?.querySelector("[data-doc-review-sent]")`, 3000);
+        const sent17 = await h.ev(DRM_TRAY);
+        await shot("17-round2-approve");
+        rec(
+            "17. with no comments, Ctrl+Enter in the general note sends Approve",
+            (sent17.sent ?? "").startsWith("Sent: Approve"),
+            JSON.stringify(sent17)
+        );
+    },
+    async teardown(h, ctx) {
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            try {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            } catch (e) {
+                console.error(`${DRM} teardown: remove the project failed: ${e?.message ?? e}`);
+            }
+        }
+        await teardownFixtureRun(h, ctx, DRM, {
+            what: "restore the rail setting",
+            fn: () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)),
+        });
+    },
+};
+
 // The Cockpit on the brief type scale (docs/superpowers/specs/2026-09-29-cockpit-polish-design.md): nothing under
 // 10.5px, and the lead card leads with the Workflow icon. Same setup as agent-tree-rail: a fixture roster whose lead
 // carries a real orchestrator run held in planning. No dagsubmit (see TREE_RAIL_FIXTURE), so the card has no plan
@@ -10073,6 +11204,7 @@ export const SCENARIOS = [
     agentTreeQuickReturn,
     docReview,
     docReviewCanvas,
+    docReviewMode,
     cockpitPolish,
     runSheetPolish,
     runTimingScenario,

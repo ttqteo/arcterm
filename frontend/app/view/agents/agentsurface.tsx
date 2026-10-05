@@ -37,7 +37,8 @@ import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
 import { rosterLoadPhase } from "./cockpitsurfacemodel";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
-import { openReview } from "./docreviewstore";
+import { DocReviewPane } from "./docreviewpane";
+import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { EndedTranscript } from "./endedtranscript";
 import { DivergenceBanner } from "./focusbanner";
 import { subjectDecision } from "./focussubject";
@@ -71,6 +72,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const agent = focused ?? agents.find((a) => a.id === order[0]) ?? agents[0] ?? terminals[0];
     const showSub = focusSub != null && focusSub.parentId === agent?.id;
     const canvasMode = useAtomValue(canvasStateAtom(agent?.id ?? ""))?.mode === "canvas";
+    const reviewMode = useAtomValue(docReviewStateAtom(agent?.id ?? ""))?.mode === "review";
+    // what shows in the terminal's place; the two are exclusive (agentview.ts)
+    const swapped = reviewMode ? "review" : canvasMode ? "canvas" : null;
     useCanvasPoller(model, agent);
 
     // sync focusId to the defaulted agent so the tree highlights it and ←/→ start from the right place
@@ -112,21 +116,25 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [agent?.id]);
 
-    // canvas mode hides the terminal, and a hidden xterm can still hold focus and eat c/[/]/m, so entering it
-    // pulls focus to the wrapper; returning to the same agent's terminal hands focus back to its xterm
-    const lastCanvas = useRef<{ id: string; on: boolean } | null>(null);
+    // canvas and review mode hide the terminal, and a hidden xterm can still hold focus and eat c/[/]/m, so
+    // entering one pulls focus away: into the review (its keys and selection live there), or to the wrapper for a
+    // canvas. Returning to the same agent's terminal hands focus back to its xterm, or the wrapper with none.
+    const lastSwap = useRef<{ id: string; on: typeof swapped } | null>(null);
     useEffect(() => {
-        const prev = lastCanvas.current;
-        lastCanvas.current = agent != null ? { id: agent.id, on: canvasMode } : null;
-        if (agent == null || prev == null) {
+        const prev = lastSwap.current;
+        lastSwap.current = agent != null ? { id: agent.id, on: swapped } : null;
+        const wrap = wrapRef.current;
+        if (agent == null || prev == null || wrap == null) {
             return;
         }
-        if (canvasMode && (!prev.on || prev.id !== agent.id)) {
-            wrapRef.current?.focus();
-        } else if (!canvasMode && prev.on && prev.id === agent.id) {
-            wrapRef.current?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`)?.focus();
+        if (swapped != null && (prev.on !== swapped || prev.id !== agent.id)) {
+            const pane = swapped === "review" ? wrap.querySelector<HTMLElement>("[data-doc-review-pane]") : null;
+            (pane ?? wrap).focus();
+        } else if (swapped == null && prev.on != null && prev.id === agent.id) {
+            const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
+            (term ?? wrap).focus();
         }
-    }, [agent?.id, canvasMode]);
+    }, [agent?.id, swapped]);
 
     // History and a session's transcript cover the terminal as canvas mode does, and a hidden xterm can still hold focus
     // and eat the surface's keys (Esc, j/k): leaving the terminal pulls focus to the wrapper, and returning to it hands
@@ -146,8 +154,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     }, [centerMode]);
 
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
-    // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the live
-    // terminal, or the wrapper when none is showing (canvas, subagent interior, no terminal).
+    // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the review when it
+    // shows, else the live terminal, or the wrapper when none is showing (canvas, subagent interior, no terminal).
     useEffect(() => {
         const wrap = wrapRef.current;
         if (
@@ -159,8 +167,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         ) {
             return;
         }
+        const pane = wrap.querySelector<HTMLElement>("[data-doc-review-pane]");
         const term = wrap.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
-        (term?.checkVisibility() ? term : wrap).focus({ preventScroll: true });
+        (pane ?? (term?.checkVisibility() ? term : wrap)).focus({ preventScroll: true });
     }, [surface]);
 
     // Agent-surface keys live in the registry (bindings.ts). Stable array — run() reads live atoms.
@@ -207,7 +216,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     return (
         <MotionConfig reducedMotion="user">
             <div ref={wrapRef} tabIndex={0} data-cockpit-surface-wrap className="flex h-full w-full bg-background outline-none">
-                {/* the tree stays in canvas mode: hiding it made reaching another agent a round trip through the terminal */}
+                {/* the tree stays in canvas and review mode: hiding it made reaching another agent a round trip through the terminal */}
                 {!fullscreen || centerMode !== "terminal" ? <AgentTree model={model} /> : null}
                 <div className="flex min-w-0 flex-1 flex-col">
                     {/* terminal stack stays mounted (hidden) while a subagent interior, a session or History is shown, so
@@ -228,7 +237,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                     data-agent-terminal={a.id}
                                     className={cn(
                                         "min-h-0 flex-1",
-                                        a.id === agent.id && !canvasMode ? "flex flex-col" : "hidden"
+                                        a.id === agent.id && swapped == null ? "flex flex-col" : "hidden"
                                     )}
                                 >
                                     <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
@@ -236,6 +245,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             ))}
                         {isEndedWorkerId(agent.id) ? (
                             <EndedTranscript model={model} agent={agent} />
+                        ) : reviewMode ? (
+                            <DocReviewPane model={model} agent={agent} />
                         ) : canvasMode ? (
                             <CanvasPane model={model} agent={agent} />
                         ) : agent.blockId == null ? (
@@ -249,7 +260,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     ) : null}
                     {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
                 </div>
-                {!fullscreen && centerMode === "terminal" && !canvasMode && agent.kind !== "terminal" ? (
+                {!fullscreen && centerMode === "terminal" && swapped == null && agent.kind !== "terminal" ? (
                     <AgentDetailsRail model={model} agent={agent} />
                 ) : null}
             </div>

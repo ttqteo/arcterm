@@ -30,6 +30,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
@@ -802,6 +803,18 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
     const docReview = () => focusedDocReview(model);
     const inReview = (ctx: KeyContext) => agentNav(ctx) && docReview()?.mode === "review";
+    // live inside the general note on purpose, as canvas-send is in a mark's note; it stands down in History and a
+    // session, which cover the review pane without leaving review mode
+    const reviewSend = (ctx: KeyContext) =>
+        ctx.surface === "agent" && !ctx.modalOpen && centerAtRest() && docReview()?.mode === "review";
+    const reviewCanRequest = () => canRequest(docReview()!.comments, docReview()!.generalNote);
+    // a draft comment's own Ctrl+Enter adds that comment, so the key passes to it
+    const sendReview = () => {
+        if ((document.activeElement as HTMLElement | null)?.closest?.("[data-doc-review-draft]") != null) {
+            return false;
+        }
+        return clickThrough("[data-doc-review-send]");
+    };
     const focusId = () => globalStore.get(model.focusIdAtom);
     return [
         {
@@ -1030,20 +1043,23 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: inReview,
             run: () => clickThrough("[data-doc-review-comment]"),
         },
+        // Ctrl+Enter sends whichever answer is the tray's accent button: Request changes once there is something
+        // to send, else Approve. Two bindings with exclusive when()s so the footer chip names the answer
         {
-            id: "agent:review-send",
+            id: "agent:review-approve",
             keys: "Ctrl:Enter",
             group: "Agent",
-            label: "Send the review to the agent",
-            // live inside the general note on purpose, as canvas-send is in a mark's note; a draft comment's own
-            // Ctrl+Enter adds that comment, so the key passes to it
-            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && docReview()?.mode === "review",
-            run: () => {
-                if ((document.activeElement as HTMLElement | null)?.closest?.("[data-doc-review-draft]") != null) {
-                    return false;
-                }
-                return clickThrough("[data-doc-review-send]");
-            },
+            label: "Approve",
+            when: (ctx) => reviewSend(ctx) && !reviewCanRequest(),
+            run: sendReview,
+        },
+        {
+            id: "agent:review-request",
+            keys: "Ctrl:Enter",
+            group: "Agent",
+            label: "Request changes",
+            when: (ctx) => reviewSend(ctx) && reviewCanRequest(),
+            run: sendReview,
         },
     ];
 }

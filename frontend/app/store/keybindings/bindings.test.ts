@@ -19,7 +19,7 @@ import {
 import { setAgentView } from "@/app/view/agents/agentview";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { docReviewAtom } from "@/app/view/agents/docreview";
-import { getDocReview, syncDocReview } from "@/app/view/agents/docreviewstore";
+import { addComment, getDocReview, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { graphOnAtom, historyFiltersAtom, historyScrollAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -936,7 +936,7 @@ describe("agent review mode keys", () => {
         expect(onKey("[")).toEqual(["agent:review-prev"]);
         expect(onKey("]")).toEqual(["agent:review-next"]);
         expect(onKey("c")).toEqual(["agent:review-comment"]);
-        expect(onKey("Ctrl:Enter")).toEqual(["agent:review-send"]);
+        expect(onKey("Ctrl:Enter")).toEqual(["agent:review-approve"]);
         for (const id of ["agent:prev", "agent:next", "agent:prev-k", "agent:next-j"]) {
             expect(active(id), id).toBe(true);
         }
@@ -973,7 +973,8 @@ describe("agent review mode keys", () => {
         for (const id of ["agent:review-close", "agent:review-prev", "agent:review-next", "agent:review-comment"]) {
             expect(active(id), id).toBe(false);
         }
-        expect(active("agent:review-send", typing)).toBe(false);
+        expect(active("agent:review-approve", typing)).toBe(false);
+        expect(active("agent:review-request", typing)).toBe(false);
         expect(active("surface:next")).toBe(true);
     });
 
@@ -984,7 +985,13 @@ describe("agent review mode keys", () => {
         expect(getCanvas("a1")!.mode).toBe("canvas");
         expect(getDocReview("a1")!.mode).toBe("terminal");
         expect(onKey("c")).toEqual(["agent:canvas-close"]);
-        for (const id of ["agent:review-close", "agent:review-comment", "agent:review-prev", "agent:review-send"]) {
+        for (const id of [
+            "agent:review-close",
+            "agent:review-comment",
+            "agent:review-prev",
+            "agent:review-approve",
+            "agent:review-request",
+        ]) {
             expect(active(id), id).toBe(false);
         }
     });
@@ -1003,9 +1010,9 @@ describe("agent review mode keys", () => {
 
     it("Ctrl+Enter clicks the accent answer, live in the note input; a draft comment keeps its own Ctrl+Enter", () => {
         setAgentView("a1", "review", 1);
-        expect(active("agent:review-send", typing)).toBe(true);
-        expect(active("agent:review-send", { ...nav, modalOpen: true })).toBe(false);
-        expect(active("agent:review-send", { ...nav, surface: "cockpit" })).toBe(false);
+        expect(active("agent:review-approve", typing)).toBe(true);
+        expect(active("agent:review-approve", { ...nav, modalOpen: true })).toBe(false);
+        expect(active("agent:review-approve", { ...nav, surface: "cockpit" })).toBe(false);
 
         const click = vi.fn();
         const note = { closest: () => null };
@@ -1013,13 +1020,47 @@ describe("agent review mode keys", () => {
             activeElement: note,
             querySelector: (sel: string) => (sel === "[data-doc-review-send]" ? { click } : null),
         });
-        find("agent:review-send").run(typing);
+        find("agent:review-approve").run(typing);
         expect(click).toHaveBeenCalledOnce();
 
         const draft = { closest: (sel: string) => (sel === "[data-doc-review-draft]" ? {} : null) };
         vi.stubGlobal("document", { activeElement: draft, querySelector: () => ({ click }) });
-        expect(find("agent:review-send").run(typing)).toBe(false);
+        expect(find("agent:review-approve").run(typing)).toBe(false);
         expect(click).toHaveBeenCalledOnce();
+    });
+
+    it("Ctrl+Enter is Approve until there is something to send, then Request changes", () => {
+        setAgentView("a1", "review", 1);
+        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+        expect(find("agent:review-approve").label).toBe("Approve");
+
+        setGeneralNote("a1", "tighten §3");
+        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-request"]);
+        expect(find("agent:review-request").label).toBe("Request changes");
+        setGeneralNote("a1", "  ");
+        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+
+        const anchor = { sectionIndex: 0, sectionLabel: "§1", paragraph: 1, sentences: [0, 0] as [number, number] };
+        addComment("a1", { ...anchor, id: "d", quote: "q", selectedText: "q", note: "", draft: true });
+        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+        addComment("a1", { ...anchor, id: "s", quote: "q", selectedText: "q", note: "say why", draft: false });
+        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-request"]);
+    });
+
+    it("Ctrl+Enter stands down in History and a session, which hide the review pane without leaving review mode", () => {
+        setAgentView("a1", "review", 1);
+        try {
+            for (const mode of ["history", "session"] as const) {
+                globalStore.set(centerModeAtom, mode);
+                expect(onKey("Ctrl:Enter", typing)).toEqual([]);
+                setGeneralNote("a1", "tighten §3");
+                expect(onKey("Ctrl:Enter", typing)).toEqual([]);
+                setGeneralNote("a1", "");
+            }
+        } finally {
+            globalStore.set(centerModeAtom, "terminal");
+        }
+        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
     });
 });
 

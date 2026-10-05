@@ -15,7 +15,7 @@ import {
     updateCanvas,
 } from "@/app/view/agents/canvasstore";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
-import { docReviewStateAtom, syncDocReview } from "@/app/view/agents/docreviewstore";
+import { docReviewStateAtom, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -171,7 +171,8 @@ describe("keybinding conflict invariant", () => {
         }
     });
 
-    // r, c, [, ] and Ctrl+Enter change hands again in review mode, with a canvas beside it or not
+    // r, c, [, ] and Ctrl+Enter change hands again in review mode, with a canvas beside it or not, and Ctrl+Enter
+    // once more when there is something to send
     it("global + list-nav + agent bindings do not conflict in any review state", () => {
         const model = withCanvas();
         const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
@@ -180,6 +181,8 @@ describe("keybinding conflict invariant", () => {
                 syncDocReview("a1", docAsk(path));
                 expect(() => assertNoConflicts(all)).not.toThrow();
                 setAgentView("a1", "review", 1);
+                expect(() => assertNoConflicts(all)).not.toThrow();
+                setGeneralNote("a1", "tighten §3");
                 expect(() => assertNoConflicts(all)).not.toThrow();
                 setAgentView("a1", "canvas", 2);
                 setMarking("a1", true);

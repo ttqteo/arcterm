@@ -2,6 +2,9 @@
 // and inject-live-agents.mjs (live pipeline). Each scenario is (now) => record[]; records are
 // AgentVM-shaped (frontend/app/view/agents/agentsviewmodel.ts). Kept in sync via validate.mjs.
 
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 // Narration helpers (ported from mockagents.ts). No `now` dependency, so module-level consts.
 const detectorNarration = [
     { kind: "message", text: "Validated the committed #39 entropy detector against PROD M0001." },
@@ -332,9 +335,64 @@ function empty() {
     return [];
 }
 
+// Two agents asking a Doc review, one on a paper (.tex) and one on a note (.md), each an absolute path to a sample
+// in this repo (scripts/cockpit-fixtures/doc-review/); focusing either opens the review in place of its terminal.
+// The samples are committed, so the review diffs them against HEAD: edit one locally to see changes. The CDP
+// scenario doc-review-mode (scripts/cdp/scenarios.mjs) writes its own, larger roster over a temp repo instead
+// (paper-writer, notes-writer and gone-writer; the PDF tab adds chapter-writer).
+function docReviewMode() {
+    const sample = (name) => join(dirname(fileURLToPath(import.meta.url)), "doc-review", name);
+    const asker = (id, name, task, question) => ({
+        id,
+        name,
+        project: "waveterm",
+        task,
+        state: "asking",
+        agent: "claude",
+        model: "opus",
+        blockedMs: 60_000,
+        blockId: `fake-blk-${id}`,
+        previousInfo: [{ kind: "message", text: `${task}. Asking for a review.` }],
+        ask: {
+            askId: `${id}-1`,
+            oref: `block:fake-blk-${id}`,
+            questions: [
+                {
+                    header: "Doc review",
+                    question,
+                    options: [{ label: "Approve" }, { label: "Request changes" }],
+                },
+            ],
+        },
+    });
+    return [
+        asker(
+            "dr-paper",
+            "paper-writer",
+            "Rewrite the method section",
+            [
+                sample("main.tex"),
+                "Rewrote §2 around the review loop and tightened §3.",
+                "Pages: 8",
+                "- §2.1 Overview: rewritten",
+                "- §3 Results: one sentence tightened",
+            ].join("\n")
+        ),
+        asker(
+            "dr-notes",
+            "notes-writer",
+            "Update the next-step note",
+            [sample("next_step.md"), "Added the links and the image.", "- 2. Links: three new items", "- 3. An image"].join(
+                "\n"
+            )
+        ),
+    ];
+}
+
 export const SCENARIOS = {
     mixed,
     "all-asking": allAsking,
     heavy,
     empty,
+    "doc-review-mode": docReviewMode,
 };

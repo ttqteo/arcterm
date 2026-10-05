@@ -148,7 +148,8 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `r` | Back to the terminal |
 | `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
 | `c` | Comment on the selected text |
-| `Ctrl`+`Enter` | Send the review: Request changes when there is a comment or a note, else Approve. Inside a comment being written it adds that comment instead |
+| `Ctrl`+`Enter` | Approve, while there is no comment and no note to send. Inside a comment being written it adds that comment instead |
+| `Ctrl`+`Enter` | Request changes, once there is a comment or a note. Inside a comment being written it adds that comment instead |
 
 ### Jarvis
 
