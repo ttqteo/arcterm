@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -779,13 +780,10 @@ func useRealEngine(t *testing.T) {
 	if haveLatexmk != nil && haveTectonic != nil {
 		t.Skip("neither latexmk nor tectonic is on PATH")
 	}
+	// what a plan command runs under, Verify and the dev app Final starts alike: see engineEnv
+	t.Setenv("MSYS_NO_PATHCONV", "1")
 	old := dataDir
-	// t.TempDir is drive-less ("/tmp/...") when TMP is; pdflatex and latexmk then resolve the -outdir against
-	// different drives. The real data dir always carries a drive, so give the test one too.
-	data, err := filepath.Abs(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := t.TempDir()
 	dataDir = func() string { return data }
 	t.Cleanup(func() { dataDir = old })
 }
@@ -836,5 +834,17 @@ func TestCompileRealDocumentWithAnError(t *testing.T) {
 	}
 	if !strings.HasPrefix(res.FirstError, "! Undefined control sequence.") || !strings.Contains(res.FirstError, "\nl.3 ") {
 		t.Fatalf("FirstError = %q, want the undefined-control-sequence error and its l.3 line\n%s", res.FirstError, res.LogTail)
+	}
+}
+
+func TestEngineEnvTurnsMsysPathConversionBackOn(t *testing.T) {
+	env := []string{"PATH=C:\bin", "MSYS_NO_PATHCONV=1", "msys_no_pathconv=1", "MSYS_NO_PATHCONVERT=1"}
+	got := engineEnv(env)
+	want := []string{"PATH=C:\bin", "MSYS_NO_PATHCONVERT=1"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("engineEnv = %q, want %q", got, want)
+	}
+	if len(env) != 4 {
+		t.Fatalf("engineEnv changed its input: %q", env)
 	}
 }

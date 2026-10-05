@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -454,12 +455,23 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// engineEnv is env without MSYS_NO_PATHCONV. MiKTeX's latexmk can run on Git's msys perl, which passes
+// pdflatex the -outdir as a POSIX path ("/tmp/..."); with conversion off pdflatex reads it against the drive
+// root, writes the log where latexmk never looks, and every compile fails. Plan commands set the variable,
+// so Verify and the dev app Final starts inherit it.
+func engineEnv(env []string) []string {
+	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		return strings.HasPrefix(strings.ToUpper(kv), "MSYS_NO_PATHCONV=")
+	})
+}
+
 // execEngine runs the engine with stdout and stderr merged. wavesrv runs without a console window of its
 // own, so a child inherits that and opens none. latexmk spawns pdflatex, so on Windows the engine runs in
 // a job object and a timeout kills the whole tree, not only latexmk.
 func execEngine(ctx context.Context, c engineCmd) (string, error) {
 	cmd := exec.CommandContext(ctx, c.Bin, c.Args...)
 	cmd.Dir = c.Dir
+	cmd.Env = engineEnv(os.Environ())
 	out := &cappedBuffer{max: engineOutputCap}
 	cmd.Stdout = out
 	cmd.Stderr = out
