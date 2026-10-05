@@ -7292,12 +7292,17 @@ const docReviewCanvas = {
 // scenario's own temp folder, so every folder above the repo up to %TEMP% is the scenario's: a paper, a note, the note's
 // images and the file it links, committed, then edited and left uncommitted. The fixture roster's agents ask `Doc
 // review` on them with no transcript, so a first round diffs against HEAD. Their asks have no live block: answering
-// one marks it sent and nothing more. Each step takes a shot; the lettered steps are the plan review's additions, and
-// the PDF tab's steps (18-24) are added after 17. Named doc-review-mode because doc-review tests the Spec/Plan dialog.
+// one marks it sent and nothing more. Each step takes a shot; the lettered steps are the plan review's additions.
+// Steps 18-24 are the PDF tab. A .tex review compiles in the background once its state loads, so the arrange sets
+// a kept compile fixture before any ask arrives: steps 1-17 never shell out to an engine. From 18 on, each step sets
+// the fixture for its next compile and clicks Recompile, since a result is kept per ask. chapter-writer's file sits
+// one folder below the repo, so the two folders the root search climbs are the scenario's own, not %TEMP%.
+// Named doc-review-mode because doc-review tests the Spec/Plan dialog.
 const DRM = "doc-review-mode";
 const DRM_PAPER = { id: "fx-drm-paper", name: "paper-writer", blockId: "fx-blk-drm-paper" };
 const DRM_NOTES = { id: "fx-drm-notes", name: "notes-writer", blockId: "fx-blk-drm-notes" };
 const DRM_GONE = { id: "fx-drm-gone", name: "gone-writer", blockId: "fx-blk-drm-gone" };
+const DRM_CHAPTER = { id: "fx-drm-chapter", name: "chapter-writer", blockId: "fx-blk-drm-chapter" };
 const DRM_PANE = `document.querySelector("[data-doc-review-pane]")`;
 const DRM_SCROLL = `document.querySelector("[data-doc-review-scroll]")`;
 const DRM_HEADER_NAME = `(document.querySelector("[data-agent-header]")?.innerText ?? "").split("\\n")[0].trim()`;
@@ -7442,6 +7447,34 @@ const DRM_MD_R1 =
 **Bước 2 — 02/08: code tay.** Mở rộng \`guard_spec.json\` từ 18 lên tập phân tích.
 `;
 const DRM_AUDIT = "# Misses audit\n\nThe failure taxonomy, one group per miss.\n";
+// a chapter with no \documentclass and no magic comment: no root file
+const DRM_CHAPTER_TEX = String.raw`\section{Chapter three}
+
+This chapter is input by a root the review can't find. Its PDF tab says how to name one.
+`;
+
+// a valid one-page PDF, built from text so no binary is committed: ASCII only, so string offsets are byte offsets
+function drmMinimalPdf() {
+    const text = "BT /F1 24 Tf 72 700 Td (Doc review sample) Tj ET";
+    const objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ];
+    let out = "%PDF-1.4\n";
+    const offsets = objects.map((body, i) => {
+        const at = out.length;
+        out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+        return at;
+    });
+    const xref = out.length;
+    out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    out += offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+    out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    return out;
+}
 
 const drmGit = (repo, ...args) =>
     execFileSync("git", ["-c", "user.email=v@v", "-c", "user.name=v", ...args], { cwd: repo, stdio: "pipe" });
@@ -7484,6 +7517,7 @@ const drmWriteRoster = (ctx, paperAsk) =>
                 drmAgent(DRM_PAPER, 120_000, paperAsk),
                 drmAgent(DRM_NOTES, 90_000, ctx.notesAsk),
                 drmAgent(DRM_GONE, 60_000, ctx.goneAsk),
+                drmAgent(DRM_CHAPTER, 30_000, ctx.chapterAsk),
             ],
             null,
             2
@@ -7517,6 +7551,12 @@ async function arrangeDocReviewMode(h) {
         writeFileSync(ctx.tex, DRM_TEX_R1);
         writeFileSync(ctx.md, DRM_MD_R1);
         writeFileSync(join(notes, "diagrams", "pipeline.svg"), DRM_SVG);
+        // the PDF the compile fixture points at, and a chapter with no root
+        ctx.pdf = join(repo, "paper", "sample.pdf");
+        writeFileSync(ctx.pdf, drmMinimalPdf());
+        mkdirSync(join(repo, "loose"), { recursive: true });
+        ctx.chapter = join(repo, "loose", "chapter3.tex");
+        writeFileSync(ctx.chapter, DRM_CHAPTER_TEX);
 
         ctx.paperAsk = drmAsk(DRM_PAPER, 1, ctx.tex, [
             "Rewrote §2.1 around the review loop and tightened §4.",
@@ -7530,23 +7570,33 @@ async function arrangeDocReviewMode(h) {
             "- 5. thêm sơ đồ pipeline",
         ]);
         ctx.goneAsk = drmAsk(DRM_GONE, 1, join(notes, "gone.md"), ["Wrote the gone note.", "- 1. Intro: new"]);
+        ctx.chapterAsk = drmAsk(DRM_CHAPTER, 1, ctx.chapter, ["Wrote chapter three.", "- §1 Chapter three: new"]);
         // the Code surface shows files of registered projects only, and step 9 opens one of the note's links there
         await h.rpc("createproject", { name: DRM_PROJECT, path: repo });
         ctx.project = DRM_PROJECT;
         await waitForProjectInConfig(h, DRM_PROJECT);
         mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
-        drmWriteRoster(ctx, ctx.paperAsk);
+        // the agents boot with no asks: a .tex ask compiles as soon as its state loads, and the compile fixture
+        // can't be set across the reload. A reload starts the session state under test clean.
+        drmWriteRoster({}, null);
         ctx.wroteFixture = true;
-        // the fixture roster is read once at boot, and a reload starts the session state under test clean
         await h.ev("location.reload()");
         await h.ev(`(async () => {
             for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
                 await new Promise((r) => setTimeout(r, 500));
             }
         })()`);
+        // kept, so it answers every compile through step 17: paper-writer's two rounds and chapter-writer's
+        ctx.compileFixture = await h.ev(`(() => {
+            if (typeof window.__docCompileFixture !== "function") return false;
+            window.__docCompileFixture(${JSON.stringify({ ok: true, engine: "latexmk", pages: 9, pdfpath: ctx.pdf })}, { keep: true });
+            return true;
+        })()`);
+        drmWriteRoster(ctx, ctx.paperAsk);
+        await h.ev(`window.__reloadDevMockRoster?.()`);
         await h.goto("cockpit");
         const goneCard = `document.querySelector('[data-cockpit-surface] [data-agent-id="${DRM_GONE.id}"]')`;
-        ctx.rosterLoaded = await docReviewWait(h, goneCard, 15000);
+        ctx.rosterLoaded = await docReviewWait(h, `${goneCard}?.textContent.includes("Doc review")`, 15000);
         await h.ev(`${goneCard}?.querySelector('button[title="Open terminal (T)"]')?.click()`);
         await docReviewWait(h, `${DRM_HEADER_NAME} === ${JSON.stringify(DRM_GONE.name)}`, 5000);
     } catch (e) {
@@ -7666,15 +7716,54 @@ const DRM_TRAY = `(() => {
     };
 })()`;
 
+// the PDF tab: its panel (data-doc-review-pdf holds the state), the toolbar's PDF side, and the one Recompile
+// showing (the toolbar's while ok or compiling, else the panel's)
+const DRM_PDF = `${DRM_PANE}?.querySelector("[data-doc-review-pdf]")`;
+const DRM_PDF_STATE = `(${DRM_PDF}?.dataset.docReviewPdf ?? null)`;
+const DRM_PDF_BAR = `(() => {
+    const p = ${DRM_PANE};
+    const over = p?.querySelector("[data-doc-review-pdf-over]");
+    const rc = p?.querySelector("[data-doc-review-recompile]");
+    return {
+        state: ${DRM_PDF_STATE},
+        pages: p?.querySelector("[data-doc-review-pdf-pages]")?.textContent.trim() ?? null,
+        over: over ? { text: over.textContent.trim(), icon: !!over.querySelector("svg") } : null,
+        meta: p?.querySelector("[data-doc-review-pdf-meta]")?.textContent.trim() ?? null,
+        recompile: rc ? { count: p.querySelectorAll("[data-doc-review-recompile]").length, disabled: rc.disabled } : null,
+        frame: p?.querySelector("[data-doc-review-pdf-frame]")?.src ?? null,
+    };
+})()`;
+const drmTabs = (h) =>
+    h.ev(`[...(${DRM_PANE}?.querySelectorAll('[role="tablist"] [role="tab"]') ?? [])].map((t) => ({
+        text: t.textContent.trim(),
+        selected: t.getAttribute("aria-selected") === "true",
+    }))`);
+const drmSelected = (tabs, text) => tabs.some((t) => t.text === text && t.selected);
+const drmCalls = (h) => h.ev(`window.__docCompileCalls ?? 0`);
+// a result is kept per ask, so each step sets the fixture its next compile uses (null: the real RPC) and clicks
+// Recompile; false when there was no live Recompile to click
+const drmRecompile = (h, fixture) =>
+    h.ev(`(() => {
+        window.__docCompileFixture?.(${JSON.stringify(fixture)});
+        const b = ${DRM_PANE}?.querySelector("[data-doc-review-recompile]");
+        if (!b || b.disabled) return false;
+        b.click();
+        return true;
+    })()`);
+// keys reach the review from its pane, as they do once the review has taken focus
+const drmFocusPane = (h) => h.ev(`(${DRM_PANE}?.focus(), !!${DRM_PANE})`);
+
 const docReviewMode = {
     name: DRM,
     surface: "agent",
     arrange: arrangeDocReviewMode,
     async assert(h, ctx) {
         const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        if (ctx.arrangeError != null || !ctx.rosterLoaded) {
-            return [{ step: "0. the fixture roster loaded", ok: false, detail: ctx.arrangeError ?? "no gone-writer card" }];
+        // `skip` records a step this machine can't run (no LaTeX engine for the real compile), with why
+        const rec = (step, ok, detail, skip = false) => steps.push(skip ? skipStep(step, detail) : { step, ok, detail });
+        if (ctx.arrangeError != null || !ctx.rosterLoaded || !ctx.compileFixture) {
+            const detail = ctx.arrangeError ?? (!ctx.rosterLoaded ? "no gone-writer card" : "no __docCompileFixture");
+            return [{ step: "0. the fixture roster and the compile fixture loaded", ok: false, detail }];
         }
         try {
             await this.steps(h, ctx, rec);
@@ -7687,8 +7776,6 @@ const docReviewMode = {
     async steps(h, ctx, rec) {
         const nap = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
         const shot = (n) => h.shot(`cdp-shots/${DRM}-${n}.png`);
-        // the PDF tab compiles in the background when a .tex review opens; steps 1-17 never shell out to an engine
-        await h.ev(`typeof window.__docCompileFixture === "function" && window.__docCompileFixture({ ok: true, engine: "latexmk", pages: 9 })`);
 
         // 1. Main
         const HOST = `document.querySelector('[data-agent-terminal="${DRM_PAPER.id}"]')`;
@@ -8395,6 +8482,251 @@ const docReviewMode = {
             "17. with no comments, Ctrl+Enter in the general note sends Approve",
             (sent17.sent ?? "").startsWith("Sent: Approve"),
             JSON.stringify(sent17)
+        );
+
+        // 18. Main, keys: ] and [ walk paper-writer's tabs; a note has none. Round 2 went out in 17, so paper-writer
+        // asks again for a review that is not sent yet; the arrange's kept fixture answers its compile
+        ctx.paperAsk3 = drmAsk(DRM_PAPER, 3, ctx.tex, [
+            "Checked the page count after round 2.",
+            "Pages: 8",
+            "- §4 Results: shortened",
+        ]);
+        drmWriteRoster(ctx, ctx.paperAsk3);
+        await h.ev(`window.__reloadDevMockRoster?.()`);
+        const fresh18 = await docReviewWait(h, `${DRM_PANE}?.querySelector("[data-doc-review-tray]")`, 5000);
+        await drmFocusPane(h);
+        await drmKey(h, "]");
+        await nap(300);
+        const next18 = await drmTabs(h);
+        const pdf18 = await h.ev(`!!${DRM_PDF}`);
+        await shot("18-keys");
+        await drmKey(h, "[");
+        await nap(300);
+        const prev18 = await drmTabs(h);
+        const changes18 = await h.ev(`!${DRM_PDF} && !!${DRM_SCROLL}`);
+        const notes18 = await drmFocus(h, DRM_NOTES);
+        await drmLoaded(h);
+        await drmFocusPane(h);
+        await drmKey(h, "]");
+        await nap(300);
+        const note18 = await h.ev(`({
+            tablist: !!${DRM_PANE}?.querySelector('[role="tablist"]'),
+            pdf: !!${DRM_PDF},
+            changes: !!${DRM_SCROLL},
+        })`);
+        const surface18 = await h.activeSurfaceLabel();
+        rec(
+            "18. on paper-writer ] selects the PDF tab and [ returns to Changes; on notes-writer there is no tablist and ] does nothing",
+            fresh18 &&
+                drmSelected(next18, "PDF") &&
+                pdf18 &&
+                drmSelected(prev18, "Changes") &&
+                changes18 &&
+                notes18 &&
+                !note18.tablist &&
+                !note18.pdf &&
+                note18.changes &&
+                surface18 === SURFACE_LABEL.agent,
+            JSON.stringify({ fresh18, next18, pdf18, prev18, changes18, notes18, note18, surface18 })
+        );
+
+        // 19. Main, PDF: Recompile with a fixture of 9 pages against the ask's Pages: 8; the iframe streams the
+        // fixture's PDF with the auth key, and wavesrv serves it as a PDF
+        await drmFocus(h, DRM_PAPER);
+        await drmLoaded(h);
+        await drmFocusPane(h);
+        await drmKey(h, "]");
+        await docReviewWait(h, DRM_PDF, 3000);
+        const calls19 = await drmCalls(h);
+        const clicked19 = await drmRecompile(h, { pages: 9, pdfpath: ctx.pdf });
+        await docReviewWait(
+            h,
+            `${DRM_PDF_STATE} === "ok" && !!${DRM_PANE}?.querySelector("[data-doc-review-pdf-frame]")`,
+            5000
+        );
+        const bar19 = await h.ev(DRM_PDF_BAR);
+        let served19 = null;
+        try {
+            const res = await fetch(bar19.frame);
+            served19 = {
+                status: res.status,
+                type: res.headers.get("content-type"),
+                head: (await res.text()).slice(0, 5),
+            };
+        } catch (e) {
+            served19 = { error: String(e?.message ?? e) };
+        }
+        // the viewer draws the page after the frame loads
+        await nap(1500);
+        await shot("19-pdf");
+        const calls19b = await drmCalls(h);
+        rec(
+            "19. the PDF tab streams the compiled PDF (stream-file with authkey, served as application/pdf); the toolbar reads 9 pages, the chip 1 page over the 8-page limit with its icon, and compiled HH:MM · latexmk · 6.2 s",
+            clicked19 &&
+                bar19.state === "ok" &&
+                (bar19.frame ?? "").includes("/wave/stream-file?") &&
+                bar19.frame.includes("authkey=") &&
+                bar19.pages === "9 pages" &&
+                bar19.over?.text === "1 page over the 8-page limit" &&
+                bar19.over.icon &&
+                /^compiled \d\d:\d\d · latexmk · 6\.2 s$/.test(bar19.meta ?? "") &&
+                served19?.status === 200 &&
+                (served19.type ?? "").startsWith("application/pdf") &&
+                served19.head === "%PDF-" &&
+                calls19b === calls19 + 1,
+            JSON.stringify({ clicked19, bar19, served19, calls19, calls19b })
+        );
+
+        // 20. Main, real compile: with the fixture cleared, Recompile runs DocCompileCommand on main.tex
+        const calls20 = await drmCalls(h);
+        const clicked20 = await drmRecompile(h, null);
+        await nap(100);
+        const during20 = await h.ev(DRM_PDF_BAR);
+        // above the server's 90 s limit, as the RPC's own timeout is
+        const landed20 = await docReviewWait(h, `${DRM_PDF_STATE} !== null && ${DRM_PDF_STATE} !== "compiling"`, 100_000);
+        await nap(1500);
+        const bar20 = await h.ev(DRM_PDF_BAR);
+        const failed20 = bar20.state === "ok" ? null : await h.ev(`${DRM_PDF}?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+        await shot("20-real-compile");
+        const calls20b = await drmCalls(h);
+        const detail20 = JSON.stringify({ clicked20, during20, landed20, bar20, failed20, calls20, calls20b });
+        if (bar20.state === "noengine") {
+            rec("20. the real compile: skipped, DocCompileCommand reports no LaTeX engine (Engine \"\") on this machine; install latexmk or tectonic to run it", false, detail20, true);
+        } else {
+            rec(
+                "20. with the fixture cleared, Recompile runs the real compile: the button is disabled while it runs, then an ok pane with its page count lands",
+                clicked20 &&
+                    during20.state === "compiling" &&
+                    during20.recompile?.disabled === true &&
+                    landed20 &&
+                    bar20.state === "ok" &&
+                    /^\d+ pages?$/.test(bar20.pages ?? "") &&
+                    (bar20.frame ?? "").includes("/wave/stream-file?") &&
+                    calls20b === calls20 + 1,
+                detail20
+            );
+        }
+
+        // 21. States, failed: the first error; Add to my answer writes it to the general note and sends nothing;
+        // Recompile (answered by the same failure) starts another compile
+        const FAILED21 = { ok: false, firsterror: "! Undefined control sequence.\nl.212 ...the generator calls \\xyzgen" };
+        const calls21 = await drmCalls(h);
+        const clicked21 = await drmRecompile(h, FAILED21);
+        await docReviewWait(h, `${DRM_PDF_STATE} === "failed"`, 5000);
+        const failed21 = await h.ev(`(() => {
+            const p = ${DRM_PDF};
+            return {
+                title: p?.firstElementChild?.textContent.trim() ?? null,
+                error: [...(p?.querySelectorAll("[data-doc-review-pdf-error] > div") ?? [])].map((d) => d.textContent),
+                add: !!p?.querySelector("[data-doc-review-add-error]"),
+            };
+        })()`);
+        await shot("21-failed");
+        await h.ev(`${DRM_PDF}?.querySelector("[data-doc-review-add-error]")?.click()`);
+        await nap(300);
+        const note21 = await h.ev(`({
+            value: ${DRM_PANE}?.querySelector("[data-doc-review-note]")?.value ?? null,
+            sent: !!${DRM_PANE}?.querySelector("[data-doc-review-sent]"),
+            tray: !!${DRM_PANE}?.querySelector("[data-doc-review-tray]"),
+        })`);
+        await shot("21b-failed-added");
+        const calls21b = await drmCalls(h);
+        const again21 = await drmRecompile(h, FAILED21);
+        await docReviewWait(h, `${DRM_PDF_STATE} === "failed"`, 5000);
+        const calls21c = await drmCalls(h);
+        rec(
+            "21. a failed compile shows main.tex didn't compile and the ! line; Add to my answer puts the file and both log lines in the general note and sends nothing; Recompile starts a compile",
+            clicked21 &&
+                failed21.title === "main.tex didn't compile" &&
+                failed21.error[0] === "! Undefined control sequence." &&
+                (failed21.error[1] ?? "").startsWith("l.212") &&
+                failed21.add &&
+                (note21.value ?? "").includes("main.tex") &&
+                note21.value.includes("! Undefined control sequence.") &&
+                note21.value.includes("l.212") &&
+                !note21.sent &&
+                note21.tray &&
+                calls21b === calls21 + 1 &&
+                again21 &&
+                calls21c === calls21b + 1,
+            JSON.stringify({ clicked21, failed21, note21, calls21, calls21b, again21, calls21c })
+        );
+
+        // 22. States, no root: chapter-writer's chapter has no \documentclass and none up two folders; the real
+        // RPC says so without looking for an engine. Its review first compiled with the kept fixture, so Recompile
+        // runs the real one
+        const chapter22 = await drmFocus(h, DRM_CHAPTER);
+        // a first focus opens the review on its own; the header's Review option is there if it didn't
+        if (!(await docReviewWait(h, `!!${DRM_PANE}`, 3000))) {
+            await drmClickOption(h, "Review");
+            await docReviewWait(h, `!!${DRM_PANE}`, 3000);
+        }
+        await drmFocusPane(h);
+        await drmKey(h, "]");
+        await docReviewWait(h, DRM_PDF, 3000);
+        const calls22 = await drmCalls(h);
+        const clicked22 = await drmRecompile(h, null);
+        await docReviewWait(h, `${DRM_PDF_STATE} === "noroot"`, 15000);
+        const noroot22 = await h.ev(`(() => {
+            const p = ${DRM_PDF};
+            return {
+                state: ${DRM_PDF_STATE},
+                text: p?.innerText.replace(/\\s+/g, " ").trim() ?? null,
+                hint: p?.querySelector("code")?.textContent.trim() ?? null,
+            };
+        })()`);
+        await shot("22-no-root");
+        const calls22b = await drmCalls(h);
+        rec(
+            "22. on chapter-writer the real compile reports no root: No root file for chapter3.tex, why, and the % !TEX root line",
+            chapter22 &&
+                clicked22 &&
+                noroot22.state === "noroot" &&
+                (noroot22.text ?? "").startsWith("No root file for chapter3.tex") &&
+                noroot22.hint === "% !TEX root = ../main.tex" &&
+                calls22b === calls22 + 1,
+            JSON.stringify({ chapter22, clicked22, noroot22, calls22, calls22b })
+        );
+
+        // 23. States, no engine: a root and no engine
+        await drmFocus(h, DRM_PAPER);
+        await docReviewWait(h, DRM_PDF, 3000);
+        const clicked23 = await drmRecompile(h, { ok: false, engine: "" });
+        await docReviewWait(h, `${DRM_PDF_STATE} === "noengine"`, 5000);
+        const noengine23 = await h.ev(`${DRM_PDF}?.innerText.replace(/\\s+/g, " ").trim() ?? null`);
+        await shot("23-no-engine");
+        rec(
+            "23. with a root and no engine the tab reads No LaTeX engine found and how to install one",
+            clicked23 &&
+                (noengine23 ?? "").startsWith("No LaTeX engine found") &&
+                noengine23.includes("latexmk and tectonic"),
+            JSON.stringify({ clicked23, noengine23 })
+        );
+
+        // 24. States, compiling: last, since a pending fixture never lands and keeps Recompile disabled
+        const clicked24 = await drmRecompile(h, "pending");
+        await docReviewWait(h, `${DRM_PDF_STATE} === "compiling"`, 3000);
+        // one tick of the elapsed time
+        await nap(1300);
+        const compiling24 = await h.ev(`(() => {
+            const bar = ${DRM_PDF_BAR};
+            return {
+                ...bar,
+                skeleton: !!${DRM_PANE}?.querySelector("[data-doc-review-pdf-skeleton]"),
+                text: ${DRM_PDF}?.innerText.replace(/\\s+/g, " ").trim() ?? null,
+            };
+        })()`);
+        await shot("24-compiling");
+        rec(
+            "24. while a compile runs the tab shows the page skeleton, the toolbar the elapsed time, and Recompile is disabled",
+            clicked24 &&
+                compiling24.state === "compiling" &&
+                compiling24.skeleton &&
+                /^compiling(?: with \w+)? · [1-9]\d* s$/.test(compiling24.meta ?? "") &&
+                compiling24.recompile?.count === 1 &&
+                compiling24.recompile.disabled === true &&
+                (compiling24.text ?? "").startsWith("Compiling main.tex."),
+            JSON.stringify({ clicked24, compiling24 })
         );
     },
     async teardown(h, ctx) {

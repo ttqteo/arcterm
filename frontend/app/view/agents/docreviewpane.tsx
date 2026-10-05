@@ -20,6 +20,7 @@ import { Check, FileText, MessageSquarePlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { askSentKey, type AgentVM } from "./agentsviewmodel";
+import { PdfPanel, PdfToolbar } from "./docpdfpane";
 import { toProse, type ProseDoc, type ProseSentence } from "./docprose";
 import { focusItem, parseDocReview, type DocReview } from "./docreview";
 import { docReviewLoadAtom, loadDocReview, loadImage, type DocReviewLoad, type ImageData } from "./docreviewload";
@@ -138,10 +139,16 @@ export function DocReviewPane({ model, agent }: { model: AgentsViewModel; agent:
             tabIndex={-1}
             className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
         >
-            <Toolbar state={state} load={load} diff={diff} narrow={narrow} agentId={agent.id} />
+            <Toolbar
+                state={state}
+                load={load}
+                diff={diff}
+                narrow={narrow}
+                agentId={agent.id}
+                pageLimit={review?.pageLimit}
+            />
             {state.doc === "latex" && state.tab === "pdf" ? (
-                // the PDF panel arrives with the PDF tab; until then the slot holds its place
-                <div data-doc-review-pdf className="min-h-0 flex-1 bg-surface-code" />
+                <PdfPanel agentId={agent.id} agentName={agent.name} review={state} sent={sent} />
             ) : (
                 <Changes
                     model={model}
@@ -191,6 +198,7 @@ function Toolbar(p: {
     diff: ProseDiff | null;
     narrow: boolean;
     agentId: string;
+    pageLimit?: number;
 }) {
     const { state, load, diff } = p;
     const { file, dir } = splitPath(state.path);
@@ -233,6 +241,9 @@ function Toolbar(p: {
             <div className="flex-1" />
             {onChanges && load != null && diff != null ? (
                 <Meta text={metaLine(diff.sections, load.from, load.ref, load.reviewedAt)} />
+            ) : null}
+            {!onChanges ? (
+                <PdfToolbar agentId={p.agentId} review={state} pageLimit={p.pageLimit} narrow={p.narrow} />
             ) : null}
         </div>
     );

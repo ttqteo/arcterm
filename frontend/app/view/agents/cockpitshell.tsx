@@ -13,6 +13,7 @@ import { primeChannels } from "./channelsstore";
 import { initHarnessPreference, loadHarnesses } from "./harnessstore";
 import { CodeSurface } from "@/app/view/code/codesurface";
 import { CockpitSurface } from "./cockpitsurface";
+import { useDocCompileSync } from "./docpdfstore";
 import { DocReviewDialog } from "./docreviewdialog";
 import { useDocReviewSync } from "./docreviewstore";
 import { FilesSurface } from "./filessurface";
@@ -98,6 +99,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useResetAnswerDraftsOnAskChange(model);
     // a Doc review's state follows its ask from here, so one answered or cleared on any surface clears it
     useDocReviewSync(model);
+    // after the sync, so a new .tex review's state exists: its PDF compiles in the background, on any surface
+    useDocCompileSync(model);
     useHarnessPreference();
     // prime the channel snapshot at boot so the nav-rail needs-you badge + Cockpit counters dedup
     // correctly even before the Channels surface is first opened.
