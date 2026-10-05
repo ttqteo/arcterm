@@ -4,7 +4,7 @@ import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
 import { atom, createStore } from "jotai";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { SESSION_KIND, type SessionThing } from "./session";
 
 const mk = (over: Partial<LiveSession> = {}): LiveSession => ({
@@ -30,8 +30,17 @@ const mk = (over: Partial<LiveSession> = {}): LiveSession => ({
 const agent = { id: "tab-1", name: "fixer", state: "working", transcriptPath: "/t/s1.jsonl" } as AgentVM;
 const action = (id: string) => SESSION_KIND.actions.find((a) => a.id === id)!;
 const thing = (session: LiveSession, a?: AgentVM): SessionThing => ({ session, agent: a });
+// `member` seeds sessionsMemberAtom, so a test can tell a member that was left alone from one that was set
+const stub = (member = "lead") =>
+    ({
+        surfaceAtom: atom<SurfaceKey>("cockpit"),
+        sessionsSelAtom: atom("all"),
+        sessionsMemberAtom: atom(member),
+    }) as unknown as AgentsViewModel;
 
 describe("session actions", () => {
+    // centerModeAtom is module-level state in the shared globalStore
+    beforeEach(() => globalStore.set(centerModeAtom, "terminal"));
     it("resume applies only to an ended session that can be resumed", () => {
         expect(action("session:resume").applies(thing(mk()))).toBe(true);
         expect(action("session:resume").applies(thing(mk({ live: true, liveId: "tab-1" }), agent))).toBe(false);
@@ -47,29 +56,27 @@ describe("session actions", () => {
         expect(action("session:open").applies(thing(mk({ resumecommand: "" })))).toBe(true);
     });
     it("open session reads a solo session in the Agent surface's centre", () => {
-        const model = {
-            surfaceAtom: atom<SurfaceKey>("cockpit"),
-            sessionsSelAtom: atom("all"),
-            sessionsMemberAtom: atom("lead"),
-        } as unknown as AgentsViewModel;
-        globalStore.set(centerModeAtom, "terminal");
+        const model = stub("t-9");
         action("session:open").run(thing(mk({ id: "s9", runtime: "pi" })), { model });
         expect(globalStore.get(model.sessionsSelAtom)).toBe("pi:s9");
+        expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-9");
         expect(globalStore.get(centerModeAtom)).toBe("session");
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
-        globalStore.set(centerModeAtom, "terminal");
+    });
+    it("open session reads a live session the same way, as its own session", () => {
+        const model = stub();
+        action("session:open").run(thing(mk({ live: true, liveId: "tab-1" }), agent), { model });
+        expect(globalStore.get(model.sessionsSelAtom)).toBe("claude:s1");
+        expect(globalStore.get(centerModeAtom)).toBe("session");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
     it("open session sends a run's session to History with its member in view", () => {
-        const model = {
-            surfaceAtom: atom<SurfaceKey>("cockpit"),
-            sessionsSelAtom: atom("all"),
-            sessionsMemberAtom: atom("lead"),
-        } as unknown as AgentsViewModel;
+        const model = stub();
         action("session:open").run(thing(mk({ runid: "r1", role: "worker", taskid: "t-2" })), { model });
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
         expect(globalStore.get(centerModeAtom)).toBe("history");
-        globalStore.set(centerModeAtom, "terminal");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 });
 
