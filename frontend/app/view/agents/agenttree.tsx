@@ -407,6 +407,32 @@ function ParentRow({
             />
         ) : null;
 
+    // a double-click anywhere on the row folds what its chip folds (a lead's workers, an agent's subagents),
+    // so the small chip is not the only target. A click on a button inside the row is that button's own.
+    const fold =
+        lead != null
+            ? () => toggleRunCollapsed(lead.run.runId)
+            : subs.length > 0
+              ? () => toggleSubagentExpand(oref, expanded)
+              : null;
+    const foldRow =
+        fold != null && !renaming
+            ? (e: React.MouseEvent) => {
+                  if (!(e.target as HTMLElement).closest("button")) {
+                      fold();
+                  }
+              }
+            : undefined;
+    // the second press of a double-click would select a word of the name; a single press and a drag are untouched
+    const keepSelection =
+        foldRow != null
+            ? (e: React.MouseEvent) => {
+                  if (e.detail > 1) {
+                      e.preventDefault();
+                  }
+              }
+            : undefined;
+
     // The animating motion.div wrapper lives in AgentTree (direct AnimatePresence child, required for
     // popLayout to pop an exiting row out of flow). This is just the row body + subagent reveal.
     return (
@@ -415,6 +441,8 @@ function ParentRow({
                 (a lead's: its workers chip and progress) */}
             <div
                 onClick={select}
+                onDoubleClick={foldRow}
+                onMouseDown={keepSelection}
                 onContextMenu={onContextMenu}
                 data-agent-row={agent.id}
                 {...dragSource(agent, !renaming)}

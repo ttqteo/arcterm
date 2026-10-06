@@ -31,6 +31,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Usage is a compact dashboard.** The live limits and the historical totals share one row of tiles,
   Daily and Where it goes sit side by side, and the header no longer repeats the totals. With a single
   provider, the provider rail is dropped and the page takes the full width.
+- In the Agent sidebar, double-click a run's lead row to fold or unfold its workers, or an agent's row to fold its
+  subagents; a single click still selects it.
 - Code blocks wrap long lines by default instead of scrolling sideways.
 - Hover tooltips fade in over 90 ms from the side facing their control.
 - Code's header is one compact row, so the editor gets more height.
