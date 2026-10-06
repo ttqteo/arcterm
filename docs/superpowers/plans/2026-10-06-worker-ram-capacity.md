@@ -31,7 +31,6 @@
 - Several consumers mounted at once: one interval, not one per consumer; the poll stops when the last unmounts, and a double release does not drive the count negative. → Task 4 store test "one poll however many users".
 
 **Verify:** `node scripts/verify.mjs ./pkg/workercap/... ./pkg/orchestrate/... ./pkg/wshrpc/...`
-**Final:** `node scripts/cdp/final-verify.mjs worker-capacity`
 
 ---
 
