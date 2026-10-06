@@ -148,6 +148,13 @@ func TestWorkerContractForbidsAttributionTrailers(t *testing.T) {
 	}
 }
 
+func TestWorkerContractStatesTheSubagentCap(t *testing.T) {
+	c := workerContract(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-3"}, "claude", "")
+	if !strings.Contains(c, jarvis.SubagentCapRule) {
+		t.Fatalf("contract must state the subagent cap:\n%s", c)
+	}
+}
+
 // a piped test exits with its last command's status, so `go test ./... | tail` reads as a pass when it fails
 func TestWorkerContractKeepsATestsExitCodeThroughAPipe(t *testing.T) {
 	c := workerContract(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-3"}, "claude", "")

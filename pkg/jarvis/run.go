@@ -275,6 +275,7 @@ func BuildQuickPrompt(goal string, principles waveobj.PrincipleList, runtime str
 	fmt.Fprintf(&b, "Goal: %s\n", goal)
 	b.WriteString("When the goal is fully accomplished, commit your work and run `wsh jarvis complete --commit $(git rev-parse HEAD)` from your working tree (the SHA of your own final commit), so the run's evidence reflects exactly your changes.\n")
 	b.WriteString(NoAttributionRule + "\n")
+	b.WriteString(SubagentCapRule + "\n")
 	return strings.TrimRight(b.String(), "\n")
 }
 

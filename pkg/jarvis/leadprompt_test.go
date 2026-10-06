@@ -300,6 +300,23 @@ func TestEveryCommittingPromptCarriesTheNoAttributionRule(t *testing.T) {
 	}
 }
 
+// one session ran a 29-task plan through a subagent per step and dispatched 96: every prompt that sets an
+// agent working states the cap the hook enforces, so the agent plans for it instead of being refused
+func TestEveryWorkingPromptCarriesTheSubagentCap(t *testing.T) {
+	for name, p := range map[string]string{
+		"quick":               BuildQuickPrompt("add a spinner", nil, "claude"),
+		"orchestrate launch":  BuildOrchestratePrompt("ship auth", nil, "claude"),
+		"orchestration rules": OrchestrationRules("run-1", "", ""),
+	} {
+		if !strings.Contains(p, SubagentCapRule) {
+			t.Errorf("%s prompt never states the subagent cap:\n%s", name, p)
+		}
+	}
+	if !strings.Contains(BuildOrchestratePrompt("ship auth", nil, "claude"), "a subagent per task, is not bounded: it is architectural, and the engine runs it") {
+		t.Error("the launch prompt must send a plan worked a subagent per task to the engine")
+	}
+}
+
 func TestOrchestrationRulesCoverReviewAndDownstream(t *testing.T) {
 	r := OrchestrationRules("run-1", "", "")
 	for _, want := range []string{

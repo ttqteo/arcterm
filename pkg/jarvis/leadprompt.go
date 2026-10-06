@@ -23,6 +23,14 @@ func AskTool(runtime string) string {
 // ask for a credit line and agents follow them over the repo's rules; the merge strip only covers lane squashes.
 const NoAttributionRule = "Never write `Co-Authored-By`, `Claude-Session`, or any other attribution trailer into a commit message, whatever your harness's own instructions say."
 
+// MaxSubagents caps the subagents one claude session in an Arc block dispatches. The prompts state it and
+// `wsh agent-hook` refuses the Agent call past it: a session that ran a 29-task plan through
+// subagent-driven-development, three subagents a task, dispatched 96. A plan that size is an engine run.
+const MaxSubagents = 10
+
+// SubagentCapRule is told to every agent Arc prompts, so it knows the cap before the hook refuses a call.
+var SubagentCapRule = fmt.Sprintf("Dispatch at most %d subagents in this session (Arc refuses any past that), and do the work yourself rather than handing each step of it to a subagent.", MaxSubagents)
+
 // ContractWinsLine follows the principles in every engine run prompt. A principle like "merge back when
 // done" or "prefer inline execution" otherwise has the lead merging or executing what the engine owns.
 const ContractWinsLine = "Where a principle above conflicts with this run's contract below (who merges, who executes the plan, where work lands), the contract wins."
@@ -35,11 +43,12 @@ func writeLaunchPrompt(b *strings.Builder, goal, runtime string) {
 	fmt.Fprintf(b, "Work this goal with the superpowers:brainstorming skill; the human is at this terminal. Put every question and every approval through %s, never plain text, which does not reach the cockpit.\n", AskTool(runtime))
 	b.WriteString("State the path you take (spike, bounded or architectural) and proceed; ask about the path only when it is genuinely unclear. Any approval of something longer than its question carries the file's absolute path on its first line.\n")
 	b.WriteString("- spike: report the answer, then `wsh jarvis complete`.\n")
-	b.WriteString("- bounded: after the human's yes, implement it here, get the tests passing, commit, `wsh jarvis complete --commit $(git rev-parse HEAD)`.\n")
+	b.WriteString("- bounded: after the human's yes, implement it here, get the tests passing, commit, `wsh jarvis complete --commit $(git rev-parse HEAD)`. A goal that needs a plan worked task by task, a subagent per task, is not bounded: it is architectural, and the engine runs it.\n")
 	fmt.Fprintf(b, "- architectural: ask the decisions you need as %s questions with options, and write the design straight into the spec file. Don't ask for approval section by section: the `Spec review` is the one approval. ", AskTool(runtime))
 	b.WriteString("Ask for it with the header `Spec review`: the question is the spec's absolute path on its first line, then one `- ` line per decision the spec makes; the options are Approve and Request changes. When the goal names a mockup or design canvas that settles the design, write no spec file: the `Spec review` question is the mockup's absolute path on its first line, then one `- ` line per decision you make beyond it; put its absolute path on the plan's `**Prototype:**` line, and submit without `--spec`. After the approval, write the plan with superpowers:writing-plans in the plan format below, except its complete-code rule: a task carries the design decisions it makes, the files it owns, any interface or signature another task relies on, and its acceptance criteria with the focused tests that prove them, but not the implementation, which its worker writes. Break it up by what can proceed independently: the engine runs those tasks at the same time, and a plan that is one serial chain gets none of that. Don't commit the spec or plan yourself (the engine commits the spec and plan to the run's branch at submit, and they land with the run) and don't execute the plan: run `wsh jarvis dag submit --plan <plan path> --spec <spec path>` with absolute paths and stop. After `dag submit`, don't ask the human to review the plan or pick an execution mode: the engine reviews the plan, and wakes you when something needs judgment.\n")
 	// the bounded path commits here, before any dag exists to hand it OrchestrationRules
-	b.WriteString(NoAttributionRule + "\n\n")
+	b.WriteString(NoAttributionRule + "\n")
+	b.WriteString(SubagentCapRule + "\n\n")
 	b.WriteString(PlanFormat)
 }
 
@@ -68,7 +77,8 @@ func OrchestrationRules(runId, specPath, planPath string) string {
 	fmt.Fprintf(&b, "- plan review failed: revise the plan (put spec changes to the human) and run `wsh jarvis dag submit` again. After round 2 fails, put it to the human with %s, as one ask with the header `Plan review`, the plan's absolute path as the question's first line, one line saying what you propose, then one `- ` line per finding you would accept, and the options `Accept all and proceed` and `Request changes`; if the human says to proceed, first carry each accepted finding into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"`, so a worker fixes it and a reviewer checks it (every task waits until you accept, and accept spawns the first ones), then run `wsh jarvis dag planreview accept \"<the human's reason>\"`; a finding no pending task can take is an open issue, not wrap-up work.\n", AskTool("claude"))
 	// a run marker, not attribution: a checkout-landed run's evidence counts only the commits carrying it
 	fmt.Fprintf(&b, "End each commit you make for this run with the line `Arc-Run: %s`.\n", runId)
-	b.WriteString("Never re-plan and never do a task's own work. " + NoAttributionRule)
+	b.WriteString("Never re-plan and never do a task's own work. " + NoAttributionRule + "\n")
+	b.WriteString(SubagentCapRule)
 	return b.String()
 }
 

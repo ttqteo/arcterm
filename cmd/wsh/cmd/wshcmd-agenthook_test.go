@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 )
 
 func TestPlanEmission(t *testing.T) {
@@ -301,5 +303,82 @@ func TestHookDebugLine(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "branch=no-blockid") {
 		t.Fatalf("log missing message, got %q", string(b))
+	}
+}
+
+func TestIsSubagentDispatch(t *testing.T) {
+	for _, tt := range []struct {
+		ev   ccHookEvent
+		want bool
+	}{
+		{ccHookEvent{HookEventName: "PreToolUse", ToolName: "Agent"}, true},
+		{ccHookEvent{HookEventName: "PreToolUse", ToolName: "Task"}, true},
+		{ccHookEvent{HookEventName: "PostToolUse", ToolName: "Agent"}, false},
+		{ccHookEvent{HookEventName: "PreToolUse", ToolName: "Bash"}, false},
+	} {
+		if got := isSubagentDispatch(tt.ev); got != tt.want {
+			t.Errorf("isSubagentDispatch(%+v) = %v, want %v", tt.ev, got, tt.want)
+		}
+	}
+}
+
+// one session once dispatched 96 subagents: past the cap every call is refused, while a call already
+// recorded (a re-run hook) keeps its place and another session has its own count
+func TestSubagentCallAllowedCapsASession(t *testing.T) {
+	dir := t.TempDir()
+	for _, id := range []string{"t1", "t2", "t3"} {
+		if !subagentCallAllowed(dir, "s1", id, 3) {
+			t.Fatalf("call %s is within the cap of 3", id)
+		}
+	}
+	for _, id := range []string{"t4", "t5"} {
+		if subagentCallAllowed(dir, "s1", id, 3) {
+			t.Fatalf("call %s is past the cap of 3", id)
+		}
+	}
+	if !subagentCallAllowed(dir, "s1", "t2", 3) {
+		t.Fatal("a call already recorded keeps its place within the cap")
+	}
+	if subagentCallAllowed(dir, "s1", "t4", 3) {
+		t.Fatal("a refused call stays refused")
+	}
+	if !subagentCallAllowed(dir, "s2", "t9", 3) {
+		t.Fatal("another session has its own count")
+	}
+}
+
+// the ledger is bookkeeping: a call it cannot record is let through, never refused
+func TestSubagentCallAllowedLetsThroughWhatItCannotRecord(t *testing.T) {
+	dir := t.TempDir()
+	for _, tt := range []struct{ session, toolUse string }{
+		{"", "t1"},
+		{"s1", ""},
+		{"../escape", "t1"},
+	} {
+		if !subagentCallAllowed(dir, tt.session, tt.toolUse, 0) {
+			t.Errorf("session %q tool use %q cannot be recorded and must be allowed", tt.session, tt.toolUse)
+		}
+	}
+}
+
+func TestSubagentCapDenialIsAPreToolUseDeny(t *testing.T) {
+	var out struct {
+		HookSpecificOutput struct {
+			HookEventName            string `json:"hookEventName"`
+			PermissionDecision       string `json:"permissionDecision"`
+			PermissionDecisionReason string `json:"permissionDecisionReason"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal(subagentCapDenial(), &out); err != nil {
+		t.Fatalf("denial is not json: %v", err)
+	}
+	h := out.HookSpecificOutput
+	if h.HookEventName != "PreToolUse" || h.PermissionDecision != "deny" {
+		t.Fatalf("denial = %+v, want a PreToolUse deny", h)
+	}
+	for _, want := range []string{fmt.Sprintf("%d subagents", jarvis.MaxSubagents), "wsh runs start --plan"} {
+		if !strings.Contains(h.PermissionDecisionReason, want) {
+			t.Errorf("reason missing %q: %s", want, h.PermissionDecisionReason)
+		}
 	}
 }

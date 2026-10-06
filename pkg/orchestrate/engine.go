@@ -717,6 +717,7 @@ func workerContract(g *waveobj.TaskGroup, task *waveobj.TaskNode, runtime, tree 
 	reportPath := WorkerReportPath(g.OID, task.ID)
 	fmt.Fprintf(&b, " Commit, then write your report with your file-writing tool to `%s`, with exactly these five sections in this order:\n%s\nNothing goes before the first heading (the commit is already passed with `--commit`). A section with nothing to say holds `None`. Not verified lists only checks the task or plan asked for, never the suite the engine runs after your merge; a failure that predates your task goes under Found not fixed. `wsh jarvis complete` refuses a report that doesn't match. Then run `wsh jarvis complete --commit $(git rev-parse HEAD) --report %s`. ", reportPath, jarvis.WorkerReportTemplate, reportPath)
 	b.WriteString(jarvis.NoAttributionRule)
+	b.WriteString(" " + jarvis.SubagentCapRule)
 	if g.PlanPath != "" {
 		b.WriteString("\nIf your context was compacted, re-read your task from the plan.")
 	}

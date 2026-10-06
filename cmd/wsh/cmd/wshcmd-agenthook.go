@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -35,6 +37,7 @@ const titleMax = 72 // fallback head-text length cap (rune-safe)
 // ccHookEvent is the subset of the Claude Code lifecycle-hook stdin payload we use.
 type ccHookEvent struct {
 	HookEventName    string          `json:"hook_event_name"`
+	SessionID        string          `json:"session_id"`
 	ToolName         string          `json:"tool_name"`
 	ToolUseID        string          `json:"tool_use_id"`
 	TranscriptPath   string          `json:"transcript_path"`
@@ -107,6 +110,70 @@ func detailForTool(name string, input json.RawMessage) string {
 		}
 	}
 	return name
+}
+
+// isSubagentDispatch reports whether ev is about to start a subagent: Claude Code's Agent tool, named Task
+// before it.
+func isSubagentDispatch(ev ccHookEvent) bool {
+	return ev.HookEventName == "PreToolUse" && (ev.ToolName == "Agent" || ev.ToolName == "Task")
+}
+
+// subagentLedgerDir holds a file per claude session with a line per Agent call its hook saw. A parallel
+// batch's hooks all run before any of its subagents has a transcript, so counting the session's
+// subagents/ dir would let the whole batch past the cap; the order of the ledger's lines settles it.
+func subagentLedgerDir() string {
+	return filepath.Join(os.TempDir(), "arc-subagents")
+}
+
+// subagentCallAllowed records an Agent call in its session's ledger and reports whether it falls within
+// max. A call already recorded keeps its first place. Any failure allows the call: the hook's own
+// bookkeeping must never break the turn.
+func subagentCallAllowed(dir, sessionID, toolUseID string, max int) bool {
+	if sessionID == "" || toolUseID == "" || filepath.Base(sessionID) != sessionID {
+		return true
+	}
+	if os.MkdirAll(dir, 0o755) != nil {
+		return true
+	}
+	path := filepath.Join(dir, sessionID+".log")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return true
+	}
+	// one append per call: concurrent hooks interleave whole lines, never parts of one
+	_, err = f.WriteString(toolUseID + "\n")
+	f.Close()
+	if err != nil {
+		return true
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == toolUseID {
+			return len(seen) < max
+		}
+		if line != "" {
+			seen[line] = true
+		}
+	}
+	return true
+}
+
+// subagentCapDenial is the PreToolUse decision that refuses an Agent call past jarvis.MaxSubagents.
+func subagentCapDenial() []byte {
+	reason := fmt.Sprintf("Arc caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
+	out, _ := json.Marshal(map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       "deny",
+			"permissionDecisionReason": reason,
+		},
+	})
+	return out
 }
 
 // canvasRevealFor names the canvas an agent just wrote a board of, and the project it sits in, so the
@@ -438,6 +505,11 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 			hookDebugLine("skip: unmarshal hook event failed")
 			return nil
 		}
+	}
+	// decided before any rpc, so the cap holds while wavesrv is down. stdout carries only this decision
+	if isSubagentDispatch(ev) && !subagentCallAllowed(subagentLedgerDir(), ev.SessionID, ev.ToolUseID, jarvis.MaxSubagents) {
+		os.Stdout.Write(subagentCapDenial())
+		hookDebugLine("denied subagent past the cap session=" + ev.SessionID)
 	}
 	em := planEmission(ev)
 	if agentHookShadow != "" {
