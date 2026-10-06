@@ -139,10 +139,15 @@ turns `text-warning`:
   RSS to `observeWorkerRSS`. Run `go test ./pkg/workercap ./pkg/orchestrate`.
 - **Frontend** — `workercapacity.test.ts` (vitest): `extraWorkers` for both pickers, `overCapacity` including
   `null`, `formatGB`, both tooltip strings. `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`.
-- **UI** — a `worker-capacity` scenario in `scripts/cdp/scenarios.mjs` asserts the app bar chip renders. The
-  over-capacity state depends on the machine's real RAM, so the scenario does not force it; vitest covers
-  that logic. The CDP harness needs WebView2 (Windows). On macOS (WKWebView, no CDP) the change is checked
-  by running `task dev` and screenshotting the live app with `screencapture`.
+- **UI** — two scenarios in `scripts/cdp/scenarios.mjs`, which the plan's Final runs. `worker-capacity`
+  asserts the app bar chip renders `+N` with its tooltip. It then forces `+0` and asserts the chip's amber
+  tone and TriangleAlert. The real RAM decides whether the over state happens, so the scenario forces it by
+  mocking `getworkercapacity` in the page (`RpcApi.setMockRpcClient`, which the 5 s poll also reads) to
+  return `moreworkers: 0`. `capacity-warn` keeps that mock and asserts the amber number and
+  `[data-capacity-warn]` with its tooltip on New run's "Workers at once", on the Brief launcher's stepper, and
+  on a live run's Adjust → Worker parallelism. The CDP harness needs WebView2 (Windows). On macOS (WKWebView,
+  no CDP) Final exits 3 as unverified without building, and the user checks the change by screenshot after
+  landing. No task starts a dev app in its worktree.
 - **Docs** — `docs/orchestrator-guide.md` gains a short paragraph where it covers parallelism: what the chip
   and the warning mean, and the formula.
 
