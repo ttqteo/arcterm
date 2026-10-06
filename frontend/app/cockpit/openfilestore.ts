@@ -13,6 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import {
+    codePendingLineAtom,
     codeProjectAtom,
     codeViewModeAtom,
     openPath,
@@ -22,7 +23,12 @@ import {
 import { normalizeRepoPath, sameRepoPath } from "@/util/paths";
 import { routeOpenFile } from "./openfileroute";
 
-export async function openFileInCode(model: AgentsViewModel, path: string, edit = false): Promise<void> {
+export async function openFileInCode(
+    model: AgentsViewModel,
+    path: string,
+    edit = false,
+    line?: number
+): Promise<void> {
     const info = await RpcApi.FileInfoCommand(TabRpcClient, { info: { path } });
     // FileInfo marks directories by returning Dir equal to Path (separator-normalized)
     const isDir =
@@ -34,8 +40,10 @@ export async function openFileInCode(model: AgentsViewModel, path: string, edit 
         await selectProject(route.project);
     }
     if (route.rel != null) {
-        globalStore.set(codeViewModeAtom, edit ? "source" : "preview");
-        await openPath(route.rel);
+        // a line is read in source; the viewer honors the pending line the moment the file's text lands
+        globalStore.set(codeViewModeAtom, edit || line != null ? "source" : "preview");
+        globalStore.set(codePendingLineAtom, line ?? null);
+        await openPath(route.rel, { line: line ?? null });
     }
     globalStore.set(model.surfaceAtom, "code");
 }

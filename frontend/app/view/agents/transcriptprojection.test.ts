@@ -33,7 +33,7 @@ describe("projectTranscript", () => {
         expect(projectTranscript(LINES)).toEqual([
             { kind: "user", text: "fix the race" },
             { kind: "message", text: "The clone re-reads the source block by id, so a stale id slips through." },
-            { kind: "action", verb: "edited", target: "sessionmodel.go" },
+            { kind: "action", verb: "edited", target: "sessionmodel.go", path: "/home/u/proj/sessionmodel.go" },
             { kind: "action", verb: "ran", target: "go test ./...", outcome: "fail" },
             { kind: "action", verb: "ran", target: "go build", outcome: "ok" },
         ]);
@@ -57,6 +57,13 @@ describe("projectTranscript", () => {
             JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "missing", is_error: true }] } }),
         ]);
         expect(out).toEqual([{ kind: "action", verb: "ran", target: "go test ./..." }]);
+    });
+
+    it("keeps the full path of a file tool beside its base name", () => {
+        const out = projectTranscript([
+            JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r", name: "Read", input: { file_path: "D:\\repo\\src\\a.ts" } }] } }),
+        ]);
+        expect(out[0]).toMatchObject({ kind: "action", target: "a.ts", path: "D:\\repo\\src\\a.ts" });
     });
 });
 

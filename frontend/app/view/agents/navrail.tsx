@@ -3,36 +3,51 @@
 
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Bot, Brain, FileCode2, FileCog, Gauge, GitCompare, LayoutDashboard, Radar, Settings } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+    Bot,
+    Brain,
+    FileCode2,
+    FileCog,
+    Gauge,
+    GitCompare,
+    LayoutDashboard,
+    Radar,
+    Settings,
+    type LucideIcon,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { navRailCollapsed } from "./navrailwidth";
 
-const iconProps = { size: 20, strokeWidth: 1.8 } as const;
-
 // Cockpit navigation icons. Runtime logos stay as image assets; app controls use Lucide components.
-const ICON: Record<SurfaceKey, ReactNode> = {
-    cockpit: <LayoutDashboard {...iconProps} />,
-    jarvis: <Brain {...iconProps} />,
-    agent: <Bot {...iconProps} />,
-    radar: <Radar {...iconProps} />,
-    files: <GitCompare {...iconProps} />,
-    usage: <Gauge {...iconProps} />,
-    code: <FileCode2 {...iconProps} />,
-    setup: <FileCog {...iconProps} />,
-    settings: <Settings {...iconProps} />,
+const ICON: Record<SurfaceKey, LucideIcon> = {
+    cockpit: LayoutDashboard,
+    jarvis: Brain,
+    agent: Bot,
+    radar: Radar,
+    files: GitCompare,
+    usage: Gauge,
+    code: FileCode2,
+    setup: FileCog,
+    settings: Settings,
 };
 
-export const ITEMS: { key: SurfaceKey; label: string }[] = [
+// the surfaces used all day, then the tools reached for now and then; Ctrl+1..7 follow this order (SURFACE_ORDER)
+export const CORE_ITEMS: { key: SurfaceKey; label: string }[] = [
     { key: "cockpit", label: "Cockpit" },
     { key: "jarvis", label: "Jarvis" },
     { key: "agent", label: "Agent" },
+    { key: "usage", label: "Usage" },
+];
+
+export const TOOL_ITEMS: { key: SurfaceKey; label: string }[] = [
     { key: "code", label: "Code" },
     { key: "files", label: "Diff" },
     { key: "radar", label: "Radar" },
-    { key: "usage", label: "Usage" },
 ];
+
+export const ITEMS = [...CORE_ITEMS, ...TOOL_ITEMS];
 
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
@@ -53,7 +68,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
     }, []);
-    const renderItem = (key: SurfaceKey, label: string, badge = 0) => {
+    const renderItem = (key: SurfaceKey, label: string, badge = 0, tool = false) => {
+        const Icon = ICON[key];
         const isActive = active === key;
         return (
             <button
@@ -64,7 +80,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 aria-label={label}
                 title={label}
                 className={cn(
-                    "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent py-[11px] text-muted hover:text-muted-foreground",
+                    "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent text-muted hover:text-muted-foreground",
+                    tool ? "py-[8px]" : "py-[11px]",
                     isActive && "text-accent-soft"
                 )}
             >
@@ -75,7 +92,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     </>
                 ) : null}
                 <span className="relative z-[1]">
-                    {ICON[key]}
+                    <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
                     {badge > 0 ? (
                         <span className="absolute -right-2 -top-1.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-asking px-1 text-[9px] font-bold tabular-nums text-background">
                             {badge}
@@ -93,7 +110,10 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 narrow ? "w-[56px]" : "w-[78px]"
             )}
         >
-            {ITEMS.map(({ key, label }) => renderItem(key, label, badges[key] ?? 0))}
+            {CORE_ITEMS.map(({ key, label }) => renderItem(key, label, badges[key] ?? 0))}
+            {/* a div, not a button: CDP scenarios count the surfaces as `nav button` */}
+            <div data-nav-divider aria-hidden="true" className="mx-auto my-1.5 h-px w-8 shrink-0 bg-edge-mid" />
+            {TOOL_ITEMS.map(({ key, label }) => renderItem(key, label, badges[key] ?? 0, true))}
             <div className="flex-1" />
             {renderItem("setup", "Setup")}
             {renderItem("settings", "Settings")}

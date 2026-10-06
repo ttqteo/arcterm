@@ -13,6 +13,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { entriesAtomFor } from "./livetranscriptatoms";
 import { CompactTranscript } from "./compacttranscript";
+import { AgentPathLinks } from "./pathlinkcontext";
 import { railVisibleAtom } from "./railstore";
 import { leadAgentOf } from "./runlineage";
 import { loadRunTranscriptPath, runTranscriptPathsAtom } from "./runlineagestore";
@@ -76,7 +77,9 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
             <div className="relative min-h-0 flex-1">
                 <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] py-[12px]">
                     {entries.length > 0 ? (
-                        <CompactTranscript entries={entries} active={false} />
+                        <AgentPathLinks agent={agent}>
+                            <CompactTranscript entries={entries} active={false} />
+                        </AgentPathLinks>
                     ) : missing ? (
                         <div className="flex h-full items-center justify-center text-[12px] text-muted">
                             No transcript found for this session.

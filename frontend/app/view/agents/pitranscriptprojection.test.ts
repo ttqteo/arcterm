@@ -43,6 +43,11 @@ const user = (id: string, text: string) =>
     L({ type: "message", id, parentId: null, message: { role: "user", content: text } });
 
 describe("projectPiTranscript", () => {
+    it("keeps the full path of a file tool beside its base name", () => {
+        const out = projectPiTranscript([session, user("u", "go"), toolCall("1", "read", { path: "/repo/src/a.ts" })]);
+        expect(out.find((e) => e.kind === "action")).toMatchObject({ target: "a.ts", path: "/repo/src/a.ts" });
+    });
+
     it("projects only the active parent branch root-first, joining tool results to calls", () => {
         const lines = [
             session,

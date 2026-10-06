@@ -82,6 +82,8 @@ function baseName(p: string): string {
     return parts[parts.length - 1] || p;
 }
 
+const FILE_TOOLS = new Set(["read", "write", "edit"]);
+
 // the target line for a tool call: the bash command, else a file/pattern when the args carry one,
 // else a task subject/id for the task tools, else the tool name (bare verb line).
 function targetFor(name: string, args: unknown): string {
@@ -175,6 +177,10 @@ function mapAssistantContent(rec: PiRecord, entries: AgentEntry[], actionById: M
         }
         const args = b.arguments ?? b.args;
         const action: ActionEntry = { kind: "action", verb: verbFor(b.name), target: targetFor(b.name, args) };
+        const p = args != null && typeof args === "object" ? (args as Record<string, unknown>).path : undefined;
+        if (FILE_TOOLS.has(b.name) && typeof p === "string" && p !== "") {
+            action.path = p;
+        }
         const detail = editDetailFor(b.name, args);
         if (detail) {
             action.detail = detail;

@@ -13,9 +13,9 @@ describe("radar navigation", () => {
         expect(SURFACE_ORDER).toContain("radar");
     });
 
-    it("places radar between diff and usage", () => {
+    it("places radar last, after diff, in the tools group", () => {
         expect(SURFACE_ORDER.indexOf("radar")).toBe(SURFACE_ORDER.indexOf("files") + 1);
-        expect(SURFACE_ORDER.indexOf("usage")).toBe(SURFACE_ORDER.indexOf("radar") + 1);
+        expect(SURFACE_ORDER.indexOf("radar")).toBe(SURFACE_ORDER.length - 1);
     });
 
     it("exposes a radar nav item with a label", () => {

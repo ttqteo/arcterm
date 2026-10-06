@@ -9,7 +9,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowLeft, ArrowUpRight, ChevronLeft, LayoutTemplate } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChevronLeft, FileText, LayoutList, LayoutTemplate } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
@@ -23,13 +23,17 @@ import {
     railAction,
     toolChips,
 } from "./agentrailmodel";
+import { RailResizeGrip, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import { bgTaskStatusLabel, planAgentRail, type AgentRailSectionId, type BgTaskLabel } from "./agentrailsections";
+import { railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
+import { fileLabel, panelFor, RAIL_OVERVIEW_PX } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
+import { FileTab } from "./filetab";
 import { capFiles, statusColor } from "./gitstatus";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
 import { prettyModel } from "./modellabel";
@@ -300,6 +304,12 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const ended = endedWorker?.agent.id === agent.id ? endedWorker : undefined;
     const artifacts = artifactsView(useAtomValue(canvasStateAtom(agent.id)));
     const terminalsView = useRailTerminals(model, agent);
+    const panels = useAtomValue(railPanelsAtom);
+    const defaultTab = useAtomValue(railTabDefaultAtom);
+    const panel = panelFor(panels, agent.id, defaultTab);
+    const wide = useWideWidth();
+    const fileRef = panel.file.current;
+    const showRail = () => globalStore.set(railVisibleAtom, true);
 
     useEffect(() => {
         fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
@@ -640,6 +650,38 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             openAtom={railVisibleAtom}
             ariaLabel="Agent details"
             sections={sections}
+            width={panel.tab === "overview" ? RAIL_OVERVIEW_PX : wide.width}
+            tabs={<RailTabStrip agentId={agent.id} panel={panel} />}
+            body={
+                panel.tab === "file" && fileRef != null ? (
+                    <FileTab model={model} agentId={agent.id} file={panel.file} />
+                ) : undefined
+            }
+            edge={panel.tab !== "overview" ? <RailResizeGrip width={wide.width} max={wide.max} /> : undefined}
+            stripTabs={[
+                {
+                    key: "overview",
+                    icon: <LayoutList size={17} strokeWidth={1.8} aria-hidden />,
+                    ariaLabel: "Overview",
+                    onClick: () => {
+                        selectRailTab(agent.id, "overview");
+                        showRail();
+                    },
+                },
+                ...(fileRef != null
+                    ? [
+                          {
+                              key: "file",
+                              icon: <FileText size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: `File ${fileLabel(fileRef).name}`,
+                              onClick: () => {
+                                  selectRailTab(agent.id, "file");
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
+            ]}
             strip={{
                 content: (
                     <RailStrip needs={yours.length} ctxPct={sub ? undefined : ctxPct} ctxMax={usage?.contextmax} />

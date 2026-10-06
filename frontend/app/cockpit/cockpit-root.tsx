@@ -16,6 +16,7 @@ import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { useApplyCockpitFonts } from "@/app/view/agents/fontstore";
 import { CockpitShell } from "@/app/view/agents/cockpitshell";
 import { NowTicker } from "@/app/view/agents/nowticker";
+import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { NewAgentModal } from "@/app/view/agents/newagentmodal";
@@ -85,6 +86,10 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     useEffect(() => initKeybindingDispatcher(model), [model]);
     useEffect(() => {
         setupOpenFileSubscription(model);
+    }, [model]);
+    useEffect(() => {
+        setPathLinkModel(model);
+        return () => setPathLinkModel(null);
     }, [model]);
     useEffect(() => setupUiClient(model), [model]);
     // Kill the native browser context menu app-wide so it never leaks on elements without a themed

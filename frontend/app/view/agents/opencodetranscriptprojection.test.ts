@@ -31,6 +31,13 @@ describe("projectOpencodeTranscript", () => {
         ]);
         expect(entries[0]).toMatchObject({ kind: "action", verb: "edited", target: "auth.go" });
     });
+
+    it("keeps the full path of a file tool beside its base name", () => {
+        const entries = projectOpencodeTranscript([
+            `{"type":"tool","name":"edit","state":"completed","input":"{\\"filePath\\":\\"/a/b/auth.go\\"}","ts":1}`,
+        ]);
+        expect(entries[0]).toMatchObject({ target: "auth.go", path: "/a/b/auth.go" });
+    });
 });
 
 describe("extractOpencodeTitle", () => {

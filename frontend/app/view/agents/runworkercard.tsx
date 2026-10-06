@@ -26,6 +26,7 @@ import { jumpToAgent } from "./channelsprimitives";
 import { liveEntriesByIdAtom } from "./livetranscript";
 import { activityAtomFor, entriesAtomFor, tasksAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
+import { AgentPathLinks } from "./pathlinkcontext";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { StatusDot } from "./statusdot";
@@ -143,7 +144,9 @@ export function RunWorkerCard({
                                 onScroll={onScroll}
                                 className={cn("sc overflow-y-auto px-3 pb-2", fill ? "h-full" : "max-h-[260px]")}
                             >
-                                <NarrationTimeline entries={entries} accentLatest active={working} />
+                                <AgentPathLinks agent={agent}>
+                                    <NarrationTimeline entries={entries} accentLatest active={working} />
+                                </AgentPathLinks>
                             </div>
                             {!atBottom ? <JumpToLatestPill onClick={jumpToBottom} /> : null}
                         </div>

@@ -18,7 +18,7 @@ import {
     buildJarvisBindings,
     buildListNavBindings,
 } from "./bindings";
-import { deriveKeyContext, focusClaimed, initKeybindingDispatcher, isEditableTarget } from "./dispatcher";
+import { deriveKeyContext, focusClaimed, initKeybindingDispatcher, isEditableTarget, ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
 
@@ -67,6 +67,17 @@ describe("isEditableTarget", () => {
     // refreshed the file index out of the middle of a word.
     it("reports Monaco's EditContext host as editable", () => {
         expect(isEditableTarget(el("DIV", { inMonaco: true }))).toBe(true);
+    });
+});
+
+describe("ownsKeys", () => {
+    const at = (owned: boolean) =>
+        ({ closest: (sel: string) => (owned && sel === "[data-owns-keys]" ? ({} as Element) : null) }) as unknown as Element;
+
+    it("is true inside a region marked data-owns-keys, false elsewhere and for no element", () => {
+        expect(ownsKeys(at(true))).toBe(true);
+        expect(ownsKeys(at(false))).toBe(false);
+        expect(ownsKeys(null)).toBe(false);
     });
 });
 

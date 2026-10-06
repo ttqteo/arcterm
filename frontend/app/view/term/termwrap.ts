@@ -6,6 +6,8 @@ import { setBadge } from "@/app/store/badge";
 import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import type { FileRef } from "@/app/view/agents/agentrailtabs";
+import { openPathFromTerminal } from "@/app/view/agents/pathlinkroute";
 import { shouldRelaunchWorker } from "@/app/view/agents/session-models/agentresumestore";
 import { recordPastedImage } from "@/app/view/agents/uploadsingest";
 import { pasteTextFor } from "@/app/view/agents/uploadsstore";
@@ -38,6 +40,7 @@ import {
     type ShellIntegrationStatus,
 } from "./osc-handlers";
 import { registerTermHandle } from "./termpaste";
+import { hintFor, makePathLinkProvider, trackForDev } from "./termpathlinks";
 import {
     bufferLinesToText,
     createTempFileFromBlob,
@@ -102,7 +105,7 @@ export class TermWrap {
     shellIntegrationStatusAtom: jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
     nodeModel: BlockNodeModel; // this can be null
     hoveredLinkUri: string | null = null;
-    onLinkHover?: (uri: string | null, mouseX: number, mouseY: number) => void;
+    onLinkHover?: (uri: string | null, mouseX: number, mouseY: number, hint?: string) => void;
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -175,6 +178,19 @@ export class TermWrap {
                 }
             )
         );
+        // file paths in the output: Ctrl+click opens one beside its agent (termpathlinks.ts). hoveredLinkUri stays a
+        // URL's alone: the context menu offers "Open URL" for it, and a Windows path parses as a URL
+        const pathHooks = {
+            cwd: () => {
+                const cwd = WOS.getObjectValue<Block>(WOS.makeORef("block", this.blockId))?.meta?.["cmd:cwd"];
+                return typeof cwd === "string" && cwd !== "" ? cwd : null;
+            },
+            activate: (ref: FileRef) => openPathFromTerminal(this.blockId, ref),
+            hover: (e: MouseEvent, ref: FileRef) => this.onLinkHover?.(ref.abs, e.clientX, e.clientY, hintFor(ref)),
+            leave: () => this.onLinkHover?.(null, 0, 0),
+        };
+        this.toDispose.push(this.terminal.registerLinkProvider(makePathLinkProvider(this.terminal, pathHooks)));
+        this.toDispose.push(trackForDev(this.blockId, this.terminal, pathHooks));
         this.setTermRenderer(WebGLSupported && waveOptions.useWebGl ? "webgl" : "dom");
         // Register OSC handlers
         this.terminal.parser.registerOscHandler(7, (data: string) => {

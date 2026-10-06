@@ -7,6 +7,17 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > append-only rationale log — append the full deferral here, then mirror a one-line row there. Entries
 > marked RESOLVED/DECLINED below are kept for the reasoning, not as pending work.
 
+## Code and Diff in the nav rail (deferred 2026-10-06)
+
+- **Deferred:** taking Code and Diff out of the nav rail. The rail now groups them with Radar as tools, under Cockpit,
+  Jarvis, Agent and Usage (`docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md`).
+- **Why:** the Agent panel's File tab (and later its Review tab) covers reading a file and an agent's changes, not
+  browsing, searching or editing a project, nor history or compare. Whether the nav items still earn their place is
+  only known after using the panel for a while.
+- **Revive when** around 2026-10-20, after the 2026-10-15 re-measure of Code's "Send to agent": if Code and Diff are
+  reached almost only through the panel's "Open in…" buttons, the palette and `g b` / `g f`, drop them from
+  `TOOL_ITEMS` in `navrail.tsx` and from `SURFACE_ORDER` in `agents.tsx` (Radar becomes Ctrl+5).
+
 ## Sessions "All activity" feed rows peeking a run, agent or initiative (deferred 2026-10-01)
 
 - **Deferred:** the peek gesture on the Sessions "All activity" feed, where `Main.dc.html` in the cockpit-peek mockup

@@ -22,6 +22,7 @@ import {
     type EditFile,
 } from "./agentsviewmodel";
 import { MarkdownMessage } from "./markdownmessage";
+import { PathLink } from "./pathlinkcontext";
 import { highlightLine } from "./highlight";
 import { formatDuration } from "./tooldetail";
 
@@ -259,7 +260,13 @@ export function ToolLine({ action }: { action: AgentActionEntry }) {
             <div onClick={onClick} className={cn(TOOL_ROW, detail && "cursor-pointer hover:bg-surface-hover")}>
                 <StatusSquare ok={ok} />
                 <span className={VERB}>{action.verb}</span>
-                <span className={cn(TARGET, detail?.kind === "bash" && "font-mono")}>{action.target}</span>
+                {action.path != null ? (
+                    <PathLink path={action.path} className={TARGET}>
+                        {action.target}
+                    </PathLink>
+                ) : (
+                    <span className={cn(TARGET, detail?.kind === "bash" && "font-mono")}>{action.target}</span>
+                )}
                 {action.summary ? (
                     <span className={cn("shrink-0 text-[10.5px] tabular-nums", ok ? "text-muted" : "text-error")}>
                         {action.summary}

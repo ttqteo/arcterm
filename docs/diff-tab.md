@@ -32,8 +32,8 @@ repository with three files dirty in the working tree. Nothing is mocked.
 
 | Gesture | Effect |
 |---|---|
-| Nav rail → **Diff** | The fifth item in the rail |
-| `Ctrl`+`5` | Jump by position (`SURFACE_ORDER` index 4) |
+| Nav rail → **Diff** | The sixth item in the rail, in its tools group |
+| `Ctrl`+`6` | Jump by position (`SURFACE_ORDER` index 5) |
 | `g` `f` | Chord: go → Diff |
 | `]` / `[` | Cycle to the next / previous surface |
 
@@ -317,7 +317,7 @@ stops — otherwise every later return to the surface would drag you back to the
 
 ## 11. The other diff — the Code surface
 
-The Code surface (`Ctrl`+`4`, or `g` `b`) has its own diff, and it answers a different question.
+The Code surface (`Ctrl`+`5`, or `g` `b`) has its own diff, and it answers a different question.
 
 | | Diff surface | Code surface's Diff mode |
 |---|---|---|

@@ -59,6 +59,12 @@ export function isEditableTarget(el: Element | null): boolean {
     return el.closest?.(".monaco-editor") != null;
 }
 
+// A region that handles its own keys (the Agent panel's tab strip, File tab and resize grip) is marked data-owns-keys.
+// Focus inside one counts as editable, so the surface's navigation bindings stand down there as they do in a field.
+export function ownsKeys(el: Element | null): boolean {
+    return el?.closest?.("[data-owns-keys]") != null;
+}
+
 // Whether a surface just switched to should leave focus where it is: a visible field or an open modal
 // already took it. Visibility matters because a field on the surface just hidden is still activeElement
 // until Chromium's next rendering update.
@@ -95,7 +101,7 @@ export function deriveKeyContext(): KeyContext {
         globalStore.get(modalsModel.modalsAtom).length > 0;
     return {
         surface,
-        editable: isEditableTarget(document.activeElement),
+        editable: isEditableTarget(document.activeElement) || ownsKeys(document.activeElement),
         modalOpen,
         leader,
     };

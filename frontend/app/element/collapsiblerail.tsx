@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Reusable right-rail: a thin always-visible strip that expands to a 300px scroll panel.
+// Reusable right-rail: a thin always-visible strip that expands to a 300px (or caller-given width) scroll panel.
 // Content-agnostic — callers pass a list of {icon,label,content} sections and a caller-owned
 // openAtom (so each surface keeps its own persistence/default). Owns width, border, and the
 // width-reveal animation. Collapsed, it shows a single expand button (the first section's icon
@@ -11,7 +11,7 @@
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useAtom, type PrimitiveAtom } from "jotai";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "@/util/util";
 import { MOTION } from "./motiontokens";
 import {
@@ -106,6 +106,15 @@ function ExtraIcon({ ei }: { ei: RailExtraIcon }) {
     );
 }
 
+// one control per tab on the collapsed strip, above the strip's own content
+export interface RailStripTab {
+    key: string;
+    icon: ReactNode;
+    ariaLabel: string;
+    onClick: () => void;
+    badge?: number;
+}
+
 const RAIL_EXPANDED_PX = 300; // matches the app-bar usage column (app-bar.tsx) → continuous divider
 const RAIL_COLLAPSED_PX = 44;
 
@@ -119,6 +128,11 @@ export function CollapsibleRail({
     hideWhenCollapsed,
     forceCollapsed,
     strip,
+    width,
+    tabs,
+    body,
+    stripTabs,
+    edge,
 }: {
     openAtom: PrimitiveAtom<boolean>;
     sections: RailSection[];
@@ -139,24 +153,54 @@ export function CollapsibleRail({
     // what the collapsed strip's expand control shows instead of the first section's icon: a caller that
     // wants the rail's key figures readable while it is closed. The title is the control's tooltip.
     strip?: { content: ReactNode; title: string };
+    // the open width; 300 when absent
+    width?: number;
+    // a tab strip in place of the bare collapse row: the 44px band and rule of a titled header, the collapse chevron
+    // at its end
+    tabs?: ReactNode;
+    // replaces the sections' scroll column, for a tab that owns the whole panel body
+    body?: ReactNode;
+    stripTabs?: RailStripTab[];
+    // laid over the panel's left edge while it is open (a resize grip)
+    edge?: ReactNode;
 }) {
     const [open, setOpen] = useAtom(openAtom);
     const collapsedWidth = hideWhenCollapsed ? 0 : RAIL_COLLAPSED_PX;
-    const width = forceCollapsed ? 0 : open ? RAIL_EXPANDED_PX : collapsedWidth;
+    const railWidth = forceCollapsed ? 0 : open ? (width ?? RAIL_EXPANDED_PX) : collapsedWidth;
+    // only opening and collapsing slide: a width change while open (Overview to a wide tab) is one layout commit, so
+    // the centre's terminal sees one PTY resize instead of one per animation frame
+    const prevMode = useRef({ open, forceCollapsed });
+    const slide = prevMode.current.open !== open || prevMode.current.forceCollapsed !== forceCollapsed;
+    useEffect(() => {
+        prevMode.current = { open, forceCollapsed };
+    });
     const headed = sections.some((s) => s.header != null);
+
+    const collapseButton = (
+        <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Collapse panel"
+            title="Collapse"
+            className="flex cursor-pointer items-center rounded-[7px] px-2 py-1 text-[14px] leading-none text-muted hover:bg-surface-hover hover:text-secondary"
+        >
+            <ChevronRight size={16} aria-hidden />
+        </button>
+    );
 
     return (
         <MotionConfig reducedMotion="user">
             <motion.aside
                 aria-label={ariaLabel}
                 initial={false}
-                animate={{ width }}
-                transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
+                animate={{ width: railWidth }}
+                transition={slide ? { duration: MOTION.durMacro, ease: MOTION.easeFluid } : { duration: 0 }}
                 className={cn(
-                    "flex h-full shrink-0 flex-col overflow-hidden bg-surface",
-                    width > 0 && "border-l border-border"
+                    "relative flex h-full shrink-0 flex-col overflow-hidden bg-surface",
+                    railWidth > 0 && "border-l border-border"
                 )}
             >
+                {open && !forceCollapsed && edge != null ? edge : null}
                 {/* the content fades in under the width slide, so a swap between strip and panel reads as one
                     change instead of a snap clipped mid-slide; no exit, the outgoing content is already clipped */}
                 <AnimatePresence initial={false}>
@@ -168,50 +212,59 @@ export function CollapsibleRail({
                             transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
                             className="flex min-h-0 flex-1 flex-col"
                         >
-                            <div
-                                className={cn(
-                                    "flex shrink-0 items-center",
-                                    title != null
-                                        ? "h-11 justify-between border-b border-border bg-surface px-[18px]"
-                                        : "justify-end px-2 pt-2"
-                                )}
-                            >
-                                {title != null ? (
-                                    <span className="text-[9.5px] font-bold uppercase tracking-[.12em] text-muted">
-                                        {title}
-                                    </span>
-                                ) : null}
-                                {/* the extra glyphs group with the collapse control rather than being spread by
-                                    justify-between: they are this edge's controls, and the title is the label. */}
-                                <div className="flex items-center gap-0.5">
-                                    {extraIcons?.map((ei) => (
-                                        <ExtraIcon key={ei.key} ei={ei} />
-                                    ))}
-                                    <button
-                                        type="button"
-                                        onClick={() => setOpen(false)}
-                                        aria-label="Collapse panel"
-                                        title="Collapse"
-                                        className="flex cursor-pointer items-center rounded-[7px] px-2 py-1 text-[14px] leading-none text-muted hover:bg-surface-hover hover:text-secondary"
-                                    >
-                                        <ChevronRight size={16} aria-hidden />
-                                    </button>
+                            {tabs != null ? (
+                                <div className="flex h-11 shrink-0 items-stretch border-b border-border bg-surface pl-2 pr-1.5">
+                                    {tabs}
+                                    <div className="flex-1" />
+                                    <div className="flex items-center gap-0.5">
+                                        {extraIcons?.map((ei) => (
+                                            <ExtraIcon key={ei.key} ei={ei} />
+                                        ))}
+                                        {collapseButton}
+                                    </div>
                                 </div>
-                            </div>
-                            <div
-                                className={cn(
-                                    "flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[8px]",
-                                    headed ? "gap-[4px]" : "gap-[24px]"
-                                )}
-                            >
-                                {sections.map((s) =>
-                                    s.header ? (
-                                        <HeadedSection key={s.id} section={s} header={s.header} />
-                                    ) : (
-                                        <div key={s.id}>{s.content}</div>
-                                    )
-                                )}
-                            </div>
+                            ) : (
+                                <div
+                                    className={cn(
+                                        "flex shrink-0 items-center",
+                                        title != null
+                                            ? "h-11 justify-between border-b border-border bg-surface px-[18px]"
+                                            : "justify-end px-2 pt-2"
+                                    )}
+                                >
+                                    {title != null ? (
+                                        <span className="text-[9.5px] font-bold uppercase tracking-[.12em] text-muted">
+                                            {title}
+                                        </span>
+                                    ) : null}
+                                    {/* the extra glyphs group with the collapse control rather than being spread by
+                                        justify-between: they are this edge's controls, and the title is the label. */}
+                                    <div className="flex items-center gap-0.5">
+                                        {extraIcons?.map((ei) => (
+                                            <ExtraIcon key={ei.key} ei={ei} />
+                                        ))}
+                                        {collapseButton}
+                                    </div>
+                                </div>
+                            )}
+                            {body != null ? (
+                                <div className="flex min-h-0 flex-1 flex-col">{body}</div>
+                            ) : (
+                                <div
+                                    className={cn(
+                                        "flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[8px]",
+                                        headed ? "gap-[4px]" : "gap-[24px]"
+                                    )}
+                                >
+                                    {sections.map((s) =>
+                                        s.header ? (
+                                            <HeadedSection key={s.id} section={s} header={s.header} />
+                                        ) : (
+                                            <div key={s.id}>{s.content}</div>
+                                        )
+                                    )}
+                                </div>
+                            )}
                             {footer ? (
                                 <div className="shrink-0 border-t border-border px-[18px] py-3">{footer}</div>
                             ) : null}
@@ -224,6 +277,23 @@ export function CollapsibleRail({
                             transition={{ duration: MOTION.durMacro, ease: MOTION.easeFluid }}
                             className="flex flex-col items-center gap-1 pt-3"
                         >
+                            {stripTabs?.map((t) => (
+                                <button
+                                    key={t.key}
+                                    type="button"
+                                    aria-label={t.ariaLabel}
+                                    title={t.ariaLabel}
+                                    onClick={t.onClick}
+                                    className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] text-muted hover:bg-surface-hover hover:text-secondary"
+                                >
+                                    {t.icon}
+                                    {t.badge ? (
+                                        <span className="absolute -right-1 -top-1 flex h-[15px] min-w-[15px] items-center justify-center rounded-full border-2 border-surface bg-surface-selected px-[3px] text-[9.5px] font-bold tabular-nums leading-none text-primary">
+                                            {t.badge}
+                                        </span>
+                                    ) : null}
+                                </button>
+                            ))}
                             {strip ? (
                                 <button
                                     type="button"
