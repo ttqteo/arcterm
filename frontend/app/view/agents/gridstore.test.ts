@@ -12,6 +12,7 @@ import {
     currentGrid,
     dropAgentOnGrid,
     eligibleIds,
+    endSplit,
     openInSplit,
     removeFromGrid,
     type GridModel,
@@ -122,6 +123,24 @@ describe("dropAgentOnGrid", () => {
         } finally {
             unsub();
         }
+    });
+});
+
+describe("endSplit", () => {
+    it("keeps only the focused cell, and the focused agent stays on screen", () => {
+        const m = model(["a", "b", "c"], "b");
+        globalStore.set(agentGridAtom, g(["a", "b", "c"], "b"));
+        endSplit(m);
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["b"], "b"));
+        expect(globalStore.get(m.focusIdAtom)).toBe("b");
+    });
+    it("leaves a grid that is not split, and the centre, alone", () => {
+        const m = model(["a", "b"], "a");
+        globalStore.set(agentGridAtom, g(["a"], "a"));
+        globalStore.set(centerModeAtom, "history");
+        endSplit(m);
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a"], "a"));
+        expect(globalStore.get(centerModeAtom)).toBe("history");
     });
 });
 

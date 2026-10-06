@@ -48,6 +48,7 @@ import {
     endedConversationsByProject,
     liveBranches,
     sessionAgeLabel,
+    splitActive,
     startOfDay,
     terminalTree,
     type EndedRunRow,
@@ -63,7 +64,8 @@ import { duplicateSession } from "./session-models/sessionsidebarmodel";
 import { askingCount, displayAgeMs, formatAgeShort, formatTokens, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
-import { canOpenInSplit, openInSplit } from "./gridstore";
+import { reconcileGrid } from "./agentgrid";
+import { agentGridAtom, canOpenInSplit, eligibleIds, endSplit, openInSplit, removeFromGrid } from "./gridstore";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
 import { rosterSeededAtom } from "./liveagents";
 import {
@@ -1086,6 +1088,76 @@ function useSectionOpen(section: SidebarSection): boolean {
     return !useAtomValue(collapsedSectionsAtom).includes(section);
 }
 
+// The Agent surface's split as one row at the top of Active, as a browser shows split tabs: a segment per cell, laid
+// out as the cells are (two side by side, three as two over one, four as 2x2), so the row is a map of the screen.
+// A click focuses that cell; a segment drags onto the grid like any agent row. The 1px gaps over the edge colour are
+// the dividers.
+function SplitRow({ model, agents }: { model: AgentsViewModel; agents: AgentVM[] }) {
+    const focusId = useSelectedRowId(model);
+    const segmentMenu = (agent: AgentVM, e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            { label: "Remove from split", icon: <X size={15} />, click: () => removeFromGrid(model, agent.id) },
+            { label: "End split", icon: <Columns2 size={15} />, click: () => endSplit(model) },
+            {
+                label: "Copy name",
+                icon: <Copy size={15} />,
+                click: () => void navigator.clipboard.writeText(agent.name),
+            },
+            { type: "separator" },
+            {
+                label: "Close agent",
+                icon: <X size={15} />,
+                danger: true,
+                click: () => confirmCloseSession(agent, model),
+            },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    return (
+        <div
+            data-agent-split-row
+            role="group"
+            aria-label={`Split, ${agents.length} agents`}
+            className="mb-[4px] grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-edge-mid bg-edge-mid"
+        >
+            {agents.map((agent, i) => {
+                const selected = focusId === agent.id;
+                return (
+                    <div
+                        key={agent.id}
+                        data-agent-split-cell={agent.id}
+                        title={agent.name}
+                        aria-current={selected ? "true" : undefined}
+                        onClick={() => selectAgentRow(model, agent.id)}
+                        onContextMenu={(e) => segmentMenu(agent, e)}
+                        {...dragSource(agent, true)}
+                        className={cn(
+                            "flex min-w-0 cursor-pointer items-center gap-[6px] px-[9px] py-[7px] transition-colors duration-[140ms]",
+                            // three cells: the third spans the bottom, as it does on screen
+                            agents.length === 3 && i === 2 && "col-span-2",
+                            selected ? "bg-surface-selected" : "bg-surface hover:bg-surface-hover"
+                        )}
+                    >
+                        {agent.state === "asking" ? (
+                            <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" aria-label="asking" />
+                        ) : (
+                            <StatusDot state={agent.state} pulse={agent.state !== "idle"} />
+                        )}
+                        <span
+                            className={cn(
+                                "min-w-0 flex-1 truncate text-[12.5px]",
+                                selected ? "text-primary" : "text-secondary"
+                            )}
+                        >
+                            {agent.name}
+                        </span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
 // and, at the far end, `trailing`, which a folded folder keeps (what in it wants you, how much it holds).
 function FolderRow({
@@ -1375,7 +1447,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const filter = useAtomValue(model.projectFilterAtom);
     const filtered = filter !== ALL_PROJECTS;
     const tree = buildAgentTree(agents, order, lineage, folds, focusId);
-    const active = activeView(tree, filter, collapsed);
+    // the split the Agent surface shows (the grid as it reconciles it) leaves the folders for one row of its own;
+    // lifted before the folds apply, so a collapsed folder stops counting what it lost
+    const gridState = useAtomValue(agentGridAtom);
+    const seeded = useAtomValue(rosterSeededAtom);
+    const cells = reconcileGrid(gridState, { focusId, eligible: eligibleIds(agents), seeded }).ids;
+    const { split, rows: unsplit } = splitActive(tree, cells, agents);
+    const active = activeView(unsplit, filter, collapsed);
     const visibleRows = active.rows;
     // every project's, whatever the filter: the badge stays on the header while the section is folded, so an agent asking
     // in a project the filter hides is never out of sight
@@ -1423,7 +1501,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 <SectionHeader
                     section="active"
                     label="Active"
-                    count={active.count}
+                    count={active.count + split.length}
                     first
                     trailing={
                         asking > 0 ? (
@@ -1436,6 +1514,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
                     pops an exiting row out of flow in this wrapper's own coordinates. A folded section unmounts it, and
                     its AnimatePresence starts over with initial={false}, so unfolding never replays the entrances */}
+                {activeOpen && split.length > 0 ? <SplitRow model={model} agents={split} /> : null}
                 {activeOpen ? (
                     <div data-agent-active-rows className="relative">
                         <AnimatePresence mode="popLayout" initial={false}>
@@ -1564,7 +1643,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                         </AnimatePresence>
                     </div>
                 ) : null}
-                {activeOpen && visibleRows.length === 0 ? (
+                {activeOpen && visibleRows.length === 0 && split.length === 0 ? (
                     <div className="px-[10px] py-[6px] text-[12px] text-muted">
                         {filtered ? `No agents running in ${filter}` : "No agents running"}
                     </div>

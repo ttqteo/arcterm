@@ -15,6 +15,7 @@ import {
     scanDue,
     sessionAgeLabel,
     sessionTitle,
+    splitActive,
     startOfDay,
     terminalTree,
     UNTITLED_SESSION,
@@ -307,6 +308,47 @@ describe("endedConversationsByProject project keys", () => {
             { Arc: { path: "/work/arcterm" } }
         );
         expect([...ended.keys()]).toEqual(["loom"]);
+    });
+});
+
+describe("splitActive", () => {
+    const roster = [agent("a"), agent("b"), agent("c", undefined, "loom"), agent("d")];
+    const tree = treeOf(roster);
+
+    it("lifts the split's agents out of their folders, in cell order", () => {
+        const v = splitActive(tree, ["c", "a"], roster);
+        expect(v.split.map((x) => x.id)).toEqual(["c", "a"]);
+        expect(labels(v.rows)).toEqual(["group:waveterm", "parent", "parent"]);
+        expect(v.rows.flatMap((r) => (r.kind === "parent" ? [r.agent.id] : []))).toEqual(["b", "d"]);
+    });
+    it("is no split with fewer than two cells", () => {
+        expect(splitActive(tree, ["a"], roster)).toEqual({ split: [], rows: tree });
+        expect(splitActive(tree, [], roster)).toEqual({ split: [], rows: tree });
+    });
+    it("skips a cell whose agent left the roster, and drops the split when one agent is left", () => {
+        expect(splitActive(tree, ["a", "gone", "b"], roster).split.map((x) => x.id)).toEqual(["a", "b"]);
+        expect(splitActive(tree, ["a", "gone"], roster)).toEqual({ split: [], rows: tree });
+    });
+    it("takes a lifted agent out of its folder's count and asking badge", () => {
+        const asking = { ...agent("b"), state: "asking" as const };
+        const list = [agent("a"), asking, agent("d")];
+        const v = splitActive(treeOf(list), ["b", "c"], [...list, agent("c", undefined, "loom")]);
+        expect(v.rows[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 0 });
+    });
+    it("lifts from the whole tree, so a collapsed folder's badge drops too and an emptied one goes", () => {
+        const asking = { ...agent("e", undefined, "loom"), state: "asking" as const };
+        const list = [...roster, asking];
+        const v = splitActive(treeOf(list), ["e", "a"], list);
+        const folded = activeView(v.rows, ALL_PROJECTS, new Set(["loom"])).rows;
+        expect(labels(folded)).toEqual(["group:waveterm", "parent", "parent", "group:loom"]);
+        expect(folded[3]).toMatchObject({ count: 1, attn: 0 });
+        // the split emptied loom: collapsed or not, it goes
+        const emptied = splitActive(treeOf(roster), ["c", "a"], roster);
+        expect(labels(activeView(emptied.rows, ALL_PROJECTS, new Set(["loom"])).rows)).toEqual([
+            "group:waveterm",
+            "parent",
+            "parent",
+        ]);
     });
 });
 

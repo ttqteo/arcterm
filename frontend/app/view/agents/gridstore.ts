@@ -14,6 +14,7 @@ import { atomWithStorage } from "jotai/utils";
 import { showTerminal } from "./agentcenter";
 import {
     addCell,
+    collapseToFocused,
     EMPTY_GRID,
     MAX_CELLS,
     parseGrid,
@@ -93,6 +94,16 @@ export function removeFromGrid(model: GridModel, id: string): void {
         return;
     }
     commit(model, removeCell(s, id));
+}
+
+// "End split" (the sidebar's split row): the other cells go and the focused agent fills the area. Their agents keep
+// running. A grid that is not split is left alone, so the call does not reach for the centre either.
+export function endSplit(model: GridModel): void {
+    const s = currentGrid(model);
+    if (s.ids.length < 2) {
+        return;
+    }
+    commit(model, collapseToFocused(s));
 }
 
 export function canOpenInSplit(model: GridModel, id: string): boolean {

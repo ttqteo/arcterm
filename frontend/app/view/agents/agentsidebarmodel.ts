@@ -241,6 +241,53 @@ export function activeView(tree: AgentTreeRow[], filter: string, collapsed: Read
     };
 }
 
+export interface SplitActive {
+    split: AgentVM[]; // the split's agents in cell order; empty when nothing is split
+    rows: AgentTreeRow[]; // the Active rows without them
+}
+
+/** Pure: the Active section while the Agent surface shows a split. Its agents (`cells`, the grid's ids in cell order)
+ *  leave their folders for the one split row at the top, so a split reads as one thing however many projects it
+ *  spans. Only a plain agent's row moves: a lead's or worker's stays inside its run. `rows` is buildAgentTree's whole
+ *  tree, before activeView folds it, so a collapsed folder loses the agents it holds too: a folder stops counting what
+ *  the split took, its asking badge included, and one the split emptied goes. Fewer than two cells on the roster is no
+ *  split. */
+export function splitActive(rows: AgentTreeRow[], cells: readonly string[], roster: AgentVM[]): SplitActive {
+    const byId = new Map(roster.map((a) => [a.id, a]));
+    const split = cells.flatMap((id) => byId.get(id) ?? []);
+    if (split.length < 2) {
+        return { split: [], rows };
+    }
+    const lifted = new Set(split.map((a) => a.id));
+    const out: AgentTreeRow[] = [];
+    // the open folder's index in `out`, and whether the split took a row from it
+    let folder = -1;
+    let took = false;
+    const closeFolder = () => {
+        if (folder >= 0 && took && folder === out.length - 1) {
+            out.pop();
+        }
+    };
+    for (const r of rows) {
+        if (r.kind === "group") {
+            closeFolder();
+            folder = out.length;
+            took = false;
+            out.push(r);
+        } else if (r.kind === "parent" && lifted.has(r.agent.id)) {
+            took = true;
+            const g = folder >= 0 ? out[folder] : undefined;
+            if (g?.kind === "group") {
+                out[folder] = { ...g, count: g.count - 1, attn: g.attn - (r.agent.state === "asking" ? 1 : 0) };
+            }
+        } else {
+            out.push(r);
+        }
+    }
+    closeFolder();
+    return { split, rows: out };
+}
+
 // the Terminals section's rows: a project's folder, and the plain terminals under it
 export type TerminalTreeRow =
     | { kind: "folder"; project: string; count: number; open: boolean }
