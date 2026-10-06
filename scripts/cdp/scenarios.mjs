@@ -6636,7 +6636,8 @@ const agentTreeRail = {
         const badges = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
-            return [...tree.querySelectorAll("span")]
+            // inside a project's row: the Active header's own total badge is not a group's
+            return [...tree.querySelectorAll("button[aria-expanded]:not([aria-label]) span")]
                 .map((s) => s.textContent.trim())
                 .filter((t) => /^\\d+ asking$/.test(t));
         })()`);
@@ -6825,12 +6826,13 @@ const agentTreeRail = {
         );
 
         // a project row is a button without an aria-label (the fold chips inside rows carry one); a plain agent row
-        // is a top-level row: no tree guides, no Workflow mark, not a nested worker, stage or fold row (pl-[28px])
+        // is a top-level row: no tree guides, no Workflow mark, not a nested worker, stage or fold row (pl-[28px]). Only the
+        // Active section's rows count: the Conversations list under it has two-line rows of its own
         const tree = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
             const groups = [...tree.querySelectorAll("button[aria-expanded]:not([aria-label])")];
-            const plain = [...tree.querySelectorAll(".cursor-pointer")].filter(
+            const plain = [...tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer")].filter(
                 (r) =>
                     r.tagName !== "BUTTON" &&
                     r.querySelector("span.rounded-full") &&
@@ -6860,13 +6862,15 @@ const agentTreeRail = {
             const tree = ${TREE};
             const g = tree && tree.querySelector("button[aria-expanded='true']:not([aria-label])");
             if (!g) return null;
-            const before = tree.querySelectorAll(".cursor-pointer").length;
+            // the Active section's rows: the Conversations list is not under a project and can fill while this runs
+            const rows = () => tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer").length;
+            const before = rows();
             g.click();
             await new Promise((r) => setTimeout(r, 600));
-            const after = tree.querySelectorAll(".cursor-pointer").length;
+            const after = rows();
             g.click();
             await new Promise((r) => setTimeout(r, 600));
-            return { before, after, back: tree.querySelectorAll(".cursor-pointer").length };
+            return { before, after, back: rows() };
         })()`);
         rec(
             "14. a project row collapses its agents and expands them again",
@@ -6894,11 +6898,14 @@ const agentTreeRail = {
 const QUICK_RETURN_DWELL_MS = 250;
 const QUICK_RETURN_SAMPLE_MS = 600;
 
-// the sidebar's session rows arrive after a scan that starts when the surface is entered: wait until the tree has stopped growing
-// before sampling it, or rows sliding aside for them read as a slide on return
+// the rows of the sidebar's Active section: each is a direct child of its wrapper (AnimatePresence renders no element). The
+// Conversations list under it fills after a scan that starts when the surface is entered, but it moves none of these, and it is
+// a plain list with no motion of its own; wait until the Active rows have stopped changing before sampling them
+const ACTIVE_ROWS = "[data-agent-tree] [data-agent-active-rows] > div";
+
 const settleTree = (h) =>
     h.ev(`(async () => {
-        const count = () => document.querySelectorAll("[data-agent-tree] .overflow-y-auto > div").length;
+        const count = () => document.querySelectorAll(${JSON.stringify(ACTIVE_ROWS)}).length;
         let last = count();
         const t0 = performance.now();
         let since = t0;
@@ -6921,7 +6928,7 @@ const agentTreeQuickReturn = {
     },
     async assert(h) {
         await settleTree(h);
-        const rows = await h.ev(`document.querySelectorAll("[data-agent-tree] .overflow-y-auto > div").length`);
+        const rows = await h.ev(`document.querySelectorAll(${JSON.stringify(ACTIVE_ROWS)}).length`);
         if (rows < 2) {
             return [
                 skipStep(
@@ -6940,7 +6947,7 @@ const agentTreeQuickReturn = {
                 let max = 0;
                 const t0 = performance.now();
                 const tick = () => {
-                    for (const el of document.querySelectorAll("[data-agent-tree] .overflow-y-auto > div")) {
+                    for (const el of document.querySelectorAll(${JSON.stringify(ACTIVE_ROWS)})) {
                         const tf = getComputedStyle(el).transform;
                         if (tf && tf !== "none") {
                             const m = new DOMMatrix(tf);
@@ -6964,14 +6971,18 @@ const agentTreeQuickReturn = {
     async teardown() {},
 };
 
-// The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's ended sessions
-// under each project, Show more, the session pane with Resume, Conversation History, Esc back to the terminal, `g s`, History's list cursor
-// leaving with the surface, and a rail with no Sessions item (Radar on Ctrl+6). One live fixture agent gives the tree a project to hang
-// sessions under; GetSessionsActivity is answered in-page (see installAhMock). Resume is asserted present, never clicked: it would start a
-// real agent. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
+// The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's Active section
+// (the live agents) over its flat Conversations list of ended sessions (a row names its project; Show more pages it), the session pane with
+// Resume, Conversation History, Esc back to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions
+// item (Radar on Ctrl+6). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see
+// installAhMock). Resume is asserted present, never clicked: it would start a real agent. The project filter's menu is not driven: it is a
+// floating menu with no marker to find its items by. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
 const AH_LIVE_ID = "fx-ah-live";
 const AH_PROJECT = "waveterm";
 const AH_GHOST = "ah-ghost";
+// ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT; with the ghost's one, three more than the list shows first
+const AH_SEEDS = 22;
+const AH_PAGE = 20; // CONVERSATION_PAGE (agentsidebarmodel.ts)
 const AH_ANSWER = "history seed answer";
 const AH_MOCK_KEY = "__arcAgentHistoryMock";
 const AH_FOCUS_KEY = "cockpit.focus.last";
@@ -7017,9 +7028,9 @@ async function ahReload(h) {
     return false;
 }
 
-// ended solo sessions ah-1 (newest) .. ah-7 under AH_PROJECT, one more page than the sidebar shows at first; ah-live is the live
+// ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT, more than one page of the Conversations list; ah-live is the live
 // fixture agent's own transcript (matched by normalized path, so it must not list as ended); ah-run was launched by a run (excluded
-// from the sidebar); ah-g1 belongs to a project with no live agent
+// from the sidebar); ah-g1 belongs to a project with no live agent, and moved after ah-1, so it heads the list
 function ahSessions(cwd, livePath, now) {
     const base = {
         runtime: "claude",
@@ -7042,7 +7053,7 @@ function ahSessions(cwd, livePath, now) {
         transcriptpath: join(cwd, `ah-${n}.jsonl`),
     });
     return [
-        ...[1, 2, 3, 4, 5, 6, 7].map(solo),
+        ...Array.from({ length: AH_SEEDS }, (_, i) => solo(i + 1)),
         {
             ...base,
             id: "ah-live",
@@ -7190,13 +7201,17 @@ async function ahListNavSurface(h, urls) {
     }
 }
 
-// the ended-session rows of one project, and whether it offers Show more
-const ahRows = (h, project) =>
-    h.ev(`(() => ({
-        keys: [...document.querySelectorAll('[data-agent-session-row][data-agent-session-project=${JSON.stringify(project)}]')]
-            .map((r) => r.getAttribute("data-agent-session-row")),
-        more: document.querySelector('[data-agent-sessions-more=${JSON.stringify(project)}]') != null,
-    }))()`);
+// the keys of the Conversations list's rows in order, whether it offers Show more and the count that button shows
+const ahList = (h) =>
+    h.ev(`(() => {
+        const more = document.querySelector("[data-agent-sessions-more]");
+        return {
+            keys: [...document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]")]
+                .map((r) => r.getAttribute("data-agent-session-row")),
+            more: more != null,
+            hidden: more?.querySelector("span")?.textContent?.trim() ?? null,
+        };
+    })()`);
 
 const ahMockCalls = (h) => h.ev(`window.${AH_MOCK_KEY}?.state.calls ?? -1`);
 
@@ -7288,23 +7303,49 @@ const agentHistory = {
                 JSON.stringify(head)
             );
 
-            const first = await ahRows(h, AH_PROJECT);
+            const first = await ahList(h);
+            // the ghost's session moved after ah-1, so it heads a list that runs across projects
+            const firstPage = ["ah-g1", ...Array.from({ length: AH_PAGE - 1 }, (_, i) => `ah-${i + 1}`)].map((id) => `claude:${id}`);
             rec(
-                "3. the live project lists five ended sessions newest first, not the live agent's own session nor a run's, and offers Show more",
-                JSON.stringify(first.keys) === JSON.stringify(["ah-1", "ah-2", "ah-3", "ah-4", "ah-5"].map((id) => `claude:${id}`)) &&
-                    first.more === true,
+                `3. the Conversations list shows ${AH_PAGE} ended sessions newest first across projects, not the live agent's own session nor a run's, and offers Show more for the rest`,
+                JSON.stringify(first.keys) === JSON.stringify(firstPage) &&
+                    first.more === true &&
+                    first.hidden === String(AH_SEEDS + 1 - AH_PAGE),
                 JSON.stringify(first)
             );
 
-            const ghost = await h.ev(`(() => ({
-                rows: document.querySelectorAll('[data-agent-session-project="${AH_GHOST}"]').length,
-                folder: [...document.querySelectorAll("[data-agent-tree] button[aria-expanded]")]
-                    .some((b) => (b.textContent || "").includes(${JSON.stringify(AH_GHOST)})),
-            }))()`);
+            const split = await h.ev(`(() => {
+                const tree = document.querySelector("[data-agent-tree]");
+                const active = tree?.querySelector("[data-agent-active-rows]");
+                const convo = tree?.querySelector("[data-agent-conversations]");
+                const ghostRow = tree?.querySelector('[data-agent-session-row][data-agent-session-project="${AH_GHOST}"]');
+                return {
+                    headings: [...(tree?.querySelectorAll("span") ?? [])]
+                        .map((s) => s.textContent.trim())
+                        .filter((t) => t === "Active" || t === "Conversations"),
+                    liveInActive: !!active?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
+                    liveInConversations: !!convo?.querySelector('[data-agent-row="${AH_LIVE_ID}"]'),
+                    sessionsInActive: active?.querySelectorAll("[data-agent-session-row]").length ?? -1,
+                    activeAboveConversations: !!active && !!convo && !!(active.compareDocumentPosition(convo) & Node.DOCUMENT_POSITION_FOLLOWING),
+                    ghostRows: tree?.querySelectorAll('[data-agent-session-project="${AH_GHOST}"]').length ?? -1,
+                    ghostNamed: (ghostRow?.textContent || "").includes(${JSON.stringify(AH_GHOST)}),
+                    ghostFolder: [...(tree?.querySelectorAll("button[aria-expanded]") ?? [])]
+                        .some((b) => (b.textContent || "").includes(${JSON.stringify(AH_GHOST)})),
+                    filter: !!convo?.querySelector('button[aria-label="Filter conversations by project"]'),
+                };
+            })()`);
             rec(
-                "4. a project with ended sessions and no live agent is a folder of its own",
-                ghost.rows === 1 && ghost.folder === true,
-                JSON.stringify(ghost)
+                "4. live agents are under Active and ended sessions in the Conversations list below it, never mixed; a project with no live agent has no folder, only its project's name on the row, and the list has its project filter",
+                JSON.stringify(split.headings) === JSON.stringify(["Active", "Conversations"]) &&
+                    split.liveInActive &&
+                    !split.liveInConversations &&
+                    split.sessionsInActive === 0 &&
+                    split.activeAboveConversations &&
+                    split.ghostRows === 1 &&
+                    split.ghostNamed &&
+                    !split.ghostFolder &&
+                    split.filter,
+                JSON.stringify(split)
             );
 
             const age = await h.ev(
@@ -7312,19 +7353,18 @@ const agentHistory = {
             );
             rec("5. a row carries its relative time (ah-1 moved 10 minutes ago)", /^\d+m$/.test(age ?? ""), `age=${age}`);
 
-            await h.ev(`document.querySelector('[data-agent-sessions-more=${JSON.stringify(AH_PROJECT)}]')?.click()`);
-            // the Show more row leaves with a short exit animation
+            await h.ev(`document.querySelector("[data-agent-sessions-more]")?.click()`);
             await ahWait(
                 h,
-                `document.querySelectorAll('[data-agent-session-row][data-agent-session-project=${JSON.stringify(AH_PROJECT)}]').length === 7 &&
-                    !document.querySelector('[data-agent-sessions-more=${JSON.stringify(AH_PROJECT)}]')`,
+                `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_SEEDS + 1} &&
+                    !document.querySelector("[data-agent-sessions-more]")`,
                 4000
             );
-            const all = await ahRows(h, AH_PROJECT);
+            const all = await ahList(h);
             rec(
-                "6. Show more lists the other two and the button goes",
-                all.keys.length === 7 && all.more === false,
-                JSON.stringify(all)
+                "6. Show more lists the rest and the button goes",
+                all.keys.length === AH_SEEDS + 1 && all.more === false && all.keys[all.keys.length - 1] === `claude:ah-${AH_SEEDS}`,
+                JSON.stringify({ ...all, keys: all.keys.length })
             );
 
             await h.ev(`document.querySelector('[data-agent-session-row="claude:ah-1"]')?.click()`);
@@ -7382,14 +7422,14 @@ const agentHistory = {
                     open: root != null,
                     title: root?.querySelector("h1")?.textContent ?? null,
                     feed: root?.textContent?.includes("All activity") ?? false,
-                    oldest: root?.textContent?.includes("history seed 7") ?? false,
+                    oldest: root?.textContent?.includes(${JSON.stringify(`history seed ${AH_SEEDS}`)}) ?? false,
                     rail: document.querySelector('aside[aria-label="Agent details"]') != null,
                     terminalVisible: ${AH_TERMINAL}?.checkVisibility() ?? null,
                     current: document.querySelector("[data-agent-history-open]")?.getAttribute("aria-current") === "true",
                 };
             })()`);
             rec(
-                "9. Conversation History lists every session (beyond the sidebar's rows), marks its button current, hides the rail, and keeps the terminal mounted",
+                "9. Conversation History lists every session (down to the oldest seed), marks its button current, hides the rail, and keeps the terminal mounted",
                 hist.open &&
                     hist.title === "Conversation History" &&
                     hist.feed &&

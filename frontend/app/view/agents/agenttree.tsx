@@ -8,7 +8,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
-import { atom, useAtomValue } from "jotai";
+import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import {
     ArrowRight,
     ArrowUpRight,
@@ -22,7 +22,7 @@ import {
     Folder,
     FolderOpen,
     History as HistoryIcon,
-    MessageSquare,
+    ListFilter,
     Pencil,
     Play,
     Plus,
@@ -42,17 +42,20 @@ import { RenameBox, startRowRename } from "./rowrename";
 import { renamingRowAtom } from "./rowrenameatom";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
-    buildSidebarRows,
+    activeRows,
+    ALL_PROJECTS,
+    conversationProjects,
+    conversationRows,
+    effectiveProject,
     endedSessionsByProject,
     sessionAgeLabel,
-    showMore,
     type EndedSessionRow,
 } from "./agentsidebarmodel";
 import { projectsAtom } from "./projectsstore";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
 import { runSessionPrimary } from "./sessionsdetail";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
+import { askingCount, displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { canOpenInSplit, openInSplit } from "./gridstore";
@@ -98,9 +101,18 @@ const SUB_COLOR: Record<SubagentState, string> = {
     done: "var(--color-muted)",
 };
 
-// how many times "Show more" was pressed under each project (five more ended sessions per press). Sidebar UI state in a
-// module-level atom, so it outlives the tree's re-renders and unmounts; it is not persisted
-const sessionPagesAtom = atom<Record<string, number>>({});
+// The Conversations list's project filter (ALL_PROJECTS, or a project's name) and how many times "Show more" was pressed
+// under it (one more page of ended sessions per press). Sidebar UI state in module-level atoms, so it outlives the tree's
+// re-renders and unmounts; neither is persisted. Cast like agentDragAtom: with strictNullChecks off, atom<string>(...)
+// resolves to the read-only overload.
+const conversationProjectAtom = atom<string>(ALL_PROJECTS) as PrimitiveAtom<string>;
+const conversationPressesAtom = atom<number>(0) as PrimitiveAtom<number>;
+
+// a project's list starts over at its first page
+function chooseConversationProject(project: string): void {
+    globalStore.set(conversationProjectAtom, project);
+    globalStore.set(conversationPressesAtom, 0);
+}
 
 // choosing an agent's row brings its terminal back from a session or History
 function selectAgentRow(model: AgentsViewModel, id: string): void {
@@ -760,14 +772,22 @@ function FoldRow({
     );
 }
 
-// An ended session under its project: its first prompt and how long ago it last moved. A click reads its transcript in
-// the centre, where Resume lives. It is not a live row, so it carries no state dot; the title is the prompt on one line
-// and the row's tooltip holds all of it.
-function SessionRow({ model, row }: { model: AgentsViewModel; row: EndedSessionRow }) {
-    const now = useAtomValue(model.nowAtom);
-    const mode = useAtomValue(centerModeAtom);
-    const sel = useAtomValue(model.sessionsSelAtom);
-    const selected = mode === "session" && sel === row.key;
+// An ended conversation in the flat Conversations list: its first prompt and how long ago it last moved, and under them
+// the project it belongs to. A click reads its transcript in the centre, where Resume lives. It is not a live row, so
+// it carries no state dot (only a small one when it is waiting for you); the title is the prompt on one line and the
+// row's tooltip holds all of it. Memoized on strings and booleans: the list re-renders with the 1s clock, a row only when
+// its age label or its selection changes.
+const ConversationRow = memo(function ConversationRow({
+    model,
+    row,
+    age,
+    selected,
+}: {
+    model: AgentsViewModel;
+    row: EndedSessionRow;
+    age: string;
+    selected: boolean;
+}) {
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [];
         if (row.session.resumecommand) {
@@ -792,39 +812,141 @@ function SessionRow({ model, row }: { model: AgentsViewModel; row: EndedSessionR
             onContextMenu={onContextMenu}
             title={row.tooltip}
             className={cn(
-                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                "flex cursor-pointer flex-col gap-[2px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <Slot>
-                <MessageSquare size={12} aria-hidden className="text-ink-faint" />
-            </Slot>
-            <div className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-muted")}>
-                {row.title}
+            <div className="flex min-w-0 items-center gap-[6px]">
+                <span
+                    className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+                >
+                    {row.title}
+                </span>
+                {row.session.needsAttention ? (
+                    <span
+                        role="img"
+                        aria-label="waiting for you"
+                        className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
+                    />
+                ) : null}
+                <span data-agent-session-age className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                    {age}
+                </span>
             </div>
-            <span data-agent-session-age className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                {sessionAgeLabel(row.lastactivets, now)}
-            </span>
+            <div className="flex min-w-0 items-center gap-[5px]">
+                <Folder size={11} aria-hidden className="flex-none text-ink-faint" />
+                <span className="min-w-0 truncate text-[11px] text-muted">{row.project}</span>
+            </div>
         </div>
     );
-}
+});
 
-// Five more ended sessions under a project, with how many are still hidden
-function MoreSessionsRow({ project, hidden }: { project: string; hidden: number }) {
+// One more page of ended conversations, with how many are still hidden
+function ShowMoreConversations({ hidden }: { hidden: number }) {
     return (
         <button
             type="button"
-            data-agent-sessions-more={project}
-            aria-label={`Show more sessions in ${project}`}
-            onClick={() => globalStore.set(sessionPagesAtom, (pages) => showMore(pages, project))}
-            className="relative flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
+            data-agent-sessions-more={ALL_PROJECTS}
+            aria-label="Show more conversations"
+            onClick={() => globalStore.set(conversationPressesAtom, (presses) => presses + 1)}
+            className="flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
         >
-            <Slot>
-                <ChevronDown size={11} aria-hidden />
-            </Slot>
+            <ChevronDown size={11} aria-hidden className="flex-none" />
             Show more
             <span className="ml-auto tabular-nums text-ink-faint">{hidden}</span>
         </button>
+    );
+}
+
+const SECTION_LABEL = "flex-none text-[11.5px] font-semibold text-muted";
+
+// The sidebar's second section: every ended conversation across projects, newest first, filtered by project. A plain
+// list, not the Active section's animated one: it can run past a hundred rows (a page at a time), and a row that slid
+// when the filter changed would be noise. The scan fills it after first paint, so nothing renders under the header
+// until the archive has loaded.
+function ConversationsSection({ model }: { model: AgentsViewModel }) {
+    const agents = useAtomValue(model.agentsAtom);
+    const archive = useAtomValue(sessionsArchiveAtom);
+    const registered = useAtomValue(projectsAtom);
+    const chosen = useAtomValue(conversationProjectAtom);
+    const presses = useAtomValue(conversationPressesAtom);
+    const now = useAtomValue(model.nowAtom);
+    const mode = useAtomValue(centerModeAtom);
+    const sel = useAtomValue(model.sessionsSelAtom);
+    // filed under the project name the Active section's folders use (agentsidebarmodel.ts)
+    const ended = useMemo(() => endedSessionsByProject(archive, agents, registered), [archive, agents, registered]);
+    const projects = useMemo(() => conversationProjects(ended), [ended]);
+    const project = effectiveProject(chosen, projects);
+    const rows = useMemo(() => conversationRows(ended, project, presses), [ended, project, presses]);
+    const filtered = project !== ALL_PROJECTS;
+
+    const openFilter = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            {
+                label: "All projects",
+                type: "radio",
+                checked: !filtered,
+                click: () => chooseConversationProject(ALL_PROJECTS),
+            },
+            ...(projects.length > 0 ? [{ type: "separator" as const }] : []),
+            ...projects.map(
+                (p): ContextMenuItem => ({
+                    label: p,
+                    type: "radio",
+                    checked: project === p,
+                    click: () => chooseConversationProject(p),
+                })
+            ),
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+
+    return (
+        <div data-agent-conversations>
+            <div className="flex items-center gap-[6px] px-[8px] pb-[2px] pt-[14px]">
+                <span className={SECTION_LABEL}>Conversations</span>
+                {filtered ? (
+                    <span
+                        data-agent-conversations-filter={project}
+                        title={`Showing ${project} only`}
+                        className="min-w-0 truncate rounded-[5px] bg-surface-hover px-[6px] py-[1px] text-[10.5px] text-ink-mid"
+                    >
+                        {project}
+                    </span>
+                ) : null}
+                <button
+                    type="button"
+                    aria-label="Filter conversations by project"
+                    aria-haspopup="menu"
+                    onClick={openFilter}
+                    className={cn(
+                        "ml-auto flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] hover:bg-surface-hover",
+                        filtered ? "text-accent-soft" : "text-ink-faint hover:text-secondary"
+                    )}
+                >
+                    <ListFilter size={13} aria-hidden />
+                </button>
+            </div>
+            {archive == null ? null : rows.length === 0 ? (
+                <div className="px-[10px] py-[6px] text-[12px] text-muted">No past conversations</div>
+            ) : (
+                <div className="flex flex-col">
+                    {rows.map((r) =>
+                        r.kind === "more" ? (
+                            <ShowMoreConversations key="more" hidden={r.hidden} />
+                        ) : (
+                            <ConversationRow
+                                key={r.key}
+                                model={model}
+                                row={r}
+                                age={sessionAgeLabel(r.lastactivets, now)}
+                                selected={mode === "session" && sel === r.key}
+                            />
+                        )
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -838,17 +960,12 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const folds = useAtomValue(treeFoldsAtom);
     const focusId = useAtomValue(model.focusIdAtom);
     const collapsedList = useAtomValue(collapsedProjectsAtom);
-    const archive = useAtomValue(sessionsArchiveAtom);
-    const registered = useAtomValue(projectsAtom);
-    const pages = useAtomValue(sessionPagesAtom);
     const center = useAtomValue(centerModeAtom);
     const collapsed = new Set(collapsedList);
-    const rows = buildAgentTree(agents, order, lineage, folds, focusId);
-    // every project is a folder: its live agents, then its ended sessions (agentsidebarmodel.ts), filed under the
-    // project name the agents use. A collapsed project hides both; the archive is null until the post-paint scan
-    // lands, so the first paint is the agents alone
-    const ended = useMemo(() => endedSessionsByProject(archive, agents, registered), [archive, agents, registered]);
-    const visibleRows = buildSidebarRows(rows, ended, collapsed, pages);
+    // the Active section: each project's live agents, a collapsed project folding to its folder row. The ended
+    // conversations are the section under it (ConversationsSection), never mixed in
+    const visibleRows = activeRows(buildAgentTree(agents, order, lineage, folds, focusId), collapsed);
+    const asking = askingCount(agents);
 
     useRunDigests(Object.values(lineage.runs));
 
@@ -893,162 +1010,160 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
-                <AnimatePresence mode="popLayout" initial={false}>
-                    {visibleRows.map((r) => {
-                        if (r.kind === "group") {
-                            return (
-                                <motion.div key={`g-${r.project}`} layout="position">
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            globalStore.set(
-                                                collapsedProjectsAtom,
-                                                toggleProject(collapsedList, r.project)
-                                            )
-                                        }
-                                        aria-expanded={!collapsed.has(r.project)}
-                                        className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
-                                    >
-                                        <ChevronRight
-                                            size={12}
-                                            aria-hidden
-                                            className={cn(
-                                                "shrink-0 text-ink-faint transition-transform",
-                                                !collapsed.has(r.project) && "rotate-90"
+                <div className="flex items-center gap-[6px] px-[8px] pb-[2px] pt-[4px]">
+                    <span className={SECTION_LABEL}>Active</span>
+                    {asking > 0 ? (
+                        <span className="ml-auto">
+                            <AskingBadge n={asking} />
+                        </span>
+                    ) : null}
+                </div>
+                {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
+                    pops an exiting row out of flow in this wrapper's own coordinates */}
+                <div data-agent-active-rows className="relative">
+                    <AnimatePresence mode="popLayout" initial={false}>
+                        {visibleRows.map((r) => {
+                            if (r.kind === "group") {
+                                return (
+                                    <motion.div key={`g-${r.project}`} layout="position">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                globalStore.set(
+                                                    collapsedProjectsAtom,
+                                                    toggleProject(collapsedList, r.project)
+                                                )
+                                            }
+                                            aria-expanded={!collapsed.has(r.project)}
+                                            className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
+                                        >
+                                            <ChevronRight
+                                                size={12}
+                                                aria-hidden
+                                                className={cn(
+                                                    "shrink-0 text-ink-faint transition-transform",
+                                                    !collapsed.has(r.project) && "rotate-90"
+                                                )}
+                                            />
+                                            {collapsed.has(r.project) ? (
+                                                <Folder size={14} aria-hidden className="shrink-0 text-muted" />
+                                            ) : (
+                                                <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
                                             )}
+                                            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
+                                                {r.project}
+                                            </span>
+                                            {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
+                                        </button>
+                                    </motion.div>
+                                );
+                            }
+                            // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
+                            // agent nesting once its run loads), so the move animates instead of remounting
+                            let key: string;
+                            let body: React.ReactNode;
+                            switch (r.kind) {
+                                case "parent":
+                                    key = r.agent.id;
+                                    body = <ParentRow model={model} agent={r.agent} />;
+                                    break;
+                                case "lead":
+                                    key = r.agent.id;
+                                    body = (
+                                        <ParentRow
+                                            model={model}
+                                            agent={r.agent}
+                                            lead={{ run: r.run, open: r.open, live: r.live }}
                                         />
-                                        {collapsed.has(r.project) ? (
-                                            <Folder size={14} aria-hidden className="shrink-0 text-muted" />
-                                        ) : (
-                                            <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
-                                        )}
-                                        <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
-                                            {r.project}
-                                        </span>
-                                        {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
-                                    </button>
-                                </motion.div>
-                            );
-                        }
-                        if (r.kind === "session" || r.kind === "more") {
-                            // initial={false} only drops these rows' own entrance animation, since they arrive after the
-                            // post-paint scan; the rows below them keep layout="position" and slide down when the first
-                            // scan lands
+                                    );
+                                    break;
+                                case "run":
+                                    key = `run-${r.run.runId}`;
+                                    body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
+                                    break;
+                                case "worker":
+                                    key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
+                                    body = (
+                                        <WorkerRow
+                                            model={model}
+                                            run={r.run}
+                                            task={r.task}
+                                            agent={r.agent}
+                                            nested={r.nested}
+                                            extras={
+                                                r.nested
+                                                    ? undefined
+                                                    : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
+                                            }
+                                        />
+                                    );
+                                    break;
+                                case "stage":
+                                    key = r.agent.id;
+                                    body = (
+                                        <StageRow
+                                            model={model}
+                                            agent={r.agent}
+                                            stageRole={r.stageRole}
+                                            outcome={r.outcome}
+                                        />
+                                    );
+                                    break;
+                                case "done":
+                                    key = `done-${r.run.runId}`;
+                                    body = (
+                                        <FoldRow
+                                            glyph={<Check size={11} aria-hidden className="text-success" />}
+                                            label={[
+                                                r.count > 0 ? `${r.count} done` : "",
+                                                r.stages > 0
+                                                    ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}`
+                                                    : "",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" · ")}
+                                            open={r.open}
+                                            onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
+                                        />
+                                    );
+                                    break;
+                                case "queued":
+                                    key = `queued-${r.run.runId}`;
+                                    body = (
+                                        <FoldRow
+                                            glyph={
+                                                <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
+                                            }
+                                            label={`${r.count} queued`}
+                                            open={r.open}
+                                            onToggle={() => toggleRunQueuedOpen(r.run.runId)}
+                                        />
+                                    );
+                                    break;
+                            }
+                            // layout="position" so a subagent expand doesn't scale-distort the row — only its
+                            // position animates on reflow. Must be the direct AnimatePresence child: popLayout
+                            // measures it via ref to pop an exiting row out of flow (else its space lingers).
                             return (
                                 <motion.div
-                                    key={r.kind === "session" ? `ended-${r.key}` : `more-${r.project}`}
+                                    key={key}
                                     layout="position"
                                     className="pl-[14px]"
                                     variants={cardVariants}
-                                    initial={false}
+                                    initial={entranceIds.has(key) ? "initial" : false}
                                     animate="animate"
                                     exit="exit"
                                 >
-                                    {r.kind === "session" ? (
-                                        <SessionRow model={model} row={r} />
-                                    ) : (
-                                        <MoreSessionsRow project={r.project} hidden={r.hidden} />
-                                    )}
+                                    {body}
                                 </motion.div>
                             );
-                        }
-                        // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
-                        // agent nesting once its run loads), so the move animates instead of remounting
-                        let key: string;
-                        let body: React.ReactNode;
-                        switch (r.kind) {
-                            case "parent":
-                                key = r.agent.id;
-                                body = <ParentRow model={model} agent={r.agent} />;
-                                break;
-                            case "lead":
-                                key = r.agent.id;
-                                body = (
-                                    <ParentRow
-                                        model={model}
-                                        agent={r.agent}
-                                        lead={{ run: r.run, open: r.open, live: r.live }}
-                                    />
-                                );
-                                break;
-                            case "run":
-                                key = `run-${r.run.runId}`;
-                                body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
-                                break;
-                            case "worker":
-                                key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
-                                body = (
-                                    <WorkerRow
-                                        model={model}
-                                        run={r.run}
-                                        task={r.task}
-                                        agent={r.agent}
-                                        nested={r.nested}
-                                        extras={
-                                            r.nested ? undefined : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
-                                        }
-                                    />
-                                );
-                                break;
-                            case "stage":
-                                key = r.agent.id;
-                                body = (
-                                    <StageRow
-                                        model={model}
-                                        agent={r.agent}
-                                        stageRole={r.stageRole}
-                                        outcome={r.outcome}
-                                    />
-                                );
-                                break;
-                            case "done":
-                                key = `done-${r.run.runId}`;
-                                body = (
-                                    <FoldRow
-                                        glyph={<Check size={11} aria-hidden className="text-success" />}
-                                        label={[
-                                            r.count > 0 ? `${r.count} done` : "",
-                                            r.stages > 0 ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}` : "",
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" · ")}
-                                        open={r.open}
-                                        onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
-                                    />
-                                );
-                                break;
-                            case "queued":
-                                key = `queued-${r.run.runId}`;
-                                body = (
-                                    <FoldRow
-                                        glyph={
-                                            <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
-                                        }
-                                        label={`${r.count} queued`}
-                                        open={r.open}
-                                        onToggle={() => toggleRunQueuedOpen(r.run.runId)}
-                                    />
-                                );
-                                break;
-                        }
-                        // layout="position" so a subagent expand doesn't scale-distort the row — only its
-                        // position animates on reflow. Must be the direct AnimatePresence child: popLayout
-                        // measures it via ref to pop an exiting row out of flow (else its space lingers).
-                        return (
-                            <motion.div
-                                key={key}
-                                layout="position"
-                                className="pl-[14px]"
-                                variants={cardVariants}
-                                initial={entranceIds.has(key) ? "initial" : false}
-                                animate="animate"
-                                exit="exit"
-                            >
-                                {body}
-                            </motion.div>
-                        );
-                    })}
-                </AnimatePresence>
+                        })}
+                    </AnimatePresence>
+                </div>
+                {visibleRows.length === 0 ? (
+                    <div className="px-[10px] py-[6px] text-[12px] text-muted">No agents running</div>
+                ) : null}
+                <ConversationsSection model={model} />
             </div>
         </div>
     );

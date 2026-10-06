@@ -33,6 +33,13 @@ cells, session rows as grid cells, uploading directories, a Tauri-side drop-path
    History`. Under each project folder (fold state already persisted in `collapsedProjectsAtom`):
    live agents first (today's rows, unchanged), then up to 5 ended sessions with a relative time
    (16m, 3d) and the session's first prompt as the title, then `Show more` (+5 per click).
+   - **Revision 2026-10-06:** the ended sessions moved out of the project folders. The sidebar is now two
+     sections: **Active**, the project folders with their live agents only (same rows, collapsing and
+     animation as before), and under it a flat **Conversations** list of every ended session across
+     projects, newest first. A row is two lines (the title and the relative age, then a folder icon and
+     the project's name) and a project filter on the section header narrows the list; `Show more` pages it
+     20 at a time. Live and ended never mix, so what is running stays readable at a glance. The rest of
+     this item (one row per live agent and session, runs excluded, no status filters) stands.
    - A live agent and its session record are one row, joined by normalized transcript path (the join
      `overlayLive` already does). When the agent exits, the tab auto-closes after about 2s and the row
      drops into the ended group.

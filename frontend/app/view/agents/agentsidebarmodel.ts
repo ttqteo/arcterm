@@ -1,22 +1,26 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Each project is
-// a folder: its live agents (agenttreemodel.ts), then up to five ended sessions, then "Show more" (five per press).
-// A live agent and its session record are one row, joined by normalized transcript path (overlayLive); a session an
-// orchestrator run launched is not listed, since the run's own done fold already holds it (History still shows it,
-// grouped by run). Status filters live in History only. No React. It imports overlayLive from sessionsarchivestore,
-// which pulls in the RPC client and the store; nothing here calls either.
+// Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two sections. Active
+// holds the live agents as the tree builds them (agenttreemodel.ts: one collapsible folder per project). Conversations
+// is a flat list of every ended session across projects, newest first, each row naming its project; a project filter
+// narrows it and "Show more" pages it (20 per press). Live and ended never mix: a live agent and its session record are
+// one row, in Active, joined by normalized transcript path (overlayLive), and a session an orchestrator run launched is
+// not listed, since the run's own done fold already holds it (History still shows it, grouped by run). Status filters
+// live in History only. No React. It imports overlayLive from sessionsarchivestore, which pulls in the RPC client and
+// the store; nothing here calls either.
 
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
-import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import { foldCollapsedProjects, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
 import { sessionKey } from "./sessionsruns";
 
-export const SESSION_PAGE = 5;
+export const CONVERSATION_PAGE = 20;
+// the project filter's value for no filter
+export const ALL_PROJECTS = "all";
 export const UNTITLED_SESSION = "(untitled session)";
 
-// an ended session under its project
+// an ended session, with the project it is filed under
 export interface EndedSessionRow {
     kind: "session";
     project: string;
@@ -27,14 +31,11 @@ export interface EndedSessionRow {
     session: LiveSession;
 }
 
-// "Show more" under a project whose ended sessions do not all fit yet
-export interface MoreSessionsRow {
+// "Show more" at the end of the Conversations list, counting the conversations still hidden
+export interface MoreConversationsRow {
     kind: "more";
-    project: string;
     hidden: number;
 }
-
-export type SidebarRow = AgentTreeRow | EndedSessionRow | MoreSessionsRow;
 
 // a total order on strings (code units, not locale), so a tie broken by it never depends on the input's order
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -136,71 +137,56 @@ export function endedSessionsByProject(
     return out;
 }
 
-// presses so far under a project; an own-property read, since a project can be named "constructor" or "toString"
-function pressesOf(project: string, pages: Readonly<Record<string, number>>): number {
-    return Object.prototype.hasOwnProperty.call(pages, project) ? pages[project] : 0;
+/** Pure: the Active section's rows, `rows` being buildAgentTree's output (a group row, then that project's agent rows).
+ *  A collapsed project keeps its group row, which carries the count and attention of what it hides, and loses the rows
+ *  under it. */
+export function activeRows(rows: AgentTreeRow[], collapsed: ReadonlySet<string>): AgentTreeRow[] {
+    return foldCollapsedProjects(rows, collapsed);
 }
 
-/** Pure: how many ended sessions a project shows, given how many times "Show more" was pressed under it. */
-export function visibleCount(project: string, pages: Readonly<Record<string, number>>): number {
-    return SESSION_PAGE * (1 + pressesOf(project, pages));
+/** Pure: the projects the Conversations filter offers, those with at least one ended conversation, the one with the
+ *  newest conversation first (equal times in name order). */
+export function conversationProjects(ended: ReadonlyMap<string, EndedSessionRow[]>): string[] {
+    const newest = new Map<string, number>();
+    for (const [project, list] of ended) {
+        if (list.length > 0) {
+            let latest = -Infinity;
+            for (const r of list) {
+                latest = Math.max(latest, r.lastactivets);
+            }
+            newest.set(project, latest);
+        }
+    }
+    return [...newest.keys()].sort((a, b) => newest.get(b) - newest.get(a) || byText(a, b));
 }
 
-/** Pure: the pages map after one more "Show more" press under `project`. */
-export function showMore(pages: Readonly<Record<string, number>>, project: string): Record<string, number> {
-    return { ...pages, [project]: pressesOf(project, pages) + 1 };
+/** Pure: the filter that applies. A chosen project with no ended conversation left (its last one was resumed, or fell
+ *  out of the scan's window) no longer filters, so the list is never stuck empty behind a project the menu does not
+ *  offer. `projects` is conversationProjects' list, empty until the scan has loaded. */
+export function effectiveProject(chosen: string, projects: readonly string[]): string {
+    return chosen === ALL_PROJECTS || projects.includes(chosen) ? chosen : ALL_PROJECTS;
 }
 
-function sessionRowsOf(
-    project: string,
-    list: EndedSessionRow[],
-    pages: Readonly<Record<string, number>>
-): SidebarRow[] {
-    const shown = list.slice(0, visibleCount(project, pages));
-    const hidden = list.length - shown.length;
-    return hidden > 0 ? [...shown, { kind: "more", project, hidden }] : shown;
-}
-
-/** Pure: the sidebar's rows. `rows` is buildAgentTree's output (a group row, then that project's agent rows);
- *  `ended` is endedSessionsByProject's, each list newest first. Each project's ended sessions follow its last agent
- *  row, and a project with ended sessions but no live agent gets a folder of its own after the live ones, newest
- *  conversation first (equal times in project-name order). A collapsed project keeps its group row and loses
- *  everything under it, agents and sessions alike. */
-export function buildSidebarRows(
-    rows: AgentTreeRow[],
+/** Pure: the Conversations list. The ended sessions of `project` (all of them for ALL_PROJECTS), newest first across
+ *  projects and equal times in key order, the first CONVERSATION_PAGE of them plus one page per "Show more" press, then
+ *  a more row counting what is still hidden. */
+export function conversationRows(
     ended: ReadonlyMap<string, EndedSessionRow[]>,
-    collapsed: ReadonlySet<string>,
-    pages: Readonly<Record<string, number>>
-): SidebarRow[] {
-    const out: SidebarRow[] = [];
-    const placed = new Set<string>();
-    let project: string | null = null;
-    const flush = () => {
-        if (project != null && !collapsed.has(project)) {
-            out.push(...sessionRowsOf(project, ended.get(project) ?? [], pages));
+    project: string,
+    presses: number
+): (EndedSessionRow | MoreConversationsRow)[] {
+    const all: EndedSessionRow[] = [];
+    if (project === ALL_PROJECTS) {
+        for (const list of ended.values()) {
+            all.push(...list);
         }
-    };
-    for (const r of rows) {
-        if (r.kind === "group") {
-            flush();
-            project = r.project;
-            placed.add(r.project);
-            out.push(r);
-        } else if (project != null && !collapsed.has(project)) {
-            out.push(r);
-        }
+    } else {
+        all.push(...(ended.get(project) ?? []));
     }
-    flush();
-    const agentless = [...ended.entries()]
-        .filter(([p, list]) => !placed.has(p) && list.length > 0)
-        .sort(([pa, a], [pb, b]) => b[0].lastactivets - a[0].lastactivets || byText(pa, pb));
-    for (const [p, list] of agentless) {
-        out.push({ kind: "group", project: p, count: 0, attn: 0 });
-        if (!collapsed.has(p)) {
-            out.push(...sessionRowsOf(p, list, pages));
-        }
-    }
-    return out;
+    all.sort((a, b) => b.lastactivets - a.lastactivets || byText(a.key, b.key));
+    const shown = all.slice(0, CONVERSATION_PAGE * (1 + Math.max(0, presses)));
+    const hidden = all.length - shown.length;
+    return hidden > 0 ? [...shown, { kind: "more", hidden }] : shown;
 }
 
 /** Pure: did an agent leave the roster between two snapshots of its ids? Its session just ended, so the sidebar

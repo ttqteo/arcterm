@@ -32,7 +32,7 @@ The **Cockpit** gives you an overview; **Agent** opens the selected agent's term
 
 The terminal is interactive—not just a transcript viewer. You can talk directly to a worker while keeping its run and task context in view.
 
-Past conversations live in the same place: each project in the **Agent** sidebar lists its recent sessions under its live agents, an ended session opens as a readable transcript with **Resume**, and **Conversation History** shows them all.
+Past conversations live in the same place: the **Agent** sidebar keeps live agents under **Active** and lists recent ended sessions below them as one **Conversations** list, newest first, each row naming its project (a filter narrows it to one), an ended session opens as a readable transcript with **Resume**, and **Conversation History** shows them all.
 
 ### Answer decisions where they arise
 
