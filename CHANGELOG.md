@@ -36,6 +36,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   provider, the provider rail is dropped and the page takes the full width.
 - In the Agent sidebar, double-click a run's lead row to fold or unfold its workers, or an agent's row to fold its
   subagents; a single click still selects it.
+- The Agent panel's details rail counts its lists (subagents, files changed, artifacts, uploads, background
+  tasks) in the tab strip, each count opening its section, and opens on one status line: context, tokens
+  and the session's spend.
 - Code blocks wrap long lines by default instead of scrolling sideways.
 - Jarvis's peek approves a gate or retries a failed task in place, as the brief does, instead of only
   opening it.
