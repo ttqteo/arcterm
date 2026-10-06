@@ -23,6 +23,7 @@ import { useEffect } from "react";
 import { isMarkdownPath } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
+import { splitFrontmatter } from "./codefrontmatter";
 import { resolveDocLink } from "./codelink";
 import {
     codeDraftsAtom,
@@ -37,9 +38,24 @@ import {
     setCaretLineReader,
 } from "./codestore";
 
-// The markdown element defaults to 14px with no padding — sized for the old full-width chat block,
-// which reads oversized in a cockpit pane beside the 12px mono source view.
-const DOC_FONT_SIZE = 12.5;
+// DESIGN.md's markdown size (14px text, 12px mono). It reads at that size because .markdown-doc holds the
+// document to a centred reading column instead of letting lines run the width of a maximized pane.
+const DOC_FONT_SIZE = 14;
+
+// A skill's or note's frontmatter as a quiet card above the document, so the fields that steer an agent
+// (name, description) stay readable without passing for the document's title.
+function FrontmatterCard({ fields }: { fields: [string, string][] }) {
+    return (
+        <dl className="mb-7 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 rounded-md border border-edge-mid bg-surface-raised px-4 py-3 text-[13px] leading-[1.55]">
+            {fields.map(([key, value]) => (
+                <div key={key} className="contents">
+                    <dt className="pt-px font-mono text-[11.5px] text-muted">{key}</dt>
+                    <dd className="min-w-0 break-words text-secondary">{value === "" ? "—" : value}</dd>
+                </div>
+            ))}
+        </dl>
+    );
+}
 
 function sizeLabel(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -176,13 +192,15 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             // READMEs and other prose render as documents; Source (the CodeEditor below) stays one
             // toggle away, and the draft feeds the preview so unsaved edits show what you would save
             if (isMarkdownPath(file.path) && mode === "preview") {
+                const doc = splitFrontmatter(draft?.text ?? file.text);
                 return (
                     <Markdown
                         key={file.path}
-                        text={draft?.text ?? file.text}
+                        text={doc.body}
+                        header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
                         scrollable
-                        className="h-full"
-                        contentClassName="px-5 py-4"
+                        className="markdown-doc h-full"
+                        contentClassName="px-8 pb-12 pt-7"
                         fontSizeOverride={DOC_FONT_SIZE}
                         onClickLink={(href) => {
                             const target = project != null ? resolveDocLink(file.path, href) : null;

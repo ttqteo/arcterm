@@ -308,6 +308,8 @@ type MarkdownProps = {
     rehype?: boolean;
     fontSizeOverride?: number;
     fixedFontSizeOverride?: number;
+    // rendered above the document, inside its scroll area (the Code preview's frontmatter card)
+    header?: React.ReactNode;
 };
 
 const Markdown = memo(function Markdown({
@@ -320,6 +322,7 @@ const Markdown = memo(function Markdown({
     resolveOpts,
     fontSizeOverride,
     fixedFontSizeOverride,
+    header,
     scrollable = true,
     rehype = true,
     onClickExecute,
@@ -482,10 +485,14 @@ const Markdown = memo(function Markdown({
                     className={cn("content", contentClassName)}
                     options={{ scrollbars: { autoHide: "leave" } }}
                 >
+                    {header}
                     {rendered}
                 </OverlayScrollbarsComponent>
             ) : (
-                <div className={cn("content non-scrollable", contentClassName)}>{rendered}</div>
+                <div className={cn("content non-scrollable", contentClassName)}>
+                    {header}
+                    {rendered}
+                </div>
             )}
             {toc && (
                 <OverlayScrollbarsComponent className="toc mt-1" options={{ scrollbars: { autoHide: "leave" } }}>
