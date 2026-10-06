@@ -36,7 +36,8 @@ A small package with no dependency on `pkg/orchestrate` (which imports it).
 const DefaultPerWorker = 1536 << 20 // 1.5 GiB
 const RecentPeaks = 10
 
-// Observe records a live worker's process-tree RSS, keeping its peak.
+// Observe records a live worker's process-tree RSS, keeping its peak. A zero reading (no node of the tree
+// could be read) or an empty block id is dropped, so the estimate can never become 0.
 func Observe(blockId string, rss uint64)
 
 // Snapshot retires every live entry whose block is no longer running (its peak joins the ring of the last
@@ -44,8 +45,11 @@ func Observe(blockId string, rss uint64)
 // per-worker estimate: the max over live peaks and the ring, or DefaultPerWorker with measured=false.
 func Snapshot(isRunning func(blockId string) bool) (liveRSS []uint64, perWorker uint64, measured bool)
 
-// Compute is the pure formula of decision 4.
+// Compute is the pure formula of decision 4; a zero perWorker means DefaultPerWorker.
 func Compute(total, available, perWorker uint64, liveRSS []uint64) Capacity
+
+// Read is Snapshot + Compute, with Measured set: what the RPC calls.
+func Read(total, available uint64, isRunning func(blockId string) bool) Capacity
 
 type Capacity struct {
     Total, Available, PerWorker, Reserve uint64
@@ -84,9 +88,9 @@ type CommandGetWorkerCapacityRtnData struct {
 }
 ```
 
-`pkg/wshrpc/wshserver/wshserver_workercap.go` calls `mem.VirtualMemory()`, then `workercap.Snapshot` with an
+`pkg/wshrpc/wshserver/wshserver_workercap.go` calls `mem.VirtualMemory()`, then `workercap.Snapshot` (via `Read`) with an
 `isRunning` built on `blockcontroller.GetBlockControllerRuntimeStatus(id)` (running when its
-`ShellProcStatus` is `Status_Running`), then `workercap.Compute`, and maps the result. A `VirtualMemory`
+`ShellProcStatus` is `Status_Running`) through `workercap.Read`, and maps the result. A `VirtualMemory`
 error is returned as the RPC error.
 
 ## Frontend
@@ -116,7 +120,7 @@ the atom to `null`.
 
 ### Stepper warning
 
-Shared `CapacityWarn({ extra })`: renders nothing unless `overCapacity`; when over, a 12 px `TriangleAlert`
+Shared `CapacityWarn({ cap, extra })`: renders nothing unless `overCapacity(cap, extra)`; when over, a 12 px `TriangleAlert`
 in `text-warning` with `title={capacityWarnTitle(cap)}`. On each stepper, when over, the picked number also
 turns `text-warning`:
 
