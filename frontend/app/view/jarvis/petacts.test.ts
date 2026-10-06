@@ -48,6 +48,20 @@ describe("actsForAttention", () => {
         ]);
     });
 
+    it("lands a held run again in place, and still escorts to it", () => {
+        const held = { ...gate(), kind: "run-land-held", key: "run-land-held:run1" } as AttentionItem;
+        expect(actsForAttention(held)).toEqual([
+            { id: "run-land-held:run1:land", verb: "land", label: "Land again", channelId: "ch1", runId: "run1" },
+            {
+                id: "run-land-held:run1:open",
+                verb: "open",
+                label: "Open",
+                target: { kind: "oref", ref: "run:run1" },
+            },
+        ]);
+        expect(actsForAttention({ ...held, channelid: "" }).map((a) => a.verb)).toEqual(["open"]);
+    });
+
     it("escorts an unverified run that names no channel, since the ack needs one", () => {
         const unverified = { ...gate(), kind: "run-unverified", channelid: "" } as AttentionItem;
         expect(actsForAttention(unverified).map((a) => a.verb)).toEqual(["open"]);

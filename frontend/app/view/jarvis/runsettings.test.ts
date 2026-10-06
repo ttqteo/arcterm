@@ -5,8 +5,6 @@ import { describe, expect, it } from "vitest";
 import {
     draftIsDirty,
     draftSeedKey,
-    effectiveRunConfig,
-    engineDefaultsPatch,
     parallelismInvalid,
     runMachine,
     runSettingsDraft,
@@ -224,65 +222,5 @@ describe("draftSeedKey", () => {
         expect(draftSeedKey(run, submittedGroup({ status: "executing" }))).toBe(
             draftSeedKey(run, submittedGroup({ status: "done" }))
         );
-    });
-});
-
-describe("effectiveRunConfig", () => {
-    it("reads the launched facts from the run and the mutable dials from the draft", () => {
-        const lead = { runtime: "claude", model: "opus" } as RoutePin;
-        const worker = { runtime: "pi" } as RoutePin;
-        const run = engineRun({ runtime: "claude", model: "opus", workerroute: lead });
-        const got = effectiveRunConfig(run, {
-            parallelism: 4,
-            workerRoute: worker,
-            reviewerPicks: false,
-            reviewerRoute: null,
-        });
-        expect(got).toEqual({
-            shape: "orchestrator",
-            parallelism: 4,
-            leadRoute: { runtime: "claude", model: "opus" },
-            workerRoute: worker,
-            reviewerPicks: false,
-            reviewerRoute: null,
-        });
-    });
-});
-
-describe("engineDefaultsPatch", () => {
-    // save-as-project-defaults copies the whole effective configuration, or the "default" is a run the
-    // user never had. It must not disturb the sections it does not own.
-    it("copies every effective setting onto the existing override", () => {
-        const existing = { principles: { disabled: ["p1"] } } as ProfileOverride;
-        const config = {
-            shape: "orchestrator",
-            parallelism: 5,
-            leadRoute: { runtime: "claude", model: "opus" } as RoutePin,
-            workerRoute: { runtime: "pi" } as RoutePin,
-            reviewerPicks: false,
-            reviewerRoute: null,
-        };
-        expect(engineDefaultsPatch(existing, config)).toEqual({
-            principles: { disabled: ["p1"] },
-            defaultmode: "orchestrator",
-            parallelism: 5,
-            route: { runtime: "claude", model: "opus" },
-            workerroute: { runtime: "pi" },
-        });
-    });
-
-    it("clears the routes when the run inherits them", () => {
-        const existing = { workerroute: { runtime: "pi" } } as ProfileOverride;
-        const patched = engineDefaultsPatch(existing, {
-            shape: "pipeline",
-            parallelism: 2,
-            leadRoute: null,
-            workerRoute: null,
-            reviewerPicks: false,
-            reviewerRoute: null,
-        });
-        expect(patched.route).toBeUndefined();
-        expect(patched.workerroute).toBeUndefined();
-        expect(patched.defaultmode).toBe("pipeline");
     });
 });

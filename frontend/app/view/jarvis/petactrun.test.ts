@@ -10,6 +10,7 @@ const postMessage = vi.fn();
 const consult = vi.fn();
 const ackRun = vi.fn();
 const getAttention = vi.fn();
+const landRun = vi.fn();
 
 vi.mock("./openref", () => ({
     openAddress: (...a: any[]) => openAddress(...a),
@@ -21,6 +22,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         ConsultCommand: (...a: any[]) => consult(...a),
         AckRunCommand: (...a: any[]) => ackRun(...a),
         GetAttentionCommand: (...a: any[]) => getAttention(...a),
+        LandRunCommand: (...a: any[]) => landRun(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -133,6 +135,55 @@ describe("runAct — ack", () => {
             text: "acknowledging run: not found",
         });
         expect(globalStore.get(attentionAtom)).toEqual([row]);
+    });
+});
+
+describe("runAct — land", () => {
+    const act: PetAct = {
+        id: "run-land-held:r1:land",
+        verb: "land",
+        label: "Land again",
+        channelId: "ch1",
+        runId: "r1",
+    };
+
+    afterEach(() => globalStore.set(attentionAtom, []));
+
+    it("lands the run with the land's own budget, drops its row, and leaves the peek open", async () => {
+        globalStore.set(petPeekOpenAtom, true);
+        globalStore.set(attentionAtom, [{ key: "run-land-held:r1" } as AttentionItem]);
+        landRun.mockResolvedValue({ state: "landed", commit: "af6760b07d6b" });
+        getAttention.mockResolvedValue({ items: [] });
+        await runAct(model, act);
+        expect(landRun).toHaveBeenCalledWith(
+            expect.anything(),
+            { channelid: "ch1", runid: "r1" },
+            { timeout: expect.any(Number) }
+        );
+        expect(landRun.mock.calls[0][2].timeout).toBeGreaterThan(40 * 60_000);
+        expect(globalStore.get(attentionAtom)).toEqual([]);
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({ status: "done", text: "Landed as af6760b0." });
+    });
+
+    // the server answers a held land with its reason, not an error: the act must not read as done
+    it("reports a land that is still held as the act's error, with the reason", async () => {
+        landRun.mockResolvedValue({ state: "held", reason: "the checkout has uncommitted changes" });
+        getAttention.mockResolvedValue({ items: [] });
+        await runAct(model, act);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({
+            status: "error",
+            text: "Still held: the checkout has uncommitted changes",
+        });
+    });
+
+    it("reports a refused land on the act", async () => {
+        landRun.mockRejectedValue(new Error("run r1 is running; only a done run lands"));
+        await runAct(model, act);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({
+            status: "error",
+            text: "run r1 is running; only a done run lands",
+        });
     });
 });
 

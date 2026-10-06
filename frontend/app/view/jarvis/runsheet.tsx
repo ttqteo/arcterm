@@ -43,13 +43,14 @@ import { atom, useAtomValue, type Atom } from "jotai";
 import { ArrowUpRight, ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RunComposer } from "./briefcomposer";
-import { RunSettingsPanel, saveRunAsDefaults, SHEET_BTN } from "./briefrunsheet";
+import { RunSettingsPanel, SHEET_BTN } from "./briefrunsheet";
 import { finalCheckEntry, shotPath, shotRounds, type FinalCheckEntry, type ShotRound } from "./finalshotsmodel";
 import { FinalShotsViewer, VERDICT_DOT } from "./finalshotsviewer";
 import { briefEffortIndexAtom, briefRevealChunkAtom } from "./jarvisstore";
+import { landAgain } from "./landrun";
 import { useLocalImage } from "./localimage";
 import { RunReportView } from "./runreportview";
-import { runSettingsDraft, type LinkedGroupRead } from "./runsettings";
+import type { LinkedGroupRead } from "./runsettings";
 import {
     doneBody,
     finalStageEndable,
@@ -948,7 +949,6 @@ function Dock({
     onOpenShots: OpenShots;
 }) {
     const { model, channel, run, agents } = ctx;
-    const [saving, setSaving] = useState(false);
     const [result, setResult] = useState<{ failed: boolean; text: string } | null>(null);
     const [ending, setEnding] = useState(false);
     const endable = finalStageEndable(group);
@@ -959,35 +959,50 @@ function Dock({
     const lead = sheetLead(run, agents);
     // a live quick run's one worker, opened where it is watched (design L576)
     const worker = run.mode !== "orchestrator" && !isTerminal(run.status) ? leadWorker(run, agents) : undefined;
-    // a finished orchestrator has no dials left, so the dock's first slot carries its configuration forward
-    const carryForward = run.status === "done" && run.mode === "orchestrator";
-    const saveDefaults = () => {
-        setSaving(true);
+    // a held land leads the dock: the run is done and waits only on the human clearing the reason and retrying
+    const held = run.land?.state === "held";
+    const [landing, setLanding] = useState(false);
+    const land = () => {
+        setLanding(true);
         setResult(null);
         fireAndForget(async () => {
             try {
-                await saveRunAsDefaults(run, runSettingsDraft(run, group));
-                setResult({ failed: false, text: "Saved as this project's defaults." });
+                setResult(await landAgain(channel.oid, run.id));
             } catch (e) {
                 setResult({ failed: true, text: String(e) });
             } finally {
-                setSaving(false);
+                setLanding(false);
             }
         });
     };
     return (
         <div className="flex flex-col gap-1.5 border-t border-edge-faint px-4 py-[11px]">
+            {held ? (
+                <span
+                    data-run-sheet-land-held
+                    className="text-[11px] leading-[1.45] text-warning [overflow-wrap:anywhere]"
+                >
+                    Not merged back: {run.land?.reason || "the engine gave no reason"}
+                    <span className="text-muted"> · the work is on wave/{run.id}</span>
+                </span>
+            ) : null}
             <div className="flex items-center gap-2">
-                {carryForward ? (
-                    <button type="button" disabled={saving} onClick={saveDefaults} className={DOCK_ACCENT}>
-                        {saving ? "Saving…" : "Save as project defaults"}
+                {held ? (
+                    <button
+                        type="button"
+                        data-run-sheet-land-again
+                        disabled={landing}
+                        onClick={land}
+                        className={DOCK_ACCENT}
+                    >
+                        {landing ? "Landing…" : "Land again"}
                     </button>
                 ) : null}
                 {run.dagoref ? (
                     <button
                         type="button"
                         onClick={() => openDagLive(channel.oid, run.id, "dag:" + run.dagoref)}
-                        className={carryForward ? DOCK_BTN : DOCK_ACCENT}
+                        className={held ? DOCK_BTN : DOCK_ACCENT}
                     >
                         Open DAG
                     </button>

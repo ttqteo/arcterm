@@ -795,7 +795,8 @@ describe("design queue wording", () => {
         expect(queueAction(q({ wireKind: "ask" }))).toEqual({ label: "Open", kind: "open" });
         expect(queueAction(q({ wireKind: "run-unverified" }))).toEqual({ label: "Acknowledge", kind: "ack-run" });
         expect(queueAction(q({ wireKind: "run-unverified", runId: null }))).toEqual({ label: "Open", kind: "open" });
-        expect(queueAction(q({ wireKind: "run-land-held" }))).toEqual({ label: "Open", kind: "open" });
+        expect(queueAction(q({ wireKind: "run-land-held" }))).toEqual({ label: "Land again", kind: "land-run" });
+        expect(queueAction(q({ wireKind: "run-land-held", runId: null }))).toEqual({ label: "Open", kind: "open" });
     });
     it("acknowledges all only the rows whose own button is Acknowledge", () => {
         const rows = [

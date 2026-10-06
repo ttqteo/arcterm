@@ -172,52 +172,6 @@ export function settingsChangePayload(
     return settingsPayload(channelId, runId, { ...runSettingsDraft(run, group), ...change });
 }
 
-// Everything about a run that a future launch could inherit: the launched facts from the run, the mutable
-// dials from the draft. Shape and the lead route are immutable here, which is exactly why they are the
-// run's own values rather than anything the sheet could have edited.
-export type EffectiveRunConfig = {
-    shape: string;
-    parallelism: number;
-    leadRoute: RoutePin | null;
-    workerRoute: RoutePin | null;
-    reviewerPicks: boolean;
-    reviewerRoute: RoutePin | null;
-};
-
-export function effectiveRunConfig(run: Run, draft: RunSettingsDraft): EffectiveRunConfig {
-    return {
-        shape: run.mode || "quick",
-        parallelism: draft.parallelism,
-        leadRoute: leadRouteOf(run),
-        workerRoute: draft.workerRoute,
-        reviewerPicks: draft.reviewerPicks,
-        reviewerRoute: draft.reviewerRoute,
-    };
-}
-
-function leadRouteOf(run: Run): RoutePin | null {
-    if ((run.runtime ?? "") === "") {
-        return null;
-    }
-    return { runtime: run.runtime, ...(run.model ? { model: run.model } : {}) };
-}
-
-// "Save as project defaults" copies the whole effective configuration — copying only part of it would
-// leave the next launch materially different from the run it was saved from, which is the opposite of what
-// the button says. Every other override section is left alone.
-export function engineDefaultsPatch(override: ProfileOverride, config: EffectiveRunConfig): ProfileOverride {
-    return {
-        ...override,
-        defaultmode: config.shape,
-        parallelism: config.parallelism,
-        route: config.leadRoute ?? undefined,
-        workerroute: config.workerRoute ?? undefined,
-        // unset rather than false, as the worker route is: a run on Same as lead leaves the project inheriting
-        reviewerpicks: config.reviewerPicks || undefined,
-        reviewerroute: config.reviewerRoute ?? undefined,
-    };
-}
-
 export function routeLabel(route: RoutePin | null | undefined): string {
     if (route == null || (route.runtime ?? "") === "") {
         return "inherit the lead";

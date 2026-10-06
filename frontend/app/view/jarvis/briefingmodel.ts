@@ -331,8 +331,8 @@ export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "bloc
 }
 
 export type QueueAct = {
-    label: "Approve" | "Retry" | "Acknowledge" | "Open";
-    kind: "approve-gate" | "approve-dag" | "retry-dag" | "ack-run" | "open";
+    label: "Approve" | "Retry" | "Acknowledge" | "Land again" | "Open";
+    kind: "approve-gate" | "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "open";
 };
 
 // What the row's button does in place (design L1598-1609). Approve and Retry need the exact task or phase
@@ -349,6 +349,10 @@ export function queueAction(row: QueueRow): QueueAct {
     }
     if (row.wireKind === "run-unverified" && row.channelId !== "" && row.runId != null) {
         return { label: "Acknowledge", kind: "ack-run" };
+    }
+    // a held land: the retry `wsh runs land` makes, once the human has cleared the reason the row names
+    if (row.wireKind === "run-land-held" && row.channelId !== "" && row.runId != null) {
+        return { label: "Land again", kind: "land-run" };
     }
     return { label: "Open", kind: "open" };
 }

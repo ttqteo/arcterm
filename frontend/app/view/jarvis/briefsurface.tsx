@@ -154,6 +154,7 @@ import {
     readingNoteAtom,
 } from "./jarvisstore";
 import { clearSubject, persistedSubjectAtom, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
+import { landAgain } from "./landrun";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
@@ -1177,6 +1178,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 return run(`Acknowledged · ${q.source || q.title}`, () =>
                     RpcApi.AckRunCommand(TabRpcClient, { channelid: q.channelId, runid: q.runId! })
                 );
+            case "land-run":
+                // a held answer throws, so the undo bar reads the reason rather than "Landed"
+                return run(`Landed · ${q.source || q.title}`, async () => {
+                    const outcome = await landAgain(q.channelId, q.runId!);
+                    if (outcome.failed) {
+                        throw new Error(outcome.text);
+                    }
+                });
             default:
                 if (l.target != null) {
                     openLine(l.target);

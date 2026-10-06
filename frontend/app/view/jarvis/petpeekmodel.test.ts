@@ -216,10 +216,24 @@ describe("queueRows — an unverified run settles in place", () => {
     });
 });
 
+describe("queueRows — a held land", () => {
+    const HELD = item({ kind: "run-land-held", key: "run-land-held:" + RUN, text: "The run's branch was not merged back: git refused the merge" }); // prettier-ignore
+
+    // the item's action is "Review", which names the escort; relabelling the retry with it would hide what it does
+    it("keeps Land again on the button, shows the reason, and escorts beside it", () => {
+        const [row] = queueRows([HELD]);
+        expect(row.primary).toMatchObject({ verb: "land", label: "Land again" });
+        expect(row.secondary).toMatchObject({ verb: "open" });
+        expect(row.detail).toBe(HELD.text);
+        expect(rowKindLabel(row.kind)).toBe("Not merged");
+    });
+});
+
 describe("enterHintLabel", () => {
     it("names what Enter does to the focused row", () => {
         expect(enterHintLabel(queueRows([item({ kind: "run-unverified", key: "u" })])[0].primary)).toBe("acknowledge");
         expect(enterHintLabel(queueRows([GATE])[0].primary)).toBe("open");
+        expect(enterHintLabel(queueRows([item({ kind: "run-land-held", key: "l" })])[0].primary)).toBe("land again");
         expect(enterHintLabel(null)).toBe("open");
     });
 });

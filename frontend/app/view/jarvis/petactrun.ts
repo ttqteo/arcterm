@@ -12,6 +12,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { loadAttention } from "@/app/view/agents/attentionstore";
+import { landAgain } from "./landrun";
 import { openAddress, openOrPeekAddress, type OpenGesture } from "./openref";
 import { closePeek } from "./peekstore";
 import type { PetAct } from "./petacts";
@@ -63,9 +64,25 @@ async function ack(act: Extract<PetAct, { verb: "ack" }>): Promise<void> {
     }
 }
 
+// A land retry settles its row in place too. A held answer is the act's error, carrying the reason, so the row
+// says why it is still there instead of quietly staying.
+async function land(act: Extract<PetAct, { verb: "land" }>): Promise<void> {
+    setActState(act.id, { status: "running" });
+    try {
+        const outcome = await landAgain(act.channelId, act.runId);
+        setActState(act.id, { status: outcome.failed ? "error" : "done", text: outcome.text });
+    } catch (e) {
+        setActState(act.id, { status: "error", text: errText(e) });
+    }
+}
+
 export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: OpenGesture): Promise<void> {
     if (act.verb === "ack") {
         await ack(act);
+        return;
+    }
+    if (act.verb === "land") {
+        await land(act);
         return;
     }
     await escort(model, act, gesture);

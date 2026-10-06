@@ -19,7 +19,6 @@ import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { RoutePicker } from "@/app/view/agents/routepicker";
-import { getJarvisProfile, refreshResolvedProfile, setChannelProfile } from "@/app/view/agents/runactions";
 import { MAX_PARALLELISM } from "@/app/view/agents/runconfig";
 import { useDagGroup } from "@/app/view/orchestrate/dagstore";
 import { cn, fireAndForget } from "@/util/util";
@@ -29,8 +28,6 @@ import { REGION_LABEL } from "./briefstyle";
 import {
     draftIsDirty,
     draftSeedKey,
-    effectiveRunConfig,
-    engineDefaultsPatch,
     parallelismInvalid,
     routeLabel,
     runSettingsDraft,
@@ -88,17 +85,6 @@ export function SheetShell({
             {children}
         </aside>
     );
-}
-
-// "Save as project defaults" copies the whole effective configuration of a run — the run's launched facts
-// with the given dials — into the channel's profile. Shared by the live dials and a finished run's dock.
-export async function saveRunAsDefaults(run: Run, draft: RunSettingsDraft): Promise<void> {
-    const channelId = run.channeloid ?? "";
-    const current = await getJarvisProfile(channelId);
-    await setChannelProfile(channelId, engineDefaultsPatch(current.override ?? {}, effectiveRunConfig(run, draft)));
-    // refresh only after the write landed, so a refused save never leaves a cache describing a profile
-    // that does not exist.
-    await refreshResolvedProfile(channelId);
 }
 
 // The inline form lives in the run sheet's reading (design L436-452): the run's meta, then the configuration
@@ -214,12 +200,6 @@ function LoadedConfig({
                 setNotice("Saved. Applies to future dispatches.");
             }
         );
-    const saveDefaults = () =>
-        submit(
-            "defaults",
-            () => saveRunAsDefaults(run, draft),
-            () => setNotice("Saved as this project's future-run defaults.")
-        );
 
     const dials = (
         <>
@@ -291,14 +271,6 @@ function LoadedConfig({
                     className={cn(SHEET_BTN, "border-accent/40 px-[11px] py-[5px] text-accent-soft")}
                 >
                     {saving === "settings" ? "Saving…" : "Save settings"}
-                </button>
-                <button
-                    type="button"
-                    onClick={saveDefaults}
-                    disabled={busy || invalid || channelId === ""}
-                    className={cn(SHEET_BTN, "px-[11px] py-[5px]")}
-                >
-                    {saving === "defaults" ? "Saving…" : "Save as project defaults"}
                 </button>
             </div>
         </>

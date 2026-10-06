@@ -5,8 +5,6 @@ import { describe, expect, it } from "vitest";
 import {
     draftIsDirty,
     draftSeedKey,
-    effectiveRunConfig,
-    engineDefaultsPatch,
     runSettingsDraft,
     settingsChangePayload,
     settingsPayload,
@@ -167,19 +165,5 @@ describe("the reviewer settings in the sheet's draft", () => {
         expect(line).toContain("workers reviewer picks");
         expect(line).toContain("reviewers claude · opus");
         expect(configLine(engineRun(), DRAFT, false)).not.toContain("reviewers");
-    });
-
-    it("saves Reviewer picks and the reviewer route as project defaults", () => {
-        const draft = { ...DRAFT, reviewerPicks: true, reviewerRoute: REVIEWER };
-        const patched = engineDefaultsPatch({ workerroute: WORKER }, effectiveRunConfig(engineRun(), draft));
-        expect(patched.reviewerpicks).toBe(true);
-        expect(patched.workerroute).toBeUndefined();
-        expect(patched.reviewerroute).toEqual(REVIEWER);
-        const cleared = engineDefaultsPatch(
-            { reviewerpicks: true, reviewerroute: REVIEWER },
-            effectiveRunConfig(engineRun(), DRAFT)
-        );
-        expect(cleared.reviewerpicks).toBeUndefined();
-        expect(cleared.reviewerroute).toBeUndefined();
     });
 });

@@ -888,7 +888,9 @@ and the land then holds as above. The base can still move between `complete` and
 arrives then holds the land.
 
 A held land raises a **land held** item under Waiting on you: "The run's branch was not merged back: <reason>".
-Clear the reason, then run `wsh runs land <run-id>`, which retries and prints where the land stands.
+Clear the reason, then press **Land again**: on that row in Jarvis's popup and in the Brief's Waiting list, and in the
+run sheet's footer, which also prints the reason. It is the same retry as `wsh runs land <run-id>`, which prints where
+the land stands; a land still held keeps the row and names the new reason.
 `wsh runs land <run-id> --force` lands a run whose final stage failed; it is your call only. When the last final
 round fails, the lead's question to you and its report say that completing will not merge the branch, and name this
 command.

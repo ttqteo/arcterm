@@ -26,10 +26,11 @@ export interface PeekRow {
 }
 
 // pkg/jarvis/attention.go writes Text per kind, and only these put anything in it that the row's own verb
-// does not already say: an escalation's and an ask's question (askText), a blocked dag's reason. A gate's
+// does not already say: an escalation's and an ask's question (askText), a blocked dag's reason, and why a land
+// was held, which is what the human has to clear before Land again can merge. A gate's
 // "Approve before Jarvis proceeds." and a dag-gate's near-twin are constants repeated on every row of that
 // kind, so they are dropped and the width goes to the source — the part that differs.
-const DETAIL_KINDS = new Set(["escalation", "dag-blocked", "ask"]);
+const DETAIL_KINDS = new Set(["escalation", "dag-blocked", "ask", "run-land-held"]);
 
 // A row names its kind in a word beside its dot, so the kind never rides on colour alone.
 const ROW_KIND_LABEL: Record<string, string> = {
@@ -38,6 +39,7 @@ const ROW_KIND_LABEL: Record<string, string> = {
     escalation: "Escalation",
     "dag-blocked": "Blocked",
     ask: "Question",
+    "run-land-held": "Not merged",
 };
 
 export function rowKindLabel(kind: string): string {
@@ -73,7 +75,8 @@ export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM>
     return (items ?? [])
         .filter((item) => item.kind !== PEEK_EXCLUDED_KIND)
         .map((item) => {
-            // actsForAttention returns [] with no runid, [ack, escort] for an unverified run, [escort] otherwise
+            // actsForAttention returns [] with no runid, [ack, escort] for an unverified run, [land, escort] for a
+            // held land, [escort] otherwise
             const [first, second] = actsForAttention(item);
             return {
                 key: item.key,
@@ -81,8 +84,14 @@ export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM>
                 source: item.source,
                 detail: DETAIL_KINDS.has(item.kind) ? item.text : null,
                 waitingsince: item.waitingsince,
-                // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for.
-                primary: first != null ? ({ ...first, label: item.action } as PetAct) : answerInAgent(item, agents),
+                // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. A
+                // land keeps its own label: the item's action ("Review") names the escort, not the retry.
+                primary:
+                    first == null
+                        ? answerInAgent(item, agents)
+                        : first.verb === "land"
+                          ? first
+                          : ({ ...first, label: item.action } as PetAct),
                 secondary: second ?? null,
             };
         });
@@ -143,7 +152,7 @@ export function rowPeekTarget(row: PeekRow | undefined): PetTarget | null {
 
 // The Enter hint names what Enter does to the focused row, which is not always a navigation.
 export function enterHintLabel(act: PetAct | null): string {
-    return act?.verb === "ack" ? "acknowledge" : "open";
+    return act?.verb === "ack" ? "acknowledge" : act?.verb === "land" ? "land again" : "open";
 }
 
 export interface PeekCondition {
