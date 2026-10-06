@@ -271,6 +271,10 @@ local default. Effort realistically L counting step 1. Full reference design in 
 
 ## 4 · Held — pick up only on the named trigger
 
+Code and Diff in the nav rail: re-measure ~2026-10-20 (deferred 2026-10-06): the rail now groups them with Radar
+as tools under Cockpit, Jarvis, Agent and Usage. Drop them from the rail if they are reached almost only through the
+Agent panel's "Open in…" buttons, the palette and `g b` / `g f`; full rationale in `docs/deferred.md`.
+
 Terminal file drop → pasted path (deferred 2026-09-30): the webview gives a dropped file no path, and Tauri's
 native drag-drop needs `dragDropEnabled`, which disables HTML5 drag app-wide. Revive when file drops onto a
 terminal are wanted; full rationale in `docs/deferred.md`.

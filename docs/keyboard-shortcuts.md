@@ -4,7 +4,7 @@ The cockpit is designed to be operated entirely from the keyboard. This is the h
 of the keybinding registry (`frontend/app/store/keybindings/`) — **the registry is the source of
 truth**; when they disagree, the registry is right and this file is stale.
 
-Verified against `bindings.ts` on 2026-09-22.
+Verified against `bindings.ts` on 2026-10-06.
 
 Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`](superpowers/specs/2026-07-03-keyboard-operability-design.md).
 
@@ -24,7 +24,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Code, Diff, Radar, Usage |
+| `Ctrl`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar |
 | `Ctrl`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Ctrl`+`N` | New agent |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |

@@ -7697,7 +7697,7 @@ const agentTreeQuickReturn = {
 // The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's Active section
 // (the live agents) over its flat Conversations list of ended sessions (a row names its project; Show more pages it), the session pane with
 // Resume, Conversation History, Esc back to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions
-// item (Radar on Ctrl+6). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see
+// item (Radar on Ctrl+7). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see
 // installAhMock). Resume is asserted present, never clicked: it would start a real agent. The project filter's menu is not driven: it is a
 // floating menu with no marker to find its items by. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
 const AH_LIVE_ID = "fx-ah-live";
@@ -8179,13 +8179,13 @@ const agentHistory = {
             await ahNap(400);
 
             const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`);
-            await ahKey(h, "6", "Digit6", { ctrlKey: true });
+            await ahKey(h, "7", "Digit7", { ctrlKey: true });
             await ahNap(800);
             const afterChord = await h.activeSurfaceLabel();
             rec(
-                "12. the rail has seven surfaces and no Sessions, and Ctrl+6 opens Radar",
+                "12. the rail has seven surfaces in two groups and no Sessions, and Ctrl+7 opens Radar",
                 !nav.includes("Sessions") &&
-                    JSON.stringify(nav.slice(0, 7)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Code", "Diff", "Radar", "Usage"]) &&
+                    JSON.stringify(nav.slice(0, 7)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Radar"]) &&
                     afterChord === "Radar",
                 JSON.stringify({ nav, afterChord })
             );
@@ -8221,7 +8221,7 @@ const agentHistory = {
                 const reopened = await ahWait(h, `document.querySelector("[data-agent-history]")`, 4000);
                 await ahNap(300);
                 const owner = await ahListNavSurface(h, modules.urls);
-                await ahKey(h, "6", "Digit6", { ctrlKey: true });
+                await ahKey(h, "7", "Digit7", { ctrlKey: true });
                 await ahNap(800);
                 const elsewhere = await h.activeSurfaceLabel();
                 const withdrawn = await ahListNavSurface(h, modules.urls);
