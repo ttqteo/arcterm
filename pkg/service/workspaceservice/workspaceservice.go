@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
@@ -84,28 +85,33 @@ func (svc *WorkspaceService) CloseTab_Meta() tsgenmeta.MethodMeta {
 // latest status. Closing the tab kills each block's process tree, but a background session the tab
 // only attached to runs in the Claude Code daemon, so CloseTab stops those by id.
 func tabSessionIds(ctx context.Context, tabId string, blockIds []string) []string {
-	var args []string
-	var paths []string
 	// an agent reports its status under its block or its tab
-	addStatus := func(scope string) {
+	statusPaths := func(scope string) []string {
+		var paths []string
 		for _, ev := range wps.Broker.ReadEventHistory(wps.Event_AgentStatus, scope, 1) {
 			var d baseds.AgentStatusData
 			if utilfn.ReUnmarshal(&d, ev.Data) == nil {
 				paths = append(paths, d.TranscriptPath)
 			}
 		}
+		return paths
 	}
-	addStatus(waveobj.MakeORef(waveobj.OType_Tab, tabId).String())
+	out := bgagents.SessionIDs(nil, statusPaths(waveobj.MakeORef(waveobj.OType_Tab, tabId).String())...)
 	for _, blockId := range blockIds {
 		block, _ := wstore.DBGet[*waveobj.Block](ctx, blockId)
 		if block == nil {
 			continue
 		}
-		args = append(args, block.Meta.GetStringList(waveobj.MetaKey_CmdArgs)...)
-		paths = append(paths, block.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, ""))
-		addStatus(waveobj.MakeORef(waveobj.OType_Block, blockId).String())
+		// one block's args at a time: a dangling --resume must not pair with the next block's first arg
+		paths := append(statusPaths(waveobj.MakeORef(waveobj.OType_Block, blockId).String()),
+			block.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, ""))
+		for _, id := range bgagents.SessionIDs(block.Meta.GetStringList(waveobj.MetaKey_CmdArgs), paths...) {
+			if !slices.Contains(out, id) {
+				out = append(out, id)
+			}
+		}
 	}
-	return bgagents.SessionIDs(args, paths...)
+	return out
 }
 
 // returns the new active tabid
