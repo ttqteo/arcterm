@@ -180,6 +180,22 @@ fn use_resource_window_icons(hwnd: isize) {
     }
 }
 
+// The NSIS installer stamps the bundle identifier as the AppUserModelID of the Start Menu shortcut,
+// but Tauri never gives the process one, so the taskbar saw two apps in one exe: launched from that
+// shortcut the window was `dev.arc.app`, launched from a pin made without it (a reinstall unpins and
+// the user re-pins) it was the bare exe path, and the running window got its own button beside the
+// pin. Claiming the identifier for the process makes every launch path one taskbar app. Must run
+// before the first window exists. Packaged only: dev shares the identifier and must stay separate.
+#[cfg(all(windows, not(debug_assertions)))]
+fn set_app_user_model_id(identifier: &str) {
+    use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+    let wide: Vec<u16> = identifier.encode_utf16().chain(std::iter::once(0)).collect();
+    let hr = unsafe { SetCurrentProcessExplicitAppUserModelID(wide.as_ptr()) };
+    if hr != 0 {
+        applog::log_line(&format!("[tauri] SetCurrentProcessExplicitAppUserModelID failed: {:#x}", hr));
+    }
+}
+
 // The bundle ships wsh version-named (e.g. wsh-0.14.5-windows.x64.exe), not a plain
 // wsh.exe — find it by pattern in {app_path}/bin.
 fn find_wsh_binary(bin_dir: &std::path::Path) -> Option<PathBuf> {
@@ -221,6 +237,8 @@ fn install_agent_hooks(app_path: &std::path::Path) {
 
 fn main() {
     let context = tauri::generate_context!();
+    #[cfg(all(windows, not(debug_assertions)))]
+    set_app_user_model_id(&context.config().identifier);
     // WebView2 reads these env vars before the webview is created, so they must be set here in
     // main (before the Tauri builder), not in the setup hook. Dev-only: compiled out of packaged.
     #[cfg(debug_assertions)]

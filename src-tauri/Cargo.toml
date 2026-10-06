@@ -22,9 +22,9 @@ tokio = { version = "1", features = ["sync"] }
 
 [target.'cfg(windows)'.dependencies]
 # Job Object APIs to tie wavesrv's lifetime to wave-tauri's (KILL_ON_JOB_CLOSE), and the window-icon
-# calls that load icon.ico's frames from the exe's resource. Pinned to the version already in the tree
-# via Tauri so no duplicate copy is pulled.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
+# calls that load icon.ico's frames from the exe's resource, and the process AppUserModelID. Pinned
+# to the version already in the tree via Tauri so no duplicate copy is pulled.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # WebView2 CapturePreview into an in-memory stream (canvas.rs). Pinned to the versions already
 # in the tree via Tauri/wry so no duplicate copy is pulled.
 webview2-com = "=0.38.2"
