@@ -90,7 +90,7 @@ Out of scope:
    - **Review.** A file header's name (decision 4).
    - **Command palette.** A file pick while the Agent surface shows a focused agent whose working directory holds the
      file opens it in that agent's panel. Anywhere else it opens the Code surface, as today.
-   - A link to a file that does not exist never opens a tab. It shows "File not found: <path>" where the click was.
+   - A link to a file that does not exist never opens a tab. A toast says "File not found: <path>" (`pushToast`).
 7. **Widths.** Overview stays 300px. Review and File share one width.
    - The width defaults to 520px and is dragged on the panel's left edge.
    - It is clamped between 360px and whatever leaves the centre `stage-min` (640px), and persisted as
