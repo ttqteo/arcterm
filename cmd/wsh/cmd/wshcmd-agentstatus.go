@@ -119,6 +119,18 @@ func agentStatusRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	if oref.OType != waveobj.OType_Block && oref.OType != waveobj.OType_Tab {
 		return fmt.Errorf("agentstatus oref must be a block or tab (got %q)", oref.OType)
 	}
+	// the Arc Claude mod reports from inside its session, so a daemon-hosted one is routed as agent-hook routes it
+	// (wshcmd-agenthosted.go). An explicit -b names its block; a session in a terminal keeps its own.
+	if blockArg == "" {
+		target, drop := statusTarget(oref)
+		if drop {
+			return nil
+		}
+		if !agentUsageFlag {
+			releaseStaleStatus(oref, target, agentStatusTranscript)
+		}
+		oref = target
+	}
 
 	if agentUsageFlag {
 		return publishUsageDelta(cmd, oref)

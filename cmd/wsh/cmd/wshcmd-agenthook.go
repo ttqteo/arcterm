@@ -533,17 +533,28 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		hookDebugLine("skip: setupRpcClient failed event=" + ev.HookEventName)
 		return nil
 	}
-	oref, err := resolveBlockArg()
+	envORef, err := resolveBlockArg()
 	if err != nil {
 		hookDebugLine("skip: resolveBlockArg failed event=" + ev.HookEventName)
 		return nil
 	}
-	// stamp the transcript path so a gone-worker exit can derive its outcome from the transcript.
-	// best-effort: a hook must never fail the turn.
 	transcriptPath := ev.TranscriptPath
 	if agentHookShadow != "" {
 		transcriptPath = agentHookShadow
 	}
+	oref := envORef
+	if agentHookShadow == "" {
+		// a session the Claude daemon hosts reports into the tab attached to it, not the tab that started the daemon
+		target, drop := statusTarget(envORef)
+		if drop {
+			hookDebugLine("skip: daemon-hosted session with no tab attached event=" + ev.HookEventName)
+			return nil
+		}
+		oref = target
+		releaseStaleStatus(envORef, oref, transcriptPath)
+	}
+	// stamp the transcript path so a gone-worker exit can derive its outcome from the transcript.
+	// best-effort: a hook must never fail the turn.
 	if transcriptPath != "" {
 		_ = wshclient.SetMetaCommand(RpcClient, wshrpc.CommandSetMetaData{
 			ORef: *oref,

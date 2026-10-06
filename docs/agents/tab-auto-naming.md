@@ -97,3 +97,10 @@ if em.AttachModelTitle && ev.TranscriptPath != "" {
   back to the agent/tab name until the first ai-title lands.
 - In-repo wiring shipped in `1326371c`; the reporter `--title` passthrough (the producer
   half) is the piece that actually lights it up.
+- **A session the Claude daemon hosts reports into the tab attached to it.** A session moved to the
+  background runs under `claude --bg-pty-host …-pty-<key>` and keeps the environment of the terminal that
+  first started the daemon, so its `WAVETERM_BLOCKID` names that terminal. `wsh agent-hook` and the mod's
+  `wsh agentstatus` route its status, title included, and `wsh ask` its card, to the tab running
+  `claude attach <key>`. With no tab attached the status is dropped and the ask falls back to the terminal
+  prompt; the old tab is idled if it still shows the session working (`pkg/agentobserve/hosted.go`,
+  `cmd/wsh/cmd/wshcmd-agenthosted.go`).

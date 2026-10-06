@@ -50,6 +50,15 @@ func askRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	if err != nil {
 		return fmt.Errorf("resolving block: %w", err)
 	}
+	// a daemon-hosted Claude session asks in the tab attached to it, where its status goes too
+	// (wshcmd-agenthosted.go). With no tab attached there is no card to show, so the terminal prompt answers.
+	if blockArg == "" {
+		target, drop := statusTarget(oref)
+		if drop {
+			return fmt.Errorf("the session runs in the Claude daemon with no Arc tab attached")
+		}
+		oref = target
+	}
 
 	if askClear && askWait {
 		return fmt.Errorf("--clear and --wait are mutually exclusive")
