@@ -1,7 +1,8 @@
 # Comments on rendered markdown in the Agent panel — design
 
-Status: approved design 2026-10-06. Mockup (gitignored, deleted when this ships): `.superpowers/design/md-comments/`.
-This amends decision 5 of `docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md` for markdown files: the File
+Status: approved design 2026-10-06; implemented 2026-10-07 (run 74f0fa77). The UI has not run live: see the markdown
+comments row in `docs/open-issues.md`. Mockup (gitignored, deleted once the `md-comments` scenario has run on Windows):
+`.superpowers/design/md-comments/`. This amends decision 5 of `docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md` for markdown files: the File
 tab renders them instead of showing Monaco.
 
 ## Problem
