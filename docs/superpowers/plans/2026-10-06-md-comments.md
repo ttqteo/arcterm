@@ -15,7 +15,7 @@
 
 - Colors only from `@theme` tokens (`bg-surface-hover`, `bg-accent`, `bg-edge-strong`, `text-muted`, `bg-asking`, `text-success`, `text-error`, …); never raw hex/rgba in a component.
 - Inter everywhere except code: the source-line quote (a file-content snippet) and `<kbd>` chips are `font-mono`; a path in a card or the tray is Inter (DESIGN.md Typography).
-- UI copy is English, sentence case, and verbatim from the spec: "Add comment", "Cancel", "Copy", "Send N comments", "Select text and press c, or hover a block and click +, to comment.", "<agent> is waiting on a question — answer it first", "Add or cancel the open comment first", "Sent N comments to <agent>", "Copied. The comments stay until you send or delete them.", "Couldn't reach <agent> — comments kept".
+- UI copy is English, sentence case, and verbatim from the spec: "Add comment", "Cancel", "Copy", "Send N comments", "No comments yet", "Select text and press c, or hover a block and click +, to comment.", "<agent> is waiting on a question — answer it first", "Add or cancel the open comment first", "Sent N comments to <agent>", "Copied. The comments stay until you send or delete them.", "Couldn't reach <agent> — comments kept".
 - Quotes: a selection is one line, whitespace collapsed, cut to 160 characters plus "…" (`QUOTE_MAX`, `proseanchor.ts`); a `+` range is up to 3 non-blank source lines, each cut to 120 characters plus "…", then `… (N more lines)` (`QUOTE_LINES`, `QUOTE_WIDTH`, `linecomments.ts`); an image has no quote.
 - The Preview / Source choice is persisted as `agent.rail.mdMode` (`"preview"` default). Drafts are in memory only.
 - No jsdom render tests: pure logic gets vitest — every gesture's anchor included (`mdcomments.ts`), so `mddoc.tsx` keeps only DOM reading and drawing; rendered UI is checked by the CDP scenario.
@@ -28,7 +28,8 @@
 
 - A file with CRLF line endings, or one that opens with frontmatter: every stamp, comment line and `:line` mark matches the file's own numbering. → Task 1 test "CRLF line endings" and Task 2 test "bodyOffset counts a CRLF frontmatter block".
 - A comment that ends in a table row: its card hangs after the table, never between rows (a `div` in a `tbody` is invalid and React would warn). → Task 2 test "a table row gives way to its table".
-- Opening another comment while the box holds a typed note: the note stays and takes focus, never lost. → Task 3 test "keeps a box that holds text".
+- Opening another comment while the box holds a typed note: the note stays and takes focus, never lost — from another file too, where the panel goes back to the box's file (spec item 11). → Task 3 test "keeps a box that holds text", Task 6 steps 15 and 16.
+- The first comment, being written: the tray reads "No comments yet" with Copy and Send disabled and the reason (spec item 14, board Compose), not the hint line. → Task 6 step 2.
 - An agent that is asking: Send is disabled with the reason, Copy still works. An agent with no terminal (an ended worker): the tray offers Copy alone, no Send (spec item 14). → Task 3 test "blocks while the agent asks…", Task 6 steps 10 and 12.
 - A selection made inside a card or the comment box (copying your own note): no floating Comment button, no anchor. → Task 6 step 3.
 - Shift+click in either direction gives the same range, measured from the block the `+` box opened on. → Task 2 tests "Shift+click downward…" / "…upward…", Task 6 steps 4 and 8.
@@ -39,7 +40,7 @@
 **Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: the md-comments scenario needs CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs md-comments`
 **Prototype:** /Users/me/projects/arcterm/.superpowers/design/md-comments/project/Main.dc.html
 
-No Go changes: the Verify pattern names one small package so that the final stage runs the whole vitest suite. Final runs the `md-comments` scenario (Task 6), whose steps show every board: Main (1), Select and Compose (2), Range (4, 8), Image (5), Cards (6), TrayStates (7 sent, 10 asking, 12 copied), Source (11). On macOS, where WKWebView answers no CDP, it exits 3 at once with that reason instead of building a dev app only to report unverified; the run owns that result.
+No Go changes: the Verify pattern names one small package so that the final stage runs the whole vitest suite. Final runs the `md-comments` scenario (Task 6), whose steps show every board: Main (1), Select and Compose (2, the note typed and the tray blocked), Range (4, 8), Image (5), Cards (6, 14), TrayStates (7 sent, 10 asking, 12 copied), Source (11). Steps 14–17 cover what no board draws: Edit and Delete, a kept box, a box in another file, and a failed send. On macOS, where WKWebView answers no CDP, it exits 3 at once with that reason instead of building a dev app only to report unverified; the run owns that result.
 
 ---
 
@@ -1655,7 +1656,7 @@ git commit -m "feat(agents): per-agent drafts for markdown comments, and the Pre
 
 **Interfaces:**
 - Consumes: `Markdown` props from Task 1 (`srcLineOffset`, `contentBlocks`, `blockAfter`, `resolveOpts`, `header`, `onClickLink`) and the DOM attributes `data-src-start`, `data-src-end`, `data-md-src`; `FrontmatterCard` (Task 1); everything Task 2 and Task 3 produce; `openFileInPanel`, `openRefInCode`, `railMdModeAtom` (`./agentrailstore`); `FileRef` (`./agentrailtabs`).
-- Produces: `MdDoc({ model, agent, fileRef, text })`; `CardSlot({ inside })`, `MdDocContext`, `MdDocCtx`; `FileTab({ model, agent, file })` — note `agent: AgentVM` replaces `agentId`. DOM hooks the scenario uses: `[data-md-doc]` (the focusable Preview body), `[data-md-mark="hit"|"target"]` and `[data-md-bar]` (each with `data-lines="s-e"`), `[data-md-plus]`, `[data-md-image-comment]` (one per image, always in the DOM so Tab reaches it; opacity 0 unless its image is hovered or it has keyboard focus), `[data-md-comment]` (the floating selection button), `[data-md-slot]`, `[data-md-card="<id>"]`, `[data-md-box]`, `[data-md-mode="preview"|"source"]`.
+- Produces: `MdDoc({ model, agent, fileRef, text })`; `revealMdBox(model: AgentsViewModel, agentId: string, shownAbs: string | null): void` (exported from `mddoc.tsx`: shows the agent's open box with the caret in it, opening its file in the panel when `shownAbs` is another file); `CardSlot({ inside })`, `MdDocContext`, `MdDocCtx`; `FileTab({ model, agent, file })` — note `agent: AgentVM` replaces `agentId`. DOM hooks the scenario uses: `[data-md-doc]` (the focusable Preview body), `[data-md-mark="hit"|"target"]` and `[data-md-bar]` (each with `data-lines="s-e"`), `[data-md-plus]`, `[data-md-image-comment]` (one per image, always in the DOM so Tab reaches it; opacity 0 unless its image is hovered or it has keyboard focus), `[data-md-comment]` (the floating selection button), `[data-md-slot]`, `[data-md-card="<id>"]`, `[data-md-box]`, `[data-md-mode="preview"|"source"]`.
 
 - [ ] **Step 1: Write the cards, the box and the slot**
 
@@ -1852,6 +1853,7 @@ export function CardSlot({ inside }: { inside: boolean }) {
 // which block a card hangs after is mdcomments.ts.
 
 import { Markdown } from "@/app/element/markdown";
+import { globalStore } from "@/app/store/jotaiStore";
 import { splitFrontmatter } from "@/app/view/code/codefrontmatter";
 import { FrontmatterCard } from "@/app/view/code/frontmattercard";
 import { formatChordString } from "@/util/keysym";
@@ -1868,7 +1870,7 @@ import {
     type KeyboardEvent,
     type MouseEvent,
 } from "react";
-import { openFileInPanel, openRefInCode } from "./agentrailstore";
+import { openFileInPanel, openRefInCode, railMdModeAtom } from "./agentrailstore";
 import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
@@ -1910,6 +1912,23 @@ function lineOf(el: Element): { start: number; end: number } {
 function toBlock(el: Element): MdBlock {
     const src = el.getAttribute("data-md-src");
     return { kind: blockKind(el.tagName), ...lineOf(el), ...(src != null ? { src } : {}) };
+}
+
+// Shows the agent's open comment box with the caret in it (spec item 11): `shownAbs` is the file the File tab shows.
+// The box renders in Preview only, so Preview is switched on. In another file, or out of Source, the box's Preview
+// mounts and its textarea takes the caret as it renders (autoFocus); here and already in Preview, it is focused now.
+export function revealMdBox(model: AgentsViewModel, agentId: string, shownAbs: string | null): void {
+    const box = globalStore.get(mdCommentAtom(agentId)).box;
+    if (box == null) {
+        return;
+    }
+    const wasPreview = globalStore.get(railMdModeAtom) === "preview";
+    globalStore.set(railMdModeAtom, "preview");
+    if (box.file !== shownAbs) {
+        openFileInPanel(model, agentId, { abs: box.file, root: box.root, line: box.startLine });
+    } else if (wasPreview) {
+        document.querySelector<HTMLTextAreaElement>("[data-rail-file] [data-md-box] textarea")?.focus();
+    }
 }
 
 export function MdDoc({
@@ -2077,9 +2096,8 @@ export function MdDoc({
         return () => document.removeEventListener("selectionchange", update);
     }, [els, blocks]);
 
-    const focusBox = useCallback(() => {
-        contentRef.current?.querySelector<HTMLTextAreaElement>("[data-md-box] textarea")?.focus();
-    }, []);
+    // a box that holds text was kept: the caret goes to it, in its own file when that is not this one
+    const focusBox = useCallback(() => revealMdBox(model, agentId, fileRef.abs), [model, agentId, fileRef.abs]);
     const done = useCallback(() => scrollRef.current?.focus({ preventScroll: true }), []);
     const opened = (r: "opened" | "kept") => {
         if (r === "kept") {
@@ -2435,7 +2453,10 @@ This task's views, states and gestures are shown by Task 6's scenario, which the
 - step 6 — a link to another `.md` opening in the panel, Back keeping the cards, a hovered `+` beside a saved card (Cards);
 - step 8 — Shift+click upward;
 - step 9 — a `#anchor` link scrolling the Preview;
-- step 11 — the `Preview | Source` toggle (Source).
+- step 11 — the `Preview | Source` toggle (Source), Monaco at the line;
+- step 14 — a card's Edit reopening it as the box holding its note, Ctrl+Enter keeping its number, Delete renumbering the rest;
+- step 15 — a new comment meeting a box that holds text: the box stays and takes the caret;
+- step 16 — the box held in `guide.md` while `other.md` shows: a new comment brings the panel back to the box with the caret in it.
 
 Do not start a dev app to check it; say in the task report that the UI is left to those steps.
 
@@ -2462,8 +2483,8 @@ git commit -m "feat(agents): the File tab renders markdown and takes comments on
 - Modify: `docs/deferred.md` (a new entry before "## Code and Diff in the nav rail")
 
 **Interfaces:**
-- Consumes: `mdCommentAtom`, `sendBlock`, `recordSend`, `MdSendResult`, `MdSendBlock` (Task 3); `countLine`, `formatMdComments` (Task 2); `sendLineComments(agent, text): Promise<{ ok: true } | { ok: false; error: string }>` (`./linereviewsend`, with its DEV sink `window.__lineReviewSink`).
-- Produces: `MdCommentTray({ agent })`; DOM hooks `[data-md-tray]`, `[data-md-send]` (not rendered for an agent with no terminal), `[data-md-copy]`, `[data-md-tray-line]`. The File tab's Esc cancels the Preview's open box before it closes the file.
+- Consumes: `mdCommentAtom`, `sendBlock`, `recordSend`, `MdSendResult`, `MdSendBlock` (Task 3); `countLine`, `formatMdComments` (Task 2); `revealMdBox` (Task 4, `./mddoc`); `sendLineComments(agent, text): Promise<{ ok: true } | { ok: false; error: string }>` (`./linereviewsend`, with its DEV sink `window.__lineReviewSink`).
+- Produces: `MdCommentTray({ model, agent, shownAbs })`; DOM hooks `[data-md-tray]`, `[data-md-send]` (not rendered for an agent with no terminal), `[data-md-copy]`, `[data-md-tray-line]`, `[data-md-show-box]` (the "Add or cancel the open comment first" button). The File tab's Esc cancels the Preview's open box before it closes the file.
 
 - [ ] **Step 1: Write the tray**
 
@@ -2482,10 +2503,12 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Check, Plus } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { sendLineComments } from "./linereviewsend";
 import { countLine, formatMdComments } from "./mdcomments";
 import { mdCommentAtom, recordSend, sendBlock, type MdSendBlock, type MdSendResult } from "./mdcommentstore";
+import { revealMdBox } from "./mddoc";
 
 const TRAY = "flex flex-none border-t border-border bg-surface px-[18px] text-[12.5px]";
 const ACCENT_BTN =
@@ -2499,8 +2522,9 @@ function plural(n: number, word: string): string {
 }
 
 // the second line: why Send is disabled, else what the last copy or failure did. No terminal has no line: Send is
-// not offered at all, and Copy is the one action (spec item 14)
-function statusLine(block: MdSendBlock, last: MdSendResult | undefined): ReactNode {
+// not offered at all, and Copy is the one action (spec item 14). An unsaved note's line is a button that shows its box,
+// which may sit in another file (spec item 11)
+function statusLine(block: MdSendBlock, last: MdSendResult | undefined, showBox: () => void): ReactNode {
     const line = (tone: string, body: ReactNode, title?: string) => (
         <span data-md-tray-line title={title} className={cn("flex min-w-0 items-center gap-[6px] text-[12px]", tone)}>
             {body}
@@ -2516,7 +2540,18 @@ function statusLine(block: MdSendBlock, last: MdSendResult | undefined): ReactNo
         );
     }
     if (block?.kind === "draft") {
-        return line("text-muted", "Add or cancel the open comment first");
+        return line(
+            "text-muted",
+            <button
+                type="button"
+                data-md-show-box
+                title="Show the open comment"
+                onClick={showBox}
+                className="cursor-pointer border-0 bg-transparent p-0 text-left text-[12px] text-muted underline-offset-2 hover:text-primary hover:underline"
+            >
+                Add or cancel the open comment first
+            </button>
+        );
     }
     if (last?.ok === false) {
         const text = last.agent ? `Couldn't reach ${last.agent} — comments kept` : "Couldn't copy — comments kept";
@@ -2534,13 +2569,24 @@ function statusLine(block: MdSendBlock, last: MdSendResult | undefined): ReactNo
     return null;
 }
 
-export function MdCommentTray({ agent }: { agent: AgentVM }) {
+// shownAbs: the file the File tab shows, so the reason line knows whether the open box is here or elsewhere
+export function MdCommentTray({
+    model,
+    agent,
+    shownAbs,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    shownAbs: string | null;
+}) {
     const state = useAtomValue(mdCommentAtom(agent.id));
     const [busy, setBusy] = useState(false);
     const n = state.comments.length;
     const last = state.lastSend;
+    // the first comment, being written: the tray shows Send blocked rather than the hint (board Compose)
+    const drafting = state.box != null && state.box.text.trim() !== "";
 
-    if (n === 0) {
+    if (n === 0 && !drafting) {
         if (last?.ok === true && last.kind === "sent") {
             return (
                 <div data-md-tray className={cn(TRAY, "items-center gap-2 py-[13px] text-success")}>
@@ -2598,25 +2644,29 @@ export function MdCommentTray({ agent }: { agent: AgentVM }) {
     return (
         <div data-md-tray className={cn(TRAY, "flex-col gap-[6px] py-[10px]")}>
             <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate font-semibold text-ink-hi">{countLine(state.comments)}</span>
-                <button type="button" data-md-copy disabled={busy} onClick={copy} className={SECONDARY_BTN}>
+                {n > 0 ? (
+                    <span className="min-w-0 flex-1 truncate font-semibold text-ink-hi">{countLine(state.comments)}</span>
+                ) : (
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-muted">No comments yet</span>
+                )}
+                <button type="button" data-md-copy disabled={busy || n === 0} onClick={copy} className={SECONDARY_BTN}>
                     Copy
                 </button>
                 {block?.kind !== "noterm" ? (
                     <button
                         type="button"
                         data-md-send
-                        disabled={block != null || busy}
+                        disabled={block != null || busy || n === 0}
                         title={`Send to ${agent.name} (${chord})`}
                         onClick={send}
                         className={ACCENT_BTN}
                     >
-                        Send {plural(n, "comment")}
+                        {n > 0 ? `Send ${plural(n, "comment")}` : "Send"}
                         <span className={KBD}>{chord}</span>
                     </button>
                 ) : null}
             </div>
-            {statusLine(block, last)}
+            {statusLine(block, last, () => revealMdBox(model, agent.id, shownAbs))}
         </div>
     );
 }
@@ -2665,10 +2715,12 @@ Replace `onKeyDown` with the version below. Esc cancels the comment box this Pre
     };
 ```
 
-After the body container, as the root's last child — shown for a markdown file, and for any file while this agent has drafts or a send result, so Back to a code file does not hide pending comments:
+After the body container, as the root's last child — shown for a markdown file, and for any file while this agent has drafts, a send result or an open box, so Back to a code file does not hide pending comments or the way back to an unsaved note:
 
 ```tsx
-            {markdown || drafts.comments.length > 0 || drafts.lastSend != null ? <MdCommentTray agent={agent} /> : null}
+            {markdown || drafts.comments.length > 0 || drafts.lastSend != null || drafts.box != null ? (
+                <MdCommentTray model={model} agent={agent} shownAbs={ref.abs} />
+            ) : null}
 ```
 
 - [ ] **Step 3: Document the keys**
@@ -2714,13 +2766,17 @@ Expected: PASS.
 
 The tray and the File tab's keys are shown by Task 6's scenario, which the Final stage runs; match each to its mockup board:
 - step 1 — the hint line with no comments (Main);
+- step 2 — the first comment, being written: "No comments yet", Copy and Send disabled, and the reason line (Compose);
 - step 4 — Send disabled with "Add or cancel the open comment first" while the range box holds text, checked before the note is added (Range);
 - step 6 — `4 comments on 2 files`, Copy and **Send 4 comments ⌃↵** (Cards);
 - step 7 — Ctrl+Enter from the document sends the exact message once; "✓ Sent 4 comments to <agent>" (TrayStates, sent);
 - step 8 — Esc with focus in the document cancels the open box and leaves the file open;
 - step 10 — an asking agent: Send disabled with its reason, Copy enabled (TrayStates, asking);
 - step 11 — the tray under Source (Source);
-- step 12 — an agent with no terminal: Copy alone; Copy writes the exact message, reads "Copied. …", and the card stays (TrayStates, copied).
+- step 12 — an agent with no terminal: Copy alone; Copy writes the exact message, reads "Copied. …", and the card stays (TrayStates, copied);
+- step 14 — the tray recounting after a Delete;
+- step 16 — the tray under `other.md` blocked by the box in `guide.md`, and its reason line bringing the panel back to the box with the caret in it;
+- step 17 — a failed send: "Couldn't reach md writer — comments kept", the comment still there.
 
 Do not start a dev app to check it; say in the task report that the UI is left to those steps.
 
@@ -2745,7 +2801,7 @@ git commit -m "feat(agents): send markdown comments to the panel's agent as one 
 
 **Interfaces:**
 - Consumes: the DOM hooks from Task 4 and Task 5; scenario helpers already in `scenarios.mjs`: `polishWaitFor(h, expr, ms)`, `ahReload(h)`, `waitForProjectInConfig(h, name)`, `UI_ROUTE`, `TREE_RAIL_FIXTURE`, `RAIL_VISIBLE_KEY`, `RAIL_SECTIONS_KEY`, `railTabsKey(h, key, code, keyCode, modifiers)`, `railTabsMouse(h, type, x, y, extra)`, `railTabsNap(ms)`.
-- Produces: scenario `md-comments` (`task verify:ui -- md-comments`, Windows only), which the Final stage runs. Its 13 steps are the acceptance Tasks 1, 4 and 5 name.
+- Produces: scenario `md-comments` (`task verify:ui -- md-comments`, Windows only), which the Final stage runs. Its 17 steps are the acceptance Tasks 1, 4 and 5 name.
 
 Do not run prettier on this file. Step 12's agent has no `blockId`, so it waits for the Cockpit card's link rather than a terminal; if a roster agent without a terminal cannot open its panel that way, record it under Found not fixed rather than inventing another route.
 
@@ -2989,17 +3045,20 @@ const mdComments = {
         await h.shot("cdp-shots/md-comments-open.png");
         rec("1. docs/guide.md:9 opens in Preview with line 9's block marked, the image rendered, and the tray's hint line", opened && hit === "9-9" && img && front && tray1.includes("Select text and press"), JSON.stringify({ opened, hit, img, front, tray1 }));
 
-        // 2. a selection, c, a note
+        // 2. a selection, c, a note: while the first note is unsaved the tray reads No comments yet with Copy and Send
+        // disabled and the reason (board Compose); Ctrl+Enter adds it
         await mdcSelect(h, "the one the link names");
         const floated = await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
         await h.shot("cdp-shots/md-comments-select.png");
         await railTabsKey(h, "c", "KeyC", 67);
         const boxRef = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
+        await mdcType(h, "Name the link's target.");
+        const draft2 = await polishWaitFor(h, `${mdcTray}.includes("No comments yet") && ${mdcTray}.includes("Add or cancel the open comment first") && !!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && !!${MDC_ASIDE}?.querySelector("[data-md-copy]")?.disabled`, 3000);
         await h.shot("cdp-shots/md-comments-compose.png");
-        await mdcNote(h, "Name the link's target.");
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
         const card1 = await polishWaitFor(h, `${MDC_DOC}?.querySelectorAll("[data-md-card]").length === 1`, 5000);
         const bar1 = await h.ev(`[...(${MDC_DOC}?.querySelectorAll("[data-md-bar]") ?? [])].map((b) => b.dataset.lines)`);
-        rec("2. a selection floats Comment; c opens the box at :9; Ctrl+Enter adds card 1 with a gutter bar", floated && boxRef.includes("docs/guide.md:9") && card1 && JSON.stringify(bar1) === JSON.stringify(["9-9"]), JSON.stringify({ floated, boxRef, card1, bar1 }));
+        rec("2. a selection floats Comment; c opens the box at :9; the unsaved note blocks the tray (No comments yet, Copy and Send disabled, the reason); Ctrl+Enter adds card 1 with a gutter bar", floated && boxRef.includes("docs/guide.md:9") && draft2 && card1 && JSON.stringify(bar1) === JSON.stringify(["9-9"]), JSON.stringify({ floated, boxRef, draft2, card1, bar1 }));
 
         // 3. a selection inside the card is not a comment target
         await h.ev(`(() => { const n = ${MDC_DOC}.querySelector("[data-md-card] .whitespace-pre-wrap").firstChild; const r = document.createRange(); r.setStart(n, 0); r.setEnd(n, 4); getSelection().removeAllRanges(); getSelection().addRange(r); return true; })()`);
@@ -3110,13 +3169,13 @@ const mdComments = {
         await h.shot("cdp-shots/md-comments-asking.png");
         rec("10. while the agent asks, Send is disabled with the reason and Copy stays enabled", disabled && copyOk && tray10.includes("is waiting on a question"), JSON.stringify({ disabled, copyOk, tray10 }));
 
-        // 11. Source keeps the tray
+        // 11. Source: Monaco at the line (the File tab's accent mark on line 9, filetab.tsx HIT_MARK), and the tray
         await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="source"]')?.click()`);
-        const monaco = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 8000);
+        const monaco = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-rail-file] .monaco-editor .border-accent")`, 8000);
         const tray11 = await h.ev(mdcTray);
         await h.shot("cdp-shots/md-comments-source.png");
         await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="preview"]')?.click()`);
-        rec("11. Source shows Monaco and keeps the tray", monaco && tray11.includes("1 comment on 1 file"), JSON.stringify({ monaco, tray11 }));
+        rec("11. Source shows Monaco with line 9 marked and keeps the tray", monaco && tray11.includes("1 comment on 1 file"), JSON.stringify({ monaco, tray11 }));
 
         // 12. an agent with no terminal: the tray offers Copy alone; Copy writes the exact message, says so, and keeps
         // the card. The reload drops step 10's comment (drafts are in memory only)
@@ -3151,6 +3210,74 @@ const mdComments = {
         const surface13 = await h.activeSurfaceLabel();
         await h.shot("cdp-shots/md-comments-code-preview.png");
         rec("13. the Code surface's preview of guide.md renders the image", surface13 === "Code" && codeImg, JSON.stringify({ surface13, codeImg }));
+
+        // 14. a terminal agent again (the reload drops step 12's comment): Edit reopens card 1 as the box holding its
+        // note, in the card's place; Ctrl+Enter saves it as card 1 again; Delete removes it and card 2 becomes 1
+        mdcRoster(ctx, "working");
+        await ahReload(h);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${MDC_AGENT}"]')`, 15000);
+        const opened14 = await mdcOpenGuide(h);
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        await mdcNote(h, "First note.");
+        await mdcPlus(h, mdcRow("Quick"), false);
+        await mdcNote(h, "Second note.");
+        const mdcCards = `[...(${MDC_DOC}?.querySelectorAll("[data-md-card]") ?? [])]`;
+        // a card's number is its first span (mdcommentcards.tsx CHIP)
+        const mdcCardNum = (c) => `${c}.querySelector("span")?.textContent`;
+        await h.ev(`${MDC_DOC}?.querySelector('button[aria-label="Edit comment 1"]')?.click()`);
+        const editBox = await polishWaitFor(h, `(() => { const t = ${MDC_DOC}?.querySelector("[data-md-box] textarea"); return t?.value === "First note." && document.activeElement === t && ${mdcCards}.length === 1; })()`, 3000);
+        await h.ev(`${MDC_DOC}?.querySelector("[data-md-box] textarea")?.select()`);
+        await h.cdp("Input.insertText", { text: "First note, edited." });
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        const edited = await polishWaitFor(h, `(() => { const c = ${mdcCards}; return c.length === 2 && c[0].innerText.includes("First note, edited.") && ${mdcCardNum("c[0]")} === "1"; })()`, 3000);
+        await h.shot("cdp-shots/md-comments-edited.png");
+        await h.ev(`${MDC_DOC}?.querySelector('button[aria-label="Delete comment 1"]')?.click()`);
+        const deleted = await polishWaitFor(h, `(() => { const c = ${mdcCards}; return c.length === 1 && c[0].innerText.includes("Second note.") && ${mdcCardNum("c[0]")} === "1"; })()`, 3000);
+        const tray14 = await h.ev(mdcTray);
+        rec("14. Edit reopens card 1 as the box holding its note; Ctrl+Enter saves it as card 1 again; Delete removes it, card 2 becomes 1, and the tray counts 1", opened14 && editBox && edited && deleted && tray14.includes("1 comment on 1 file"), JSON.stringify({ opened14, editBox, edited, deleted, tray14 }));
+
+        // 15. a box that holds text stays when another comment starts in its file: c opens nothing new, and the caret
+        // goes back to the box
+        await mdcPlus(h, mdcRow("Goal"), false);
+        await mdcType(h, "Half a thought");
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        const mdcKeptBox = `(() => { const b = ${MDC_DOC}?.querySelectorAll("[data-md-box]") ?? []; const t = b[0]?.querySelector("textarea"); return b.length === 1 && b[0].innerText.includes("docs/guide.md:14") && t?.value === "Half a thought" && document.activeElement === t; })()`;
+        const kept = await polishWaitFor(h, mdcKeptBox, 3000);
+        await h.shot("cdp-shots/md-comments-kept.png");
+        rec("15. with a typed box open on :14, a selection and c keep that box, its text, and give it the caret", kept, JSON.stringify({ kept }));
+
+        // 16. the typed box belongs to guide.md: under other.md the tray is blocked, and its reason line brings the
+        // panel back to the box with the caret in it; so does a new comment begun in other.md. Esc in the box cancels it
+        await h.ev(`[...${MDC_DOC}.querySelectorAll("a")].find((a) => a.textContent === "the other doc").click()`);
+        const other16 = await polishWaitFor(h, `(${MDC_DOC}?.innerText ?? "").includes("The other doc's only paragraph.") && !${MDC_DOC}.querySelector("[data-md-box]")`, 8000);
+        const blocked16 = await h.ev(`!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && !!${MDC_ASIDE}?.querySelector("[data-md-show-box]")`);
+        await h.shot("cdp-shots/md-comments-box-elsewhere.png");
+        await h.ev(`${MDC_ASIDE}?.querySelector("[data-md-show-box]")?.click()`);
+        const viaReason = await polishWaitFor(h, mdcKeptBox, 8000);
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Back"]')?.click()`);
+        await polishWaitFor(h, `(${MDC_DOC}?.innerText ?? "").includes("The other doc's only paragraph.")`, 8000);
+        await mdcSelect(h, "only paragraph");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        const viaComment = await polishWaitFor(h, mdcKeptBox, 8000);
+        await railTabsKey(h, "Escape", "Escape", 27);
+        const cancelled16 = await polishWaitFor(h, `!${MDC_DOC}?.querySelector("[data-md-box]") && !!${MDC_ASIDE}?.querySelector("[data-rail-file]")`, 3000);
+        rec("16. under other.md the box in guide.md blocks Send; the reason line, and a comment begun in other.md, each bring back guide.md with the caret in the box; Esc there cancels it", other16 && blocked16 && viaReason && viaComment && cancelled16, JSON.stringify({ other16, blocked16, viaReason, viaComment, cancelled16 }));
+
+        // 17. a send that fails keeps the comment and says so (the DEV sink throwing is a failed send)
+        await h.ev(`(() => { window.__lineReviewSink = () => { throw new Error("terminal gone"); }; return true; })()`);
+        await h.ev(`${MDC_DOC}?.focus()`);
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        const failed = await polishWaitFor(h, `${mdcTray}.includes("Couldn't reach md writer — comments kept")`, 5000);
+        const cards17 = await h.ev(`${MDC_DOC}?.querySelectorAll("[data-md-card]").length ?? 0`);
+        const tray17 = await h.ev(mdcTray);
+        await h.shot("cdp-shots/md-comments-failed.png");
+        rec("17. a failed send keeps the comment and the tray reads Couldn't reach md writer — comments kept", failed && cards17 === 1 && tray17.includes("1 comment on 1 file"), JSON.stringify({ failed, cards17, tray17 }));
         return steps;
     },
     async teardown(h, ctx) {
@@ -3201,7 +3328,7 @@ Expected: `true`.
 - [ ] **Step 4: Run it (Windows dev machine only)**
 
 On Windows with `task dev` running: `task verify:ui -- md-comments`
-Expected: steps 1–13 PASS; `cdp-shots/index.html` shows open (Main), select and compose (Select, Compose), range and range-up (Range), image and image-card (Image), cards (Cards), sent, asking and copied (TrayStates), anchor, source (Source) and code-preview shots that match the mockup boards. On macOS skip this step and say so in the task report: the Final stage runs the scenario on Windows and reports unverified on macOS.
+Expected: steps 1–17 PASS; `cdp-shots/index.html` shows open (Main), select and compose (Select, Compose), range and range-up (Range), image and image-card (Image), cards (Cards), sent, asking and copied (TrayStates), anchor, source (Source) and code-preview shots that match the mockup boards, then edited, kept, box-elsewhere and failed. On macOS skip this step and say so in the task report: the Final stage runs the scenario on Windows and reports unverified on macOS.
 
 - [ ] **Step 5: Commit**
 
