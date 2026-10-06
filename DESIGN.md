@@ -411,8 +411,9 @@ Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
   hover:bg-surface-hover` (see `cockpit/app-bar.tsx`).
 - **Tooltips** — give the control a `title`, with its shortcut in trailing
   parentheses (`Hide the review (Esc)`). `element/titletiphost.tsx` shows every
-  title immediately in the app's own chip, the shortcut muted at the right;
-  `data-tip-placement` overrides where it opens.
+  title immediately in the app's own chip, the shortcut muted at the right,
+  revealed in 90 ms from the side facing the control (`tooltipReveal`) and gone
+  at once; `data-tip-placement` overrides where it opens.
 - **Status indicators** — dot + color + pulse (`pulse-dot` on `bg-working`/`bg-asking`;
   `pulse-dot-slow`, `pulse-soft` for the slower curves); status is never color alone.
   The pulse is drawn at 12fps by `element/pulsedriver.tsx`, not a CSS animation:

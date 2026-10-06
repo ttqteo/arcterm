@@ -6,7 +6,9 @@
 // renderer rather than the thing that decides (design §5).
 //
 // The precedence is strict and lives here and nowhere else (design §3):
-//   1 tired — the rate-limit window depleting. Cyclical, legible within a day, and not your fault.
+//   1 ram-full — no more worker fits in free RAM (workercapacity.ts). Ranked first because it is the one you
+//     can fix right now: start fewer workers.
+//   2 tired — the rate-limit window depleting. Cyclical, legible within a day, and not your fault.
 // Nothing present => at-rest.
 //
 // Every input field is optional, and an absent field is "no signal" — never "signal absent". That
@@ -15,6 +17,7 @@
 
 import { formatReset, usageLevel } from "@/app/view/agents/agentsviewmodel";
 import { providerLabel } from "@/app/view/agents/cockpitrailmodel";
+import { formatGB } from "@/app/view/agents/workercapacity";
 
 export interface PetSignals {
     // rank 1: highest 5-hour utilisation across providers (0..100). `resetAt` is epoch SECONDS, matching
@@ -22,20 +25,33 @@ export interface PetSignals {
     // `provider` is required because the reading is per-provider and the highest wins: unnamed, a codex
     // window reads as a claude one, and the countdown belongs to whichever provider won.
     rateLimit?: { provider: string; pct: number; resetAt?: number };
+    // rank 1: the worker-capacity reading (GetWorkerCapacityCommand), in bytes. `more` is how many more
+    // workers fit; 0 is a full RAM. perWorker is a typical worker, heavy the heaviest job (pkg/workercap).
+    memory?: { more: number; available: number; perWorker: number; heavy: number };
     // posture: kinds only. The creature never renders a count — the nav badge owns that (design §3).
     attention?: { reviewGates: number; escalations: number; blockedWorkers: number };
 }
 
-export type PetExpression = { kind: "tired"; provider: string; pct: number; resetAt?: number } | { kind: "at-rest" };
+export type PetExpression =
+    | { kind: "ram-full"; available: number; perWorker: number; heavy: number }
+    | { kind: "tired"; provider: string; pct: number; resetAt?: number }
+    | { kind: "at-rest" };
 
 export type PetPosture = "review-gate" | "escalation" | "blocked-worker" | "none";
 
 // The rank of each expression, exported so the precedence is assertable rather than inferred from the
 // order of ifs below.
 export const EXPRESSION_RANK: Record<PetExpression["kind"], number> = {
-    tired: 1,
-    "at-rest": 2,
+    "ram-full": 1,
+    tired: 2,
+    "at-rest": 3,
 };
+
+// A full RAM wears the tired look (slow walk, long rests, the sweat drop) rather than pixels of its own: both
+// say "strained", and the peek's line says which strain.
+export function wearsTired(kind: PetExpression["kind"]): boolean {
+    return kind === "tired" || kind === "ram-full";
+}
 
 // tiredness starts where the cockpit's own usage bands stop being "ok" (>60%), so every consumer reports
 // the same window honestly even when a higher-priority expression owns the creature.
@@ -48,6 +64,10 @@ export function isWindowConstrained(rateLimit: PetSignals["rateLimit"]): boolean
 // an empty list is how quiet is spelled.
 export function conditionsFor(signals: PetSignals): PetExpression[] {
     const out: PetExpression[] = [];
+    const mem = signals.memory;
+    if (mem != null && mem.more <= 0) {
+        out.push({ kind: "ram-full", available: mem.available, perWorker: mem.perWorker, heavy: mem.heavy });
+    }
     const rl = signals.rateLimit;
     if (rl != null && isWindowConstrained(rl)) {
         out.push({ kind: "tired", provider: rl.provider, pct: rl.pct, resetAt: rl.resetAt });
@@ -85,6 +105,8 @@ export function postureFor(signals: PetSignals): PetPosture {
 // Here rather than in the renderer so the bubble and the peek cannot word the same condition differently.
 export function conditionLine(expr: PetExpression, nowMs: number): string {
     switch (expr.kind) {
+        case "ram-full":
+            return `RAM is full — ${formatGB(expr.available)} free; a worker needs ~${formatGB(expr.perWorker)}, a heavy job like tsc ~${formatGB(expr.heavy)}.`;
         case "tired": {
             const pct = Math.round(expr.pct);
             const who = providerLabel(expr.provider);

@@ -9,6 +9,7 @@ import { cardVariants, composerReveal } from "@/app/element/motiontokens";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { sayIfOverCapacity } from "@/app/view/jarvis/petcapacity";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { ArrowRight, Check, ChevronDown, ChevronRight, Network, SquareTerminal, Workflow } from "lucide-react";
@@ -28,6 +29,7 @@ import {
 } from "./agentsviewmodel";
 import { AnswerBar, DocReviewSummary } from "./answerbar";
 import { AttentionBanner } from "./attentioncard";
+import { CapacityWarn } from "./capacitywarn";
 import { diffStatsByIdAtom } from "./cardgitstore";
 import type { CardShare } from "./cardgridlayout";
 import {
@@ -63,6 +65,8 @@ import { SubLabel } from "./sectionlabel";
 import { parseDocReview } from "./docreview";
 import { StatusLine } from "./statusline";
 import { JumpToLatestPill, useStickToBottom } from "./sticktobottom";
+import { extraWorkers, overCapacity } from "./workercapacity";
+import { useWorkerCapacity } from "./workercapacitystore";
 
 const CTL_BOX =
     "flex h-[23px] w-[25px] shrink-0 cursor-pointer items-center justify-center rounded-sm border border-edge-mid text-secondary hover:border-edge-strong hover:bg-surface-hover";
@@ -131,6 +135,7 @@ export function LeadCard(p: LeadCardProps) {
     const paneOpen =
         useAtomValue(leadPaneOpenAtom)[run.runId] ?? (bodyRect == null || bodyRect.height >= LEAD_PANE_MIN_BODY_PX);
     const telling = useAtomValue(tellingRowAtom);
+    const cap = useWorkerCapacity();
     const [guide, setGuide] = useState<Record<string, string>>({});
 
     // one path for every engine action, shared with the keyboard: a refusal is shown on the card, never swallowed
@@ -160,6 +165,8 @@ export function LeadCard(p: LeadCardProps) {
     const review = leadAsking ? parseDocReview(lead.ask) : null;
     const question = lead?.ask?.questions?.[answerTab[lead.id] ?? 0]?.question;
     const parValue = par ?? run.dag?.parallelism ?? 1;
+    // a live run's new width only adds the workers above the tasks already running
+    const parExtra = extraWorkers(parValue, runningCount(vm.rows));
     const mark = leadMark(run, lead);
     const leadIcon = (
         <Workflow size={13} aria-hidden className={cn("shrink-0", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)} />
@@ -544,7 +551,12 @@ export function LeadCard(p: LeadCardProps) {
                             >
                                 −
                             </button>
-                            <span className="min-w-[14px] text-center text-[12px] font-semibold tabular-nums text-primary">
+                            <span
+                                className={cn(
+                                    "min-w-[14px] text-center text-[12px] font-semibold tabular-nums",
+                                    overCapacity(cap, parExtra) ? "text-warning" : "text-primary"
+                                )}
+                            >
                                 {parValue}
                             </span>
                             <button
@@ -554,11 +566,15 @@ export function LeadCard(p: LeadCardProps) {
                             >
                                 +
                             </button>
+                            <CapacityWarn cap={cap} extra={parExtra} />
                             <span className="min-w-0 flex-1 text-[11px] text-muted">applies to new dispatches</span>
                             <button
                                 type="button"
                                 onClick={() => {
-                                    act("Parallelism", () => setRunParallelism(run, parValue));
+                                    act("Parallelism", async () => {
+                                        await setRunParallelism(run, parValue);
+                                        sayIfOverCapacity({ picked: parValue, extra: parExtra, live: true });
+                                    });
                                     setPanel(null);
                                 }}
                                 className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-accent px-[11px] text-[11.5px] font-semibold text-background"

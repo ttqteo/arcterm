@@ -20,6 +20,7 @@ type DagCommands interface {
 	DagMergeContinueCommand(ctx context.Context, data CommandDagMergeData) error                                      // finish a resolved squash merge, or re-run a failed Verify
 	DagAsksCommand(ctx context.Context, data CommandDagStatusData) (*CommandDagAsksRtnData, error)                    // pending child asks (children block on one at a time)
 	DagAnswerCommand(ctx context.Context, data CommandDagAnswerData) error                                            // deliver an answer to a child's pending ask
+	GetWorkerCapacityCommand(ctx context.Context) (*CommandGetWorkerCapacityRtnData, error)                           // free RAM and how many more workers it holds (pkg/workercap)
 }
 
 // A submission is a plan file or a typed task list. Every shipped caller sends a plan file — `wsh jarvis
@@ -272,4 +273,16 @@ type DagTaskDuration struct {
 	MergeWaitMs int64  `json:"mergewaitms,omitempty"`
 	CleanupMs   int64  `json:"cleanupms,omitempty"`
 	Partial     bool   `json:"partial,omitempty"`
+}
+
+// CommandGetWorkerCapacityRtnData is the app bar chip's and the worker steppers' reading (pkg/workercap).
+type CommandGetWorkerCapacityRtnData struct {
+	TotalBytes     uint64 `json:"totalbytes"`
+	AvailableBytes uint64 `json:"availablebytes"` // gopsutil Available: darwin free+inactive, Windows ullAvailPhys
+	PerWorkerBytes uint64 `json:"perworkerbytes"` // a typical worker: the mean of the workers' means
+	HeavyBytes     uint64 `json:"heavybytes"`     // the heaviest job: the highest peak (a tsc run)
+	Measured       bool   `json:"measured"`       // false: PerWorkerBytes and HeavyBytes are the defaults, no worker sampled yet
+	LiveWorkers    int    `json:"liveworkers"`
+	ReserveBytes   uint64 `json:"reservebytes"` // room the live workers may still grow into, plus one heavy job's extra
+	MoreWorkers    int    `json:"moreworkers"`
 }

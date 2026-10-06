@@ -19,6 +19,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import { planShapeText, planWarnings } from "../orchestrate/dagdigest";
+import { CapacityWarn } from "./capacitywarn";
 import { RoutePicker } from "./routepicker";
 import {
     MAX_PARALLELISM,
@@ -49,6 +50,8 @@ import {
     stepParallelism,
     workerRouteAtom,
 } from "./runconfigstore";
+import { extraWorkers, overCapacity } from "./workercapacity";
+import { useWorkerCapacity } from "./workercapacitystore";
 
 export const EYEBROW = "text-[10.5px] font-bold uppercase tracking-[.09em] text-ink-mid";
 
@@ -75,6 +78,8 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 export function ShapeCards({ showParallelism }: { showParallelism: boolean }) {
     const shape = useAtomValue(runShapeAtom);
     const par = useAtomValue(parallelismAtom);
+    const cap = useWorkerCapacity();
+    const extra = extraWorkers(par);
     return (
         <Section label="Shape">
             <div className="flex items-center gap-1.5">
@@ -100,7 +105,8 @@ export function ShapeCards({ showParallelism }: { showParallelism: boolean }) {
                 {showParallelism ? (
                     <div className="ml-auto flex items-center gap-1.5">
                         <span className="text-[10.5px] text-ink-mid">workers</span>
-                        <WorkerStepper value={par} onStep={stepParallelism} />
+                        <WorkerStepper value={par} onStep={stepParallelism} warn={overCapacity(cap, extra)} />
+                        <CapacityWarn cap={cap} extra={extra} />
                     </div>
                 ) : null}
             </div>
@@ -224,12 +230,15 @@ export function WorkerStepper({
     onStep,
     disabled = false,
     unsetLabel = "–",
+    warn = false,
 }: {
     value: number | null;
     onStep: (delta: number) => void;
     disabled?: boolean;
     // what a null value reads as: the launcher's dash, or the profile's "auto"
     unsetLabel?: string;
+    // the pick is more workers than fit in RAM (CapacityWarn says why)
+    warn?: boolean;
 }) {
     return (
         <>
@@ -246,7 +255,7 @@ export function WorkerStepper({
                 aria-live="polite"
                 className={cn(
                     "min-w-4 text-center text-[12px] tabular-nums",
-                    value == null ? "text-ink-mid" : "text-primary"
+                    value == null ? "text-ink-mid" : warn ? "text-warning" : "text-primary"
                 )}
             >
                 {value ?? unsetLabel}

@@ -14,7 +14,7 @@
 // decision 6). It is also stepped whenever an input changes, at any time, so every timed state remembers
 // when its next frame is due and an early step neither moves it nor ends its rest.
 
-import type { PetExpression, PetPosture } from "./petcondition";
+import { wearsTired, type PetExpression, type PetPosture } from "./petcondition";
 import { PET_CELL_PX, PET_PX, type PetMark, type PetPose } from "./petsprite";
 
 export type WalkerStateName = "walk" | "rest" | "sleep" | "hold" | "hop" | "dragged";
@@ -214,7 +214,7 @@ function pickTarget(x: number, input: WalkerInput, rand: () => number): number {
 }
 
 function frameMsFor(input: WalkerInput): number {
-    return input.expression === "tired" ? TIRED_FRAME_MS : FRAME_MS;
+    return wearsTired(input.expression) ? TIRED_FRAME_MS : FRAME_MS;
 }
 
 function isIdle(input: WalkerInput, now: number): boolean {
@@ -233,7 +233,7 @@ function rest(s: WalkerState, input: WalkerInput, now: number, rand: () => numbe
     const length = REST_MIN_MS + rand() * (REST_MAX_MS - REST_MIN_MS);
     return {
         ...still(s, "rest"),
-        due: now + (input.expression === "tired" ? 2 * length : length),
+        due: now + (wearsTired(input.expression) ? 2 * length : length),
         restPose: rand() < 0.5 ? "stand" : "sit",
     };
 }
@@ -283,7 +283,7 @@ function poseOf(s: WalkerState, input: WalkerInput): PetPose {
         case "walk":
             return Math.floor(s.frame / 2) % 2 === 0 ? "walk1" : "walk2";
         case "rest":
-            return input.expression === "tired" ? "tired" : s.restPose;
+            return wearsTired(input.expression) ? "tired" : s.restPose;
         case "sleep":
             return "sleep";
         case "hold":

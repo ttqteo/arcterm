@@ -36,3 +36,27 @@ export function splitTitle(title: string): TipText {
     }
     return { label: text };
 }
+
+// A modifier pressed alone is not the user moving on: it is the start of a chord, and on macOS the screenshot
+// chords (⌘⇧4, ⌘⇧5) deliver their modifiers to the page before the system takes the last key. Dismissing on
+// those made a tooltip impossible to capture.
+const MODIFIER_KEYS = new Set(["Meta", "Shift", "Control", "Alt", "AltGraph", "CapsLock", "Fn", "FnLock", "OS"]);
+
+export function keyDismissesTip(key: string): boolean {
+    return !MODIFIER_KEYS.has(key);
+}
+
+const OPPOSITE: Record<string, string> = { top: "bottom", bottom: "top", left: "right", right: "left" };
+
+// The CSS transform-origin a tip grows from: the side facing its anchor, at the placement's alignment, so the
+// reveal reads as coming out of the control. Takes the placement floating-ui resolved, which flip() may have
+// turned around.
+export function tooltipOrigin(placement: string): string {
+    const [side, align] = placement.split("-");
+    if (side === "top" || side === "bottom") {
+        const x = align === "start" ? "left" : align === "end" ? "right" : "center";
+        return `${x} ${OPPOSITE[side]}`;
+    }
+    const y = align === "start" ? "top" : align === "end" ? "bottom" : "center";
+    return `${OPPOSITE[side] ?? "left"} ${y}`;
+}

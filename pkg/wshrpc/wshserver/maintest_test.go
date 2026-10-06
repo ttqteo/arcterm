@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,12 @@ func TestMain(m *testing.M) {
 	// (a2c2ca6e). Tests that need the tick run it themselves or record the poke.
 	scheduleDag = func(string) {}
 	code := m.Run()
+	// a test that repoints the config home without restoring it hands every later test the real vault
+	// (fixture efforts and tasks landed in ~/.waveterm/vault that way); TestVaultIsTheTestsOwn runs too early to see it
+	if root := memroots.VaultRoot(); !strings.HasPrefix(filepath.Clean(root), filepath.Clean(testVaultDir)) {
+		fmt.Fprintf(os.Stderr, "FAIL: after the tests the vault root is %q, outside the test vault %q\n", root, testVaultDir)
+		code = 1
+	}
 	os.RemoveAll(dir)
 	os.Exit(code)
 }

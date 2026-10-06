@@ -273,12 +273,13 @@ func stubTurnEnded(t *testing.T, at int64) {
 
 func stubChildCPU(t *testing.T, sample func(call int) (int64, bool)) {
 	t.Helper()
-	prev, calls := childCPUTime, 0
-	childCPUTime = func(string) (int64, bool) {
+	prev, calls := childTreeSample, 0
+	childTreeSample = func(string) (treeSample, bool) {
 		calls++
-		return sample(calls)
+		cpu, ok := sample(calls)
+		return treeSample{CPUMs: cpu}, ok
 	}
-	t.Cleanup(func() { childCPUTime = prev })
+	t.Cleanup(func() { childTreeSample = prev })
 }
 
 func tick(t *testing.T, ctx context.Context, g *waveobj.TaskGroup) *waveobj.TaskNode {
@@ -327,6 +328,25 @@ func TestCPUSampleIsThrottled(t *testing.T) {
 	tick(t, ctx, g)
 	if calls != 1 {
 		t.Fatalf("two ticks inside cpuSampleEvery sample once, got %d", calls)
+	}
+}
+
+// The liveness sample is also the worker-capacity reading: the worker's block and its tree's RSS reach
+// workercap on the same walk that reads its CPU.
+func TestCPUSampleReportsTheTreeRSS(t *testing.T) {
+	ctx, g, _ := seedChildWrittenAt(t, "rss-sample", time.Now().Add(-2*time.Minute))
+	prevTree := childTreeSample
+	childTreeSample = func(string) (treeSample, bool) { return treeSample{CPUMs: 1000, RSS: 700 << 20}, true }
+	t.Cleanup(func() { childTreeSample = prevTree })
+	var gotBlock string
+	var gotRSS uint64
+	prevObserve := observeWorkerRSS
+	observeWorkerRSS = func(blockId string, rss uint64) { gotBlock, gotRSS = blockId, rss }
+	t.Cleanup(func() { observeWorkerRSS = prevObserve })
+
+	tick(t, ctx, g)
+	if gotBlock != "worker-block" || gotRSS != 700<<20 {
+		t.Fatalf("observeWorkerRSS got (%q, %d), want (\"worker-block\", 700 MiB)", gotBlock, gotRSS)
 	}
 }
 

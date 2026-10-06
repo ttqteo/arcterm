@@ -144,7 +144,7 @@ export function DailyChart({
     }
 
     return (
-        <div className="mb-4 rounded-[14px] border border-border bg-surface-raised px-[22px] pb-5 pt-[18px]">
+        <div className="rounded-[14px] border border-border bg-surface-raised px-[22px] pb-5 pt-[18px]">
             <div className="mb-5 flex flex-wrap items-center gap-3">
                 <h3 className="text-[15px] font-bold tracking-[-0.01em] text-primary">Daily</h3>
                 <span className="text-[11px] text-muted">

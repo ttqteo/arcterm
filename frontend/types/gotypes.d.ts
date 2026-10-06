@@ -951,6 +951,18 @@ declare global {
         weektokens: number;
     };
 
+    // wshrpc.CommandGetWorkerCapacityRtnData
+    type CommandGetWorkerCapacityRtnData = {
+        totalbytes: number;
+        availablebytes: number;
+        perworkerbytes: number;
+        heavybytes: number;
+        measured: boolean;
+        liveworkers: number;
+        reservebytes: number;
+        moreworkers: number;
+    };
+
     // wshrpc.CommandGitChangesData
     type CommandGitChangesData = {
         cwd: string;

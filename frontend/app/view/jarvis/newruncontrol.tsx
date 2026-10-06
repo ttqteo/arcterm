@@ -26,6 +26,7 @@ import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { AgentsViewModel } from "../agents/agents";
+import { CapacityWarn } from "../agents/capacitywarn";
 import { channelsAtom, createChannel, primeChannels } from "../agents/channelsstore";
 import { noteRecentProject, projectListAtom, recentProjectsAtom } from "../agents/projectsstore";
 import { RoutePicker } from "../agents/routepicker";
@@ -62,6 +63,8 @@ import {
     workerRouteAtom,
 } from "../agents/runconfigstore";
 import { ShapeCards, WorkerStepper, usePlanPreview } from "../agents/runlauncher";
+import { extraWorkers, overCapacity } from "../agents/workercapacity";
+import { useWorkerCapacity } from "../agents/workercapacitystore";
 import { planShapeText, planWarnings } from "../orchestrate/dagdigest";
 import {
     initialPick,
@@ -297,6 +300,8 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
     const pref = useAtomValue(harnessPreferenceAtom);
     const shape = useAtomValue(runShapeAtom);
     const parallelism = useAtomValue(parallelismAtom);
+    const cap = useWorkerCapacity();
+    const extra = extraWorkers(parallelism);
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
@@ -475,7 +480,12 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
                                 {orchestrator ? (
                                     <div className="flex items-center gap-1.5">
                                         <span className="flex-1 text-[12px] text-ink-mid">Workers at once</span>
-                                        <WorkerStepper value={parallelism} onStep={stepParallelism} />
+                                        <WorkerStepper
+                                            value={parallelism}
+                                            onStep={stepParallelism}
+                                            warn={overCapacity(cap, extra)}
+                                        />
+                                        <CapacityWarn cap={cap} extra={extra} />
                                     </div>
                                 ) : null}
                             </div>

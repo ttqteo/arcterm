@@ -16,6 +16,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { liveWindowAgents, providerPlanUsage } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { mergeRateLimitWindows, savedRateLimitsAtom, topProviderUsage } from "@/app/view/agents/ratelimitstore";
+import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
 import { motion, useMotionValue, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -69,6 +70,7 @@ function usePetSignals(model: AgentsViewModel): PetSignals {
     const saved = useAtomValue(savedRateLimitsAtom);
     const now = useAtomValue(model.nowAtom);
     const attention = useAtomValue(attentionAtom);
+    const cap = useWorkerCapacity();
 
     const donuts = mergeRateLimitWindows(providerPlanUsage(liveWindowAgents(agents)), saved, now);
     const top = topProviderUsage(donuts);
@@ -83,6 +85,15 @@ function usePetSignals(model: AgentsViewModel): PetSignals {
 
     return {
         rateLimit,
+        memory:
+            cap != null
+                ? {
+                      more: cap.moreworkers,
+                      available: cap.availablebytes,
+                      perWorker: cap.perworkerbytes,
+                      heavy: cap.heavybytes,
+                  }
+                : undefined,
         attention: {
             reviewGates: count(attention, ATTENTION_GATE),
             escalations: count(attention, ATTENTION_ESCALATION),

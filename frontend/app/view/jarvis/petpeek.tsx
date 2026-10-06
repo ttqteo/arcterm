@@ -84,6 +84,9 @@ const ORIGIN: Record<PetCorner, string> = {
 // unremedied condition ends in "no action" rather than in nothing. A spent window reads red, not amber:
 // the line already says "spent", and the dot must not understate it.
 function conditionDot(expr: PetExpression): string {
+    if (expr.kind === "ram-full") {
+        return "bg-warning";
+    }
     if (expr.kind === "tired") {
         return expr.pct >= 100 ? "bg-error" : "bg-warning";
     }

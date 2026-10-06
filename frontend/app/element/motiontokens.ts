@@ -10,6 +10,7 @@ export const MOTION = {
     durMacro: 0.36, // entrances, reflow
     durMicro: 0.14, // feedback, composer reveal
     durExit: 0.28, // exits leave a touch quicker than they arrive
+    durTip: 0.09, // a hover tooltip: there before the eye arrives, never a wait
     easeFluid: [0.22, 1, 0.36, 1] as [number, number, number, number],
 } as const;
 
@@ -69,6 +70,13 @@ export const popoverReveal: Variants = {
     initial: { opacity: 0, scale: 0.96 },
     animate: { opacity: 1, scale: 1, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
     exit: { opacity: 0, scale: 0.96, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+};
+
+// Hover tooltip reveal (titletiphost.tsx). Opacity + scale from the side facing the anchor, open only: a tip
+// leaves at once, so sweeping the pointer along a toolbar never trails a fading one behind it.
+export const tooltipReveal: Variants = {
+    initial: { opacity: 0, scale: 0.96 },
+    animate: { opacity: 1, scale: 1, transition: { duration: MOTION.durTip, ease: MOTION.easeFluid } },
 };
 
 // Narration burst guard (moment 5): only prose/user turns fade in. Tool-action bursts

@@ -25,7 +25,11 @@ import (
 // newLandingRepo is a git project with one commit on main.
 func newLandingRepo(t *testing.T) (string, func(args ...string) string) {
 	t.Helper()
-	dir := t.TempDir()
+	// resolved: on macOS the temp dir is under /var, a link to /private/var, and git prints the resolved path
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	execGit := func(args ...string) string {
 		t.Helper()
 		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()

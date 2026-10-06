@@ -13,6 +13,7 @@ import { primeChannels } from "./channelsstore";
 import { initHarnessPreference, loadHarnesses } from "./harnessstore";
 import { CodeSurface } from "@/app/view/code/codesurface";
 import { CockpitSurface } from "./cockpitsurface";
+import { useDockBadge } from "./dockbadgesync";
 import { useDocCompileSync } from "./docpdfstore";
 import { DocReviewDialog } from "./docreviewdialog";
 import { useDocReviewSync } from "./docreviewstore";
@@ -111,6 +112,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useEffect(() => setupRosterSeededLatch(), []);
     // a turn can end while any surface shows, so the unread set is kept here, not in the Agent surface
     useUnreadTracking(model);
+    useDockBadge();
     const surface = useAtomValue(model.surfaceAtom);
     return (
         <div className="flex h-full w-full">

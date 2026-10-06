@@ -161,9 +161,10 @@ export interface PeekCondition {
     readout: boolean;
 }
 
-// The rate-limit countdown is the one condition with genuinely nothing to do (petacts.ts header). Naming it
-// here rather than inferring it keeps "no remedy" and "no remedy yet" distinguishable.
-const READOUT_KINDS = new Set<PetExpression["kind"]>(["tired"]);
+// The rate-limit countdown has genuinely nothing to do (petacts.ts header), and a full RAM has no act here: its
+// remedy is a smaller width at the next pick, which the line says. Naming them here rather than inferring it
+// keeps "no remedy" and "no remedy yet" distinguishable.
+const READOUT_KINDS = new Set<PetExpression["kind"]>(["tired", "ram-full"]);
 
 // Every standing condition in rank order, each marked readout or not.
 export function peekConditions(signals: PetSignals): PeekCondition[] {
