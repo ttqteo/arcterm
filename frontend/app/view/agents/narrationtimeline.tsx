@@ -239,7 +239,7 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
 // A single tool action row. Clickable when it carries detail: short detail expands inline, detail
 // past the per-kind budget opens the viewport modal. The bare-line look is preserved when detail
 // is absent (e.g. Codex actions, or Claude tools with no captured body).
-function ToolLine({ action }: { action: AgentActionEntry }) {
+export function ToolLine({ action }: { action: AgentActionEntry }) {
     const [open, setOpen] = useState(false);
     const ok = action.outcome !== "fail";
     const detail = action.detail;
@@ -307,7 +307,7 @@ function ToolLine({ action }: { action: AgentActionEntry }) {
 
 // A folded run of consecutive edits (Wave-transcript-feed.dc.html burst). Summary row: "N files
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
-function CommandChip({ name, args, isSkill }: { name: string; args?: string; isSkill?: boolean }) {
+export function CommandChip({ name, args, isSkill }: { name: string; args?: string; isSkill?: boolean }) {
     return (
         <div className="mt-2 flex justify-end">
             <span
@@ -328,7 +328,7 @@ function CommandChip({ name, args, isSkill }: { name: string; args?: string; isS
     );
 }
 
-function CompactionDivider({
+export function CompactionDivider({
     trigger,
     preTokens,
     postTokens,
@@ -434,7 +434,7 @@ function EditBurstRow({ files, adds, dels }: { files: EditFile[]; adds: number; 
 }
 
 // The human interrupted the agent mid-turn. A thin centered marker, not a You bubble.
-function InterruptedDivider() {
+export function InterruptedDivider() {
     return (
         <div className="mt-3 flex items-center gap-2.5">
             <span className="h-px flex-1 bg-edge-mid" />
@@ -449,7 +449,7 @@ function InterruptedDivider() {
 
 // A finished background Task/subagent (<task-notification>). Collapsed: a "Task" chip + summary +
 // status pill; expands to the child's full result via MarkdownMessage (result can be large).
-function TaskNotificationRow({ summary, status, result }: { summary: string; status?: string; result?: string }) {
+export function TaskNotificationRow({ summary, status, result }: { summary: string; status?: string; result?: string }) {
     const [open, setOpen] = useState(false);
     const canExpand = !!result;
     const ok = status == null || status === "completed";

@@ -19,7 +19,7 @@ import type { AgentsViewModel } from "./agents";
 import type { AgentEntry } from "./agentsviewmodel";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import type { Runtime } from "./launch";
-import { NarrationTimeline } from "./narrationtimeline";
+import { CompactTranscript } from "./compacttranscript";
 import { runtimeMeta } from "./runtimemeta";
 import type { LiveSession } from "./sessionsarchivestore";
 import { LEAD_MEMBER, sessionPrimary, type RunMember, type RunView, type Status, type StatusKey } from "./sessionsruns";
@@ -275,7 +275,7 @@ function SessionBody({
     } else if (entries.length === 0) {
         body = <div className="py-4 text-[13px] text-muted">No transcript to show.</div>;
     } else {
-        body = <NarrationTimeline entries={entries} active={session.live} />;
+        body = <CompactTranscript entries={entries} active={session.live} />;
     }
     return (
         <div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto", className)}>
