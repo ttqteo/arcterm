@@ -34,7 +34,7 @@ Out of scope:
    - Overview (`LayoutList`) and Review (`FileDiff`, followed by the changed-file count) are icons with no text label.
      The header's `Terminal | Canvas | Review` switch already uses "Review" for Doc review. Each has an `aria-label` and
      a tooltip.
-   - The File tab, present only while a file is open, is shaped like an editor tab: a file icon, the file name (mono,
+   - The File tab, present only while a file is open, is shaped like an editor tab: a file icon, the file name (Inter,
      truncated at 190px) and a close button.
    - The strip replaces today's bare collapse row, keeps its 44px height and bottom rule, and ends with the collapse
      chevron.

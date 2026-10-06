@@ -1072,7 +1072,7 @@ export function FileTab({ model, agentId, file }: { model: AgentsViewModel; agen
                 >
                     <ChevronRight size={14} aria-hidden />
                 </button>
-                <span title={ref.abs} className="min-w-0 flex-1 truncate font-mono text-[11.5px]">
+                <span title={ref.abs} className="min-w-0 flex-1 truncate text-[11.5px]">
                     <span className="text-muted">{dir}</span>
                     <span className="text-ink-hi">{name}</span>
                     {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
@@ -1296,7 +1296,7 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
                         className="flex min-w-0 cursor-pointer items-center gap-[7px] border-0 bg-transparent py-0 pl-2.5 pr-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                     >
                         <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
-                        <span className="min-w-0 truncate font-mono text-[11.5px]">{fileLabel(file).name}</span>
+                        <span className="min-w-0 truncate text-[11.5px]">{fileLabel(file).name}</span>
                     </button>
                     <button
                         type="button"
