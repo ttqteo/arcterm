@@ -114,7 +114,8 @@ the atom to `null`.
 
 ### App bar chip
 
-`WorkerCapacityChip` in `frontend/app/cockpit/app-bar.tsx`, before `HeaderUsageMeters`: a memory icon and
+`WorkerCapacityChip` lives in `frontend/app/view/agents/workercapacitychip.tsx` and is mounted in
+`frontend/app/cockpit/app-bar.tsx` before `HeaderUsageMeters`: a memory icon and
 `+N`, `text-[11.5px] text-muted`, no border, `title={capacityTitle(cap)}`. At `+0` the icon becomes
 `TriangleAlert` and the text `text-warning`. Renders nothing while the atom is `null`. Token colors only.
 

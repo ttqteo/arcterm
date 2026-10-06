@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
+import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -73,6 +74,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
             <div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
+                <WorkerCapacityChip />
                 <HeaderUsageMeters model={model} />
                 {/* secondary, so New agent stays the one primary action. data-new-run: the Brief's `r` key
                     presses this (buildJarvisBindings). */}

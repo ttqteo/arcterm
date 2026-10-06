@@ -15647,6 +15647,111 @@ const agentUploads = {
     },
 };
 
+// A worker-capacity reading with no room left, for the scenarios that force the over-capacity state.
+const CAPACITY_FULL = {
+    totalbytes: 8 * 2 ** 30,
+    availablebytes: 2 ** 30,
+    perworkerbytes: 1.5 * 2 ** 30,
+    measured: false,
+    liveworkers: 0,
+    reservebytes: 0,
+    moreworkers: 0,
+};
+const CAPACITY_MOCK_KEY = "__arcCapacityMock";
+
+// Answers getworkercapacity with `reading` from the page, through RpcApi's mock client (installAhMock's pattern),
+// and passes every other command to what was there. Writing workerCapacityAtom would not hold: globalStore is
+// not on window, and the 5 s poll would overwrite it; the mock is what the poll itself reads. A reload drops it,
+// so install it after the scenario's last reload.
+async function installCapacityMock(h, reading) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CAPACITY_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const reading = ${JSON.stringify(reading)};
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getworkercapacity") return Promise.resolve(reading);
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CAPACITY_MOCK_KEY} = { api, prev };
+        return "installed";
+    })()`);
+}
+
+const removeCapacityMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CAPACITY_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${CAPACITY_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// The app bar's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows its "+N"
+// with the numbers in its tooltip. The machine's real RAM decides whether that is +0, so step 4 forces +0 with
+// a mocked reading to see the warning tone.
+const workerCapacity = {
+    name: "worker-capacity",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+
+        const cap = await h.rpc("getworkercapacity", null);
+        rec(
+            "1. GetWorkerCapacityCommand reads the machine",
+            !!cap && cap.totalbytes > 0 && cap.perworkerbytes > 0 && cap.moreworkers >= 0,
+            JSON.stringify(cap)
+        );
+
+        let chip = null;
+        for (let waited = 0; waited <= 10000 && !chip; waited += 250) {
+            chip = await h.ev(
+                `(() => { const c = document.querySelector("[data-worker-capacity]"); return c ? { text: c.textContent, title: c.title } : null; })()`
+            );
+            if (!chip) await settle(250);
+        }
+        rec("2. the app bar chip shows +N", !!chip && /^\+\d+$/.test(chip.text.trim()), chip ? chip.text : "no chip after 10s");
+        rec(
+            "3. its tooltip carries free RAM and the per-worker estimate",
+            !!chip && chip.title.includes("free of") && chip.title.includes("per worker"),
+            chip ? chip.title : ""
+        );
+
+        const mocked = await installCapacityMock(h, CAPACITY_FULL);
+        let full = null;
+        for (let waited = 0; waited <= 8000; waited += 250) {
+            full = await h.ev(
+                `(() => { const c = document.querySelector("[data-worker-capacity]"); return c ? { text: c.textContent.trim(), amber: c.classList.contains("text-warning"), triangle: !!c.querySelector("svg.lucide-triangle-alert") } : null; })()`
+            );
+            if (full && full.text === "+0") break;
+            await settle(250);
+        }
+        await h.shot("cdp-shots/worker-capacity-full.png");
+        rec(
+            "4. at +0 the chip turns amber with a TriangleAlert",
+            mocked === "installed" && !!full && full.text === "+0" && full.amber && full.triangle,
+            `mock=${mocked} ${JSON.stringify(full)}`
+        );
+        return steps;
+    },
+    async teardown(h) {
+        await removeCapacityMock(h);
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -15712,4 +15817,5 @@ export const SCENARIOS = [
     agentGrid,
     agentUploads,
     agentRailTabs,
+    workerCapacity,
 ];
