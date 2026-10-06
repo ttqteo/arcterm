@@ -10728,8 +10728,18 @@ const lineReview = {
             await addNote(note);
             return wait(`!${LR_BOX}`, 2000);
         };
+        // Leaving compare (step 12) or switching scope (step 19) re-reads the change list, and until that
+        // read lands the history has no Uncommitted row: row 0 is then a commit, and a click on it is
+        // dropped. So wait for the Uncommitted row itself, click it, and confirm it is the selection.
+        const WT_BUTTON = `document.querySelector('[data-history-row="worktree"] button')`;
         const toUncommittedReview = async () => {
-            await click(`document.querySelectorAll("[data-history-row]")[0]?.querySelector("button")`);
+            if (!(await wait(`!!${WT_BUTTON}`, 15000))) {
+                return false;
+            }
+            await click(WT_BUTTON);
+            if (!(await wait(`${WT_BUTTON}?.className.includes("bg-surface-selected")`, 8000))) {
+                return false;
+            }
             await wait(`document.querySelector("[data-diff-mode]")`, 8000);
             if ((await h.ev(`document.querySelector("[data-diff-mode]")?.dataset.diffMode`)) !== "review") {
                 await click(LR_MODE("review"));
@@ -10739,7 +10749,7 @@ const lineReview = {
         const sentLine = (name) => `t.line === ${JSON.stringify(`Sent to ${name}`)}`;
 
         // 13. the tray in Review and in File mode
-        await toUncommittedReview();
+        const at13 = await toUncommittedReview();
         const cards13 = await cardCount();
         const review13 = await trayWait(`t.text.includes("3 comments on 2 files")`);
         const tray13 = await tray();
@@ -10752,13 +10762,14 @@ const lineReview = {
         const back13 = await wait(LR_HEADER(LR_README), 8000);
         rec(
             "13. the tray reads 3 comments on 2 files and Send 3 comments in Review, and stays in File mode",
-            cards13 === 3 &&
+            at13 &&
+                cards13 === 3 &&
                 review13 &&
                 (tray13?.button ?? "").startsWith("Send 3 comments") &&
                 tray13.disabled === false &&
                 file13 &&
                 back13,
-            JSON.stringify({ cards13, tray13, file13, back13 })
+            JSON.stringify({ at13, cards13, tray13, file13, back13 })
         );
 
         // 14. a box holding text blocks the send
