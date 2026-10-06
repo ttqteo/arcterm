@@ -18,9 +18,9 @@
 // The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -79,24 +79,39 @@ export function sweepStaleStores(dir) {
     }
 }
 
+// the longest unix socket path the platforms allow is 104 bytes on macOS (sun_path), less a terminator; node does not
+// reject a longer one, it silently cuts it, so the socket file is not at the path later probed and dropped
+const MAX_SOCKET_PATH = 100;
+
 // the os drops a pipe or socket with its process, so a killed stage leaves no stale lock on windows. keyed by the
-// base, which is what the stages share
-export function buildLockPath(base) {
+// base, which is what the stages share. A posix socket lives in the base unless that path is too long for a socket,
+// then in the temp dir under the same key
+export function buildLockPath(base, platform = process.platform) {
     const id = createHash("sha1").update(base).digest("hex").slice(0, STORE_ID_LEN);
-    return process.platform === "win32" ? `\\\\.\\pipe\\arc-final-build-${id}` : join(base, `build-${id}.sock`);
+    if (platform === "win32") return `\\\\.\\pipe\\arc-final-build-${id}`;
+    const inBase = join(base, `build-${id}.sock`);
+    return Buffer.byteLength(inBase) <= MAX_SOCKET_PATH ? inBase : join(tmpdir(), `arc-final-build-${id}.sock`);
 }
 
 function listenOn(path) {
     return new Promise((resolve, reject) => {
         const srv = createServer();
-        srv.once("error", (e) => (e.code === "EADDRINUSE" ? resolve(null) : reject(e)));
+        // a bind that races another stage's reports EEXIST on macOS, where a plain clash reports EADDRINUSE; both mean held
+        srv.once("error", (e) => (e.code === "EADDRINUSE" || e.code === "EEXIST" ? resolve(null) : reject(e)));
         srv.listen(path, () => resolve(srv));
     });
 }
 
-// a posix socket file outlives a killed stage; one nothing answers on is dropped
+// a posix socket file outlives a killed stage; one nothing answers on is dropped. A file made in the last second is
+// left: a stage that just bound it refuses connections until its listen runs, and dropping it would hand the lock to
+// two stages
 async function dropStaleSocket(path) {
     if (process.platform === "win32") return;
+    try {
+        if (Date.now() - statSync(path).mtimeMs < 1_000) return;
+    } catch {
+        return;
+    }
     const live = await new Promise((resolve) => {
         const sock = connect(path);
         sock.once("connect", () => {
