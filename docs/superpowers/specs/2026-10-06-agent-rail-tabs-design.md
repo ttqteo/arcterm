@@ -26,6 +26,8 @@ Out of scope:
 - Editing in the panel. The File tab is read-only; "Open in Code" edits.
 - More than one open file per agent. The File tab has back/forward instead.
 - Line comments on a diff, and a side-by-side diff in the panel.
+- Path links in the folded "edited N files" row and in the tool-detail modal; a session read from disk with no live
+  agent (its paths stay text).
 - New global key chords for the tabs.
 
 ## The panel
@@ -81,12 +83,14 @@ Out of scope:
      exist underline.
      - Ctrl+click (Cmd on macOS) opens a file, as it does a URL. Hovering shows "Ctrl + click to open <name> at line N".
      - An agent's TUI opens the file in that agent's panel. A plain terminal has no panel, so it opens the file in the
-       Code surface (`openInCode`).
-   - **Transcripts and Cockpit cards.** The path in a tool row (Edited, Read, Wrote, …) is a link of its own; a click on
-     the rest of the row still opens the tool detail. Inline code in an agent's message is a link when the tokenizer
+       Code surface at the line (`openInCode`, or `openFileInCode` with a line for a file outside the terminal's
+       directory).
+   - **Transcripts and Cockpit cards.** The path in a file tool's row (Edited, Read, Wrote) is a link of its own; a click
+     on the rest of the row still opens the tool detail. The projectors keep the tool's full path beside the base name
+     they show, for the file tools only: a directory-taking tool (ls, grep, find, glob) has no link. Inline code in an agent's message is a link when the tokenizer
      accepts it as a path. Both resolve against the agent's working directory and check the file on click.
-     - From a Cockpit card, the click goes through `openref.ts`'s agent route: it selects the agent, switches to the
-       Agent surface, then opens the file.
+     - From a Cockpit card, the click selects the agent and switches to the Agent surface the way `openref.ts`'s agent
+       route does (`jumpToAgent`), then opens the file.
    - **Review.** A file header's name (decision 4).
    - **Command palette.** A file pick while the Agent surface shows a focused agent whose working directory holds the
      file opens it in that agent's panel. Anywhere else it opens the Code surface, as today.
@@ -112,6 +116,10 @@ Out of scope:
     - In Review, the comment keys are line review's own: inside a comment box, Ctrl+Enter adds and Esc cancels. With
       focus in the panel and outside a box, Ctrl+Enter sends when the tray can send.
     - Escape in the File tab closes the file.
+    - The cockpit's key dispatcher runs on window capture, before any component, and the Agent surface's own bindings
+      (the arrows and j/k between agents, Esc back to the Cockpit, `d`) would take these keys first. So the tab strip,
+      the File tab and the resize grip are marked `data-owns-keys`, and focus inside one counts as `editable` for the
+      dispatcher, as a text field does. The Agent bindings stand down there.
 
 ### States
 
@@ -132,8 +140,8 @@ Out of scope:
 
 11. **Two groups.**
     - The core surfaces, Cockpit, Jarvis, Agent and Usage, keep today's 56px items.
-    - A 1px `edge-mid` separator follows them, then the tools: Code, Diff and Radar. Tool items are 46px tall with a
-      16px icon, and their labels keep the 10.5px floor.
+    - A 1px `edge-mid` separator follows them, then the tools: Code, Diff and Radar. Tool items are shorter (8px vertical
+      padding instead of 11, about 46px) with a 16px icon; their labels keep today's size.
     - Setup and Settings stay at the bottom, unchanged.
     - On the narrow rail (56px) the separator stays and labels are hidden, as today.
 12. **The order is the shortcut order.** `SURFACE_ORDER` becomes cockpit, jarvis, agent, usage, code, files, radar.
@@ -154,6 +162,7 @@ Out of scope:
 - `termwrap.ts`: the path link provider. Narration tool rows and markdown inline code: the path links.
   `command-palette.tsx`: the file pick routes to the panel.
 - `navrail.tsx` and `agents.tsx` (`SURFACE_ORDER`): the two groups.
+- `dispatcher.ts`: `ownsKeys`, so a marked region's keys reach it. `openfilestore.ts`: `openFileInCode` takes a line.
 
 ## Verification
 
@@ -163,13 +172,31 @@ Unit tests:
   Claude Code's tool lines;
 - the new surface order and its Ctrl+N mapping.
 
-A CDP scenario, `agent-rail-tabs`. Its fixture is an agent in a temp git repo with one modified file, `a.txt`, and a
-transcript whose tool row edited it.
-- It opens Overview and Review and screenshots each. Review shows `a.txt`'s header and its changed rows.
-- Clicking the transcript's `a.txt` opens the File tab on it.
-- A plain terminal launched in the repo `echo`es `a.txt:2`. The path underlines, and a Ctrl+click opens the Code surface
-  at line 2.
-- It screenshots the nav rail's two groups and checks that Ctrl+4 opens Usage.
+A CDP scenario, `agent-rail-tabs`, run on the dev app by the session that started the engine run, after the run lands
+(the user's choice: no Final line, so no cold build inside the run).
+
+Its fixture:
+- a temp git repo, registered as a project, with `a.txt` modified;
+- three files outside the repo: a 3 MB text file, a binary and one that is deleted mid-scenario;
+- an agent whose transcript edited `a.txt`, names `a.txt:3` in a message, and read the three files;
+- a plain terminal. Its shell starts in `~`, because a shell in a temp dir locks it until the app exits. It prints
+  `a.txt`'s absolute path, with forward slashes, followed by `:2`.
+
+The scenario checks:
+- Overview: the strip alone, at 300px, and Files changed listing `a.txt`.
+- Links from a Cockpit card: the tool row's `a.txt`, then the inline `a.txt:3`, each opening the File tab, at the wide
+  width and on the line.
+- The File tab's states: too large, binary, and deleted since it was opened. Back and Forward.
+- The tab strip's → and the File tab's Esc, with the surface left where it was.
+- The grip: a 100px drag left, then Home and End.
+- The collapsed strip's icons, and reopening on File from one.
+- A palette pick of `a.txt` on the Agent surface.
+- The plain terminal. A real mouse hover over the printed path shows its hint, and a real Ctrl+click opens the Code
+  surface at line 2. A DEV-only hook (`window.__arcTermPathLinks.locate`) gives the link's screen position, because
+  the terminal draws to a canvas.
+- The nav: its order, the divider, the tool items' shorter height, and Ctrl+4 opening Usage.
+
+Not covered: the File tab's loading skeleton, which lasts one read. The Review tab's checks come with its own plan.
 
 ## Phase 2: the Terminal tab
 

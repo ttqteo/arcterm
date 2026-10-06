@@ -39,7 +39,12 @@ This plan runs on Arc's engine (`wsh runs start --plan`).
   - Stage exact paths only (`git add <file>…`), never `git add -A` or `.`.
 - **Verify** runs at every merge, scoped to what the merge changed: `tsc` plus the vitest files related to the changed
   TS. At the final stage it runs all of vitest; the Go pattern is only there because the script needs one.
-- **There is no `**Final:**` line.** Final cold-builds a dev app of its own, and the machine lags under a build.
+- **There is no `**Final:**` line, by the user's decision (2026-10-06).**
+  - Final cold-builds a dev app of its own, and the machine lags under a build.
+  - The UI is checked instead by the session that started the run, after the run lands. It runs Task 9's
+    `agent-rail-tabs` scenario on the running dev app.
+  - That scenario covers every UI state the spec lists except the File tab's loading skeleton, which lasts one read.
+  - A plan review that fails only because nothing in the run checks the UI is to be accepted with this reason.
 - **No builds while developing.** Do not run `task build:*`, `cargo …` or `scripts/cdp/final-verify.mjs`. Test one file
   at a time: `npx vitest run <file>`.
 - **No CDP in a lane.**
@@ -542,13 +547,36 @@ git commit -m "feat(agents): a tokenizer for file paths in terminal and transcri
 
 **Files:**
 - Modify: `frontend/app/cockpit/openfileroute.ts` (export `isUnderRoot` and `toRel`)
+- Modify: `frontend/app/cockpit/openfilestore.ts` (`openFileInCode` takes a line)
 - Create: `frontend/app/view/agents/agentrailtabs.ts`, `frontend/app/view/agents/agentrailtabs.test.ts`
 - Create: `frontend/app/view/agents/agentrailstore.ts`
 
-- [ ] **Step 1: Export the path helpers**
+- [ ] **Step 1: Export the path helpers, and give `openFileInCode` a line**
 
 In `openfileroute.ts`, change `function isUnderRoot(` to `export function isUnderRoot(` and `function toRel(` to
-`export function toRel(`. Nothing else changes.
+`export function toRel(`. Nothing else changes there.
+
+In `openfilestore.ts`, `openFileInCode` opens a file outside every known project but has no way to land on a line. Make
+these changes:
+
+- Change its signature to
+  `export async function openFileInCode(model: AgentsViewModel, path: string, edit = false, line?: number): Promise<void>`.
+- Replace its `if (route.rel != null) { … }` block with:
+
+```ts
+    if (route.rel != null) {
+        // a line is read in source; the viewer honors the pending line the moment the file's text lands
+        globalStore.set(codeViewModeAtom, edit || line != null ? "source" : "preview");
+        globalStore.set(codePendingLineAtom, line ?? null);
+        await openPath(route.rel, { line: line ?? null });
+    }
+```
+
+- Add `codePendingLineAtom` to its `@/app/view/code/codestore` import.
+- Check `openPath`'s options type in `codestore.ts` (`{ pushHistory?; line? }`). If `line` is typed `number | undefined`,
+  pass `line` rather than `line ?? null`.
+
+Existing callers pass no `line`, so they are unchanged.
 
 - [ ] **Step 2: Write the failing model tests**
 
@@ -860,7 +888,7 @@ export async function openRefInCode(model: AgentsViewModel, ref: FileRef): Promi
         await openInCode(model, { projectPath: ref.root, rel: toRel(ref.root, ref.abs), line: ref.line });
         return;
     }
-    await openFileInCode(model, ref.abs, false);
+    await openFileInCode(model, ref.abs, false, ref.line);
 }
 ```
 
@@ -868,8 +896,8 @@ export async function openRefInCode(model: AgentsViewModel, ref: FileRef): Promi
 
 ```bash
 npx prettier --check frontend/app/view/agents/agentrailtabs.ts frontend/app/view/agents/agentrailtabs.test.ts frontend/app/view/agents/agentrailstore.ts
-npx eslint frontend/app/view/agents/agentrailtabs.ts frontend/app/view/agents/agentrailstore.ts frontend/app/cockpit/openfileroute.ts
-git add frontend/app/cockpit/openfileroute.ts frontend/app/view/agents/agentrailtabs.ts \
+npx eslint frontend/app/view/agents/agentrailtabs.ts frontend/app/view/agents/agentrailstore.ts frontend/app/cockpit/openfileroute.ts frontend/app/cockpit/openfilestore.ts
+git add frontend/app/cockpit/openfileroute.ts frontend/app/cockpit/openfilestore.ts frontend/app/view/agents/agentrailtabs.ts \
   frontend/app/view/agents/agentrailtabs.test.ts frontend/app/view/agents/agentrailstore.ts
 git commit -m "feat(agents): the Agent panel's tab and file model, and its store"
 ```
@@ -1076,7 +1104,8 @@ export function FileTab({ model, agentId, file }: { model: AgentsViewModel; agen
     }
 
     return (
-        <div data-rail-file={ref.abs} onKeyDown={onKeyDown} className="flex min-h-0 flex-1 flex-col">
+        // data-owns-keys: the panel's own keys (Esc here) reach it before the surface's (dispatcher.ts ownsKeys)
+        <div data-rail-file={ref.abs} data-owns-keys onKeyDown={onKeyDown} className="flex min-h-0 flex-1 flex-col">
             <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-2.5">
                 <button
                     type="button"
@@ -1136,9 +1165,65 @@ The tab is seen working in Task 9's scenario.
 **Depends on:** Task 3, Task 4
 
 **Files:**
+- Modify: `frontend/app/store/keybindings/dispatcher.ts`, `frontend/app/store/keybindings/dispatcher.test.ts`
+- Modify: `frontend/app/store/keybindings/bindings.ts` (the `subagent:back` binding's `when`)
 - Modify: `frontend/app/element/collapsiblerail.tsx`
 - Create: `frontend/app/view/agents/agentrailpanel.tsx`
 - Modify: `frontend/app/view/agents/agentdetailsrail.tsx`
+
+The cockpit's key dispatcher runs on window capture (`dispatcher.ts`, `initKeybindingDispatcher`), before any component
+sees a key. The Agent surface's navigation bindings stand down only while `ctx.editable`:
+- `agent:back` (Esc) goes back to the Cockpit;
+- the arrows and j/k move between agents;
+- `d` toggles the rail.
+
+Without the change below, → in the tab strip moves to the next agent, and Esc in the File tab leaves the surface. So a
+region that handles its own keys is marked `data-owns-keys`, and focus inside one counts as `editable`, as it does in a
+text field. This applies to the tab strip, the File tab and the resize grip.
+
+- [ ] **Step 0: Let a marked region own its keys (test first)**
+
+In `dispatcher.test.ts`, add next to `describe("isEditableTarget", …)` (the `el()` stub there answers `closest` for
+`.monaco-editor`; this test builds its own):
+
+```ts
+describe("ownsKeys", () => {
+    const at = (owned: boolean) =>
+        ({ closest: (sel: string) => (owned && sel === "[data-owns-keys]" ? ({} as Element) : null) }) as unknown as Element;
+
+    it("is true inside a region marked data-owns-keys, false elsewhere and for no element", () => {
+        expect(ownsKeys(at(true))).toBe(true);
+        expect(ownsKeys(at(false))).toBe(false);
+        expect(ownsKeys(null)).toBe(false);
+    });
+});
+```
+
+Add `ownsKeys` to the test's import from `./dispatcher`. Run:
+`npx vitest run frontend/app/store/keybindings/dispatcher.test.ts`. Expected: FAIL (`ownsKeys` is not exported).
+
+In `dispatcher.ts`, add below `isEditableTarget`:
+
+```ts
+// A region that handles its own keys (the Agent panel's tab strip, File tab and resize grip) is marked data-owns-keys.
+// Focus inside one counts as editable, so the surface's navigation bindings stand down there as they do in a field.
+export function ownsKeys(el: Element | null): boolean {
+    return el?.closest?.("[data-owns-keys]") != null;
+}
+```
+
+In `deriveKeyContext`'s returned object, change `editable: isEditableTarget(document.activeElement),` to:
+
+```ts
+        editable: isEditableTarget(document.activeElement) || ownsKeys(document.activeElement),
+```
+
+In `bindings.ts`, the `subagent:back` binding fires whatever `editable` is. Add
+`&& !ownsKeys(document.activeElement)` to its `when`, so Esc in a File tab opened over a subagent closes the file and
+does not leave the subagent. Import `ownsKeys` from `./dispatcher`.
+
+Run the test again. Expected: PASS. Also run `npx vitest run frontend/app/store/keybindings/bindings.test.ts`.
+Expected: PASS.
 
 - [ ] **Step 1: Give `CollapsibleRail` the optional props**
 
@@ -1295,7 +1380,7 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
     });
     const file = panel.file.current;
     return (
-        <div ref={ref} role="tablist" aria-label="Agent panel" onKeyDown={onKeyDown} className="flex items-stretch">
+        <div ref={ref} role="tablist" aria-label="Agent panel" data-owns-keys onKeyDown={onKeyDown} className="flex items-stretch">
             <button
                 type="button"
                 {...tabProps("overview")}
@@ -1405,6 +1490,7 @@ export function RailResizeGrip({ width, max }: { width: number; max: number }) {
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize panel"
+            data-owns-keys
             aria-valuemin={RAIL_WIDE_MIN_PX}
             aria-valuemax={max}
             aria-valuenow={Math.round(width)}
@@ -1487,7 +1573,8 @@ Imports:
 A full `task check:ts` waits for Task 10. For now:
 
 ```bash
-npx eslint frontend/app/element/collapsiblerail.tsx frontend/app/view/agents/agentrailpanel.tsx frontend/app/view/agents/agentdetailsrail.tsx
+npx eslint frontend/app/element/collapsiblerail.tsx frontend/app/view/agents/agentrailpanel.tsx frontend/app/view/agents/agentdetailsrail.tsx \
+  frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/bindings.ts
 npx prettier --check frontend/app/view/agents/agentrailpanel.tsx
 ```
 
@@ -1495,7 +1582,8 @@ The dev app serves the main checkout, not this lane, so the strip is first seen 
 lands.
 
 ```bash
-git add frontend/app/element/collapsiblerail.tsx frontend/app/view/agents/agentrailpanel.tsx frontend/app/view/agents/agentdetailsrail.tsx
+git add frontend/app/element/collapsiblerail.tsx frontend/app/view/agents/agentrailpanel.tsx frontend/app/view/agents/agentdetailsrail.tsx \
+  frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/dispatcher.test.ts frontend/app/store/keybindings/bindings.ts
 git commit -m "feat(agents): the Agent rail becomes a tab strip, Overview plus the open file"
 ```
 
@@ -1809,6 +1897,26 @@ export function trackForDev(blockId: string, term: Terminal, hooks: PathLinkHook
             }
             return found;
         },
+        // where a link's text sits on screen (the middle of its third cell), so a scenario can hover and Ctrl+click it
+        locate: (id: string, linkText: string) => {
+            const t = devTerms.get(id);
+            const screen = t?.term.element?.querySelector(".xterm-screen") as HTMLElement | null;
+            if (t == null || screen == null) {
+                return null;
+            }
+            const buf = t.term.buffer.active;
+            const r = screen.getBoundingClientRect();
+            const cw = r.width / t.term.cols;
+            const ch = r.height / t.term.rows;
+            for (let row = 0; row < t.term.rows; row++) {
+                const text = buf.getLine(buf.viewportY + row)?.translateToString(true) ?? "";
+                const c = findPathCandidates(text).find((c) => c.text === linkText);
+                if (c != null) {
+                    return { x: r.left + (c.start + Math.min(2, c.end - c.start - 1) + 0.5) * cw, y: r.top + (row + 0.5) * ch };
+                }
+            }
+            return null;
+        },
         open: async (id: string, linkText: string) => {
             const t = devTerms.get(id);
             if (t == null) {
@@ -1967,20 +2075,23 @@ In `agentsviewmodel.ts`, add to the `kind: "action"` member of `AgentEntry`, aft
 ```
 
 - **pi** (`pitranscriptprojection.ts`): right after its `const action: ActionEntry = { … targetFor(b.name, args) };`,
-  add:
+  add the code below. Only its file tools name a file; `ls`, `grep` and `find` pass directories, which would read
+  "File not found".
 
 ```ts
         const p = args != null && typeof args === "object" ? (args as Record<string, unknown>).path : undefined;
-        if (typeof p === "string" && p !== "") {
+        if (FILE_TOOLS.has(b.name) && typeof p === "string" && p !== "") {
             action.path = p;
         }
 ```
+
+  Above `targetFor`, add `const FILE_TOOLS = new Set(["read", "write", "edit"]);`.
 
 - **opencode** (`opencodetranscriptprojection.ts`): right after its
   `const action: any = { kind: "action", verb: verbFor(rec.name), target: targetFor(rec.name, input) };`, add:
 
 ```ts
-            const p = filePathOf(input);
+            const p = FILE_TOOLS.has(rec.name) ? filePathOf(input) : null;
             if (p != null) {
                 action.path = p;
             }
@@ -1989,6 +2100,9 @@ In `agentsviewmodel.ts`, add to the `kind: "action"` member of `AgentEntry`, aft
   Also add, next to its `targetFor`:
 
 ```ts
+// only the file tools name a file; grep and glob take a directory
+const FILE_TOOLS = new Set(["read", "write", "edit"]);
+
 // the full path a file tool's JSON input names, if any
 function filePathOf(input: string): string | null {
     try {
@@ -2128,7 +2242,8 @@ Wrap each of these in `<AgentPathLinks agent={…}>…</AgentPathLinks>`, import
 
 - `agentrow.tsx`: the `<NarrationTimeline … />` element inside `AgentRow`, with `agent={agent}`.
 - `leadcard.tsx`: the `<NarrationTimeline … />` element inside `LeadTranscript`, with `agent={lead}`.
-- `runworkercard.tsx`: both `<NarrationTimeline … />` elements, with the card's `agent`.
+- `runworkercard.tsx`: the `<NarrationTimeline … />` inside `RunWorkerCard`, with the card's `agent`. Leave
+  `PhaseHistory`'s alone: it has only tab ids, no agent.
 - `endedtranscript.tsx`: the `<CompactTranscript … />` element, with the component's `agent`.
 
 Leave `sessionsdetail.tsx`'s `CompactTranscript` and `subagentinterior.tsx` unwrapped. A session read from disk has no
@@ -2201,69 +2316,123 @@ The decision itself is unit-tested in Task 6 (`focusedPanelAgent`).
 **Depends on:** Task 1, Task 2, Task 3, Task 4, Task 5, Task 6, Task 7, Task 8
 
 **Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (a new scenario, registered in `SCENARIOS`; `readFileSync` added to the `node:fs`
-  import)
+- Modify: `scripts/cdp/scenarios.mjs`: a new scenario, registered in `SCENARIOS`, with `readFileSync` added to the
+  `node:fs` import.
 
-The scenario covers four things:
-- **Overview:** the tab strip, and the fixture agent's Files changed listing `a.txt`.
-- **A Cockpit card's tool row:** clicking `a.txt` opens the File tab, at 520px.
-- **A plain terminal:** a printed `…\a.txt:2` is a link, and following it opens the Code surface on `a.txt`.
-- **The nav:** its two groups, and Ctrl+4 opening Usage.
+The scenario is written here and runs after the run lands (see "After the run lands"). Its steps cover every UI state
+the spec lists except the File tab's loading skeleton, which lasts one read. They check:
+
+- Overview: the strip and its width, and Files changed.
+- Links: a tool row's link and an inline-code link in a Cockpit card.
+- The File tab: too-large, binary and deleted files, and Back/Forward.
+- The tab keys, and Esc.
+- The grip, by drag and by keys.
+- The collapsed strip.
+- A pick in the palette.
+- A plain terminal: the hover hint, then a real Ctrl+click, landing on the Code surface at the line.
+- The nav: its groups, item heights and Ctrl+4.
 
 It uses the file's existing helpers: `ahReload`, `polishWaitFor`, `waveService`, `openRailTerminal`, `uploadsShellUp`,
-`uploadsTermHas`, `UI_ROUTE`, `TREE_RAIL_FIXTURE` and `RAIL_VISIBLE_KEY`. Read each before using it.
+`uploadsTermHas` (it returns `{ seen, readable }`), `UI_ROUTE`, `TREE_RAIL_FIXTURE`, `RAIL_VISIBLE_KEY` and
+`RAIL_SECTIONS_KEY`. Read each before using it.
 
 - [ ] **Step 1: Write the scenario**
 
 Add next to `agentRailSections`:
 
 ```js
-// The Agent panel's tabs and file path links (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md). A fixture
-// agent works in a temp repo where a.txt is modified; its transcript edited a.txt. A plain terminal (started in ~: a
-// shell in the temp dir would lock it until the app exits) prints a.txt's absolute path with :2. The user's fixture
-// roster and the panel's keys are put back in teardown.
+// The Agent panel's tabs and file path links (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md), run on the
+// dev app after the run lands. The pieces:
+//   - a temp repo, registered as a project so the palette can search it, where a.txt is modified;
+//   - files outside it for the File tab's states;
+//   - a fixture agent whose transcript edited a.txt, names `a.txt:3` in a message and read the other files;
+//   - a plain terminal that prints a.txt's absolute path with :2. It starts in ~, because a shell in the temp dir
+//     would lock it until the app exits.
+// Teardown puts back the user's fixture roster and every key this touches.
 const RAIL_TABS_AGENT = "fx-rail-tabs";
 const RAIL_TABS_BLOCK = "fx-blk-rail-tabs";
-const RAIL_TABS_PROJECT = "rail-tabs";
-const RAIL_TABS_KEYS = [RAIL_VISIBLE_KEY, "agent.rail.tab", "agent.rail.wideWidth", "code.project.last"];
+const RAIL_TABS_PROJECT = "verify-rail-tabs";
+const RAIL_TABS_KEYS = [
+    RAIL_VISIBLE_KEY,
+    RAIL_SECTIONS_KEY,
+    "agent.rail.tab",
+    "agent.rail.wideWidth",
+    "code.project.last",
+    "agent.launch.recentprojects",
+];
 const RAIL_TABS_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const RAIL_TABS_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${RAIL_TABS_AGENT}"]')`;
 const railTabLabels = `[...(${RAIL_TABS_ASIDE}?.querySelectorAll('[role="tab"]') ?? [])].map((t) => t.getAttribute("aria-label") + (t.getAttribute("aria-selected") === "true" ? "*" : ""))`;
 const railTabsWidth = `Math.round(${RAIL_TABS_ASIDE}?.getBoundingClientRect().width ?? 0)`;
+const railTabsFileText = `(${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "")`;
+// the widest a wide tab may be in this window: the centre keeps 640 beside the nav (56 below 900px) and the tree
+const railTabsMax = `Math.max(360, window.innerWidth - (window.innerWidth < 900 ? 56 : 78) - 248 - 640)`;
+const railTabsNap = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function railTabsRepo(base) {
+function railTabsFixture(base) {
     const repo = join(base, "repo");
+    const files = join(base, "files");
     mkdirSync(repo);
+    mkdirSync(files);
     const git = (...args) =>
         execFileSync("git", ["-C", repo, "-c", "user.email=v@v", "-c", "user.name=v", ...args], { stdio: "pipe" });
     git("init", "-q", "--initial-branch=main");
-    writeFileSync(join(repo, "a.txt"), "one\ntwo\nthree\n");
+    writeFileSync(join(repo, "a.txt"), "one\ntwo\nthree\nfour\n");
     git("add", ".");
     git("commit", "-qm", "seed");
-    writeFileSync(join(repo, "a.txt"), "one\nTWO\nthree\n");
-    // outside the repo, so it is not one of the repo's changes; cwd on every record is how the rail finds the repo
+    writeFileSync(join(repo, "a.txt"), "one\nTWO\nthree\nfour\n");
+    // outside the repo, so the repo's only change is a.txt
+    writeFileSync(join(files, "big.txt"), "x".repeat(3 * 1024 * 1024)); // over the panel's 2 MB
+    writeFileSync(join(files, "blob.bin"), Buffer.from([0, 1, 2, 0, 255, 0]));
+    writeFileSync(join(files, "c.txt"), "deleted after it opens\n");
+    // cwd on every record is how the rail and the links find the repo
     const transcript = join(base, "agent.jsonl");
     const rec = (o) => JSON.stringify({ cwd: repo, ...o }) + "\n";
+    const tool = (id, name, input) =>
+        rec({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] } });
+    const ok = (id) =>
+        rec({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: false }] } });
     writeFileSync(
         transcript,
         rec({ type: "user", message: { role: "user", content: [{ type: "text", text: "capitalise line two" }] } }) +
-            rec({
-                type: "assistant",
-                message: {
-                    role: "assistant",
-                    content: [
-                        { type: "tool_use", id: "e1", name: "Edit", input: { file_path: join(repo, "a.txt"), old_string: "two", new_string: "TWO" } },
-                    ],
-                },
-            }) +
-            rec({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "e1", is_error: false }] } })
+            tool("e1", "Edit", { file_path: join(repo, "a.txt"), old_string: "two", new_string: "TWO" }) +
+            ok("e1") +
+            rec({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Line `a.txt:3` is next." }] } }) +
+            tool("r1", "Read", { file_path: join(files, "big.txt") }) +
+            ok("r1") +
+            tool("r2", "Read", { file_path: join(files, "blob.bin") }) +
+            ok("r2") +
+            tool("r3", "Read", { file_path: join(files, "c.txt") }) +
+            ok("r3")
     );
-    return { repo, transcript };
+    return { repo, files, transcript };
 }
 
-async function railTabsCtrlKey(h, digit) {
-    const key = { key: digit, code: `Digit${digit}`, windowsVirtualKeyCode: 48 + Number(digit), modifiers: 2 };
-    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...key });
-    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+async function railTabsKey(h, key, code, keyCode, modifiers = 0) {
+    const k = { key, code, windowsVirtualKeyCode: keyCode, modifiers };
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...k });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...k });
+    await railTabsNap(300);
+}
+
+async function railTabsMouse(h, type, x, y, extra = {}) {
+    await h.cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });
+}
+
+// clicks the Cockpit card's path link whose data-path-link passes `test` (a JS predicate on the path, as source)
+async function railTabsClickLink(h, test) {
+    await h.goto("cockpit");
+    const found = await polishWaitFor(
+        h,
+        `[...(${RAIL_TABS_CARD}?.querySelectorAll("[data-path-link]") ?? [])].some((b) => (${test})(b.dataset.pathLink))`,
+        15000
+    );
+    if (!found) return false;
+    await h.ev(
+        `[...${RAIL_TABS_CARD}.querySelectorAll("[data-path-link]")].find((b) => (${test})(b.dataset.pathLink)).click()`
+    );
+    await railTabsNap(800);
+    return true;
 }
 
 const agentRailTabs = {
@@ -2281,8 +2450,9 @@ const agentRailTabs = {
             for (const k of RAIL_TABS_KEYS) {
                 ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
             }
-            const { repo, transcript } = railTabsRepo(base);
-            ctx.repo = repo;
+            Object.assign(ctx, railTabsFixture(base));
+            await h.rpc("createproject", { name: RAIL_TABS_PROJECT, path: ctx.repo });
+            ctx.project = RAIL_TABS_PROJECT;
             const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
             const wslist = await h.rpc("workspacelist", null);
             const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
@@ -2303,7 +2473,7 @@ const agentRailTabs = {
                             model: "opus",
                             activeMs: 60_000,
                             blockId: RAIL_TABS_BLOCK,
-                            transcriptPath: transcript,
+                            transcriptPath: ctx.transcript,
                         },
                     ],
                     null,
@@ -2311,9 +2481,12 @@ const agentRailTabs = {
                 )
             );
             ctx.wroteFixture = true;
-            await h.ev(
-                `localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true"); localStorage.removeItem("agent.rail.tab"); localStorage.removeItem("agent.rail.wideWidth")`
-            );
+            // a known rail: open, every section at its default, Overview, the default width; the palette's project
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth"])}) localStorage.removeItem(k);
+                localStorage.setItem("agent.launch.recentprojects", ${JSON.stringify(JSON.stringify([RAIL_TABS_PROJECT]))});
+            })()`);
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
             ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${RAIL_TABS_AGENT}"]')`, 15000);
@@ -2321,9 +2494,13 @@ const agentRailTabs = {
             // the Agent surface mounts every terminal's pane, which starts its shell
             const term = ctx.terminals[0];
             ctx.shellUp = await uploadsShellUp(h, term.blockId);
-            const line = `echo ${join(repo, "a.txt")}:2\r`;
-            await h.rpc("controllerinput", { blockid: term.blockId, inputdata64: Buffer.from(line).toString("base64") });
-            ctx.printed = await uploadsTermHas(h, term.blockId, "a.txt:2");
+            // forward slashes in single quotes: the same in Git Bash, pwsh and cmd
+            ctx.printedPath = `${ctx.repo.replace(/\\/g, "/")}/a.txt:2`;
+            await h.rpc("controllerinput", {
+                blockid: term.blockId,
+                inputdata64: Buffer.from(`echo '${ctx.printedPath}'\r`).toString("base64"),
+            });
+            ctx.printed = (await uploadsTermHas(h, term.blockId, "a.txt:2")).seen;
             await h.rpc("uireveal", { address: `agent:${RAIL_TABS_AGENT}` }, UI_ROUTE);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
@@ -2338,6 +2515,7 @@ const agentRailTabs = {
         rec("0. the fixture agent is focused and its rail is a tab strip", strip, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, strip }));
         if (!strip) return steps;
 
+        // 1. Overview
         const listed = await polishWaitFor(h, `(${RAIL_TABS_ASIDE}?.querySelector('[data-rail-section="files"]')?.textContent ?? "").includes("a.txt")`, 10000);
         const tabs1 = await h.ev(railTabLabels);
         const w1 = await h.ev(railTabsWidth);
@@ -2348,59 +2526,151 @@ const agentRailTabs = {
             JSON.stringify({ tabs1, w1, listed })
         );
 
-        await h.goto("cockpit");
-        const linkSel = `document.querySelector('[data-cockpit-surface] [data-agent-id="${RAIL_TABS_AGENT}"] [data-path-link]')`;
-        const linked = await polishWaitFor(h, `!!${linkSel}`, 15000);
-        if (linked) await h.ev(`${linkSel}.click()`);
-        const opened = linked && (await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file] .monaco-editor')`, 10000));
+        // 2. a tool row's link
+        const clicked2 = await railTabsClickLink(h, `(p) => p !== "a.txt" && p.endsWith("a.txt")`);
+        const editor2 = clicked2 && (await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 10000));
         const surface2 = await h.activeSurfaceLabel();
         const tabs2 = await h.ev(railTabLabels);
         const w2 = await h.ev(railTabsWidth);
-        // 520, unless the window leaves less: the centre keeps 640 beside the nav (56 below 900px) and the tree
-        const wide = await h.ev(`Math.max(360, Math.min(520, window.innerWidth - (window.innerWidth < 900 ? 56 : 78) - 248 - 640))`);
+        const wide = await h.ev(`Math.min(520, ${railTabsMax})`);
         await h.shot("cdp-shots/agent-rail-tabs-file.png");
         rec(
             "2. a.txt in the Cockpit card's tool row opens the Agent surface with a.txt on the File tab, at the wide width",
-            linked && opened && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
-            JSON.stringify({ linked, opened, surface2, tabs2, w2, wide })
+            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
+            JSON.stringify({ clicked2, editor2, surface2, tabs2, w2, wide })
         );
 
-        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.click()`);
-        await new Promise((r) => setTimeout(r, 300));
-        const w3 = await h.ev(railTabsWidth);
-        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[aria-label="Close file"]')?.click()`);
-        await new Promise((r) => setTimeout(r, 300));
-        const tabs3 = await h.ev(railTabLabels);
+        // 3. an inline-code link, at its line
+        const clicked3 = await railTabsClickLink(h, `(p) => p === "a.txt"`);
+        // the header names the line and the editor carries the File tab's accent mark on it (filetab.tsx HIT_MARK)
+        const atLine3 = clicked3 && (await polishWaitFor(h, `${railTabsFileText}.includes("a.txt:3") && !!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor .border-accent")`, 8000));
+        rec("3. `a.txt:3` in the agent's message opens a.txt at line 3", atLine3, JSON.stringify({ clicked3, text: await h.ev(railTabsFileText) }));
+
+        // 4. the File tab's states, and Back/Forward
+        const big = (await railTabsClickLink(h, `(p) => p.endsWith("big.txt")`)) && (await polishWaitFor(h, `${railTabsFileText}.includes("Large file, 3.0 MB")`, 8000));
+        const blob = (await railTabsClickLink(h, `(p) => p.endsWith("blob.bin")`)) && (await polishWaitFor(h, `${railTabsFileText}.includes("Binary file")`, 8000));
+        const cOpen = (await railTabsClickLink(h, `(p) => p.endsWith("c.txt")`)) && (await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 8000));
+        rmSync(join(ctx.files, "c.txt"), { force: true });
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Back"]')?.click()`);
+        const back = await polishWaitFor(h, `${railTabsFileText}.includes("Binary file")`, 8000);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Forward"]')?.click()`);
+        const gone = await polishWaitFor(h, `${railTabsFileText}.includes("This file no longer exists")`, 8000);
+        await h.shot("cdp-shots/agent-rail-tabs-file-states.png");
         rec(
-            "3. Overview is back to 300px, and closing the file leaves Overview alone",
-            Math.abs(w3 - 300) <= 2 && JSON.stringify(tabs3) === JSON.stringify(["Overview*"]),
-            JSON.stringify({ w3, tabs3 })
+            "4. a 3 MB file says Large file, a binary says Binary file, Back returns, and a file deleted since it opened says so",
+            big && blob && cOpen && back && gone,
+            JSON.stringify({ big, blob, cOpen, back, gone })
         );
 
-        const term = ctx.terminals[0];
-        const scan = ctx.printed ? await h.ev(`window.__arcTermPathLinks?.scan(${JSON.stringify(term.blockId)})`) : null;
-        const hit = (scan ?? []).find((l) => /a\.txt:2$/.test(l.text) && /\/a\.txt$/i.test(l.abs) && l.line === 2);
-        if (hit) await h.ev(`window.__arcTermPathLinks.open(${JSON.stringify(term.blockId)}, ${JSON.stringify(hit.text)})`);
-        const onCode = hit != null && (await polishWaitFor(h, `(() => { try { return (JSON.parse(localStorage.getItem("code.project.last") ?? "null")?.path ?? "").toLowerCase().replace(/\\\\/g, "/").endsWith("/repo"); } catch { return false; } })()`, 8000));
-        const surface4 = await h.activeSurfaceLabel();
+        // 5. the tab keys and Esc, which the panel owns while it has focus
+        await railTabsClickLink(h, `(p) => p !== "a.txt" && p.endsWith("a.txt")`);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="file"]') && ${RAIL_TABS_ASIDE}.querySelector('[data-rail-tab="overview"]').click()`);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.focus()`);
+        await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
+        const tabs5 = await h.ev(railTabLabels);
+        const surface5a = await h.activeSurfaceLabel();
+        await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("[data-rail-file] button") ?? [])].find((b) => b.textContent.includes("Open in Code"))?.focus()`);
+        await railTabsKey(h, "Escape", "Escape", 27);
+        const tabs5b = await h.ev(railTabLabels);
+        const surface5b = await h.activeSurfaceLabel();
         rec(
-            "4. the plain terminal's printed a.txt:2 is a link, and following it opens the Code surface on the repo",
-            ctx.shellUp === true && ctx.printed === true && hit != null && onCode && surface4 === "Code",
-            JSON.stringify({ shellUp: ctx.shellUp, printed: ctx.printed, scan, onCode, surface4 })
+            "5. → in the tab strip selects File without leaving the agent, and Esc in the File tab closes the file, not the surface",
+            JSON.stringify(tabs5) === JSON.stringify(["Overview", "File a.txt*"]) && surface5a === "Agent" &&
+                JSON.stringify(tabs5b) === JSON.stringify(["Overview*"]) && surface5b === "Agent",
+            JSON.stringify({ tabs5, surface5a, tabs5b, surface5b })
         );
 
-        const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => b.getAttribute("aria-label"))`);
-        const divider = await h.ev(`!!document.querySelector("nav [data-nav-divider]")`);
-        // out of the Code surface's editor, which would take the key
+        // 6. the grip: drag left widens, keys reach both ends
+        await railTabsClickLink(h, `(p) => p !== "a.txt" && p.endsWith("a.txt")`);
+        const grip = await h.ev(`(() => { const g = ${RAIL_TABS_ASIDE}?.querySelector('[role="separator"][aria-label="Resize panel"]'); if (!g) return null; const r = g.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        let w6drag = null;
+        let want6 = null;
+        if (grip) {
+            const start = await h.ev(railTabsWidth);
+            want6 = await h.ev(`Math.min(${start} + 100, ${railTabsMax})`);
+            await railTabsMouse(h, "mousePressed", grip.x, grip.y);
+            await railTabsMouse(h, "mouseMoved", grip.x - 50, grip.y, { buttons: 1 });
+            await railTabsMouse(h, "mouseMoved", grip.x - 100, grip.y, { buttons: 1 });
+            await railTabsMouse(h, "mouseReleased", grip.x - 100, grip.y);
+            await railTabsNap(300);
+            w6drag = await h.ev(railTabsWidth);
+            await h.ev(`${RAIL_TABS_ASIDE}.querySelector('[role="separator"][aria-label="Resize panel"]').focus()`);
+        }
+        await railTabsKey(h, "Home", "Home", 36);
+        const w6min = await h.ev(railTabsWidth);
+        await railTabsKey(h, "End", "End", 35);
+        const w6max = await h.ev(railTabsWidth);
+        const max6 = await h.ev(railTabsMax);
+        rec(
+            "6. dragging the grip 100px left widens the panel by 100 (to the max), Home narrows it to 360 and End widens it to the max",
+            grip != null && Math.abs(w6drag - want6) <= 2 && Math.abs(w6min - 360) <= 2 && Math.abs(w6max - max6) <= 2,
+            JSON.stringify({ grip, w6drag, want6, w6min, w6max, max6 })
+        );
+
+        // 7. the collapsed strip
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Collapse panel"]')?.click()`);
+        await railTabsNap(700);
+        const w7 = await h.ev(railTabsWidth);
+        const strip7 = await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("button[aria-label]") ?? [])].map((b) => b.getAttribute("aria-label"))`);
+        await h.shot("cdp-shots/agent-rail-tabs-strip.png");
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label^="File "]')?.click()`);
+        await railTabsNap(700);
+        const tabs7 = await h.ev(railTabLabels);
+        rec(
+            "7. collapsed, the strip shows Overview and the open file; the file's icon opens the panel on File",
+            Math.abs(w7 - 44) <= 2 && strip7.includes("Overview") && strip7.some((l) => l === "File a.txt") &&
+                JSON.stringify(tabs7) === JSON.stringify(["Overview", "File a.txt*"]),
+            JSON.stringify({ w7, strip7, tabs7 })
+        );
+
+        // 8. the palette: a file of the focused agent's repo opens in its panel
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Close file"]')?.click()`);
         await h.ev(`document.activeElement?.blur?.()`);
-        await railTabsCtrlKey(h, "4");
-        await new Promise((r) => setTimeout(r, 800));
+        await railTabsKey(h, "p", "KeyP", 80, 2);
+        const paletteUp = await polishWaitFor(h, `document.activeElement?.tagName === "INPUT"`, 5000);
+        if (paletteUp) await h.cdp("Input.insertText", { text: "a.txt" });
+        await railTabsNap(1500);
+        if (paletteUp) await railTabsKey(h, "Enter", "Enter", 13);
+        const viaPalette = paletteUp && (await polishWaitFor(h, `${railTabsFileText}.includes("a.txt")`, 8000));
+        const surface8 = await h.activeSurfaceLabel();
+        rec("8. picking a.txt in the palette on the Agent surface opens it on the File tab", viaPalette && surface8 === "Agent", JSON.stringify({ paletteUp, viaPalette, surface8 }));
+
+        // 9. the plain terminal: the hover hint, then a real Ctrl+click
+        const term = ctx.terminals[0];
+        await h.rpc("uireveal", { address: `agent:${term.tabId}` }, UI_ROUTE);
+        await railTabsNap(1000);
+        const at = ctx.printed ? await h.ev(`window.__arcTermPathLinks?.locate(${JSON.stringify(term.blockId)}, ${JSON.stringify(ctx.printedPath)})`) : null;
+        let hint = false;
+        if (at) {
+            await railTabsMouse(h, "mouseMoved", at.x - 4, at.y);
+            await railTabsMouse(h, "mouseMoved", at.x, at.y);
+            hint = await polishWaitFor(h, `document.body.innerText.includes("click to open a.txt at line 2")`, 3000);
+            await railTabsMouse(h, "mousePressed", at.x, at.y, { modifiers: 2 });
+            await railTabsMouse(h, "mouseReleased", at.x, at.y, { modifiers: 2 });
+        }
+        const onLine = at != null && (await polishWaitFor(h, `(document.querySelector(".monaco-editor .active-line-number")?.textContent ?? "").trim() === "2"`, 10000));
+        const surface9 = await h.activeSurfaceLabel();
+        await h.shot("cdp-shots/agent-rail-tabs-terminal.png");
+        rec(
+            "9. the plain terminal's printed a.txt:2 shows the hover hint, and Ctrl+click opens the Code surface on a.txt at line 2",
+            ctx.shellUp === true && ctx.printed === true && at != null && hint && onLine && surface9 === "Code",
+            JSON.stringify({ shellUp: ctx.shellUp, printed: ctx.printed, at, hint, onLine, surface9 })
+        );
+
+        // 10. the nav
+        const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
+        const divider = await h.ev(`!!document.querySelector("nav [data-nav-divider]")`);
+        const height = (label) => nav.find((n) => n.label === label)?.h ?? 0;
+        await h.ev(`document.activeElement?.blur?.()`);
+        await railTabsKey(h, "4", "Digit4", 52, 2);
+        await railTabsNap(500);
         const afterChord = await h.activeSurfaceLabel();
         await h.shot("cdp-shots/agent-rail-tabs-nav.png");
         rec(
-            "5. the nav lists the core surfaces, a divider, then the tools, and Ctrl+4 opens Usage",
-            JSON.stringify(nav) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Radar", "Setup", "Settings"]) &&
+            "10. the nav lists the core surfaces, a divider, then shorter tool items, and Ctrl+4 opens Usage",
+            JSON.stringify(nav.map((n) => n.label)) === JSON.stringify(["Cockpit", "Jarvis", "Agent", "Usage", "Code", "Diff", "Radar", "Setup", "Settings"]) &&
                 divider &&
+                height("Code") < height("Usage") &&
                 afterChord === "Usage",
             JSON.stringify({ nav, divider, afterChord })
         );
@@ -2417,12 +2687,23 @@ const agentRailTabs = {
         for (const t of ctx.terminals ?? []) {
             await step("close the terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
         }
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
         if (ctx.wroteFixture) {
             await step("restore the fixture roster", () =>
                 ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
             );
         }
-        await step("restore the panel's keys", async () => {
+        await step("restore the keys", async () => {
             for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
                 await h.ev(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
             }
@@ -2437,28 +2718,27 @@ Then:
 - Add `agentRailTabs,` at the end of the `SCENARIOS` array.
 - Add `readFileSync` to the `node:fs` import at the top of the file.
 
-Before relying on the helpers, check three things:
-- **`uploadsShellUp` and `uploadsTermHas` return booleans.** If either returns something else, adapt the two `ctx`
-  fields.
-- **`code.project.last` holds the project as JSON with a `path`** (`lastCodeProjectAtom` in `codestore.ts`). If not,
-  assert the Code surface's open file another way. Read `codepathbar.tsx` for an element that names it.
-- **`openRailTerminal` sets the shell's cwd to `~`.** That is why the echo prints an absolute path: a relative one has
-  nothing to resolve against.
+Before relying on these, check:
+- **The card shows every entry.** If `NarrationTimeline` folds older entries in the card (its "expand" control), click it open in `railTabsClickLink` before searching for the link.
+- **The step-4 copy matches `filetab.tsx`.** `formatSize(3 * 1024 * 1024)` is "3.0 MB", so the message reads "Large file, 3.0 MB".
+- **`.active-line-number` is how Monaco marks the cursor's line number** on the Code surface (step 9). If it is not
+  in this version, read the editor's position through the line-numbers gutter another way, and say so in the step.
+- **The palette's starting scope.** If, on the Agent surface, it opens on a scope that lists no files
+  (`palette-scope.ts`, `initialNav`), switch to the Files scope the way a user does before typing, in step 8.
 
 - [ ] **Step 2: Check that it parses (do not run it from the lane)**
 
 Run: `node --check scripts/cdp/scenarios.mjs`. Expected: no output, exit 0.
 
-Then confirm the registration: `node -e "import('./scripts/cdp/scenarios.mjs').then(m => console.log(m.SCENARIOS.some(s => s.name === 'agent-rail-tabs')))"`
+Then confirm the registration:
+`node -e "import('./scripts/cdp/scenarios.mjs').then(m => console.log(m.SCENARIOS.some(s => s.name === 'agent-rail-tabs')))"`
 prints `true`.
-
-The scenario runs after the run lands, from the checkout, against the dev app (see "After the run lands" near the top).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add scripts/cdp/scenarios.mjs
-git commit -m "test(cdp): agent-rail-tabs, the panel's tabs and the file path links"
+git commit -m "test(cdp): agent-rail-tabs, the panel's tabs, states and keys, and the file path links"
 ```
 
 ---
@@ -2470,7 +2750,8 @@ git commit -m "test(cdp): agent-rail-tabs, the panel's tabs and the file path li
 - [ ] **Step 1: The touched tests, once more**
 
 ```bash
-npx vitest run frontend/app/view/agents/pathlinks.test.ts frontend/app/view/agents/agentrailtabs.test.ts   frontend/app/view/agents/pathlinkroute.test.ts frontend/app/view/agents/transcriptprojection.test.ts   frontend/app/view/agents/pitranscriptprojection.test.ts frontend/app/view/agents/opencodetranscriptprojection.test.ts   frontend/app/view/agents/surfaceorder.test.ts frontend/app/view/agents/radarnav.test.ts   frontend/app/store/keybindings/bindings.test.ts frontend/app/view/agents/agentsviewmodel.test.ts
+npx vitest run frontend/app/view/agents/pathlinks.test.ts frontend/app/view/agents/agentrailtabs.test.ts   frontend/app/view/agents/pathlinkroute.test.ts frontend/app/view/agents/transcriptprojection.test.ts   frontend/app/view/agents/pitranscriptprojection.test.ts frontend/app/view/agents/opencodetranscriptprojection.test.ts   frontend/app/view/agents/surfaceorder.test.ts frontend/app/view/agents/radarnav.test.ts   frontend/app/store/keybindings/bindings.test.ts frontend/app/store/keybindings/dispatcher.test.ts \
+  frontend/app/view/agents/agentsviewmodel.test.ts
 ```
 
 Expected: all PASS. (`tsc` runs in Verify at the merge.)
