@@ -8046,8 +8046,8 @@ const agentHistory = {
                 JSON.stringify(first)
             );
 
-            // every seed moved within the last few hours, so each folder heads its rows Today (unless the run straddles midnight); a
-            // session's second line is its runtime, branch and tokens, a run's its task progress
+            // no recency headings: each row reads its own age; a session's second line is its runtime, branch and tokens, a
+            // run's its task progress
             const rich = await h.ev(`(() => {
                 const convo = document.querySelector("[data-agent-conversations]");
                 const row = convo?.querySelector('[data-agent-session-row="claude:ah-1"]');
@@ -8060,9 +8060,8 @@ const agentHistory = {
             })()`);
             await h.shot("cdp-shots/agent-history-rows.png");
             rec(
-                "3b. each folder heads its conversations by recency, and a row's second line reads its branch and tokens, a run's its progress",
-                rich.headings.length >= 2 &&
-                    rich.headings.every((b) => ["today", "yesterday"].includes(b)) &&
+                "3b. no recency heading splits a folder, and a row's second line reads its branch and tokens, a run's its progress",
+                rich.headings.length === 0 &&
                     /main/.test(rich.meta ?? "") &&
                     /1k tok/.test(rich.meta ?? "") &&
                     /landed|no tasks|complete/.test(rich.run ?? ""),

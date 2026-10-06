@@ -6,7 +6,6 @@ import { useSettle } from "@/app/element/motionhooks";
 import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
-import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
@@ -47,13 +46,12 @@ import {
     conversationCount,
     conversationTree,
     endedConversationsByProject,
-    RECENCY_LABEL,
+    liveBranches,
     sessionAgeLabel,
     startOfDay,
     terminalTree,
     type EndedRunRow,
     type EndedSessionRow,
-    type RecencyBucket,
 } from "./agentsidebarmodel";
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
@@ -343,12 +341,15 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
 function ParentRow({
     model,
     agent,
+    branch,
     lead,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
+    branch?: string; // the git branch its session is on (liveBranches); absent until the scan has seen it
     lead?: { run: RunInfo; open: boolean; live: number };
 }) {
+    const rt = runtimeMeta(agent.agent);
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
@@ -402,72 +403,101 @@ function ParentRow({
     // popLayout to pop an exiting row out of flow). This is just the row body + subagent reveal.
     return (
         <>
+            {/* two lines, as a Conversations row reads: the name, its state and age, then its runtime, branch and model
+                (a lead's: its workers chip and progress) */}
             <div
                 onClick={select}
                 onContextMenu={onContextMenu}
                 data-agent-row={agent.id}
                 {...dragSource(agent, !renaming)}
                 className={cn(
-                    "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                    "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
                     // selection is the one filled row; an asking agent says so in words, not in a tint
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
                 )}
             >
-                <Slot>
-                    {mark ? (
-                        <Workflow
-                            size={13}
-                            aria-hidden
-                            className={cn(LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
-                        />
-                    ) : (
-                        <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
-                    )}
-                </Slot>
-                <div className="min-w-0 flex-1">
-                    {renaming ? (
-                        <RenameBox tabId={agent.id} />
-                    ) : (
-                        <div className="flex min-w-0 items-center gap-[6px]">
-                            <div
-                                className={cn(
-                                    "min-w-0 flex-1 truncate text-[13px]",
-                                    selected ? "text-primary" : "text-secondary"
-                                )}
-                            >
-                                {agent.name}
-                            </div>
-                            {/* a lead's second line holds its workers chip and progress, which need its full width */}
-                            {lead ? subsChip : null}
-                        </div>
-                    )}
-                    {lead ? <RunSubline run={lead.run} open={lead.open} live={lead.live} /> : null}
-                </div>
-                {lead ? null : subsChip}
-                <CanvasTag model={model} id={agent.id} />
-                {/* a row names its state only when it wants something; the dot already says working or idle */}
-                {review ? (
-                    // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
-                    // focuses its agent in review mode itself, so the click must not reach the row either way
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            openReview(model, agent.id);
-                        }}
-                        title={`Open the ${review.kind} review`}
-                        className="flex cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] text-[10.5px] font-semibold text-warning hover:border-warning"
-                    >
-                        review
-                        <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
-                    </button>
-                ) : asking ? (
-                    <span className="text-[10.5px] font-semibold text-warning">asking</span>
+                {renaming ? (
+                    <RenameBox tabId={agent.id} />
                 ) : (
-                    <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                        {formatAgeShort(displayAgeMs(agent, now))}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-[6px]">
+                        {mark ? (
+                            <Workflow
+                                size={12}
+                                strokeWidth={1.8}
+                                aria-hidden
+                                className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
+                            />
+                        ) : null}
+                        <span
+                            className={cn(
+                                "min-w-0 flex-1 truncate text-[13px]",
+                                selected ? "text-primary" : "text-secondary"
+                            )}
+                        >
+                            {agent.name}
+                        </span>
+                        {/* a lead's second line holds its workers chip and progress, which need its full width */}
+                        {lead ? subsChip : null}
+                        <CanvasTag model={model} id={agent.id} />
+                        {/* a row names its state in words only when it wants something; otherwise the dot says
+                            working or idle */}
+                        {review ? (
+                            // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
+                            // focuses its agent in review mode itself, so the click must not reach the row either way
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    openReview(model, agent.id);
+                                }}
+                                title={`Open the ${review.kind} review`}
+                                className="flex flex-none cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] text-[10.5px] font-semibold text-warning hover:border-warning"
+                            >
+                                review
+                                <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
+                            </button>
+                        ) : asking ? (
+                            <span className="flex-none text-[10.5px] font-semibold text-warning">asking</span>
+                        ) : (
+                            <>
+                                {mark ? null : (
+                                    <StatusDot
+                                        state={agent.state}
+                                        pulse={agent.state !== "idle"}
+                                        className="!h-[6px] !w-[6px] flex-none"
+                                    />
+                                )}
+                                <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                                    {formatAgeShort(displayAgeMs(agent, now))}
+                                </span>
+                            </>
+                        )}
+                    </div>
+                )}
+                {lead ? (
+                    <RunSubline run={lead.run} open={lead.open} live={lead.live} />
+                ) : (
+                    <div className={cn(CONVERSATION_META, "mt-[3px]")}>
+                        <span className={cn("flex-none", rt.text)} title={rt.label}>
+                            {rt.glyph}
+                        </span>
+                        {branch ? (
+                            <span className="min-w-0 truncate" title={branch}>
+                                {branch}
+                            </span>
+                        ) : null}
+                        {agent.model ? (
+                            <>
+                                <span aria-hidden className="flex-none text-ink-faint">
+                                    ·
+                                </span>
+                                <span className="flex-none whitespace-nowrap">{agent.model}</span>
+                            </>
+                        ) : null}
+                        <span className="flex-1" />
+                        {subsChip}
+                    </div>
                 )}
             </div>
             {/* subagent reveal: the children block expands/collapses via composerReveal (height+opacity).
@@ -988,15 +1018,6 @@ const RunConversationRow = memo(function RunConversationRow({
     );
 });
 
-// the heading over a recency bucket's first conversation in a folder, or in the flat filtered list
-function RecencyHeading({ bucket }: { bucket: RecencyBucket }) {
-    return (
-        <div data-agent-recency={bucket} className="px-[10px] pb-[2px] pt-[8px]">
-            <span className={cn(REGION_LABEL, "text-ink-faint")}>{RECENCY_LABEL[bucket]}</span>
-        </div>
-    );
-}
-
 // One more page of a project's ended conversations, with how many are still hidden
 function ShowMoreConversations({ project, hidden }: { project: string; hidden: number }) {
     return (
@@ -1196,7 +1217,7 @@ function TerminalsSection({ model }: { model: AgentsViewModel }) {
 }
 
 // The sidebar's second section: every ended conversation and orchestrator run, in a folder per project (the one with the
-// newest conversation first) under recency headings, or the chosen project's alone when the app bar narrows the sidebar
+// newest conversation first), or the chosen project's alone when the app bar narrows the sidebar
 // (the switcher names it). A plain list, not the Active section's animated one: it can run
 // past a hundred rows (a page at a time per folder), and a row that slid when the filter changed would be noise. The scan
 // fills it after first paint, so nothing renders under the header until the archive has loaded.
@@ -1216,11 +1237,11 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
         () => endedConversationsByProject(archive, agents, registered),
         [archive, agents, registered]
     );
-    // the day changes the headings, not the clock's every tick
+    // a clock that moves once a day, so the run views below do not rebuild on every tick
     const today = startOfDay(now);
     const rows = useMemo(
-        () => conversationTree(ended, filter, new Set(collapsedList), presses, today),
-        [ended, filter, collapsedList, presses, today]
+        () => conversationTree(ended, filter, new Set(collapsedList), presses),
+        [ended, filter, collapsedList, presses]
     );
     // each shown run's view, from its own objects (loaded on first read); an ended run's dag no longer moves
     const shownRuns = useMemo(() => rows.filter((r): r is EndedRunRow => r.kind === "run"), [rows]);
@@ -1280,12 +1301,6 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                 return (
                                     <div key={`more-${r.project}`} className={rowIndent(filtered)}>
                                         <ShowMoreConversations project={r.project} hidden={r.hidden} />
-                                    </div>
-                                );
-                            case "bucket":
-                                return (
-                                    <div key={`b-${r.project}-${r.bucket}`} className={rowIndent(filtered)}>
-                                        <RecencyHeading bucket={r.bucket} />
                                     </div>
                                 );
                             case "run":
@@ -1365,6 +1380,9 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // every project's, whatever the filter: the badge stays on the header while the section is folded, so an agent asking
     // in a project the filter hides is never out of sight
     const asking = askingCount(agents);
+    // each live agent's branch, for its row's second line (as a Conversations row reads its own)
+    const archive = useAtomValue(sessionsArchiveAtom);
+    const branches = useMemo(() => liveBranches(archive, agents), [archive, agents]);
 
     useRunDigests(Object.values(lineage.runs));
 
@@ -1447,7 +1465,9 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                 switch (r.kind) {
                                     case "parent":
                                         key = r.agent.id;
-                                        body = <ParentRow model={model} agent={r.agent} />;
+                                        body = (
+                                            <ParentRow model={model} agent={r.agent} branch={branches.get(r.agent.id)} />
+                                        );
                                         break;
                                     case "lead":
                                         key = r.agent.id;
@@ -1455,6 +1475,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             <ParentRow
                                                 model={model}
                                                 agent={r.agent}
+                                                branch={branches.get(r.agent.id)}
                                                 lead={{ run: r.run, open: r.open, live: r.live }}
                                             />
                                         );

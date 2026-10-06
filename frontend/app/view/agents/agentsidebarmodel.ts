@@ -5,10 +5,9 @@
 // collapsible. Active holds the live agents as the tree builds them (agenttreemodel.ts: one collapsible folder per
 // project). Terminals holds the plain shells, a collapsible folder per project. Conversations holds every ended
 // session, in a collapsible folder per project (the folder with the newest conversation first, newest first inside
-// it, under a heading per recency bucket: Today, Yesterday, Previous 7 days, Earlier), and "Show more" pages a folder
-// (CONVERSATION_PAGE per press). The app bar's project switcher narrows all three
-// to one project, which then needs no folder: each section is a flat list, and Active counts the agents it hides so
-// one asking elsewhere is not lost. Live and ended never mix: a live agent and its session record are one row, in Active, joined by normalized
+// it, each row reading its own age), and "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's
+// project switcher narrows all three to one project, which then needs no folder: each section is a flat list, and
+// Active counts the agents it hides so one asking elsewhere is not lost. Live and ended never mix: a live agent and its session record are one row, in Active, joined by normalized
 // transcript path (overlayLive), and the sessions an orchestrator run launched fold into one entry for the run, listed
 // once none of them is live (until then the run is in Active). Status filters live in History only. No React. It
 // imports overlayLive from sessionsarchivestore, which pulls in the RPC client and the store; nothing here calls
@@ -48,22 +47,6 @@ export interface EndedRunRow {
 // one entry of the Conversations section: an ended session on its own, or an ended run
 export type ConversationEntry = EndedSessionRow | EndedRunRow;
 
-export type RecencyBucket = "today" | "yesterday" | "week" | "earlier";
-
-export const RECENCY_LABEL: Record<RecencyBucket, string> = {
-    today: "Today",
-    yesterday: "Yesterday",
-    week: "Previous 7 days",
-    earlier: "Earlier",
-};
-
-// the heading over the first shown entry of each recency bucket in a folder (or the flat filtered list)
-export interface RecencyHeadingRow {
-    kind: "bucket";
-    project: string;
-    bucket: RecencyBucket;
-}
-
 // a project's folder in the Conversations section: its ended conversations, how many of them wait on you, and whether
 // it is open
 export interface ConversationFolderRow {
@@ -81,7 +64,7 @@ export interface MoreConversationsRow {
     hidden: number;
 }
 
-export type ConversationTreeRow = ConversationFolderRow | RecencyHeadingRow | ConversationEntry | MoreConversationsRow;
+export type ConversationTreeRow = ConversationFolderRow | ConversationEntry | MoreConversationsRow;
 
 // a total order on strings (code units, not locale), so a tie broken by it never depends on the input's order
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -91,27 +74,9 @@ export function sessionTitle(task: string): string {
     return task.replace(/\s+/g, " ").trim() || UNTITLED_SESSION;
 }
 
-/** Pure: the start of the local day `now` falls in, the reference recencyBucket measures from. */
+/** Pure: the start of the local day `now` falls in, a clock that moves once a day. */
 export function startOfDay(now: number): number {
     return new Date(now).setHours(0, 0, 0, 0);
-}
-
-/** Pure: which recency bucket a time falls in, `today` being startOfDay of the clock: Today, Yesterday, the 7 days
- *  before today (yesterday aside), or Earlier. Calendar days, not 24-hour spans, so a DST change moves no boundary. A
- *  clock-skewed future stamp is Today. */
-export function recencyBucket(ts: number, today: number): RecencyBucket {
-    if (ts >= today) {
-        return "today";
-    }
-    const daysBefore = (n: number) => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - n);
-        return d.getTime();
-    };
-    if (ts >= daysBefore(1)) {
-        return "yesterday";
-    }
-    return ts >= daysBefore(7) ? "week" : "earlier";
 }
 
 /** Pure: how long ago a session last moved, as the tree's other rows read ("<1m", "16m", "3h", "3d"). */
@@ -281,6 +246,23 @@ export type TerminalTreeRow =
     | { kind: "folder"; project: string; count: number; open: boolean }
     | { kind: "terminal"; project: string; terminal: AgentVM };
 
+/** Pure: the git branch each live agent's session is on, by agent id, for its Active row's second line. Read from the
+ *  archive's record of the transcript the agent is writing (overlayLive's join); an agent the scan has not seen yet, or
+ *  one whose session names no branch, is absent. `base` is null until the scan loads. */
+export function liveBranches(base: SessionActivity[] | null, roster: AgentVM[]): Map<string, string> {
+    const out = new Map<string, string>();
+    if (base == null) {
+        return out;
+    }
+    // overlayLive's third argument (`now`) is unused, so 0 stands in for it
+    for (const s of overlayLive(base, roster, 0)) {
+        if (s.liveId != null && s.branch) {
+            out.set(s.liveId, s.branch);
+        }
+    }
+    return out;
+}
+
 /** Pure: the Terminals section. A folder per project the plain terminals were launched in (projectOf; "ungrouped" for
  *  none, as the Active section files an agent), the projects in the roster's order, then, unless it is collapsed, the
  *  folder's terminals in that order. Filtered to a project, its terminals alone in that order, flat and unfolded, with
@@ -338,16 +320,14 @@ function projectsInScope(ended: ReadonlyMap<string, ConversationEntry[]>, filter
 
 /** Pure: the Conversations section. A folder row per project the filter (the app bar's project switcher: ALL_PROJECTS or
  *  a project's name) keeps, then, unless the folder is collapsed, its ended conversations newest first (equal times in
- *  key order): the first CONVERSATION_PAGE plus one page per "Show more" press on that folder, a recency heading over
- *  the first shown entry of each bucket (`today` is startOfDay of the clock), then a more row counting what is still
- *  hidden. Headings are not entries: a page counts entries alone. Filtered to a project, the one folder's rows alone:
- *  no folder row, so no fold applies. */
+ *  key order): the first CONVERSATION_PAGE plus one page per "Show more" press on that folder, then a more row
+ *  counting what is still hidden. Filtered to a project, the one folder's rows alone: no folder row, so no fold
+ *  applies. */
 export function conversationTree(
     ended: ReadonlyMap<string, ConversationEntry[]>,
     filter: string,
     collapsed: ReadonlySet<string>,
-    presses: ReadonlyMap<string, number>,
-    today: number
+    presses: ReadonlyMap<string, number>
 ): ConversationTreeRow[] {
     const out: ConversationTreeRow[] = [];
     const flat = filter !== ALL_PROJECTS;
@@ -362,15 +342,7 @@ export function conversationTree(
             continue;
         }
         const shown = list.slice(0, CONVERSATION_PAGE * (1 + Math.max(0, presses.get(project) ?? 0)));
-        let bucket: RecencyBucket | undefined;
-        for (const entry of shown) {
-            const b = recencyBucket(entry.lastactivets, today);
-            if (b !== bucket) {
-                bucket = b;
-                out.push({ kind: "bucket", project, bucket: b });
-            }
-            out.push(entry);
-        }
+        out.push(...shown);
         if (shown.length < list.length) {
             out.push({ kind: "more", project, hidden: list.length - shown.length });
         }

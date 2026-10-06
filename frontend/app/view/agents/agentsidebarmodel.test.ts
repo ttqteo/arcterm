@@ -11,7 +11,7 @@ import {
     conversationProjects,
     conversationTree,
     endedConversationsByProject,
-    recencyBucket,
+    liveBranches,
     scanDue,
     sessionAgeLabel,
     sessionTitle,
@@ -28,8 +28,6 @@ import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttre
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 const NOW = 1_800_000_000_000;
-// a day boundary a day before NOW, so every fixture minutes old is Today whatever the test machine's time zone
-const TODAY = NOW - DAY;
 
 const session = (id: string, over: Partial<SessionActivity> = {}): SessionActivity => ({
     id,
@@ -72,12 +70,10 @@ const groupsOf = (rows: AgentTreeRow[]) => rows.flatMap((r) => (r.kind === "grou
 // an entry as its session id, or "run:<id>" for a run
 const entryId = (r: ConversationEntry) => (r.kind === "run" ? `run:${r.group.runId}` : r.session.id);
 
-// the Conversations section as entry ids, a folder row as "folder:<project>", a more row as "more:<project>:<hidden>";
-// recency headings are left out (see headed for them)
-const rowId = (r: Exclude<ConversationTreeRow, { kind: "bucket" }>) =>
+// the Conversations section as entry ids, a folder row as "folder:<project>", a more row as "more:<project>:<hidden>"
+const rowId = (r: ConversationTreeRow) =>
     r.kind === "folder" ? `folder:${r.project}` : r.kind === "more" ? `more:${r.project}:${r.hidden}` : entryId(r);
-const rowIds = (rows: ConversationTreeRow[]) => rows.flatMap((r) => (r.kind === "bucket" ? [] : [rowId(r)]));
-const noHeadings = (rows: ConversationTreeRow[]) => rows.filter((r) => r.kind !== "bucket");
+const rowIds = (rows: ConversationTreeRow[]) => rows.map(rowId);
 
 const treeOf = (agents: AgentVM[]) =>
     buildAgentTree(
@@ -96,24 +92,28 @@ describe("sessionTitle", () => {
     });
 });
 
-describe("recencyBucket", () => {
+describe("liveBranches", () => {
+    it("reads each live agent's branch from the session it is writing", () => {
+        const scan = [
+            session("s1", { branch: "feat/x" }),
+            session("s2", { branch: "" }),
+            session("s3", { branch: "main" }),
+        ];
+        const roster = [
+            agent("a1", "/home/u/.claude/projects/home-u-waveterm/s1.jsonl"),
+            agent("a2", "/home/u/.claude/projects/home-u-waveterm/s2.jsonl"),
+            agent("a3"),
+        ];
+        // s3 is ended (no agent writes it), a2's session names no branch, a3 has no transcript yet
+        expect(liveBranches(scan, roster)).toEqual(new Map([["a1", "feat/x"]]));
+    });
+    it("is empty until the scan loads", () => {
+        expect(liveBranches(null, [agent("a1", "/x.jsonl")]).size).toBe(0);
+    });
+});
+
+describe("startOfDay", () => {
     const today = startOfDay(NOW);
-    const daysBefore = (n: number) => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - n);
-        return d.getTime();
-    };
-    it("reads calendar days back from the start of today", () => {
-        expect(recencyBucket(today, today)).toBe("today");
-        expect(recencyBucket(today - 1, today)).toBe("yesterday");
-        expect(recencyBucket(daysBefore(1), today)).toBe("yesterday");
-        expect(recencyBucket(daysBefore(1) - 1, today)).toBe("week");
-        expect(recencyBucket(daysBefore(7), today)).toBe("week");
-        expect(recencyBucket(daysBefore(7) - 1, today)).toBe("earlier");
-    });
-    it("reads a clock-skewed future stamp as today", () => {
-        expect(recencyBucket(NOW + DAY, today)).toBe("today");
-    });
     it("starts the day at local midnight", () => {
         expect(new Date(today).getHours()).toBe(0);
         expect(today).toBeLessThanOrEqual(NOW);
@@ -404,51 +404,8 @@ describe("conversationTree", () => {
         ended: ReadonlyMap<string, ConversationEntry[]>,
         filter = ALL_PROJECTS,
         collapsed: ReadonlySet<string> = open,
-        presses: ReadonlyMap<string, number> = unpressed,
-        today = TODAY
-    ) => conversationTree(ended, filter, collapsed, presses, today);
-    // the rows with each recency heading as "#<bucket>"
-    const headed = (rows: ConversationTreeRow[]) => rows.map((r) => (r.kind === "bucket" ? `#${r.bucket}` : rowId(r)));
-
-    it("heads each recency bucket's first shown entry, inside each folder", () => {
-        const today = startOfDay(NOW);
-        const ago = (days: number) => {
-            const d = new Date(today);
-            d.setDate(d.getDate() - days);
-            return d.getTime() + 60 * MIN;
-        };
-        const ended = endedOf([
-            session("t", { lastactivets: today + MIN }),
-            session("y", { lastactivets: ago(1) }),
-            session("w3", { lastactivets: ago(3) }),
-            session("w7", { lastactivets: ago(7) }),
-            session("e", { lastactivets: ago(8) }),
-            session("l", { projectname: "loom", lastactivets: ago(3) }),
-        ]);
-        expect(headed(tree(ended, ALL_PROJECTS, open, unpressed, today))).toEqual([
-            "folder:waveterm",
-            "#today",
-            "t",
-            "#yesterday",
-            "y",
-            "#week",
-            "w3",
-            "w7",
-            "#earlier",
-            "e",
-            "folder:loom",
-            "#week",
-            "l",
-        ]);
-        expect(headed(tree(ended, "loom", open, unpressed, today))).toEqual(["#week", "l"]);
-    });
-
-    it("heads only the entries a page shows, and none in a folded folder", () => {
-        const ended = endedOf([...solos(12), session("old", { lastactivets: TODAY - 3 * DAY })]);
-        expect(headed(tree(ended)).filter((r) => r.startsWith("#"))).toEqual(["#today"]);
-        expect(headed(tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 1]]))).slice(-2)).toEqual(["#week", "old"]);
-        expect(headed(tree(ended, ALL_PROJECTS, new Set(["waveterm"])))).toEqual(["folder:waveterm"]);
-    });
+        presses: ReadonlyMap<string, number> = unpressed
+    ) => conversationTree(ended, filter, collapsed, presses);
 
     it("files each project's ended sessions under its folder, the folder with the newest conversation first", () => {
         const ended = endedOf([
@@ -520,13 +477,13 @@ describe("conversationTree", () => {
         expect(ids[0]).toBe("folder:waveterm");
         expect(ids.slice(1, 4)).toEqual(["s1", "s2", "s3"]);
         expect(ids[CONVERSATION_PAGE]).toBe("s10");
-        expect(noHeadings(rows)[CONVERSATION_PAGE + 1]).toEqual({ kind: "more", project: "waveterm", hidden: 4 });
+        expect(rows[CONVERSATION_PAGE + 1]).toEqual({ kind: "more", project: "waveterm", hidden: 4 });
         expect(ids.slice(CONVERSATION_PAGE + 2)).toEqual(["folder:zeta", "l1", "l2", "l3"]);
     });
 
     it("has no more row when everything fits, a page exactly included", () => {
         expect(rowIds(tree(endedOf(solos(3))))).toEqual(["folder:waveterm", "s1", "s2", "s3"]);
-        const exact = noHeadings(tree(endedOf(solos(CONVERSATION_PAGE))));
+        const exact = tree(endedOf(solos(CONVERSATION_PAGE)));
         expect(exact).toHaveLength(CONVERSATION_PAGE + 1);
         expect(exact.some((r) => r.kind === "more")).toBe(false);
     });
@@ -534,7 +491,7 @@ describe("conversationTree", () => {
     it("shows one page more per press of that project, and drops the more row once nothing is hidden", () => {
         const ended = endedOf([...solos(25), ...solos(12, "zeta", "l")]);
         const inWaveterm = (rows: ConversationTreeRow[]) =>
-            rows.filter((r) => r.kind !== "folder" && r.kind !== "bucket" && r.project === "waveterm");
+            rows.filter((r) => r.kind !== "folder" && r.project === "waveterm");
         const once = tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 1]]));
         expect(inWaveterm(once)).toHaveLength(2 * CONVERSATION_PAGE + 1);
         expect(inWaveterm(once).at(-1)).toEqual({ kind: "more", project: "waveterm", hidden: 5 });
@@ -549,7 +506,7 @@ describe("conversationTree", () => {
 
     it("reads a press count below zero as none", () => {
         const rows = tree(endedOf(solos(25)), ALL_PROJECTS, open, new Map([["waveterm", -3]]));
-        expect(noHeadings(rows)).toHaveLength(CONVERSATION_PAGE + 2);
+        expect(rows).toHaveLength(CONVERSATION_PAGE + 2);
     });
 
     it("breaks a tie on the time by key within a folder, and between folders by name, whatever the input order", () => {
