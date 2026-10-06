@@ -2,7 +2,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { setPlatform } from "@/util/platformutil";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
     conflictOf,
     nextDrafts,
@@ -90,6 +91,7 @@ describe("withoutDraft", () => {
 
 describe("renameDraftKeys", () => {
     const d: Draft = { text: "x", base };
+    beforeEach(() => setPlatform("win32"));
 
     it("moves the draft of a renamed file", () => {
         const out = renameDraftKeys(new Map([["C:\\repo\\a.go", d]]), "C:\\repo\\a.go", "C:\\repo\\b.go");
@@ -118,6 +120,16 @@ describe("renameDraftKeys", () => {
         const start = new Map([["C:\\repo\\a.go", d]]);
         renameDraftKeys(start, "C:\\repo\\a.go", "C:\\repo\\b.go");
         expect([...start.keys()]).toEqual(["C:\\repo\\a.go"]);
+    });
+
+    it("moves the drafts under a renamed directory on macOS, and not a prefix sibling's", () => {
+        setPlatform("darwin");
+        const start = new Map([
+            ["/repo/pkg/a.go", d],
+            ["/repo/pkg2/a.go", d],
+        ]);
+        const out = renameDraftKeys(start, "/repo/pkg", "/repo/lib");
+        expect([...out.keys()]).toEqual(["/repo/lib/a.go", "/repo/pkg2/a.go"]);
     });
 });
 

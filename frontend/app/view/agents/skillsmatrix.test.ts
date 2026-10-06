@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { setPlatform } from "@/util/platformutil";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
     adoptCount,
     adoptKeep,
@@ -177,6 +178,7 @@ describe("skillsSummary", () => {
 
 describe("skillFilePath", () => {
     const rows = () => skillRows(sample(), {});
+    beforeEach(() => setPlatform("win32"));
 
     it("opens the vault copy of a managed skill", () => {
         const r = rows().find((x) => x.name === "vaulted")!;

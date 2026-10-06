@@ -2,6 +2,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { isWindows } from "@/util/platformutil";
+
 // Pure: unsaved edits and the decision of whether saving one is safe. No React, no IO.
 //
 // A draft pins the disk state it was based on. That is the whole point: this repo's working tree is
@@ -70,10 +72,10 @@ export function withoutDraft(drafts: Drafts, key: string): Map<string, Draft> {
     return out;
 }
 
-// Windows-only build: draft keys come from joinRepoPath, which normalizes the whole join to
-// backslashes, so both sides of this comparison are built the same way and a plain prefix match is
-// exact rather than approximate.
-const ABS_SEP = "\\";
+// Draft keys come from joinRepoPath, which normalizes the whole join to the platform's separator, so
+// both sides of this comparison are built the same way and a plain prefix match is exact rather than
+// approximate.
+const absSep = () => (isWindows() ? "\\" : "/");
 
 // A rename carries its drafts along: the file's own key, or every key under a renamed directory. The
 // separator is what stops `pkg` from also claiming `pkg2\a.go`.
@@ -82,7 +84,7 @@ export function renameDraftKeys(drafts: Drafts, from: string, to: string): Map<s
     for (const [key, d] of drafts) {
         if (key === from) {
             out.set(to, d);
-        } else if (key.startsWith(from + ABS_SEP)) {
+        } else if (key.startsWith(from + absSep())) {
             out.set(to + key.slice(from.length), d);
         } else {
             out.set(key, d);

@@ -2,10 +2,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { joinRepoPath, repoBasename, sameRepoPath, splitRepoPath } from "./paths";
+import { setPlatform } from "./platformutil";
 
-describe("joinRepoPath", () => {
+describe("joinRepoPath on Windows", () => {
+    beforeEach(() => setPlatform("win32"));
+
     it("joins a forward-slashed git path onto a backslashed Windows root", () => {
         expect(joinRepoPath("C:\\repo", "src/main.ts")).toBe("C:\\repo\\src\\main.ts");
     });
@@ -20,6 +23,18 @@ describe("joinRepoPath", () => {
 
     it("does not choke on a trailing separator on the root", () => {
         expect(joinRepoPath("C:\\repo\\", "a.ts")).toBe("C:\\repo\\a.ts");
+    });
+});
+
+describe("joinRepoPath on macOS", () => {
+    beforeEach(() => setPlatform("darwin"));
+
+    it("keeps the forward slashes of a POSIX root", () => {
+        expect(joinRepoPath("/Users/x/repo", "src/main.ts")).toBe("/Users/x/repo/src/main.ts");
+    });
+
+    it("does not double the separator after a trailing slash on the root", () => {
+        expect(joinRepoPath("/Users/x/repo/", "a.ts")).toBe("/Users/x/repo/a.ts");
     });
 });
 
