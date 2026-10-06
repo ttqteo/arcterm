@@ -6,7 +6,7 @@
 // Spend is priced via usagepricing (single source of truth). No React/runtime imports; unit-tested.
 
 import { spendBreakdown } from "./usagepricing";
-import { CLASS_LABEL, CLASS_ORDER, type ClassUsage, type TokenClass } from "./usagestats";
+import { CLASS_LABEL, CLASS_ORDER, usd, type ClassUsage, type TokenClass } from "./usagestats";
 
 export interface SessionModelUsage {
     model: string; // raw id; labelled via prettyModel at render
@@ -28,6 +28,14 @@ export interface SessionUsage {
     classes: ClassUsage[]; // fixed CLASS_ORDER
     models: SessionModelUsage[]; // desc by tokens
     insight: SessionInsight | null; // null when the session has no tokens
+}
+
+// spendHeadline is the session's spend as the rail shows it: the cost the transcripts reported when they carry one,
+// else the bundled-table estimate, marked as approximate
+export function spendHeadline(u: SessionUsage): { text: string; caption: string } {
+    return u.reportedTotalUsd !== undefined
+        ? { text: usd(u.reportedTotalUsd), caption: "reported" }
+        : { text: `≈ ${usd(u.totalSpendUsd)}`, caption: "API-equivalent" };
 }
 
 function zeroClasses(): Record<TokenClass, number> {

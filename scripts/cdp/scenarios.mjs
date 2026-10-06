@@ -7510,12 +7510,11 @@ const agentTreeRail = {
             }));
         })()`);
         // no Terminals: plain terminals are the Agent tree's own section
-        const order = ["subagents", "files", "artifacts", "uploads", "bgtasks", "tools", "details", "usage"];
-        const seen = (sections ?? []).map((s) => s.id).filter((id) => [...order, "terminals"].includes(id));
+        const shape = await h.ev(railShape(RAIL));
         rec(
-            "10. the lead's rail lists Subagents, Files changed, Artifacts, Uploads, Background tasks, Tools used, Details, Token usage in order, and no Terminals",
-            JSON.stringify(seen) === JSON.stringify(order),
-            JSON.stringify(sections)
+            "10. the lead's strip counts Subagents, Files changed, Artifacts, Uploads, Background tasks in order; its body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
+            railShapeOk(shape),
+            JSON.stringify(shape)
         );
         const byId = Object.fromEntries((sections ?? []).map((s) => [s.id, s]));
         rec(
@@ -13608,27 +13607,43 @@ const canvasTabsScenario = {
 // counted 0 that opens to an enabled Attach (the fixture agent has a block to paste into); agent-uploads covers what the
 // section does once something is in it. Plain terminals left the agent's rail for a section of the Agent tree, and a
 // focused terminal's own rail still lists them.
+// The Agent details rail's shape (agentrailsections.ts): the strip counts every list in one fixed order, the body lists
+// only the counted sections holding something, and Token usage then Details close it
+const RAIL_STATS_ORDER = ["subagents", "files", "artifacts", "uploads", "bgtasks"];
+function railShape(railExpr) {
+    return `(() => {
+        const rail = ${railExpr};
+        if (!rail) return null;
+        return {
+            stats: [...rail.querySelectorAll("[data-rail-stat]")].map((b) => ({ id: b.dataset.railStat, count: b.dataset.count })),
+            sections: [...rail.querySelectorAll("[data-rail-section]")].map((s) => s.dataset.railSection),
+        };
+    })()`;
+}
+function railShapeOk(shape) {
+    if (!shape) return false;
+    const emptyListed = shape.stats.filter((s) => s.count === "0" && shape.sections.includes(s.id));
+    return (
+        JSON.stringify(shape.stats.map((s) => s.id)) === JSON.stringify(RAIL_STATS_ORDER) &&
+        emptyListed.length === 0 &&
+        !shape.sections.includes("terminals") &&
+        !shape.sections.includes("tools") &&
+        JSON.stringify(shape.sections.slice(-2)) === JSON.stringify(["usage", "details"])
+    );
+}
+
 const RAIL_SECTIONS_AGENT_ID = "fx-rail-sections";
 const RAIL_SECTIONS_AGENT_BLOCK = "fx-blk-rail-sections";
 const RAIL_SECTIONS_PROJECT_A = "verify-rail-a";
 const RAIL_SECTIONS_PROJECT_B = "verify-rail-b";
 const RAIL_SECTIONS_TOPIC = "verify-rail-sections";
-const RAIL_SECTIONS_ORDER = [
-    "subagents",
-    "files",
-    "artifacts",
-    "uploads",
-    "bgtasks",
-    "tools",
-    "details",
-    "usage",
-];
 const RAIL_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const RAIL_SECTION_IDS = `(() => {
     const rail = ${RAIL_ASIDE};
     return rail ? [...rail.querySelectorAll("[data-rail-section]")].map((s) => s.dataset.railSection) : null;
 })()`;
 const railSection = (id) => `${RAIL_ASIDE}?.querySelector('[data-rail-section="${id}"]')`;
+const railStat = (id) => `${RAIL_ASIDE}?.querySelector('[data-rail-stat="${id}"]')`;
 // the number after a section's label (the heading is the label, then the count span, then an icon with no text)
 const railCount = (id) => `(() => {
     const t = ${railSection(id)}?.querySelector("h3")?.textContent ?? "";
@@ -13754,7 +13769,7 @@ const agentRailSections = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.terminalsListed === true;
-        const railUp = arranged && (await polishWaitFor(h, `!!${railSection("subagents")}`, 8000));
+        const railUp = arranged && (await polishWaitFor(h, `!!${railStat("subagents")}`, 8000));
         rec(
             "0. the fixture agent is focused, both terminals are in the roster and its rail is showing",
             railUp,
@@ -13764,11 +13779,11 @@ const agentRailSections = {
         if (!railUp) return steps;
         const [termA, termB] = ctx.terminals;
 
-        const ids = await h.ev(RAIL_SECTION_IDS);
+        const shape = await h.ev(railShape(RAIL_ASIDE));
         rec(
-            "1. the rail lists Subagents, Files, Artifacts, Uploads, Background tasks, Tools, Details, Token usage in order, and no Terminals",
-            JSON.stringify(ids) === JSON.stringify(RAIL_SECTIONS_ORDER),
-            JSON.stringify(ids)
+            "1. the strip counts Subagents, Files changed, Artifacts, Uploads, Background tasks in order; the body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
+            railShapeOk(shape),
+            JSON.stringify(shape)
         );
         await h.shot("cdp-shots/agent-rail-sections.png");
 
@@ -13798,32 +13813,22 @@ const agentRailSections = {
         await h.shot("cdp-shots/agent-rail-sections-canvas.png");
         // the rail hides in canvas mode; the header swap brings the terminal, and the rail, back
         await clickCanvasSwap(h, "Terminal");
-        await polishWaitFor(h, `!!${railSection("uploads")}`, 4000);
+        await polishWaitFor(h, `!!${railStat("uploads")}`, 4000);
 
-        const uploadsBefore = await h.ev(`(() => {
-            const s = ${railSection("uploads")};
-            return s
-                ? { open: s.dataset.open, count: ${railCount("uploads")}, expandable: s.querySelector("h3 button")?.disabled === false }
-                : null;
-        })()`);
-        await h.ev(`${railSection("uploads")}?.querySelector("h3 button")?.click()`);
-        await polishNap(300);
-        const uploadsAfter = await h.ev(`(() => {
-            const s = ${railSection("uploads")};
-            const attach = s?.querySelector("button[data-rail-attach]");
-            return s
-                ? { open: s.dataset.open, empty: s.querySelector("[data-rail-uploads]") != null, attachEnabled: attach != null && !attach.disabled }
+        // not clicked: Attach opens the system file picker, which CDP cannot dismiss
+        const uploads = await h.ev(`(() => {
+            const b = ${railStat("uploads")};
+            return b
+                ? { count: b.dataset.count, disabled: b.getAttribute("aria-disabled"), title: b.title, section: !!${railSection("uploads")} }
                 : null;
         })()`);
         rec(
-            "4. Uploads is a counted 0 that opens to an empty state and an enabled Attach",
-            uploadsBefore?.count === 0 &&
-                uploadsBefore.open === "false" &&
-                uploadsBefore.expandable === true &&
-                uploadsAfter?.open === "true" &&
-                uploadsAfter.empty === true &&
-                uploadsAfter.attachEnabled === true,
-            JSON.stringify({ uploadsBefore, uploadsAfter })
+            "4. an empty Uploads is the strip's live paperclip, an Attach, and has no section in the body",
+            uploads?.count === "0" &&
+                uploads.disabled === "false" &&
+                uploads.title.startsWith("Attach") &&
+                uploads.section === false,
+            JSON.stringify(uploads)
         );
 
         const treeRows = await h.ev(treeTerminalRows);
@@ -15139,15 +15144,16 @@ const UPLOADS_CAP_LABEL = `${UPLOADS_CAP_BYTES / (1024 * 1024)} MB`;
 // AGENT_DRAG_MIME (frontend/app/view/agents/griddrop.ts), mirrored: what a grid drag carries, which a file drop must ignore
 const UPLOADS_AGENT_MIME = "application/x-arc-agent";
 const UPLOADS_DAY_MS = 24 * 3600 * 1000;
+// the body lists the Uploads section only once it holds a record; the strip's count is drawn for any agent
 const UPLOADS_SECTION = `document.querySelector('aside[aria-label="Agent details"] [data-rail-section="uploads"]')`;
 const UPLOADS_TOGGLE = `${UPLOADS_SECTION}?.querySelector("h3 button")`;
-const UPLOADS_ATTACH = `${UPLOADS_SECTION}?.querySelector("button[data-rail-attach]")`;
+const UPLOADS_STAT = `document.querySelector('aside[aria-label="Agent details"] [data-rail-stat="uploads"]')`;
 // the lightbox is portaled to document.body, so it is not under the rail
 const UPLOADS_LIGHTBOX = `document.querySelector('[role="dialog"][aria-modal="true"] [data-upload-lightbox-img]')`;
-// the number after the section's label, null while the section is not drawn
+// the strip's Uploads count, null while the strip is not drawn
 const UPLOADS_COUNT = `(() => {
-    const m = /(\\d+)\\s*$/.exec(${UPLOADS_SECTION}?.querySelector("h3")?.textContent ?? "");
-    return m ? Number(m[1]) : null;
+    const c = ${UPLOADS_STAT}?.dataset.count;
+    return c ? Number(c) : null;
 })()`;
 
 const publishUploadsStatus = (h, ctx) =>
@@ -15177,8 +15183,8 @@ async function openUploadsAgent(h, ctx) {
 
 // Makes the agent's pane the one shown (a lone cell, so shown is focused: the rail is that agent's). Its tree row is
 // clicked until then, so a click that lands before the roster has settled is not lost. Resolves to
-//   "ready"      the pane is shown and its rail has the Uploads section
-//   "no-section" the pane is shown but the rail never drew the section: a regression, not a gap in this scenario's setup
+//   "ready"      the pane is shown and its rail's strip counts Uploads
+//   "no-section" the pane is shown but the strip never drew the count: a regression, not a gap in this scenario's setup
 //   "no-pane"    the pane never got shown (the roster did not list the agent, or the surface did not show it)
 async function focusUploadsAgent(h, ctx) {
     await h.goto("agent");
@@ -15186,7 +15192,7 @@ async function focusUploadsAgent(h, ctx) {
         h,
         `(() => {
             const pane = document.querySelector('[data-agent-terminal="${ctx.tabId}"]');
-            if (pane != null && !pane.classList.contains("hidden") && ${UPLOADS_SECTION} != null) return true;
+            if (pane != null && !pane.classList.contains("hidden") && ${UPLOADS_STAT} != null) return true;
             document.querySelector('[data-agent-row="${ctx.tabId}"]')?.click();
             return false;
         })()`,
@@ -15341,14 +15347,14 @@ const agentUploads = {
         if (ctx.arrangeError != null) {
             return [{ step: "0. the agent and its Uploads section were made", ok: false, detail: ctx.arrangeError }];
         }
-        // the pane is up but its rail has no Uploads section: that is the app (the section is drawn for any agent with a
-        // block, and agent-rail-sections shows it for a fixture agent), so it fails instead of skipping
+        // the pane is up but its rail's strip has no Uploads count: that is the app (the count is drawn for any agent, and
+        // agent-rail-sections shows it for a fixture agent), so it fails instead of skipping
         if (ctx.focus === "no-section") {
             return [
                 {
-                    step: "0. the agent's pane is shown with its details rail, Uploads section included",
+                    step: "0. the agent's pane is shown with its details rail, the Uploads count included",
                     ok: false,
-                    detail: `the pane is shown, but no Uploads section was drawn in the rail within ${UPLOADS_AGENT_WAIT_MS / 1000}s`,
+                    detail: `the pane is shown, but no Uploads count was drawn in the rail's strip within ${UPLOADS_AGENT_WAIT_MS / 1000}s`,
                 },
             ];
         }
@@ -15373,28 +15379,21 @@ const agentUploads = {
 
         // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
         try {
-            // a counted 0 that is closed by default but not inert: it opens to the empty state and an enabled Attach
-            const before = await h.ev(`(() => {
-                const s = ${UPLOADS_SECTION};
-                const t = ${UPLOADS_TOGGLE};
-                return s ? { open: s.dataset.open, toggleEnabled: t != null && !t.disabled } : null;
-            })()`);
+            // an empty Uploads has no section: the strip's paperclip is its Attach. Not clicked: it opens the system file
+            // picker, which CDP cannot dismiss
             const countBefore = await count();
-            const openedEmpty = await openUploads();
-            await polishWaitFor(h, `${UPLOADS_ATTACH} != null`, 3000);
-            const attach = await h.ev(`(() => {
-                const b = ${UPLOADS_ATTACH};
-                return b ? { text: b.textContent.trim(), disabled: b.disabled } : null;
+            const sectionBefore = await h.ev(`${UPLOADS_SECTION} != null`);
+            const stat = await h.ev(`(() => {
+                const b = ${UPLOADS_STAT};
+                return b ? { disabled: b.getAttribute("aria-disabled"), title: b.title } : null;
             })()`);
             rec(
-                "0. Uploads starts as a closed 0 that opens to an enabled Attach",
+                "0. an empty Uploads is the strip's live paperclip, an Attach, with no section in the body",
                 countBefore === 0 &&
-                    before?.open === "false" &&
-                    before.toggleEnabled === true &&
-                    openedEmpty === true &&
-                    attach?.text === "Attach" &&
-                    attach.disabled === false,
-                { countBefore, before, openedEmpty, attach }
+                    sectionBefore === false &&
+                    stat?.disabled === "false" &&
+                    stat.title.startsWith("Attach"),
+                { countBefore, sectionBefore, stat }
             );
 
             // the shell's prompt means the terminal has loaded (a drop is refused before that) and the echo can be read
@@ -15403,6 +15402,8 @@ const agentUploads = {
             // --- paste an image: the real pasteHandler writes a temp file, pastes its path and records it ---------
             const pasted = await h.ev(uploadsPasteExpr(ctx.tabId));
             const gotPaste = await waitCount(1);
+            // the first record brings the section into the body
+            await openUploads();
             // the record carries its thumbnail, which reaches the DOM a render after the row does
             await polishWaitFor(h, `${UPLOADS_SECTION}?.querySelector("[data-upload-row] [data-upload-thumb]") != null`, 3000);
             const pasteRow = (await uploadsRows(h))[0];

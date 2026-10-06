@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { CollapsibleRail, type RailSection } from "@/app/element/collapsiblerail";
-import { Meter } from "@/app/element/meter";
 import { easeFluidCss, MOTION, popoverReveal } from "@/app/element/motiontokens";
+import { railSectionOpenAtom } from "@/app/element/railsections";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
@@ -18,13 +18,21 @@ import {
     cacheRewriteTitle,
     contextLevel,
     contextNote,
+    contextTokens,
     filesSummary,
     offersContextReset,
     railAction,
+    railStatusLine,
     toolChips,
 } from "./agentrailmodel";
-import { RailResizeGrip, RailTabStrip, useWideWidth } from "./agentrailpanel";
-import { bgTaskStatusLabel, planAgentRail, type AgentRailSectionId, type BgTaskLabel } from "./agentrailsections";
+import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
+import {
+    bgTaskStatusLabel,
+    planAgentRail,
+    planRailStats,
+    type AgentRailSectionId,
+    type BgTaskLabel,
+} from "./agentrailsections";
 import { railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
 import { fileLabel, panelFor, RAIL_OVERVIEW_PX } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
@@ -46,11 +54,15 @@ import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
+import { spendHeadline } from "./sessionusage";
+import { StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { TokenUsageSection } from "./tokenusagesection";
 import type { BackgroundTask } from "./transcriptprojection";
-import { loadSessionUsage } from "./transcriptusagestore";
+import { loadSessionUsage, sessionUsageAtom, UsageUnavailable } from "./transcriptusagestore";
+import { pickAndAttach } from "./uploadsingest";
 import { uploadsAtom } from "./uploadsstore";
+import { fmt } from "./usagestats";
 
 const GAUGE_FILL: Record<"ok" | "warn" | "hot", string> = {
     ok: "bg-accent",
@@ -105,22 +117,89 @@ function DetailLine({
 const RESET_BTN =
     "flex-none cursor-pointer rounded-[6px] px-[6px] py-[2px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover";
 
-// onReset, when given, offers Compact and Clear under the note: they shrink what every turn re-reads
-function ContextLine({ pct, max, onReset }: { pct: number; max?: number; onReset?: (cmd: string) => void }) {
-    const level = contextLevel(pct, max);
-    const note = contextNote(pct, max);
+const RING_R = 6;
+const RING_C = 2 * Math.PI * RING_R;
+
+// ContextRing is the context window as a 16px ring, filled clockwise from the top in its level's color
+function ContextRing({ pct, level }: { pct: number; level: "ok" | "warn" | "hot" }) {
+    const reduce = useReducedMotion();
+    const filled = Math.min(100, Math.max(0, pct)) / 100;
     return (
-        <>
-            <div title={note || undefined} className="flex min-w-0 items-center gap-[10px]">
-                <span className="w-[52px] shrink-0 text-[12px] text-muted">Context</span>
-                <Meter pct={pct} fill={GAUGE_FILL[level]} height={5} radius={3} track="bg-border" className="flex-1" />
-                <span className={cn("w-[34px] text-right text-[11.5px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
-                    {Math.round(pct)}%
-                </span>
+        <svg
+            width={16}
+            height={16}
+            viewBox="0 0 16 16"
+            aria-hidden
+            className={cn("shrink-0 -rotate-90", GAUGE_TEXT[level])}
+        >
+            <circle cx={8} cy={8} r={RING_R} fill="none" strokeWidth={2.5} className="stroke-border" />
+            <circle
+                cx={8}
+                cy={8}
+                r={RING_R}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeDasharray={RING_C}
+                strokeDashoffset={RING_C * (1 - filled)}
+                style={{ transition: reduce ? undefined : `stroke-dashoffset ${MOTION.durMacro}s ${easeFluidCss}` }}
+            />
+        </svg>
+    );
+}
+
+// StatusLine is the rail's first row: the context window (ring, percent and the tokens in it) on the left, the
+// session's spend on the right, opening Token usage. The context's note is its tooltip. onReset, when given, offers
+// Compact and Clear under the row: they shrink what every turn re-reads.
+function StatusLine({
+    ctx,
+    spend,
+    onReset,
+    onSpend,
+}: {
+    ctx?: { pct: number; max?: number };
+    spend?: { text: string; title: string };
+    onReset?: (cmd: string) => void;
+    onSpend: () => void;
+}) {
+    if (ctx == null && spend == null) {
+        return null;
+    }
+    const level = ctx ? contextLevel(ctx.pct, ctx.max) : "ok";
+    const tokens = ctx ? contextTokens(ctx.pct, ctx.max) : undefined;
+    const note = ctx ? contextNote(ctx.pct, ctx.max) : "";
+    return (
+        <div data-rail-status className="flex flex-col gap-[3px] pb-[8px] pt-[2px]">
+            <div className="flex min-w-0 items-center gap-[8px]">
+                {ctx ? (
+                    <span
+                        title={`Context window ${Math.round(ctx.pct)}%${note ? ` · ${note}` : ""}`}
+                        className="flex min-w-0 items-center gap-[7px]"
+                    >
+                        <ContextRing pct={ctx.pct} level={level} />
+                        <span className={cn("text-[12px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
+                            {Math.round(ctx.pct)}%
+                        </span>
+                        {tokens ? (
+                            <span className="truncate text-[11px] tabular-nums text-muted">· {tokens}</span>
+                        ) : null}
+                    </span>
+                ) : null}
+                <span className="flex-1" />
+                {spend ? (
+                    <button
+                        type="button"
+                        onClick={onSpend}
+                        title={spend.title}
+                        className="-mr-[6px] flex-none cursor-pointer rounded-[6px] px-[6px] py-[2px] text-[12px] font-semibold tabular-nums text-success hover:bg-surface-hover"
+                    >
+                        {spend.text}
+                    </button>
+                ) : null}
             </div>
-            {note ? <div className="pl-[62px] text-[10.5px] tabular-nums text-muted">{note}</div> : null}
             {onReset ? (
-                <div className="flex gap-[4px] pl-[56px]">
+                <div className="flex gap-[4px] pl-[17px]">
                     <button
                         type="button"
                         onClick={() => onReset("/compact\r")}
@@ -139,7 +218,7 @@ function ContextLine({ pct, max, onReset }: { pct: number; max?: number; onReset
                     </button>
                 </div>
             ) : null}
-        </>
+        </div>
     );
 }
 
@@ -290,6 +369,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     // an agent's uploads are keyed by its terminal block (uploadsstore.ts); one with no terminal has none
     const uploads = useAtomValue(uploadsAtom(agent.blockId ?? ""));
     const cacheStatus = useAtomValue(agentCacheStatusAtom);
+    const sessionUsage = useAtomValue(sessionUsageAtom);
     const now = useAtomValue(model.nowAtom);
     const role = lineage.roles[agent.id];
     const roleRun = role ? lineage.runs[roleRunId(role)] : undefined;
@@ -356,13 +436,13 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const branch = ended ? ended.branch : railState?.branch;
     const worktree = ended ? undefined : railState?.worktree;
     const live = agent.blockId != null && !ended;
-    const action = sub ? null : railAction(agent.state, age, live);
+    const action = sub ? null : railAction(agent.state, live);
     const offerReset =
         ctxPct != null &&
         offersContextReset({ isClaude, state: agent.state, level: contextLevel(ctxPct, usage?.contextmax), live });
 
     const fileCount = ended ? ended.files.length : railState?.isRepo ? changes.length : null;
-    const plan = planAgentRail({
+    const railInput = {
         inSubagent: sub != null,
         needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
         subagents: subs.length,
@@ -370,31 +450,60 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: artifacts.rows.length,
         uploads: uploads.length,
         bgTasks: bgTasks.length,
-        tools: tools.length,
         hasRun: role != null && roleRun != null,
-    });
+    };
+    const plan = planAgentRail(railInput);
+    const usageLoaded = sessionUsage != null && sessionUsage !== UsageUnavailable ? sessionUsage : null;
+    const spend =
+        usageLoaded && usageLoaded.totalTokens > 0
+            ? (() => {
+                  const h = spendHeadline(usageLoaded);
+                  return { text: h.text, title: `${h.caption} · ${fmt(usageLoaded.totalTokens)} tokens` };
+              })()
+            : undefined;
+    // the transcript's own models when its usage is read, else the roster's family label
+    const modelLabel =
+        usageLoaded && usageLoaded.models.length > 0
+            ? usageLoaded.models.map((m) => prettyModel(m.model)).join(", ")
+            : agent.model
+              ? prettyModel(agent.model)
+              : "";
+    const project = agentProject(lineage, agents, agent);
+
+    // a strip count, or the spend, opens its section on Overview: open it, then bring it into view once it has rendered
+    const openSection = (id: AgentRailSectionId) => {
+        selectRailTab(agent.id, "overview");
+        showRail();
+        globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
+        requestAnimationFrame(() => {
+            const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            document
+                .querySelector(`aside[aria-label="Agent details"] [data-rail-section="${id}"]`)
+                ?.scrollIntoView({ block: "nearest", behavior: smooth ? "smooth" : "auto" });
+        });
+    };
     const LABEL: Record<AgentRailSectionId, string> = {
         subagent: "Subagent",
+        status: "Status",
         needs: "Needs you",
         subagents: "Subagents",
         files: "Files changed",
         artifacts: "Artifacts",
         uploads: "Uploads",
         bgtasks: "Background tasks",
-        tools: "Tools used",
         run: role?.kind === "worker" ? "Task" : "Run",
         details: "Details",
         usage: "Token usage",
     };
     const ICON: Record<AgentRailSectionId, ReactNode> = {
         subagent: RAIL_ICON.subagents,
+        status: RAIL_ICON.context,
         needs: RAIL_ICON.bell,
         subagents: RAIL_ICON.subagents,
         files: RAIL_ICON.files,
         artifacts: RAIL_ICON.artifacts,
         uploads: RAIL_ICON.attach,
         bgtasks: RAIL_ICON.terminal,
-        tools: RAIL_ICON.tools,
         run: RAIL_ICON.autonomy,
         details: RAIL_ICON.info,
         usage: RAIL_ICON.usage,
@@ -425,6 +534,14 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     back to {agent.name}
                 </button>
             </div>
+        ),
+        status: () => (
+            <StatusLine
+                ctx={!sub && ctxPct != null ? { pct: ctxPct, max: usage?.contextmax } : undefined}
+                spend={spend}
+                onReset={offerReset ? drive : undefined}
+                onSpend={() => openSection("usage")}
+            />
         ),
         // only the lead's rail: a worker's own question is already on screen, in its terminal's picker
         needs: () => <NeedsYouSection key={agent.id} model={model} run={roleRun!} asks={yours} />,
@@ -552,19 +669,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        tools: () => (
-            <div className="flex flex-wrap gap-[7px]">
-                {tools.map((t) => (
-                    <span
-                        key={t.verb}
-                        className="flex items-baseline gap-[5px] rounded-sm border border-edge-mid bg-surface-raised px-[9px] py-[4px] text-[11px] font-medium tabular-nums"
-                    >
-                        <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
-                        <span className="text-[10.5px] text-muted">×{t.count}</span>
-                    </span>
-                ))}
-            </div>
-        ),
         run: () =>
             role?.kind === "worker" ? (
                 <TaskSection key={agent.id} model={model} run={roleRun!} taskId={role.taskId} asks={asks} />
@@ -582,7 +686,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     </>
                 ) : (
                     <>
-                        <DetailLine label="Project">{agentProject(lineage, agents, agent) || "—"}</DetailLine>
+                        <DetailLine label="Project">{project || "—"}</DetailLine>
                         <DetailLine label="Branch" title={branch || undefined}>
                             <span>{branch || "—"}</span>
                         </DetailLine>
@@ -591,42 +695,40 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 <span>{worktree}</span>
                             </DetailLine>
                         ) : null}
-                        <DetailLine
-                            label="Session"
-                            title={cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined}
-                        >
-                            {ended ? (
-                                <>ended {age} ago</>
-                            ) : (
-                                <>
-                                    {agent.state} {age}
-                                </>
-                            )}
-                            {cacheCountdown !== "—" ? (
-                                <>
-                                    <span className="text-muted"> · </span>
-                                    cache {cacheCountdown}
-                                </>
-                            ) : null}
-                        </DetailLine>
-                        {ctxPct != null ? (
-                            <ContextLine
-                                pct={ctxPct}
-                                max={usage?.contextmax}
-                                onReset={offerReset ? drive : undefined}
-                            />
-                        ) : null}
+                        {modelLabel ? <DetailLine label="Model">{modelLabel}</DetailLine> : null}
                     </>
                 )}
+                {tools.length > 0 ? (
+                    <div className="flex min-w-0 items-baseline gap-[10px]">
+                        <span className="w-[52px] shrink-0 text-[12px] text-muted">Tools</span>
+                        <div className="flex min-w-0 flex-1 flex-wrap gap-[5px]">
+                            {tools.map((t) => (
+                                <span
+                                    key={t.verb}
+                                    className="flex items-baseline gap-[4px] rounded-sm border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-medium tabular-nums"
+                                >
+                                    <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
+                                    <span className="text-muted">×{t.count}</span>
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
             </div>
         ),
         usage: () => <TokenUsageSection />,
     };
+    // closed, Details reads as where the agent works: its project and branch, or a subagent's model
+    const detailsSummary = sub
+        ? subVM?.model
+            ? prettyModel(subVM.model)
+            : ""
+        : [project, branch].filter(Boolean).join(" · ");
     const sections: RailSection[] = plan.map((p) => ({
         id: p.id,
         label: LABEL[p.id],
         icon: ICON[p.id],
-        header: p.header,
+        header: p.id === "details" && p.header ? { ...p.header, summary: detailsSummary || undefined } : p.header,
         content: CONTENT[p.id](),
     }));
 
@@ -644,7 +746,21 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             ariaLabel="Agent details"
             sections={sections}
             width={panel.tab === "overview" ? RAIL_OVERVIEW_PX : wide.width}
-            tabs={<RailTabStrip agentId={agent.id} panel={panel} />}
+            tabs={
+                <>
+                    <RailTabStrip agentId={agent.id} panel={panel} />
+                    <RailStats
+                        stats={planRailStats(railInput)}
+                        canAttach={agent.blockId != null}
+                        onOpen={openSection}
+                        onAttach={() => {
+                            if (agent.blockId) {
+                                fireAndForget(() => pickAndAttach(agent.blockId!));
+                            }
+                        }}
+                    />
+                </>
+            }
             body={
                 panel.tab === "file" && fileRef != null ? (
                     <FileTab model={model} agentId={agent.id} file={panel.file} />
@@ -682,30 +798,36 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 title: `${stripTitle} (${formatChordString("d")})`,
             }}
             footer={
-                action ? (
-                    <div className="flex items-center gap-[10px]">
-                        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">{action.hint}</span>
-                        {action.kind === "resume" ? (
+                sub ? undefined : (
+                    <div className="flex items-center gap-[9px]">
+                        <StatusDot state={ended ? "idle" : agent.state} />
+                        <span
+                            title={cacheCountdown !== "—" ? cacheRewriteTitle(ctxPct, usage?.contextmax) : undefined}
+                            className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted"
+                        >
+                            {railStatusLine({ state: agent.state, age, ended: ended != null, cache: cacheCountdown })}
+                        </span>
+                        {action?.kind === "resume" ? (
                             <button
                                 type="button"
                                 onClick={() => drive(NUDGE_INPUT)}
                                 title="nudge the agent to continue from idle"
-                                className="flex-none cursor-pointer rounded-[6px] border border-accent/45 bg-accent/10 px-[16px] py-[7px] text-[12px] font-medium text-accent-soft hover:bg-accent/[0.18]"
+                                className="flex-none cursor-pointer rounded-[6px] border border-accent/45 bg-accent/10 px-[14px] py-[5px] text-[12px] font-medium text-accent-soft hover:bg-accent/[0.18]"
                             >
                                 Resume
                             </button>
-                        ) : (
+                        ) : action?.kind === "stop" ? (
                             <button
                                 type="button"
                                 onClick={() => drive("\x1b")}
-                                title="interrupt the current turn"
-                                className="flex-none cursor-pointer rounded-[6px] border border-error/30 bg-transparent px-[16px] py-[7px] text-[12px] font-medium text-error hover:bg-error/10"
+                                title="interrupt the current turn (Esc in the terminal also stops)"
+                                className="flex-none cursor-pointer rounded-[6px] border border-error/30 bg-transparent px-[14px] py-[5px] text-[12px] font-medium text-error hover:bg-error/10"
                             >
                                 Stop
                             </button>
-                        )}
+                        ) : null}
                     </div>
-                ) : undefined
+                )
             }
         />
     );

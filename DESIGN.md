@@ -357,11 +357,16 @@ content is always fluid.
   (status dot or mark, name, meta). The selected row is a grey fill
   (`bg-surface-selected`). Asking is a word in the row, not a filled row: an
   amber fill would make the list shout.
-- **Details rail** — a list of counted, collapsible sections, each a header
-  row with a count: Needs you, Subagents, Files changed, Background tasks,
-  Tools used, Run/Task, Details, Token usage. An empty section stays listed,
-  dimmed, so the rail does not reshuffle as work arrives; Details and Token
-  usage are closed by default.
+- **Details rail** — the tab strip counts the agent's lists after its tabs,
+  an icon and a number each in one fixed order (Subagents, Files changed,
+  Artifacts, Uploads, Background tasks), dimmed at 0, so the rail keeps one
+  shape as work arrives; a count opens its section, an empty Uploads
+  attaches. The body opens on a one-line status (a context ring with its
+  percent and tokens, then the session's spend), then Needs you, the counted
+  sections that hold something, Run/Task, and Token usage and Details,
+  closed by default (Details' header reads project · branch while closed).
+  The footer is the session's state and cache with Resume or Stop. Each
+  figure shows once.
 - **Surfaces** — absolutely stacked (`absolute inset-0`) under a
   `relative min-w-0 flex-1` shell; each surface is `flex flex-col bg-background`.
   The Agent surface stays mounted-but-hidden across nav switches so its xterm

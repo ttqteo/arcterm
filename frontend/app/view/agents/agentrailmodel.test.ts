@@ -11,6 +11,7 @@ import {
     linkedWorktree,
     offersContextReset,
     railAction,
+    railStatusLine,
     toolChips,
 } from "./agentrailmodel";
 
@@ -92,13 +93,32 @@ describe("cacheRewriteTitle", () => {
 
 describe("railAction", () => {
     it("offers Resume for an idle agent and Stop for one mid-turn", () => {
-        expect(railAction("idle", "38m", true)).toEqual({ kind: "resume", hint: "idle 38m · nudge to continue" });
-        expect(railAction("working", "4m", true)).toEqual({ kind: "stop", hint: "working 4m · Esc also stops" });
-        expect(railAction("asking", "2m", true)?.kind).toBe("stop");
+        expect(railAction("idle", true)).toEqual({ kind: "resume" });
+        expect(railAction("working", true)).toEqual({ kind: "stop" });
+        expect(railAction("asking", true)?.kind).toBe("stop");
     });
 
     it("offers nothing without a live terminal", () => {
-        expect(railAction("working", "4m", false)).toBeNull();
+        expect(railAction("working", false)).toBeNull();
+    });
+});
+
+describe("railStatusLine", () => {
+    it("says the state, how long it has held, and how long the prompt cache has left", () => {
+        expect(railStatusLine({ state: "idle", age: "<1m", ended: false, cache: "59m left" })).toBe(
+            "idle <1m · cache 59m left"
+        );
+        expect(railStatusLine({ state: "idle", age: "2h", ended: false, cache: "expired" })).toBe(
+            "idle 2h · cache expired"
+        );
+    });
+
+    it("leaves out a cache nobody has read yet", () => {
+        expect(railStatusLine({ state: "working", age: "4m", ended: false, cache: "—" })).toBe("working 4m");
+    });
+
+    it("an ended session says when it ended, with no cache", () => {
+        expect(railStatusLine({ state: "idle", age: "3h", ended: true, cache: "12m left" })).toBe("ended 3h ago");
     });
 });
 

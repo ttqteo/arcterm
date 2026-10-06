@@ -1,14 +1,25 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent panel's tab strip (icons, plus an editor-style tab while a file is open) and the grip that sizes the wide
-// tabs. The panel itself is AgentDetailsRail, through CollapsibleRail's tabs/body/width props.
+// The Agent panel's tab strip (icons, plus an editor-style tab while a file is open), the counts beside it, and the
+// grip that sizes the wide tabs. The panel itself is AgentDetailsRail, through CollapsibleRail's tabs/body/width props.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { FileText, LayoutList, X } from "lucide-react";
+import {
+    FileDiff,
+    FileText,
+    GitBranch,
+    LayoutList,
+    LayoutTemplate,
+    Paperclip,
+    SquareTerminal,
+    X,
+    type LucideIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agentrailsections";
 import { closeRailFile, railWideDragAtom, railWideWidthAtom, selectRailTab } from "./agentrailstore";
 import {
     clampWideWidth,
@@ -81,7 +92,10 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
                         className="flex min-w-0 cursor-pointer items-center gap-[7px] border-0 bg-transparent py-0 pl-2.5 pr-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                     >
                         <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
-                        <span className="min-w-0 truncate text-[11.5px]">{fileLabel(file).name}</span>
+                        {/* on Overview's 300px the tab is its icon, so the counts beside it keep their room */}
+                        <span className={cn("min-w-0 truncate text-[11.5px]", panel.tab !== "file" && "hidden")}>
+                            {fileLabel(file).name}
+                        </span>
                     </button>
                     <button
                         type="button"
@@ -93,6 +107,97 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
                     </button>
                 </div>
             ) : null}
+        </div>
+    );
+}
+
+const STAT_ICON: Record<AgentRailStatId, LucideIcon> = {
+    subagents: GitBranch,
+    files: FileDiff,
+    artifacts: LayoutTemplate,
+    uploads: Paperclip,
+    bgtasks: SquareTerminal,
+};
+
+const STAT_LABEL: Record<AgentRailStatId, string> = {
+    subagents: "Subagents",
+    files: "Files changed",
+    artifacts: "Artifacts",
+    uploads: "Uploads",
+    bgtasks: "Background tasks",
+};
+
+function statTitle(s: AgentRailStat, canAttach: boolean): string {
+    const label = STAT_LABEL[s.id];
+    switch (railStatAction(s)) {
+        case "attach":
+            return canAttach ? "Attach files: insert their paths at this agent's prompt" : "No uploads";
+        case "open":
+            return s.count == null ? label : `${label}: ${s.count}`;
+        default:
+            return `No ${label.toLowerCase()}`;
+    }
+}
+
+// RailStats counts the agent's lists after the tabs, one icon each in a fixed order, so the rail keeps one shape while
+// the body lists only what holds something. A count opens its section; an empty Uploads attaches; any other 0 is inert.
+// aria-disabled, not disabled: a disabled button shows no tooltip.
+export function RailStats({
+    stats,
+    canAttach,
+    onOpen,
+    onAttach,
+}: {
+    stats: AgentRailStat[];
+    canAttach: boolean;
+    onOpen: (id: AgentRailStatId) => void;
+    onAttach: () => void;
+}) {
+    if (stats.length === 0) {
+        return null;
+    }
+    return (
+        <div
+            role="group"
+            aria-label="Agent counts"
+            data-owns-keys
+            className="ml-1 flex min-w-0 items-center overflow-hidden"
+        >
+            {stats.map((s) => {
+                const action = railStatAction(s);
+                const live = action === "open" || (action === "attach" && canAttach);
+                const Icon = STAT_ICON[s.id];
+                const title = statTitle(s, canAttach);
+                return (
+                    <button
+                        key={s.id}
+                        type="button"
+                        data-rail-stat={s.id}
+                        data-count={s.count ?? ""}
+                        aria-disabled={!live}
+                        aria-label={title}
+                        title={title}
+                        onClick={() => {
+                            if (action === "open") {
+                                onOpen(s.id);
+                            } else if (action === "attach" && canAttach) {
+                                onAttach();
+                            }
+                        }}
+                        className={cn(
+                            "flex h-[26px] shrink-0 items-center gap-[3px] rounded-[6px] px-[5px] text-[11px] font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                            action === "open"
+                                ? "cursor-pointer text-secondary hover:bg-surface-hover hover:text-primary"
+                                : live
+                                  ? "cursor-pointer text-ink-faint hover:bg-surface-hover hover:text-secondary"
+                                  : "cursor-default text-ink-faint"
+                        )}
+                    >
+                        <Icon size={13} strokeWidth={1.8} aria-hidden />
+                        {s.count ? <span>{s.count}</span> : null}
+                    </button>
+                );
+            })}
         </div>
     );
 }

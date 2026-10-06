@@ -13,6 +13,7 @@ export interface RailSectionHeader {
     // a section whose empty state carries something to do (an Attach button, a "show more" toggle) stays openable at
     // count 0 instead of going inert
     emptyOpenable?: boolean;
+    summary?: string; // shown after the label while the section is closed, so its gist reads without opening it
 }
 
 // per section id; ids are unique across the rails that use headers

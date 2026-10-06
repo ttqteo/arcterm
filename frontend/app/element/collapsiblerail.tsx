@@ -56,6 +56,11 @@ function HeadedSection({ section, header }: { section: RailSection; header: Rail
                     {header.count != null ? (
                         <span className="text-[11px] tabular-nums text-ink-faint">{header.count}</span>
                     ) : null}
+                    {header.summary && !open ? (
+                        <span className="min-w-0 truncate text-[11px] font-normal text-ink-faint">
+                            {header.summary}
+                        </span>
+                    ) : null}
                     <ChevronRight
                         size={12}
                         aria-hidden

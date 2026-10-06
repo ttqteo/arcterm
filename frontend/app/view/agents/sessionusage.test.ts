@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateSessionUsage } from "./sessionusage";
+import { aggregateSessionUsage, spendHeadline, type SessionUsage } from "./sessionusage";
 
 function bkt(over: Partial<UsageBucket>): UsageBucket {
     return {
@@ -86,5 +86,24 @@ describe("aggregateSessionUsage", () => {
         expect(write.tokens).toBe(0);
         expect(write.spendUsd).toBe(0);
         expect(s.totalTokens).toBe(1_600_000);
+    });
+});
+
+describe("spendHeadline", () => {
+    const usage = (over: Partial<SessionUsage>): SessionUsage => ({
+        totalTokens: 1000,
+        totalSpendUsd: 21.04,
+        classes: [],
+        models: [],
+        insight: null,
+        ...over,
+    });
+
+    it("marks the bundled-table estimate as approximate, API-equivalent", () => {
+        expect(spendHeadline(usage({}))).toEqual({ text: "≈ $21.04", caption: "API-equivalent" });
+    });
+
+    it("shows a reported cost as is", () => {
+        expect(spendHeadline(usage({ reportedTotalUsd: 3.5 }))).toEqual({ text: "$3.50", caption: "reported" });
     });
 });

@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure: what the Agent details rail says in its context row, its footer action, its tool chips, its files summary
-// and the worktree line under its branch. No React.
+// Pure: what the Agent details rail says in its context row, its footer status and action, its tool chips, its files
+// summary and the worktree line under its branch. No React.
 
 import { usageLevel, type AgentVM } from "./agentsviewmodel";
 
@@ -80,21 +80,26 @@ export function cacheRewriteTitle(pct: number | undefined, max: number | undefin
     return tokens ? `if the cache expires, the next turn rewrites ~${tokens}` : undefined;
 }
 
-export type RailAction = { kind: "resume" | "stop"; hint: string };
+export type RailAction = { kind: "resume" | "stop" };
 
 // railAction is the rail footer's one control: Resume nudges an idle agent, Stop interrupts a turn. An agent with
 // no live terminal has nothing to drive.
-export function railAction(state: AgentVM["state"], age: string, live: boolean): RailAction | null {
+export function railAction(state: AgentVM["state"], live: boolean): RailAction | null {
     if (!live) {
         return null;
     }
-    if (state === "idle") {
-        return { kind: "resume", hint: `idle ${age} · nudge to continue` };
+    return { kind: state === "idle" ? "resume" : "stop" };
+}
+
+// railStatusLine is the rail footer's text: the session's state and how long it has held it, and how long the prompt
+// cache has left (formatCacheCountdown's "—" is a cache nobody has read yet, which the line leaves out). An ended
+// session has no cache to keep warm.
+export function railStatusLine(o: { state: AgentVM["state"]; age: string; ended: boolean; cache: string }): string {
+    if (o.ended) {
+        return `ended ${o.age} ago`;
     }
-    if (state === "asking") {
-        return { kind: "stop", hint: "waiting on you · Esc in the terminal also stops" };
-    }
-    return { kind: "stop", hint: `working ${age} · Esc also stops` };
+    const base = `${o.state} ${o.age}`;
+    return o.cache === "—" ? base : `${base} · cache ${o.cache}`;
 }
 
 export function toolChips(byVerb: { verb: string; count: number }[]): { verb: string; count: number; dim: boolean }[] {
