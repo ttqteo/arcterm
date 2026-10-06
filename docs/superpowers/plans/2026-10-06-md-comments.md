@@ -15,28 +15,31 @@
 
 - Colors only from `@theme` tokens (`bg-surface-hover`, `bg-accent`, `bg-edge-strong`, `text-muted`, `bg-asking`, `text-success`, `text-error`, …); never raw hex/rgba in a component.
 - Inter everywhere except code: the source-line quote (a file-content snippet) and `<kbd>` chips are `font-mono`; a path in a card or the tray is Inter (DESIGN.md Typography).
-- UI copy is English, sentence case, and verbatim from the spec: "Add comment", "Cancel", "Copy", "Send N comments", "Select text and press c, or hover a block and click +, to comment.", "<agent> is waiting on a question — answer it first", "Add or cancel the open comment first", "<agent> has no terminal — copy the comments instead", "Sent N comments to <agent>", "Copied. The comments stay until you send or delete them.", "Couldn't reach <agent> — comments kept".
+- UI copy is English, sentence case, and verbatim from the spec: "Add comment", "Cancel", "Copy", "Send N comments", "Select text and press c, or hover a block and click +, to comment.", "<agent> is waiting on a question — answer it first", "Add or cancel the open comment first", "Sent N comments to <agent>", "Copied. The comments stay until you send or delete them.", "Couldn't reach <agent> — comments kept".
 - Quotes: a selection is one line, whitespace collapsed, cut to 160 characters plus "…" (`QUOTE_MAX`, `proseanchor.ts`); a `+` range is up to 3 non-blank source lines, each cut to 120 characters plus "…", then `… (N more lines)` (`QUOTE_LINES`, `QUOTE_WIDTH`, `linecomments.ts`); an image has no quote.
 - The Preview / Source choice is persisted as `agent.rail.mdMode` (`"preview"` default). Drafts are in memory only.
-- No jsdom render tests: pure logic gets vitest; rendered UI is checked in the dev app and by the CDP scenario.
+- No jsdom render tests: pure logic gets vitest — every gesture's anchor included (`mdcomments.ts`), so `mddoc.tsx` keeps only DOM reading and drawing; rendered UI is checked by the CDP scenario.
 - Typecheck with `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` (8 GB Mac; ~2 min — give the command a 5-minute timeout). Never `npx tsc`.
 - Format-check only the files you touched (`npx prettier --check <files>`); never `--write` the tree; never run prettier on `scripts/**/*.mjs`.
 - Stop a dev app by PID, never by image name: the packaged arcterm shares its process names.
-- CDP (`task verify:ui`) needs WebView2, so it runs only on the Windows dev machine; on macOS check the UI by hand in `task dev`.
+- The UI is verified by the `md-comments` CDP scenario (Task 6), which the Final stage runs. CDP needs WebView2, so it runs on Windows only; on macOS Final reports unverified. No task checks UI by hand: each task that builds a view, state or interaction names the Task 6 steps that are its acceptance.
 
 ## Review Focus
 
 - A file with CRLF line endings, or one that opens with frontmatter: every stamp, comment line and `:line` mark matches the file's own numbering. → Task 1 test "CRLF line endings" and Task 2 test "bodyOffset counts a CRLF frontmatter block".
 - A comment that ends in a table row: its card hangs after the table, never between rows (a `div` in a `tbody` is invalid and React would warn). → Task 2 test "a table row gives way to its table".
 - Opening another comment while the box holds a typed note: the note stays and takes focus, never lost. → Task 3 test "keeps a box that holds text".
-- An agent that is asking, or has no terminal (an ended worker): Send is disabled with the reason, Copy still works. → Task 3 test "blocks while the agent asks…" and Task 6 step 8.
-- A selection made inside a card or the comment box (copying your own note): no floating Comment button, no anchor. → Task 4 Step 6 manual check, Task 6 step 3.
+- An agent that is asking: Send is disabled with the reason, Copy still works. An agent with no terminal (an ended worker): the tray offers Copy alone, no Send (spec item 14). → Task 3 test "blocks while the agent asks…", Task 6 steps 10 and 12.
+- A selection made inside a card or the comment box (copying your own note): no floating Comment button, no anchor. → Task 6 step 3.
+- Shift+click in either direction gives the same range, measured from the block the `+` box opened on. → Task 2 tests "Shift+click downward…" / "…upward…", Task 6 steps 4 and 8.
+- Esc with a box open and focus in the document cancels the box and never closes the file. → Task 6 step 8.
 
 **Verify:** `node scripts/verify.mjs ./pkg/util/keyedmutex`
 **Check:** `NODE_OPTIONS=--max-old-space-size=4096 node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`
+**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: the md-comments scenario needs CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs md-comments`
 **Prototype:** /Users/me/projects/arcterm/.superpowers/design/md-comments/project/Main.dc.html
 
-No Go changes: the Verify pattern names one small package so that the final stage runs the whole vitest suite. There is no Final line: on macOS `final-verify` waits for CDP, which WKWebView never answers. The UI is checked by hand after landing, and by `task verify:ui -- md-comments` on Windows.
+No Go changes: the Verify pattern names one small package so that the final stage runs the whole vitest suite. Final runs the `md-comments` scenario (Task 6), whose steps show every board: Main (1), Select and Compose (2), Range (4, 8), Image (5), Cards (6), TrayStates (7 sent, 10 asking, 12 copied), Source (11). On macOS, where WKWebView answers no CDP, it exits 3 at once with that reason instead of building a dev app only to report unverified; the run owns that result.
 
 ---
 
@@ -47,13 +50,13 @@ No Go changes: the Verify pattern names one small package so that the final stag
 **Files:**
 - Create: `frontend/app/element/rehype-srclines.ts`
 - Test: `frontend/app/element/rehype-srclines.test.ts`
-- Modify: `frontend/app/element/markdown.tsx` (imports; `Heading` ~line 64; `CodeBlock` ~line 140; `MarkdownImg` ~line 290; `MarkdownProps` ~line 296; the `Markdown` body ~lines 315–470)
+- Modify: `frontend/app/element/markdown.tsx` (imports; `Heading` ~line 64; `CodeBlock` ~line 140; `MarkdownImg` ~line 290; `MarkdownProps` ~line 296; the `Markdown` body ~lines 315–470, including the `focusedHeading` effect ~line 345)
 - Create: `frontend/app/view/code/frontmattercard.tsx`
 - Modify: `frontend/app/view/code/codeviewer.tsx` (`FrontmatterCard` moves out; the preview passes `resolveOpts`)
 
 **Interfaces:**
 - Produces: `rehypeSrcLines(opts?: { offset?: number })` (a unified plugin), `withSrcLineAttributes<S>(schema: S): S`, `SRC_LINE_PROPS`.
-- Produces: `Markdown` props `srcLineOffset?: number`, `contentBlocks?: boolean` (default `true`), `blockAfter?: (tag: string) => React.ReactNode`. Every stamped block element in the DOM carries `data-src-start` / `data-src-end`; a rendered `img` also carries `data-md-src` (its `src` as written). `blockAfter(tag)` is rendered right after a stamped `p` / `h1`–`h6` / `pre` / `hr` / `table` / `img`, and as the last child of a stamped `li`.
+- Produces: `Markdown` props `srcLineOffset?: number`, `contentBlocks?: boolean` (default `true`), `blockAfter?: (tag: string) => React.ReactNode`. Every stamped block element in the DOM carries `data-src-start` / `data-src-end`; a rendered `img` also carries `data-md-src` (its `src` as written). `blockAfter(tag)` is rendered right after a stamped `p` / `h1`–`h6` / `pre` / `hr` / `table` / `img`, and as the last child of a stamped `li`. A `#anchor` link scrolls its heading into view with `scrollable={false}` too (the host's scroller moves), not only inside `Markdown`'s own OverlayScrollbars viewport.
 - Produces: `FrontmatterCard({ fields }: { fields: [string, string][] })` exported from `frontend/app/view/code/frontmattercard.tsx`.
 
 - [ ] **Step 1: Write the failing test**
@@ -412,6 +415,27 @@ In the `rehypePlugins` block, stamp first and let the stamps through sanitize:
 
 (The two commented-out lines about `hljs` class names that sat in the `span` list can go with this edit: they were an alternative never used.)
 
+A `#anchor` link sets `focusedHeading`, whose effect scrolls only `Markdown`'s own OverlayScrollbars viewport, so with `scrollable={false}` (the Agent panel's Preview, whose scroller is its host) it does nothing. Replace the effect so that case scrolls the heading into view through whatever scrolls it:
+
+```tsx
+    useEffect(() => {
+        if (!focusedHeading) {
+            return;
+        }
+        const heading = document.getElementById(idPrefix + focusedHeading.slice(1));
+        if (heading == null) {
+            return;
+        }
+        const viewport = contentsOsRef.current?.osInstance()?.elements().viewport;
+        if (viewport != null) {
+            viewport.scrollBy({ top: heading.getBoundingClientRect().top - viewport.getBoundingClientRect().top });
+        } else {
+            // not scrollable: the host's scroller moves (the Agent panel's markdown Preview)
+            heading.scrollIntoView({ block: "start" });
+        }
+    }, [focusedHeading]);
+```
+
 - [ ] **Step 6: Move `FrontmatterCard` out, and give the Code preview its images**
 
 Create `frontend/app/view/code/frontmattercard.tsx` with the component cut from `codeviewer.tsx` (its comment comes along):
@@ -460,9 +484,9 @@ Expected: PASS.
 Run: `npx prettier --check frontend/app/element/rehype-srclines.ts frontend/app/element/rehype-srclines.test.ts frontend/app/element/markdown.tsx frontend/app/view/code/frontmattercard.tsx frontend/app/view/code/codeviewer.tsx`
 Expected: no warnings on lines you changed. HEAD is not formatter-clean: if prettier flags lines you did not touch, leave them.
 
-- [ ] **Step 8: Check the Code preview by hand**
+- [ ] **Step 8: Name the acceptance (no hand check)**
 
-Run `task dev`, open the Code surface on `docs/orchestrator-guide.md`, Preview mode. Expected: the "New project modal" screenshot renders as an image (not `[img:images/…]`), tables and code blocks look as before, and the frontmatter card still shows on a skill file (e.g. `skills/cockpit-ui/SKILL.md`). Stop the dev app by its PID.
+This task's rendered result is shown by Task 6's scenario, which the Final stage runs: step 1 (the frontmatter card above the body, and the stamps behind the `:9` mark), steps 2 and 4 (the stamps a selection and a `+` range read), step 9 (a `#anchor` link scrolling a non-scrollable `Markdown`) and step 13 (the Code preview rendering the image, not `[img:…]`). Do not start a dev app to check it; say in the task report that the UI is left to those steps.
 
 - [ ] **Step 9: Commit**
 
@@ -487,10 +511,12 @@ git commit -m "feat(markdown): stamp rendered blocks with their source lines; im
   - `type QuoteKind = "selection" | "source" | "none"`; `type BlockKind = "block" | "tr" | "table" | "img"`
   - `interface MdBlock { kind: BlockKind; start: number; end: number; src?: string }`
   - `interface MdComment { id: string; seq: number; file: string; root: string | null; startLine: number; endLine: number; quoteKind: QuoteKind; quote: string[]; image?: string; note: string }`
+  - `interface MdTarget { startLine: number; endLine: number; quoteKind: QuoteKind; quote: string[]; image?: string; anchor?: { start: number; end: number } }` — what a gesture comments on; `MdBox` (Task 3) carries the same fields
   - `blockKind(tagName: string): BlockKind`
   - `bodyOffset(text: string, body: string): number`
   - `selectionQuote(text: string): string[]`; `sourceQuote(fileLines: string[], start: number, end: number): string[]`
   - `spanOf(lines: { start: number; end: number }[]): { start: number; end: number } | null`
+  - the three gestures' anchors: `selectionTarget(blocks: MdBlock[], touched: number[], text: string): MdTarget | null`; `plusTarget(blocks: MdBlock[], index: number, fileLines: string[], shift: boolean, from: { start: number; end: number } | undefined): { extend: boolean; target: MdTarget } | null`; `imageTarget(blocks: MdBlock[], index: number): MdTarget | null`
   - `blockForLine(blocks: MdBlock[], line: number): number`; `hostIndex(blocks: MdBlock[], c: { endLine: number; image?: string }): number`; `coveredIndexes(blocks: MdBlock[], start: number, end: number): number[]`
   - `lineRef(c: { startLine: number; endLine: number }): string`; `refPath(file: string, root: string | null): string`; `imageName(src: string): string`; `commentRefLabel(c: Pick<MdComment, "file" | "root" | "startLine" | "endLine" | "image">): string`
   - `orderMdComments(comments: MdComment[]): MdComment[]`; `cardNumbers(comments: MdComment[]): Map<string, number>`; `countLine(comments: MdComment[]): string`; `formatMdComments(comments: MdComment[]): string`
@@ -515,17 +541,43 @@ import {
     coveredIndexes,
     formatMdComments,
     hostIndex,
+    imageTarget,
     orderMdComments,
     panelLink,
+    plusTarget,
     refPath,
     selectionQuote,
+    selectionTarget,
     sourceQuote,
     spanOf,
     type MdBlock,
     type MdComment,
 } from "./mdcomments";
 
-// docs/guide.md as the DOM lists its stamped blocks (the CDP scenario's fixture): frontmatter on lines 1-3
+// the first 19 lines of docs/guide.md, the CDP scenario's fixture
+const GUIDE = [
+    "---",
+    "title: Guide",
+    "---",
+    "# Guide",
+    "",
+    "First paragraph line one,",
+    "still the first paragraph.",
+    "",
+    "Second paragraph, the one the link names.",
+    "",
+    "| Flow | Use |",
+    "|---|---|",
+    "| Quick | one worker |",
+    "| Goal | a lead |",
+    "| Plan | the engine |",
+    "",
+    "![Shot](images/shot.png)",
+    "",
+    "See [the other doc](other.md).",
+];
+
+// those lines as the DOM lists their stamped blocks: frontmatter on lines 1-3
 const B: MdBlock[] = [
     { kind: "block", start: 4, end: 4 }, // 0 h1
     { kind: "block", start: 6, end: 7 }, // 1 p
@@ -638,6 +690,97 @@ describe("spanOf", () => {
     it("runs from the earliest start to the latest end", () => {
         expect(spanOf([{ start: 9, end: 9 }, { start: 6, end: 7 }])).toEqual({ start: 6, end: 9 });
         expect(spanOf([])).toBeNull();
+    });
+});
+
+describe("selectionTarget", () => {
+    it("takes the lines of the one block a selection sits in, and quotes the selection", () => {
+        expect(selectionTarget(B, [2], "the one the link names")).toEqual({
+            startLine: 9,
+            endLine: 9,
+            quoteKind: "selection",
+            quote: ["the one the link names"],
+        });
+    });
+    it("runs across blocks from the first one's start to the last one's end", () => {
+        expect(selectionTarget(B, [1, 2], "still the first paragraph. Second")).toMatchObject({
+            startLine: 6,
+            endLine: 9,
+        });
+    });
+    it("reduces each end to its innermost block: rows, not their table; a paragraph, not its list item", () => {
+        expect(selectionTarget(B, [3, 5, 6], "one worker | Goal")).toMatchObject({ startLine: 13, endLine: 14 });
+        expect(selectionTarget(L, [0, 1], "a")).toMatchObject({ startLine: 1, endLine: 1 });
+    });
+    it("keeps to the body: dragged in from outside it, it spans only the body blocks it touches", () => {
+        // from the panel's header down into the first paragraph: the DOM lists the body's blocks alone
+        expect(selectionTarget(B, [0, 1], "Guide First paragraph")).toMatchObject({ startLine: 4, endLine: 7 });
+    });
+    it("is null when it touches no stamped block", () => {
+        expect(selectionTarget(B, [], "raw html")).toBeNull();
+    });
+});
+
+describe("plusTarget", () => {
+    it("+ alone comments on that block and quotes its source lines", () => {
+        expect(plusTarget(B, 5, GUIDE, false, undefined)).toEqual({
+            extend: false,
+            target: {
+                startLine: 13,
+                endLine: 13,
+                quoteKind: "source",
+                quote: ["| Quick | one worker |"],
+                anchor: { start: 13, end: 13 },
+            },
+        });
+    });
+    it("Shift+click downward stretches the open + box from its first block", () => {
+        expect(plusTarget(B, 7, GUIDE, true, { start: 13, end: 13 })).toEqual({
+            extend: true,
+            target: {
+                startLine: 13,
+                endLine: 15,
+                quoteKind: "source",
+                quote: ["| Quick | one worker |", "| Goal | a lead |", "| Plan | the engine |"],
+                anchor: { start: 13, end: 13 },
+            },
+        });
+    });
+    it("Shift+click upward stretches it the other way", () => {
+        expect(plusTarget(B, 5, GUIDE, true, { start: 15, end: 15 })).toMatchObject({
+            extend: true,
+            target: { startLine: 13, endLine: 15, anchor: { start: 15, end: 15 } },
+        });
+    });
+    it("measures every Shift+click from the first block, so a later one can shrink the range", () => {
+        expect(plusTarget(B, 6, GUIDE, true, { start: 13, end: 13 })?.target).toMatchObject({
+            startLine: 13,
+            endLine: 14,
+        });
+    });
+    it("Shift with no + box open opens one on that block", () => {
+        expect(plusTarget(B, 2, GUIDE, true, undefined)).toMatchObject({
+            extend: false,
+            target: { startLine: 9, endLine: 9 },
+        });
+    });
+    it("is null for a block that is gone", () => {
+        expect(plusTarget(B, 40, GUIDE, false, undefined)).toBeNull();
+    });
+});
+
+describe("imageTarget", () => {
+    it("anchors to the image's line and its src as written, with no quote", () => {
+        expect(imageTarget(B, 9)).toEqual({
+            startLine: 17,
+            endLine: 17,
+            quoteKind: "none",
+            quote: [],
+            image: "images/shot.png",
+        });
+    });
+    it("is null for a block that is not an image", () => {
+        expect(imageTarget(B, 8)).toBeNull();
     });
 });
 
@@ -840,6 +983,16 @@ export interface MdComment {
     note: string;
 }
 
+// what a gesture comments on; the comment box (mdcommentstore.ts MdBox) carries the same fields
+export interface MdTarget {
+    startLine: number;
+    endLine: number;
+    quoteKind: QuoteKind;
+    quote: string[];
+    image?: string;
+    anchor?: { start: number; end: number }; // a + box: the block it opened on, which Shift+click stretches from
+}
+
 export function blockKind(tagName: string): BlockKind {
     const t = tagName.toLowerCase();
     return t === "tr" || t === "table" || t === "img" ? t : "block";
@@ -955,6 +1108,55 @@ export function coveredIndexes(blocks: MdBlock[], start: number, end: number): n
     }
     const one = blockForLine(blocks, start);
     return one >= 0 ? [one] : [];
+}
+
+// A selection: each end reduced to its innermost stamped block, from the earlier start to the later end. `touched`
+// is the blocks the selection's range intersects, as indexes into blocks; the view lists the body's alone, which
+// clips a selection reaching past the body. Null when it touches none: no Comment button.
+export function selectionTarget(blocks: MdBlock[], touched: number[], text: string): MdTarget | null {
+    const span = spanOf(innermost(blocks, touched).map((i) => blocks[i]));
+    if (span == null) {
+        return null;
+    }
+    return { startLine: span.start, endLine: span.end, quoteKind: "selection", quote: selectionQuote(text) };
+}
+
+// The + on block `index`: a box on that block's lines. With Shift while the open box in this file came from a +
+// (`from`, the block it opened on), that range stretched from its first block to this one, in either direction;
+// `extend` says to keep the open box and its text.
+export function plusTarget(
+    blocks: MdBlock[],
+    index: number,
+    fileLines: string[],
+    shift: boolean,
+    from: { start: number; end: number } | undefined
+): { extend: boolean; target: MdTarget } | null {
+    const b = blocks[index];
+    if (b == null) {
+        return null;
+    }
+    const extend = shift && from != null;
+    const start = extend ? Math.min(from.start, b.start) : b.start;
+    const end = extend ? Math.max(from.end, b.end) : b.end;
+    return {
+        extend,
+        target: {
+            startLine: start,
+            endLine: end,
+            quoteKind: "source",
+            quote: sourceQuote(fileLines, start, end),
+            anchor: extend ? from : { start: b.start, end: b.end },
+        },
+    };
+}
+
+// An image's Comment: the image's lines and its src as written; no quote.
+export function imageTarget(blocks: MdBlock[], index: number): MdTarget | null {
+    const b = blocks[index];
+    if (b?.kind !== "img" || b.src == null) {
+        return null;
+    }
+    return { startLine: b.start, endLine: b.end, quoteKind: "none", quote: [], image: b.src };
 }
 
 export function lineRef(c: { startLine: number; endLine: number }): string {
@@ -1387,8 +1589,8 @@ export function deleteComment(agentId: string, id: string): void {
     update(agentId, (s) => ({ ...s, comments: s.comments.filter((c) => c.id !== id) }));
 }
 
-// Why Send is disabled: no terminal to paste into (an ended worker), an open ask that would take the paste as its
-// answer, or a note typed but not added.
+// Why Send is not offered: no terminal to paste into (an ended worker: the tray shows Copy alone), or, disabled with
+// a reason, an open ask that would take the paste as its answer, or a note typed but not added.
 export function sendBlock(state: MdCommentState, agent: AgentVM | null): MdSendBlock {
     if (agent == null || !agent.blockId) {
         return { kind: "noterm", agent: agent?.name ?? "" };
@@ -1453,7 +1655,7 @@ git commit -m "feat(agents): per-agent drafts for markdown comments, and the Pre
 
 **Interfaces:**
 - Consumes: `Markdown` props from Task 1 (`srcLineOffset`, `contentBlocks`, `blockAfter`, `resolveOpts`, `header`, `onClickLink`) and the DOM attributes `data-src-start`, `data-src-end`, `data-md-src`; `FrontmatterCard` (Task 1); everything Task 2 and Task 3 produce; `openFileInPanel`, `openRefInCode`, `railMdModeAtom` (`./agentrailstore`); `FileRef` (`./agentrailtabs`).
-- Produces: `MdDoc({ model, agent, fileRef, text })`; `CardSlot({ inside })`, `MdDocContext`, `MdDocCtx`; `FileTab({ model, agent, file })` — note `agent: AgentVM` replaces `agentId`. DOM hooks the scenario uses: `[data-md-doc]` (the focusable Preview body), `[data-md-mark="hit"|"target"]` and `[data-md-bar]` (each with `data-lines="s-e"`), `[data-md-plus]`, `[data-md-image-comment]`, `[data-md-comment]` (the floating selection button), `[data-md-slot]`, `[data-md-card="<id>"]`, `[data-md-box]`, `[data-md-mode="preview"|"source"]`.
+- Produces: `MdDoc({ model, agent, fileRef, text })`; `CardSlot({ inside })`, `MdDocContext`, `MdDocCtx`; `FileTab({ model, agent, file })` — note `agent: AgentVM` replaces `agentId`. DOM hooks the scenario uses: `[data-md-doc]` (the focusable Preview body), `[data-md-mark="hit"|"target"]` and `[data-md-bar]` (each with `data-lines="s-e"`), `[data-md-plus]`, `[data-md-image-comment]` (one per image, always in the DOM so Tab reaches it; opacity 0 unless its image is hovered or it has keyboard focus), `[data-md-comment]` (the floating selection button), `[data-md-slot]`, `[data-md-card="<id>"]`, `[data-md-box]`, `[data-md-mode="preview"|"source"]`.
 
 - [ ] **Step 1: Write the cards, the box and the slot**
 
@@ -1653,7 +1855,7 @@ import { Markdown } from "@/app/element/markdown";
 import { splitFrontmatter } from "@/app/view/code/codefrontmatter";
 import { FrontmatterCard } from "@/app/view/code/frontmattercard";
 import { formatChordString } from "@/util/keysym";
-import { fireAndForget } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MessageSquarePlus, Plus } from "lucide-react";
 import {
@@ -1678,13 +1880,14 @@ import {
     cardNumbers,
     coveredIndexes,
     hostIndex,
+    imageTarget,
     orderMdComments,
     panelLink,
-    selectionQuote,
-    sourceQuote,
-    spanOf,
+    plusTarget,
+    selectionTarget,
     type MdBlock,
     type MdComment,
+    type MdTarget,
 } from "./mdcomments";
 import { mdCommentAtom, openBox, setBoxRange } from "./mdcommentstore";
 
@@ -1736,14 +1939,13 @@ export function MdDoc({
     const [els, setEls] = useState<Element[]>([]);
     const blocks = useMemo(() => els.map(toBlock), [els]);
     const [hover, setHover] = useState<{ index: number; top: number } | null>(null);
-    const [imgHover, setImgHover] = useState<{ index: number; top: number; right: number } | null>(null);
-    const [sel, setSel] = useState<{ start: number; end: number; text: string; top: number; left: number } | null>(
-        null
-    );
-    const [geo, setGeo] = useState<{ marks: (Overlay & { kind: string })[]; bars: Overlay[] }>({
-        marks: [],
-        bars: [],
-    });
+    const [hoverImg, setHoverImg] = useState<number | null>(null);
+    const [sel, setSel] = useState<{ target: MdTarget; top: number; left: number } | null>(null);
+    const [geo, setGeo] = useState<{
+        marks: (Overlay & { kind: string })[];
+        bars: Overlay[];
+        images: { index: number; top: number; right: number }[];
+    }>({ marks: [], bars: [], images: [] });
 
     const fileComments = useMemo(
         () => orderMdComments(state.comments.filter((c) => c.file === fileRef.abs)),
@@ -1793,7 +1995,8 @@ export function MdDoc({
         scrolledTo.current = key;
     }, [hitIndex, els, fileRef.abs, line]);
 
-    // the marks (the :line block, the open box's blocks) and each comment's gutter bar, in content coordinates
+    // the marks (the :line block, the open box's blocks), each comment's gutter bar, and each image's top-right corner
+    // for its Comment button, in content coordinates
     useLayoutEffect(() => {
         const root = contentRef.current;
         if (root == null) {
@@ -1824,7 +2027,14 @@ export function MdDoc({
             const bars = fileComments
                 .map((c) => span(covered(c), `${c.startLine}-${c.endLine}`))
                 .filter((o): o is Overlay => o != null);
-            setGeo({ marks, bars });
+            const images = blocks.flatMap((b, index) => {
+                if (b.kind !== "img") {
+                    return [];
+                }
+                const r = els[index].getBoundingClientRect();
+                return [{ index, top: r.top - base.top + 10, right: base.right - r.right + 10 }];
+            });
+            setGeo({ marks, bars, images });
         };
         measure();
         const ro = new ResizeObserver(measure);
@@ -1832,8 +2042,8 @@ export function MdDoc({
         return () => ro.disconnect();
     }, [els, blocks, hitIndex, box, fileComments]);
 
-    // the selection, reduced to the innermost stamped blocks it touches, and where its Comment button floats. A
-    // selection inside a card or the box (copying your own note) is not one.
+    // the selection's target (mdcomments.ts selectionTarget, from the body's blocks it touches) and where its Comment
+    // button floats. A selection inside a card or the box (copying your own note) is not one.
     useEffect(() => {
         const update = () => {
             const s = window.getSelection();
@@ -1849,25 +2059,23 @@ export function MdDoc({
                 setSel(null);
                 return;
             }
-            const hits = els.filter((el) => range.intersectsNode(el));
-            const inner = hits.filter((el) => !hits.some((o) => o !== el && el.contains(o)));
-            const span = spanOf(inner.map(lineOf));
-            if (span == null) {
+            const touched = els.flatMap((el, i) => (range.intersectsNode(el) ? [i] : []));
+            const target = selectionTarget(blocks, touched, s.toString());
+            if (target == null) {
                 setSel(null);
                 return;
             }
             const r = range.getBoundingClientRect();
             const base = root.getBoundingClientRect();
             setSel({
-                ...span,
-                text: s.toString(),
+                target,
                 top: r.bottom - base.top + 6,
                 left: Math.min(Math.max(r.right - base.left - 120, 8), base.width - 150),
             });
         };
         document.addEventListener("selectionchange", update);
         return () => document.removeEventListener("selectionchange", update);
-    }, [els]);
+    }, [els, blocks]);
 
     const focusBox = useCallback(() => {
         contentRef.current?.querySelector<HTMLTextAreaElement>("[data-md-box] textarea")?.focus();
@@ -1884,51 +2092,29 @@ export function MdDoc({
         if (sel == null) {
             return;
         }
-        opened(
-            openBox(agentId, {
-                ...at,
-                startLine: sel.start,
-                endLine: sel.end,
-                quoteKind: "selection",
-                quote: selectionQuote(sel.text),
-            })
-        );
+        opened(openBox(agentId, { ...at, ...sel.target }));
         window.getSelection()?.removeAllRanges();
         setSel(null);
     };
 
     const plus = (index: number, shift: boolean) => {
-        const b = blocks[index];
-        if (b == null) {
+        const from = state.box?.file === fileRef.abs ? state.box.anchor : undefined;
+        const p = plusTarget(blocks, index, fileLines, shift, from);
+        if (p == null) {
             return;
         }
-        const cur = state.box;
-        if (shift && cur?.anchor != null && cur.file === fileRef.abs) {
-            const start = Math.min(cur.anchor.start, b.start);
-            const end = Math.max(cur.anchor.end, b.end);
-            setBoxRange(agentId, start, end, sourceQuote(fileLines, start, end));
-            return;
+        if (p.extend) {
+            setBoxRange(agentId, p.target.startLine, p.target.endLine, p.target.quote);
+        } else {
+            opened(openBox(agentId, { ...at, ...p.target }));
         }
-        opened(
-            openBox(agentId, {
-                ...at,
-                startLine: b.start,
-                endLine: b.end,
-                quoteKind: "source",
-                quote: sourceQuote(fileLines, b.start, b.end),
-                anchor: { start: b.start, end: b.end },
-            })
-        );
     };
 
     const commentImage = (index: number) => {
-        const b = blocks[index];
-        if (b?.src == null) {
-            return;
+        const target = imageTarget(blocks, index);
+        if (target != null) {
+            opened(openBox(agentId, { ...at, ...target }));
         }
-        opened(
-            openBox(agentId, { ...at, startLine: b.start, endLine: b.end, quoteKind: "none", quote: [], image: b.src })
-        );
     };
 
     // the block under the pointer's row, probed at the text column so the gutter + stays reachable; between blocks
@@ -1948,13 +2134,12 @@ export function MdDoc({
         if (index < 0) {
             return;
         }
-        const r = el.getBoundingClientRect();
         if (el.tagName === "IMG") {
-            setImgHover({ index, top: r.top - base.top + 10, right: base.right - r.right + 10 });
+            setHoverImg(index);
             setHover(null);
         } else {
-            setHover({ index, top: r.top - base.top + 2 });
-            setImgHover(null);
+            setHover({ index, top: el.getBoundingClientRect().top - base.top + 2 });
+            setHoverImg(null);
         }
     };
 
@@ -2022,7 +2207,7 @@ export function MdDoc({
                 onMouseMove={onMove}
                 onMouseLeave={() => {
                     setHover(null);
-                    setImgHover(null);
+                    setHoverImg(null);
                 }}
                 className="relative pb-10 pr-[22px] pt-[18px]"
                 style={{ paddingLeft: GUTTER }}
@@ -2082,20 +2267,28 @@ export function MdDoc({
                         <Plus size={12} strokeWidth={2.6} aria-hidden />
                     </button>
                 ) : null}
-                {imgHover != null && sel == null ? (
+                {/* one per image and always in the DOM, so Tab reaches it (spec item 17); seen while its image is
+                    hovered or it has keyboard focus */}
+                {geo.images.map((m) => (
                     <button
+                        key={m.index}
                         type="button"
                         data-md-overlay
                         data-md-image-comment
                         title="Comment on this image"
-                        onClick={() => commentImage(imgHover.index)}
-                        className={FLOAT_BTN}
-                        style={{ top: imgHover.top, right: imgHover.right }}
+                        // the pointer can reach the corner before the image: show the button it is over
+                        onMouseEnter={() => setHoverImg(m.index)}
+                        onClick={() => commentImage(m.index)}
+                        className={cn(
+                            FLOAT_BTN,
+                            hoverImg === m.index && sel == null ? null : "opacity-0 focus-visible:opacity-100"
+                        )}
+                        style={{ top: m.top, right: m.right }}
                     >
                         <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
                         Comment
                     </button>
-                ) : null}
+                ))}
                 {sel != null ? (
                     <button
                         type="button"
@@ -2231,19 +2424,20 @@ Expected: exit 0.
 Run: `npx vitest run frontend/app/view/agents frontend/app/element`
 Expected: PASS.
 
-- [ ] **Step 6: Check it in the dev app**
+- [ ] **Step 6: Name the acceptance (no hand check)**
 
-Run `task dev`. In an agent's terminal print a path such as `docs/orchestrator-guide.md:10` and Ctrl/Cmd+click it (or click such a path in a transcript). Expected, matching the mockup boards Main, Select, Compose, Cards, Range and Image:
-- the File tab opens in **Preview**; the paragraph at line 10 is centred with a grey fill and an accent bar; tables, code blocks and the "New project modal" image render;
-- `Preview | Source` switches to Monaco at line 10 and back; the choice survives a reload;
-- selecting "A reviewer checks the plan before any worker starts" shows the floating **Comment c**; `c` opens the box under the paragraph with the reference `docs/orchestrator-guide.md:10-14` and the quote; Ctrl/Cmd+Enter adds a card numbered 1; the paragraph keeps a grey gutter bar;
-- selecting text inside that card, or inside an open box's textarea, shows no Comment button;
-- hovering "Everything else in this guide…" shows `+` in the gutter; `+` on the first table row then Shift+click on the third opens one box after the table, `:20-22`, quoting the three source rows;
-- hovering the image shows **Comment** in its corner; it opens a box after the image with `· image 01-new-project.png` and no quote;
-- with a box holding text, `+` elsewhere does not move it: the box's textarea takes focus; Esc in the textarea cancels it without closing the file;
-- a link to another `.md` opens in the panel (Back returns, cards still there).
+This task's views, states and gestures are shown by Task 6's scenario, which the Final stage runs; match each to its mockup board:
+- step 1 — Preview opened at a line, the block marked (board Main);
+- step 2 — a selection's floating **Comment c**, the box, a card and its gutter bar (Select, Compose);
+- step 3 — no Comment button for a selection inside a card;
+- step 4 — `+` then Shift+click downward, the box after the table (Range);
+- step 5 — the image's Comment on hover, Tab reaching it, its box and its card after the image (Image);
+- step 6 — a link to another `.md` opening in the panel, Back keeping the cards, a hovered `+` beside a saved card (Cards);
+- step 8 — Shift+click upward;
+- step 9 — a `#anchor` link scrolling the Preview;
+- step 11 — the `Preview | Source` toggle (Source).
 
-Stop the dev app by its PID.
+Do not start a dev app to check it; say in the task report that the UI is left to those steps.
 
 - [ ] **Step 7: Format-check and commit**
 
@@ -2269,7 +2463,7 @@ git commit -m "feat(agents): the File tab renders markdown and takes comments on
 
 **Interfaces:**
 - Consumes: `mdCommentAtom`, `sendBlock`, `recordSend`, `MdSendResult`, `MdSendBlock` (Task 3); `countLine`, `formatMdComments` (Task 2); `sendLineComments(agent, text): Promise<{ ok: true } | { ok: false; error: string }>` (`./linereviewsend`, with its DEV sink `window.__lineReviewSink`).
-- Produces: `MdCommentTray({ agent })`; DOM hooks `[data-md-tray]`, `[data-md-send]`, `[data-md-copy]`, `[data-md-tray-line]`.
+- Produces: `MdCommentTray({ agent })`; DOM hooks `[data-md-tray]`, `[data-md-send]` (not rendered for an agent with no terminal), `[data-md-copy]`, `[data-md-tray-line]`. The File tab's Esc cancels the Preview's open box before it closes the file.
 
 - [ ] **Step 1: Write the tray**
 
@@ -2280,8 +2474,8 @@ git commit -m "feat(agents): the File tab renders markdown and takes comments on
 // SPDX-License-Identifier: Apache-2.0
 //
 // The File tab's comment tray (docs/superpowers/specs/2026-10-06-md-comments-design.md): how many comments wait
-// across the agent's files, Copy, and the one Send that pastes them into this agent's terminal as one message. The
-// File tab's Ctrl+Enter presses data-md-send, so every check lives here.
+// across the agent's files, Copy, and the one Send that pastes them into this agent's terminal as one message (an
+// agent with no terminal gets Copy alone). The File tab's Ctrl+Enter presses data-md-send, so every check lives here.
 
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
@@ -2304,7 +2498,8 @@ function plural(n: number, word: string): string {
     return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-// the second line: why Send is disabled, else what the last copy or failure did
+// the second line: why Send is disabled, else what the last copy or failure did. No terminal has no line: Send is
+// not offered at all, and Copy is the one action (spec item 14)
 function statusLine(block: MdSendBlock, last: MdSendResult | undefined): ReactNode {
     const line = (tone: string, body: ReactNode, title?: string) => (
         <span data-md-tray-line title={title} className={cn("flex min-w-0 items-center gap-[6px] text-[12px]", tone)}>
@@ -2322,9 +2517,6 @@ function statusLine(block: MdSendBlock, last: MdSendResult | undefined): ReactNo
     }
     if (block?.kind === "draft") {
         return line("text-muted", "Add or cancel the open comment first");
-    }
-    if (block?.kind === "noterm") {
-        return line("text-muted", `${block.agent} has no terminal — copy the comments instead`);
     }
     if (last?.ok === false) {
         const text = last.agent ? `Couldn't reach ${last.agent} — comments kept` : "Couldn't copy — comments kept";
@@ -2410,17 +2602,19 @@ export function MdCommentTray({ agent }: { agent: AgentVM }) {
                 <button type="button" data-md-copy disabled={busy} onClick={copy} className={SECONDARY_BTN}>
                     Copy
                 </button>
-                <button
-                    type="button"
-                    data-md-send
-                    disabled={block != null || busy}
-                    title={`Send to ${agent.name} (${chord})`}
-                    onClick={send}
-                    className={ACCENT_BTN}
-                >
-                    Send {plural(n, "comment")}
-                    <span className={KBD}>{chord}</span>
-                </button>
+                {block?.kind !== "noterm" ? (
+                    <button
+                        type="button"
+                        data-md-send
+                        disabled={block != null || busy}
+                        title={`Send to ${agent.name} (${chord})`}
+                        onClick={send}
+                        className={ACCENT_BTN}
+                    >
+                        Send {plural(n, "comment")}
+                        <span className={KBD}>{chord}</span>
+                    </button>
+                ) : null}
             </div>
             {statusLine(block, last)}
         </div>
@@ -2434,7 +2628,7 @@ In `filetab.tsx`, import the tray and the drafts:
 
 ```tsx
 import { useAtom, useAtomValue } from "jotai";
-import { mdCommentAtom } from "./mdcommentstore";
+import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
 ```
 
@@ -2444,12 +2638,18 @@ After the `mdMode` line:
     const drafts = useAtomValue(mdCommentAtom(agentId));
 ```
 
-Replace `onKeyDown` with:
+Replace `onKeyDown` with the version below. Esc cancels the comment box this Preview shows before it closes the file (spec item 17): the textarea handles its own Esc, but with focus on the document or a button the key reaches here, and closing the file would leave the box open on a file no longer shown.
 
 ```tsx
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
         if (e.key === "Escape") {
             e.stopPropagation();
+            if (preview && drafts.box?.file === ref.abs) {
+                cancelBox(agentId);
+                // focus may have been on the box's own buttons, which are gone now
+                e.currentTarget.querySelector<HTMLElement>("[data-md-doc]")?.focus({ preventScroll: true });
+                return;
+            }
             closeRailFile(agentId);
             return;
         }
@@ -2510,16 +2710,19 @@ Expected: exit 0.
 Run: `npx vitest run frontend/app/view/agents`
 Expected: PASS.
 
-- [ ] **Step 6: Check it in the dev app**
+- [ ] **Step 6: Name the acceptance (no hand check)**
 
-Run `task dev` with an agent whose terminal is a shell you can watch (start a plain `claude` agent, or any agent). Open a `.md` in its panel and add two comments on it and one on a second `.md`. Expected, matching boards Source and TrayStates:
-- with no comments the tray shows the hint line; with three, `3 comments on 2 files`, Copy and **Send 3 comments ⌃↵**;
-- Copy puts the exact `formatMdComments` text on the clipboard and shows "Copied. The comments stay until you send or delete them."; the cards stay;
-- Ctrl/Cmd+Enter with focus in the document (not in a box) sends: the message lands in the agent's terminal as one paste and is submitted; the tray reads "✓ Sent 3 comments to <agent>" and the cards are gone;
-- with a box holding text, Send is disabled with "Add or cancel the open comment first";
-- in Source view the tray is still there; Back to a non-markdown file keeps the tray while comments wait.
+The tray and the File tab's keys are shown by Task 6's scenario, which the Final stage runs; match each to its mockup board:
+- step 1 — the hint line with no comments (Main);
+- step 4 — Send disabled with "Add or cancel the open comment first" while the range box holds text, checked before the note is added (Range);
+- step 6 — `4 comments on 2 files`, Copy and **Send 4 comments ⌃↵** (Cards);
+- step 7 — Ctrl+Enter from the document sends the exact message once; "✓ Sent 4 comments to <agent>" (TrayStates, sent);
+- step 8 — Esc with focus in the document cancels the open box and leaves the file open;
+- step 10 — an asking agent: Send disabled with its reason, Copy enabled (TrayStates, asking);
+- step 11 — the tray under Source (Source);
+- step 12 — an agent with no terminal: Copy alone; Copy writes the exact message, reads "Copied. …", and the card stays (TrayStates, copied).
 
-Stop the dev app by its PID.
+Do not start a dev app to check it; say in the task report that the UI is left to those steps.
 
 - [ ] **Step 7: Format-check and commit**
 
@@ -2542,9 +2745,9 @@ git commit -m "feat(agents): send markdown comments to the panel's agent as one 
 
 **Interfaces:**
 - Consumes: the DOM hooks from Task 4 and Task 5; scenario helpers already in `scenarios.mjs`: `polishWaitFor(h, expr, ms)`, `ahReload(h)`, `waitForProjectInConfig(h, name)`, `UI_ROUTE`, `TREE_RAIL_FIXTURE`, `RAIL_VISIBLE_KEY`, `RAIL_SECTIONS_KEY`, `railTabsKey(h, key, code, keyCode, modifiers)`, `railTabsMouse(h, type, x, y, extra)`, `railTabsNap(ms)`.
-- Produces: scenario `md-comments` (`task verify:ui -- md-comments`, Windows only).
+- Produces: scenario `md-comments` (`task verify:ui -- md-comments`, Windows only), which the Final stage runs. Its 13 steps are the acceptance Tasks 1, 4 and 5 name.
 
-Do not run prettier on this file.
+Do not run prettier on this file. Step 12's agent has no `blockId`, so it waits for the Cockpit card's link rather than a terminal; if a roster agent without a terminal cannot open its panel that way, record it under Found not fixed rather than inventing another route.
 
 - [ ] **Step 1: Add the fixture and helpers**
 
@@ -2552,7 +2755,8 @@ After the `agentRailTabs` object in `scripts/cdp/scenarios.mjs`:
 
 ```js
 // md-comments (docs/superpowers/specs/2026-10-06-md-comments-design.md): an agent whose transcript names
-// docs/guide.md:9; guide.md has frontmatter (lines 1-3), a table (11-15) and an image (17) and links docs/other.md.
+// docs/guide.md:9; guide.md has frontmatter (lines 1-3), a table (11-15) and an image (17), links docs/other.md (19),
+// and links #notes (21), a heading below enough filler that reaching it scrolls the Preview.
 const MDC_AGENT = "fx-md-comments";
 const MDC_BLOCK = "fx-blk-md-comments";
 const MDC_PROJECT = "verify-md-comments";
@@ -2581,6 +2785,13 @@ const MDC_GUIDE = [
     "",
     "See [the other doc](other.md).",
     "",
+    "Jump to [the notes](#notes).",
+    "",
+    ...Array.from({ length: 40 }, (_, i) => [`Filler paragraph ${i + 1}, here to push the notes below the fold.`, ""]).flat(),
+    "## Notes",
+    "",
+    "The notes close the guide.",
+    "",
 ].join("\n");
 const MDC_OTHER = "# Other\n\nThe other doc's only paragraph.\n";
 // a 1x1 PNG
@@ -2608,6 +2819,7 @@ const MDC_EXPECTED = [
     "   > only paragraph",
     "   Say more here.",
 ].join("\n");
+const MDC_COPY_EXPECTED = ["Comments on docs/guide.md (1):", "", "1. docs/guide.md:9", "   > the one the link names", "   Copy me."].join("\n");
 
 function mdcFixture(base) {
     const repo = join(base, "repo");
@@ -2625,7 +2837,8 @@ function mdcFixture(base) {
     return { repo, transcript };
 }
 
-function mdcRoster(ctx, state) {
+// terminal false leaves the blockId out: an agent with no terminal, as an ended worker is
+function mdcRoster(ctx, state, terminal = true) {
     writeFileSync(
         TREE_RAIL_FIXTURE,
         JSON.stringify(
@@ -2639,7 +2852,7 @@ function mdcRoster(ctx, state) {
                     agent: "claude",
                     model: "opus",
                     activeMs: 60_000,
-                    blockId: MDC_BLOCK,
+                    ...(terminal ? { blockId: MDC_BLOCK } : {}),
                     transcriptPath: ctx.transcript,
                 },
             ],
@@ -2687,10 +2900,15 @@ async function mdcSelect(h, words) {
     })()`);
 }
 
-// types a note into the open box and adds it with Ctrl+Enter
-async function mdcNote(h, note) {
+// types a note into the open box
+async function mdcType(h, note) {
     await h.ev(`${MDC_DOC}?.querySelector("[data-md-box] textarea")?.focus()`);
     await h.cdp("Input.insertText", { text: note });
+}
+
+// types a note into the open box and adds it with Ctrl+Enter
+async function mdcNote(h, note) {
+    await mdcType(h, note);
     await railTabsKey(h, "Enter", "Enter", 13, 2);
 }
 
@@ -2717,6 +2935,8 @@ async function mdcPlus(h, expr, shift) {
 
 const mdcRow = (text) => `[...${MDC_DOC}.querySelectorAll("tr")].find((r) => r.textContent.includes(${JSON.stringify(text)}))`;
 const mdcTray = `(${MDC_ASIDE}?.querySelector("[data-md-tray]")?.innerText ?? "")`;
+// the image's Comment button is always in the DOM (Tab reaches it); this says whether it is seen
+const mdcImgBtnShown = `(() => { const b = ${MDC_DOC}?.querySelector("[data-md-image-comment]"); return b != null && getComputedStyle(b).opacity === "1"; })()`;
 ```
 
 - [ ] **Step 2: Add the scenario**
@@ -2765,8 +2985,9 @@ const mdComments = {
         const hit = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="hit"]')?.dataset.lines ?? null`);
         const img = await polishWaitFor(h, `!!${MDC_DOC}?.querySelector('img[data-md-src="images/shot.png"]')`, 8000);
         const front = await h.ev(`(${MDC_DOC}?.innerText ?? "").includes("Guide") && !(${MDC_DOC}?.innerText ?? "").includes("title: Guide\\n---")`);
+        const tray1 = await h.ev(mdcTray);
         await h.shot("cdp-shots/md-comments-open.png");
-        rec("1. docs/guide.md:9 opens in Preview with line 9's block marked and the image rendered", opened && hit === "9-9" && img && front, JSON.stringify({ opened, hit, img, front }));
+        rec("1. docs/guide.md:9 opens in Preview with line 9's block marked, the image rendered, and the tray's hint line", opened && hit === "9-9" && img && front && tray1.includes("Select text and press"), JSON.stringify({ opened, hit, img, front, tray1 }));
 
         // 2. a selection, c, a note
         await mdcSelect(h, "the one the link names");
@@ -2787,27 +3008,43 @@ const mdComments = {
         await h.ev(`getSelection().removeAllRanges()`);
         rec("3. selecting a card's own text floats no Comment button", noFloat, JSON.stringify({ noFloat }));
 
-        // 4. + on the first body row, Shift+click on the last: one box after the table
+        // 4. + on the first body row, Shift+click on the last (downward): one box after the table; while it holds
+        // text, Send is disabled with the reason
         const plus1 = await mdcPlus(h, mdcRow("Quick"), false);
         const plus2 = await mdcPlus(h, mdcRow("Plan"), true);
         const box4 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
         const afterTable = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.closest("[data-md-slot]")?.previousElementSibling?.tagName ?? ""`);
         const target = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="target"]')?.dataset.lines ?? null`);
+        await mdcType(h, "Add a column for cost.");
+        const draftBlocked = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && ${mdcTray}.includes("Add or cancel the open comment first")`, 3000);
         await h.shot("cdp-shots/md-comments-range.png");
-        await mdcNote(h, "Add a column for cost.");
-        rec("4. + then Shift+click covers rows 13-15, the box hangs after the table and quotes the rows", plus1 && plus2 && box4.includes("docs/guide.md:13-15") && box4.includes("| Plan | the engine |") && afterTable === "TABLE" && target === "13-15", JSON.stringify({ plus1, plus2, box4, afterTable, target }));
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        rec("4. + then Shift+click downward covers rows 13-15, the box hangs after the table and quotes the rows; a typed note blocks Send", plus1 && plus2 && box4.includes("docs/guide.md:13-15") && box4.includes("| Plan | the engine |") && afterTable === "TABLE" && target === "13-15" && draftBlocked, JSON.stringify({ plus1, plus2, box4, afterTable, target, draftBlocked }));
 
-        // 5. the image
+        // 5. the image: hovering shows its Comment; away from it the button hides but Tab still reaches it (and shows
+        // it); its box is labelled with the image, and its card hangs after the image
         const ic = await mdcCenter(h, `${MDC_DOC}?.querySelector('img[data-md-src="images/shot.png"]')`);
         await railTabsMouse(h, "mouseMoved", ic.x, ic.y, { button: "none" });
-        const imgBtn = await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-image-comment]")`, 5000);
+        const imgBtn = await polishWaitFor(h, mdcImgBtnShown, 5000);
         await h.shot("cdp-shots/md-comments-image.png");
-        await h.ev(`${MDC_DOC}.querySelector("[data-md-image-comment]").click()`);
+        await railTabsMouse(h, "mouseMoved", 1, 1, { button: "none" });
+        const imgHidden = await polishWaitFor(h, `!${mdcImgBtnShown}`, 3000);
+        await h.ev(`${MDC_DOC}?.focus()`);
+        let tabbed = false;
+        for (let i = 0; i < 20 && !tabbed; i++) {
+            await railTabsKey(h, "Tab", "Tab", 9);
+            tabbed = await h.ev(`document.activeElement?.matches?.("[data-md-image-comment]") === true`);
+        }
+        const focusShown = tabbed && (await h.ev(mdcImgBtnShown));
+        await h.ev(`document.activeElement?.matches?.("[data-md-image-comment]") && document.activeElement.click()`);
         const box5 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
         await mdcNote(h, "Retake this shot.");
-        rec("5. an image's Comment opens a box labelled with the image and no quote", imgBtn && box5.includes("docs/guide.md:17 · image shot.png"), JSON.stringify({ imgBtn, box5 }));
+        const imgCard = await h.ev(`[...(${MDC_DOC}?.querySelectorAll("[data-md-card]") ?? [])].find((c) => c.innerText.includes("image shot.png"))?.closest("[data-md-slot]")?.previousElementSibling?.tagName ?? ""`);
+        await h.shot("cdp-shots/md-comments-image-card.png");
+        rec("5. hovering the image shows its Comment; Tab reaches and shows it; its box names the image with no quote; the card hangs after the image", imgBtn && imgHidden && tabbed && focusShown && box5.includes("docs/guide.md:17 · image shot.png") && imgCard === "IMG", JSON.stringify({ imgBtn, imgHidden, tabbed, focusShown, box5, imgCard }));
 
-        // 6. a link to other.md opens in the panel; a comment there; Back keeps guide.md's cards
+        // 6. a link to other.md opens in the panel; a comment there; Back keeps guide.md's cards; hovering a block
+        // that has a card shows its + in the gutter
         await h.ev(`[...${MDC_DOC}.querySelectorAll("a")].find((a) => a.textContent === "the other doc").click()`);
         const other = await polishWaitFor(h, `(${MDC_DOC}?.innerText ?? "").includes("The other doc's only paragraph.")`, 8000);
         await mdcSelect(h, "only paragraph");
@@ -2817,8 +3054,11 @@ const mdComments = {
         await h.ev(`${MDC_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Back"]')?.click()`);
         const back = await polishWaitFor(h, `${MDC_DOC}?.querySelectorAll("[data-md-card]").length === 3`, 8000);
         const tray6 = await h.ev(mdcTray);
+        const p9 = await mdcCenter(h, `${MDC_DOC}?.querySelector('[data-src-start="9"]')`);
+        if (p9 != null) await railTabsMouse(h, "mouseMoved", p9.x, p9.y, { button: "none" });
+        const plus6 = await polishWaitFor(h, `(() => { const p = ${MDC_DOC}?.querySelector("[data-md-plus]")?.getBoundingClientRect(); const b = ${MDC_DOC}?.querySelector('[data-src-start="9"]')?.getBoundingClientRect(); return p != null && b != null && Math.abs(p.top - b.top) < 12; })()`, 3000);
         await h.shot("cdp-shots/md-comments-cards.png");
-        rec("6. other.md opens in the panel, takes a comment, and Back returns to guide.md's 3 cards; the tray counts 4 on 2 files", other && back && tray6.includes("4 comments on 2 files"), JSON.stringify({ other, back, tray6 }));
+        rec("6. other.md opens in the panel, takes a comment, and Back returns to guide.md's 3 cards; the tray counts 4 on 2 files and offers Send 4 comments; a carded block's + shows on hover", other && back && tray6.includes("4 comments on 2 files") && tray6.includes("Send 4 comments") && plus6, JSON.stringify({ other, back, tray6, plus6 }));
 
         // 7. Send through the DEV sink: the exact message, then the sent line
         await h.ev(`(() => { window.__mdSent = []; window.__lineReviewSink = (t) => { window.__mdSent.push(t); }; return true; })()`);
@@ -2830,7 +3070,31 @@ const mdComments = {
         await h.shot("cdp-shots/md-comments-sent.png");
         rec("7. Ctrl+Enter sends the exact message once and the tray reads Sent 4 comments", sent && text === MDC_EXPECTED && tray7.includes("Sent 4 comments"), JSON.stringify({ sent, text, tray7 }));
 
-        // 8. an asking agent: Send disabled with its reason, Copy still enabled
+        // 8. + on the last row, Shift+click on the first (upward): the same 13-15 range; then Esc with focus in the
+        // document cancels the box and leaves the file open
+        const up1 = await mdcPlus(h, mdcRow("Plan"), false);
+        const up2 = await mdcPlus(h, mdcRow("Quick"), true);
+        const box8 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
+        const target8 = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="target"]')?.dataset.lines ?? null`);
+        await h.shot("cdp-shots/md-comments-range-up.png");
+        await h.ev(`${MDC_DOC}?.focus()`);
+        await railTabsKey(h, "Escape", "Escape", 27);
+        const cancelled = await polishWaitFor(h, `!${MDC_DOC}?.querySelector("[data-md-box]")`, 3000);
+        const stillOpen = await h.ev(`!!${MDC_ASIDE}?.querySelector("[data-rail-file]") && !!${MDC_DOC}`);
+        rec("8. + on row 15 then Shift+click on row 13 covers 13-15; Esc in the document cancels the box and keeps the file open", up1 && up2 && box8.includes("docs/guide.md:13-15") && target8 === "13-15" && cancelled && stillOpen, JSON.stringify({ up1, up2, box8, target8, cancelled, stillOpen }));
+
+        // 9. a #anchor link scrolls the Preview to its heading: below the fold before the click, in view after it (the
+        // heading ends the document, so it lands in view, not at the top)
+        const notesInView = `(() => { const d = ${MDC_DOC}; const n = [...(d?.querySelectorAll(".heading") ?? [])].find((e) => e.textContent === "Notes"); if (d == null || n == null) return false; const r = n.getBoundingClientRect(); const v = d.getBoundingClientRect(); return r.top >= v.top && r.bottom <= v.bottom; })()`;
+        await h.ev(`${MDC_DOC}?.scrollTo(0, 0)`);
+        await railTabsNap(200);
+        const belowFold = await h.ev(`!${notesInView}`);
+        await h.ev(`[...${MDC_DOC}.querySelectorAll("a")].find((a) => a.textContent === "the notes").click()`);
+        const anchored = await polishWaitFor(h, notesInView, 3000);
+        await h.shot("cdp-shots/md-comments-anchor.png");
+        rec("9. the #notes link scrolls the Preview until the Notes heading is in view", belowFold && anchored, JSON.stringify({ belowFold, anchored }));
+
+        // 10. an asking agent: Send disabled with its reason, Copy still enabled
         mdcRoster(ctx, "asking");
         await ahReload(h);
         await h.goto("agent");
@@ -2842,25 +3106,51 @@ const mdComments = {
         await mdcNote(h, "Again.");
         const disabled = await h.ev(`!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled`);
         const copyOk = await h.ev(`${MDC_ASIDE}?.querySelector("[data-md-copy]")?.disabled === false`);
-        const tray8 = await h.ev(mdcTray);
+        const tray10 = await h.ev(mdcTray);
         await h.shot("cdp-shots/md-comments-asking.png");
-        rec("8. while the agent asks, Send is disabled with the reason and Copy stays enabled", disabled && copyOk && tray8.includes("is waiting on a question"), JSON.stringify({ disabled, copyOk, tray8 }));
+        rec("10. while the agent asks, Send is disabled with the reason and Copy stays enabled", disabled && copyOk && tray10.includes("is waiting on a question"), JSON.stringify({ disabled, copyOk, tray10 }));
 
-        // 9. Source keeps the tray
+        // 11. Source keeps the tray
         await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="source"]')?.click()`);
         const monaco = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 8000);
-        const tray9 = await h.ev(mdcTray);
+        const tray11 = await h.ev(mdcTray);
         await h.shot("cdp-shots/md-comments-source.png");
         await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="preview"]')?.click()`);
-        rec("9. Source shows Monaco and keeps the tray", monaco && tray9.includes("1 comment on 1 file"), JSON.stringify({ monaco, tray9 }));
+        rec("11. Source shows Monaco and keeps the tray", monaco && tray11.includes("1 comment on 1 file"), JSON.stringify({ monaco, tray11 }));
 
-        // 10. the Code preview renders the image too
+        // 12. an agent with no terminal: the tray offers Copy alone; Copy writes the exact message, says so, and keeps
+        // the card. The reload drops step 10's comment (drafts are in memory only)
+        mdcRoster(ctx, "working", false);
+        await ahReload(h);
+        const opened12 = await mdcOpenGuide(h);
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        await mdcNote(h, "Copy me.");
+        const noSend = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-md-copy]") && !${MDC_ASIDE}?.querySelector("[data-md-send]")`, 3000);
+        await h.ev(`(() => {
+            window.__mdCopied = [];
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: async (text) => { window.__mdCopied.push(text); } },
+            });
+            return true;
+        })()`);
+        await h.ev(`${MDC_ASIDE}?.querySelector("[data-md-copy]")?.click()`);
+        const copied = await polishWaitFor(h, `(window.__mdCopied ?? []).length === 1`, 5000);
+        const text12 = await h.ev(`(window.__mdCopied ?? [])[0] ?? ""`);
+        const tray12 = await h.ev(mdcTray);
+        const cards12 = await h.ev(`${MDC_DOC}?.querySelectorAll("[data-md-card]").length ?? 0`);
+        await h.shot("cdp-shots/md-comments-copied.png");
+        rec("12. with no terminal the tray offers Copy alone; Copy writes the exact message, reads Copied, and keeps the card", opened12 && noSend && copied && text12 === MDC_COPY_EXPECTED && tray12.includes("Copied. The comments stay until you send or delete them.") && cards12 === 1, JSON.stringify({ opened12, noSend, copied, text12, tray12, cards12 }));
+
+        // 13. the Code preview renders the image too
         await h.ev(`[...(${MDC_ASIDE}?.querySelectorAll("[data-rail-file] button") ?? [])].find((b) => b.textContent.includes("Open in Code"))?.click()`);
         // the Agent surface stays mounted while hidden, so the panel's own image must not count
         const codeImg = await polishWaitFor(h, `[...document.querySelectorAll('img[data-md-src="images/shot.png"]')].some((i) => !i.closest("aside") && i.checkVisibility())`, 10000);
-        const surface10 = await h.activeSurfaceLabel();
+        const surface13 = await h.activeSurfaceLabel();
         await h.shot("cdp-shots/md-comments-code-preview.png");
-        rec("10. the Code surface's preview of guide.md renders the image", surface10 === "Code" && codeImg, JSON.stringify({ surface10, codeImg }));
+        rec("13. the Code surface's preview of guide.md renders the image", surface13 === "Code" && codeImg, JSON.stringify({ surface13, codeImg }));
         return steps;
     },
     async teardown(h, ctx) {
@@ -2871,7 +3161,8 @@ const mdComments = {
                 console.error(`md-comments teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
-        await step("clear the DEV hooks", () => h.ev(`(delete window.__lineReviewSink, delete window.__mdSent, true)`));
+        // the clipboard stub from step 12 is an own property over Navigator's getter; deleting it restores that
+        await step("clear the DEV hooks", () => h.ev(`(delete window.__lineReviewSink, delete window.__mdSent, delete window.__mdCopied, delete navigator.clipboard, true)`));
         if (ctx.project) {
             await step("remove the project", async () => {
                 await h.rpc("deleteproject", { name: ctx.project });
@@ -2910,7 +3201,7 @@ Expected: `true`.
 - [ ] **Step 4: Run it (Windows dev machine only)**
 
 On Windows with `task dev` running: `task verify:ui -- md-comments`
-Expected: steps 1–10 PASS; `cdp-shots/index.html` shows open, select, compose, range, image, cards, sent, asking, source and code-preview shots that match the mockup boards. On macOS skip this step and say so in the task report.
+Expected: steps 1–13 PASS; `cdp-shots/index.html` shows open (Main), select and compose (Select, Compose), range and range-up (Range), image and image-card (Image), cards (Cards), sent, asking and copied (TrayStates), anchor, source (Source) and code-preview shots that match the mockup boards. On macOS skip this step and say so in the task report: the Final stage runs the scenario on Windows and reports unverified on macOS.
 
 - [ ] **Step 5: Commit**
 

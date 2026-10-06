@@ -57,7 +57,8 @@ Out of scope:
 2. **Body.** `Markdown` with `markdown-doc` styles at 14px. The text column is the panel's width, inset 36px on the
    left (room for the gutter `+`) and 22px on the right, on `bg-background`.
    - A frontmatter block renders as the Code preview's card (`splitFrontmatter`, `FrontmatterCard`).
-   - Images resolve with `resolveOpts` `{ connName: "", baseDir: <the file's directory> }`.
+   - Images resolve with `resolveOpts` `{ connName: "local", baseDir: <the file's directory> }` (`""` would build
+     `wsh:///…`).
    - A link to a relative `.md` file opens that file in the panel and pushes the current one onto Back (`openFile`).
      A `#anchor` link scrolls within the document. Any other link opens as it does in the Code preview.
 3. **At a line.** A file opened at a line (`ref.line`) scrolls the block that holds that line to the centre and marks it
