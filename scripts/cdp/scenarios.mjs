@@ -4306,20 +4306,62 @@ const codeGitStatus = {
     },
 };
 
+// code-diff's own project: one committed file, modified in the working tree, so the Changed column has exactly
+// that file whatever else is registered
+const CODE_DIFF_PROJECT = "verify-code-diff";
+const CODE_DIFF_FILE = "notes.md";
+
 const codeDiff = {
     name: "code-diff",
     surface: "code",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const dir = mkdtempSync(join(tmpdir(), "verify-code-diff-"));
+        const ctx = { dir };
+        try {
+            git(dir, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(dir, CODE_DIFF_FILE), "# notes\n\nThe first line.\n");
+            git(dir, "add", ".");
+            git(dir, "commit", "-q", "-m", "seed the notes");
+            writeFileSync(join(dir, CODE_DIFF_FILE), "# notes\n\nThe first line, edited.\nA second line.\n");
+            await h.rpc("createproject", { name: CODE_DIFF_PROJECT, path: dir });
+            ctx.project = CODE_DIFF_PROJECT;
+            await waitForProjectInConfig(h, CODE_DIFF_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const steps = [];
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo and the project", ok: false, detail: ctx.arrangeError }];
+        }
         await h.goto("code");
-        if ((await openProjectPicker(h)) === true) {
-            await sleep(300);
-            await chooseProjectRow(h);
-            await sleep(1200);
+        // always through the picker, by name: another project may already be open, or listed first
+        const picked = await h.ev(`(async () => {
+            const chip = document.querySelector('[data-code-project-picker]');
+            if (!chip) return 'no picker';
+            chip.click();
+            const sel = '[data-code-picker-row=${JSON.stringify(CODE_DIFF_PROJECT)}]';
+            for (let i = 0; i < 40 && !document.querySelector(sel); i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            const row = document.querySelector(sel);
+            if (!row) return 'no row';
+            row.click();
+            // the chip names the open project; the column tabs may still be the previous project's
+            const shown = () => (document.querySelector('[data-code-project-picker]')?.textContent || '').trim();
+            for (let i = 0; i < 40 && shown() !== ${JSON.stringify(CODE_DIFF_PROJECT)}; i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            for (let i = 0; i < 40 && !document.querySelector('[data-code-column-tab]'); i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            return shown();
+        })()`);
+        if (picked !== CODE_DIFF_PROJECT) {
+            steps.push({ step: "pick the project in the Code picker", ok: false, detail: `picked=${picked}` });
         }
 
         // the Changed column guarantees the file we open actually differs from HEAD
@@ -4333,18 +4375,18 @@ const codeDiff = {
             rowPath = await h.ev(
                 `(() => { const r = document.querySelector('[data-code-changed-row]'); return r ? r.getAttribute('data-code-changed-row') : ''; })()`
             );
-            if (rowPath) break;
+            if (rowPath === CODE_DIFF_FILE) break;
             await sleep(500);
         }
         const opened = await h.ev(`(() => {
-            const r = document.querySelector('[data-code-changed-row]');
+            const r = document.querySelector('[data-code-changed-row=${JSON.stringify(CODE_DIFF_FILE)}]');
             if (!r) return false;
             r.click();
             return true;
         })()`);
         steps.push({
             step: "open a file that differs from HEAD",
-            ok: opened === true && rowPath !== "",
+            ok: opened === true && rowPath === CODE_DIFF_FILE,
             detail: `path=${rowPath || "(none)"}`,
         });
         await sleep(900);
@@ -4396,8 +4438,40 @@ const codeDiff = {
         });
         return steps;
     },
-    async teardown(h) {
+    async teardown(h, ctx) {
         await h.goto("cockpit"); // leave the app where a human expects it
+        if (ctx?.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            try {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.dir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            } catch (e) {
+                console.error(`code-diff teardown: remove the project failed: ${e?.message ?? e}`);
+            }
+            // Code keeps the picked project in a module atom; a reload drops it, so no later scenario opens Code
+            // on a directory removed below
+            try {
+                await h.ev("location.reload()");
+            } catch {
+                /* the evaluate is cut off by the navigation it just started */
+            }
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+        }
+        if (ctx?.dir) {
+            try {
+                rmSync(ctx.dir, { recursive: true, force: true });
+            } catch {
+                /* a leftover temp repo is cheaper than a failed teardown */
+            }
+        }
     },
 };
 
