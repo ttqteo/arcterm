@@ -55,7 +55,7 @@ func askRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	if blockArg == "" {
 		target, drop := statusTarget(oref)
 		if drop {
-			return fmt.Errorf("the session runs in the Claude daemon with no Arc tab attached")
+			return fmt.Errorf("the session runs in the Claude daemon with no arcterm tab attached")
 		}
 		oref = target
 	}

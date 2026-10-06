@@ -24,7 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// managedHook is one (event, matcher) hook Arc owns in the user's settings.json.
+// managedHook is one (event, matcher) hook arcterm owns in the user's settings.json.
 type managedHook struct {
 	Event   string
 	Matcher string // "" => no matcher key (matches all)
@@ -66,9 +66,9 @@ func managedEventOrder() []string {
 	return order
 }
 
-// managedEventScan is every event the merge and the health check must visit: the events Arc manages
+// managedEventScan is every event the merge and the health check must visit: the events arcterm manages
 // now, then any other event already in the file. Visiting the file's own events is what lets a hook
-// Arc wrote under an event it no longer manages still be pruned — when agent-memory-hook was removed
+// arcterm wrote under an event it no longer manages still be pruned — when agent-memory-hook was removed
 // it took SessionEnd out of managedHooks entirely, and a scan over managedHooks alone would never
 // look at the stale group again. Extras are sorted so output stays deterministic across runs.
 func managedEventScan(hooks map[string]any) []string {
@@ -87,7 +87,7 @@ func managedEventScan(hooks map[string]any) []string {
 	return append(order, extra...)
 }
 
-// isManagedCommand reports whether a hook command string is one Arc wrote: the first
+// isManagedCommand reports whether a hook command string is one arcterm wrote: the first
 // token's basename starts with "wsh" and the remaining args are exactly one of our
 // subcommands. Path- and version-independent so app updates self-heal.
 func isManagedCommand(command string) bool {
@@ -101,7 +101,7 @@ func isManagedCommand(command string) bool {
 	}
 	switch strings.TrimSpace(rest) {
 	// the agent-memory-* entries name removed subcommands and stay listed so a reinstall still
-	// recognizes — and therefore strips — a hook an older Arc wrote
+	// recognizes — and therefore strips — a hook an older arcterm wrote
 	case "agent-hook", "ask", "ask --clear", "jarvis dag rules --inject",
 		"agent-memory-hook", "agent-memory-project", "agent-memory-project --inject":
 		return true
@@ -151,7 +151,7 @@ const claudeModFSRoot = "claude-mod"
 
 const claudePluginDirsVar = "CLAUDE_CODE_PLUGIN_DIRS"
 
-// claudeModDir is where the Arc Claude mod is installed: fixed and versionless like stableWshPath, so
+// claudeModDir is where the arcterm Claude mod is installed: fixed and versionless like stableWshPath, so
 // the CLAUDE_CODE_PLUGIN_DIRS entry naming it never goes stale.
 func claudeModDir(home string) string {
 	return filepath.Join(home, ".arc", "claude-mod")
@@ -159,7 +159,7 @@ func claudeModDir(home string) string {
 
 // installClaudeMod writes the embedded mod into claudeModDir with the wsh path substituted. A file
 // whose bytes already match is left alone: every interactive claude session watches its plugin
-// folders and reloads the mod on a write, so rewriting on every Arc launch would reload it everywhere.
+// folders and reloads the mod on a write, so rewriting on every arcterm launch would reload it everywhere.
 func installClaudeMod(home, wshExe string) error {
 	dir := claudeModDir(home)
 	return fs.WalkDir(claudeModFS, claudeModFSRoot, func(p string, d fs.DirEntry, err error) error {
@@ -327,7 +327,7 @@ func groupIsManaged(group any) bool {
 	return false
 }
 
-// mergeAgentHooks returns a copy of existing with Arc's managed hook entries added or
+// mergeAgentHooks returns a copy of existing with arcterm's managed hook entries added or
 // refreshed, preserving every other key and every non-managed hook group.
 func mergeAgentHooks(existing map[string]any, wshExe string) map[string]any {
 	// deep copy via round-trip so the caller's map is never mutated
@@ -366,7 +366,7 @@ func mergeAgentHooks(existing map[string]any, wshExe string) map[string]any {
 	return out
 }
 
-// isManagedStatusLine reports whether a statusLine command is Arc's wrapper: first token's
+// isManagedStatusLine reports whether a statusLine command is arcterm's wrapper: first token's
 // basename starts with "wsh" and the remainder begins with "statusline". Path/version-independent.
 func isManagedStatusLine(command string) bool {
 	exe, rest := splitFirstToken(command)
@@ -403,7 +403,7 @@ func recoverInner(command string) string {
 	return ""
 }
 
-// mergeStatusLine returns a copy of existing with statusLine.command wrapped by Arc's
+// mergeStatusLine returns a copy of existing with statusLine.command wrapped by arcterm's
 // "wsh statusline --inner=<b64>", carrying the user's original command so their terminal
 // statusline display is unchanged. Idempotent: re-wrapping recovers the original instead of nesting.
 func mergeStatusLine(existing map[string]any, wshExe string) map[string]any {
@@ -429,7 +429,7 @@ func mergeStatusLine(existing map[string]any, wshExe string) map[string]any {
 	return out
 }
 
-// claudeModsMinVersion is the first Claude Code build the Arc mod was verified on. At or above it the
+// claudeModsMinVersion is the first Claude Code build the arcterm mod was verified on. At or above it the
 // mod reports usage and the statusLine wrapper is retired; below it the wrapper stays.
 var claudeModsMinVersion = [3]int{2, 1, 287}
 
@@ -461,7 +461,7 @@ func parseClaudeVersion(s string) ([3]int, bool) {
 	return v, true
 }
 
-// claudeSupportsMods reports whether the installed claude loads the Arc mod. No claude, or a version
+// claudeSupportsMods reports whether the installed claude loads the arcterm mod. No claude, or a version
 // that does not parse, keeps the wrapper: a dark usage readout is worse than a wrapped status line.
 func claudeSupportsMods() bool {
 	out, err := claudeVersionOutput()
@@ -480,8 +480,8 @@ func claudeSupportsMods() bool {
 	return true
 }
 
-// unwrapStatusLine returns a copy of existing with Arc's statusLine wrapper removed: the user's original
-// command restored, or statusLine dropped when Arc had added it with none. A statusLine Arc does not
+// unwrapStatusLine returns a copy of existing with arcterm's statusLine wrapper removed: the user's original
+// command restored, or statusLine dropped when arcterm had added it with none. A statusLine arcterm does not
 // manage is left alone.
 func unwrapStatusLine(existing map[string]any) map[string]any {
 	out := map[string]any{}
@@ -501,7 +501,7 @@ func unwrapStatusLine(existing map[string]any) map[string]any {
 	return out
 }
 
-// configIsHealthy reports whether existing already carries Arc's full managed hook set and, unless
+// configIsHealthy reports whether existing already carries arcterm's full managed hook set and, unless
 // modsSupported (then no wrapper at all), managed statusLine, all naming wantExe — the path this
 // install would write. When true the install skips its
 // rewrite, so a working config is not rewritten every launch. A config naming any other binary (a
@@ -737,7 +737,7 @@ func installPiSimplifyGateExtension(home string) error {
 	return write("waveterm-simplify-gate-core.ts", piSimplifyGateCoreExtensionTemplate)
 }
 
-// removeStalePiMemoryExtension deletes the waveterm-memory.ts an older Arc installed. pi auto-loads
+// removeStalePiMemoryExtension deletes the waveterm-memory.ts an older arcterm installed. pi auto-loads
 // every file in its extensions dir, so leaving it there keeps registering tools that shell out to a
 // `wsh memory` subcommand that no longer exists. Absent file, or pi not installed, is a no-op.
 func removeStalePiMemoryExtension(home string) error {
@@ -867,7 +867,7 @@ func installPiKeybindings(home string) (bool, error) {
 
 var installAgentHooksCmd = &cobra.Command{
 	Use:                   "install-agent-hooks",
-	Short:                 "install Arc's Claude Code hooks into ~/.claude/settings.json (idempotent)",
+	Short:                 "install arcterm's Claude Code hooks into ~/.claude/settings.json (idempotent)",
 	Args:                  cobra.NoArgs,
 	RunE:                  installAgentHooksRun,
 	Hidden:                true,
@@ -909,7 +909,7 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 
 	modsSupported := claudeSupportsMods()
 	if configIsHealthy(existing, wsh, modDir, modsSupported) {
-		fmt.Printf("Arc agent hooks already installed in %s (skipping)\n", path)
+		fmt.Printf("arcterm agent hooks already installed in %s (skipping)\n", path)
 	} else {
 		merged := mergeAgentHooks(existing, wsh)
 		if modsSupported {
@@ -930,7 +930,7 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 		if err := os.Rename(tmp, path); err != nil {
 			return fmt.Errorf("replacing %s: %w", path, err)
 		}
-		fmt.Printf("installed Arc agent hooks into %s\n", path)
+		fmt.Printf("installed arcterm agent hooks into %s\n", path)
 	}
 	if err := installOpencodePlugin(home, wsh); err != nil {
 		return err

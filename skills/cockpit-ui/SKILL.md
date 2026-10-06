@@ -1,11 +1,11 @@
 ---
 name: cockpit-ui
-description: Use when you want to show the user something in the Arc cockpit (a run, an agent terminal, a record, a memory note, a radar finding, a surface), read what they're looking at, or run a cockpit action for them — via `wsh ui`.
+description: Use when you want to show the user something in the arcterm cockpit (a run, an agent terminal, a record, a memory note, a radar finding, a surface), read what they're looking at, or run a cockpit action for them — via `wsh ui`.
 ---
 
-# Driving the Arc cockpit
+# Driving the arcterm cockpit
 
-You run inside Arc. `wsh ui` lets you see and steer the cockpit the user is looking at.
+You run inside arcterm. `wsh ui` lets you see and steer the cockpit the user is looking at.
 
 - `wsh ui state` — JSON: current surface, `busy`, `selection` (addresses), and the `actions` available now.
 - `wsh ui reveal <address>` — take the user to an entity. Addresses: `run:<id>`, `channel:<id>`,

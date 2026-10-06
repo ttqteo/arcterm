@@ -87,7 +87,7 @@ func effortCreateProject(cmd *cobra.Command) (string, error) {
 		return "", err
 	}
 	if p == nil {
-		fmt.Fprintf(os.Stderr, "note: %s is in no Arc project, so the effort has none; set one with `wsh effort project`\n", here)
+		fmt.Fprintf(os.Stderr, "note: %s is in no arcterm project, so the effort has none; set one with `wsh effort project`\n", here)
 		return "", nil
 	}
 	return p.name, nil

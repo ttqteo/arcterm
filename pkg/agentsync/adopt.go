@@ -107,7 +107,7 @@ type skillCopy struct {
 	runtime, name, from string
 }
 
-// isSkillDir reports whether an entry Arc does not own is a skill. A harness keeps more than skills in
+// isSkillDir reports whether an entry arcterm does not own is a skill. A harness keeps more than skills in
 // its skills directory (Codex's bundled .system set, another tool's store with no SKILL.md), and adopt
 // must neither list nor move those. Reconcile still sees every entry, so it never writes over one.
 func isSkillDir(dir, name string) bool {
@@ -118,7 +118,7 @@ func isSkillDir(dir, name string) bool {
 	return err == nil
 }
 
-// unmanagedCopies lists every harness-local skill Arc does not own: harnesses in catalog order,
+// unmanagedCopies lists every harness-local skill arcterm does not own: harnesses in catalog order,
 // skills sorted within each.
 func unmanagedCopies(p Paths) ([]skillCopy, error) {
 	var out []skillCopy
@@ -195,7 +195,7 @@ func PlanAdopt(p Paths, keep map[string]string) (AdoptPlan, error) {
 func claimKept(keep map[string]string, copies []skillCopy, sharedDir map[string]string) error {
 	for name, runtime := range keep {
 		if _, canonical := sharedDir[name]; canonical {
-			return fmt.Errorf("cannot keep %s's copy of %q: the skill is already managed by Arc", runtime, name)
+			return fmt.Errorf("cannot keep %s's copy of %q: the skill is already managed by arcterm", runtime, name)
 		}
 		found := false
 		for _, c := range copies {

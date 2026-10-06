@@ -285,7 +285,7 @@ It ran 26 min end to end and landed on `main` as `4dda4b54`.
   - F12, F13 and F14.
   - F16: no gate went stale, since the engine merges by itself.
 - **Not in that build:** today's flaky Verify reporting (`8b322aa0`), multi-question Gatekeeper (`ac04d587`) and lane
-  rewind (`69abf62e`), and the run's own three changes. They need a rebuilt Arc and another run.
+  rewind (`69abf62e`), and the run's own three changes. They need a rebuilt arcterm and another run.
 
 ## Incident — run a088e568's land held on a merge conflict, and nobody was told (2026-09-29)
 
@@ -380,7 +380,7 @@ What happened, read from the two session transcripts under
   whole.
 - `powershell.exe` resolves `claude` to `~/.local/bin/claude.exe`, a native program, so the test's Go helper reads its
   arguments the same way `claude.exe` does.
-- The fix takes effect only once Arc is rebuilt. The installed build was made at 11:05, before it.
+- The fix takes effect only once arcterm is rebuilt. The installed build was made at 11:05, before it.
 
 Open:
 

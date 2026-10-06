@@ -29,7 +29,7 @@ automatically a visual question.
 ## The loop
 
 1. Write every artboard and `canvas.json` for the change in ONE message, with the Write tool.
-2. Inside Arc (`wsh` is on PATH), run `wsh ui reveal canvas:<topic>` from your terminal. Arc
+2. Inside arcterm (`wsh` is on PATH), run `wsh ui reveal canvas:<topic>` from your terminal. arcterm
    serves the folder itself and attaches the canvas to you on the Agent surface without switching
    the user to it; they open it when ready, mark it, and send the marks back to you as one line.
    Start no server. If the command fails or `wsh` is missing, serve the folder yourself, on
@@ -43,7 +43,7 @@ automatically a visual question.
    - Any other code: a stale server with another root holds the port; try the next one.
    One server serves every topic.
 3. Tell the user which artboards you added or changed, `Main.dc.html` first, with a line on what
-   each shows and the assumptions you made. Outside Arc, give each one's URL
+   each shows and the assumptions you made. Outside arcterm, give each one's URL
    (`http://127.0.0.1:<port>/<topic>/project/<Name>.dc.html`). When the brief asks for states,
    derive the state list from the component and its stores, not the brief, and map each state to
    the artboard that draws it; name any state left undrawn. End your turn.

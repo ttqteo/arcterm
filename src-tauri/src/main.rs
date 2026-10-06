@@ -210,7 +210,7 @@ fn find_wsh_binary(bin_dir: &std::path::Path) -> Option<PathBuf> {
     None
 }
 
-// Fire-and-forget: idempotently provision Arc's Claude Code hooks into the user's
+// Fire-and-forget: idempotently provision arcterm's Claude Code hooks into the user's
 // ~/.claude/settings.json. Runs every launch; wsh does the idempotent merge. Any
 // failure is ignored — a missing hook only means degraded cockpit display.
 fn install_agent_hooks(app_path: &std::path::Path) {

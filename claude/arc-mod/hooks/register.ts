@@ -1,6 +1,6 @@
-// Arc's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
+// arcterm's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
-// outside an Arc block every hook passes straight through.
+// outside an arcterm block every hook passes straight through.
 import type { EngineInterface, Register } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
@@ -18,7 +18,7 @@ let active = false;
 let transcriptPath: string | null = null;
 
 // the line under claude's dialog while the card asks beside it
-const ALSO_ON_CARD = "Also answerable in Arc's ask card";
+const ALSO_ON_CARD = "Also answerable in arcterm's ask card";
 
 // the calls the card races claude's dialog for. one predicate for both hooks below, so the settings
 // hooks are skipped exactly where the mod has a card up
@@ -166,7 +166,7 @@ export const register: Register = (on) => {
         return fromDialog;
     });
 
-    // the settings hooks Arc installs for AskUserQuestion project a keystroke-answered card of their own
+    // the settings hooks arcterm installs for AskUserQuestion project a keystroke-answered card of their own
     // (`wsh ask`), which would stand over the one the call above is waiting on. answering here without
     // next(e) skips every settings PreToolUse hook beneath, so the call goes on to its dialog
     on("classic.PreToolUse", { tool: "AskUserQuestion" }, ($, e, next) => (racesCard(e.questions) ? {} : next(e)));

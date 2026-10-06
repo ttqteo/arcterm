@@ -18,4 +18,4 @@ paragraphs.
 
 The app's mark, drawn on the light matte a note's image sits on:
 
-![Arc mark](../../../public/logos/arcterm.png)
+![arcterm mark](../../../public/logos/arcterm.png)

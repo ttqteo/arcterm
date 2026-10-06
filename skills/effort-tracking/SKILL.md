@@ -21,7 +21,7 @@ Seed chunks from the plan's phase list — one `--chunk` per line is the CLI for
 paste-and-tick list. Ticked lines become `done`; chunks you plan but have not started stay
 `pending` (never pre-mark done).
 
-The project defaults to the Arc project holding the current directory; pass `--project` only when
+The project defaults to the arcterm project holding the current directory; pass `--project` only when
 the effort belongs to another one.
 
 ## When the route is still unclear

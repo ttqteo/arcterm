@@ -69,7 +69,7 @@ describe("skillGroups", () => {
             { title: "Same copy in 2 harnesses", names: ["commit", "wrangler"] },
             { title: "Only in Claude Code", names: ["graphify"] },
             { title: "Only in Codex", names: ["review-spec"] },
-            { title: "Managed by Arc", names: ["vaulted"] },
+            { title: "Managed by arcterm", names: ["vaulted"] },
         ]);
     });
 
@@ -158,19 +158,19 @@ describe("adopt", () => {
     });
 
     it("labels the button", () => {
-        expect(manageLabel(18)).toBe("Manage 18 skills in Arc");
-        expect(manageLabel(1)).toBe("Manage 1 skill in Arc");
+        expect(manageLabel(18)).toBe("Manage 18 skills in arcterm");
+        expect(manageLabel(1)).toBe("Manage 1 skill in arcterm");
     });
 });
 
 describe("skillsSummary", () => {
-    it("counts every skill once and the ones Arc manages", () => {
-        expect(skillsSummary(sample())).toBe("7 skills · 1 managed by Arc");
+    it("counts every skill once and the ones arcterm manages", () => {
+        expect(skillsSummary(sample())).toBe("7 skills · 1 managed by arcterm");
     });
 
     it("says none when the vault holds no skill", () => {
         expect(skillsSummary(data({ unmanaged: [move("claude", "x", { seed: true })] }))).toBe(
-            "1 skill · none managed by Arc"
+            "1 skill · none managed by arcterm"
         );
     });
 });

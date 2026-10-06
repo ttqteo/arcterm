@@ -158,7 +158,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                     <Removed agent={agent} topic={s.topic} />
                 ) : (
                     // the shown boards (every one under All) at their canvas.json frames, each iframe at the board's full size, so the canvas
-                    // scrolls here, in Arc, instead of showing the board pages' own scrollbars. The gutter is
+                    // scrolls here, in arcterm, instead of showing the board pages' own scrollbars. The gutter is
                     // reserved so the scrollbar appearing can't narrow the pane, change the fit scale, and make
                     // itself disappear again
                     <div
@@ -273,7 +273,7 @@ function BoardFrameView({
     );
 }
 
-// Arc DOM over the iframe, so the iframe can't take the pointer or focus while marking, and the window capture
+// arcterm DOM over the iframe, so the iframe can't take the pointer or focus while marking, and the window capture
 // includes the boxes
 function MarkLayer({ agentId, marks }: { agentId: string; marks: Mark[] }) {
     const [draft, setDraft] = useState<Box | null>(null);
@@ -428,10 +428,10 @@ function ServerDown() {
         <EdgeState>
             <span className="flex items-center gap-[8px] text-[14px] font-semibold text-primary">
                 <span className="h-[7px] w-[7px] rounded-full bg-error" />
-                Arc could not serve this canvas
+                arcterm could not serve this canvas
             </span>
             <span className={EXPLAINER}>
-                The canvas files are on disk, but Arc got no answer serving them. It tries again every few seconds.
+                The canvas files are on disk, but arcterm got no answer serving them. It tries again every few seconds.
             </span>
         </EdgeState>
     );

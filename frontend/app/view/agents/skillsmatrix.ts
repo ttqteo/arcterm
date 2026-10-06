@@ -60,7 +60,7 @@ function canonicalNames(data: SkillsData): Set<string> {
     return new Set((data.skills ?? []).map((s) => s.name));
 }
 
-// copies of each skill Arc does not own yet, keyed by name, each list in column order
+// copies of each skill arcterm does not own yet, keyed by name, each list in column order
 function unmanagedByName(data: SkillsData): Map<string, SkillCopy[]> {
     const order = new Map((data.columns ?? []).map((c, i) => [c.runtime, i]));
     const out = new Map<string, SkillCopy[]>();
@@ -124,7 +124,7 @@ function unmanagedCell(copies: SkillCopy[], kept: string | null, runtime: string
                   runtime,
                   label: "Replaced",
                   tone: "warn",
-                  title: "Set aside under skills-replaced when Arc manages it",
+                  title: "Set aside under skills-replaced when arcterm manages it",
               };
     }
     if (c.bodydiff) {
@@ -208,7 +208,7 @@ function groupTitle(row: SkillRow): string {
         case "only":
             return `Only in ${row.copies[0].label}`;
         case "managed":
-            return "Managed by Arc";
+            return "Managed by arcterm";
     }
 }
 
@@ -277,19 +277,19 @@ function plural(n: number, word: string): string {
     return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-// "19 skills · none managed by Arc"
+// "19 skills · none managed by arcterm"
 export function skillsSummary(data: SkillsData): string {
     const canonical = canonicalNames(data);
     const unmanagedOnly = [...unmanagedByName(data).keys()].filter((n) => !canonical.has(n)).length;
     const managed = canonical.size === 0 ? "none" : String(canonical.size);
-    return `${plural(canonical.size + unmanagedOnly, "skill")} · ${managed} managed by Arc`;
+    return `${plural(canonical.size + unmanagedOnly, "skill")} · ${managed} managed by arcterm`;
 }
 
 export function manageLabel(n: number): string {
-    return `Manage ${plural(n, "skill")} in Arc`;
+    return `Manage ${plural(n, "skill")} in arcterm`;
 }
 
-// The SKILL.md that Open shows: the vault copy once Arc owns it, else the kept copy, else the base copy.
+// The SKILL.md that Open shows: the vault copy once arcterm owns it, else the kept copy, else the base copy.
 export function skillFilePath(row: SkillRow, skillsroot: string, keep: SkillKeep): string {
     if (row.kind === "managed") {
         return joinRepoPath(skillsroot, `${row.name}/${SKILL_FILE}`);
@@ -313,15 +313,15 @@ export function copyDelta(c: SkillCopy): string {
 export function skillNote(row: SkillRow): string {
     switch (row.kind) {
         case "decide":
-            return "The copies differ in body text, so Arc will not pick one for you. Choose the copy every harness gets, or leave them alone.";
+            return "The copies differ in body text, so arcterm will not pick one for you. Choose the copy every harness gets, or leave them alone.";
         case "differs":
             return row.needsKeep
                 ? "The kept copy becomes the one every harness gets. The others are set aside under skills-replaced."
-                : "The copies differ in frontmatter or files. Arc keeps one shared copy and records each harness's differences beside it.";
+                : "The copies differ in frontmatter or files. arcterm keeps one shared copy and records each harness's differences beside it.";
         case "same":
-            return "The same SKILL.md sits in each harness's skills folder, copied by hand. Managing it in Arc keeps one copy in the vault and writes it into every harness.";
+            return "The same SKILL.md sits in each harness's skills folder, copied by hand. Managing it in arcterm keeps one copy in the vault and writes it into every harness.";
         case "only":
-            return `Kept in ${row.copies[0].label}'s skills folder only. Managing it in Arc also writes it into the other harnesses.`;
+            return `Kept in ${row.copies[0].label}'s skills folder only. Managing it in arcterm also writes it into the other harnesses.`;
         case "managed":
             return row.description || "One copy in the vault, written into every harness.";
     }

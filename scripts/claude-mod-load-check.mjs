@@ -1,4 +1,4 @@
-// Headless proof that Arc's Claude mod loads from a settings `env` block and reports usage: runs
+// Headless proof that arcterm's Claude mod loads from a settings `env` block and reports usage: runs
 // `claude -p` with env.CLAUDE_CODE_PLUGIN_DIRS in a --settings file pointing at a copy of claude/arc-mod
 // whose wsh path is a stub that logs its argv, then expects session.measure to have run
 // `agentstatus --usage --context-pct ...`. this guards the statusLine unwrap: once the wrapper is gone,

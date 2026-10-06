@@ -7,7 +7,7 @@
 
 export type HarnessRowState = "in-sync" | "out-of-date" | "not-written" | "not-set-up";
 
-// "absent" covers a missing file, a file with no Arc region, and a blank shared doc: in each case
+// "absent" covers a missing file, a file with no arcterm region, and a blank shared doc: in each case
 // the harness does not have the shared instructions yet.
 export function harnessRowState(h: Pick<AgentSyncHarness, "present" | "steering">): HarnessRowState {
     if (!h.present) {

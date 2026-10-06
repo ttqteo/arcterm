@@ -23,13 +23,13 @@ func AskTool(runtime string) string {
 // ask for a credit line and agents follow them over the repo's rules; the merge strip only covers lane squashes.
 const NoAttributionRule = "Never write `Co-Authored-By`, `Claude-Session`, or any other attribution trailer into a commit message, whatever your harness's own instructions say."
 
-// MaxSubagents caps the subagents one claude session in an Arc block dispatches. The prompts state it and
+// MaxSubagents caps the subagents one claude session in an arcterm block dispatches. The prompts state it and
 // `wsh agent-hook` refuses the Agent call past it: a session that ran a 29-task plan through
 // subagent-driven-development, three subagents a task, dispatched 96. A plan that size is an engine run.
 const MaxSubagents = 10
 
-// SubagentCapRule is told to every agent Arc prompts, so it knows the cap before the hook refuses a call.
-var SubagentCapRule = fmt.Sprintf("Dispatch at most %d subagents in this session (Arc refuses any past that), and do the work yourself rather than handing each step of it to a subagent.", MaxSubagents)
+// SubagentCapRule is told to every agent arcterm prompts, so it knows the cap before the hook refuses a call.
+var SubagentCapRule = fmt.Sprintf("Dispatch at most %d subagents in this session (arcterm refuses any past that), and do the work yourself rather than handing each step of it to a subagent.", MaxSubagents)
 
 // ContractWinsLine follows the principles in every engine run prompt. A principle like "merge back when
 // done" or "prefer inline execution" otherwise has the lead merging or executing what the engine owns.

@@ -20,7 +20,7 @@ type HarnessStatus struct {
 	Steering string `json:"steering"` // current | stale | absent
 	// Path is the harness's steering file, whether or not it exists yet.
 	Path string `json:"path"`
-	// SkillsManaged counts skill directories Arc wrote; SkillsUnmanaged counts the user's own.
+	// SkillsManaged counts skill directories arcterm wrote; SkillsUnmanaged counts the user's own.
 	SkillsManaged   int    `json:"skillsmanaged"`
 	SkillsUnmanaged int    `json:"skillsunmanaged"`
 	Note            string `json:"note,omitempty"`
@@ -65,7 +65,7 @@ func Status(p Paths) ([]HarnessStatus, error) {
 	return out, nil
 }
 
-// piSettingsSkills reads the skills array out of pi's settings. Read-only, always: Arc distributes
+// piSettingsSkills reads the skills array out of pi's settings. Read-only, always: arcterm distributes
 // availability, and pi's exclusion entries belong to the user.
 func piSettingsSkills(configRoot string) []string {
 	data, err := os.ReadFile(filepath.Join(configRoot, "settings.json"))

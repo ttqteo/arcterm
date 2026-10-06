@@ -1,14 +1,12 @@
 {
-    "name": "waveterm",
+    "name": "arcterm",
     "author": {
-        "name": "Command Line Inc",
-        "email": "info@commandline.dev"
+        "name": "ttqteo"
     },
-    "productName": "Wave",
-    "description": "Open-Source AI-Native Terminal Built for Seamless Workflows",
+    "productName": "arcterm",
+    "description": "An agent cockpit for driving and supervising coding agents",
     "license": "Apache-2.0",
-    "version": "0.14.25",
-    "homepage": "https://waveterm.dev",
+    "version": "0.15.0",
     "private": true,
     "type": "module",
     "browserslist": [

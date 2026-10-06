@@ -1,4 +1,4 @@
-// the pure half of answering AskUserQuestion from Arc's cockpit card beside claude's own dialog: which
+// the pure half of answering AskUserQuestion from arcterm's cockpit card beside claude's own dialog: which
 // calls the card can take, what `wsh ask --wait` reads, and the card's reply as the hook's answer.
 // register.ts does the I/O.
 

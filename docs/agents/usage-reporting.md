@@ -14,15 +14,15 @@ appears, **no usage data is reaching Wave** — see the data flow below.
 ## Where usage comes from
 
 Agent **state** comes from `wsh agent-hook` in the Claude Code lifecycle hooks; those payloads carry no
-usage numbers. Usage reaches Arc one of two ways, chosen by `wsh install-agent-hooks` from
+usage numbers. Usage reaches arcterm one of two ways, chosen by `wsh install-agent-hooks` from
 `claude --version`:
 
-- **Claude Code 2.1.287 and later:** the Arc Claude mod (`claude/arc-mod`, installed to
+- **Claude Code 2.1.287 and later:** the arcterm Claude mod (`claude/arc-mod`, installed to
   `~/.arc/claude-mod` and loaded through `env.CLAUDE_CODE_PLUGIN_DIRS`) hooks `session.measure`, which
   fires when the context fill, a rate-limit window or the cost changes, and runs
-  `wsh agentstatus --usage`. Your `statusLine` is left as you wrote it; a wrapper an older Arc added is
+  `wsh agentstatus --usage`. Your `statusLine` is left as you wrote it; a wrapper an older arcterm added is
   unwrapped back to your original command.
-- **Older Claude Code:** the statusLine JSON is the only source, so Arc wraps `statusLine.command` in
+- **Older Claude Code:** the statusLine JSON is the only source, so arcterm wraps `statusLine.command` in
   `wsh statusline --inner=<base64 of your original command>`, which publishes the usage and then runs
   your original command with the same stdin.
 
@@ -94,15 +94,15 @@ for API-key auth) — omit them rather than send `0`, or the gauge shows a misle
 
 ## Setup (automatic)
 
-Provisioning is automatic — there is nothing to hand-edit. On every launch the Arc
-app runs `wsh install-agent-hooks`, which (besides the lifecycle hooks) writes the Arc
+Provisioning is automatic — there is nothing to hand-edit. On every launch the arcterm
+app runs `wsh install-agent-hooks`, which (besides the lifecycle hooks) writes the arcterm
 Claude mod to `~/.arc/claude-mod`, lists that folder in `env.CLAUDE_CODE_PLUGIN_DIRS` of
 `~/.claude/settings.json`, and then picks the usage source from `claude --version`:
 
 - **2.1.287 and later:** the mod reports usage, so your `statusLine` is not wrapped. A
-  wrapper an older Arc added is unwrapped: `--inner=` is decoded back to your original
-  command, or `statusLine` is removed if Arc had added it with none.
-- **Older, or `claude` not on PATH:** Arc wraps your `statusLine.command`:
+  wrapper an older arcterm added is unwrapped: `--inner=` is decoded back to your original
+  command, or `statusLine` is removed if arcterm had added it with none.
+- **Older, or `claude` not on PATH:** arcterm wraps your `statusLine.command`:
 
       statusLine.command  →  "<wsh>" statusline --inner=<base64 of your original command>
 
@@ -113,7 +113,7 @@ Claude mod to `~/.arc/claude-mod`, lists that folder in `env.CLAUDE_CODE_PLUGIN_
   path so app updates self-heal. If you change your statusLine later, the next launch
   re-wraps the new value.
 
-To (re)provision manually from any Arc terminal: `wsh install-agent-hooks`.
+To (re)provision manually from any arcterm terminal: `wsh install-agent-hooks`.
 
 ## Verifying
 

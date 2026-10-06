@@ -1,9 +1,9 @@
-// Pins the commits Arc's stored runs cite so they stay resolvable.
+// Pins the commits arcterm's stored runs cite so they stay resolvable.
 //
 // An orchestrator run records the lane's basecommit/endcommit, but merging a lane rewrites it — the
-// commit Arc stored is then reachable from nothing and survives only until the next `git gc --prune`.
+// commit arcterm stored is then reachable from nothing and survives only until the next `git gc --prune`.
 // Run diffs and `wsh jarvis` range reads break at that point, silently and unrecoverably. This walks
-// both Arc stores (the packaged app and the dev app keep separate databases), takes every commit cited
+// both arcterm stores (the packaged app and the dev app keep separate databases), takes every commit cited
 // by a run for THIS repo, and gives the unreachable ones a ref under refs/arc/runs/ so gc keeps them.
 //
 //   node scripts/pin-run-commits.mjs --dry-run   # list what would be pinned
@@ -33,7 +33,7 @@ const gitOk = (args) => {
 const repoRoot = path.resolve(git(["rev-parse", "--show-toplevel"])).toLowerCase();
 const localAppData = process.env.LOCALAPPDATA;
 if (!localAppData) {
-    throw new Error("LOCALAPPDATA is not set; this script targets the Windows Arc stores");
+    throw new Error("LOCALAPPDATA is not set; this script targets the Windows arcterm stores");
 }
 const stores = ["dev.arc.app", "dev.arc.app-dev"].map((app) =>
     path.join(localAppData, app, "data", "db", "waveterm.db")

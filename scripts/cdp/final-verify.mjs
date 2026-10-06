@@ -15,7 +15,7 @@
 // Final stages run one at a time: they share the cargo target dir, and `cargo tauri dev` runs the exe it builds
 // there, so a second stage's build would overwrite the exe the first is running.
 //
-// The user's packaged Arc shares the dev app's image names, so only the PID this script spawned is ever killed.
+// The user's packaged arcterm shares the dev app's image names, so only the PID this script spawned is ever killed.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";

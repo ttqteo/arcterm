@@ -1,10 +1,10 @@
-# Arc
+# arcterm
 
 **A desktop cockpit for coding agents.** See what is running, answer what is blocked, and review what changed—without hopping between terminal windows.
 
-Arc brings agent terminals, questions, task graphs, Git diffs, and run history into one workspace. Use it to supervise an individual agent or coordinate a larger change across parallel workers.
+arcterm brings agent terminals, questions, task graphs, Git diffs, and run history into one workspace. Use it to supervise an individual agent or coordinate a larger change across parallel workers.
 
-![Arc's Agent surface: project-grouped agents on the left, a live terminal in the center, and context and usage details on the right](docs/images/orchestrator-guide/22-agent-tree-executing.png)
+![arcterm's Agent surface: project-grouped agents on the left, a live terminal in the center, and context and usage details on the right](docs/images/orchestrator-guide/22-agent-tree-executing.png)
 
 _The Agent surface keeps the actual agent terminal at the center, with project, run, and usage context alongside it._
 
@@ -14,15 +14,15 @@ _The Agent surface keeps the actual agent terminal at the center, with project, 
 >
 > Screenshots are real dev-app captures from September 2026. Navigation and some controls have since changed; the Memory/Vault surface visible in older captures has been removed.
 
-## Why Arc
+## Why arcterm
 
-Running more agents creates more work to supervise: which one needs a decision, which task is waiting on another, what actually landed, and whether it was verified. Arc puts that context next to the work rather than leaving it scattered across terminals and transcripts.
+Running more agents creates more work to supervise: which one needs a decision, which task is waiting on another, what actually landed, and whether it was verified. arcterm puts that context next to the work rather than leaving it scattered across terminals and transcripts.
 
 - **Watch and intervene.** Group agents by project, open their live terminals, inspect context and usage, and take control when needed.
 - **Keep questions visible.** Agent questions and review requests surface in the cockpit instead of disappearing into terminal scrollback.
 - **Coordinate larger changes.** Run a dependency-aware plan with parallel workers, worktree isolation, task reviews, merges, and verification.
 - **Inspect the result.** Follow a run's timeline and outcomes, then read its Git changes in the same app.
-- **Keep your tools.** Arc wraps existing coding-agent CLIs; it is not a replacement model or a separate coding harness. Orchestrator leads and workers run on **Claude Code or pi**.
+- **Keep your tools.** arcterm wraps existing coding-agent CLIs; it is not a replacement model or a separate coding harness. Orchestrator leads and workers run on **Claude Code or pi**.
 
 ## App tour
 
@@ -48,7 +48,7 @@ For orchestrated work, the lead handles questions it can resolve from the plan a
 
 The orchestrator's **DAG view** shows dependencies, task states, and a lifecycle timeline. It makes the difference between “waiting for another task” and “blocked on a failure” visible, with actions to retry, skip, escalate, or resolve a blocked merge.
 
-![Arc's orchestrator task graph showing completed and running tasks, a dependent task, and the lifecycle timeline](docs/images/orchestrator-guide/17-dag.png)
+![arcterm's orchestrator task graph showing completed and running tasks, a dependent task, and the lifecycle timeline](docs/images/orchestrator-guide/17-dag.png)
 
 _Task dependencies on the left; reviews, merges, verification, and attention events on the right._
 
@@ -58,7 +58,7 @@ Scheduling, worktrees, merges, and command execution belong to the deterministic
 
 The **Diff** surface puts Git history, changed files, and the selected file's diff side by side. Inspect the working tree, changes since an agent's session started, a run's changes, or a comparison between two refs. Diff review is read-only; **Code** is the separate editing surface.
 
-![Arc's Diff surface with a Git commit graph, changed-file list, and file diff in three panes](docs/images/diff-tab/three-panes-wide.png)
+![arcterm's Diff surface with a Git commit graph, changed-file list, and file diff in three panes](docs/images/diff-tab/three-panes-wide.png)
 
 _History → files → diff, without leaving the cockpit._
 
@@ -106,7 +106,7 @@ The desktop app is currently built and packaged for **Windows**. Install:
 - [Zig](https://ziglang.org/download/), used for CGO cross/static linking.
 - [Git for Windows](https://git-scm.com/downloads/win), including Git Bash for orchestrator plan commands.
 
-To run agents, install and authenticate the coding-agent CLI you intend to use. Arc does not provide model access or credentials.
+To run agents, install and authenticate the coding-agent CLI you intend to use. arcterm does not provide model access or credentials.
 
 ### Start the dev app
 
@@ -119,7 +119,7 @@ task dev    # build the dev backend and launch Tauri + Vite
 
 Vite serves the frontend on `localhost:5174` with hot reload. The native app starts its own Go backend; you do not need to launch it separately. Dev and packaged builds use separate app stores.
 
-**Before launching:** Arc installs or refreshes agent integrations on startup. These include Claude Code hooks and, when installed, pi extensions and an OpenCode status plugin. They write to global harness configuration under your home directory. For a dev session that must leave those integrations untouched, set `ARC_DEV_NO_GLOBAL_INSTALL=1` before `task dev`.
+**Before launching:** arcterm installs or refreshes agent integrations on startup. These include Claude Code hooks and, when installed, pi extensions and an OpenCode status plugin. They write to global harness configuration under your home directory. For a dev session that must leave those integrations untouched, set `ARC_DEV_NO_GLOBAL_INSTALL=1` before `task dev`.
 
 Once open, register your repository and use **+ New agent** for an interactive session or **+ Run** in Jarvis for tracked work.
 
@@ -135,7 +135,7 @@ Build commands, test commands, data locations, and troubleshooting notes live in
 
 ## Under the hood
 
-Arc began as a fork of [Wave Terminal](https://github.com/wavetermdev/waveterm). It retains the terminal and `wshrpc` foundations, but replaces the Electron shell with Tauri and centers the interface on agent supervision rather than terminal multiplexing.
+arcterm began as a fork of [Wave Terminal](https://github.com/wavetermdev/waveterm). It retains the terminal and `wshrpc` foundations, but replaces the Electron shell with Tauri and centers the interface on agent supervision rather than terminal multiplexing.
 
 | Layer        | Stack                                                           | Responsibility                                                         |
 | ------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------- |

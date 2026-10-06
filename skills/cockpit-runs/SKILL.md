@@ -1,9 +1,9 @@
 ---
 name: cockpit-runs
-description: Use when you need to start an Arc run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`.
+description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`.
 ---
 
-# Arc runs from the command line
+# arcterm runs from the command line
 
 `wsh runs` does what the cockpit's + Run launcher and run sheet do. `wsh runs <cmd> --help` has every flag.
 

@@ -46,7 +46,7 @@ func TestAttachedBlock(t *testing.T) {
 		{Pid: 1, BlockID: "old-tab", Cmdline: ptyHostCmd, CreateMs: 50},                  // the daemon's own env: not a viewer
 		{Pid: 2, BlockID: "first-view", Cmdline: attachCmd, CreateMs: 100},               // attached first
 		{Pid: 3, BlockID: "second-view", Cmdline: attachCmd, CreateMs: 200},              // reattached later: it wins
-		{Pid: 4, BlockID: "", Cmdline: attachCmd, CreateMs: 300},                         // outside Arc
+		{Pid: 4, BlockID: "", Cmdline: attachCmd, CreateMs: 300},                         // outside arcterm
 		{Pid: 5, BlockID: "other", Cmdline: `claude.exe attach 8b5bd349`, CreateMs: 400}, // another session
 	}
 	if got := AttachedBlock(procs, "61c3c450"); got != "second-view" {

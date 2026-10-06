@@ -1,1 +1,1 @@
-{ "name": "arc", "version": "0.1.0", "description": "Reports a Claude Code session into the Arc cockpit: usage, and asks answered from the cockpit card beside Claude's own dialog." }
+{ "name": "arc", "version": "0.1.0", "description": "Reports a Claude Code session into the arcterm cockpit: usage, and asks answered from the cockpit card beside Claude's own dialog." }

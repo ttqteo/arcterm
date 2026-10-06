@@ -20,7 +20,7 @@ Unlike usage (which has no hook and must ride the statusLine — see
 [usage-reporting.md](./usage-reporting.md)), the title rides the **same
 `agent:status` state event** that already carries state/detail/model. It is produced
 by `wsh agent-hook` (in-repo, `cmd/wsh/cmd/wshcmd-agenthook.go`), wired into Claude
-Code lifecycle hooks (`PreToolUse`, `Stop`, …) and auto-installed by the Arc app.
+Code lifecycle hooks (`PreToolUse`, `Stop`, …) and auto-installed by the arcterm app.
 
 The reporter already tail-reads the parent transcript to find the model; the title
 extraction piggybacks on that same read. The ai-title is **not** in the hook payload —

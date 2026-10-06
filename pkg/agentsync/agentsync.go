@@ -21,7 +21,7 @@ type Paths struct {
 	Home        string
 	SteeringDoc string
 	SkillsRoot  string
-	// Shipped holds the skills Arc ships, one top-level directory each, seeded into SkillsRoot.
+	// Shipped holds the skills arcterm ships, one top-level directory each, seeded into SkillsRoot.
 	// nil seeds nothing.
 	Shipped fs.FS
 }
@@ -50,7 +50,7 @@ type Action struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
-// configRootExists gates every write: Arc syncs a harness only once the user has actually run it.
+// configRootExists gates every write: arcterm syncs a harness only once the user has actually run it.
 func configRootExists(spec harness.Spec, home string) bool {
 	root := spec.ConfigRoot(home)
 	if root == "" {

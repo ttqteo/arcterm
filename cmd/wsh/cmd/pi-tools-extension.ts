@@ -56,8 +56,8 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
     pi.registerTool({
         name: "wave_open_file",
         label: "Open File in Wave",
-        description: "Open an existing file in the Arc cockpit code surface.",
-        promptSnippet: "Open a file in the Arc code surface",
+        description: "Open an existing file in the arcterm cockpit code surface.",
+        promptSnippet: "Open a file in the arcterm code surface",
         promptGuidelines: ["Use wave_open_file when the user wants a file opened in Wave."],
         parameters: Type.Object({
             path: Type.String({ description: "Absolute path to the file to open" }),

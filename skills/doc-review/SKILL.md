@@ -1,12 +1,12 @@
 ---
 name: doc-review
-description: Use when you finish a meaningful edit to a paper (.tex) or a markdown note in an Arc session and need the user to review it — ask a Doc review and stop.
+description: Use when you finish a meaningful edit to a paper (.tex) or a markdown note in an arcterm session and need the user to review it — ask a Doc review and stop.
 ---
 
 # Asking for a Doc review
 
 When you finish a meaningful edit to a paper (`.tex`) or a markdown note, ask the user to review it
-instead of carrying on. Arc shows them a sentence-level diff of what you changed, lets them comment
+instead of carrying on. arcterm shows them a sentence-level diff of what you changed, lets them comment
 on passages, and sends their answer back to you.
 
 ## When to ask

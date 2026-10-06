@@ -411,7 +411,7 @@ func piMemoryExtensionPath(home string) string {
 	return filepath.Join(home, ".pi", "agent", "extensions", "waveterm-memory.ts")
 }
 
-// pi auto-loads every file in its extensions dir, so an extension left behind from an older Arc keeps
+// pi auto-loads every file in its extensions dir, so an extension left behind from an older arcterm keeps
 // registering tools that shell out to `wsh memory`, a subcommand that no longer exists. The install
 // has to remove it, the same way a stale hook is pruned from settings.json.
 func TestRemoveStalePiMemoryExtension_deletesIt(t *testing.T) {
@@ -636,8 +636,8 @@ func TestInstallPiKeybindingsOnlyWhenAbsent(t *testing.T) {
 	}
 }
 
-// The memory subcommands are gone, but a settings.json written by an older Arc still names them. Each
-// removed form has to stay recognized as Arc's, or the hook it wrote is never identified and so never
+// The memory subcommands are gone, but a settings.json written by an older arcterm still names them. Each
+// removed form has to stay recognized as arcterm's, or the hook it wrote is never identified and so never
 // pruned — it would keep firing a subcommand wsh no longer has.
 func TestRemovedMemoryHooksAreStillRecognized(t *testing.T) {
 	for _, mh := range managedHooks {
@@ -651,13 +651,13 @@ func TestRemovedMemoryHooksAreStillRecognized(t *testing.T) {
 		`"C:\bin\wsh-0.14.5-windows.x64.exe" agent-memory-project --inject`,
 	} {
 		if !isManagedCommand(c) {
-			t.Fatalf("%q not recognized as Arc-managed; the stale hook would survive every reinstall", c)
+			t.Fatalf("%q not recognized as arcterm-managed; the stale hook would survive every reinstall", c)
 		}
 	}
 }
 
 // SessionEnd left managedHooks entirely when agent-memory-hook was removed, so a merge that only
-// walked the events Arc manages now would never revisit the stale group sitting under it.
+// walked the events arcterm manages now would never revisit the stale group sitting under it.
 func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
 	existing := map[string]any{
 		"hooks": map[string]any{
@@ -683,7 +683,7 @@ func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
 	}
 }
 
-// An unrelated hook under an event Arc does not manage must survive the wider scan untouched.
+// An unrelated hook under an event arcterm does not manage must survive the wider scan untouched.
 func TestMergeKeepsForeignHooksUnderUnmanagedEvents(t *testing.T) {
 	foreign := map[string]any{
 		"hooks": []any{map[string]any{"type": "command", "command": "node /x/notify.js"}},
@@ -717,7 +717,7 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 	}
 	// a command wsh does not recognize is never replaced, so every re-run would add another copy
 	if !isManagedCommand(`"C:\bin\wsh-0.14.10-windows.x64.exe" jarvis dag rules --inject`) {
-		t.Fatal("the rules hook command is not recognized as Arc-managed")
+		t.Fatal("the rules hook command is not recognized as arcterm-managed")
 	}
 	merged := mergeAgentHooks(mergeAgentHooks(map[string]any{}, testWsh), testWsh)
 	groups, _ := merged["hooks"].(map[string]any)["SessionStart"].([]any)
@@ -977,12 +977,12 @@ func TestUnwrapStatusLine(t *testing.T) {
 
 	arcOnly := mergeStatusLine(map[string]any{}, testWsh)
 	if _, present := unwrapStatusLine(arcOnly)["statusLine"]; present {
-		t.Fatal("a statusLine Arc added with no original command should be removed")
+		t.Fatal("a statusLine arcterm added with no original command should be removed")
 	}
 
 	user := map[string]any{"statusLine": map[string]any{"type": "command", "command": `bash /mine.sh`}}
 	if unwrapStatusLine(user)["statusLine"].(map[string]any)["command"] != `bash /mine.sh` {
-		t.Fatal("a statusLine Arc does not manage must be left alone")
+		t.Fatal("a statusLine arcterm does not manage must be left alone")
 	}
 	if _, present := unwrapStatusLine(map[string]any{})["statusLine"]; present {
 		t.Fatal("unwrap invented a statusLine")

@@ -3,7 +3,7 @@
 
 // Per-agent Doc review state: which ask the review answers, whether it shows in place of the terminal, and the
 // comments being written. Keyed by agent id like canvasstore.ts, in atoms because the header, the tree, the keys
-// and the review view all read it. Session-only: nothing here survives an Arc restart.
+// and the review view all read it. Session-only: nothing here survives an arcterm restart.
 //
 // Every "open the review" goes through openReview, which also keeps Spec and Plan reviews on their dialog.
 

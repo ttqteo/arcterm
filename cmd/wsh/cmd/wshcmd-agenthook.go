@@ -170,7 +170,7 @@ func subagentCallAllowed(dir, sessionID, toolUseID string, max int) bool {
 
 // subagentCapDenial is the PreToolUse decision that refuses an Agent call past jarvis.MaxSubagents.
 func subagentCapDenial() []byte {
-	reason := fmt.Sprintf("Arc caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
+	reason := fmt.Sprintf("arcterm caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
 	out, _ := json.Marshal(map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",
@@ -446,7 +446,7 @@ func titleFromPrompt(prompt string) string {
 
 var agentHookCmd = &cobra.Command{
 	Use:                   "agent-hook",
-	Short:                 "Claude Code lifecycle hook: report agent status to the Arc cockpit",
+	Short:                 "Claude Code lifecycle hook: report agent status to the arcterm cockpit",
 	Args:                  cobra.NoArgs,
 	RunE:                  agentHookRun,
 	Hidden:                true,
@@ -495,7 +495,7 @@ func hookDebugLine(msg string) {
 // agentHookRun always returns nil: a hook must never break the agent's turn.
 func agentHookRun(cmd *cobra.Command, args []string) error {
 	if os.Getenv("WAVETERM_BLOCKID") == "" {
-		return nil // not inside an Arc block; near-instant no-op (not logged: not an error)
+		return nil // not inside an arcterm block; near-instant no-op (not logged: not an error)
 	}
 	// The opencode path (--shadow) supplies its state explicitly — the plugin derives it from
 	// opencode events. The claude path derives state from the lifecycle-hook payload on stdin.

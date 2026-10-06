@@ -1,7 +1,7 @@
 {
     "name": "arc-pi",
     "version": "0.1.0",
-    "description": "Arc cockpit integration package for Pi: status extension, arc theme, arc-dev skill, arc-review prompt",
+    "description": "arcterm cockpit integration package for Pi: status extension, arc theme, arc-dev skill, arc-review prompt",
     "license": "Apache-2.0",
     "keywords": [
         "pi-package",

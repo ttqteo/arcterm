@@ -385,7 +385,7 @@ function SharedRail({ rows }: { rows: AgentSyncHarness[] }) {
             <div className="flex flex-col gap-2">
                 <div className={SECTION_HEAD}>How saving works</div>
                 <p className="m-0 text-[12px] leading-[1.45] text-ink-mid">
-                    Each harness file gets this doc between two Arc marker lines. Anything outside them is left alone.
+                    Each harness file gets this doc between two arcterm marker lines. Anything outside them is left alone.
                 </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -406,7 +406,7 @@ function SharedRail({ rows }: { rows: AgentSyncHarness[] }) {
             </div>
             <div className="flex-1" />
             <div className="text-[11.5px] leading-[1.5] text-muted">
-                {ed.mtime > 0 ? `Last saved ${formatAgo(Math.max(0, Date.now() - ed.mtime))}.` : "Not saved yet."} Arc
+                {ed.mtime > 0 ? `Last saved ${formatAgo(Math.max(0, Date.now() - ed.mtime))}.` : "Not saved yet."} arcterm
                 also re-applies this on every launch.
             </div>
         </aside>
@@ -610,11 +610,11 @@ function KeepChoice({ row }: { row: SkillRow }) {
     );
     return (
         <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
-            <legend className={cn(SECTION_HEAD, "pb-1.5")}>When Arc manages it</legend>
+            <legend className={cn(SECTION_HEAD, "pb-1.5")}>When arcterm manages it</legend>
             {row.copies.map((c) =>
                 option(c.runtime, `Keep ${c.label}'s copy`, "Every harness gets it. The other copies are set aside.")
             )}
-            {option(null, "Leave these copies alone", "Arc skips this skill; each harness keeps its own file.")}
+            {option(null, "Leave these copies alone", "arcterm skips this skill; each harness keeps its own file.")}
         </fieldset>
     );
 }
@@ -638,7 +638,7 @@ function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: Sk
                 {row.kind === "managed" ? (
                     <>
                         <div className={card}>
-                            <span className="text-[12.5px] font-semibold text-secondary">Arc vault</span>
+                            <span className="text-[12.5px] font-semibold text-secondary">arcterm vault</span>
                             <span className="truncate text-[10.5px] text-muted">
                                 {skillFilePath(row, skillsroot, keep)}
                             </span>
@@ -728,7 +728,7 @@ function SkillsTab({ model }: { model: AgentsViewModel }) {
 
 export function SetupSurface({ model }: { model: AgentsViewModel }) {
     const tab = useAtomValue(setupTabAtom);
-    // re-read on every visit: a harness file edited outside Arc must not show stale
+    // re-read on every visit: a harness file edited outside arcterm must not show stale
     useEffect(() => {
         fireAndForget(loadSetup);
     }, []);

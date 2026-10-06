@@ -66,7 +66,7 @@ func (s Spec) SkillsPath(home string) string {
 	return filepath.Join(append([]string{home}, s.SkillsRel...)...)
 }
 
-// ConfigRoot must already exist for a harness to be synced; Arc never creates one, so a harness the
+// ConfigRoot must already exist for a harness to be synced; arcterm never creates one, so a harness the
 // user has never run is skipped rather than provisioned.
 func (s Spec) ConfigRoot(home string) string {
 	if len(s.SteeringRel) == 0 {

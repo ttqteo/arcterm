@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package doccompile compiles a LaTeX document to a PDF for the doc review's PDF tab. It finds the root
-// file a section belongs to, runs latexmk (else tectonic) with its output kept in Arc's data dir rather
+// file a section belongs to, runs latexmk (else tectonic) with its output kept in arcterm's data dir rather
 // than the repo, and reads the page count and the first error back out of the engine's log.
 package doccompile
 

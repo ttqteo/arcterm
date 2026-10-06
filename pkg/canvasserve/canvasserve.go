@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package canvasserve serves design-local canvas folders over wavesrv's web listener, so no agent has
-// to run a server of its own. A board loads in an iframe, which cannot send Arc's auth header, so a
+// to run a server of its own. A board loads in an iframe, which cannot send arcterm's auth header, so a
 // folder is reached through an unguessable token in the path instead.
 package canvasserve
 

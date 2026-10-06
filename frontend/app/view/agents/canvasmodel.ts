@@ -55,7 +55,7 @@ function placeBoards(entries: { name: string; entry: unknown }[]): CanvasBoard[]
     return boards;
 }
 
-// canvas.json is written by the design-local skill, not by Arc, so anything malformed reads as the one board
+// canvas.json is written by the design-local skill, not by arcterm, so anything malformed reads as the one board
 // every canvas has rather than as an error
 export function boardsFromCanvasJson(json: unknown): CanvasBoard[] {
     const fallback = [MAIN_FALLBACK];

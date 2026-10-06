@@ -374,13 +374,13 @@ func runsWorkspaceId() (string, error) {
 	return runsPickWorkspace(list)
 }
 
-// runsPickWorkspace chooses where worker tabs go when this process is not in an Arc terminal. Guessing
+// runsPickWorkspace chooses where worker tabs go when this process is not in an arcterm terminal. Guessing
 // between two workspaces would put the workers somewhere the user is not looking.
 func runsPickWorkspace(list []wshrpc.WorkspaceInfoData) (string, error) {
 	if len(list) == 1 && list[0].WorkspaceData != nil {
 		return list[0].WorkspaceData.OID, nil
 	}
-	return "", fmt.Errorf("%s is not set and there are %d workspaces; run this from an Arc terminal", workspaceIdEnvVar, len(list))
+	return "", fmt.Errorf("%s is not set and there are %d workspaces; run this from an arcterm terminal", workspaceIdEnvVar, len(list))
 }
 
 func runsChannels() ([]*waveobj.Channel, error) {
@@ -417,7 +417,7 @@ func runsChannel(cmd *cobra.Command, mint bool) (*waveobj.Channel, error) {
 		return nil, err
 	}
 	if p == nil {
-		return nil, fmt.Errorf("%s is in no Arc project: register it in the cockpit, or pass --channel", here)
+		return nil, fmt.Errorf("%s is in no arcterm project: register it in the cockpit, or pass --channel", here)
 	}
 	if p.ch != nil {
 		return p.ch, nil

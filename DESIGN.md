@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: Arc Cockpit
+name: arcterm Cockpit
 description: Design system of the Tauri agent-cockpit frontend. Tokens mirror frontend/tailwindsetup.css @theme values (Graphite default); prose explains how they are applied. The code is authoritative when this file disagrees.
 colors:
   # core surfaces
@@ -157,7 +157,7 @@ components:
     color: "{colors.error}"
 ---
 
-# Wave Terminal (Arc fork) — Design System
+# Wave Terminal (arcterm fork) — Design System
 
 ## Overview
 
@@ -489,7 +489,7 @@ first, always. The mockup is the design proposal; it must be seen and approved b
 code is written.
 
 - Build it with the `design-local` Claude Code skill: a `.dc.html` canvas under the gitignored
-  `.superpowers/design/<topic>/`, which Arc serves and shows on the Agent surface. This file is its design system — every rule
+  `.superpowers/design/<topic>/`, which arcterm serves and shows on the Agent surface. This file is its design system — every rule
   above applies to the mockup as it will to the code.
 - Token values come from `frontend/tailwindsetup.css` `@theme`, never from memory or an
   older canvas.

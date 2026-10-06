@@ -1,6 +1,6 @@
 # docs
 
-Design records and reference material for Arc. `AGENTS.md` at the repo root is the working
+Design records and reference material for arcterm. `AGENTS.md` at the repo root is the working
 reference for build commands, architecture, and gotchas — start there.
 
 ## Standing documents

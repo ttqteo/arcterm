@@ -5,7 +5,7 @@ description: |
   changes following the repo conventions. Use for any code change in this repository.
 ---
 
-# Arc Dev
+# arcterm Dev
 
 Workflow for changing code in this repository (Tauri cockpit + Go backend).
 

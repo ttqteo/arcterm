@@ -249,7 +249,7 @@ lane's squash commit.
 A lead that exits before submitting fails the run with a **Lead exited** row.
 
 A goal the lead would work as a plan, task by task with a subagent per task, is architectural, not bounded: the
-engine runs it. Every claude session in an Arc block, lead, worker or one you opened yourself, dispatches at most
+engine runs it. Every claude session in an arcterm block, lead, worker or one you opened yourself, dispatches at most
 `jarvis.MaxSubagents` (10) subagents. The lead, quick and worker prompts state the cap, and `wsh agent-hook`
 refuses each Agent call past it in its PreToolUse hook, telling the agent to finish the work itself or hand a plan
 to the engine (`wsh runs start --plan`). One session ran a 29-task plan through `subagent-driven-development` and

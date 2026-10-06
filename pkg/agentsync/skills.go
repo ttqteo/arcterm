@@ -20,7 +20,7 @@ const (
 	skillFile = "SKILL.md"
 	// deltaDirName holds one canonical skill's per-harness overrides. Never copied to a harness.
 	deltaDirName = ".arc"
-	// managedMarkName is written into every skill directory Arc renders. Ownership is declared, not
+	// managedMarkName is written into every skill directory arcterm renders. Ownership is declared, not
 	// inferred: a directory without it is the user's and is never written or removed.
 	managedMarkName = ".arc-managed"
 )
@@ -303,7 +303,7 @@ func shippedTree(shipped fs.FS, name string) (map[string][]byte, error) {
 	return out, nil
 }
 
-// seedShippedSkills makes each shipped skill in the vault match what Arc ships, so the reconcile
+// seedShippedSkills makes each shipped skill in the vault match what arcterm ships, so the reconcile
 // that follows projects the shipped copy. The .arc delta directory is the user's and survives.
 func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
 	if shipped == nil {
@@ -330,7 +330,7 @@ func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
 
 // ---- reconcile ----
 
-// observeSkills reads a harness's skills directory one level deep, reporting which entries Arc owns.
+// observeSkills reads a harness's skills directory one level deep, reporting which entries arcterm owns.
 func observeSkills(dir string) ([]ObservedEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -378,7 +378,7 @@ const (
 )
 
 // skillStateFor compares the rendered tree against what is on disk. An unmanaged directory is
-// reported and never opened — the user's copy is not Arc's to read a verdict from.
+// reported and never opened — the user's copy is not arcterm's to read a verdict from.
 func skillStateFor(dir string, observed map[string]ObservedEntry, name string, want map[string][]byte) string {
 	e, present := observed[name]
 	switch {
@@ -393,8 +393,8 @@ func skillStateFor(dir string, observed map[string]ObservedEntry, name string, w
 }
 
 // reconcileSkills renders every canonical skill into each present harness that scans a fixed skills
-// directory. The skills directory itself is created when missing: that is Arc's own target, unlike
-// the harness config root, which Arc never creates.
+// directory. The skills directory itself is created when missing: that is arcterm's own target, unlike
+// the harness config root, which arcterm never creates.
 func reconcileSkills(p Paths, dryRun bool) ([]Action, error) {
 	canonical, err := canonicalSkills(p.SkillsRoot)
 	if err != nil {
@@ -437,7 +437,7 @@ func reconcileSkills(p Paths, dryRun bool) ([]Action, error) {
 				}
 			}
 		}
-		// a directory Arc wrote for a skill the vault no longer has. Plain files, so an ordinary
+		// a directory arcterm wrote for a skill the vault no longer has. Plain files, so an ordinary
 		// recursive delete — the junction-era reparse-point hazard is gone with the junctions.
 		for _, e := range observed {
 			if wanted[e.Name] || !e.Managed {

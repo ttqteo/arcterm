@@ -53,7 +53,7 @@ func TestStatusCountsManagedAndUnmanagedSkills(t *testing.T) {
 	p := testPaths(t, "canonical\n", ".codex")
 	seedSkill(t, p, "graphify")
 	seedSkill(t, p, "effort-tracking")
-	// the user's own directory under a canonical name: Arc writes neither it nor a rendered copy
+	// the user's own directory under a canonical name: arcterm writes neither it nor a rendered copy
 	occupied := filepath.Join(p.Home, ".codex", "skills", "graphify")
 	writeFile(t, filepath.Join(occupied, "SKILL.md"), "mine\n")
 	if _, err := Apply(p, false); err != nil {

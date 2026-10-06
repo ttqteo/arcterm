@@ -33,7 +33,7 @@ type PetCode = keyof typeof PET_TOKENS;
 const E = "................";
 
 // Rows 0-3 are kept clear for the marks; the bottom row is the one that stands on the ledge. The sprout is
-// the `t` of Arc's mark: its crossbar is the leaves.
+// the `t` of arcterm's mark: its crossbar is the leaves.
 export const POSES: Record<PetPose, readonly string[]> = {
     walk1: [
         E,

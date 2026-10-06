@@ -22,7 +22,7 @@ var uiRevealAnchor string
 
 var uiCmd = &cobra.Command{
 	Use:   "ui",
-	Short: "read and steer the Arc cockpit: state, actions, reveal <address>, do <action-id>",
+	Short: "read and steer the arcterm cockpit: state, actions, reveal <address>, do <action-id>",
 }
 
 var uiStateCmd = &cobra.Command{

@@ -203,7 +203,7 @@ export function PdfPanel(p: { agentId: string; agentName: string; review: DocRev
                     No LaTeX engine found
                 </span>
                 <span className={BODY}>
-                    Arc looked for latexmk and tectonic on PATH. Install one (MiKTeX or TeX Live include latexmk), then
+                    arcterm looked for latexmk and tectonic on PATH. Install one (MiKTeX or TeX Live include latexmk), then
                     recompile.
                 </span>
                 <div className="mt-[4px]">{recompile}</div>
@@ -213,7 +213,7 @@ export function PdfPanel(p: { agentId: string; agentName: string; review: DocRev
     return <FailedPanel {...p} pdf={pdf} file={file} recompile={recompile} />;
 }
 
-// A compile error goes back to the agent through the general note; a failed RPC is Arc's, so it only recompiles.
+// A compile error goes back to the agent through the general note; a failed RPC is arcterm's, so it only recompiles.
 function FailedPanel(p: {
     agentId: string;
     agentName: string;
@@ -251,7 +251,7 @@ function FailedPanel(p: {
             <span className={cn(BODY, "max-w-[440px]")}>
                 {answer != null
                     ? `The Changes tab still works. Add the error to your answer so ${p.agentName} fixes it, or fix it yourself and recompile.`
-                    : "Arc couldn't finish the compile. The Changes tab still works; recompile to try again."}
+                    : "arcterm couldn't finish the compile. The Changes tab still works; recompile to try again."}
             </span>
             <div className="mt-[4px] flex gap-[10px]">
                 {answer != null ? (

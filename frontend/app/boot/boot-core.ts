@@ -64,7 +64,7 @@ export async function bootWaveCore(initOpts: WaveInitOpts): Promise<void> {
         const ws = await WOS.loadAndPinWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid));
         ws?.tabids?.forEach((tabid) => WOS.getObjectValue<Tab>(WOS.makeORef("tab", tabid)));
         WOS.wpsSubscribeToObject(WOS.makeORef("workspace", waveWindow.workspaceid));
-        document.title = `Arc - ${initialTab.name}`;
+        document.title = `arcterm - ${initialTab.name}`;
     } catch (e) {
         console.error("Failed initialization error", e);
         getApi().sendLog("Error in bootWaveCore (loading required objects) " + e.message + "\n" + e.stack);

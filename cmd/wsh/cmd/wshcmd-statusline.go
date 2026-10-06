@@ -73,7 +73,7 @@ var statusLineInner string
 
 var statusLineCmd = &cobra.Command{
 	Use:                   "statusline",
-	Short:                 "Claude Code statusLine wrapper: publish usage to the Arc cockpit, then delegate",
+	Short:                 "Claude Code statusLine wrapper: publish usage to the arcterm cockpit, then delegate",
 	Args:                  cobra.NoArgs,
 	RunE:                  statusLineRun,
 	Hidden:                true,
