@@ -402,3 +402,58 @@ func TestSubagentDoneSignal(t *testing.T) {
 		t.Errorf("live1: want Done=false (pending tool_use)")
 	}
 }
+
+// The endings claude writes today, tallied over 305 real subagent files on 2026-10-06: a hand-back (182), a text
+// turn followed by hook attachments (33), a user interrupt (11). Each finished; one cut off mid-tool did not.
+func TestSubagentDoneSignalReadsTodaysEndings(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "sess.jsonl")
+	if err := os.WriteFile(parent, []byte(`{"type":"user"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	subdir := filepath.Join(dir, "sess", "subagents")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRecs := func(id string, recs ...string) {
+		if err := os.WriteFile(filepath.Join(subdir, "agent-"+id+".jsonl"), []byte(strings.Join(recs, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hook := `{"type":"attachment","attachment":{"type":"hook_success","hookName":"PostToolUse:Bash"}}`
+	writeRecs("handback",
+		`{"agentId":"handback","type":"user","message":{"content":"Map the rail"}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"h1","name":"SubagentHandback","input":{"report":"done"}}]}}`,
+		hook,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"h1","content":[{"type":"text","text":"{\"success\":true,\"message\":\"Report delivered to your caller.\"}"}]}]}}`,
+		hook,
+		hook)
+	writeRecs("texthooks",
+		`{"agentId":"texthooks","type":"user","message":{"content":"Explore"}}`,
+		`{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"result"}]}}`,
+		hook,
+		hook)
+	writeRecs("interrupted",
+		`{"agentId":"interrupted","type":"user","message":{"content":"Plan"}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r1","name":"Read"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}`)
+	writeRecs("midtool",
+		`{"agentId":"midtool","type":"user","message":{"content":"Fix it"}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"e1","name":"Edit"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"e1","content":"ok"}]}}`,
+		hook)
+
+	infos, err := listSubagents(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byId := map[string]wshrpc.SubagentFileInfo{}
+	for _, in := range infos {
+		byId[in.AgentId] = in
+	}
+	for id, want := range map[string]bool{"handback": true, "texthooks": true, "interrupted": true, "midtool": false} {
+		if byId[id].Done != want {
+			t.Errorf("%s: Done = %v, want %v", id, byId[id].Done, want)
+		}
+	}
+}

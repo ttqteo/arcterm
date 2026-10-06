@@ -387,6 +387,20 @@ describe("extractSubagentSpawns", () => {
         ]);
     });
 
+    it("does not take a background agent's launch receipt for its result", () => {
+        const lines = [
+            asst([{ type: "tool_use", id: "bg", name: "Agent", input: { subagent_type: "Explore", prompt: "map it" } }]),
+            usr([
+                {
+                    type: "tool_result",
+                    tool_use_id: "bg",
+                    content: [{ type: "text", text: "Async agent launched successfully. (This tool result is internal metadata)" }],
+                },
+            ]),
+        ];
+        expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false, async: true });
+    });
+
     it("marks a still-running Task as not done", () => {
         const lines = [asst([{ type: "tool_use", id: "t2", name: "Task", input: { subagent_type: "Plan", prompt: "plan Y" } }])];
         expect(extractSubagentSpawns(lines)[0]).toMatchObject({ done: false, failed: false });

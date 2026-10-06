@@ -34,6 +34,11 @@ describe("correlateSubagents", () => {
         expect(correlateSubagents([spawn({ done: false })], [file({})])[0].state).toBe("working");
     });
 
+    it("takes a background agent's state from its file: the parent only saw the launch receipt", () => {
+        expect(correlateSubagents([spawn({ async: true })], [file({ done: false })])[0].state).toBe("working");
+        expect(correlateSubagents([spawn({ async: true })], [file({ done: true })])[0].state).toBe("done");
+    });
+
     it("maps an unmatched, unfinished file to working", () => {
         expect(correlateSubagents([], [file({ firstprompt: "orphan", done: false })])[0].state).toBe("working");
     });

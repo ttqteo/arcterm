@@ -27,9 +27,10 @@ function firstLineLabel(prompt: string): string {
 
 // state resolution: a matched spawn's parent tool_result is authoritative (working/failure/success).
 // An orphan (no matching spawn) has no parent accept/reject signal, so the child file tells us only
-// whether it *finished* — a terminated orphan is the neutral "done", never a green success.
+// whether it *finished* — a terminated orphan is the neutral "done", never a green success. A background
+// spawn is read the same way: its parent's tool_result was only the launch receipt.
 function resolveState(spawn: SubagentSpawn | undefined, fileDone: boolean): SubagentVM["state"] {
-    if (spawn != null) {
+    if (spawn != null && !spawn.async) {
         return !spawn.done ? "working" : spawn.failed ? "failure" : "success";
     }
     return fileDone ? "done" : "working";

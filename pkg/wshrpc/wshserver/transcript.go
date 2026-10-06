@@ -242,40 +242,100 @@ func firstPromptOf(line string) string {
 	return ""
 }
 
-// lastRecordTerminal reports whether the transcript's last record is a terminal assistant turn: an
-// assistant message with a text block and no pending tool_use. Verified 2026-07-10 across 619 real
-// subagent files — a finished child always ends this way (end_turn/stop_sequence); a live child's last
-// record is a pending tool_use or a mid-flight tool_result. Read error / no records / non-assistant -> false.
+// terminalTailLines is how far back lastRecordTerminal looks: past the hook attachments claude appends after a
+// child's last message, to the tool_use a final tool_result answers.
+const terminalTailLines = 40
+
+// handbackTool is the tool a background subagent delivers its report with; its result ends the child.
+const handbackTool = "SubagentHandback"
+
+type transcriptBlock struct {
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	ID        string `json:"id"`
+	ToolUseID string `json:"tool_use_id"`
+	IsError   bool   `json:"is_error"`
+	Text      string `json:"text"`
+}
+
+type transcriptMessage struct {
+	Type   string
+	Blocks []transcriptBlock
+	Text   string // a message whose content is a bare string
+}
+
+// lastRecordTerminal reports whether a subagent's transcript says the child has finished, from its last
+// user/assistant message (records of any other type, such as hook attachments, are skipped). A child has
+// finished when that message is:
+//   - an assistant turn with text and no tool_use (end_turn);
+//   - the result of its SubagentHandback (a background child delivered its report);
+//   - the user's interrupt, which stops the child for good.
+//
+// A pending tool_use or any other tool_result is a live child. On 2026-10-06, 182 of 305 real subagent files
+// ended with a handback and 33 with hook attachments after the text turn; reading only the last record read
+// every one of them as live.
 func lastRecordTerminal(path string) bool {
-	tail, err := readTranscriptTail(path, 1)
-	if err != nil || len(tail) == 0 {
+	tail, err := readTranscriptTail(path, terminalTailLines)
+	if err != nil {
 		return false
 	}
-	var rec struct {
-		Type    string `json:"type"`
-		Message struct {
-			Content json.RawMessage `json:"content"`
-		} `json:"message"`
-	}
-	if json.Unmarshal([]byte(tail[0]), &rec) != nil || rec.Type != "assistant" {
-		return false
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-	}
-	if json.Unmarshal(rec.Message.Content, &blocks) != nil {
-		return false
-	}
-	hasText := false
-	for _, b := range blocks {
-		if b.Type == "tool_use" {
-			return false // a tool call awaits its result: still working
+	var msgs []transcriptMessage
+	for _, line := range tail {
+		var rec struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
 		}
-		if b.Type == "text" {
-			hasText = true
+		if json.Unmarshal([]byte(line), &rec) != nil || (rec.Type != "user" && rec.Type != "assistant") {
+			continue
+		}
+		m := transcriptMessage{Type: rec.Type}
+		if json.Unmarshal(rec.Message.Content, &m.Blocks) != nil {
+			_ = json.Unmarshal(rec.Message.Content, &m.Text) // content is either blocks or a string
+		}
+		msgs = append(msgs, m)
+	}
+	if len(msgs) == 0 {
+		return false
+	}
+	last := msgs[len(msgs)-1]
+	if last.Type == "assistant" {
+		hasText := false
+		for _, b := range last.Blocks {
+			if b.Type == "tool_use" {
+				return false // a tool call awaits its result: still working
+			}
+			if b.Type == "text" {
+				hasText = true
+			}
+		}
+		return hasText
+	}
+	if strings.HasPrefix(last.Text, "[Request interrupted by user") {
+		return true
+	}
+	for _, b := range last.Blocks {
+		if b.Type == "text" && strings.HasPrefix(b.Text, "[Request interrupted by user") {
+			return true
+		}
+		if b.Type == "tool_result" && !b.IsError && toolNameFor(msgs[:len(msgs)-1], b.ToolUseID) == handbackTool {
+			return true
 		}
 	}
-	return hasText
+	return false
+}
+
+// toolNameFor names the tool_use with id in msgs, latest first, or "" when it is not among them.
+func toolNameFor(msgs []transcriptMessage, id string) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		for _, b := range msgs[i].Blocks {
+			if b.Type == "tool_use" && b.ID == id {
+				return b.Name
+			}
+		}
+	}
+	return ""
 }
 
 // listSubagents returns one SubagentFileInfo per agent-*.jsonl in the parent's subagents dir, sorted by

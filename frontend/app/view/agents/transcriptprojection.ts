@@ -336,11 +336,17 @@ export interface SubagentSpawn {
     prompt: string;
     done: boolean;
     failed: boolean;
+    // a background agent: its tool_result was the launch receipt, so only its own transcript knows when it ends
+    async?: true;
 }
+
+// how claude answers the tool_use of an agent it starts in the background, before the agent has done anything
+const ASYNC_LAUNCH_RECEIPT = "Async agent launched successfully";
 
 /** Pure: Task/Agent tool_use blocks in a Claude transcript -> subagent spawns, each joined to its
  *  tool_result by tool_use_id (done + failed via is_error). A spawn with no matching result is still
- *  running (done=false). Spawns keep first-seen order; non-Task tools are ignored. */
+ *  running (done=false), and so is a background one whose result was only its launch receipt (async).
+ *  Spawns keep first-seen order; non-Task tools are ignored. */
 export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
     const spawns = new Map<string, SubagentSpawn>();
     const order: string[] = [];
@@ -372,7 +378,9 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
                 order.push(block.id);
             } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
                 const s = spawns.get(block.tool_use_id);
-                if (s) {
+                if (s && toolResultText(block.content).startsWith(ASYNC_LAUNCH_RECEIPT)) {
+                    s.async = true;
+                } else if (s) {
                     s.done = true;
                     s.failed = block.is_error === true;
                 }
