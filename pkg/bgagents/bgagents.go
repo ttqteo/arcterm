@@ -10,10 +10,13 @@ package bgagents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -21,6 +24,7 @@ const listTimeout = 5 * time.Second
 
 // Agent is one normalized entry. State is `state` (background) or `status` (interactive).
 type Agent struct {
+	ID        string // the short id `claude attach` and `claude stop` take; background entries only
 	SessionId string
 	Cwd       string
 	Kind      string // "background" | "interactive"
@@ -31,6 +35,7 @@ type Agent struct {
 
 // rawAgent carries every field either record shape can emit; missing fields unmarshal to zero.
 type rawAgent struct {
+	ID        string `json:"id"`
 	SessionId string `json:"sessionId"`
 	Cwd       string `json:"cwd"`
 	Kind      string `json:"kind"`
@@ -56,6 +61,7 @@ func Parse(data []byte) ([]Agent, error) {
 			state = r.Status
 		}
 		out = append(out, Agent{
+			ID:        r.ID,
 			SessionId: r.SessionId,
 			Cwd:       r.Cwd,
 			Kind:      r.Kind,
@@ -133,4 +139,75 @@ func List(ctx context.Context) ([]Agent, error) {
 		return nil, fmt.Errorf("running claude agents --json: %w", err)
 	}
 	return Parse(out)
+}
+
+// SessionIDs is every Claude session a closing agent tab could be showing: the one its launch resumed
+// (`--resume <id>` in its args; how Attach opens a background session) and the ones its transcripts
+// are named for (a transcript's file stem is its session id). Empty ones and duplicates are dropped.
+func SessionIDs(args []string, transcriptPaths ...string) []string {
+	var out []string
+	add := func(id string) {
+		if id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	for i, a := range args {
+		if a == "--resume" && i+1 < len(args) {
+			add(args[i+1])
+		} else if v, ok := strings.CutPrefix(a, "--resume="); ok {
+			add(v)
+		}
+	}
+	for _, p := range transcriptPaths {
+		// split on both separators: the path may come from either OS's agent
+		base := p[strings.LastIndexAny(p, `/\`)+1:]
+		add(strings.TrimSuffix(base, ".jsonl"))
+	}
+	return out
+}
+
+// StopTargets is what to pass `claude stop` for each listed background session among sessionIds: its
+// short id, else its session id. An interactive session is never a target: it runs in a terminal of
+// its own, which closing that terminal ends.
+func StopTargets(agents []Agent, sessionIds []string) []string {
+	var out []string
+	for _, a := range agents {
+		if a.Kind != "background" || !slices.Contains(sessionIds, a.SessionId) {
+			continue
+		}
+		if a.ID != "" {
+			out = append(out, a.ID)
+		} else {
+			out = append(out, a.SessionId)
+		}
+	}
+	return out
+}
+
+// Stop ends the background sessions among sessionIds. A tab that attached to one only holds the
+// `claude attach` client, which closing the tab kills while the session runs on in the Claude Code
+// daemon, outside the tab's process tree; closing an agent has to end its work. The conversation is
+// kept: `claude --resume` reopens it. Sessions the daemon does not host are left alone.
+func Stop(ctx context.Context, sessionIds []string) error {
+	if len(sessionIds) == 0 {
+		return nil
+	}
+	agents, err := List(ctx)
+	if err != nil {
+		return err
+	}
+	bin, err := exec.LookPath("claude")
+	if err != nil {
+		return nil
+	}
+	var errs []error
+	for _, id := range StopTargets(agents, sessionIds) {
+		cctx, cancel := context.WithTimeout(ctx, listTimeout)
+		out, err := exec.CommandContext(cctx, bin, "stop", id).CombinedOutput()
+		cancel()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("claude stop %s: %w: %s", id, err, strings.TrimSpace(string(out))))
+		}
+	}
+	return errors.Join(errs...)
 }

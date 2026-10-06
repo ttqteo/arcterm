@@ -118,9 +118,11 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
 }
 
 // Attach = resume a detached background agent inside a fresh Wave terminal block. `claude --resume
-// <sessionId>` is the primitive (there is no `claude attach`); task is empty so resume reattaches
-// without replaying a prompt. Once it boots, the hook reporter registers it and the session-id dedup
-// collapses the background-lane entry into the now-live agent.
+// <sessionId>` is the primitive; for a session the Claude Code daemon still runs it turns into
+// `claude attach`, so the tab only holds the client and closing it stops the session by id
+// (WorkspaceService.CloseTab -> bgagents.Stop). Task is empty so resume reattaches without replaying
+// a prompt. Once it boots, the hook reporter registers it and the session-id dedup collapses the
+// background-lane entry into the now-live agent.
 export async function attachBackgroundAgent(
     model: AgentsViewModel,
     bg: { sessionId: string; cwd: string; project: string }

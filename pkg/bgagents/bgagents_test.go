@@ -3,6 +3,7 @@ package bgagents
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -106,5 +107,48 @@ func TestRemoveJobBySessionId_MissingJobsDir(t *testing.T) {
 func TestRemove_EmptySessionId(t *testing.T) {
 	if err := Remove(""); err == nil {
 		t.Fatal("expected error for empty sessionId")
+	}
+}
+
+func TestParse_ShortId(t *testing.T) {
+	got, err := Parse([]byte(`[{"id":"61c3c450","sessionId":"61c3c450-f238","kind":"background","state":"working"}]`))
+	if err != nil || len(got) != 1 || got[0].ID != "61c3c450" {
+		t.Fatalf("want the short id kept, got %+v err=%v", got, err)
+	}
+}
+
+func TestSessionIDs(t *testing.T) {
+	// an Attach tab names its session in --resume; the agent's transcript stem names the one it writes
+	got := SessionIDs([]string{"--resume", "abc", "--model", "opus"}, `C:\Users\u\.claude\projects\p\def.jsonl`, "")
+	if strings.Join(got, ",") != "abc,def" {
+		t.Errorf("want abc,def, got %v", got)
+	}
+	got = SessionIDs([]string{"--resume=xyz"}, "/home/u/.claude/projects/p/xyz.jsonl")
+	if strings.Join(got, ",") != "xyz" {
+		t.Errorf("want the = form read and the duplicate dropped, got %v", got)
+	}
+	if got = SessionIDs(nil, ""); len(got) != 0 {
+		t.Errorf("want none for a plain terminal, got %v", got)
+	}
+	// a trailing --resume with no value names nothing
+	if got = SessionIDs([]string{"--resume"}); len(got) != 0 {
+		t.Errorf("want none for a dangling --resume, got %v", got)
+	}
+}
+
+func TestStopTargets(t *testing.T) {
+	agents := []Agent{
+		{ID: "61c3c450", SessionId: "61c3c450-full", Kind: "background", State: "working"},
+		{SessionId: "noshort-full", Kind: "background", State: "blocked"},
+		{SessionId: "interactive-full", Kind: "interactive", State: "busy"},
+		{ID: "other", SessionId: "other-full", Kind: "background", State: "working"},
+	}
+	got := StopTargets(agents, []string{"61c3c450-full", "noshort-full", "interactive-full", "absent"})
+	// only daemon-hosted sessions the closed tab named: by short id, else by session id; never an interactive one
+	if strings.Join(got, ",") != "61c3c450,noshort-full" {
+		t.Errorf("want 61c3c450,noshort-full, got %v", got)
+	}
+	if got = StopTargets(agents, nil); len(got) != 0 {
+		t.Errorf("want none for no session ids, got %v", got)
 	}
 }
