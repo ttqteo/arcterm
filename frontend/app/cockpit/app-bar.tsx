@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
@@ -29,6 +30,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </span>
                 <span data-tauri-drag-region className="text-[14.5px] font-bold tracking-[-0.01em] text-primary">
                     arcterm
+                    {/* a dev app beside the installed one must not pass for it (main.rs titles its window too) */}
+                    {isDev() ? <span className="ml-1 text-[13px] font-medium text-muted">(dev)</span> : null}
                 </span>
                 <span data-tauri-drag-region className="text-[13px] text-muted">
                     /

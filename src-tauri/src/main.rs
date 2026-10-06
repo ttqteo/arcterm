@@ -280,6 +280,14 @@ fn main() {
                 std::env::var_os(paths::DEV_DATA_DIR_ENV),
             );
             applog::init(&paths::data_home_dirs(&data_base).0);
+            // tell a dev window from the installed app in the taskbar and Alt+Tab; the packaged title stays
+            // tauri.conf.json's "arcterm"
+            #[cfg(debug_assertions)]
+            if let Some(w) = app.get_webview_window("main") {
+                if let Err(e) = w.set_title("arcterm (dev)") {
+                    applog::log_line(&format!("[tauri] setting the dev window title failed: {}", e));
+                }
+            }
             if is_dev && std::env::var_os(paths::DEV_NO_GLOBAL_INSTALL_ENV).is_some() {
                 applog::log_line(
                     "[tauri] ARC_DEV_NO_GLOBAL_INSTALL is set; skipping the agent-hooks install",
