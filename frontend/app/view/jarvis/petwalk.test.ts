@@ -280,6 +280,37 @@ describe("hold", () => {
         expect(step.x).toBe(400);
     });
 
+    it("hops in place when a posture arrives over a terminal, then walks off it and holds there", () => {
+        const avoid: [number, number][] = [[380, 480]];
+        const gate = input({ posture: "review-gate", avoid });
+        const resting = walker({ name: "rest", x: 400, due: T0 + 8_000 });
+        const { step, steps } = drive(resting, gate, T0, half, () => false);
+        expect(steps[0]).toMatchObject({ x: 400, lift: HOP_LIFT_PX });
+        expect(steps[0].state.name).toBe("hop");
+        const names = steps.map((s) => s.state.name);
+        expect(names).toContain("walk");
+        // no hop after the walk starts, and no walk once it holds
+        expect(names.slice(names.indexOf("walk"))).not.toContain("hop");
+        expect(names.slice(names.indexOf("hold"))).toEqual(["hold"]);
+        expect(steps.filter((s) => s.state.name === "walk").every((s) => s.marks.includes("gate"))).toBe(true);
+        expect(step.state.name).toBe("hold");
+        expect(step.delayMs).toBeNull();
+        expect(step.x).toBe(clearSpot(400, LEDGE, avoid));
+        expect(overlaps(step.x, avoid)).toBe(false);
+    });
+
+    it.each([
+        ["speaking", { speaking: true }],
+        ["the peek", { peekOpen: true }],
+    ] as [string, Partial<WalkerInput>][])("holds over a terminal in place while %s", (_label, over) => {
+        const avoid: [number, number][] = [[380, 480]];
+        const inp = input({ posture: "review-gate", avoid, ...over });
+        const { step, steps } = drive(walker({ name: "rest", x: 400, due: T0 + 8_000 }), inp, T0, half, () => false);
+        expect(steps.map((s) => s.state.name)).not.toContain("walk");
+        expect(step.state.name).toBe("hold");
+        expect(step.x).toBe(400);
+    });
+
     it("walks off a terminal it was held over once nothing holds it", () => {
         const avoid: [number, number][] = [[380, 480]];
         const step = stepWalker(walker({ name: "hold", x: 400 }), input({ avoid }), T0, half);

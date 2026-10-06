@@ -2509,7 +2509,8 @@ func Submit(id string) error {
 };
 
 // --- jarvis pet: Sprout, walking the footer ledge ----------------------------------------------
-// docs/superpowers/specs/2026-10-06-jarvis-sprout-pet-design.md §5, steps 1-9. The creature is an SVG of cell rects,
+// docs/superpowers/specs/2026-10-06-jarvis-sprout-pet-design.md §5, steps 1-9, and steps 10-13 from the plan review
+// (quiet opacity, hover without scale, the hop, a posture never held on a terminal). The creature is an SVG of cell rects,
 // and petview.tsx keeps window.__jarvisPet current in DEV builds (spec §4, "The DEV contract"): the walker's state,
 // pose and marks, x, the ledge and avoid spans it walked against, the fills it drew, and force(), which overrides the
 // walker's inputs so every state shows without arranging a rate limit or an attention item. The sprite's box, the
@@ -2559,11 +2560,11 @@ const PET_SNAPSHOT = `(() => {
     const svg = ${PET_SVG};
     const fill = ${PET_FILL};
     const shown = (r) => r.width > 0 && r.height > 0;
-    const tops = [...document.querySelectorAll("[data-pet-ledge]")]
+    const ledges = [...document.querySelectorAll("[data-pet-ledge]")]
         .map((e) => e.getBoundingClientRect())
-        .filter(shown)
-        .map((r) => r.top);
-    const ledgeTop = tops.length ? Math.max(...tops) : null;
+        .filter(shown);
+    const lowest = ledges.reduce((a, r) => (a == null || r.top > a.top ? r : a), null);
+    const ledgeTop = lowest?.top ?? null;
     const xterms = [...document.querySelectorAll(".xterm")].map((e) => e.getBoundingClientRect()).filter(shown);
     const b = svg?.getBoundingClientRect();
     return {
@@ -2583,6 +2584,7 @@ const PET_SNAPSHOT = `(() => {
         sprite: b == null ? null : { left: b.left, right: b.right, top: b.top, bottom: b.bottom },
         fills: [...new Set([...(svg?.querySelectorAll("rect") ?? [])].map(fill))],
         ledgeTop,
+        ledgeBox: lowest == null ? null : { left: lowest.left, right: lowest.right },
         nearXterms:
             ledgeTop == null
                 ? []
@@ -2618,10 +2620,34 @@ const petSnap = (h) => h.ev(PET_SNAPSHOT);
 const petMarked = (s, mark) => (s?.pet?.marks ?? []).includes(mark);
 const petOnLedge = (s) => s?.sprite != null && s.ledgeTop != null && Math.abs(s.sprite.bottom - s.ledgeTop) <= 1;
 const petInLedge = (s) => s?.pet?.ledge != null && s.pet.ledge.left <= s.pet.x && s.pet.x + PET_PX <= s.pet.ledge.right;
+// the walker's ledge never runs past the ledge element's own ends (the Cockpit's HintsBar stops at its rail)
+const petLedgeClipped = (s) =>
+    s?.pet?.ledge != null &&
+    s.ledgeBox != null &&
+    s.pet.ledge.left >= s.ledgeBox.left - 1 &&
+    s.pet.ledge.right <= s.ledgeBox.right + 1;
 const petBrief = (s) =>
     s?.pet == null ? null : { state: s.pet.state, pose: s.pet.pose, marks: s.pet.marks, x: s.pet.x };
 // the left edge a drop at pointer x lands on: centred on the pointer, clamped to the ledge (spec §4)
 const petDropX = (ledge, px) => Math.min(Math.max(px - PET_PX / 2, ledge.left), ledge.right - PET_PX);
+// whether the span at left edge x overlaps any [x0, x1] span; touching edges do not
+const petOverlaps = (x, spans) => (spans ?? []).filter(([a, b]) => x < Math.max(a, b) && x + PET_PX > Math.min(a, b));
+// The release x nearest want, within [lo, hi], whose drop span stays 4px clear of every avoid span, so the drop rests
+// where it lands rather than walking off; null when there is none.
+const petClearRelease = (ledge, avoid, want, lo, hi) => {
+    const clear = (px) => {
+        const x = petDropX(ledge, px);
+        return (avoid ?? []).every(([a, b]) => x + PET_PX + 4 <= Math.min(a, b) || x - 4 >= Math.max(a, b));
+    };
+    const from = Math.ceil(lo ?? ledge.left);
+    const to = Math.floor(hi ?? ledge.right);
+    for (let d = 0; d <= to - from; d++) {
+        for (const px of [Math.round(want) - d, Math.round(want) + d]) {
+            if (px >= from && px <= to && clear(px)) return px;
+        }
+    }
+    return null;
+};
 const petCentre = (s) => ({
     x: Math.round((s.sprite.left + s.sprite.right) / 2),
     y: Math.round((s.sprite.top + s.sprite.bottom) / 2),
@@ -2815,14 +2841,16 @@ const jarvisPet = {
         // 1. the ledge: the footer on Agent, the Cockpit's own HintsBar on Cockpit (drawn once the roster is ready)
         const ledgeOn = async (surface) => {
             await h.goto(surface);
-            const s = await petWait(h, (s) => petOnLedge(s) && petInLedge(s), 8000);
+            const fits = (s) => petOnLedge(s) && petInLedge(s) && petLedgeClipped(s);
+            const s = await petWait(h, fits, 8000);
             return {
-                ok: petOnLedge(s) && petInLedge(s),
+                ok: fits(s),
                 bottom: s?.sprite?.bottom,
                 ledgeTop: s?.ledgeTop,
                 x: s?.pet?.x,
                 spriteLeft: s?.sprite?.left,
                 ledge: s?.pet?.ledge,
+                ledgeBox: s?.ledgeBox,
                 state: s?.pet?.state,
             };
         };
@@ -2831,7 +2859,7 @@ const jarvisPet = {
         const onCockpit = await ledgeOn("cockpit");
         await petShot(h, "jarvis-pet-1-cockpit");
         rec(
-            "1. on Agent and on Cockpit the creature stands on the [data-pet-ledge] top (±1px) with its whole span inside the ledge",
+            "1. on Agent and on Cockpit the creature stands on the [data-pet-ledge] top (±1px) with its whole span inside the ledge, which stays within the ledge element's ends (±1px)",
             onAgent.ok && onCockpit.ok,
             { onAgent, onCockpit }
         );
@@ -2940,8 +2968,11 @@ const jarvisPet = {
         // 6. a real drag: dangle while held; the release lands it on the ledge, centred on the release x (clamped)
         const before6 = await petSnap(h);
         const ledge6 = before6?.pet?.ledge ?? { left: 0, right: before6?.vw ?? 0 };
+        // released where the dropped span is clear of every avoid span, so it rests where it lands
+        const mid6 = Math.round((ledge6.left + ledge6.right) / 2);
+        const clear6 = petClearRelease(ledge6, before6?.pet?.avoid, mid6);
         const to6 = {
-            x: Math.round((ledge6.left + ledge6.right) / 2),
+            x: clear6 ?? mid6,
             y: Math.round((before6?.ledgeTop ?? before6?.vh ?? 0) - 160),
         };
         const held6 = await petDragHold(h, ctx, to6);
@@ -2953,16 +2984,19 @@ const jarvisPet = {
         const peekAfterDrag = await h.ev(`!!document.querySelector('[data-pet-peek]')`);
         if (peekAfterDrag) await petEscape(h);
         rec(
-            "6. a real drag shows dangle while held, and the release lands on the ledge with its centre within 3px of the release x (clamped)",
-            held6?.pet?.state === "dragged" &&
+            "6. a real drag shows dangle while held, and the release on a clear spot rests on the ledge with its centre within 3px of the release x (clamped)",
+            clear6 != null &&
+                held6?.pet?.state === "dragged" &&
                 held6.pet.pose === "dangle" &&
                 landed6?.pet != null &&
-                landed6.pet.state !== "dragged" &&
+                landed6.pet.state === "rest" &&
                 Math.abs(landed6.pet.x - want6) <= 3 &&
                 petOnLedge(settled6),
             {
                 held: petBrief(held6),
                 releaseX: to6.x,
+                clearRelease: clear6,
+                avoid: before6?.pet?.avoid,
                 landed: petBrief(landed6),
                 wantX: want6,
                 bottom: settled6?.sprite?.bottom,
@@ -3013,9 +3047,18 @@ const jarvisPet = {
         // 8. sides: the peek opens away from the window edge the creature is nearer
         const side = async (label, fraction) => {
             const s0 = await petSnap(h);
-            const to = { x: Math.round((s0?.vw ?? 0) * fraction), y: Math.round((s0?.ledgeTop ?? s0?.vh ?? 0) - 160) };
+            const vw = s0?.vw ?? 0;
+            const want = Math.round(vw * fraction);
+            // a clear drop inside the required half, 8px off the middle so the centre is plainly on its side
+            const ledge = s0?.pet?.ledge ?? { left: 0, right: vw };
+            const clearAt =
+                label === "left"
+                    ? petClearRelease(ledge, s0?.pet?.avoid, want, ledge.left, vw / 2 - 8)
+                    : petClearRelease(ledge, s0?.pet?.avoid, want, vw / 2 + 8, ledge.right);
+            const to = { x: clearAt ?? want, y: Math.round((s0?.ledgeTop ?? s0?.vh ?? 0) - 160) };
             await petDragHold(h, ctx, to);
             const landed = await petRelease(h, ctx, to);
+            const rested = landed?.pet?.state === "rest";
             await polishNap(400);
             const clickedAt = await petClick(h);
             const opened = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek]')`, 3000);
@@ -3034,12 +3077,24 @@ const jarvisPet = {
             const inHalf = centre != null && (label === "left" ? centre < half : centre > half);
             const within =
                 box?.x != null && (label === "left" ? box.left >= box.x - 1 : box.right <= box.x + PET_PX + 1);
-            return { ok: inHalf && opened && within && closed, centre, half, clickedAt, opened, box, closed };
+            return {
+                ok: clearAt != null && rested && inHalf && opened && within && closed,
+                releaseX: to.x,
+                clearAt,
+                avoid: s0?.pet?.avoid,
+                landed: petBrief(landed),
+                centre,
+                half,
+                clickedAt,
+                opened,
+                box,
+                closed,
+            };
         };
         const left8 = await side("left", 0.3);
         const right8 = await side("right", 0.8);
         rec(
-            "8. in the left half a real click opens the peek no further left than the creature, in the right half no further right; Escape closes it",
+            "8. dropped on a clear spot (resting) in the left half, a real click opens the peek no further left than the creature, in the right half no further right; Escape closes it",
             left8.ok && right8.ok,
             { left: left8, right: right8 }
         );
@@ -3065,6 +3120,139 @@ const jarvisPet = {
                 still.every((p) => p != null && p.state !== "walk" && p.state !== "hop") &&
                 new Set(still.map((p) => p?.x)).size === 1,
             { reloaded, reduced, samples: still }
+        );
+
+        // Steps 10-13 need the walker back in full motion, and useReducedMotion read the emulated media at mount, so
+        // the page reloads again now that the media is reset.
+        const unreduced = await ahReload(h);
+        await h.goto("agent");
+        await petWait(h, (s) => s?.pet != null, 10_000);
+        const opacity = () => h.ev(`(() => { const el = ${PET}; return el == null ? null : Number(getComputedStyle(el).opacity); })()`);
+        const nearly = (v, want) => typeof v === "number" && Math.abs(v - want) <= 0.05;
+        // a point in the other half of the window from the creature, so a hover cannot make it solid
+        const mouseAway = async () => {
+            const s = await petSnap(h);
+            const vw = s?.vw ?? 0;
+            const centre = s?.sprite == null ? vw : (s.sprite.left + s.sprite.right) / 2;
+            await petMouse(h, "mouseMoved", Math.round(centre > vw / 2 ? vw * 0.25 : vw * 0.75), Math.round((s?.vh ?? 0) / 3));
+        };
+
+        // 10. quiet opacity: faint with nothing to express, solid for a posture (it tweens over 0.3 s)
+        await mouseAway();
+        await petForce(h, PET_CALM);
+        const quiet10 = await petUntil(opacity, (v) => nearly(v, 0.4), 2000, 100);
+        await petShot(h, "jarvis-pet-10");
+        await petForce(h, { ...PET_CALM, posture: "review-gate" });
+        const solid10 = await petUntil(opacity, (v) => nearly(v, 1), 2000, 100);
+        await petZoom(h, "jarvis-pet-10-solid");
+        const released10 = await petForce(h, null);
+        rec(
+            "10. quiet: with the mouse away and nothing to express the creature's opacity is 0.4, and a posture makes it 1",
+            unreduced && nearly(quiet10, 0.4) && nearly(solid10, 1) && released10 === true,
+            { reloaded: unreduced, quiet: quiet10, solid: solid10, released: released10 }
+        );
+
+        // 11. hover: solid, and opacity only — a scale would lift the sprite off the ledge. A resting creature holds
+        // still under the pointer, so the hover is not lost to a walk carrying it away
+        await mouseAway();
+        await petForce(h, PET_CALM);
+        const rest11 = await petWait(h, (s) => s?.pet?.state === "rest" && s.sprite != null, 40_000);
+        const before11 = await opacity();
+        const at11 = rest11?.sprite == null ? null : petCentre(rest11);
+        if (at11 != null) await petMouse(h, "mouseMoved", at11.x, at11.y);
+        const hovered11 = await petUntil(opacity, (v) => nearly(v, 1), 2000, 100);
+        const transform11 = await h.ev(`(() => { const el = ${PET}; return el == null ? null : getComputedStyle(el).transform; })()`);
+        const m11 = /^matrix\(([^)]*)\)$/.exec(transform11 ?? "");
+        const abcd11 = m11 == null ? null : m11[1].split(",").map(Number);
+        const unscaled11 =
+            transform11 === "none" ||
+            (abcd11 != null && Math.abs(abcd11[0] - 1) < 1e-3 && Math.abs(abcd11[3] - 1) < 1e-3);
+        await petShot(h, "jarvis-pet-11");
+        await mouseAway();
+        await petForce(h, null);
+        rec(
+            "11. a real hover on the resting creature makes it solid, and its transform carries no scale",
+            at11 != null && nearly(hovered11, 1) && unscaled11,
+            { state: rest11?.pet?.state, hoverAt: at11, before: before11, hovered: hovered11, transform: transform11 }
+        );
+
+        // 12. the hop: a posture's arrival hops in place; it may then walk off a span, then holds — and never hops
+        // again while the posture stands. Sampled in the page, every 16 ms for 1.5 s, from the force on
+        await petForce(h, PET_CALM);
+        const free12 = await petWait(h, (s) => s?.pet != null && s.pet.state !== "hold", 5000);
+        const states12 = await h.ev(`new Promise((resolve) => {
+            const out = [];
+            window.__jarvisPet.force(${JSON.stringify({ ...PET_CALM, posture: "escalation" })});
+            const start = performance.now();
+            const timer = setInterval(() => {
+                out.push(window.__jarvisPet?.state ?? null);
+                if (performance.now() - start >= 1500) {
+                    clearInterval(timer);
+                    resolve(out);
+                }
+            }, 16);
+        })`);
+        await petShot(h, "jarvis-pet-12");
+        await petForce(h, null);
+        const firstHold12 = (states12 ?? []).indexOf("hold");
+        // the runs, not every sample: a readable record of the sequence
+        const runs12 = (states12 ?? []).filter((v, i, a) => i === 0 || a[i - 1] !== v);
+        rec(
+            "12. a posture's arrival hops, and no hop follows the first hold",
+            free12?.pet?.state !== "hold" &&
+                (states12 ?? []).includes("hop") &&
+                // a long walk off a span may not reach its hold inside the window; then there is no hold to follow
+                (firstHold12 < 0 || !states12.slice(firstHold12).includes("hop")),
+            { before: free12?.pet?.state, runs: runs12, samples: states12?.length ?? 0 }
+        );
+
+        // 13. a posture is not held on a terminal: dropped onto an .xterm with a posture arriving at once, it walks off
+        // the span and holds beside it
+        let s13 = await petSnap(h);
+        if ((s13?.nearXterms ?? []).length === 0 && ctx.terminals?.[0] != null) {
+            const tabId = ctx.terminals[0].tabId;
+            await h.rpc("uireveal", { address: `agent:${tabId}` }, UI_ROUTE);
+            s13 = await petWait(h, (s) => (s?.nearXterms ?? []).length > 0, 15_000);
+        }
+        const xterm13 = s13?.nearXterms?.[0] ?? null;
+        let held13 = null;
+        let release13 = null;
+        if (xterm13 != null && s13?.pet?.ledge != null) {
+            const ledge13 = s13.pet.ledge;
+            const mid13 = Math.round((xterm13[0] + xterm13[1]) / 2);
+            release13 = {
+                x: Math.min(Math.max(mid13, ledge13.left + PET_PX / 2), ledge13.right - PET_PX / 2),
+                y: Math.round((s13.ledgeTop ?? s13.vh) - 160),
+            };
+            await petDragHold(h, ctx, release13);
+            await petMouse(h, "mouseReleased", release13.x, release13.y, { button: "left", buttons: 0, clickCount: 1 });
+            ctx.mouseDown = null;
+            await petForce(h, { ...PET_CALM, posture: "review-gate" });
+            held13 = await petWait(h, (s) => s?.pet?.state === "hold", 40_000);
+        }
+        const span13 = held13?.pet == null ? null : [held13.pet.x, held13.pet.x + PET_PX];
+        const onXterm13 = held13?.pet == null ? [] : petOverlaps(held13.pet.x, held13.nearXterms);
+        const onAvoid13 = held13?.pet == null ? [] : petOverlaps(held13.pet.x, held13.pet.avoid);
+        const dropOnXterm13 =
+            release13 == null || s13?.pet?.ledge == null
+                ? null
+                : petOverlaps(petDropX(s13.pet.ledge, release13.x), [xterm13]).length > 0;
+        await petShot(h, "jarvis-pet-13");
+        await petForce(h, null);
+        rec(
+            "13. dropped on an .xterm with a posture arriving, the creature holds off every near-ledge .xterm and avoid span",
+            dropOnXterm13 === true && held13?.pet?.state === "hold" && onXterm13.length === 0 && onAvoid13.length === 0,
+            {
+                xterm: xterm13,
+                releaseX: release13?.x ?? null,
+                dropOnXterm: dropOnXterm13,
+                held: petBrief(held13),
+                span: span13,
+                nearXterms: held13?.nearXterms,
+                avoid: held13?.pet?.avoid,
+                onXterm: onXterm13,
+                onAvoid: onAvoid13,
+            }
         );
         return steps;
     },

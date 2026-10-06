@@ -263,15 +263,16 @@ function settle(s: WalkerState, input: WalkerInput, now: number, rand: () => num
     return spot === s.x ? arrive(s, input, now, rand) : startWalk(s, spot, input, now);
 }
 
-// One walk frame, if one is due: a cell toward the target, or the arrival when it is within a cell of it.
-function advance(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
+// One walk frame, if one is due: a cell toward the target, or the arrival (`land`) when it is within a cell
+// of it.
+function advance(s: WalkerState, input: WalkerInput, now: number, land: (s: WalkerState) => WalkerState): WalkerState {
     if (now < s.due) {
         return s;
     }
     const target = s.target ?? s.x;
     const dx = target - s.x;
     if (Math.abs(dx) <= STEP_PX) {
-        return arrive({ ...s, x: target }, input, now, rand);
+        return land({ ...s, x: target });
     }
     const x = clampX(s.x + Math.sign(dx) * STEP_PX, input.ledge);
     return { ...s, x, flip: dx < 0, frame: s.frame + 1, due: now + frameMsFor(input) };
@@ -387,6 +388,17 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
                 return view({ ...s, frame: s.frame + 1, due: now + frameMs }, input, frameMs);
             }
         }
+        // A posture can stand for minutes, so it is not held on a terminal: hopped in place, the creature walks
+        // off the span to the nearest clear spot and holds there. A bubble or the peek holds it where it is,
+        // since both are anchored to it and are brief.
+        const spot = clearSpot(s.x, ledge, avoid);
+        if (!input.speaking && !input.peekOpen && spot !== s.x) {
+            s = s.name === "walk" ? { ...s, target: spot } : startWalk(s, spot, input, now);
+            s = advance(s, input, now, (s) => still(s, "hold"));
+            if (s.name === "walk") {
+                return view(s, input, Math.max(0, s.due - now));
+            }
+        }
         return view(still(s, "hold"), input, null);
     }
 
@@ -415,7 +427,7 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
     }
 
     if (s.name === "walk") {
-        s = advance(s, input, now, rand);
+        s = advance(s, input, now, (s) => arrive(s, input, now, rand));
     }
     switch (s.name) {
         case "walk":
