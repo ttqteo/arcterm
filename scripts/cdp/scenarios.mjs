@@ -2780,15 +2780,19 @@ const jarvisPet = {
                 TREE_RAIL_FIXTURE,
                 JSON.stringify(
                     [
+                        // working with an activity, not idle: the Cockpit leaves an agent with nothing to show off
+                        // its grid and out of its phase (cockpitsurfacemodel.ts cardHasContent), so an idle one kept
+                        // it empty, with no HintsBar for step 1 to stand on
                         {
                             id: PET_FIXTURE_AGENT,
                             name: "jarvis pet agent",
                             project: PET_PROJECT,
                             task: "give the Cockpit a ready roster",
-                            state: "idle",
+                            state: "working",
+                            activity: "keeping the Cockpit roster ready",
                             agent: "claude",
                             model: "opus",
-                            idleSince: Date.now() - 60_000,
+                            activeMs: 60_000,
                             blockId: "fx-blk-jarvis-pet",
                         },
                     ],
