@@ -34,6 +34,7 @@ Out of scope:
 - A key for the Preview / Source toggle.
 - One tray shared with line review. The panel's future Review tab keeps line review's tray.
 - Wave's `@@@start` content blocks in the panel.
+- Commenting on a block from the keyboard alone: the gutter `+` is a pointer gesture.
 
 ## Decisions
 
@@ -67,12 +68,13 @@ Out of scope:
 
 ## Anchoring
 
-5. **Stamps.** A remark plugin sets `data-src-start` and `data-src-end` (1-based file lines) on these mdast nodes:
-   `heading`, `paragraph`, `listItem`, `code`, `thematicBreak`, `tableRow` and `image`. It reaches the DOM through
-   `data.hProperties`, and the sanitize schema lets the two attributes through on every element.
-   - `listItem` is stamped as well as its paragraphs, because a tight list unwraps its paragraphs and their stamp is
-     lost with them.
-   - Raw HTML has no stamp and cannot be commented on.
+5. **Stamps.** A rehype plugin (`rehype-srclines.ts`) sets `data-src-start` and `data-src-end` (1-based file lines)
+   from each element's source position, on `p`, `h1`–`h6`, `li`, `pre`, `hr`, `table`, `tr` and `img`. The sanitize
+   schema lets the two attributes through on every element.
+   - It runs first, before `rehype-raw`, so raw HTML (parsed later) has no stamp and cannot be commented on.
+   - It works on the HTML tree because a fenced code block's position lands on `pre` there. A remark plugin's
+     `hProperties` would land on the inner `code`.
+   - A tight list renders no `p` inside its items; the `li` stamp covers them.
    - Every component that `markdown.tsx` overrides (`p`, the headings, `img`, `pre`) passes the two attributes through.
 6. **Lines match the file exactly.** The plugin adds an offset: the number of lines `splitFrontmatter` took off the
    top. The panel also turns off Wave content blocks (a new `contentBlocks` prop, default on): `transformBlocks` folds a
@@ -93,8 +95,8 @@ Out of scope:
 10. **Where a card sits.** A comment's card and its open box render after the innermost stamped block that holds the
     comment's last line, with two exceptions: a comment ending in a table renders after the table, and one ending in an
     image renders after the image. The block keeps a 2px `edge-strong` bar in the gutter while it has a comment.
-    - Cards read the agent's drafts from an atom, so adding or editing one re-renders only that card. The document,
-      and with it the scroll position, does not re-render.
+    - Cards read the agent's drafts through a context, so adding or editing one re-renders only the cards. The
+      document, and with it the scroll position, does not re-render.
 
 ## Comments
 
@@ -154,7 +156,8 @@ Out of scope:
     - `c`: comment on the selection.
     - Ctrl+Enter: add the comment inside a box; send when outside a box and Send is enabled.
     - Esc: cancel an open box; otherwise close the file (today's key).
-    - The gutter `+` and the image's Comment button are buttons: Tab reaches them and they show on `focus-visible`.
+    - The gutter `+` follows the pointer, so it is a mouse gesture. The image's Comment button and each card's buttons
+      are buttons Tab reaches.
 
 ## States
 
@@ -178,11 +181,13 @@ Out of scope:
 
 | File | Change |
 |---|---|
-| `frontend/app/element/remark-srclines.ts` (new, tested) | The stamping plugin, with its line offset. |
-| `frontend/app/element/markdown.tsx` | Props: `srcLineOffset` (turns stamping on), `contentBlocks` (default true) and `blockAfter(start, end)`, which overridden block components render after themselves. The sanitize schema allows the two attributes. |
+| `frontend/app/element/rehype-srclines.ts` (new, tested) | The stamping plugin, with its line offset, and the sanitize schema helper. |
+| `frontend/app/element/markdown.tsx` | Props: `srcLineOffset` (turns stamping on), `contentBlocks` (default true) and `blockAfter(tag)`, which every stamped block component renders after itself (inside an `li`). The sanitize schema allows the two attributes. |
+| `frontend/app/view/code/frontmattercard.tsx` (new) | `FrontmatterCard`, moved out of `codeviewer.tsx` so the panel shares it. |
 | `frontend/app/view/agents/mdcomments.ts` (new, tested) | Pure: the anchor from a selection's two ends, from `+` and Shift+click, and from an image; the quotes; which block hosts a card; the block for a line; relative paths; `formatMdComments`; numbering. |
 | `frontend/app/view/agents/mdcommentstore.ts` (new, tested) | Drafts per agent id: comments, the box, the last send; add, edit and delete; `sendBlock`; `recordSend`. |
-| `frontend/app/view/agents/mddoc.tsx` (new) | The Preview body: selection and its floating button, gutter `+`, the image's button, cards and the box, the marked block, focus and keys. |
+| `frontend/app/view/agents/mddoc.tsx` (new) | The Preview body: it measures the stamped blocks and draws the marks, the selection's floating button, the gutter `+` and the image's button; focus and keys. |
+| `frontend/app/view/agents/mdcommentcards.tsx` (new) | The card, the box and the slot each stamped block renders after itself, which shows the cards whose host is that block. |
 | `frontend/app/view/agents/mdcommenttray.tsx` (new) | The tray. It always targets the panel's agent: no agent menu. The presentational part may be shared with `linereviewtray.tsx` if that falls out cleanly. |
 | `frontend/app/view/agents/filetab.tsx` | The toggle, the Preview body and the tray. |
 | `frontend/app/view/agents/agentrailstore.ts` | `railMdModeAtom` (`agent.rail.mdMode`). |
