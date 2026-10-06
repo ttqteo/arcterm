@@ -18,6 +18,7 @@ function cap(over: Partial<WorkerCapacity> = {}): WorkerCapacity {
         totalbytes: 8 * GIB,
         availablebytes: 1.3 * GIB,
         perworkerbytes: 1.5 * GIB,
+        heavybytes: 3 * GIB,
         measured: true,
         liveworkers: 2,
         reservebytes: 0,
@@ -64,7 +65,7 @@ describe("overCapacity", () => {
 describe("tooltips", () => {
     it("the chip's title says one fact per line", () => {
         expect(capacityTitle(cap())).toBe(
-            "1.3 GB free of 8 GB\n~1.5 GB per worker (measured)\n2 running · ~1 more fits"
+            "1.3 GB free of 8 GB\n~1.5 GB per worker, ~3 GB for a heavy job (measured)\n2 running · ~1 more fits"
         );
         expect(capacityTitle(cap({ measured: false }))).toContain("(default)");
         expect(capacityTitle(cap({ moreworkers: 0 }))).toContain("~0 more fit");

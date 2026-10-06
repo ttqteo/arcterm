@@ -956,6 +956,7 @@ declare global {
         totalbytes: number;
         availablebytes: number;
         perworkerbytes: number;
+        heavybytes: number;
         measured: boolean;
         liveworkers: number;
         reservebytes: number;

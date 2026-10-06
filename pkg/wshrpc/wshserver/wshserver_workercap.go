@@ -36,6 +36,7 @@ func (ws *WshServer) GetWorkerCapacityCommand(ctx context.Context) (*wshrpc.Comm
 		TotalBytes:     c.Total,
 		AvailableBytes: c.Available,
 		PerWorkerBytes: c.PerWorker,
+		HeavyBytes:     c.Heavy,
 		Measured:       c.Measured,
 		LiveWorkers:    c.LiveWorkers,
 		ReserveBytes:   c.Reserve,

@@ -14,6 +14,7 @@ const reading: WorkerCapacity = {
     totalbytes: 8,
     availablebytes: 4,
     perworkerbytes: 1,
+    heavybytes: 3,
     measured: true,
     liveworkers: 0,
     reservebytes: 0,

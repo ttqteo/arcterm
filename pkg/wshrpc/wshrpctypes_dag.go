@@ -279,9 +279,10 @@ type DagTaskDuration struct {
 type CommandGetWorkerCapacityRtnData struct {
 	TotalBytes     uint64 `json:"totalbytes"`
 	AvailableBytes uint64 `json:"availablebytes"` // gopsutil Available: darwin free+inactive, Windows ullAvailPhys
-	PerWorkerBytes uint64 `json:"perworkerbytes"`
-	Measured       bool   `json:"measured"` // false: PerWorkerBytes is the default, no worker sampled yet
+	PerWorkerBytes uint64 `json:"perworkerbytes"` // a typical worker: the mean of the workers' means
+	HeavyBytes     uint64 `json:"heavybytes"`     // the heaviest job: the highest peak (a tsc run)
+	Measured       bool   `json:"measured"`       // false: PerWorkerBytes and HeavyBytes are the defaults, no worker sampled yet
 	LiveWorkers    int    `json:"liveworkers"`
-	ReserveBytes   uint64 `json:"reservebytes"` // room the live workers may still grow into
+	ReserveBytes   uint64 `json:"reservebytes"` // room the live workers may still grow into, plus one heavy job's extra
 	MoreWorkers    int    `json:"moreworkers"`
 }

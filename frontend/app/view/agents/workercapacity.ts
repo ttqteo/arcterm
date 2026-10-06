@@ -32,7 +32,7 @@ function moreFit(n: number): string {
 export function capacityTitle(cap: WorkerCapacity): string {
     return [
         `${formatGB(cap.availablebytes)} free of ${formatGB(cap.totalbytes)}`,
-        `~${formatGB(cap.perworkerbytes)} per worker (${cap.measured ? "measured" : "default"})`,
+        `~${formatGB(cap.perworkerbytes)} per worker, ~${formatGB(cap.heavybytes)} for a heavy job (${cap.measured ? "measured" : "default"})`,
         `${cap.liveworkers} running · ${moreFit(cap.moreworkers)}`,
     ].join("\n");
 }

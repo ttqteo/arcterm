@@ -24,8 +24,11 @@ func TestWorkerCapacityMapsTheReading(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rtn.TotalBytes != 8<<30 || rtn.AvailableBytes != 3<<30 || rtn.PerWorkerBytes == 0 {
-		t.Fatalf("got %+v, want the OS reading passed through and a nonzero estimate", rtn)
+	if rtn.TotalBytes != 8<<30 || rtn.AvailableBytes != 3<<30 || rtn.PerWorkerBytes == 0 || rtn.HeavyBytes < rtn.PerWorkerBytes {
+		t.Fatalf("got %+v, want the OS reading passed through, a nonzero typical size and a heavy job at least that big", rtn)
+	}
+	if rtn.ReserveBytes < rtn.HeavyBytes-rtn.PerWorkerBytes {
+		t.Fatalf("the reserve holds back one heavy job's extra, got %+v", rtn)
 	}
 	// the tracker is process-wide, so the expected count is derived from what came back
 	want := 0

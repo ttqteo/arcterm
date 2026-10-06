@@ -29,22 +29,25 @@ func TestCompute(t *testing.T) {
 		name      string
 		available uint64
 		perWorker uint64
+		heavy     uint64
 		liveRSS   []uint64
 		wantPer   uint64
+		wantHeavy uint64
 		reserve   uint64
 		more      int
 	}{
-		{"no live workers splits free RAM", 4 * gib, gib, nil, gib, 0, 4},
-		{"rounds down", 3*gib + gib/2, gib, nil, gib, 0, 3},
-		{"a live worker below the estimate holds its growth room", 4 * gib, 2 * gib, []uint64{gib / 2}, 2 * gib, 3 * gib / 2, 1},
-		{"a live worker above the estimate holds nothing", 4 * gib, gib, []uint64{3 * gib}, gib, 0, 4},
-		{"free RAM below the reserve is 0, not a wrapped uint64", gib, 2 * gib, []uint64{gib / 4}, 2 * gib, 7 * gib / 4, 0},
-		{"a zero estimate falls back to the default", 3 * gib, 0, nil, DefaultPerWorker, 0, 2},
+		{"no live workers still holds one heavy job back", 4 * gib, gib, 3 * gib, nil, gib, 3 * gib, 2 * gib, 2},
+		{"rounds down", 4*gib + gib/2, gib, 3 * gib, nil, gib, 3 * gib, 2 * gib, 2},
+		{"a live worker below the typical size holds its growth room", 5 * gib, gib, 3 * gib, []uint64{gib / 2}, gib, 3 * gib, 5 * gib / 2, 2},
+		{"a live worker above the typical size holds nothing more", 4 * gib, gib, 3 * gib, []uint64{2 * gib}, gib, 3 * gib, 2 * gib, 2},
+		{"free RAM below the reserve is 0, not a wrapped uint64", gib + gib/4, gib, 3 * gib, nil, gib, 3 * gib, 2 * gib, 0},
+		{"zero estimates fall back to the defaults", 6 * gib, 0, 0, nil, DefaultPerWorker, DefaultHeavy, 2 * gib, 4},
+		{"a heavy job no bigger than a typical worker holds nothing extra", 3 * gib, gib, gib / 2, nil, gib, gib, 0, 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := Compute(8*gib, tc.available, tc.perWorker, tc.liveRSS)
-			if c.Total != 8*gib || c.Available != tc.available || c.PerWorker != tc.wantPer {
+			c := Compute(8*gib, tc.available, tc.perWorker, tc.heavy, tc.liveRSS)
+			if c.Total != 8*gib || c.Available != tc.available || c.PerWorker != tc.wantPer || c.Heavy != tc.wantHeavy {
 				t.Fatalf("passthrough fields wrong: %+v", c)
 			}
 			if c.Reserve != tc.reserve || c.More != tc.more || c.LiveWorkers != len(tc.liveRSS) {
@@ -55,21 +58,21 @@ func TestCompute(t *testing.T) {
 	}
 }
 
-func TestNoReadingsUseTheDefault(t *testing.T) {
+func TestNoReadingsUseTheDefaults(t *testing.T) {
 	resetTracker(t)
-	liveRSS, per, measured := Snapshot(allRunning)
-	if len(liveRSS) != 0 || per != DefaultPerWorker || measured {
-		t.Fatalf("got %v %d %v, want no live workers, the default, unmeasured", liveRSS, per, measured)
+	e := Snapshot(allRunning)
+	if len(e.LiveRSS) != 0 || e.PerWorker != DefaultPerWorker || e.Heavy != DefaultHeavy || e.Measured {
+		t.Fatalf("got %+v, want no live workers, the defaults, unmeasured", e)
 	}
 }
 
-func TestObserveKeepsThePeak(t *testing.T) {
+func TestObserveKeepsTheMeanAndThePeak(t *testing.T) {
 	resetTracker(t)
-	Observe("a", 2*gib)
 	Observe("a", gib)
-	liveRSS, per, measured := Snapshot(allRunning)
-	if len(liveRSS) != 1 || liveRSS[0] != gib || per != 2*gib || !measured {
-		t.Fatalf("got %v %d %v, want current 1 GiB and peak 2 GiB, measured", liveRSS, per, measured)
+	Observe("a", 3*gib)
+	e := Snapshot(allRunning)
+	if len(e.LiveRSS) != 1 || e.LiveRSS[0] != 3*gib || e.PerWorker != 2*gib || e.Heavy != 3*gib || !e.Measured {
+		t.Fatalf("got %+v, want current 3 GiB, typical (mean) 2 GiB, heavy (peak) 3 GiB, measured", e)
 	}
 }
 
@@ -77,22 +80,26 @@ func TestObserveDropsAZeroReading(t *testing.T) {
 	resetTracker(t)
 	Observe("a", 0)
 	Observe("", gib)
-	if _, per, measured := Snapshot(allRunning); per != DefaultPerWorker || measured {
-		t.Fatalf("a zero reading or an empty block is not a measurement, got %d %v", per, measured)
+	if e := Snapshot(allRunning); e.PerWorker != DefaultPerWorker || e.Measured {
+		t.Fatalf("a zero reading or an empty block is not a measurement, got %+v", e)
 	}
 }
 
 func TestSnapshotRetiresStoppedBlocks(t *testing.T) {
 	resetTracker(t)
-	Observe("a", 3*gib)
+	Observe("a", gib)
+	Observe("a", 3*gib) // mean 2 GiB, peak 3 GiB
 	Observe("b", gib)
-	liveRSS, per, _ := Snapshot(func(id string) bool { return id == "b" })
-	if len(liveRSS) != 1 || liveRSS[0] != gib || per != 3*gib {
-		t.Fatalf("a stopped worker leaves the live set and keeps its peak, got %v %d", liveRSS, per)
+	e := Snapshot(func(id string) bool { return id == "b" })
+	if len(e.LiveRSS) != 1 || e.LiveRSS[0] != gib {
+		t.Fatalf("a stopped worker leaves the live set, got %+v", e)
 	}
-	liveRSS, per, measured := Snapshot(noneRunning)
-	if len(liveRSS) != 0 || per != 3*gib || !measured {
-		t.Fatalf("finished peaks still set the estimate, got %v %d %v", liveRSS, per, measured)
+	if e.PerWorker != 3*gib/2 || e.Heavy != 3*gib {
+		t.Fatalf("typical is the mean of the workers' means and heavy the highest peak, live or finished, got %+v", e)
+	}
+	e = Snapshot(noneRunning)
+	if len(e.LiveRSS) != 0 || e.PerWorker != 3*gib/2 || e.Heavy != 3*gib || !e.Measured {
+		t.Fatalf("finished workers still set the estimate, got %+v", e)
 	}
 }
 
@@ -100,12 +107,12 @@ func TestRingKeepsTheLastTen(t *testing.T) {
 	resetTracker(t)
 	Observe("big", 5*gib)
 	Snapshot(noneRunning)
-	for i := range RecentPeaks {
+	for i := range RecentWorkers {
 		Observe(fmt.Sprint(i), gib)
 		Snapshot(noneRunning)
 	}
-	if _, per, _ := Snapshot(noneRunning); per != gib {
-		t.Fatalf("the oldest peak falls out after %d newer ones, got %d", RecentPeaks, per)
+	if e := Snapshot(noneRunning); e.PerWorker != gib || e.Heavy != gib {
+		t.Fatalf("the oldest worker falls out after %d newer ones, got %+v", RecentWorkers, e)
 	}
 }
 
@@ -113,7 +120,7 @@ func TestRead(t *testing.T) {
 	resetTracker(t)
 	Observe("a", gib)
 	c := Read(8*gib, 4*gib, allRunning)
-	want := Capacity{Total: 8 * gib, Available: 4 * gib, PerWorker: gib, Reserve: 0, Measured: true, LiveWorkers: 1, More: 4}
+	want := Capacity{Total: 8 * gib, Available: 4 * gib, PerWorker: gib, Heavy: gib, Reserve: 0, Measured: true, LiveWorkers: 1, More: 4}
 	if c != want {
 		t.Fatalf("got %+v, want %+v", c, want)
 	}
