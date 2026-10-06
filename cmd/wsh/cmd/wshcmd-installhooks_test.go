@@ -703,6 +703,7 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 		{"SessionStart", "compact", "agent-hook", 10},
 		{"SessionStart", "compact", "jarvis dag rules --inject", 15},
 		{"SessionStart", "clear", "agent-hook", 10},
+		{"SessionStart", "resume", "agent-hook", 10},
 	} {
 		found := false
 		for _, mh := range managedHooks {
@@ -720,8 +721,8 @@ func TestCompactionHooksAreManaged(t *testing.T) {
 	}
 	merged := mergeAgentHooks(mergeAgentHooks(map[string]any{}, testWsh), testWsh)
 	groups, _ := merged["hooks"].(map[string]any)["SessionStart"].([]any)
-	if len(groups) != 3 {
-		t.Fatalf("SessionStart groups after two merges = %d, want the compact idle, rules and clear hooks", len(groups))
+	if len(groups) != 4 {
+		t.Fatalf("SessionStart groups after two merges = %d, want the compact idle, rules, clear and resume hooks", len(groups))
 	}
 }
 

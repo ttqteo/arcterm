@@ -50,6 +50,8 @@ var managedHooks = []managedHook{
 	{"SessionStart", "compact", "jarvis dag rules --inject", 15},
 	// /clear opens a new transcript: report it now so the cockpit follows the new file before the next prompt
 	{"SessionStart", "clear", "agent-hook", 10},
+	// a resume (--resume, /resume) is silent until its next prompt: report it at its prompt, with its title
+	{"SessionStart", "resume", "agent-hook", 10},
 }
 
 func managedEventOrder() []string {
