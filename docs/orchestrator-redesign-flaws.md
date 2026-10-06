@@ -337,6 +337,46 @@ Recovery, by the lead on the human's go-ahead:
 3. Commit the merge as `7561443d`.
 4. `wsh runs land`, which landed it as `fb4e5db2`.
 
+## Incident — run e8ddc171's lead started without its plan review's findings (2026-10-06)
+
+Run `e8ddc171` sat in `plan-review` for 59 minutes with no task started, and `wsh runs attention` said nothing was
+waiting on the user. The run: plan `docs/superpowers/plans/2026-10-06-agent-rail-tabs.md`, dag `b4238bb3`, a claude
+lead, sonnet workers.
+
+What happened, read from the two session transcripts under
+`~/.claude/projects/D--projects-arcterm--waveterm-worktrees-e8ddc171-…`:
+
+1. The plan reviewer (session `9de9cc36`) started at 11:29 and recorded `planreview fail` at 11:40:16, after 11 minutes.
+   - Its findings were over `MaxReviewNoteLen` (2,000 characters), which refuses rather than clips.
+   - It cut them down to fit and said so in its closing message. A wake that arrived would still have carried the
+     short version.
+2. The run had no lead yet, so the fail wake launched one (`launchLocked`: a lead's first wake is its launch prompt).
+   The lead's session (`15fc3b1a`) began at 11:40:19.
+3. The first message in the lead's transcript is 1,155 characters and stops mid-sentence, at
+   `` `wsh jarvis dag forward <task> <what ``. Two things are missing from it:
+   - the rest of `PlanLeadPrompt`'s contract;
+   - the wake line (`wake: plan review failed in round 1: …`).
+4. The lead ran `dag status` and read `status=plan-review`. It then wrote "Nothing needs me yet. The engine will wake me
+   with the next event, such as the review verdict", and ended its turn at 11:40:31. The verdict had been its launch
+   wake, so no further wake came.
+5. Nothing ages a `plan-review` stage whose reviewer has ended. `dag status` printed the same digest for 59 minutes, and
+   `runs attention` stayed empty.
+
+Open:
+
+- **Where the launch prompt was cut.** Not established. To reproduce, give a lead its first wake as a long text full of
+  quotes and backticks, as these findings were, and compare the `lead-launched` run event's text with the lead's first
+  transcript message.
+- **A failed plan review that no lead acts on is invisible.** The digest's `next` could name the failed review, or the
+  stage could age into `runs attention`, the way F16 aged the merge gate.
+
+Recovery, by the human's session:
+1. Read both transcripts.
+2. Cancel the run. It needed `--yes`, because the idle lead counted as a live worker.
+3. Remove its tree with `task worktree:cleanup`.
+4. Revise the plan from the reviewer's full findings (`abcccd05`).
+5. Start run `fe95d11e`.
+
 ## Constraints carried into the redesign
 
 - KISS/YAGNI: no new subsystems, no per-task timeout policies, no message bus. Only the failure modes
