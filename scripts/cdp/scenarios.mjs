@@ -13094,16 +13094,19 @@ const agentGrid = {
 //  - A dropped folder: webkitGetAsEntry needs a real drag, and a script-built item has no file-system entry behind it, so
 //    collectDroppedFiles' tests (uploadfile.test.ts) cover it.
 //  - A paste from the OS clipboard and a drag from Explorer, which are the browser's own events, not these.
-// Steps 1c and 3c read the shell's echo of the paste from the block's "term" file over HTTP (window.term is no longer set);
-// they skip, naming why, when that file has nothing in it.
+// Steps 1c and 3c read the shell's echo of the paste from the block's "term" file over HTTP (window.term is no longer set),
+// with every escape sequence and all whitespace taken out of both the file and what they look for. They skip, naming why,
+// when that file has nothing in it, and fail when it has output that does not hold the path.
 const UPLOADS_KEY = "agent.uploads";
 const UPLOADS_NAME = "verify-uploads";
 const UPLOADS_AGENT_WAIT_MS = 15000;
 const UPLOADS_SHELL_WAIT_MS = 15000;
-// MAX_UPLOAD_BYTES (uploadfile.ts), mirrored: step 5 drops a file one byte over it and reads the cap back out of the
-// toast, so a cap that moves fails there instead of passing on a stale number
+// MAX_UPLOAD_BYTES (uploadfile.ts), mirrored: step 5 drops a file one byte over it and checks the toast for the label
+// below, so a cap that moves fails there instead of passing on a stale number
 const UPLOADS_CAP_BYTES = 3.5 * 1024 * 1024;
 const UPLOADS_CAP_LABEL = `${UPLOADS_CAP_BYTES / (1024 * 1024)} MB`;
+// AGENT_DRAG_MIME (frontend/app/view/agents/griddrop.ts), mirrored: what a grid drag carries, which a file drop must ignore
+const UPLOADS_AGENT_MIME = "application/x-arc-agent";
 const UPLOADS_DAY_MS = 24 * 3600 * 1000;
 const UPLOADS_SECTION = `document.querySelector('aside[aria-label="Agent details"] [data-rail-section="uploads"]')`;
 const UPLOADS_TOGGLE = `${UPLOADS_SECTION}?.querySelector("h3 button")`;
@@ -13141,11 +13144,14 @@ async function openUploadsAgent(h, ctx) {
     await publishUploadsStatus(h, ctx);
 }
 
-// The agent's pane is the one shown (a lone cell, so shown is focused: the rail is that agent's) and its rail has the
-// Uploads section. Its tree row is clicked until then, so a click that lands before the roster has settled is not lost.
+// Makes the agent's pane the one shown (a lone cell, so shown is focused: the rail is that agent's). Its tree row is
+// clicked until then, so a click that lands before the roster has settled is not lost. Resolves to
+//   "ready"      the pane is shown and its rail has the Uploads section
+//   "no-section" the pane is shown but the rail never drew the section: a regression, not a gap in this scenario's setup
+//   "no-pane"    the pane never got shown (the roster did not list the agent, or the surface did not show it)
 async function focusUploadsAgent(h, ctx) {
     await h.goto("agent");
-    return polishWaitFor(
+    const ready = await polishWaitFor(
         h,
         `(() => {
             const pane = document.querySelector('[data-agent-terminal="${ctx.tabId}"]');
@@ -13155,6 +13161,12 @@ async function focusUploadsAgent(h, ctx) {
         })()`,
         UPLOADS_AGENT_WAIT_MS
     );
+    if (ready) return "ready";
+    const shown = await h.ev(`(() => {
+        const pane = document.querySelector('[data-agent-terminal="${ctx.tabId}"]');
+        return pane != null && !pane.classList.contains("hidden");
+    })()`);
+    return shown === true ? "no-section" : "no-pane";
 }
 
 // a small PNG, drawn the way a screenshot is: a File of a real image type in a real DataTransfer
@@ -13184,7 +13196,7 @@ const uploadsDragExpr = (tabId, kind, { name = "notes with space.txt", bytes = 1
     if (!el) return { ok: false };
     const dt = new DataTransfer();
     dt.items.add(new File([new Uint8Array(${bytes}).fill(97)], ${JSON.stringify(name)}, { type: "text/plain" }));
-    if (${agentMime}) dt.setData("application/x-arc-agent", "verify");
+    if (${agentMime}) dt.setData(${JSON.stringify(UPLOADS_AGENT_MIME)}, "verify");
     const ev = new DragEvent(${JSON.stringify(kind)}, { dataTransfer: dt, bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
     return { ok: true, taken: ev.defaultPrevented };
@@ -13208,19 +13220,28 @@ const uploadsToasts = (h) =>
 // the file name of a path, either separator
 const uploadsBaseName = (path) => path.split(/[\\/]/).pop();
 
-// What the shell has printed, kept by wavesrv in the block's "term" file; null when the file is missing, empty or cannot
-// be read. Colour, cursor and title sequences are stripped, and so are line breaks, so a path the shell redraws token
-// by token, or that the terminal wrapped, still reads whole.
+// Terminal output as plain text for a search: every escape sequence is dropped (strings ended by BEL or ST, CSI with any
+// parameter bytes, and the two- and three-byte ones such as ESC = and ESC ( B), then every control character and all
+// whitespace. A path the shell redraws token by token, that readline padded, that ConPTY spaced with cursor-forward moves
+// or that the terminal wrapped therefore reads whole. Whatever is searched for goes through this too.
+function uploadsPlainText(raw) {
+    return raw
+        .replace(/\x1b[\]P_^X][^\x1b\x07]*(?:\x07|\x1b\\)/g, "") // eslint-disable-line no-control-regex
+        .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "") // eslint-disable-line no-control-regex
+        .replace(/\x1b[ -/]+[0-~]/g, "") // eslint-disable-line no-control-regex
+        .replace(/\x1b[0-~]/g, "") // eslint-disable-line no-control-regex
+        .replace(/[\x00-\x1f\x7f]/g, "") // eslint-disable-line no-control-regex
+        .replace(/\s+/g, "");
+}
+
+// What the shell has printed, kept by wavesrv in the block's "term" file, as uploadsPlainText; null when the file is
+// missing, has nothing in it or cannot be read.
 async function uploadsTermText(h, blockId) {
     try {
         const [endpoint, key] = await h.ev(`[window.api.getEnv("WAVE_SERVER_WEB_ENDPOINT"), window.api.getAuthKey()]`);
         const res = await fetch(`http://${endpoint}/wave/file?zoneid=${blockId}&name=term`, { headers: { "x-authkey": key } });
         if (res.status !== 200) return null;
-        const text = Buffer.from(await res.arrayBuffer())
-            .toString("utf8")
-            .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "") // eslint-disable-line no-control-regex
-            .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") // eslint-disable-line no-control-regex
-            .replace(/[\r\n]+/g, "");
+        const text = uploadsPlainText(Buffer.from(await res.arrayBuffer()).toString("utf8"));
         return text === "" ? null : text;
     } catch {
         return null;
@@ -13228,10 +13249,11 @@ async function uploadsTermText(h, blockId) {
 }
 
 async function uploadsTermHas(h, blockId, needle) {
+    const want = uploadsPlainText(needle);
     let text = null;
     for (let waited = 0; waited < 5000; waited += 500) {
         text = await uploadsTermText(h, blockId);
-        if (text != null && text.includes(needle)) return { seen: true, readable: true };
+        if (text != null && text.includes(want)) return { seen: true, readable: true };
         await polishNap(500);
     }
     return { seen: false, readable: text != null };
@@ -13275,7 +13297,7 @@ const agentUploads = {
             // all of them are read once per page load
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await openUploadsAgent(h, ctx);
-            ctx.focused = await focusUploadsAgent(h, ctx);
+            ctx.focus = await focusUploadsAgent(h, ctx);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -13288,11 +13310,22 @@ const agentUploads = {
         if (ctx.arrangeError != null) {
             return [{ step: "0. the agent and its Uploads section were made", ok: false, detail: ctx.arrangeError }];
         }
-        if (ctx.focused !== true) {
+        // the pane is up but its rail has no Uploads section: that is the app (the section is drawn for any agent with a
+        // block, and agent-rail-sections shows it for a fixture agent), so it fails instead of skipping
+        if (ctx.focus === "no-section") {
+            return [
+                {
+                    step: "0. the agent's pane is shown with its details rail, Uploads section included",
+                    ok: false,
+                    detail: `the pane is shown, but no Uploads section was drawn in the rail within ${UPLOADS_AGENT_WAIT_MS / 1000}s`,
+                },
+            ];
+        }
+        if (ctx.focus !== "ready") {
             return [
                 skipStep(
                     "agent uploads",
-                    "could not verify: the agent never showed its Uploads rail section (does the roster list a working claude agent that has no transcript, and does the surface show it when its tree row is clicked?)"
+                    "could not verify: the agent's pane never reached the Agent surface (does the roster list a working claude agent that has no transcript, and does the surface show it when its tree row is clicked?)"
                 ),
             ];
         }
@@ -13361,8 +13394,12 @@ const agentUploads = {
             );
             // a record's name is a label, so the echo is looked for under the temp file's own name
             const pasteFile = typeof pasteRow?.path === "string" ? uploadsBaseName(pasteRow.path) : null;
-            const echoed = pasteFile ? await uploadsTermHas(h, ctx.blockId, pasteFile) : { seen: false, readable: false };
-            if (!echoed.readable) {
+            const echoed = pasteFile != null ? await uploadsTermHas(h, ctx.blockId, pasteFile) : null;
+            if (echoed == null) {
+                steps.push(
+                    skipStep("1c. the pasted path reached the terminal", "step 1 listed no pasted row with a path, so there is no file name to look for")
+                );
+            } else if (!echoed.readable) {
                 steps.push(
                     skipStep(
                         "1c. the pasted path reached the terminal",
@@ -13484,7 +13521,8 @@ const agentUploads = {
             );
 
             const now = Date.now();
-            const aged = list.map((r) => (r.source === "paste" ? { ...r, ts: now - 25 * 3600 * 1000 } : r));
+            // an hour past the day a temp copy is kept
+            const aged = list.map((r) => (r.source === "paste" ? { ...r, ts: now - (UPLOADS_DAY_MS + 3600 * 1000) } : r));
             // an attach never reads expired, however old: a record of one is seeded, since its dialog cannot be driven
             aged.push({
                 id: "verify-attach",
@@ -13499,7 +13537,7 @@ const agentUploads = {
             );
             const reloaded = await ahReload(h);
             await publishUploadsStatus(h, ctx);
-            const back = reloaded && (await focusUploadsAgent(h, ctx));
+            const back = reloaded ? await focusUploadsAgent(h, ctx) : "not reloaded";
             await openUploads();
             await waitCount(3);
             const rows = await uploadsRows(h);
@@ -13507,7 +13545,7 @@ const agentUploads = {
             const oldPaste = rows.find((r) => r.source === "paste");
             rec(
                 "7. after a reload the agent's rail lists all three records",
-                reloaded === true && back === true && rows.length === 3,
+                reloaded === true && back === "ready" && rows.length === 3,
                 { reloaded, back, rows: rows.length }
             );
             rec(
@@ -13539,10 +13577,10 @@ const agentUploads = {
             }
         };
         if (ctx.skip) return;
-        // a lightbox a failed step left open is closed; the shell does not hold it past the reload below, but its
-        // backdrop would cover the page until then
+        // the Uploads lightbox a failed step left open is closed (the dialog that holds its image, not any other modal);
+        // the reload below would drop it too, but its backdrop would cover the page until then
         await step("close a lightbox a failed step left open", () =>
-            h.ev(`document.querySelector('[role="dialog"][aria-modal="true"] button[aria-label="Close"]')?.click()`)
+            h.ev(`${UPLOADS_LIGHTBOX}?.closest('[role="dialog"]')?.querySelector('button[aria-label="Close"]')?.click()`)
         );
         if (ctx.tabId) {
             await step("close the terminal tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false]));
