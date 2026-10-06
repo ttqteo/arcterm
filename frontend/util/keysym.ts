@@ -31,8 +31,10 @@ const NAMED: Record<string, string> = {
 export function modSymbol(token: string): string {
     switch (token) {
         case "Cmd":
-        case "Ctrl":
             return isMacOS() ? "⌘" : "^";
+        // keyutil matches "Ctrl" against the Control key on every platform, so a Mac must not show ⌘
+        case "Ctrl":
+            return isMacOS() ? "⌃" : "^";
         case "Shift":
             return "⇧";
         case "Alt":

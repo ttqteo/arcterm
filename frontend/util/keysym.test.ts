@@ -10,9 +10,10 @@ describe("keysym", () => {
         expect(modSymbol("Shift")).toBe("⇧");
         expect(modSymbol("Alt")).toBe("Alt");
     });
-    it("primary accelerator is ⌘ on macOS", () => {
+    // "Ctrl" bindings fire on the Control key on every platform (keyutil), so a Mac shows ⌃, not ⌘
+    it("Ctrl is ⌃ and Cmd is ⌘ on macOS", () => {
         setPlatform("darwin");
-        expect(modSymbol("Ctrl")).toBe("⌘");
+        expect(modSymbol("Ctrl")).toBe("⌃");
         expect(modSymbol("Cmd")).toBe("⌘");
         expect(modSymbol("Option")).toBe("⌥");
     });
