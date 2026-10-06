@@ -79,6 +79,29 @@ func TestScanRoot_skipsFilesWithoutHumanPrompt(t *testing.T) {
 	}
 }
 
+// A subagent the Agent tool starts writes <parent>/subagents/agent-<id>.jsonl, every record isSidechain; its first
+// is the task its parent gave it, which no person typed, so it is part of its parent and not a session of its own.
+// A parent that carries sidechain records inline is still titled by what its person typed.
+func TestScanRoot_skipsSubagentTranscripts(t *testing.T) {
+	dir := t.TempDir()
+	writeJSONL(t, dir, "parent.jsonl",
+		`{"type":"user","isSidechain":true,"cwd":"/x","message":{"role":"user","content":"You are the SPEC COMPLIANCE reviewer for Task 3"}}`,
+		`{"type":"user","cwd":"/x","message":{"role":"user","content":"Build the uploads list"}}`,
+	)
+	sub := filepath.Join(dir, "parent", "subagents")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONL(t, sub, "agent-a3f6fcb8fdd0390b8.jsonl",
+		`{"type":"user","isSidechain":true,"agentId":"a3f6fcb8fdd0390b8","cwd":"/x","message":{"role":"user","content":"You are implementing **Task 28: The Uploads list**"}}`,
+		`{"type":"assistant","isSidechain":true,"message":{"model":"claude-opus-4-8"}}`,
+	)
+	got := scanProvider(claudeProvider(dir), 0, 10)
+	if len(got) != 1 || got[0].ID != "parent" || got[0].Task != "Build the uploads list" {
+		t.Fatalf("want only the parent, titled by its own prompt, got %+v", got)
+	}
+}
+
 func TestScanRoot_capsToLimit(t *testing.T) {
 	dir := t.TempDir()
 	for _, n := range []string{"a", "b", "c"} {
