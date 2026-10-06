@@ -1,7 +1,8 @@
 # Agent rail tabs (Overview, Review, File), path links, and a regrouped nav rail — design
 
-Status: approved design 2026-10-06, not implemented. Phase 1 is everything below except the last section; phase 2 is
-the Terminal tab. Mockups (gitignored, deleted when each phase ships): `.superpowers/design/agent-rail-tabs/` (phase
+Status: approved design 2026-10-06. Phase 1 implemented 2026-10-06 (run adc0e838) except the Review tab, which waits
+on line review (see Order under decision 4); phase 2, the Terminal tab, not implemented. Phase 1 is everything below
+except the last section; phase 2 is the Terminal tab. Mockups (gitignored, deleted when each phase ships): `.superpowers/design/agent-rail-tabs/` (phase
 1), `.superpowers/design/agent-rail-terminal/` (phase 2).
 
 ## Problem
@@ -206,8 +207,8 @@ Kept here so phase 1 leaves room for it. Not designed further until phase 1 has 
   terminal and agent with a block already has a pane mounted in the centre stack, and two term views on one block
   would fight over the PTY size, so the panel never shows a centre terminal.
 - A side terminal is an ordinary shell block in a workspace tab, created like a terminal launch (`cockpit-actions.ts`).
-  Its tab carries a new meta key, `session:sidepanel` (the cwd string), which keeps it out of the roster, the tree and
-  Overview's Terminals section (`deriveTerminalVMs` skips it). This needs the key in the Go meta types and
+  Its tab carries a new meta key, `session:sidepanel` (the cwd string), which keeps it out of the roster and the tree's
+  Terminals section (`deriveTerminalVMs` skips it). This needs the key in the Go meta types and
   `task generate`.
 - Side terminals are keyed by the agent's working directory. Opening the tab for a directory with none starts one; `+`
   starts another; the bin icon closes the selected one.

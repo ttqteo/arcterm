@@ -92,6 +92,7 @@ interface TermLinkTooltipProps {
  */
 export const TermLinkTooltip = React.memo(function TermLinkTooltip({ termWrap }: TermLinkTooltipProps) {
     const [mousePos, setMousePos] = React.useState<{ x: number; y: number } | null>(null);
+    const [hint, setHint] = React.useState<string | null>(null);
     const timeoutRef = React.useRef<number | null>(null);
     const maxTimeoutRef = React.useRef<number | null>(null);
 
@@ -100,7 +101,7 @@ export const TermLinkTooltip = React.memo(function TermLinkTooltip({ termWrap }:
             return;
         }
 
-        termWrap.onLinkHover = (uri: string | null, mouseX: number, mouseY: number) => {
+        termWrap.onLinkHover = (uri: string | null, mouseX: number, mouseY: number, hint?: string) => {
             clearTimeoutRef(timeoutRef);
 
             if (uri == null) {
@@ -112,6 +113,7 @@ export const TermLinkTooltip = React.memo(function TermLinkTooltip({ termWrap }:
             // Show after a short delay so fast mouse movements don't flicker.
             timeoutRef.current = window.setTimeout(() => {
                 timeoutRef.current = null;
+                setHint(hint ?? null);
                 setMousePos({ x: mouseX, y: mouseY });
                 // Auto-dismiss after MaxHoverTimeMs so the tooltip doesn't linger forever.
                 clearTimeoutRef(maxTimeoutRef);
@@ -130,5 +132,5 @@ export const TermLinkTooltip = React.memo(function TermLinkTooltip({ termWrap }:
         };
     }, [termWrap]);
 
-    return <TermTooltip mousePos={mousePos} content={<span>{modKey}-click to open link</span>} />;
+    return <TermTooltip mousePos={mousePos} content={<span>{modKey}-click to {hint ?? "open link"}</span>} />;
 });

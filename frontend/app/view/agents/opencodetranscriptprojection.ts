@@ -46,6 +46,24 @@ function targetFor(name: string, input: string): string {
     return input;
 }
 
+// only the file tools name a file; grep and glob take a directory
+const FILE_TOOLS = new Set(["read", "write", "edit"]);
+
+// the full path a file tool's JSON input names, if any
+function filePathOf(input: string): string | null {
+    try {
+        const args = JSON.parse(input);
+        for (const key of ["filePath", "file_path"]) {
+            if (typeof args?.[key] === "string" && args[key] !== "") {
+                return args[key];
+            }
+        }
+    } catch {
+        // not JSON: a bash command or a bare name
+    }
+    return null;
+}
+
 /** Pure: project shadow JSONL lines into ordered entries. user -> asked, assistant -> message,
  *  tool -> action (bash fails on an error state), state/session -> no entry. Unparseable lines and
  *  unknown record types are skipped. */
@@ -69,6 +87,10 @@ export function projectOpencodeTranscript(lines: string[]): AgentEntry[] {
         if (rec.type === "tool" && typeof rec.name === "string") {
             const input = typeof rec.input === "string" ? rec.input : "";
             const action: any = { kind: "action", verb: verbFor(rec.name), target: targetFor(rec.name, input) };
+            const p = FILE_TOOLS.has(rec.name) ? filePathOf(input) : null;
+            if (p != null) {
+                action.path = p;
+            }
             if (rec.name === "bash" && input) {
                 action.outcome = rec.state === "error" ? "fail" : "ok";
             }

@@ -45,6 +45,7 @@ export type AgentEntry =
           kind: "action";
           verb: string;
           target: string;
+          path?: string; // the file the tool touched, in full, when it names one; target keeps the base name
           outcome?: "ok" | "fail";
           note?: string;
           summary?: string; // e.g. "14 matches", "80 lines", "24 passing"

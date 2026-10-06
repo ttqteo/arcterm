@@ -42,6 +42,7 @@ import type { CardShare } from "./cardgridlayout";
 import { parseDocReview } from "./docreview";
 import { entriesAtomFor, tasksAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
+import { AgentPathLinks } from "./pathlinkcontext";
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState, SubagentVM } from "./session-models/sessionviewmodel";
 import { ActivityLine, StatusLine } from "./statusline";
@@ -511,7 +512,9 @@ export const AgentRow = memo(function AgentRow({
                             />
                         ) : null}
                         {entries.length > 0 ? (
-                            <NarrationTimeline entries={entries} accentLatest active={!idle} />
+                            <AgentPathLinks agent={agent}>
+                                <NarrationTimeline entries={entries} accentLatest active={!idle} />
+                            </AgentPathLinks>
                         ) : null}
                     </div>
 

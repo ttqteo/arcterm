@@ -121,7 +121,7 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[SURFACE_ORDER.length - 1]);
     });
 
-    it("binds Ctrl+1..7 to SURFACE_ORDER, so Radar is Ctrl+6 and Usage is Ctrl+7", () => {
+    it("binds Ctrl+1..7 to SURFACE_ORDER, so Usage is Ctrl+4 and Radar is Ctrl+7", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const chords = buildGlobalBindings(model).filter(
             (b) => /^Ctrl:\d$/.test(b.keys) && b.id.startsWith("surface:")
@@ -135,10 +135,10 @@ describe("surface switch [ / ]", () => {
             "Ctrl:6",
             "Ctrl:7",
         ]);
-        chords.find((b) => b.keys === "Ctrl:6")!.run(ctx());
-        expect(globalStore.get(model.surfaceAtom)).toBe("radar");
-        chords.find((b) => b.keys === "Ctrl:7")!.run(ctx());
+        chords.find((b) => b.keys === "Ctrl:4")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("usage");
+        chords.find((b) => b.keys === "Ctrl:7")!.run(ctx());
+        expect(globalStore.get(model.surfaceAtom)).toBe("radar");
     });
 
     it("enters the cycle gracefully from a surface not in SURFACE_ORDER (settings)", () => {
@@ -407,6 +407,10 @@ describe("jarvis surface bindings", () => {
 });
 
 describe("subagent vs agent Escape", () => {
+    // subagent:back reads the focused element (a region that owns its keys keeps Escape); the suite has no DOM
+    beforeEach(() => vi.stubGlobal("document", { activeElement: null }));
+    afterEach(() => vi.unstubAllGlobals());
+
     it("routes Escape to subagent-back only while a subagent is focused, else to agent-back", () => {
         const bindings = buildAgentBindings(stubModel());
         const sub = bindings.find((b) => b.id === "subagent:back")!;
@@ -440,6 +444,19 @@ describe("subagent vs agent Escape", () => {
 
         globalStore.set(renamingRowAtom, null);
         expect(sub.when!(editingCtx)).toBe(true);
+        globalStore.set(focusSubagentAtom, null);
+    });
+
+    // the Agent panel's File tab closes on Escape: opened over a subagent, it must not also leave the subagent
+    it("yields Escape to a region that owns its keys, even with a subagent focused", () => {
+        const sub = buildAgentBindings(stubModel()).find((b) => b.id === "subagent:back")!;
+        const ctx: KeyContext = { surface: "agent", editable: true, modalOpen: false, leader: null };
+        globalStore.set(focusSubagentAtom, { parentId: "p", agentId: "s" } as any);
+        const owned = { closest: (sel: string) => (sel === "[data-owns-keys]" ? {} : null) };
+        vi.stubGlobal("document", { activeElement: owned });
+        expect(sub.when!(ctx)).toBe(false);
+        vi.stubGlobal("document", { activeElement: null });
+        expect(sub.when!(ctx)).toBe(true);
         globalStore.set(focusSubagentAtom, null);
     });
 });
@@ -1124,6 +1141,7 @@ describe("Agent centre modes", () => {
     const CENTER_MODES = ["history", "session"] as const;
 
     afterEach(() => {
+        vi.unstubAllGlobals();
         globalStore.set(centerModeAtom, "terminal");
         globalStore.set(focusSubagentAtom, null);
         detachCanvas("a1");
@@ -1194,6 +1212,7 @@ describe("Agent centre modes", () => {
     });
 
     it("lets a focused subagent's Escape close it before leaving the centre mode", () => {
+        vi.stubGlobal("document", { activeElement: null });
         globalStore.set(centerModeAtom, "session");
         globalStore.set(focusSubagentAtom, { parentId: "p", agentId: "s" } as any);
         expect(find("agent:leave-center").when!(agentCtx)).toBe(false);

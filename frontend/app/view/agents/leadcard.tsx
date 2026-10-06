@@ -54,6 +54,7 @@ import {
 } from "./leadcardmodel";
 import { entriesAtomFor } from "./livetranscriptatoms";
 import { NarrationTimeline } from "./narrationtimeline";
+import { AgentPathLinks } from "./pathlinkcontext";
 import { clampParallelism } from "./runconfig";
 import type { RunInfo } from "./runlineage";
 import { openRunDag } from "./runrailsections";
@@ -865,7 +866,9 @@ function LeadTranscript({
                     onScroll={onScroll}
                     className="h-full overflow-y-auto overflow-x-hidden px-5 pb-3.5"
                 >
-                    <NarrationTimeline entries={entries} accentLatest active={lead.state !== "idle"} />
+                    <AgentPathLinks agent={lead}>
+                        <NarrationTimeline entries={entries} accentLatest active={lead.state !== "idle"} />
+                    </AgentPathLinks>
                 </div>
                 {atBottom ? null : <JumpToLatestPill onClick={jumpToBottom} />}
             </div>
