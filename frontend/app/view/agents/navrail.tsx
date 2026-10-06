@@ -19,6 +19,8 @@ import { useEffect, useState } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { navRailCollapsed } from "./navrailwidth";
+import { unreadLabel } from "./unreadagents";
+import { unreadAgentsAtom } from "./unreadagentsstore";
 
 // Cockpit navigation icons. Runtime logos stay as image assets; app controls use Lucide components.
 const ICON: Record<SurfaceKey, LucideIcon> = {
@@ -49,17 +51,23 @@ export const TOOL_ITEMS: { key: SurfaceKey; label: string }[] = [
 
 export const ITEMS = [...CORE_ITEMS, ...TOOL_ITEMS];
 
+// a badge says the surface wants you (asking); Agent's says something finished that you have not read, which is news
+// rather than a request, so it takes the accent
+const BADGE_FILL: Partial<Record<SurfaceKey, string>> = { agent: "bg-accent" };
+
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
     // Three disjoint "needs you" badges from one server-computed list: Jarvis counts everything a channel
     // owns (review gates, Gatekeeper escalations, dispatched workers), Cockpit counts standalone agents
     // no channel dispatched, Radar counts projects with untriaged findings. Each sits on the surface that
-    // clears it.
+    // clears it. Agent counts the agents that finished a turn you have not looked at yet (unreadagents.ts).
     const attention = useAtomValue(attentionAtom);
     const split = splitAttention(attention);
+    const unread = useAtomValue(unreadAgentsAtom);
     const badges: Partial<Record<SurfaceKey, number>> = {
         cockpit: split.standalone.length,
         jarvis: split.channel.length,
+        agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
         radar: split.radar.length,
     };
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
@@ -94,8 +102,14 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 <span className="relative z-[1]">
                     <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
                     {badge > 0 ? (
-                        <span className="absolute -right-2 -top-1.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-asking px-1 text-[9px] font-bold tabular-nums text-background">
-                            {badge}
+                        <span
+                            data-nav-badge={key}
+                            className={cn(
+                                "absolute -right-2 -top-1.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums text-background",
+                                BADGE_FILL[key] ?? "bg-asking"
+                            )}
+                        >
+                            {unreadLabel(badge)}
                         </span>
                     ) : null}
                 </span>

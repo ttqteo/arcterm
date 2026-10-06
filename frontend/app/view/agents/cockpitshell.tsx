@@ -20,6 +20,7 @@ import { FilesSurface } from "./filessurface";
 import { setupRosterSeededLatch } from "./liveagents";
 import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
 import { NavRail } from "./navrail";
+import { useUnreadTracking } from "./unreadagentsstore";
 import { RadarSurface } from "./radarsurface";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
@@ -108,6 +109,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     }, []);
     // the roster's first-load gate; here rather than at boot, because boot subscribes before the workspace loads
     useEffect(() => setupRosterSeededLatch(), []);
+    // a turn can end while any surface shows, so the unread set is kept here, not in the Agent surface
+    useUnreadTracking(model);
     const surface = useAtomValue(model.surfaceAtom);
     return (
         <div className="flex h-full w-full">

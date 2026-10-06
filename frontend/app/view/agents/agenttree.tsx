@@ -107,6 +107,8 @@ import { subagentExpanded, visibleSubagents, type SubagentState } from "./sessio
 import { StatusDot } from "./statusdot";
 import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
+import { unreadLabel } from "./unreadagents";
+import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showTerminalMenu } from "./terminalsrail";
 
 const SUB_COLOR: Record<SubagentState, string> = {
@@ -360,6 +362,10 @@ function ParentRow({
     const expandOverride = useAtomValue(getSubagentExpandAtom(oref));
     const expanded = subagentExpanded(subs, expandOverride);
     const selected = focusId === agent.id;
+    // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
+    // list shows unread messages, and the name reads bold
+    const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
+    const unread = unreadCount > 0;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
@@ -434,7 +440,8 @@ function ParentRow({
                         <span
                             className={cn(
                                 "min-w-0 flex-1 truncate text-[13px]",
-                                selected ? "text-primary" : "text-secondary"
+                                selected || unread ? "text-primary" : "text-secondary",
+                                unread && "font-semibold"
                             )}
                         >
                             {agent.name}
@@ -443,7 +450,7 @@ function ParentRow({
                         {lead ? subsChip : null}
                         <CanvasTag model={model} id={agent.id} />
                         {/* a row names its state in words only when it wants something; otherwise the dot says
-                            working or idle */}
+                            working or idle, and a count says how many finished turns you have not read */}
                         {review ? (
                             // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
                             // focuses its agent in review mode itself, so the click must not reach the row either way
@@ -463,7 +470,8 @@ function ParentRow({
                             <span className="flex-none text-[10.5px] font-semibold text-warning">asking</span>
                         ) : (
                             <>
-                                {mark ? null : (
+                                {/* the count stands in for an idle agent's grey dot; a working one keeps its pulse */}
+                                {mark || (unread && agent.state === "idle") ? null : (
                                     <StatusDot
                                         state={agent.state}
                                         pulse={agent.state !== "idle"}
@@ -473,6 +481,15 @@ function ParentRow({
                                 <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
                                     {formatAgeShort(displayAgeMs(agent, now))}
                                 </span>
+                                {unread ? (
+                                    <span
+                                        data-agent-unread={unreadCount}
+                                        aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
+                                        className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+                                    >
+                                        {unreadLabel(unreadCount)}
+                                    </span>
+                                ) : null}
                             </>
                         )}
                     </div>
