@@ -6,8 +6,8 @@
 // the whole point of mounting it in cockpit-root rather than inside a surface.
 //
 // Two values are remembered across launches — where it sits, and how much it has already said. The
-// seed-from-localStorage-at-module-load pattern is ratelimitstore.ts's, so the pet is already in its
-// corner on the first frame rather than jumping there after a hydration pass.
+// seed-from-localStorage-at-module-load pattern is ratelimitstore.ts's, so the pet is already at its
+// home on the first frame rather than jumping there after a hydration pass.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
@@ -15,34 +15,11 @@ import { atom, type PrimitiveAtom } from "jotai";
 import type { PetActState } from "./petacts";
 import type { PetEvent, PetWatermark } from "./petvoice";
 
-const CORNER_KEY = "wave:pet.corner";
+const HOME_KEY = "wave:pet.home";
 const WATERMARK_KEY = "wave:pet.watermark";
-
-// Corners rather than free x/y: an offset is measured against a viewport that changes size, while a
-// corner still means the same place after a resize. Occlusion is the corner dweller's cost, and moving
-// between corners is how it is paid (design §9).
-//
-// The bottom two only. A top pair used to be here and sat on the surface heading band — measured, that
-// band runs y=66 to ~144 with the page title starting at x=106, and a top-corner creature spanned
-// y=58-102: title text on the left, and because SurfaceHeader is justify-between, the header's action
-// buttons on the right. A corner whose whole job is escaping occlusion cannot be the one that occludes
-// most, so the escape is left/right along the bottom edge — the axis content is aligned on anyway.
-export const PET_CORNERS = ["bottom-right", "bottom-left"] as const;
-export type PetCorner = (typeof PET_CORNERS)[number];
-
-const DEFAULT_CORNER: PetCorner = "bottom-right";
 
 // Best-effort reads; any failure (no localStorage, parse error, a value written by an older shape) falls
 // back to the default rather than throwing on the boot path.
-function readCorner(): PetCorner {
-    try {
-        const raw = globalThis.localStorage?.getItem(CORNER_KEY);
-        return (PET_CORNERS as readonly string[]).includes(raw ?? "") ? (raw as PetCorner) : DEFAULT_CORNER;
-    } catch {
-        return DEFAULT_CORNER;
-    }
-}
-
 function readWatermark(): PetWatermark | null {
     try {
         const raw = globalThis.localStorage?.getItem(WATERMARK_KEY);
@@ -58,12 +35,32 @@ function readWatermark(): PetWatermark | null {
     }
 }
 
-export const petCornerAtom = atom<PetCorner>(readCorner()) as PrimitiveAtom<PetCorner>;
+// Home: where on the footer ledge Sprout rests, as a fraction of the ledge's width (0 its left end, 1 its
+// right), so a resize keeps it in the same place relative to the ledge (sprout spec §3). A drop sets it.
+export const DEFAULT_PET_HOME = 0.9;
 
-export function setPetCorner(corner: PetCorner): void {
-    globalStore.set(petCornerAtom, corner);
+// A missing, non-finite or out-of-range value is not clamped but read as the default: it was never a home
+// the user chose, so the nearest end of the ledge would be as arbitrary as any other place.
+function readHome(): number {
     try {
-        globalThis.localStorage?.setItem(CORNER_KEY, corner);
+        const raw = globalThis.localStorage?.getItem(HOME_KEY);
+        if (raw == null || raw.trim() === "") {
+            return DEFAULT_PET_HOME;
+        }
+        const home = Number(raw);
+        return Number.isFinite(home) && home >= 0 && home <= 1 ? home : DEFAULT_PET_HOME;
+    } catch {
+        return DEFAULT_PET_HOME;
+    }
+}
+
+export const petHomeAtom = atom<number>(readHome()) as PrimitiveAtom<number>;
+
+export function setPetHome(fraction: number): void {
+    const home = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : DEFAULT_PET_HOME;
+    globalStore.set(petHomeAtom, home);
+    try {
+        globalThis.localStorage?.setItem(HOME_KEY, String(home));
     } catch {
         // quota/disabled — the in-memory atom still holds it for this session
     }
@@ -128,18 +125,6 @@ export function rememberSaid(event: PetEvent): void {
 // the guard there, dismissing the peek also ejects the user to the Cockpit.
 export const petPeekOpenAtom = atom(false);
 
-// When Jarvis last said something, as a performance.now() reading, or null if not yet this session.
-//
-// Session-scoped and deliberately not persisted: it drives the data rings' surge, and a relaunch surging
-// about something said an hour ago would be a lie. Held as a timestamp rather than as an animating value
-// because the render loop derives the envelope per frame — a 60-per-second atom write would put a React
-// render on every frame in a window running live terminals.
-export const petSpokeAtAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
-
-export function markPetSpoke(at: number): void {
-    globalStore.set(petSpokeAtAtom, at);
-}
-
 // The decision a volunteered utterance pointed at, for decisionlog.tsx to scroll to and flash. A
 // decision has no surface of its own — decisionlog renders it inside its parent record's thread — so
 // navigation lands on the record and this names the card. Cleared by the consumer once honoured.
@@ -148,7 +133,7 @@ export const pendingDecisionAnchorAtom = atom<string | null>(null) as PrimitiveA
 // What each act is doing right now, keyed by PetAct.id. Module-level because the peek unmounts and
 // remounts while the creature does not, so an outcome has to outlive the panel that showed it.
 //
-// Deliberately NOT persisted, unlike the corner and the watermark above: "3 archived" restored from a
+// Deliberately NOT persisted, unlike the home and the watermark above: "3 archived" restored from a
 // previous launch would be a claim about this session that nothing verified.
 export const petActStateAtom = atom<Record<string, PetActState>>({}) as PrimitiveAtom<Record<string, PetActState>>;
 

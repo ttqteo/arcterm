@@ -23,6 +23,7 @@ import { GLOBAL_HINTS, SURFACE_HINTS } from "./footerhints";
 function FooterBar({ children, dim }: { children?: React.ReactNode; dim?: boolean }) {
     return (
         <div
+            data-pet-ledge
             className={cn(
                 "flex h-7 shrink-0 items-center gap-4 border-t border-edge-strong bg-modalbg px-4",
                 dim && "opacity-60"

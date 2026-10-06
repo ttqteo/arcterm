@@ -5,7 +5,7 @@
 // modules from the dev server (see ahResolveModules). steps are { step, ok, detail }.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2508,71 +2508,794 @@ func Submit(id string) error {
     },
 };
 
-// --- jarvis avatar: the hologram in window chrome ----------------------------------------------
-// The avatar is a <canvas>, so there are no attributes to read the way the old SVG creature allowed. It
-// publishes its last built scene on window in DEV builds instead (petview.tsx), which is a STRONGER
-// assertion than the SVG version permitted: the whole scene at once rather than one element's transform.
-// A screenshot still goes to the contact sheet for eyeballing the glow.
-const jarvisAvatar = {
-    name: "jarvis-avatar",
-    surface: "cockpit",
-    async arrange() {
-        return {};
-    },
-    async assert(h) {
-        const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+// --- jarvis pet: Sprout, walking the footer ledge ----------------------------------------------
+// docs/superpowers/specs/2026-10-06-jarvis-sprout-pet-design.md §5, steps 1-9, and steps 10-13 from the plan review
+// (quiet opacity, hover without scale, the hop, a posture never held on a terminal). The creature is an SVG of cell rects,
+// and petview.tsx keeps window.__jarvisPet current in DEV builds (spec §4, "The DEV contract"): the walker's state,
+// pose and marks, x, the ledge and avoid spans it walked against, the fills it drew, and force(), which overrides the
+// walker's inputs so every state shows without arranging a rate limit or an attention item. The sprite's box, the
+// ledge element and the terminals are also measured from the page itself, so a contract that drifted from what is
+// drawn fails rather than vouching for itself.
+// The Final starts on an empty store, so arrange supplies what the ledge needs: a fixture roster agent, without which
+// the Cockpit roster never reaches `ready` and draws no HintsBar, and a plain terminal focused on Agent, so an .xterm
+// stands above the ledge for step 4.
+const PET = `document.querySelector('[aria-label="Jarvis condition"]')`;
+const PET_PX = 48;
+const PET_HOME_KEY = "wave:pet.home";
+const PET_PROJECT = "verify-jarvis-pet";
+const PET_FIXTURE_AGENT = "fx-jarvis-pet";
+const PET_NOTIFY_TITLE = "cdp jarvis-pet";
+// Every force names all four inputs, so it means the same whether a later call replaces the override or merges into
+// it. Steps 1-4 hold the live signals off: a rate limit or an attention item in the profile would slow or hold the walk.
+const PET_CALM = { expression: "at-rest", posture: "none", speaking: false, idle: false };
+const PET_POSTURE_MARKS = [
+    ["review-gate", "gate"],
+    ["escalation", "escalation"],
+    ["blocked-worker", "blocked"],
+];
+const PET_TOKEN = /^var\(--color-[a-z0-9-]+\)$/;
+const PET_REDUCE = { features: [{ name: "prefers-reduced-motion", value: "reduce" }] };
+// an empty value lifts that feature's override
+const PET_MEDIA_RESET = { media: "", features: [{ name: "prefers-reduced-motion", value: "" }] };
+// the unread mark's cells (spec §2: `bb` `bb` at (1, 5)), drawn unmirrored, where no pose has a body cell either way round
+const PET_UNREAD_CELLS = [
+    [1, 5],
+    [2, 5],
+    [1, 6],
+    [2, 6],
+];
 
-        const raw = await h.ev("JSON.stringify(window.__jarvisAvatarScene ?? null)");
-        const scene = raw ? JSON.parse(raw) : null;
-        if (scene == null) {
-            rec("1. the avatar publishes a scene", false, "window.__jarvisAvatarScene is null — is the loop running?");
-            return steps;
+// the drawn sprite: the svg inside the named control, or the control itself when it is the svg
+const PET_SVG = `(() => {
+    const el = ${PET};
+    return el == null ? null : el.tagName.toLowerCase() === "svg" ? el : (el.querySelector("svg") ?? el);
+})()`;
+const PET_FILL = `(r) => (r.getAttribute("fill") || r.style.fill || "").replace(/\\s+/g, "")`;
+
+// One read of the contract and of the page, in the same task: the contract minus force (a function does not survive
+// returnByValue), the sprite's box, the distinct fills of its rects, the lowest visible ledge element's top, and every
+// visible .xterm whose box comes within 80px above that ledge (the spec's avoid rule).
+const PET_SNAPSHOT = `(() => {
+    const p = window.__jarvisPet;
+    const svg = ${PET_SVG};
+    const fill = ${PET_FILL};
+    const shown = (r) => r.width > 0 && r.height > 0;
+    const ledges = [...document.querySelectorAll("[data-pet-ledge]")]
+        .map((e) => e.getBoundingClientRect())
+        .filter(shown);
+    const lowest = ledges.reduce((a, r) => (a == null || r.top > a.top ? r : a), null);
+    const ledgeTop = lowest?.top ?? null;
+    const xterms = [...document.querySelectorAll(".xterm")].map((e) => e.getBoundingClientRect()).filter(shown);
+    const b = svg?.getBoundingClientRect();
+    return {
+        pet:
+            p == null
+                ? null
+                : {
+                      state: p.state,
+                      pose: p.pose,
+                      marks: [...(p.marks ?? [])],
+                      x: p.x,
+                      ledge: p.ledge == null ? null : { top: p.ledge.top, left: p.ledge.left, right: p.ledge.right },
+                      avoid: (p.avoid ?? []).map((s) => [s[0], s[1]]),
+                      tokens: [...(p.tokens ?? [])],
+                      force: typeof p.force === "function",
+                  },
+        sprite: b == null ? null : { left: b.left, right: b.right, top: b.top, bottom: b.bottom },
+        fills: [...new Set([...(svg?.querySelectorAll("rect") ?? [])].map(fill))],
+        ledgeTop,
+        ledgeBox: lowest == null ? null : { left: lowest.left, right: lowest.right },
+        nearXterms:
+            ledgeTop == null
+                ? []
+                : xterms
+                      .filter((r) => r.top < ledgeTop && r.bottom > ledgeTop - 80)
+                      .map((r) => [Math.round(r.left), Math.round(r.right)]),
+        xterms: xterms.map((r) => [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)]),
+        named: document.querySelectorAll('[aria-label="Jarvis condition"]').length,
+        navNamed: document.querySelectorAll('[aria-label="Jarvis"]').length,
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+    };
+})()`;
+
+// whether each unread cell's centre is covered by an accent rect, measured against the sprite's own box
+const PET_UNREAD_DRAWN = `(() => {
+    const svg = ${PET_SVG};
+    if (svg == null) return null;
+    const fill = ${PET_FILL};
+    const box = svg.getBoundingClientRect();
+    const cell = box.width / 16;
+    const rects = [...svg.querySelectorAll("rect")].map((r) => ({ b: r.getBoundingClientRect(), fill: fill(r) }));
+    return ${JSON.stringify(PET_UNREAD_CELLS)}.map(([cx, cy]) => {
+        const px = box.left + (cx + 0.5) * cell;
+        const py = box.top + (cy + 0.5) * cell;
+        return rects.some(
+            (r) => r.fill === "var(--color-accent)" && r.b.left <= px && px <= r.b.right && r.b.top <= py && py <= r.b.bottom
+        );
+    });
+})()`;
+
+const petSnap = (h) => h.ev(PET_SNAPSHOT);
+const petMarked = (s, mark) => (s?.pet?.marks ?? []).includes(mark);
+const petOnLedge = (s) => s?.sprite != null && s.ledgeTop != null && Math.abs(s.sprite.bottom - s.ledgeTop) <= 1;
+const petInLedge = (s) => s?.pet?.ledge != null && s.pet.ledge.left <= s.pet.x && s.pet.x + PET_PX <= s.pet.ledge.right;
+// the walker's ledge never runs past the ledge element's own ends (the Cockpit's HintsBar stops at its rail)
+const petLedgeClipped = (s) =>
+    s?.pet?.ledge != null &&
+    s.ledgeBox != null &&
+    s.pet.ledge.left >= s.ledgeBox.left - 1 &&
+    s.pet.ledge.right <= s.ledgeBox.right + 1;
+const petBrief = (s) =>
+    s?.pet == null ? null : { state: s.pet.state, pose: s.pet.pose, marks: s.pet.marks, x: s.pet.x };
+// the left edge a drop at pointer x lands on: centred on the pointer, clamped to the ledge (spec §4)
+const petDropX = (ledge, px) => Math.min(Math.max(px - PET_PX / 2, ledge.left), ledge.right - PET_PX);
+// whether the span at left edge x overlaps any [x0, x1] span; touching edges do not
+const petOverlaps = (x, spans) => (spans ?? []).filter(([a, b]) => x < Math.max(a, b) && x + PET_PX > Math.min(a, b));
+// The release x nearest want, within [lo, hi], whose drop span stays 4px clear of every avoid span, so the drop rests
+// where it lands rather than walking off; null when there is none.
+const petClearRelease = (ledge, avoid, want, lo, hi) => {
+    const clear = (px) => {
+        const x = petDropX(ledge, px);
+        return (avoid ?? []).every(([a, b]) => x + PET_PX + 4 <= Math.min(a, b) || x - 4 >= Math.max(a, b));
+    };
+    const from = Math.ceil(lo ?? ledge.left);
+    const to = Math.floor(hi ?? ledge.right);
+    for (let d = 0; d <= to - from; d++) {
+        for (const px of [Math.round(want) - d, Math.round(want) + d]) {
+            if (px >= from && px <= to && clear(px)) return px;
         }
+    }
+    return null;
+};
+const petCentre = (s) => ({
+    x: Math.round((s.sprite.left + s.sprite.right) / 2),
+    y: Math.round((s.sprite.top + s.sprite.bottom) / 2),
+});
+const petForce = (h, o) =>
+    h.ev(`(() => {
+        const force = window.__jarvisPet?.force;
+        if (typeof force !== "function") return false;
+        force(${JSON.stringify(o)});
+        return true;
+    })()`);
+const petMouse = (h, type, x, y, extra = {}) => h.cdp("Input.dispatchMouseEvent", { type, x, y, ...extra });
 
-        rec(
-            "1. the render loop publishes a non-empty scene",
-            scene.segments > 0 && scene.fills > 0,
-            `segments=${scene.segments} fills=${scene.fills} renderer=${scene.renderer}`
-        );
-        // a literal here would silently opt the avatar out of every runtime theme
-        rec(
-            "2. the tone is a theme token, never a resolved colour",
-            String(scene.toneVar).startsWith("--color-"),
-            `toneVar=${scene.toneVar} markerVar=${scene.markerVar}`
-        );
-        rec("3. the form has a non-zero extent", scene.extent > 0, `extent=${scene.extent}`);
+// reads until ok(value) or ms has passed, and returns the last value read
+async function petUntil(read, ok, ms, every = 250) {
+    const end = Date.now() + ms;
+    let v = await read();
+    while (!ok(v) && Date.now() < end) {
+        await polishNap(every);
+        v = await read();
+    }
+    return v;
+}
+const petWait = (h, ok, ms, every) => petUntil(() => petSnap(h), ok, ms, every);
 
-        // exactly one control owns each accessible name; two would make a by-label query ambiguous, and
-        // h.goto navigates the rail by exactly this label
-        const named = await h.ev(`[...document.querySelectorAll('[aria-label="Jarvis condition"]')].length`);
-        const navNamed = await h.ev(`[...document.querySelectorAll('[aria-label="Jarvis"]')].length`);
+// the walker every everyMs, sampled in the page so the spacing is the page's clock rather than CDP round trips
+const petSamples = (h, count, everyMs) =>
+    h.ev(`new Promise((resolve) => {
+        const out = [];
+        const take = () => {
+            const p = window.__jarvisPet;
+            out.push(p == null ? null : { state: p.state, pose: p.pose, x: p.x });
+            if (out.length >= ${count}) {
+                clearInterval(timer);
+                resolve(out);
+            }
+        };
+        const timer = setInterval(take, ${everyMs});
+        take();
+    })`);
+
+// a 4x crop around the creature, which at 48px is a speck in a 1600px window, recorded the way h.shot records a shot so
+// it reaches the contact sheet and the Final's manifest
+async function petZoom(h, name) {
+    const s = await petSnap(h);
+    if (s?.sprite == null) return;
+    const pad = 56;
+    const size = PET_PX + 2 * pad;
+    const x = Math.max(0, Math.min(s.vw - size, Math.round(s.sprite.left) - pad));
+    const y = Math.max(0, Math.min(s.vh - size, Math.round(s.sprite.top) - pad));
+    const { data } = await h.cdp("Page.captureScreenshot", {
+        format: "png",
+        clip: { x, y, width: size, height: size, scale: 4 },
+    });
+    const path = `cdp-shots/${name}.png`;
+    mkdirSync("cdp-shots", { recursive: true });
+    writeFileSync(path, Buffer.from(data, "base64"));
+    h.shots.push({ name, png: `${name}.png`, path });
+}
+
+async function petShot(h, name) {
+    await h.shot(`cdp-shots/${name}.png`);
+    await petZoom(h, `${name}-zoom`);
+}
+
+// A real drag, held: press on the creature and move in steps past motion's drag threshold. The pressed point is kept
+// on ctx until petRelease, so teardown can let go of the button if a read throws mid-drag.
+async function petDragHold(h, ctx, to) {
+    const start = await petSnap(h);
+    if (start?.sprite == null) return null;
+    const from = petCentre(start);
+    await petMouse(h, "mouseMoved", from.x, from.y);
+    await petMouse(h, "mousePressed", from.x, from.y, { button: "left", buttons: 1, clickCount: 1 });
+    ctx.mouseDown = to;
+    const moves = 8;
+    for (let i = 1; i <= moves; i++) {
+        const x = Math.round(from.x + ((to.x - from.x) * i) / moves);
+        const y = Math.round(from.y + ((to.y - from.y) * i) / moves);
+        await petMouse(h, "mouseMoved", x, y, { button: "left", buttons: 1 });
+        await polishNap(30);
+    }
+    return petWait(h, (s) => s?.pet?.state === "dragged", 1000, 50);
+}
+
+// the release, and the first read after it, before the walker's next step can carry it a frame on. Nothing to release
+// when petDragHold found no sprite to press on
+async function petRelease(h, ctx, to) {
+    if (ctx.mouseDown == null) return petSnap(h);
+    await petMouse(h, "mouseReleased", to.x, to.y, { button: "left", buttons: 0, clickCount: 1 });
+    ctx.mouseDown = null;
+    return petWait(h, (s) => s?.pet != null && s.pet.state !== "dragged", 2000, 50);
+}
+
+// a real click at the creature's centre, read just before it (it may be walking)
+async function petClick(h) {
+    const s = await petSnap(h);
+    if (s?.sprite == null) return null;
+    const at = petCentre(s);
+    await petMouse(h, "mouseMoved", at.x, at.y);
+    await petMouse(h, "mousePressed", at.x, at.y, { button: "left", buttons: 1, clickCount: 1 });
+    await petMouse(h, "mouseReleased", at.x, at.y, { button: "left", buttons: 0, clickCount: 1 });
+    return at;
+}
+
+async function petEscape(h) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+}
+
+const jarvisPet = {
+    name: "jarvis-pet",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            terminals: [],
+            prevHome: await h.ev(`localStorage.getItem(${JSON.stringify(PET_HOME_KEY)})`),
+            // a fixture the developer had active goes back in teardown rather than away
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, PET_PROJECT);
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        // working with an activity, not idle: the Cockpit leaves an agent with nothing to show off
+                        // its grid and out of its phase (cockpitsurfacemodel.ts cardHasContent), so an idle one kept
+                        // it empty, with no HintsBar for step 1 to stand on
+                        {
+                            id: PET_FIXTURE_AGENT,
+                            name: "jarvis pet agent",
+                            project: PET_PROJECT,
+                            task: "give the Cockpit a ready roster",
+                            state: "working",
+                            activity: "keeping the Cockpit roster ready",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            blockId: "fx-blk-jarvis-pet",
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the fixture roster is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            const tabId = ctx.terminals[0].tabId;
+            const pane = `document.querySelector('[data-agent-terminal="${tabId}"]')`;
+            ctx.inRoster = await polishWaitFor(h, `!!${pane}`, CANVAS_ROSTER_WAIT_MS);
+            if (!ctx.inRoster) return ctx;
+            // the Agent surface opens a background terminal as readily as an agent (openref.ts loadAgent)
+            await h.rpc("uireveal", { address: `agent:${tabId}` }, UI_ROUTE);
+            ctx.xtermShown = await polishWaitFor(
+                h,
+                `(() => {
+                    const r = ${pane}?.querySelector(".xterm")?.getBoundingClientRect();
+                    return r != null && r.width > 0 && r.height > 0;
+                })()`,
+                15000
+            );
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+
+        const first = await petWait(h, (s) => s?.pet != null, 5000);
+        const calmed = first?.pet?.force === true && (await petForce(h, PET_CALM));
         rec(
-            "4. the avatar and the nav rail keep distinct accessible names",
-            named === 1 && navNamed === 1,
-            `"Jarvis condition"=${named} "Jarvis"=${navNamed}`
+            "0. arranged: a ready fixture roster, a terminal's .xterm shown on Agent, and window.__jarvisPet with force",
+            ctx.arrangeError == null && ctx.inRoster === true && ctx.xtermShown === true && calmed === true,
+            ctx.arrangeError ?? {
+                inRoster: ctx.inRoster,
+                xtermShown: ctx.xtermShown,
+                contract: first?.pet != null,
+                calmed,
+            }
+        );
+        if (first?.pet == null) return steps;
+
+        // 1. the ledge: the footer on Agent, the Cockpit's own HintsBar on Cockpit (drawn once the roster is ready)
+        const ledgeOn = async (surface) => {
+            await h.goto(surface);
+            const fits = (s) => petOnLedge(s) && petInLedge(s) && petLedgeClipped(s);
+            const s = await petWait(h, fits, 8000);
+            return {
+                ok: fits(s),
+                bottom: s?.sprite?.bottom,
+                ledgeTop: s?.ledgeTop,
+                x: s?.pet?.x,
+                spriteLeft: s?.sprite?.left,
+                ledge: s?.pet?.ledge,
+                ledgeBox: s?.ledgeBox,
+                state: s?.pet?.state,
+            };
+        };
+        const onAgent = await ledgeOn("agent");
+        await petShot(h, "jarvis-pet-1");
+        const onCockpit = await ledgeOn("cockpit");
+        await petShot(h, "jarvis-pet-1-cockpit");
+        rec(
+            "1. on Agent and on Cockpit the creature stands on the [data-pet-ledge] top (±1px) with its whole span inside the ledge, which stays within the ledge element's ends (±1px)",
+            onAgent.ok && onCockpit.ok,
+            { onAgent, onCockpit }
+        );
+        await h.goto("agent");
+
+        // 2. a literal colour would opt the creature out of every runtime theme. tokens must also be what is drawn
+        const drawn = await petSnap(h);
+        const tokens = (drawn?.pet?.tokens ?? []).map((t) => String(t).replace(/\s+/g, "")).sort();
+        const fills = [...(drawn?.fills ?? [])].sort();
+        rec(
+            '2. every drawn fill is a var(--color-…) token, and exactly one element is named "Jarvis condition"',
+            tokens.length > 0 &&
+                tokens.every((t) => PET_TOKEN.test(t)) &&
+                JSON.stringify(tokens) === JSON.stringify(fills) &&
+                drawn?.named === 1,
+            { tokens, fills, named: drawn?.named, navNamed: drawn?.navNamed }
+        );
+        await petShot(h, "jarvis-pet-2");
+
+        // 3. walking. A window that caught the end of a walk is retried on the next one; a window that walked
+        // throughout and still failed is the answer
+        let walk = null;
+        const walkEnd = Date.now() + 40_000;
+        while (Date.now() < walkEnd) {
+            const s = await petWait(h, (s) => s?.pet?.state === "walk", walkEnd - Date.now());
+            if (s?.pet?.state !== "walk") break;
+            const samples = await petSamples(h, 11, 100);
+            const poses = new Set(samples.map((p) => p?.pose));
+            walk = {
+                ok: new Set(samples.map((p) => p?.x)).size > 1 && poses.has("walk1") && poses.has("walk2"),
+                samples,
+            };
+            if (walk.ok || samples.every((p) => p?.state === "walk")) break;
+        }
+        await petShot(h, "jarvis-pet-3");
+        rec(
+            "3. walking: sampled every 100ms for 1s, x changes and both walk1 and walk2 show",
+            walk?.ok === true,
+            walk ?? "state never reached walk in 40s"
         );
 
-        // Two canvases by design: one element can only ever yield contexts of a single kind, so the 2D
-        // fallback needs its own. Exactly one is displayed at a time.
-        const canvases = JSON.parse(
-            await h.ev(`(() => {
-                const w = document.querySelector('[aria-label="Jarvis condition"]');
-                if (!w) return "[]";
-                return JSON.stringify([...w.querySelectorAll('canvas')].map((c) => c.className));
-            })()`)
-        );
+        // 4. resting off the terminal. A rest begun before the switch back to Agent was placed without the terminal, so
+        // the rest judged is one that follows a walk on Agent
+        await petWait(h, (s) => s?.pet?.state === "walk", 40_000);
+        const rest = await petWait(h, (s) => s?.pet?.state === "rest", 40_000);
+        const span = rest?.pet == null ? null : [rest.pet.x, rest.pet.x + PET_PX];
+        const near = rest?.nearXterms ?? [];
+        const onTerminal = span == null ? [] : near.filter(([a, b]) => span[0] < b && span[1] > a);
+        await petShot(h, "jarvis-pet-4");
         rec(
-            "5. both renderers have a canvas and exactly one is shown",
-            canvases.length === 2 && canvases.filter((c) => c === "block").length === 1,
-            JSON.stringify(canvases)
+            "4. resting on Agent: an .xterm stands above the ledge, and the resting creature's span overlaps none",
+            rest?.pet?.state === "rest" && near.length > 0 && onTerminal.length === 0,
+            {
+                state: rest?.pet?.state,
+                span,
+                nearXterms: near,
+                xterms: rest?.xterms,
+                avoid: rest?.pet?.avoid,
+                onTerminal,
+            }
         );
 
-        await h.shot("cdp-shots/jarvis-avatar.png");
+        // 5. every state through force. tired first: step 4 left it resting, which is where tired shows (otherwise it
+        // walks there first, at half pace)
+        const forced = {};
+        const forceUntil = async (label, o, ok, ms) => {
+            await petForce(h, { ...PET_CALM, ...o });
+            const s = await petWait(h, ok, ms);
+            forced[label] = { ok: ok(s), ...petBrief(s) };
+        };
+        await forceUntil(
+            "tired",
+            { expression: "tired" },
+            (s) => s?.pet?.state === "rest" && s.pet.pose === "tired" && petMarked(s, "drop"),
+            60_000
+        );
+        await petZoom(h, "jarvis-pet-5-tired");
+        for (const [posture, mark] of PET_POSTURE_MARKS) {
+            const others = PET_POSTURE_MARKS.map(([, m]) => m).filter((m) => m !== mark);
+            await forceUntil(
+                posture,
+                { posture },
+                (s) => s?.pet?.pose === "stand" && petMarked(s, mark) && others.every((m) => !petMarked(s, m)),
+                5000
+            );
+            // past the arrival hop, so the crop shows it standing
+            await polishNap(400);
+            await petZoom(h, `jarvis-pet-5-${mark}`);
+        }
+        await forceUntil("speaking", { speaking: true }, (s) => s?.pet?.pose === "speak", 5000);
+        await petZoom(h, "jarvis-pet-5-speak");
+        await forceUntil(
+            "idle",
+            { idle: true },
+            (s) => s?.pet?.state === "sleep" && s.pet.pose === "sleep" && petMarked(s, "z"),
+            40_000
+        );
+        await petShot(h, "jarvis-pet-5");
+        const released = await petForce(h, null);
+        rec(
+            "5. forced: each posture marks stand (gate, escalation, blocked), tired rests with the sweat drop, speaking shows speak, idle sleeps with the z; then force(null)",
+            Object.values(forced).every((f) => f.ok) && released === true,
+            { forced, released }
+        );
+
+        // 6. a real drag: dangle while held; the release lands it on the ledge, centred on the release x (clamped)
+        const before6 = await petSnap(h);
+        const ledge6 = before6?.pet?.ledge ?? { left: 0, right: before6?.vw ?? 0 };
+        // released where the dropped span is clear of every avoid span, so it rests where it lands
+        const mid6 = Math.round((ledge6.left + ledge6.right) / 2);
+        const clear6 = petClearRelease(ledge6, before6?.pet?.avoid, mid6);
+        const to6 = {
+            x: clear6 ?? mid6,
+            y: Math.round((before6?.ledgeTop ?? before6?.vh ?? 0) - 160),
+        };
+        const held6 = await petDragHold(h, ctx, to6);
+        await petShot(h, "jarvis-pet-6");
+        const landed6 = await petRelease(h, ctx, to6);
+        const settled6 = await petWait(h, petOnLedge, 2000, 50);
+        const want6 = petDropX(landed6?.pet?.ledge ?? ledge6, to6.x);
+        // not this step's subject, but a peek the drag opened would decide steps 7 and 8, so it is closed and reported
+        const peekAfterDrag = await h.ev(`!!document.querySelector('[data-pet-peek]')`);
+        if (peekAfterDrag) await petEscape(h);
+        rec(
+            "6. a real drag shows dangle while held, and the release on a clear spot rests on the ledge with its centre within 3px of the release x (clamped)",
+            clear6 != null &&
+                held6?.pet?.state === "dragged" &&
+                held6.pet.pose === "dangle" &&
+                landed6?.pet != null &&
+                landed6.pet.state === "rest" &&
+                Math.abs(landed6.pet.x - want6) <= 3 &&
+                petOnLedge(settled6),
+            {
+                held: petBrief(held6),
+                releaseX: to6.x,
+                clearRelease: clear6,
+                avoid: before6?.pet?.avoid,
+                landed: petBrief(landed6),
+                wantX: want6,
+                bottom: settled6?.sprite?.bottom,
+                ledgeTop: settled6?.ledgeTop,
+                peekAfterDrag,
+            }
+        );
+
+        // 7. unread: the bubble speaks the notify with the creature in speak; once it leaves, the unread dot is drawn
+        const before7 = await petSnap(h);
+        await h.rpc("notify", { title: PET_NOTIFY_TITLE, level: "info" });
+        const said = await petUntil(
+            async () => ({
+                bubble: await h.ev(
+                    `document.querySelector('[data-pet-bubble]')?.textContent?.includes(${JSON.stringify(PET_NOTIFY_TITLE)}) ?? false`
+                ),
+                s: await petSnap(h),
+            }),
+            (v) => v.bubble === true && v.s?.pet?.pose === "speak",
+            3000
+        );
+        await petShot(h, "jarvis-pet-7");
+        const bubbleGone = await polishWaitFor(h, `!document.querySelector('[data-pet-bubble]')`, 10_000);
+        const unread = await petUntil(
+            async () => ({ s: await petSnap(h), cells: await h.ev(PET_UNREAD_DRAWN) }),
+            (v) => petMarked(v.s, "unread") && Array.isArray(v.cells) && v.cells.every(Boolean),
+            3000
+        );
+        await petZoom(h, "jarvis-pet-7-unread");
+        rec(
+            "7. a notify shows the bubble with the creature in speak; when the bubble leaves, marks holds unread and its rects are drawn",
+            said.bubble === true &&
+                said.s?.pet?.pose === "speak" &&
+                bubbleGone &&
+                petMarked(unread.s, "unread") &&
+                Array.isArray(unread.cells) &&
+                unread.cells.every(Boolean),
+            {
+                before: petBrief(before7),
+                bubble: said.bubble,
+                speaking: petBrief(said.s),
+                bubbleGone,
+                after: petBrief(unread.s),
+                unreadCells: unread.cells,
+            }
+        );
+
+        // 8. sides: the peek opens away from the window edge the creature is nearer
+        const side = async (label, fraction) => {
+            const s0 = await petSnap(h);
+            const vw = s0?.vw ?? 0;
+            const want = Math.round(vw * fraction);
+            // a clear drop inside the required half, 8px off the middle so the centre is plainly on its side
+            const ledge = s0?.pet?.ledge ?? { left: 0, right: vw };
+            const clearAt =
+                label === "left"
+                    ? petClearRelease(ledge, s0?.pet?.avoid, want, ledge.left, vw / 2 - 8)
+                    : petClearRelease(ledge, s0?.pet?.avoid, want, vw / 2 + 8, ledge.right);
+            const to = { x: clearAt ?? want, y: Math.round((s0?.ledgeTop ?? s0?.vh ?? 0) - 160) };
+            await petDragHold(h, ctx, to);
+            const landed = await petRelease(h, ctx, to);
+            const rested = landed?.pet?.state === "rest";
+            await polishNap(400);
+            const clickedAt = await petClick(h);
+            const opened = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek]')`, 3000);
+            // the panel scales in from the creature's side
+            await polishNap(600);
+            const box = await h.ev(`(() => {
+                const r = document.querySelector('[data-pet-peek]')?.getBoundingClientRect();
+                const p = window.__jarvisPet;
+                return r == null ? null : { left: Math.round(r.left), right: Math.round(r.right), x: p?.x ?? null };
+            })()`);
+            await petShot(h, `jarvis-pet-8-${label}`);
+            await petEscape(h);
+            const closed = await polishWaitFor(h, `!document.querySelector('[data-pet-peek]')`, 3000);
+            const centre = landed?.pet == null ? null : landed.pet.x + PET_PX / 2;
+            const half = (s0?.vw ?? 0) / 2;
+            const inHalf = centre != null && (label === "left" ? centre < half : centre > half);
+            const within =
+                box?.x != null && (label === "left" ? box.left >= box.x - 1 : box.right <= box.x + PET_PX + 1);
+            return {
+                ok: clearAt != null && rested && inHalf && opened && within && closed,
+                releaseX: to.x,
+                clearAt,
+                avoid: s0?.pet?.avoid,
+                landed: petBrief(landed),
+                centre,
+                half,
+                clickedAt,
+                opened,
+                box,
+                closed,
+            };
+        };
+        const left8 = await side("left", 0.3);
+        const right8 = await side("right", 0.8);
+        rec(
+            "8. dropped on a clear spot (resting) in the left half, a real click opens the peek no further left than the creature, in the right half no further right; Escape closes it",
+            left8.ok && right8.ok,
+            { left: left8, right: right8 }
+        );
+
+        // 9. reduced motion. motion's useReducedMotion reads the media query once per mount, so the page reloads under
+        // the emulated media (the override survives a reload) and the creature boots with it
+        await h.cdp("Emulation.setEmulatedMedia", PET_REDUCE);
+        ctx.mediaEmulated = true;
+        const reloaded = await ahReload(h);
+        await h.goto("agent");
+        const reduced = await h.ev(`matchMedia("(prefers-reduced-motion: reduce)").matches`);
+        await petWait(h, (s) => s?.pet != null, 10_000);
+        // placed once, without walking, while the ledge and the panes settle
+        await polishNap(1500);
+        const still = await petSamples(h, 21, 100);
+        await petShot(h, "jarvis-pet-9");
+        await h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET);
+        ctx.mediaEmulated = false;
+        rec(
+            "9. under prefers-reduced-motion: reduce, x holds for 2s and state is never walk or hop",
+            reloaded &&
+                reduced === true &&
+                still.every((p) => p != null && p.state !== "walk" && p.state !== "hop") &&
+                new Set(still.map((p) => p?.x)).size === 1,
+            { reloaded, reduced, samples: still }
+        );
+
+        // Steps 10-13 need the walker back in full motion, and useReducedMotion read the emulated media at mount, so
+        // the page reloads again now that the media is reset.
+        const unreduced = await ahReload(h);
+        await h.goto("agent");
+        await petWait(h, (s) => s?.pet != null, 10_000);
+        const opacity = () => h.ev(`(() => { const el = ${PET}; return el == null ? null : Number(getComputedStyle(el).opacity); })()`);
+        const nearly = (v, want) => typeof v === "number" && Math.abs(v - want) <= 0.05;
+        // a point in the other half of the window from the creature, so a hover cannot make it solid
+        const mouseAway = async () => {
+            const s = await petSnap(h);
+            const vw = s?.vw ?? 0;
+            const centre = s?.sprite == null ? vw : (s.sprite.left + s.sprite.right) / 2;
+            await petMouse(h, "mouseMoved", Math.round(centre > vw / 2 ? vw * 0.25 : vw * 0.75), Math.round((s?.vh ?? 0) / 3));
+        };
+
+        // 10. quiet opacity: faint with nothing to express, solid for a posture (it tweens over 0.3 s)
+        await mouseAway();
+        await petForce(h, PET_CALM);
+        const quiet10 = await petUntil(opacity, (v) => nearly(v, 0.4), 2000, 100);
+        await petShot(h, "jarvis-pet-10");
+        await petForce(h, { ...PET_CALM, posture: "review-gate" });
+        const solid10 = await petUntil(opacity, (v) => nearly(v, 1), 2000, 100);
+        await petZoom(h, "jarvis-pet-10-solid");
+        const released10 = await petForce(h, null);
+        rec(
+            "10. quiet: with the mouse away and nothing to express the creature's opacity is 0.4, and a posture makes it 1",
+            unreduced && nearly(quiet10, 0.4) && nearly(solid10, 1) && released10 === true,
+            { reloaded: unreduced, quiet: quiet10, solid: solid10, released: released10 }
+        );
+
+        // 11. hover: solid, and opacity only — a scale would lift the sprite off the ledge. A resting creature holds
+        // still under the pointer, so the hover is not lost to a walk carrying it away
+        await mouseAway();
+        await petForce(h, PET_CALM);
+        const rest11 = await petWait(h, (s) => s?.pet?.state === "rest" && s.sprite != null, 40_000);
+        const before11 = await opacity();
+        const at11 = rest11?.sprite == null ? null : petCentre(rest11);
+        if (at11 != null) await petMouse(h, "mouseMoved", at11.x, at11.y);
+        const hovered11 = await petUntil(opacity, (v) => nearly(v, 1), 2000, 100);
+        const transform11 = await h.ev(`(() => { const el = ${PET}; return el == null ? null : getComputedStyle(el).transform; })()`);
+        const m11 = /^matrix\(([^)]*)\)$/.exec(transform11 ?? "");
+        const abcd11 = m11 == null ? null : m11[1].split(",").map(Number);
+        const unscaled11 =
+            transform11 === "none" ||
+            (abcd11 != null && Math.abs(abcd11[0] - 1) < 1e-3 && Math.abs(abcd11[3] - 1) < 1e-3);
+        await petShot(h, "jarvis-pet-11");
+        await mouseAway();
+        await petForce(h, null);
+        rec(
+            "11. a real hover on the resting creature makes it solid, and its transform carries no scale",
+            at11 != null && nearly(hovered11, 1) && unscaled11,
+            { state: rest11?.pet?.state, hoverAt: at11, before: before11, hovered: hovered11, transform: transform11 }
+        );
+
+        // 12. the hop: a posture's arrival hops in place; it may then walk off a span, then holds — and never hops
+        // again while the posture stands. Sampled in the page, every 16 ms for 1.5 s, from the force on
+        await petForce(h, PET_CALM);
+        const free12 = await petWait(h, (s) => s?.pet != null && s.pet.state !== "hold", 5000);
+        const states12 = await h.ev(`new Promise((resolve) => {
+            const out = [];
+            window.__jarvisPet.force(${JSON.stringify({ ...PET_CALM, posture: "escalation" })});
+            const start = performance.now();
+            const timer = setInterval(() => {
+                out.push(window.__jarvisPet?.state ?? null);
+                if (performance.now() - start >= 1500) {
+                    clearInterval(timer);
+                    resolve(out);
+                }
+            }, 16);
+        })`);
+        await petShot(h, "jarvis-pet-12");
+        await petForce(h, null);
+        const firstHold12 = (states12 ?? []).indexOf("hold");
+        // the runs, not every sample: a readable record of the sequence
+        const runs12 = (states12 ?? []).filter((v, i, a) => i === 0 || a[i - 1] !== v);
+        rec(
+            "12. a posture's arrival hops, and no hop follows the first hold",
+            free12?.pet?.state !== "hold" &&
+                (states12 ?? []).includes("hop") &&
+                // a long walk off a span may not reach its hold inside the window; then there is no hold to follow
+                (firstHold12 < 0 || !states12.slice(firstHold12).includes("hop")),
+            { before: free12?.pet?.state, runs: runs12, samples: states12?.length ?? 0 }
+        );
+
+        // 13. a posture is not held on a terminal: dropped onto an .xterm with a posture arriving at once, it walks off
+        // the span and holds beside it
+        let s13 = await petSnap(h);
+        if ((s13?.nearXterms ?? []).length === 0 && ctx.terminals?.[0] != null) {
+            const tabId = ctx.terminals[0].tabId;
+            await h.rpc("uireveal", { address: `agent:${tabId}` }, UI_ROUTE);
+            s13 = await petWait(h, (s) => (s?.nearXterms ?? []).length > 0, 15_000);
+        }
+        const xterm13 = s13?.nearXterms?.[0] ?? null;
+        let held13 = null;
+        let release13 = null;
+        if (xterm13 != null && s13?.pet?.ledge != null) {
+            const ledge13 = s13.pet.ledge;
+            const mid13 = Math.round((xterm13[0] + xterm13[1]) / 2);
+            release13 = {
+                x: Math.min(Math.max(mid13, ledge13.left + PET_PX / 2), ledge13.right - PET_PX / 2),
+                y: Math.round((s13.ledgeTop ?? s13.vh) - 160),
+            };
+            await petDragHold(h, ctx, release13);
+            await petMouse(h, "mouseReleased", release13.x, release13.y, { button: "left", buttons: 0, clickCount: 1 });
+            ctx.mouseDown = null;
+            await petForce(h, { ...PET_CALM, posture: "review-gate" });
+            held13 = await petWait(h, (s) => s?.pet?.state === "hold", 40_000);
+        }
+        const span13 = held13?.pet == null ? null : [held13.pet.x, held13.pet.x + PET_PX];
+        const onXterm13 = held13?.pet == null ? [] : petOverlaps(held13.pet.x, held13.nearXterms);
+        const onAvoid13 = held13?.pet == null ? [] : petOverlaps(held13.pet.x, held13.pet.avoid);
+        const dropOnXterm13 =
+            release13 == null || s13?.pet?.ledge == null
+                ? null
+                : petOverlaps(petDropX(s13.pet.ledge, release13.x), [xterm13]).length > 0;
+        await petShot(h, "jarvis-pet-13");
+        await petForce(h, null);
+        rec(
+            "13. dropped on an .xterm with a posture arriving, the creature holds off every near-ledge .xterm and avoid span",
+            dropOnXterm13 === true && held13?.pet?.state === "hold" && onXterm13.length === 0 && onAvoid13.length === 0,
+            {
+                xterm: xterm13,
+                releaseX: release13?.x ?? null,
+                dropOnXterm: dropOnXterm13,
+                held: petBrief(held13),
+                span: span13,
+                nearXterms: held13?.nearXterms,
+                avoid: held13?.pet?.avoid,
+                onXterm: onXterm13,
+                onAvoid: onAvoid13,
+            }
+        );
         return steps;
     },
-    async teardown(h) {
-        await h.goto("cockpit"); // leave the app where a human expects it
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jarvis-pet teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.mouseDown) {
+            const at = ctx.mouseDown;
+            await step("let go of the mouse", () =>
+                petMouse(h, "mouseReleased", at.x, at.y, { button: "left", buttons: 0, clickCount: 1 })
+            );
+        }
+        await step("release the forced inputs", () => petForce(h, null));
+        await step("reset the emulated media", () => h.cdp("Emulation.setEmulatedMedia", PET_MEDIA_RESET));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+        if (ctx.wroteFixture) {
+            await step("put the fixture roster back", () =>
+                ctx.prevFixture != null
+                    ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                    : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        // the drags moved home; the home atom is read at module load, so this lands with the reload below
+        await step("restore the creature's home", () => h.ev(restoreStorageKey(PET_HOME_KEY, ctx.prevHome)));
+        // the fixture roster is read once at boot
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("go home", () => h.goto("cockpit"));
     },
 };
 
@@ -13675,7 +14398,7 @@ export const SCENARIOS = [
     codeGitStatus,
     codeDiff,
     codeMarkdown,
-    jarvisAvatar,
+    jarvisPet,
     briefSurface,
     briefPeek,
     peekCtrlClick,

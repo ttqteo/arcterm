@@ -1467,7 +1467,11 @@ Deferred out of this cycle:
   (`avatarcanvas.ts`), a shared scene abstraction (`avatarscene.ts`), and a live `webgl | canvas` renderer
   switch in `petview.tsx`, built to JARVIS's documented form (four rounds of taste, four skins of one blob).
   The deferred entry's original reasoning held: the renderer swap changed no logic (all decisions stay in the
-  pure `petcondition.ts` / `petvoice.ts` modules).
+  pure `petcondition.ts` / `petvoice.ts` modules). **Replaced 2026-10-06:** the hologram (`avatarscene.ts`,
+  `avatarthree.ts`, `avatarcanvas.ts`, `petmotion.ts`, and the `three` dependency) is gone; the creature is now
+  Sprout, a pixel pet drawn as SVG cells that walks the footer ledge
+  (`docs/superpowers/specs/2026-10-06-jarvis-sprout-pet-design.md`). The decisions still live in
+  `petcondition.ts` / `petvoice.ts`; the hologram's design prototypes (`docs/prototype/jarvis-hud-*`) went with it.
 - **Concierge-tier courier gestures** — carry/hold/escort, i.e. dragging an object onto the creature to
   pocket it and dragging it back out onto a target. Nothing of this remains in the code: the half-built state
   seam (a `petPocketAtom` with a reader and no writer, plus a Pocket section in `petpeek.tsx` that could never
@@ -1480,10 +1484,11 @@ Deferred out of this cycle:
   specific channel; design §6 records the resolution and nothing in this cycle acts on a channel.
 
 Resolved rather than deferred, recorded because the fix removed something a reader might try to restore: the
-two top corners were dropped on 2026-08-04 (`PET_CORNERS` is now the bottom pair only). They sat on the
+two top corners were dropped on 2026-08-04 (the pet's corners became the bottom pair only). They sat on the
 surface heading band — the page title on the left, the header's action buttons on the right. Do not re-add
 them without a placement that clears a band whose height varies per surface. Design §9 carries the
-measurements.
+measurements. Since 2026-10-06 the creature has no stored corner at all: Sprout walks the footer ledge, and
+the bubble and peek open from the half of the window it stands in (`cornerFor` in `petledge.ts`).
 
 ## Orchestrator merge queue — one Verify per lane, serialized (2026-09-16)
 

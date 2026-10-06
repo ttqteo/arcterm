@@ -11,7 +11,7 @@ import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { cn } from "@/util/util";
 import { autoUpdate, offset, shift, useFloating, type Placement } from "@floating-ui/react";
 import { useEffect, useRef, useState } from "react";
-import type { PetCorner } from "./petstore";
+import type { PetCorner } from "./petledge";
 import { eventLabel, type NotifyLevel, type PetEvent } from "./petvoice";
 
 const BUBBLE_MS = 6_000;
