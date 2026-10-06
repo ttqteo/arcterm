@@ -22,7 +22,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { closePeek } from "./peekstore";
 import { PetBubble } from "./petbubble";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
-import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge } from "./petledge";
+import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner } from "./petledge";
 import { PetPeek } from "./petpeek";
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
 import {
@@ -35,7 +35,6 @@ import {
     rememberSaid,
     setPetHome,
     setPetWatermark,
-    type PetCorner,
 } from "./petstore";
 import { nextUtterance } from "./petvoice";
 import {

@@ -6,7 +6,9 @@
 // are testable without a DOM.
 
 import { PET_PX } from "./petsprite";
-import type { PetCorner } from "./petstore";
+
+// The side the bubble and peek open from (petbubble.tsx, petpeek.tsx), derived from where the creature is.
+export type PetCorner = "bottom-right" | "bottom-left";
 
 export interface Box {
     left: number;

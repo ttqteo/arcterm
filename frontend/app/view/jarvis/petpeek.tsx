@@ -53,6 +53,7 @@ import { EventLabel, eventTone } from "./petbubble";
 import { conditionLine, type PetExpression, type PetSignals } from "./petcondition";
 import { PetErrand } from "./peterrand";
 import { resolveDestination } from "./peterrandmodel";
+import type { PetCorner } from "./petledge";
 import {
     dedupeUpdates,
     enterHintLabel,
@@ -65,7 +66,7 @@ import {
     rowPeekTarget,
     type PeekRow,
 } from "./petpeekmodel";
-import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom, type PetCorner } from "./petstore";
+import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom } from "./petstore";
 import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 
