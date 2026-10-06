@@ -22,6 +22,7 @@ import { activeChannelAtom, channelsAtom, primeChannels } from "@/app/view/agent
 import { openReview } from "@/app/view/agents/docreviewstore";
 import { activeFocusAtom, enterFocusFor, exitFocus, focusesAtom, loadFocuses } from "@/app/view/agents/focusstore";
 import type { Runtime } from "@/app/view/agents/launch";
+import { openInFocusedPanel } from "@/app/view/agents/pathlinkroute";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectListAtom, projectsAtom, recentProjectsAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
 import { runStatusView, type RunStatusTone } from "@/app/view/agents/runmodel";
@@ -43,7 +44,7 @@ import { workOnInitiative } from "@/app/view/jarvis/initiativeworkaction";
 import { newRunPrefillAtom } from "@/app/view/jarvis/newruncontrol";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
-import { sameRepoPath } from "@/util/paths";
+import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import {
@@ -1094,6 +1095,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                 echo: fileEcho(f, fg.line),
                 run: () => {
                     close();
+                    // on the Agent surface, a file under the focused agent's directory opens in its panel
+                    if (openInFocusedPanel(model, joinRepoPath(fileTarget.path, f.path), fg.line)) {
+                        return;
+                    }
                     fireAndForget(() =>
                         openInCode(model, { projectPath: fileTarget.path, rel: f.path, line: fg.line })
                     );
