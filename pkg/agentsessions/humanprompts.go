@@ -40,6 +40,13 @@ type claudeOrigin struct {
 	Kind string `json:"kind"`
 }
 
+// sentByPerson reports a user record a person sent: not a subagent's, whose every record is a sidechain and whose
+// prompt is the task its parent gave it, and with no origin or a human one (a background task finishing, and Claude
+// Code's other own records, stamp their kind).
+func sentByPerson(isSidechain bool, origin *claudeOrigin) bool {
+	return !isSidechain && (origin == nil || origin.Kind == "human")
+}
+
 // HumanPrompts returns the prompts submitted to a claude or pi session, oldest first, the one it was launched
 // with included. Claude also writes a user record for tool output and for its own notices (a skill body, a
 // slash command, command output, a background task finishing, an interruption, the compaction summary); none
@@ -81,8 +88,6 @@ func claudeTypedText(rec claudePromptLine) string {
 	var raw json.RawMessage
 	var origin *claudeOrigin
 	switch {
-	case rec.IsSidechain:
-		return ""
 	case rec.Type == "user" && !rec.IsMeta && !rec.IsCompactSummary:
 		raw, origin = rec.Message.Content, rec.Origin
 	// a message typed while the session is busy reaches the model mid-turn as this attachment, and never as a user record
@@ -91,7 +96,7 @@ func claudeTypedText(rec claudePromptLine) string {
 	default:
 		return ""
 	}
-	if origin != nil && origin.Kind != "human" {
+	if !sentByPerson(rec.IsSidechain, origin) {
 		return ""
 	}
 	if text := claudePromptText(raw); !isClaudeNotice(text) {

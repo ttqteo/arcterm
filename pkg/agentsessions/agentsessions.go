@@ -109,12 +109,13 @@ type SessionInfo struct {
 }
 
 type claudeLine struct {
-	Type        string `json:"type"`
-	IsSidechain bool   `json:"isSidechain"` // a subagent's record: its prompt is the task its parent gave it
-	Timestamp   string `json:"timestamp"`   // events derivation; session derivation ignores it
-	Cwd         string `json:"cwd"`
-	GitBranch   string `json:"gitBranch"`
-	Entrypoint  string `json:"entrypoint"`
+	Type        string        `json:"type"`
+	IsSidechain bool          `json:"isSidechain"` // with Origin, whether a person sent the record (sentByPerson)
+	Origin      *claudeOrigin `json:"origin"`
+	Timestamp   string        `json:"timestamp"` // events derivation; session derivation ignores it
+	Cwd         string        `json:"cwd"`
+	GitBranch   string        `json:"gitBranch"`
+	Entrypoint  string        `json:"entrypoint"`
 	Message     struct {
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
@@ -163,9 +164,9 @@ func claudeSessionFrom(id string, recs []claudeLine) *SessionInfo {
 			u := rec.Message.Usage
 			s.TokensTotal += u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 		}
-		// a subagent's prompt was not typed by a person (claudeTypedText's rule), so a file of only those, the Agent
-		// tool's <parent>/subagents/agent-<id>.jsonl, has no task and is part of its parent, not a session
-		if !hasTask && rec.Type == "user" && !rec.IsSidechain {
+		// only what a person sent titles a session: a file with none, such as the Agent tool's
+		// <parent>/subagents/agent-<id>.jsonl, has no task and is no session
+		if !hasTask && rec.Type == "user" && sentByPerson(rec.IsSidechain, rec.Origin) {
 			raw := stringContent(rec.Message.Content)
 			if title := sessionTitle(raw); title == "" {
 				continue

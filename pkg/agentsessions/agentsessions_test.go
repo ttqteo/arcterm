@@ -102,6 +102,21 @@ func TestScanRoot_skipsSubagentTranscripts(t *testing.T) {
 	}
 }
 
+// Claude Code writes a background task finishing as a user record stamped with its own origin; no person typed it, so
+// it titles nothing: a session it opens is titled by the first prompt after it, and one with no prompt is no session.
+func TestScanRoot_titlesOnlyWhatAPersonSent(t *testing.T) {
+	dir := t.TempDir()
+	notice := `{"type":"user","cwd":"/x","origin":{"kind":"task-notification","producer":"session-task"},"message":{"role":"user","content":"<task-notification>\n<task-id>bcj8gg197</task-id>\n</task-notification>"}}`
+	writeJSONL(t, dir, "continued.jsonl", notice,
+		`{"type":"user","cwd":"/x","origin":{"kind":"human"},"message":{"role":"user","content":"Tighten section 3"}}`,
+	)
+	writeJSONL(t, dir, "noticeonly.jsonl", notice)
+	got := scanProvider(claudeProvider(dir), 0, 10)
+	if len(got) != 1 || got[0].ID != "continued" || got[0].Task != "Tighten section 3" {
+		t.Fatalf("want only the continued session, titled by its prompt, got %+v", got)
+	}
+}
+
 func TestScanRoot_capsToLimit(t *testing.T) {
 	dir := t.TempDir()
 	for _, n := range []string{"a", "b", "c"} {
