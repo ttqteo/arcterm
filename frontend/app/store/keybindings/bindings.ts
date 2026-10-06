@@ -67,6 +67,7 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import type { MutableRefObject } from "react";
+import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import type { Binding, KeyContext } from "./types";
 
@@ -840,7 +841,9 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 ctx.surface === "agent" &&
                 !ctx.modalOpen &&
                 globalStore.get(renamingRowAtom) == null &&
-                globalStore.get(focusSubagentAtom) != null,
+                globalStore.get(focusSubagentAtom) != null &&
+                // a File tab opened over the subagent owns Escape: it closes the file, not the subagent
+                !ownsKeys(document.activeElement),
             run: () => globalStore.set(focusSubagentAtom, null),
         },
         {
