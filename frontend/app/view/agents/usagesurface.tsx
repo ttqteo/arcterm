@@ -31,6 +31,7 @@ import { harnessesAtom } from "./harnessstore";
 import { mergeRateLimitWindows, savedRateLimitsAtom, type DonutWindow } from "./ratelimitstore";
 import { runtimeMeta } from "./runtimemeta";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
+import { legendGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
 import {
     buildUsageRail,
     countReporting,
@@ -130,7 +131,9 @@ function SectionRule({ label, meta, accent = false }: { label: string; meta?: st
     );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+type StatCardProps = { label: string; value: string; sub?: string };
+
+function StatCard({ label, value, sub }: StatCardProps) {
     return (
         <div className="rounded-[11px] border border-border bg-surface-raised px-4 py-[14px]">
             <div className="mb-2 text-[10.5px] text-muted">{label}</div>
@@ -297,7 +300,8 @@ function UsageRail({
     );
 }
 
-function SplitCard({ split, scope }: { split: ClassUsage[]; scope: string }) {
+function SplitCard({ split: all, scope }: { split: ClassUsage[]; scope: string }) {
+    const split = visibleClasses(all);
     const tokTotal = split.reduce((s, c) => s + c.tokens, 0);
     const spdTotal = split.reduce((s, c) => s + c.spendUsd, 0);
     const cacheRead = split.find((c) => c.cls === "cacheRead");
@@ -336,7 +340,12 @@ function SplitCard({ split, scope }: { split: ClassUsage[]; scope: string }) {
                 segs={split.map((c) => ({ key: c.cls, value: c.spendUsd, fill: CLASS_FILL[c.cls] }))}
             />
 
-            <div className="grid grid-cols-2 gap-x-3 gap-y-3.5 border-t border-edge-faint pt-[15px] lg:grid-cols-3 xl:grid-cols-5">
+            <div
+                className={cn(
+                    "grid gap-x-3 gap-y-3.5 border-t border-edge-faint pt-[15px]",
+                    legendGridClass(split.length)
+                )}
+            >
                 {split.map((c) => (
                     <div key={c.cls}>
                         <div className="mb-[7px] flex items-center gap-[7px]">
@@ -406,7 +415,6 @@ function DetailHeader({
     const all = sel === ALL;
     const meta = runtimeMeta(sel);
     const st = row != null ? stateMeta(row, now) : null;
-    const reported = stats.totals.reportedCostWindowPresent ? usd(stats.totals.reportedCostWindowUsd) : "not reported";
     const modelCount = stats.providers.reduce((s, p) => s + p.models.length, 0);
     return (
         <div className="mb-5 flex items-start gap-3.5 border-b border-edge-faint pb-4">
@@ -438,10 +446,12 @@ function DetailHeader({
                         {"tokens "}
                         <span className="text-secondary">{fmt(stats.totals.tokensWindow)}</span>
                     </span>
-                    <span>
-                        {"reported "}
-                        <span className="text-secondary">{reported}</span>
-                    </span>
+                    {stats.totals.reportedCostWindowPresent ? (
+                        <span>
+                            {"reported "}
+                            <span className="text-secondary">{usd(stats.totals.reportedCostWindowUsd)}</span>
+                        </span>
+                    ) : null}
                     <span>
                         {"api-equiv "}
                         <span className="text-secondary">≈ {usd(stats.totals.spendWindowUsd)}</span>
@@ -528,7 +538,11 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         [allStats.availableHarnesses, allStats.daily, donuts, catalogOrder]
     );
     const rows = useMemo(() => railRows(groups), [groups]);
-    const selRow = rows.find((r) => r.harness === sel);
+    // with one harness there is nothing to pick: no rail, and the detail is that harness, not an
+    // "all providers" aggregate of one
+    const solo = soloHarness(rows);
+    const scope = solo ?? sel;
+    const selRow = rows.find((r) => r.harness === scope);
 
     // A window reload can remove the selected harness from the rail (e.g. its history falls outside
     // the window and it reports no quota). Fall back to the aggregate so the detail never points at a
@@ -560,7 +574,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     const reporting = countReporting(groups);
     const reportingLabel = `${reporting} of ${rows.length} reporting`;
-    const all = sel === ALL;
+    const all = scope === ALL;
     // the aggregate can't average independent per-account quotas — it reports whichever is closest to
     // its cap (worstWindow) and says whose it is.
     const fiveHour: AggregateWindow = all ? worstWindow(rows, "fivehour") : (selRow?.fivehour ?? {});
@@ -570,22 +584,68 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         ? week.harness === "claude"
             ? weeklyProjectionMs
             : null
-        : sel === "claude"
+        : scope === "claude"
           ? weeklyProjectionMs
           : null;
 
     const hasHistory = stats.providers.length > 0 || stats.totals.tokensWindow > 0;
     const revealHistory = useDidBecomeTrue(hasHistory);
-    const chartHarnesses = all ? rows.map((r) => r.harness) : [sel];
-    const scopeLabel = all ? "all providers" : providerLabel(sel);
+    const chartHarnesses = all ? rows.map((r) => r.harness) : [scope];
+    const scopeLabel = all ? "all providers" : providerLabel(scope);
     const windowLabel = usageWindow === "7d" ? "last 7 days" : "all time";
 
-    const reportedCard = (present: boolean, sources: string[], value: number): { value: string; sub: string } => ({
-        value: present ? usd(value) : "—",
-        sub: present && sources.length > 0 ? `from ${sources.join(" · ")}` : "no source reports cost",
-    });
     const estimateSub = (coveragePct: number | null) =>
         coveragePct == null ? "no priced tokens" : `${Math.round(coveragePct)}% of tokens priced`;
+    // reported cost is a card only when some source reported one; otherwise it would be a dash
+    const reportedCard = (label: string, present: boolean, sources: string[], value: number): StatCardProps[] =>
+        present
+            ? [{ label, value: usd(value), sub: sources.length > 0 ? `from ${sources.join(" · ")}` : undefined }]
+            : [];
+    const t = stats.totals;
+    const statCards: StatCardProps[] =
+        usageWindow === "7d"
+            ? [
+                  {
+                      label: "Tokens · today",
+                      value: fmt(t.tokensToday),
+                      sub: all ? harnessSub(t.tokensTodayByHarness) : undefined,
+                  },
+                  { label: "Tokens · 7 days", value: fmt(t.tokensWeek) },
+                  ...reportedCard(
+                      "Reported cost · 7 days",
+                      t.reportedCostWeekPresent,
+                      t.reportedCostWeekHarnesses,
+                      t.reportedCostWeekUsd
+                  ),
+                  {
+                      label: "API-equivalent · 7 days",
+                      value: `≈ ${usd(t.spendWeekUsd)}`,
+                      sub: estimateSub(t.pricingCoverageWeekPct),
+                  },
+              ]
+            : [
+                  {
+                      label: "Tokens · all time",
+                      value: fmt(t.tokensWindow),
+                      sub: all ? harnessSub(t.tokensWindowByHarness) : undefined,
+                  },
+                  {
+                      label: "Daily avg",
+                      value: fmt(t.activeDays > 0 ? t.tokensWindow / t.activeDays : 0),
+                      sub: `over ${t.activeDays} active day${t.activeDays === 1 ? "" : "s"}`,
+                  },
+                  ...reportedCard(
+                      "Reported cost · all time",
+                      t.reportedCostWindowPresent,
+                      t.reportedCostWindowHarnesses,
+                      t.reportedCostWindowUsd
+                  ),
+                  {
+                      label: "API-equivalent · all time",
+                      value: `≈ ${usd(t.spendWindowUsd)}`,
+                      sub: estimateSub(t.pricingCoverageWindowPct),
+                  },
+              ];
 
     return (
         <MotionConfig reducedMotion="user">
@@ -593,7 +653,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                 <SurfaceHeader
                     title="Usage"
                     badge={
-                        reporting > 0 ? (
+                        reporting > 0 && solo == null ? (
                             <span className="inline-flex items-center gap-1.5 rounded-sm border border-accent bg-accentbg px-2 py-[3px] text-[10.5px] font-semibold uppercase tabular-nums tracking-[0.08em] text-accent-soft">
                                 <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                                 {reporting} reporting
@@ -601,11 +661,18 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                         ) : null
                     }
                     subtitle={
-                        <span className="block max-w-[680px] leading-[1.5]">
-                            Live provider quota while agents run, and the durable history behind it. Pick a scope on the
-                            left; reported cost is what each agent source recorded, the API-equivalent estimate comes
-                            from a bundled price table. Neither is a bill.
-                        </span>
+                        solo != null ? (
+                            <span className="block leading-[1.5]">
+                                Live quota and token history. Spend is an estimate from a bundled price table, not a
+                                bill.
+                            </span>
+                        ) : (
+                            <span className="block max-w-[680px] leading-[1.5]">
+                                Live provider quota while agents run, and the durable history behind it. Pick a scope on
+                                the left; reported cost is what each agent source recorded, the API-equivalent estimate
+                                comes from a bundled price table. Neither is a bill.
+                            </span>
+                        )
                     }
                     actions={
                         <Segmented<"7d" | "all">
@@ -622,16 +689,24 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                 {loadError ? <SurfaceError message="Couldn’t refresh — showing the last loaded usage." /> : null}
 
                 <div className="flex min-h-0 flex-1">
-                    <UsageRail
-                        groups={groups}
-                        sel={sel}
-                        now={now}
-                        totalTokens={allStats.totals.tokensWindow}
-                        onSelect={setSel}
-                    />
+                    {solo == null ? (
+                        <UsageRail
+                            groups={groups}
+                            sel={sel}
+                            now={now}
+                            totalTokens={allStats.totals.tokensWindow}
+                            onSelect={setSel}
+                        />
+                    ) : null}
 
-                    <div data-usage-detail={sel} className="min-w-0 flex-1 overflow-y-auto px-7 pb-12 pt-5">
-                        <DetailHeader sel={sel} row={selRow} stats={stats} now={now} reportingLabel={reportingLabel} />
+                    <div data-usage-detail={scope} className="min-w-0 flex-1 overflow-y-auto px-7 pb-12 pt-5">
+                        <DetailHeader
+                            sel={scope}
+                            row={selRow}
+                            stats={stats}
+                            now={now}
+                            reportingLabel={reportingLabel}
+                        />
 
                         <SectionRule
                             label="Live limits"
@@ -657,7 +732,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                             </div>
                         ) : (
                             <p className="mb-6 rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
-                                No quota reading{all ? "" : ` for ${providerLabel(sel)}`}. Claude&apos;s windows are
+                                No quota reading{all ? "" : ` for ${providerLabel(scope)}`}. Claude&apos;s windows are
                                 read from your Claude Code login with no session running, once it has signed in; other
                                 providers&apos; are known only while an agent that publishes them runs. The last
                                 snapshot is kept per provider, and rolls to empty once its window passes. History below
@@ -671,7 +746,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                             <UsageHistorySkeleton />
                         ) : !hasHistory ? (
                             <div className="mt-10 text-center text-[13px] text-muted">
-                                No usage in this window{all ? " — start an agent." : ` for ${providerLabel(sel)}.`}
+                                No usage in this window{all ? " — start an agent." : ` for ${providerLabel(scope)}.`}
                             </div>
                         ) : (
                             <motion.div
@@ -679,60 +754,10 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                 initial={revealHistory ? "initial" : false}
                                 animate="animate"
                             >
-                                <div className="mb-3.5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-                                    {usageWindow === "7d" ? (
-                                        <>
-                                            <StatCard
-                                                label="Tokens · today"
-                                                value={fmt(stats.totals.tokensToday)}
-                                                sub={all ? harnessSub(stats.totals.tokensTodayByHarness) : undefined}
-                                            />
-                                            <StatCard label="Tokens · 7 days" value={fmt(stats.totals.tokensWeek)} />
-                                            <StatCard
-                                                label="Reported cost · 7 days"
-                                                {...reportedCard(
-                                                    stats.totals.reportedCostWeekPresent,
-                                                    stats.totals.reportedCostWeekHarnesses,
-                                                    stats.totals.reportedCostWeekUsd
-                                                )}
-                                            />
-                                            <StatCard
-                                                label="API-equivalent · 7 days"
-                                                value={`≈ ${usd(stats.totals.spendWeekUsd)}`}
-                                                sub={estimateSub(stats.totals.pricingCoverageWeekPct)}
-                                            />
-                                        </>
-                                    ) : (
-                                        <>
-                                            <StatCard
-                                                label="Tokens · all time"
-                                                value={fmt(stats.totals.tokensWindow)}
-                                                sub={all ? harnessSub(stats.totals.tokensWindowByHarness) : undefined}
-                                            />
-                                            <StatCard
-                                                label="Daily avg"
-                                                value={fmt(
-                                                    stats.totals.activeDays > 0
-                                                        ? stats.totals.tokensWindow / stats.totals.activeDays
-                                                        : 0
-                                                )}
-                                                sub={`over ${stats.totals.activeDays} active day${stats.totals.activeDays === 1 ? "" : "s"}`}
-                                            />
-                                            <StatCard
-                                                label="Reported cost · all time"
-                                                {...reportedCard(
-                                                    stats.totals.reportedCostWindowPresent,
-                                                    stats.totals.reportedCostWindowHarnesses,
-                                                    stats.totals.reportedCostWindowUsd
-                                                )}
-                                            />
-                                            <StatCard
-                                                label="API-equivalent · all time"
-                                                value={`≈ ${usd(stats.totals.spendWindowUsd)}`}
-                                                sub={estimateSub(stats.totals.pricingCoverageWindowPct)}
-                                            />
-                                        </>
-                                    )}
+                                <div className={cn("mb-3.5 grid gap-3", statGridClass(statCards.length))}>
+                                    {statCards.map((c) => (
+                                        <StatCard key={c.label} {...c} />
+                                    ))}
                                 </div>
 
                                 <SplitCard split={stats.split} scope={scopeLabel} />
