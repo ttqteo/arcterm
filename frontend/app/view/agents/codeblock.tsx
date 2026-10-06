@@ -7,9 +7,9 @@ import { atomWithStorage } from "jotai/utils";
 import { useState } from "react";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
 
-// Wrap long lines instead of scrolling sideways. One mode for every code block, kept across reloads
-// (atomWithStorage convention, see cockpitprefsstore.ts).
-const codeWrapAtom = atomWithStorage<boolean>("cockpit.codeblock.wrap", false);
+// Wrap long lines instead of scrolling sideways, on by default. One mode for every code block, kept across
+// reloads (atomWithStorage convention, see cockpitprefsstore.ts).
+const codeWrapAtom = atomWithStorage<boolean>("cockpit.codeblock.wrap", true);
 
 // Styled fenced-code block for transcript prose (Wave-transcript-feed.dc.html code block).
 // lang label + optional path + wrap/copy affordances + line-number gutter + tokenized source.
