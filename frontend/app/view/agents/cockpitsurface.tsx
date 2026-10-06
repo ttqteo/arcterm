@@ -33,6 +33,7 @@ import {
     columnNavIds,
     isBackgroundedRun,
     resolveCursor,
+    gridColumnCount,
     splitGridColumns,
     toggleChip,
     withActiveRunLeads,
@@ -175,6 +176,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     }, []);
     const gridScrollRef = useRef<HTMLDivElement>(null);
     const [gridViewportPx, setGridViewportPx] = useState(0);
+    const [gridWidthPx, setGridWidthPx] = useState(0);
     useEffect(() => {
         const el = gridScrollRef.current;
         if (!el) {
@@ -185,6 +187,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         const measure = () => {
             const cs = getComputedStyle(el);
             setGridViewportPx(el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
+            setGridWidthPx(el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
         };
         const ro = new ResizeObserver(measure);
         ro.observe(el);
@@ -252,7 +255,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const cards = shownCards.filter((c) => cardMatchesChip(c, chip, cardNeedsYou(c)));
     // counted by card, as the tab filters: a run's idle workers and a lead between wakes are not up for review
     const readyCount = shownCards.filter((c) => cardMatchesChip(c, "idle", cardNeedsYou(c))).length;
-    const columns = splitGridColumns(cards, (c) => c.kind === "run");
+    const columns = splitGridColumns(cards, (c) => c.kind === "run", gridColumnCount(gridWidthPx));
     // cursor stops: cards, and each lead card's shown task rows; a worker's id aliases to its row
     const rowsOf = (c: GridCard) => {
         const vm = c.kind === "run" ? leadVMs.get(c.id) : undefined;

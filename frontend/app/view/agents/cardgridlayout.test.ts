@@ -11,6 +11,8 @@ import {
     cardShare,
     columnJump,
     columnNavIds,
+    GRID_THREE_COL_MIN_PX,
+    gridColumnCount,
     isBackgroundedRun,
     resolveCursor,
     splitGridColumns,
@@ -31,6 +33,26 @@ describe("splitGridColumns", () => {
     it("alternates one kind across both columns, as the old grid did", () => {
         expect(splitGridColumns(["a1", "a2", "a3"], isRun)).toEqual([["a1", "a3"], ["a2"]]);
         expect(splitGridColumns(["L1", "L2"], isRun)).toEqual([["L1"], ["L2"]]);
+    });
+    it("spreads one kind across three columns once the grid is wide enough", () => {
+        const four = ["a1", "a2", "a3", "a4"];
+        expect(splitGridColumns(four, isRun, gridColumnCount(GRID_THREE_COL_MIN_PX))).toEqual([
+            ["a1", "a4"],
+            ["a2"],
+            ["a3"],
+        ]);
+        expect(splitGridColumns(four, isRun, gridColumnCount(GRID_THREE_COL_MIN_PX - 1))).toEqual([
+            ["a1", "a3"],
+            ["a2", "a4"],
+        ]);
+        // never more columns than cards
+        expect(splitGridColumns(["a1", "a2"], isRun, 3)).toEqual([["a1"], ["a2"]]);
+    });
+    it("keeps runs and agents to one column each however wide the grid", () => {
+        expect(splitGridColumns(["a1", "L1", "a2"], isRun, 3)).toEqual([["L1"], ["a1", "a2"]]);
+    });
+    it("reads an unmeasured grid as two columns", () => {
+        expect(gridColumnCount(0)).toBe(2);
     });
     it("gives a lone card one full-width column", () => {
         expect(splitGridColumns(["L1"], isRun)).toEqual([["L1"]]);
@@ -171,6 +193,13 @@ describe("columnJump", () => {
     it("stays put at the edge or with one column", () => {
         expect(columnJump(cols, cardOf, "L", -1)).toBeUndefined();
         expect(columnJump([["a"]], cardOf, "a", 1)).toBeUndefined();
+    });
+    it("steps one column at a time across three", () => {
+        const three = [["a", "d"], ["b", "e"], ["c"]];
+        expect(columnJump(three, cardOf, "d", 1)).toBe("e");
+        expect(columnJump(three, cardOf, "e", 1)).toBe("c");
+        expect(columnJump(three, cardOf, "c", -1)).toBe("b");
+        expect(columnJump(three, cardOf, "c", 1)).toBeUndefined();
     });
 });
 

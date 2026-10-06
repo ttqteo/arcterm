@@ -17,9 +17,19 @@ export interface CardShare {
     minPx: number;
 }
 
+// the grid's content width from which one kind of card spreads over three columns: three asking cards of
+// about 440px each, so a maximized window fills its width instead of stretching two cards across it
+export const GRID_THREE_COL_MIN_PX = 1340;
+
+/** Pure: how many columns one kind of card spreads over at this grid width (0 = not measured yet). */
+export function gridColumnCount(gridWidthPx: number): number {
+    return gridWidthPx >= GRID_THREE_COL_MIN_PX ? 3 : 2;
+}
+
 /** Pure: leads in column 1 and agents in column 2 when both are present, so a lead never trades places
- *  with an agent as states change. One kind alone alternates across two columns; a lone card spans. */
-export function splitGridColumns<T>(items: T[], isRun: (t: T) => boolean): T[][] {
+ *  with an agent as states change. One kind alone alternates across `cols` columns (never more than there
+ *  are cards); a lone card spans. */
+export function splitGridColumns<T>(items: T[], isRun: (t: T) => boolean, cols = 2): T[][] {
     const runs = items.filter(isRun);
     const plain = items.filter((t) => !isRun(t));
     if (runs.length > 0 && plain.length > 0) {
@@ -28,7 +38,8 @@ export function splitGridColumns<T>(items: T[], isRun: (t: T) => boolean): T[][]
     if (items.length <= 1) {
         return items.length === 1 ? [items] : [];
     }
-    return [items.filter((_, i) => i % 2 === 0), items.filter((_, i) => i % 2 === 1)];
+    const n = Math.min(cols, items.length);
+    return Array.from({ length: n }, (_, c) => items.filter((_, i) => i % n === c));
 }
 
 /** Pure: a card's flex share of its column and its floor. */
@@ -136,21 +147,21 @@ export function columnNavIds(columns: GridCard[][], rowKeysOf: (card: GridCard) 
     return columns.map((col) => col.flatMap((c) => [c.id, ...rowKeysOf(c)]));
 }
 
-/** Pure: h/l. From a card or one of its rows, go to the card at the same card index in the other column. */
+/** Pure: h/l. From a card or one of its rows, go to the card at the same card index in the neighbouring column. */
 export function columnJump(
     cols: string[][],
     cardOf: (id: string) => string,
     cur: string | undefined,
     dir: -1 | 1
 ): string | undefined {
-    if (cols.length !== 2 || cur == null) {
+    if (cols.length < 2 || cur == null) {
         return undefined;
     }
     const card = cardOf(cur);
     const cardsIn = (col: string[]) => col.filter((id) => cardOf(id) === id);
     const from = cols.findIndex((col) => col.includes(cur));
     const to = from + dir;
-    if (from < 0 || to < 0 || to > 1) {
+    if (from < 0 || to < 0 || to >= cols.length) {
         return undefined;
     }
     const target = cardsIn(cols[to]);
