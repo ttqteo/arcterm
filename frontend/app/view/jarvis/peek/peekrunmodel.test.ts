@@ -1,7 +1,6 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { FocusRowVM } from "@/app/view/agents/focusswitchermodel";
 import { describe, expect, it } from "vitest";
 import { buildRunPeek, runPeekFacts, type PeekRunInput } from "./peekrunmodel";
 
@@ -148,28 +147,8 @@ describe("buildRunPeek: a quick run", () => {
 });
 
 describe("runPeekFacts", () => {
-    const row: FocusRowVM = {
-        key: "run:r1",
-        kind: "run",
-        id: "r1",
-        label: "Ship auth",
-        detail: "2 agents",
-        meta: "arc",
-        project: "arc",
-    };
-
     it("is gone when the run no longer exists", () => {
-        expect(runPeekFacts(undefined, row)).toEqual({ gone: true, focus: null });
-    });
-
-    it("has nothing to focus on when the switcher has no row for the run", () => {
-        expect(runPeekFacts(run(), undefined)).toEqual({ gone: false, focus: null });
-    });
-
-    it("focuses through the switcher's row, with its label and project", () => {
-        expect(runPeekFacts(run(), row)).toEqual({
-            gone: false,
-            focus: { ref: { kind: "run", id: "r1" }, label: "Ship auth", project: "arc" },
-        });
+        expect(runPeekFacts(undefined)).toEqual({ gone: true });
+        expect(runPeekFacts(run())).toEqual({ gone: false });
     });
 });

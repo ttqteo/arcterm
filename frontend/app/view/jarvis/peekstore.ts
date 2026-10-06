@@ -6,7 +6,6 @@
 // destination's selection, which is the point of a peek.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import type { ActiveFocus } from "@/app/view/agents/focusstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { OpenTarget } from "./address";
 import { petPeekOpenAtom } from "./petstore";
@@ -19,9 +18,9 @@ export type PeekItem = { target: PeekTarget; status: "loading" | "ready"; from: 
 
 export const peekItemAtom = atom<PeekItem | null>(null) as PrimitiveAtom<PeekItem | null>;
 
-// What only the item's body knows: whether the target is still there, and what focusing it would set. The body
+// What only the item's body knows: whether the target is still there. The body
 // reports them; the item view's buttons read them. null until the body has said.
-export type PeekFacts = { gone: boolean; focus: ActiveFocus | null };
+export type PeekFacts = { gone: boolean };
 
 export const peekFactsAtom = atom<PeekFacts | null>(null) as PrimitiveAtom<PeekFacts | null>;
 

@@ -1,6 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { imageStatus, localFileUrl } from "./localimage";
 
@@ -31,5 +33,18 @@ describe("imageStatus", () => {
         expect(imageStatus(404)).toBe("missing");
         expect(imageStatus(500)).toBe("error");
         expect(imageStatus(403)).toBe("error");
+    });
+});
+
+// useLocalImage hands <img> a blob: URL, and the packaged app's CSP decides whether WebView2 will show it. The dev app
+// never applies the CSP (cargo tauri dev serves through the dev server), so only a packaged build would catch it.
+describe("the packaged CSP", () => {
+    it("lets an <img> load the blob: URLs useLocalImage makes", () => {
+        const conf = JSON.parse(readFileSync(resolve(__dirname, "../../../../src-tauri/tauri.conf.json"), "utf8"));
+        const imgSrc = String(conf.app.security.csp)
+            .split(";")
+            .map((d: string) => d.trim().split(/\s+/))
+            .find((d: string[]) => d[0] === "img-src");
+        expect(imgSrc).toContain("blob:");
     });
 });

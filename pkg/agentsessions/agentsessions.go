@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -110,6 +111,8 @@ type SessionInfo struct {
 
 type claudeLine struct {
 	Type        string        `json:"type"`
+	AiTitle     string        `json:"aiTitle"`     // an ai-title record: Claude Code's running name for the session
+	IsMeta      bool          `json:"isMeta"`      // a companion Claude Code writes beside a prompt (an image's size), no prompt itself
 	IsSidechain bool          `json:"isSidechain"` // with Origin, whether a person sent the record (sentByPerson)
 	Origin      *claudeOrigin `json:"origin"`
 	Timestamp   string        `json:"timestamp"` // events derivation; session derivation ignores it
@@ -146,9 +149,13 @@ func claudeSessionFrom(id string, recs []claudeLine) *SessionInfo {
 	s := &SessionInfo{ID: id}
 	hasTask := false
 	fallback := ""
+	aiTitle := ""
 	for _, rec := range recs {
 		if agentobserve.IsHeadlessEntrypoint(rec.Entrypoint) {
 			return nil
+		}
+		if rec.Type == "ai-title" && strings.TrimSpace(rec.AiTitle) != "" {
+			aiTitle = strings.TrimSpace(rec.AiTitle) // the last one is the session's current name
 		}
 		if s.ProjectPath == "" && rec.Cwd != "" {
 			s.ProjectPath = rec.Cwd
@@ -166,8 +173,13 @@ func claudeSessionFrom(id string, recs []claudeLine) *SessionInfo {
 		}
 		// only what a person sent titles a session: a file with none, such as the Agent tool's
 		// <parent>/subagents/agent-<id>.jsonl, has no task and is no session
-		if !hasTask && rec.Type == "user" && sentByPerson(rec.IsSidechain, rec.Origin) {
-			raw := stringContent(rec.Message.Content)
+		if !hasTask && rec.Type == "user" && !rec.IsMeta && sentByPerson(rec.IsSidechain, rec.Origin) {
+			// a prompt with a pasted image is array content (its text, then the image); claudePromptText reads both
+			// shapes, and a tool result as none
+			raw := claudePromptText(rec.Message.Content)
+			if strings.HasPrefix(raw, "[Request interrupted by user") {
+				continue
+			}
 			if title := sessionTitle(raw); title == "" {
 				continue
 			} else if isBareCommand(raw, title) {
@@ -186,6 +198,12 @@ func claudeSessionFrom(id string, recs []claudeLine) *SessionInfo {
 	}
 	if !hasTask {
 		return nil
+	}
+	// Claude Code's own name for the session, the one its live row showed (wsh agent-hook reads the last ai-title
+	// too), wins over the first prompt, which is often a /model switch or a pasted image. The prompt still decides
+	// whether the file is a session at all.
+	if aiTitle != "" {
+		s.Task = trimTo(aiTitle, maxTaskLen)
 	}
 	return s
 }
@@ -630,6 +648,7 @@ type provider struct {
 	runtime   string
 	root      string
 	matches   func(name string) bool
+	skipDir   func(name string) bool // a folder the walk never enters; nil enters every one
 	fused     func(path, stem string, lines []string) (*SessionInfo, sessionEvents)
 	resumeCmd func(s *SessionInfo) string
 }
@@ -639,6 +658,9 @@ func claudeProvider(root string) provider {
 		runtime: "claude",
 		root:    root,
 		matches: func(name string) bool { return strings.HasSuffix(name, ".jsonl") },
+		// the Agent tool's <parent>/subagents/agent-<id>.jsonl is part of its parent and never a session of its own
+		// (claudeSessionFrom drops it), yet those files were a third of a cold scan's bytes
+		skipDir: func(name string) bool { return name == "subagents" },
 		// one shared unmarshal pass for both derivations — claude transcripts dominate the scan cost
 		fused: func(_ string, id string, lines []string) (*SessionInfo, sessionEvents) {
 			recs := parseClaudeLines(lines)
@@ -1101,6 +1123,9 @@ func walkCandidates(p provider, windowDays int) []candidate {
 			if headlessSlug != "" && d.Name() == headlessSlug {
 				return filepath.SkipDir // the backend's own headless passes, never a user session
 			}
+			if p.skipDir != nil && p.skipDir(d.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !p.matches(d.Name()) {
@@ -1159,31 +1184,76 @@ func scanSessionCached(c candidate) (*SessionInfo, sessionEvents) {
 	return s, se
 }
 
+// parseWorkers bounds how many candidates are parsed at once. A cold scan (the first after wavesrv starts) parses a
+// few hundred MB of JSON, which is CPU-bound; each worker holds a whole transcript, up to tens of MB, while it does.
+var parseWorkers = min(runtime.GOMAXPROCS(0), 8)
+
 // parseCandidates derives sessions from candidates in mtime order until limit sessions are found
-// (nil candidates do not count, so the parse set can exceed limit when subagent files interleave).
+// (nil candidates do not count, so the parse set can exceed limit when non-session files interleave).
+// Candidates are parsed in parallel batches, each the size of what the limit still needs, so the files read are the
+// same newest ones a one-at-a-time scan would read.
 func parseCandidates(cands []candidate, limit int) []SessionInfo {
 	var out []SessionInfo
-	for _, c := range cands {
-		if limit > 0 && len(out) >= limit {
-			break
+	for next := 0; next < len(cands); {
+		n := len(cands) - next
+		if limit > 0 {
+			if len(out) >= limit {
+				break
+			}
+			n = min(n, limit-len(out))
 		}
-		s, se := scanSessionCached(c)
-		if s == nil {
-			continue
+		batch := cands[next : next+n]
+		next += n
+		for i, r := range parseBatch(batch) {
+			if s := asSession(batch[i], r); s != nil {
+				out = append(out, *s)
+			}
 		}
-		// value copy: the cache holds the canonical entry; callers may not mutate it
-		s2 := *s
-		s2.Runtime = c.p.runtime
-		s2.LastActiveTs = c.mtime.UnixMilli()
-		s2.ResumeCommand = c.p.resumeCmd(&s2)
-		s2.TranscriptPath = c.path
-		s2.Events = se.Events
-		s2.Status = se.Status
-		s2.StartedTs = se.StartedTs
-		s2.DurationMs = se.DurationMs
-		out = append(out, s2)
 	}
 	return out
+}
+
+type parsed struct {
+	info *SessionInfo
+	se   sessionEvents
+}
+
+// parseBatch derives every candidate in batch on up to parseWorkers goroutines, its results in batch order.
+func parseBatch(batch []candidate) []parsed {
+	results := make([]parsed, len(batch))
+	idx := make(chan int)
+	var wg sync.WaitGroup
+	for range min(parseWorkers, len(batch)) {
+		wg.Go(func() {
+			for i := range idx {
+				results[i].info, results[i].se = scanSessionCached(batch[i])
+			}
+		})
+	}
+	for i := range batch {
+		idx <- i
+	}
+	close(idx)
+	wg.Wait()
+	return results
+}
+
+// asSession is a candidate's parsed result as a listed session, or nil when the file carries none.
+func asSession(c candidate, r parsed) *SessionInfo {
+	if r.info == nil {
+		return nil
+	}
+	// value copy: the cache holds the canonical entry; callers may not mutate it
+	s := *r.info
+	s.Runtime = c.p.runtime
+	s.LastActiveTs = c.mtime.UnixMilli()
+	s.ResumeCommand = c.p.resumeCmd(&s)
+	s.TranscriptPath = c.path
+	s.Events = r.se.Events
+	s.Status = r.se.Status
+	s.StartedTs = r.se.StartedTs
+	s.DurationMs = r.se.DurationMs
+	return &s
 }
 
 // ExtractSession folds a single transcript file into a SessionInfo, selecting the parser by runtime.

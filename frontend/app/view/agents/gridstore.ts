@@ -5,7 +5,7 @@
 // railstore.ts and projectfoldstore.ts), and the operations the drop overlay, the cell bars and the menus
 // run. The rules are in agentgrid.ts; this file only reads and writes atoms.
 //
-// getOnInit is load-bearing, as in focusstore.ts: without it the stored value arrives one render after the
+// getOnInit is load-bearing: without it the stored value arrives one render after the
 // first read and the surface would paint, and reconcile against, an empty grid first.
 
 import { globalStore } from "@/app/store/jotaiStore";

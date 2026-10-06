@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The avatar popup's item view: a peeked target shown in place of the hub. The shell is the same for every
-// kind (Back to Jarvis, close, Open and Focus this); the body comes from the registry and reports whether its
+// kind (Back to Jarvis, close, Open); the body comes from the registry and reports whether its
 // target is still there. The key hints and the panel's own keys stay with petpeek.tsx, which owns the dialog.
 
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { enterFocusFor } from "@/app/view/agents/focusstore";
 import { cn, fireAndForget } from "@/util/util";
 import { ChevronLeft, X } from "lucide-react";
 import { openTarget } from "./openref";
@@ -43,13 +42,6 @@ export function runItemCommand(
             chrome.leave();
             closePeek();
             fireAndForget(() => openTarget(model, item.target));
-            return true;
-        case "focus":
-            if (buttons.focus !== "enabled") {
-                return false;
-            }
-            enterFocusFor(model, facts.focus);
-            chrome.close();
             return true;
     }
 }
@@ -135,9 +127,9 @@ export function PeekItemView({
                 )}
             </div>
 
-            {buttons.open !== "absent" || buttons.focus !== "absent" ? (
+            {buttons.open !== "absent" ? (
                 <div className="flex flex-none items-center gap-2 border-t border-border px-3.5 py-2.5">
-                    {buttons.open !== "absent" ? (
+                    {
                         <button
                             type="button"
                             data-pet-peek-open
@@ -151,22 +143,7 @@ export function PeekItemView({
                         >
                             {openLabel(kind)}
                         </button>
-                    ) : null}
-                    {buttons.focus !== "absent" ? (
-                        <button
-                            type="button"
-                            data-pet-peek-focus
-                            disabled={buttons.focus === "disabled"}
-                            onClick={() => onCommand("focus")}
-                            className={cn(
-                                "rounded-[7px] border border-edge-mid bg-surface px-3 py-[7px] text-[12px] font-semibold text-secondary hover:bg-surface-hover",
-                                "disabled:cursor-default disabled:opacity-50 disabled:hover:bg-surface",
-                                FOCUS_RING
-                            )}
-                        >
-                            Focus this
-                        </button>
-                    ) : null}
+                    }
                 </div>
             ) : null}
         </>

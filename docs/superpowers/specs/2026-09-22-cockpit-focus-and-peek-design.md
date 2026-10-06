@@ -1,7 +1,7 @@
 # Cockpit Focus and Peek — Design
 
 **Date:** 2026-09-22
-**Status:** Approved 2026-09-22 — design agreed in brainstorming; pending spec review
+**Status:** Approved 2026-09-22. Peek shipped; the Focus control was removed on 2026-10-06 (`docs/deferred.md`, Cockpit focus)
 **Type:** Cockpit-wide contract, two slices
 
 ## Summary

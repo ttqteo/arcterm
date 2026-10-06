@@ -19,6 +19,7 @@ import {
     rowState,
     serialize,
     TEMP_RETENTION_MS,
+    updateUploads,
     UPLOADS_STORAGE_KEY,
     uploadsAtom,
     uploadsMapAtom,
@@ -300,6 +301,16 @@ describe("recordUpload", () => {
         expect(globalStore.get(uploadsAtom("b1"))).toEqual([rec()]);
         expect(globalStore.get(uploadsAtom("b2"))).toEqual([]);
         expect(parseStored(store[UPLOADS_STORAGE_KEY])).toEqual({ b1: [rec()] });
+    });
+    it("updates an owner's records in place and persists them, writing nothing when the update changes nothing", () => {
+        recordUpload("b1", rec());
+        updateUploads("b1", (list) => list.map((r) => ({ ...r, name: "Image #2" })));
+        expect(globalStore.get(uploadsAtom("b1"))[0].name).toBe("Image #2");
+        expect(parseStored(store[UPLOADS_STORAGE_KEY]).b1[0].name).toBe("Image #2");
+        const before = globalStore.get(uploadsMapAtom);
+        updateUploads("b1", (list) => list);
+        updateUploads("nobody", () => [rec({ id: "x" })]);
+        expect(globalStore.get(uploadsMapAtom)).toBe(before);
     });
     it("keeps the thumbnail in memory and never writes it to storage", () => {
         recordUpload("b1", rec(), "data:image/png;base64,AAAA");

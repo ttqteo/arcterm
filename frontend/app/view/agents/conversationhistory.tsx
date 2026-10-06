@@ -11,22 +11,18 @@ import { cardVariants, MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
-import * as WOS from "@/app/store/wos";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
-import { atom, useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { Activity, ArrowLeft, Check, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
-import type { AgentVM } from "./agentsviewmodel";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
-import { FocusBanner } from "./focusbanner";
-import { filterSessionsByFocus, focusBannerCopy } from "./focusscope";
-import { activeFocusAtom, exitFocus, focusRevealAtom, focusScopeAtom, revealSurface } from "./focusstore";
 import type { RunInfo } from "./runlineage";
 import { runDigestsAtom, useRunDigests } from "./runlineagestore";
+import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
 import {
     filterByProject,
@@ -47,15 +43,14 @@ import {
     defaultMember,
     groupRunSessions,
     LEAD_MEMBER,
+    memberLiveSession,
     memberSession,
-    rosterSession,
     runIdOfSel,
     runSelKey,
     runView,
     sessionKey,
     sessionLabel,
     sessionSelection,
-    type RunMember,
     type RunSessions,
     type RunView,
     type Status,
@@ -103,15 +98,6 @@ function soloStatus(s: LiveSession, now: number): Status {
 }
 
 // the session a member opens: its own, else the live agent of its run the scan has not picked up yet
-function memberLiveSession(m: RunMember, runId: string, roster: AgentVM[]): LiveSession | undefined {
-    if (m.session) {
-        return m.session;
-    }
-    const childRunId = m.key === LEAD_MEMBER ? runId : m.childRunId;
-    const agent = childRunId ? roster.find((a) => a.runId === childRunId) : undefined;
-    return agent ? rosterSession(agent) : undefined;
-}
-
 export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const base = useAtomValue(sessionsArchiveAtom);
     const loadError = useAtomValue(sessionsErrorAtom);
@@ -121,9 +107,6 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const [member, setMember] = useAtom(model.sessionsMemberAtom);
     const [filter, setFilter] = useAtom(model.sessionsStatusFilterAtom);
     const projectFilter = useAtomValue(model.projectFilterAtom);
-    const activeSpace = useAtomValue(activeFocusAtom);
-    const spaceScope = useAtomValue(focusScopeAtom);
-    const spaceRevealed = useAtomValue(focusRevealAtom).has("history");
     const digests = useAtomValue(runDigestsAtom);
 
     useEffect(() => {
@@ -133,24 +116,8 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const live = useMemo(() => (base == null ? [] : overlayLive(base, roster, now)), [base, roster, now]);
     const { runs: runGroups, solos } = useMemo(() => groupRunSessions(live), [live]);
 
-    // each run's own object and its dag, read from the object store (loaded on first read)
-    const runIdsKey = runGroups.map((g) => g.runId).join(",");
-    const runObjsAtom = useMemo(
-        () =>
-            atom((get) => {
-                const out: Record<string, { run?: Run; dag?: TaskGroup }> = {};
-                for (const id of runIdsKey.split(",").filter(Boolean)) {
-                    const run = get(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", id)));
-                    const dag = run?.dagoref
-                        ? get(WOS.getWaveObjectAtom<TaskGroup>(WOS.makeORef("dag", run.dagoref)))
-                        : undefined;
-                    out[id] = { run, dag };
-                }
-                return out;
-            }),
-        [runIdsKey]
-    );
-    const runObjs = useAtomValue(runObjsAtom);
+    // each run's own object and its dag
+    const runObjs = useRunObjects(runGroups.map((g) => g.runId));
 
     const runRows: Row[] = useMemo(
         () =>
@@ -198,12 +165,10 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         lastactivets: s.lastactivets,
         session: s,
     }));
-    const inScope = (sessions: LiveSession[]) => filterSessionsByFocus(sessions, spaceScope, spaceRevealed).length > 0;
-    const projectScoped = [
+    const scoped = [
         ...runRows.filter((r) => projectFilter === "all" || r.run!.view.project === projectFilter),
         ...soloRows.filter((r) => filterByProject([r.session!], projectFilter).length > 0),
     ];
-    const scoped = projectScoped.filter((r) => inScope(r.run ? r.run.group.sessions : [r.session!]));
     const groups = groupByRecency(
         scoped.filter((r) => keepRow(r, filter)),
         now
@@ -211,14 +176,8 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const scopedSessions = scoped.flatMap((r) => (r.run ? r.run.group.sessions : [r.session!]));
     const liveCount = scopedSessions.filter((s) => s.live).length;
     const needsCount = scoped.filter(needsRow).length;
-    // without the reveal, so the banner still counts the focus's own rows after Show all
-    const spaceInScope = projectScoped.filter(
-        (r) => filterSessionsByFocus(r.run ? r.run.group.sessions : [r.session!], spaceScope, false).length > 0
-    ).length;
-    // the empty list is the focus's doing, not an empty archive, so the empty state must say so
-    const focusHidesAll = activeSpace != null && !spaceRevealed && spaceInScope === 0 && projectScoped.length > 0;
 
-    // detail resolves against every row so project, Space, and status filters never blank an explicit selection
+    // detail resolves against every row so project and status filters never blank an explicit selection
     const selSession = selRunId ? undefined : resolveSelectedSession(live, sel);
     const viewRunId = selRunId ?? selSession?.runid;
     const selRun = viewRunId ? runRows.find((r) => r.run!.group.runId === viewRunId)?.run : undefined;
@@ -333,20 +292,6 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                     }
                 />
 
-                {activeSpace != null ? (
-                    <FocusBanner
-                        surface="history"
-                        copy={focusBannerCopy(
-                            activeSpace.label,
-                            spaceInScope,
-                            projectScoped.length,
-                            spaceRevealed,
-                            "sessions"
-                        )}
-                        revealed={spaceRevealed}
-                    />
-                ) : null}
-
                 {loadError ? (
                     <SurfaceError
                         message="Couldn’t load sessions."
@@ -378,18 +323,6 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                 {Array.from({ length: 6 }).map((_, i) => (
                                     <SkeletonLine key={i} className="h-[58px] rounded-[10px]" />
                                 ))}
-                            </div>
-                        ) : groups.length === 0 && focusHidesAll ? (
-                            <div className="mt-6">
-                                <SurfaceEmptyState
-                                    title="Nothing in this focus"
-                                    body={`No live session belongs to ${activeSpace.label}. The focus hides all ${projectScoped.length}.`}
-                                    action={{
-                                        label: `Show all ${projectScoped.length}`,
-                                        onClick: () => revealSurface("history"),
-                                    }}
-                                    secondaryAction={{ label: "Clear focus", onClick: exitFocus }}
-                                />
                             </div>
                         ) : groups.length === 0 ? (
                             <div className="mt-6">

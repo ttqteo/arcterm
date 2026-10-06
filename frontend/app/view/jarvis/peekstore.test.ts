@@ -108,7 +108,7 @@ describe("a peek's lifecycle", () => {
 });
 
 describe("the facts a body reports", () => {
-    const FACTS: PeekFacts = { gone: false, focus: { ref: { kind: "run", id: "r1" }, label: "Ship", project: "arc" } };
+    const FACTS: PeekFacts = { gone: false };
 
     it("are kept for the current item, through its settle", () => {
         const item = startPeek(RUN);
@@ -121,9 +121,9 @@ describe("the facts a body reports", () => {
 
     it("from a stale target are ignored", () => {
         settlePeek(startPeek(RUN));
-        reportPeekFacts(AGENT, { gone: true, focus: null });
+        reportPeekFacts(AGENT, { gone: true });
         expect(globalStore.get(peekFactsAtom)).toBeNull();
-        reportPeekFacts({ kind: "record", dossierId: "d1" }, { gone: true, focus: null });
+        reportPeekFacts({ kind: "record", dossierId: "d1" }, { gone: true });
         closePeek();
         reportPeekFacts(RUN, FACTS);
         expect(globalStore.get(peekFactsAtom)).toBeNull();

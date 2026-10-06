@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The cockpit's right rail: the Events rail. Plan usage sits in the header (UsageMeters).
+// The cockpit's right rail: the Events rail. Plan usage sits in the app bar (HeaderUsageMeters).
 
 import { CollapsibleRail } from "@/app/element/collapsiblerail";
 import { SquareStack } from "lucide-react";

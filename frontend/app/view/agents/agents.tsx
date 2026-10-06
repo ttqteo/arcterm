@@ -5,6 +5,7 @@ import type { BlockNodeModel } from "@/app/block/blocktypes";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { TabModel } from "@/app/store/tab-model";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import { sentAskIdsAtom } from "./agentaskstore";
 import { showTerminal } from "./agentcenter";
 import {
@@ -115,7 +116,12 @@ export class AgentsViewModel implements ViewModel {
 
     // handoff-parity filters + per-card layout (spec §State). Project scope is a single source bound to
     // both the app-bar switcher and the header button.
-    projectFilterAtom = atom<string>("all"); // "all" | <projectName>
+    // "all" | <projectName>. Persisted, so a restart reopens on the project you left; getOnInit so the first
+    // render already reads it (a late value would paint and load the "all" scope first). Removing the
+    // project resets it to "all" (projectsstore.ts removeProject).
+    projectFilterAtom = atomWithStorage<string>("agent.projectFilter", "all", undefined, {
+        getOnInit: true,
+    }) as PrimitiveAtom<string>;
     liveOnlyAtom = atom(false);
     // which card's composer is expanded (one at a time); asking cards are always expanded regardless
     openComposerIdAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;

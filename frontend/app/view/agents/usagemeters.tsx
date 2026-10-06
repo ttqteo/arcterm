@@ -1,16 +1,19 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The cockpit header's plan-usage meters: each provider's 5-hour and weekly windows as two small bars. Tokens
+// The app bar's plan-usage meters: each provider's 5-hour and weekly windows as two small bars. Tokens
 // and resets are on hover; the button opens the Usage surface for the rest.
 
 import { Meter } from "@/app/element/meter";
-import { cn } from "@/util/util";
-import { Fragment } from "react";
-import { usageLevel } from "./agentsviewmodel";
+import { globalStore } from "@/app/store/jotaiStore";
+import { cn, fireAndForget } from "@/util/util";
+import { useAtomValue } from "jotai";
+import { Fragment, useEffect } from "react";
+import type { AgentsViewModel } from "./agents";
+import { liveWindowAgents, providerPlanUsage, usageLevel } from "./agentsviewmodel";
 import { meterTitle, providerDot, usageBarVisible, windowUsedTokens } from "./cockpitrailmodel";
-import type { mergeRateLimitWindows } from "./ratelimitstore";
-import type { WindowTokens } from "./windowtokenstore";
+import { mergeRateLimitWindows, savedRateLimitsAtom } from "./ratelimitstore";
+import { loadWindowTokens, windowTokensAtom, type WindowTokens } from "./windowtokenstore";
 
 const LEVEL_BAR: Record<"ok" | "warn" | "hot", string> = { ok: "bg-accent", warn: "bg-warning", hot: "bg-error" };
 const LEVEL_TXT: Record<"ok" | "warn" | "hot", string> = { ok: "text-accent", warn: "text-warning", hot: "text-error" };
@@ -20,7 +23,36 @@ const WINDOWS = [
     ["week", "wk", "Weekly"],
 ] as const;
 
-export function UsageMeters({
+// The app bar is always mounted, so this reads everything itself rather than borrowing a surface's state.
+// Rate-limit windows are account-scoped, not per-agent: every agent's live reading collapses to one block
+// per provider (last live wins), merged over the saved snapshot so it survives idle — the aggregation the
+// Usage surface uses. Only running agents count as live (liveWindowAgents): an idle one holds the reading
+// frozen at its last turn and would pin the meter to that old value. The 1s clock rolls a window over the
+// moment it resets.
+export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
+    const agents = useAtomValue(model.agentsAtom);
+    const saved = useAtomValue(savedRateLimitsAtom);
+    const windowTokens = useAtomValue(windowTokensAtom);
+    const now = useAtomValue(model.nowAtom);
+    const donuts = mergeRateLimitWindows(providerPlanUsage(liveWindowAgents(agents)), saved, now);
+    const claude = donuts.find((d) => d.provider === "claude");
+    useEffect(() => {
+        if (claude == null) {
+            return;
+        }
+        fireAndForget(() => loadWindowTokens(claude.fivehour.reset, claude.week.reset));
+    }, [claude?.fivehour.reset, claude?.week.reset]);
+    return (
+        <UsageMeters
+            donuts={donuts}
+            windowTokens={windowTokens}
+            now={now}
+            onOpen={() => globalStore.set(model.surfaceAtom, "usage")}
+        />
+    );
+}
+
+function UsageMeters({
     donuts,
     windowTokens,
     now,

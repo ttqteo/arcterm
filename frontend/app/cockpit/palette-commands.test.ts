@@ -107,11 +107,10 @@ describe("buildCommandItems", () => {
 describe("buildExtraItems", () => {
     const deps = () => ({ openNewProject: vi.fn() });
 
-    it("offers the chordless modal and one drill row each for themes and focus", () => {
+    it("offers the chordless modal and a drill row for themes", () => {
         const items = buildExtraItems(deps());
         expect(items.map((i) => [i.key, i.drill])).toEqual([
             ["cmd:new-project", undefined],
-            ["cmd:focus", "focus"],
             ["cmd:theme", "theme"],
         ]);
     });

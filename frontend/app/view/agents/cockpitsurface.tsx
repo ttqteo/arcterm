@@ -24,7 +24,6 @@ import {
     matchesProjectFilter,
     mergeOrder,
     partitionBackgrounded,
-    providerPlanUsage,
     type AgentVM,
 } from "./agentsviewmodel";
 import {
@@ -45,9 +44,6 @@ import { hiddenAgentIds, rosterLoadPhase, splitRecentlyIdle } from "./cockpitsur
 import { BackgroundAgentsStrip } from "./backgroundagentsstrip";
 import { BackgroundedSection } from "./backgroundedsection";
 import { channelsAtom } from "./channelsstore";
-import { filterByFocus, focusBannerCopy } from "./focusscope";
-import { activeFocusAtom, focusRevealAtom, focusScopeAtom } from "./focusstore";
-import { FocusBanner } from "./focusbanner";
 import { answeredAskIdsAcross, needsHuman } from "./jarvisderive";
 import { IdleSection } from "./idlesection";
 import { LeadCard } from "./leadcard";
@@ -67,11 +63,8 @@ import { useRunDigests } from "./runlineagestore";
 import { useCockpitKeyboard } from "./usecockpitkeyboard";
 import { useCardStreams } from "./usecardstreams";
 import { ProjectSwitcher } from "./projectswitcher";
-import { mergeRateLimitWindows, savedRateLimitsAtom } from "./ratelimitstore";
-import { loadWindowTokens, windowTokensAtom } from "./windowtokenstore";
 import { useSubagentTracking } from "./subagenttracking";
 import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
-import { UsageMeters } from "./usagemeters";
 
 // Status tabs (mockup A3): a tab's count takes its status color while it has any, the selected tab underlines
 const TAB_TONE: Record<ChipFilter, { text: string; line: string }> = {
@@ -109,17 +102,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // cues that need per-second precision live in self-subscribing leaves (QuietDot, CockpitEventsRail,
     // CockpitRail), which read the 1s `nowAtom` directly.
     const structuralNow = useAtomValue(model.structuralNowAtom);
-    // Rate-limit windows are account-scoped, not per-agent: collapse every agent's live reading to one
-    // block per provider (last live wins), merged over the saved snapshot so it survives idle — the
-    // same aggregation the full Usage surface uses.
-    const savedRateLimits = useAtomValue(savedRateLimitsAtom);
-    const usageDonuts = mergeRateLimitWindows(
-        providerPlanUsage([...asking, ...working, ...idle]),
-        savedRateLimits,
-        structuralNow
-    );
-    const windowTokens = useAtomValue(windowTokensAtom);
-    const claudeDonut = usageDonuts.find((d) => d.provider === "claude");
     // The 1s now-clock is driven by a single always-mounted NowTicker (cockpit root); the leaf
     // indicators (QuietDot, CockpitEventsRail, CockpitRail) self-subscribe to `nowAtom` directly.
     // 15s writer: coarse enough that re-rendering CockpitSurface on it is cheap, frequent enough that
@@ -128,12 +110,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         const t = setInterval(() => globalStore.set(model.structuralNowAtom, Date.now()), 15000);
         return () => clearInterval(t);
     }, []);
-    useEffect(() => {
-        if (claudeDonut == null) {
-            return;
-        }
-        fireAndForget(() => loadWindowTokens(claudeDonut.fivehour.reset, claudeDonut.week.reset));
-    }, [claudeDonut?.fivehour.reset, claudeDonut?.week.reset]);
 
     // A just-finished agent keeps its full row (so you can reply) for the grace window, then collapses
     // into the Idle list. Dismissals are keyed by idle episode (id:idleSince).
@@ -219,14 +195,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // status chips narrow what the grid renders; cursor/order still operate over the full set
     const projectFilter = useAtomValue(model.projectFilterAtom);
     const liveOnly = useAtomValue(model.liveOnlyAtom);
-    const spaceScope = useAtomValue(focusScopeAtom);
-    const activeSpace = useAtomValue(activeFocusAtom);
-    const agentRevealed = useAtomValue(focusRevealAtom).has("agent");
-    // project + live-only first, then the Space lens. The banner's in-focus count ignores the reveal, so it still says how many
-    // rows are the focus's own after Show all.
-    const projectScoped = filterAgents(orderedAgents, projectFilter, liveOnly);
-    const visibleOrdered = filterByFocus(projectScoped, spaceScope, agentRevealed);
-    const spaceInScope = filterByFocus(projectScoped, spaceScope, false).length;
+    const visibleOrdered = filterAgents(orderedAgents, projectFilter, liveOnly);
     // run events feed lead-down, review findings and the Events rail; digests feed lanes and question owners
     const lineage = useAtomValue(model.lineageAtom);
     const runsInView = Object.values(lineage.runs);
@@ -248,7 +217,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // one card per plain agent or run; a run's workers are rows of its card. A running run keeps its card while
     // its lead idles between wakes, so its lead is looked up in scope before parking and Live only.
-    const runScope = filterByFocus(filterAgents(agents, projectFilter, false), spaceScope, agentRevealed);
+    const runScope = filterAgents(agents, projectFilter, false);
     // agents with nothing to show stay off the grid and out of its counts until their first transcript entry
     const idsWithEntries = useAtomValue(idsWithEntriesAtom);
     const hidden = hiddenAgentIds(agents, idsWithEntries, lineage);
@@ -529,12 +498,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                             ))}
                         </div>
                         <div className="mb-1.5 ml-auto flex flex-none items-center gap-2">
-                            <UsageMeters
-                                donuts={usageDonuts}
-                                windowTokens={windowTokens}
-                                now={structuralNow}
-                                onOpen={() => globalStore.set(model.surfaceAtom, "usage")}
-                            />
                             <ProjectSwitcher model={model} variant="header" />
                             <button
                                 type="button"
@@ -551,21 +514,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                             </button>
                         </div>
                     </div>
-                    {activeSpace != null ? (
-                        <div className="px-4 pt-2.5">
-                            <FocusBanner
-                                surface="agent"
-                                copy={focusBannerCopy(
-                                    activeSpace.label,
-                                    spaceInScope,
-                                    projectScoped.length,
-                                    agentRevealed,
-                                    "agents"
-                                )}
-                                revealed={agentRevealed}
-                            />
-                        </div>
-                    ) : null}
                 </div>
 
                 <div className="relative flex min-h-0 flex-1 flex-col">

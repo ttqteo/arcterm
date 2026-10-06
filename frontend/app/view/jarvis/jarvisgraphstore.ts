@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Jarvis graph surface (U3) state + loaders. Module-scope jotai atoms written by async loaders via
-// globalStore (mirrors memstore/focusstore), so state survives the nav-switch unmount. Snapshot
+// globalStore (mirrors memstore), so state survives the nav-switch unmount. Snapshot
 // semantics: the base graph loads once per open; a dossier's attribution blooms lazily on focus and
 // is cached. No live push this cycle.
 

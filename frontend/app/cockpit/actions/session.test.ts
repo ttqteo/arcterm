@@ -70,12 +70,12 @@ describe("session actions", () => {
         expect(globalStore.get(centerModeAtom)).toBe("session");
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
-    it("open session sends a run's session to History with its member in view", () => {
+    it("open session opens a run's session in the run pane with its member in view", () => {
         const model = stub();
         action("session:open").run(thing(mk({ runid: "r1", role: "worker", taskid: "t-2" })), { model });
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(centerModeAtom)).toBe("run");
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 });

@@ -351,9 +351,10 @@ content is always fluid.
   window controls.
 - **Nav rail** — fixed 78px wide (56px on narrow windows via
   `navRailCollapsed(windowWidth)` in `navrailwidth.ts`).
-- **Agent surface tree** — a sentence-case header with a "New agent" button,
-  then collapsible project folder rows, each holding one-line agent rows
-  (status dot, name, meta). The selected row is a grey fill
+- **Agent surface tree** — a "Conversation History" row (New agent is the app
+  bar's, not repeated here), then three sections (Active, Terminals, Conversations), each a counted header
+  that folds it, holding collapsible project folder rows of one-line rows
+  (status dot or mark, name, meta). The selected row is a grey fill
   (`bg-surface-selected`). Asking is a word in the row, not a filled row: an
   amber fill would make the list shout.
 - **Details rail** — a list of counted, collapsible sections, each a header
@@ -402,11 +403,16 @@ All primitives are built in-house in `frontend/app/element/` (button, toggle,
 input, modal, popover, tooltip, segmented, skeleton, collapsiblerail,
 errorboundary) — **no shadcn components** (only its vendored `cn()` helper).
 Icons are `lucide-react` named imports (size 20, `strokeWidth 1.8` in nav);
-runtime logos stay image assets.
+runtime logos stay image assets, and so do file-type icons — the Material Icon
+Theme set, via `element/fileicon.tsx` (`<FileIcon path dir expanded />`).
 
 - **Buttons** — primary = `bg-accent text-background hover:bg-accenthover`;
   secondary = `bg-surface-raised border-edge-mid text-muted hover:border-edge-strong
   hover:bg-surface-hover` (see `cockpit/app-bar.tsx`).
+- **Tooltips** — give the control a `title`, with its shortcut in trailing
+  parentheses (`Hide the review (Esc)`). `element/titletiphost.tsx` shows every
+  title immediately in the app's own chip, the shortcut muted at the right;
+  `data-tip-placement` overrides where it opens.
 - **Status indicators** — dot + color + pulse (`pulse-dot` on `bg-working`/`bg-asking`;
   `pulse-dot-slow`, `pulse-soft` for the slower curves); status is never color alone.
   The pulse is drawn at 12fps by `element/pulsedriver.tsx`, not a CSS animation:

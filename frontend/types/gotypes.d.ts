@@ -305,6 +305,14 @@ declare global {
         ts: number;
     };
 
+    // wshrpc.ClaudeProjectData
+    type ClaudeProjectData = {
+        path: string;
+        name: string;
+        lastactivets: number;
+        sessions: number;
+    };
+
     // waveobj.Client
     type Client = WaveObj & {
         windowids: string[];
@@ -809,6 +817,16 @@ declare global {
     // wshrpc.CommandGetChannelsRtnData
     type CommandGetChannelsRtnData = {
         channels: Channel[];
+    };
+
+    // wshrpc.CommandGetClaudeQuotaRtnData
+    type CommandGetClaudeQuotaRtnData = {
+        fivehourpct?: number;
+        fivehourreset?: number;
+        weekpct?: number;
+        weekreset?: number;
+        capturedat?: number;
+        source?: string;
     };
 
     // wshrpc.CommandGetDossierData
@@ -1324,6 +1342,11 @@ declare global {
     type CommandRunUsageRtnData = {
         usage?: UsageRow[];
         sealed?: boolean;
+    };
+
+    // wshrpc.CommandScanClaudeProjectsRtnData
+    type CommandScanClaudeProjectsRtnData = {
+        projects: ClaudeProjectData[];
     };
 
     // wshrpc.CommandSealRunEvidenceData

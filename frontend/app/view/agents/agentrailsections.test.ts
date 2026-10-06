@@ -16,8 +16,6 @@ const base: AgentRailInput = {
     artifacts: 0,
     uploads: 0,
     bgTasks: 1,
-    terminals: 0,
-    terminalsOther: 0,
     tools: 4,
     hasRun: false,
 };
@@ -26,13 +24,13 @@ const header = (i: AgentRailInput, id: AgentRailSectionId) => planAgentRail(i).f
 
 describe("planAgentRail", () => {
     it("lists attention first, then what the agent holds, then the facts last, keeping empty counted sections", () => {
+        // no Terminals: plain terminals are the Agent tree's own section
         expect(ids(base)).toEqual([
             "subagents",
             "files",
             "artifacts",
             "uploads",
             "bgtasks",
-            "terminals",
             "tools",
             "details",
             "usage",
@@ -50,7 +48,6 @@ describe("planAgentRail", () => {
             "artifacts",
             "uploads",
             "bgtasks",
-            "terminals",
             "tools",
             "run",
             "details",
@@ -65,9 +62,12 @@ describe("planAgentRail", () => {
         expect(header({ ...base, files: null }, "files")).toEqual({});
     });
     it("a subagent interior shows its head, tools, details and usage only", () => {
-        expect(
-            ids({ ...base, inSubagent: true, needsYou: 1, hasRun: true, artifacts: 2, uploads: 1, terminals: 3 })
-        ).toEqual(["subagent", "tools", "details", "usage"]);
+        expect(ids({ ...base, inSubagent: true, needsYou: 1, hasRun: true, artifacts: 2, uploads: 1 })).toEqual([
+            "subagent",
+            "tools",
+            "details",
+            "usage",
+        ]);
     });
     it("artifacts counts the agent's boards, and goes inert at zero", () => {
         expect(header({ ...base, artifacts: 2 }, "artifacts")).toEqual({ count: 2 });
@@ -84,30 +84,27 @@ describe("planAgentRail", () => {
         expect(sectionOpen({}, "uploads", header(base, "uploads")!)).toBe(false);
         expect(sectionOpen({}, "uploads", header({ ...base, uploads: 3 }, "uploads")!)).toBe(true);
     });
-    it("terminals counts what the rail lists", () => {
-        expect(header({ ...base, terminals: 2 }, "terminals")).toEqual({ count: 2 });
-        expect(header({ ...base, terminals: 1, terminalsOther: 4 }, "terminals")).toEqual({ count: 1 });
-    });
-    it("terminals with none in this project stays openable only when other projects have some to show", () => {
-        expect(header(base, "terminals")).toEqual({ count: 0 });
-        expect(sectionExpandable(header(base, "terminals")!)).toBe(false);
-        expect(header({ ...base, terminalsOther: 2 }, "terminals")).toEqual({ count: 0, emptyOpenable: true });
-        expect(sectionExpandable(header({ ...base, terminalsOther: 2 }, "terminals")!)).toBe(true);
-        // no defaultOpen: it opens at 0, so the toggle for the other projects' terminals is visible
-        expect(sectionOpen({}, "terminals", header({ ...base, terminalsOther: 2 }, "terminals")!)).toBe(true);
-    });
 });
 
 describe("planTerminalRail", () => {
+    const terminalsHeader = (terminals: number, terminalsOther: number) =>
+        planTerminalRail({ terminals, terminalsOther })[0].header;
+
     it("a focused terminal's rail is the Terminals section alone", () => {
         expect(planTerminalRail({ terminals: 2, terminalsOther: 0 })).toEqual([
             { id: "terminals", header: { count: 2 } },
         ]);
     });
-    it("it follows the same openable rule as an agent's Terminals section", () => {
-        expect(planTerminalRail({ terminals: 0, terminalsOther: 3 })).toEqual([
-            { id: "terminals", header: { count: 0, emptyOpenable: true } },
-        ]);
+    it("counts what the rail lists", () => {
+        expect(terminalsHeader(1, 4)).toEqual({ count: 1 });
+    });
+    it("with none in this project stays openable only when other projects have some to show", () => {
+        expect(terminalsHeader(0, 0)).toEqual({ count: 0 });
+        expect(sectionExpandable(terminalsHeader(0, 0))).toBe(false);
+        expect(terminalsHeader(0, 3)).toEqual({ count: 0, emptyOpenable: true });
+        expect(sectionExpandable(terminalsHeader(0, 3))).toBe(true);
+        // no defaultOpen: it opens at 0, so the toggle for the other projects' terminals is visible
+        expect(sectionOpen({}, "terminals", terminalsHeader(0, 3))).toBe(true);
     });
 });
 

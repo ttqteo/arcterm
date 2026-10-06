@@ -44,12 +44,13 @@ import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { EndedTranscript } from "./endedtranscript";
-import { DivergenceBanner } from "./focusbanner";
+import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { GridCellBar } from "./gridcellbar";
 import { GridDropOverlay } from "./griddropoverlay";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
+import { RunPane } from "./runpane";
 import { SessionPane } from "./sessionpane";
 import { terminalFullscreenAtom } from "./railstore";
 import { projectFocusTarget } from "./railterminals";
@@ -332,10 +333,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         if (holdForGrid || rosterLoadPhase(seeded, agents.length) === "loading") {
             return <AgentSurfaceSkeleton />;
         }
-        if (centerMode === "terminal") {
-            return <AgentLaunchHero model={model} />;
-        }
-        // History and a session read without an agent: the tree is where they are opened from
+        // with no agent the centre is the launch hero, or History or a session read; the tree stays beside it, since it is
+        // where conversations and terminals are opened from
         return (
             <MotionConfig reducedMotion="user">
                 <div
@@ -346,7 +345,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 >
                     <AgentTree model={model} />
                     <div className="flex min-w-0 flex-1 flex-col">
-                        <AgentCenterPane model={model} mode={centerMode} />
+                        {centerMode === "terminal" ? (
+                            <AgentLaunchHero model={model} />
+                        ) : (
+                            <AgentCenterPane model={model} mode={centerMode} />
+                        )}
                     </div>
                 </div>
             </MotionConfig>
@@ -363,7 +366,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}
                     <div className={cn("flex min-h-0 flex-1 flex-col", stackHidden && "hidden")}>
                         <AgentHeader model={model} agent={agent} />
-                        <DivergenceBanner scope="project" decision={decision} onRejoin={rejoin} />
+                        <DivergenceBanner decision={decision} onRejoin={rejoin} />
                         {/* The grid parent is always rendered: hidden, never unmounted, so no xterm remounts. Tracks
                             are minmax(0, 1fr) and cells min-w-0 min-h-0 so a cell can shrink below its xterm's pixel
                             width, which is what makes the terminal's ResizeObserver fire and refit. Nothing here
@@ -458,7 +461,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
 function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {mode === "history" ? <ConversationHistory model={model} /> : <SessionPane model={model} />}
+            {mode === "history" ? (
+                <ConversationHistory model={model} />
+            ) : mode === "run" ? (
+                <RunPane model={model} />
+            ) : (
+                <SessionPane model={model} />
+            )}
         </div>
     );
 }

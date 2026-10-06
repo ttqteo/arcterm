@@ -141,6 +141,19 @@ describe("runView", () => {
         expect(defaultMember(v)).toBe("t-3");
     });
 
+    it("opens a run with no lead session on its first member that has one", () => {
+        const leadless = groupRunSessions([
+            mk({ id: "w2", runid: "r9", role: "worker", taskid: "t-2", lastactivets: 4 }),
+            mk({ id: "w3", runid: "r9", role: "worker", taskid: "t-3", lastactivets: 6 }),
+        ]).runs[0];
+        const done = dagOf([task("t-1", "done"), task("t-2", "done"), task("t-3", "done")], { status: "done" });
+        expect(defaultMember(runView({ group: leadless, dag: done, now: 0 }))).toBe("t-2");
+        // and on the lead when no member has a session at all
+        expect(defaultMember(runView({ group: { ...leadless, tasks: {}, sessions: [] }, dag: done, now: 0 }))).toBe(
+            LEAD_MEMBER
+        );
+    });
+
     it("opens a run with nothing asking on its lead", () => {
         const v = runView({ group: groupRunSessions(sessions).runs[0], dag, now: 0 });
         expect(v.head).toEqual({ key: "running", text: "2 running" });

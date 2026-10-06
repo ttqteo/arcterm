@@ -11,7 +11,6 @@ import { cn } from "@/util/util";
 import {
     Contrast,
     CornerDownRight,
-    Crosshair,
     File,
     FileText,
     Flag,
@@ -72,7 +71,6 @@ const KIND_ICONS: Partial<Record<GroupKind, LucideIcon>> = {
     command: Play,
     file: File,
     theme: Contrast,
-    "focus-task": Crosshair,
     "as-goal": Zap,
     widen: Search,
     line: CornerDownRight,

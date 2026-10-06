@@ -4,7 +4,8 @@
 // Persists the last-known account-level rate-limit windows (5-hour + weekly) per provider so the
 // Usage surface donuts survive when no agent is running. Live AgentUsage only exists while a Claude
 // agent is active; this saves a snapshot whenever one reports, seeds from localStorage at load, and
-// merges live-over-saved (with per-window rollover) for the surface. Pure-FE — no Go, no RPC.
+// merges live-over-saved (with per-window rollover) for the surface. The claude snapshot is also fed
+// with no agent running, from the account's quota read (claudequota.ts), so it is known before one runs.
 // See docs/superpowers/specs/2026-06-26-ratelimit-donut-persistence-design.md.
 
 import { atom, type PrimitiveAtom } from "jotai";
@@ -54,8 +55,14 @@ export const savedRateLimitsAtom = atom<Record<string, SavedSnapshot>>(
 
 // Save a snapshot for `provider` — only when the usage carries a 5h or weekly window field.
 // Window fields + capturedAt only; context/cost are per-session and deliberately dropped.
-export function recordRateLimit(provider: string, usage: AgentUsage): void {
+// `capturedAt` is when the reading is as of (now, for an agent's report); a newer snapshot already
+// saved wins over an older reading.
+export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt = Date.now()): void {
     if (usage == null || (usage.fivehourpct == null && usage.weekpct == null)) {
+        return;
+    }
+    const saved = globalStore.get(savedRateLimitsAtom);
+    if ((saved[provider]?.capturedAt ?? 0) > capturedAt) {
         return;
     }
     const snapshot: SavedSnapshot = {
@@ -63,9 +70,9 @@ export function recordRateLimit(provider: string, usage: AgentUsage): void {
         fivehourreset: usage.fivehourreset,
         weekpct: usage.weekpct,
         weekreset: usage.weekreset,
-        capturedAt: Date.now(),
+        capturedAt,
     };
-    const next = { ...globalStore.get(savedRateLimitsAtom), [provider]: snapshot };
+    const next = { ...saved, [provider]: snapshot };
     globalStore.set(savedRateLimitsAtom, next);
     try {
         globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(next));

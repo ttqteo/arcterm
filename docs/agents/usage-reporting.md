@@ -26,6 +26,26 @@ usage numbers. Usage reaches Arc one of two ways, chosen by `wsh install-agent-h
   `wsh statusline --inner=<base64 of your original command>`, which publishes the usage and then runs
   your original command with the same stdin.
 
+A session only learns its rate-limit windows from its first response, so both sources say nothing
+about the account until a claude turn has run. For the **account's Claude windows with no session
+running**, wavesrv reads them itself (`pkg/claudequota`, the `GetClaudeQuotaCommand` RPC):
+
+- It asks `GET https://api.anthropic.com/api/oauth/usage` with the access token Claude Code stored in
+  `<config dir>/.credentials.json` (`CLAUDE_CONFIG_DIR`, else `~/.claude`). The token is only read,
+  never refreshed: rotating it would sign Claude Code out. An expired one is skipped until Claude Code
+  refreshes it on its next run.
+- The endpoint is rate-limited, so wavesrv asks at most once per 5 minutes, whichever windows poll,
+  and backs off on a 429 (10 minutes doubling to an hour, or the `Retry-After` when longer).
+- Without a live answer it falls back to `cachedUsageUtilization` in Claude Code's config file, Claude
+  Code's own copy of an earlier answer. That copy can be a day old.
+- The frontend (`frontend/app/view/agents/claudequota.ts`, started at boot) polls the RPC every 5
+  minutes and saves the answer as the claude snapshot in `ratelimitstore.ts`, stamped with the time
+  it is as of. A newer snapshot from a live agent is kept. Every place that shows saved windows shows
+  it, labeled "as of".
+
+This reverses the 2026-06-26 specs' choice to avoid the endpoint, made by the user on 2026-10-06 so
+the windows are known before any claude runs.
+
 ## Data flow
 
 ```

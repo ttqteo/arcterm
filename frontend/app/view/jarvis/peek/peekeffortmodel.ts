@@ -45,5 +45,5 @@ export function effortPeekModel(effort: Effort): EffortPeekModel {
 
 // an initiative is never a focus target
 export function effortPeekFacts(effort: Effort | undefined): PeekFacts {
-    return { gone: effort == null, focus: null };
+    return { gone: effort == null };
 }

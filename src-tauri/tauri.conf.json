@@ -13,7 +13,7 @@
     "windows": [
       { "label": "main", "title": "arcterm", "width": 1000, "height": 700, "decorations": false, "dragDropEnabled": false }
     ],
-    "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:*" }
+    "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:*" }
   },
   "bundle": {
     "active": true,

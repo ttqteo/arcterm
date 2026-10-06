@@ -6893,8 +6893,8 @@ const uiApi = {
     },
 };
 
-// --- focus: re-aiming and divergence ------------------------------------------------------------
-// Both scenarios need two registered projects to have anything to diverge BETWEEN, so they register
+// --- project divergence -------------------------------------------------------------------------
+// The scenario needs two registered projects to have anything to diverge BETWEEN, so they register
 // their own temp pair rather than depending on whatever is in the dev registry, and remove them in
 // teardown. Every DOM query below is scoped to a data-* hook: a document-wide `button` query picks
 // the app bar's global search button, not the row under test.
@@ -6932,105 +6932,6 @@ const codeProjectName = (h) =>
     h.ev(
         `(() => { try { return JSON.parse(localStorage.getItem('code.project.last'))?.name ?? null; } catch (e) { return null; } })()`
     );
-
-const focusReaimsSurfaces = {
-    name: "focus-reaims-surfaces",
-    surface: "cockpit",
-    async arrange(h) {
-        // Code seeds from the app-bar project ONLY when it has no persisted pick — that precedence is
-        // the whole point of step 5, so the persisted pick is cleared here and restored in teardown.
-        const prevCode = await h.ev("localStorage.getItem('code.project.last')");
-        const prevFocus = await h.ev("localStorage.getItem('cockpit.focus.last')");
-        await h.ev("localStorage.removeItem('code.project.last')");
-        await h.ev("localStorage.removeItem('cockpit.focus.last')");
-        return { prevCode, prevFocus };
-    },
-    async assert(h) {
-        const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        await h.goto("cockpit");
-        await napFocus(400);
-
-        const opened = await h.ev(`(() => {
-            const t = document.querySelector('[data-focus-switcher]');
-            if (!t) return false;
-            t.click();
-            return true;
-        })()`);
-        await napFocus(250);
-        const agentRow = await h.ev(`(() => {
-            const row = document.querySelector('[data-focus-row^="agent:"]');
-            return row ? { key: row.getAttribute('data-focus-row'), label: row.textContent.trim() } : null;
-        })()`);
-        rec(
-            "1. the focus switcher lists live agents, not tasks only",
-            opened === true && agentRow != null,
-            JSON.stringify({ opened, agentRow })
-        );
-        if (agentRow == null) {
-            // Stated as a failing step rather than an early PASS: a scenario that quietly succeeds on
-            // an empty roster proves nothing about the thing it is named for.
-            rec("PRECONDITION: no live agent to focus — start one and re-run", false, "roster empty");
-            return steps;
-        }
-
-        const rowSel = `[data-focus-row=${JSON.stringify(agentRow.key)}]`;
-        const clicked = await h.ev(`(() => {
-            const row = document.querySelector(${JSON.stringify(rowSel)});
-            if (!row) return false;
-            row.click();
-            return true;
-        })()`);
-        await napFocus(700);
-        const barLabel = await h.ev(`document.querySelector('[data-focus-switcher]')?.textContent?.trim() ?? null`);
-        rec(
-            "2. focusing an agent flips the app-bar indicator to its label",
-            clicked === true && barLabel != null && barLabel !== "Global",
-            `bar=${barLabel}`
-        );
-
-        const barProject = await h.ev(
-            `document.querySelector('[data-project-switcher="bar"]')?.textContent?.trim() ?? null`
-        );
-        rec(
-            "3. focus adopted the agent's project",
-            barProject != null && !/All projects/.test(barProject),
-            `project=${barProject}`
-        );
-
-        await h.goto("files");
-        await napFocus(1000);
-        const diffSubject = await h.ev(`(() => {
-            const picker = document.querySelector('[data-files-source-picker]');
-            return picker ? picker.textContent.trim() : null;
-        })()`);
-        rec(
-            "4. Diff seeded on the focused agent rather than an empty surface",
-            diffSubject != null && diffSubject !== "",
-            `subject=${diffSubject}`
-        );
-
-        await h.goto("code");
-        await napFocus(1600);
-        const codeName = await codeProjectName(h);
-        rec(
-            "5. Code, with no persisted pick, seeded from the focus project",
-            codeName != null,
-            `code.project.last=${codeName} bar=${barProject}`
-        );
-        return steps;
-    },
-    async teardown(h, ctx) {
-        await h.ev("localStorage.removeItem('code.project.last')");
-        if (ctx?.prevCode != null) {
-            await h.ev(`localStorage.setItem('code.project.last', ${JSON.stringify(ctx.prevCode)})`);
-        }
-        if (ctx?.prevFocus != null) {
-            await h.ev(`localStorage.setItem('cockpit.focus.last', ${JSON.stringify(ctx.prevFocus)})`);
-        }
-        await h.goto("cockpit");
-    },
-};
 
 const focusDivergenceRejoin = {
     name: "focus-divergence-rejoin",
@@ -7360,7 +7261,7 @@ const agentTreeRail = {
             const tree = ${TREE};
             if (!tree) return null;
             // inside a project's row: the Active header's own total badge is not a group's
-            return [...tree.querySelectorAll("button[aria-expanded]:not([aria-label]) span")]
+            return [...tree.querySelectorAll('[data-agent-folder-section="active"] span')]
                 .map((s) => s.textContent.trim())
                 .filter((t) => /^\\d+ asking$/.test(t));
         })()`);
@@ -7520,10 +7421,11 @@ const agentTreeRail = {
                 size: s.querySelector("h3") ? getComputedStyle(s.querySelector("h3")).fontSize : null,
             }));
         })()`);
-        const order = ["subagents", "files", "artifacts", "uploads", "bgtasks", "terminals", "tools", "details", "usage"];
-        const seen = (sections ?? []).map((s) => s.id).filter((id) => order.includes(id));
+        // no Terminals: plain terminals are the Agent tree's own section
+        const order = ["subagents", "files", "artifacts", "uploads", "bgtasks", "tools", "details", "usage"];
+        const seen = (sections ?? []).map((s) => s.id).filter((id) => [...order, "terminals"].includes(id));
         rec(
-            "10. the lead's rail lists Subagents, Files changed, Artifacts, Uploads, Background tasks, Terminals, Tools used, Details, Token usage in order",
+            "10. the lead's rail lists Subagents, Files changed, Artifacts, Uploads, Background tasks, Tools used, Details, Token usage in order, and no Terminals",
             JSON.stringify(seen) === JSON.stringify(order),
             JSON.stringify(sections)
         );
@@ -7548,13 +7450,13 @@ const agentTreeRail = {
                 : skipStep("12. with no preset picked the cockpit is Graphite", `this profile picked ${theme.preset}`)
         );
 
-        // a project row is a button without an aria-label (the fold chips inside rows carry one); a plain agent row
-        // is a top-level row: no tree guides, no Workflow mark, not a nested worker, stage or fold row (pl-[28px]). Only the
-        // Active section's rows count: the Conversations list under it has two-line rows of its own
+        // a project row is the Active section's folder row; a plain agent row is a top-level row: no tree guides, no
+        // Workflow mark, not a nested worker, stage or fold row (pl-[28px]). Only the Active section's rows count: the
+        // Terminals and Conversations sections under it have folders and rows of their own
         const tree = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
-            const groups = [...tree.querySelectorAll("button[aria-expanded]:not([aria-label])")];
+            const groups = [...tree.querySelectorAll('[data-agent-folder-section="active"]')];
             const plain = [...tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer")].filter(
                 (r) =>
                     r.tagName !== "BUTTON" &&
@@ -7564,7 +7466,8 @@ const agentTreeRail = {
                     !r.className.includes("pl-[28px]")
             );
             return {
-                newAgent: [...tree.querySelectorAll("button")].some((b) => b.textContent.trim() === "New agent"),
+                // the app bar owns New agent; a second one in the tree was a duplicate
+                newAgent: ![...tree.querySelectorAll("button")].some((b) => b.textContent.trim() === "New agent"),
                 groups: groups.length,
                 folders: groups.filter((g) => g.querySelector("svg.lucide-folder-open, svg.lucide-folder")).length,
                 plain: plain.length,
@@ -7572,7 +7475,7 @@ const agentTreeRail = {
             };
         })()`);
         rec(
-            "13. the tree opens with New agent, every project is a folder row, and a plain agent row is one line",
+            "13. the tree has no New agent of its own, every project is a folder row, and a plain agent row is one line",
             tree != null &&
                 tree.newAgent &&
                 tree.groups >= 2 &&
@@ -7583,7 +7486,7 @@ const agentTreeRail = {
         );
         const fold = await h.ev(`(async () => {
             const tree = ${TREE};
-            const g = tree && tree.querySelector("button[aria-expanded='true']:not([aria-label])");
+            const g = tree && tree.querySelector('[data-agent-folder-section="active"][aria-expanded="true"]');
             if (!g) return null;
             // the Active section's rows: the Conversations list is not under a project and can fill while this runs
             const rows = () => tree.querySelectorAll("[data-agent-active-rows] .cursor-pointer").length;
@@ -7695,20 +7598,21 @@ const agentTreeQuickReturn = {
 };
 
 // The Agent surface after the Sessions merge (docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md): the sidebar's Active section
-// (the live agents) over its flat Conversations list of ended sessions (a row names its project; Show more pages it), the session pane with
-// Resume, Conversation History, Esc back to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions
-// item (Radar on Ctrl+7). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see
-// installAhMock). Resume is asserted present, never clicked: it would start a real agent. The project filter's menu is not driven: it is a
-// floating menu with no marker to find its items by. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
+// (the live agents) over its Conversations section of ended sessions in a folder per project (Show more pages a folder), both sections and
+// the folders folding, the app bar's project switcher narrowing the sidebar, the session pane with Resume, Conversation History, Esc back
+// to the terminal, `g s`, History's list cursor leaving with the surface, and a rail with no Sessions item (Radar on
+// Ctrl+7). One live fixture agent gives the Active section a project folder; GetSessionsActivity is answered in-page (see installAhMock). The
+// ghost's project is registered for the run, since the switcher offers registered projects only. Resume is asserted present, never clicked:
+// it would start a real agent. Keys are synthetic keydowns at the focused element, as docReviewEscape sends them.
 const AH_LIVE_ID = "fx-ah-live";
 const AH_PROJECT = "waveterm";
 const AH_GHOST = "ah-ghost";
-// ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT; with the ghost's one, three more than the list shows first
+// ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT, AH_PAGE of them shown before Show more; the ghost's one is newer
 const AH_SEEDS = 22;
-const AH_PAGE = 20; // CONVERSATION_PAGE (agentsidebarmodel.ts)
+const AH_PAGE = 10; // CONVERSATION_PAGE (agentsidebarmodel.ts)
+const AH_FOLDS_KEYS = ["agent.tree.sections.collapsed", "agent.tree.conversations.collapsed"];
 const AH_ANSWER = "history seed answer";
 const AH_MOCK_KEY = "__arcAgentHistoryMock";
-const AH_FOCUS_KEY = "cockpit.focus.last";
 const AH_CURSOR_STEP = "14. History's list cursor is withdrawn while another surface shows, and is back with the surface";
 const AH_SCAN_GAP_MS = 5400; // the sidebar rescans on re-entry at most every 5s (agentsidebarmodel.ts scanDue)
 const AH_TERMINAL = `document.querySelector('[data-agent-terminal="${AH_LIVE_ID}"]')`;
@@ -7752,8 +7656,9 @@ async function ahReload(h) {
 }
 
 // ended solo sessions ah-1 (newest) .. ah-<AH_SEEDS> under AH_PROJECT, more than one page of the Conversations list; ah-live is the live
-// fixture agent's own transcript (matched by normalized path, so it must not list as ended); ah-run was launched by a run (excluded
-// from the sidebar); ah-g1 belongs to a project with no live agent, and moved after ah-1, so it heads the list
+// fixture agent's own transcript (matched by normalized path, so it must not list as ended); ah-run was launched by run ah-run-1, filed
+// under the ghost's project, and lists as that run's one entry after ah-g1; ah-g1 belongs to a project with no live agent, and moved
+// after ah-1, so it heads the list
 function ahSessions(cwd, livePath, now) {
     const base = {
         runtime: "claude",
@@ -7789,8 +7694,10 @@ function ahSessions(cwd, livePath, now) {
         {
             ...base,
             id: "ah-run",
+            projectname: AH_GHOST,
+            projectpath: "C:/ah/ghost",
             task: "ah run worker",
-            lastactivets: now - 45_000,
+            lastactivets: now - 180_000,
             resumecommand: "claude --resume ah-run",
             transcriptpath: join(cwd, "ah-run.jsonl"),
             runid: "ah-run-1",
@@ -7924,17 +7831,21 @@ async function ahListNavSurface(h, urls) {
     }
 }
 
-// the keys of the Conversations list's rows in order, whether it offers Show more and the count that button shows
+// the Conversations section's rows in order: a folder as "folder:<project>", a session as its key, a run as "run:<id>", Show more as
+// "more:<project>:<hidden>"; the recency headings are left out (step 3b reads them)
 const ahList = (h) =>
-    h.ev(`(() => {
-        const more = document.querySelector("[data-agent-sessions-more]");
-        return {
-            keys: [...document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]")]
-                .map((r) => r.getAttribute("data-agent-session-row")),
-            more: more != null,
-            hidden: more?.querySelector("span")?.textContent?.trim() ?? null,
-        };
-    })()`);
+    h.ev(`[...document.querySelectorAll(
+        "[data-agent-conversations] [data-agent-folder], [data-agent-conversations] [data-agent-session-row], [data-agent-conversations] [data-agent-run-conversation], [data-agent-sessions-more]"
+    )].map((r) =>
+        r.hasAttribute("data-agent-folder")
+            ? "folder:" + r.getAttribute("data-agent-folder")
+            : r.hasAttribute("data-agent-sessions-more")
+              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.querySelector("span")?.textContent?.trim() ?? "")
+              : r.hasAttribute("data-agent-run-conversation")
+                ? "run:" + r.getAttribute("data-agent-run-conversation")
+                : r.getAttribute("data-agent-session-row")
+    )`);
+const ahKeys = (n, from = 1) => Array.from({ length: n }, (_, i) => `claude:ah-${i + from}`);
 
 const ahMockCalls = (h) => h.ev(`window.${AH_MOCK_KEY}?.state.calls ?? -1`);
 
@@ -7946,7 +7857,7 @@ const agentHistory = {
         const ctx = {
             cwd,
             prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
-            prevFocus: await h.ev(`localStorage.getItem(${JSON.stringify(AH_FOCUS_KEY)})`),
+            prevFolds: await h.ev(`${JSON.stringify(AH_FOLDS_KEYS)}.map((k) => localStorage.getItem(k))`),
         };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
@@ -7982,8 +7893,13 @@ const agentHistory = {
             );
             ctx.wroteFixture = true;
             await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
-            // History lists through the active Space (a persisted focus), which would hide the seeded sessions
-            await h.ev(`localStorage.removeItem(${JSON.stringify(AH_FOCUS_KEY)})`);
+            await h.ev(`${JSON.stringify(AH_FOLDS_KEYS)}.forEach((k) => localStorage.removeItem(k))`);
+            // the switcher offers registered projects only; the reload below boots a frontend that has it
+            ctx.ghostDir = join(cwd, "ghost");
+            mkdirSync(ctx.ghostDir);
+            await h.rpc("createproject", { name: AH_GHOST, path: ctx.ghostDir });
+            ctx.ghostRegistered = true;
+            await waitForProjectInConfig(h, AH_GHOST);
             // the fixture roster is read once at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             ctx.modules = await ahResolveModules(h);
@@ -8018,23 +7934,69 @@ const agentHistory = {
 
             const head = await h.ev(`(() => {
                 const tree = document.querySelector("[data-agent-tree]");
-                return tree ? [...tree.querySelectorAll("button")].slice(0, 2).map((b) => b.textContent.trim()) : null;
+                return tree ? [...tree.querySelectorAll("button")].slice(0, 1).map((b) => b.textContent.trim()) : null;
             })()`);
             rec(
-                "2. the tree opens with New agent, then Conversation History",
-                JSON.stringify(head) === JSON.stringify(["New agent", "Conversation History"]),
+                "2. the tree opens with Conversation History (New agent is the app bar's)",
+                JSON.stringify(head) === JSON.stringify(["Conversation History"]),
                 JSON.stringify(head)
             );
 
             const first = await ahList(h);
-            // the ghost's session moved after ah-1, so it heads a list that runs across projects
-            const firstPage = ["ah-g1", ...Array.from({ length: AH_PAGE - 1 }, (_, i) => `ah-${i + 1}`)].map((id) => `claude:${id}`);
+            // the ghost's session moved after ah-1, so its folder comes first
+            const firstPage = [
+                `folder:${AH_GHOST}`,
+                "claude:ah-g1",
+                "run:ah-run-1",
+                `folder:${AH_PROJECT}`,
+                ...ahKeys(AH_PAGE),
+                `more:${AH_PROJECT}:${AH_SEEDS - AH_PAGE}`,
+            ];
             rec(
-                `3. the Conversations list shows ${AH_PAGE} ended sessions newest first across projects, not the live agent's own session nor a run's, and offers Show more for the rest`,
-                JSON.stringify(first.keys) === JSON.stringify(firstPage) &&
-                    first.more === true &&
-                    first.hidden === String(AH_SEEDS + 1 - AH_PAGE),
+                `3. Conversations files the ended sessions in a folder per project, the newest folder first, ${AH_PAGE} of a folder before its Show more; not the live agent's own session, and a run's sessions as one run entry`,
+                JSON.stringify(first) === JSON.stringify(firstPage),
                 JSON.stringify(first)
+            );
+
+            // every seed moved within the last few hours, so each folder heads its rows Today (unless the run straddles midnight); a
+            // session's second line is its runtime, branch and tokens, a run's its task progress
+            const rich = await h.ev(`(() => {
+                const convo = document.querySelector("[data-agent-conversations]");
+                const row = convo?.querySelector('[data-agent-session-row="claude:ah-1"]');
+                const run = convo?.querySelector('[data-agent-run-conversation="ah-run-1"]');
+                return {
+                    headings: [...(convo?.querySelectorAll("[data-agent-recency]") ?? [])].map((e) => e.getAttribute("data-agent-recency")),
+                    meta: row?.lastElementChild?.textContent?.replace(/\s+/g, " ").trim() ?? null,
+                    run: run?.lastElementChild?.textContent?.replace(/\s+/g, " ").trim() ?? null,
+                };
+            })()`);
+            await h.shot("cdp-shots/agent-history-rows.png");
+            rec(
+                "3b. each folder heads its conversations by recency, and a row's second line reads its branch and tokens, a run's its progress",
+                rich.headings.length >= 2 &&
+                    rich.headings.every((b) => ["today", "yesterday"].includes(b)) &&
+                    /main/.test(rich.meta ?? "") &&
+                    /1k tok/.test(rich.meta ?? "") &&
+                    /landed|no tasks|complete/.test(rich.run ?? ""),
+                JSON.stringify(rich)
+            );
+
+            // a run's row reads its detail in the centre, on its first member with a session (ah-run-1 has no lead), not
+            // inside History; its back button returns to the terminal
+            await h.ev(`document.querySelector('[data-agent-run-conversation="ah-run-1"]')?.click()`);
+            const runPane = await ahWait(h, `document.querySelector('[data-agent-run-pane="ah-run-1"]')`, 4000);
+            const runOpen = await h.ev(`(() => ({
+                history: !!document.querySelector("[data-agent-history]"),
+                member: [...document.querySelectorAll('[data-agent-run-pane] h3')].at(-1)?.textContent?.trim() ?? null,
+                selected: document.querySelector('[data-agent-run-conversation="ah-run-1"]')?.className.includes("bg-surface-selected") ?? false,
+            }))()`);
+            await h.shot("cdp-shots/agent-history-run.png");
+            await h.ev(`document.querySelector("[data-agent-run-pane] [data-agent-session-back]")?.click()`);
+            const runClosed = await ahWait(h, `!document.querySelector("[data-agent-run-pane]")`, 3000);
+            rec(
+                "3c. a run's row opens its own pane, not History, on its first task, and Back returns to the terminal",
+                runPane && !runOpen.history && /Task 1/.test(runOpen.member ?? "") && runOpen.selected && runClosed,
+                JSON.stringify({ runPane, ...runOpen, runClosed })
             );
 
             const split = await h.ev(`(() => {
@@ -8051,23 +8013,24 @@ const agentHistory = {
                     sessionsInActive: active?.querySelectorAll("[data-agent-session-row]").length ?? -1,
                     activeAboveConversations: !!active && !!convo && !!(active.compareDocumentPosition(convo) & Node.DOCUMENT_POSITION_FOLLOWING),
                     ghostRows: tree?.querySelectorAll('[data-agent-session-project="${AH_GHOST}"]').length ?? -1,
-                    ghostNamed: (ghostRow?.textContent || "").includes(${JSON.stringify(AH_GHOST)}),
-                    ghostFolder: [...(tree?.querySelectorAll("button[aria-expanded]") ?? [])]
-                        .some((b) => (b.textContent || "").includes(${JSON.stringify(AH_GHOST)})),
-                    filter: !!convo?.querySelector('button[aria-label="Filter conversations by project"]'),
+                    ghostActiveFolder: !!tree?.querySelector('[data-agent-folder-section="active"][data-agent-folder="${AH_GHOST}"]'),
+                    ghostConversationsFolder: !!ghostRow && !!convo?.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_GHOST}"]'),
+                    toggles: [...(tree?.querySelectorAll("[data-agent-section-toggle]") ?? [])]
+                        .map((b) => b.getAttribute("data-agent-section-toggle") + ":" + b.getAttribute("aria-expanded")),
                 };
             })()`);
             rec(
-                "4. live agents are under Active and ended sessions in the Conversations list below it, never mixed; a project with no live agent has no folder, only its project's name on the row, and the list has its project filter",
+                "4. live agents are under Active and ended sessions in Conversations below it, never mixed; a project with no live agent has a Conversations folder and no Active one; both section headers fold, open by default",
                 JSON.stringify(split.headings) === JSON.stringify(["Active", "Conversations"]) &&
                     split.liveInActive &&
                     !split.liveInConversations &&
                     split.sessionsInActive === 0 &&
                     split.activeAboveConversations &&
-                    split.ghostRows === 1 &&
-                    split.ghostNamed &&
-                    !split.ghostFolder &&
-                    split.filter,
+                    split.ghostRows === 2 &&
+                    !split.ghostActiveFolder &&
+                    split.ghostConversationsFolder &&
+                    split.toggles.includes("active:true") &&
+                    split.toggles.includes("conversations:true"),
                 JSON.stringify(split)
             );
 
@@ -8076,7 +8039,12 @@ const agentHistory = {
             );
             rec("5. a row carries its relative time (ah-1 moved 10 minutes ago)", /^\d+m$/.test(age ?? ""), `age=${age}`);
 
-            await h.ev(`document.querySelector("[data-agent-sessions-more]")?.click()`);
+            // a press shows one page more: AH_SEEDS (22) takes two
+            const more = `document.querySelector('[data-agent-sessions-more="${AH_PROJECT}"]')`;
+            await h.ev(`${more}?.click()`);
+            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${2 * AH_PAGE + 1}`, 4000);
+            const once = await ahList(h);
+            await h.ev(`${more}?.click()`);
             await ahWait(
                 h,
                 `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_SEEDS + 1} &&
@@ -8085,9 +8053,82 @@ const agentHistory = {
             );
             const all = await ahList(h);
             rec(
-                "6. Show more lists the rest and the button goes",
-                all.keys.length === AH_SEEDS + 1 && all.more === false && all.keys[all.keys.length - 1] === `claude:ah-${AH_SEEDS}`,
-                JSON.stringify({ ...all, keys: all.keys.length })
+                "6. each Show more press lists one page more of its folder, and the button goes once nothing is hidden",
+                once[once.length - 1] === `more:${AH_PROJECT}:${AH_SEEDS - 2 * AH_PAGE}` &&
+                    JSON.stringify(all) ===
+                        JSON.stringify([
+                            `folder:${AH_GHOST}`,
+                            "claude:ah-g1",
+                            "run:ah-run-1",
+                            `folder:${AH_PROJECT}`,
+                            ...ahKeys(AH_SEEDS),
+                        ]),
+                JSON.stringify({ once: once.length, onceLast: once[once.length - 1], rows: all.length, last: all[all.length - 1] })
+            );
+
+            // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once
+            const folderBtn = `document.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_PROJECT}"]')`;
+            await h.ev(`${folderBtn}?.click()`);
+            await ahNap(200);
+            const folded = await ahList(h);
+            const foldedCount = await h.ev(`${folderBtn}?.textContent?.trim() ?? null`);
+            await h.ev(`${folderBtn}?.click()`);
+            await ahNap(200);
+            const conversationsToggle = `document.querySelector('[data-agent-section-toggle="conversations"]')`;
+            await h.ev(`${conversationsToggle}?.click()`);
+            await ahNap(200);
+            const noConversations = await h.ev(`document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`);
+            await h.ev(`${conversationsToggle}?.click()`);
+            await ahNap(200);
+            const activeToggle = `document.querySelector('[data-agent-section-toggle="active"]')`;
+            await h.ev(`${activeToggle}?.click()`);
+            await ahNap(300);
+            const activeFolded = await h.ev(`(() => ({
+                rows: !!document.querySelector("[data-agent-active-rows]"),
+                expanded: ${activeToggle}?.getAttribute("aria-expanded") ?? null,
+            }))()`);
+            await h.ev(`${activeToggle}?.click()`);
+            await ahNap(300);
+            const restored = await h.ev(`!!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`);
+            rec(
+                "6b. a Conversations folder folds to its row and count, and each section folds to its header and back",
+                JSON.stringify(folded) ===
+                    JSON.stringify([`folder:${AH_GHOST}`, "claude:ah-g1", "run:ah-run-1", `folder:${AH_PROJECT}`]) &&
+                    (foldedCount ?? "").endsWith(String(AH_SEEDS)) &&
+                    noConversations === true &&
+                    activeFolded.rows === false &&
+                    activeFolded.expanded === "false" &&
+                    restored === true,
+                JSON.stringify({ folded, foldedCount, noConversations, activeFolded, restored })
+            );
+
+            // the app bar's switcher narrows the whole sidebar to its project, flat (one project needs no folder), and names the
+            // project plainly; Active says how many live agents it hides, and that line widens the sidebar again
+            const picked = await setBarProject(h, AH_GHOST);
+            await ahNap(400);
+            const narrowed = await ahList(h);
+            const narrowedMarks = await h.ev(`(() => ({
+                label: document.querySelector('[data-project-switcher="bar"]')?.textContent?.trim() ?? null,
+                live: !!document.querySelector('[data-agent-tree] [data-agent-row="${AH_LIVE_ID}"]'),
+                elsewhere: document.querySelector("[data-agent-elsewhere]")?.textContent?.trim() ?? null,
+                folders: document.querySelectorAll("[data-agent-tree] [data-agent-folder]").length,
+            }))()`);
+            await h.shot("cdp-shots/agent-history-filtered.png");
+            await h.ev(`document.querySelector("[data-agent-elsewhere]")?.click()`);
+            await ahNap(400);
+            const widened = await ahList(h);
+            const widenedLabel = await h.ev(`document.querySelector('[data-project-switcher="bar"]')?.textContent?.trim() ?? null`);
+            rec(
+                "6c. choosing a project in the app bar narrows the sidebar to it, flat, under a plain label; Active counts the agents it hides, and that line brings every project back",
+                picked === true &&
+                    JSON.stringify(narrowed) === JSON.stringify(["claude:ah-g1", "run:ah-run-1"]) &&
+                    narrowedMarks.label === AH_GHOST &&
+                    narrowedMarks.live === false &&
+                    /^1 in other project/.test(narrowedMarks.elsewhere ?? "") &&
+                    narrowedMarks.folders === 0 &&
+                    widened.length === AH_SEEDS + 4 &&
+                    widenedLabel === "All projects",
+                JSON.stringify({ picked, narrowed, ...narrowedMarks, widened: widened.length, widenedLabel })
             );
 
             await h.ev(`document.querySelector('[data-agent-session-row="claude:ah-1"]')?.click()`);
@@ -8271,7 +8312,21 @@ const agentHistory = {
         await step("remove the sessions mock", () => removeAhMock(h));
         if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
         await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
-        await step("restore the persisted focus", () => h.ev(restoreStorageKey(AH_FOCUS_KEY, ctx.prevFocus)));
+        for (const [i, key] of AH_FOLDS_KEYS.entries()) {
+            await step(`restore ${key}`, () => h.ev(restoreStorageKey(key, ctx.prevFolds?.[i] ?? null)));
+        }
+        await step("clear the project scope", () => setBarProject(h, "all"));
+        if (ctx.ghostRegistered) {
+            await step("delete the ghost's project", () => h.rpc("deleteproject", { name: AH_GHOST }));
+            // deleteproject leaves the channel createproject made
+            await step("delete the ghost project's channel", async () => {
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.ghostDir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
         await step("reload onto the live roster", async () => {
             if (!(await ahReload(h))) console.error("agent-history teardown: the page did not come back after the reload");
         });
@@ -12503,13 +12558,13 @@ const canvasSwap = {
             back.sameNode && (tagged.xterm ? back.sameXterm === true : true),
             JSON.stringify({ taggedXterm: tagged.xterm, sameNode: back.sameNode, sameXterm: back.sameXterm })
         );
-        const treeTerminals = await h.ev(
-            `[...document.querySelectorAll("[data-agent-tree] span")].some((s) => (s.textContent || "").trim() === "Terminals")`
+        const treeTerminal = await h.ev(
+            `!!document.querySelector('[data-agent-tree] [data-agent-terminals] [data-agent-terminal-row="${ctx.tabId}"]')`
         );
         rec(
-            "6. the agent tree has no Terminals group (terminals live in the details rail)",
-            treeTerminals === false,
-            `treeTerminals=${treeTerminals}`
+            "6. the agent tree's Terminals section lists the terminal",
+            treeTerminal === true,
+            `treeTerminal=${treeTerminal}`
         );
         if (!delivered) {
             steps.push(skipStep("4b. the c key itself", "CDP key events never reached the page; drove the header instead"));
@@ -12693,11 +12748,12 @@ const canvasTabsScenario = {
     },
 };
 
-// --- the details rail's sections: Artifacts, Uploads and Terminals, in the order the spec gives ---------------------
+// --- the details rail's sections: Artifacts and Uploads in the order the spec gives, and the tree's Terminals -------
 // docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md, decision 6. The roster is one dev fixture agent;
 // the terminals are two real plain tabs in two projects; the agent owns a temp canvas with two boards. Uploads is a
 // counted 0 that opens to an enabled Attach (the fixture agent has a block to paste into); agent-uploads covers what the
-// section does once something is in it.
+// section does once something is in it. Plain terminals left the agent's rail for a section of the Agent tree, and a
+// focused terminal's own rail still lists them.
 const RAIL_SECTIONS_AGENT_ID = "fx-rail-sections";
 const RAIL_SECTIONS_AGENT_BLOCK = "fx-blk-rail-sections";
 const RAIL_SECTIONS_PROJECT_A = "verify-rail-a";
@@ -12709,7 +12765,6 @@ const RAIL_SECTIONS_ORDER = [
     "artifacts",
     "uploads",
     "bgtasks",
-    "terminals",
     "tools",
     "details",
     "usage",
@@ -12726,8 +12781,10 @@ const railCount = (id) => `(() => {
     const m = /(\\d+)$/.exec(t.trim());
     return m ? Number(m[1]) : null;
 })()`;
-const railTerminalIds = `[...document.querySelectorAll('aside[aria-label="Agent details"] [data-rail-terminal]')]
-    .map((r) => r.getAttribute("data-rail-terminal"))`;
+// the tree's Terminals section in order: a folder as "folder:<project>", a terminal row as its tab id
+const treeTerminalRows = `[...(document.querySelector("[data-agent-tree] [data-agent-terminals]")
+    ?.querySelectorAll("[data-agent-folder], [data-agent-terminal-row]") ?? [])]
+    .map((r) => r.hasAttribute("data-agent-folder") ? "folder:" + r.getAttribute("data-agent-folder") : r.getAttribute("data-agent-terminal-row"))`;
 
 // a plain terminal tab in a project, the way launchAgent makes one (CreateTab, then the terminal meta). It is tracked
 // on ctx as soon as the tab exists, so a failure in the calls after it still lets teardown close it
@@ -12855,7 +12912,7 @@ const agentRailSections = {
 
         const ids = await h.ev(RAIL_SECTION_IDS);
         rec(
-            "1. the rail lists Subagents, Files, Artifacts, Uploads, Background tasks, Terminals, Tools, Details, Token usage in order",
+            "1. the rail lists Subagents, Files, Artifacts, Uploads, Background tasks, Tools, Details, Token usage in order, and no Terminals",
             JSON.stringify(ids) === JSON.stringify(RAIL_SECTIONS_ORDER),
             JSON.stringify(ids)
         );
@@ -12915,36 +12972,18 @@ const agentRailSections = {
             JSON.stringify({ uploadsBefore, uploadsAfter })
         );
 
-        const scoped = await h.ev(railTerminalIds);
-        const scopedCount = await h.ev(railCount("terminals"));
-        const widened = await h.ev(`(async () => {
-            const b = [...(${railSection("terminals")}?.querySelectorAll("button") ?? [])]
-                .find((x) => /^Show \\d+ from other projects$/.test((x.textContent || "").trim()));
-            if (!b) return null;
-            b.click();
-            await new Promise((r) => setTimeout(r, 400));
-            return ${railTerminalIds};
-        })()`);
+        const treeRows = await h.ev(treeTerminalRows);
+        const under = (t) => treeRows.indexOf(t.tabId) === treeRows.indexOf(`folder:${t.project}`) + 1;
         rec(
-            "5. Terminals lists the agent's project's terminals, and Show N from other projects adds the rest",
-            scoped.includes(termA.tabId) &&
-                !scoped.includes(termB.tabId) &&
-                scopedCount === scoped.length &&
-                Array.isArray(widened) &&
-                widened.includes(termA.tabId) &&
-                widened.includes(termB.tabId),
-            JSON.stringify({ scoped, scopedCount, widened })
+            "5. the Agent tree's Terminals section files each terminal under its project's folder, whatever project is focused",
+            treeRows.includes(termA.tabId) && treeRows.includes(termB.tabId) && under(termA) && under(termB),
+            JSON.stringify(treeRows)
         );
 
         const swept = await h.ev(polishSweep(RAIL_ASIDE));
         rec("6. nothing in the open rail is under 10.5px", sweptOk(swept), JSON.stringify(swept));
 
-        // a row is a focusable button (the keyboard acts on it as a click does), so read that before the click
-        const rowKind = await h.ev(`(() => {
-            const r = document.querySelector('[data-rail-terminal="${termA.tabId}"]');
-            return r ? { role: r.getAttribute("role"), tabIndex: r.tabIndex } : null;
-        })()`);
-        await h.ev(`document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.click()`);
+        await h.ev(`document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.click()`);
         const focused = await polishWaitFor(
             h,
             `(() => {
@@ -12955,30 +12994,21 @@ const agentRailSections = {
         );
         await polishNap(600);
         const narrowed = await h.ev(RAIL_SECTION_IDS);
-        const current = await h.ev(
-            `document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.getAttribute("aria-current")`
-        );
-        rec(
-            "7. a Terminals row is a button that focuses that terminal, and the rail narrows to Terminals alone",
-            rowKind?.role === "button" &&
-                rowKind.tabIndex === 0 &&
-                focused &&
-                JSON.stringify(narrowed) === JSON.stringify(["terminals"]) &&
-                current === "true",
-            JSON.stringify({ rowKind, focused, narrowed, current })
-        );
-        await h.shot("cdp-shots/agent-rail-sections-terminal.png");
-
-        // absent because the tree is not mounted would pass the group check vacuously, so the tree must be there too
-        const tree = await h.ev(`(() => ({
-            mounted: !!document.querySelector("[data-agent-tree]"),
-            terminalsGroup: [...document.querySelectorAll("[data-agent-tree] span")].some((s) => (s.textContent || "").trim() === "Terminals"),
+        const marks = await h.ev(`(() => ({
+            rail: document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.getAttribute("aria-current") ?? null,
+            railRole: document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.getAttribute("role") ?? null,
+            tree: document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.className.includes("bg-surface-selected") ?? false,
         }))()`);
         rec(
-            "8. the Agent tree has no Terminals group",
-            tree?.mounted === true && tree.terminalsGroup === false,
-            JSON.stringify(tree)
+            "7. a tree Terminals row focuses that terminal, which reads as selected there, and its rail is Terminals alone with it current",
+            focused &&
+                JSON.stringify(narrowed) === JSON.stringify(["terminals"]) &&
+                marks.rail === "true" &&
+                marks.railRole === "button" &&
+                marks.tree === true,
+            JSON.stringify({ focused, narrowed, ...marks })
         );
+        await h.shot("cdp-shots/agent-rail-sections-terminal.png");
         return steps;
     },
     async teardown(h, ctx) {
@@ -14802,7 +14832,6 @@ export const SCENARIOS = [
     resourceLinking,
     radarStartInvestigation,
     uiApi,
-    focusReaimsSurfaces,
     focusDivergenceRejoin,
     narrationFeed,
     agentTreeRail,

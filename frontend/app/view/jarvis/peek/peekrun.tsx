@@ -6,7 +6,6 @@
 
 import * as WOS from "@/app/store/wos";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { runRows } from "@/app/view/agents/focusswitchermodel";
 import { projectLabel } from "@/app/view/agents/projectlabel";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RuntimeMark } from "@/app/view/agents/runtimemark";
@@ -187,18 +186,16 @@ function LinkedRunPeek({ run, dagOref }: { run: Run; dagOref: string }) {
     return <RunPeekLive run={run} group={group ?? null} commitCount={digest.digest?.report?.commits?.length} />;
 }
 
-export function PeekRunBody({ model, target }: { model: AgentsViewModel; target: PeekTarget }) {
+export function PeekRunBody({ target }: { model: AgentsViewModel; target: PeekTarget }) {
     const runId = target.kind === "run" ? target.runId : "";
     const [run, loading] = WOS.useWaveObjectValue<Run>(WOS.makeORef("run", runId));
-    const agents = useAtomValue(model.agentsAtom);
-    const row = runRows(agents).find((r) => r.id === runId);
 
     useEffect(() => {
         if (loading) {
             return;
         }
-        reportPeekFacts(target, runPeekFacts(run ?? undefined, row));
-    }, [target, loading, run == null, row?.label, row?.project]);
+        reportPeekFacts(target, runPeekFacts(run ?? undefined));
+    }, [target, loading, run == null]);
 
     if (run == null) {
         return null;

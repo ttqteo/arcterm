@@ -7,7 +7,7 @@ import type { PeekFacts } from "../peekstore";
 
 // A note is gone when its read is rejected. It has no surface and nothing to focus on.
 export function notePeekFacts(result: "ok" | "error"): PeekFacts {
-    return { gone: result === "error", focus: null };
+    return { gone: result === "error" };
 }
 
 // PeekNote.dc.html's meta line: the note's project, then the day it was last updated (MM-DD)

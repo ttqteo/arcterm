@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The details rail's Terminals section: the plain shells launched beside the agents. They have no group in the Agent
-// tree any more, so this is where they are reached. A row focuses its terminal, which the surface then shows in the
-// centre. A focused terminal has no tools, files or run of its own, so its rail is this section alone (TerminalRail),
-// which keeps the way to the next terminal in reach.
+// The plain shells launched beside the agents, as a focused terminal's rail shows them. The Agent tree's Terminals
+// section lists every one of them; a focused terminal has no tools, files or run of its own, so its rail is this list
+// alone (TerminalRail), its project's terminals first. A row focuses its terminal, which the surface then shows in the
+// centre.
 
 import { CollapsibleRail, type RailSection } from "@/app/element/collapsiblerail";
 import { ContextMenuModel } from "@/app/store/contextmenu";
@@ -37,6 +37,30 @@ export function useRailTerminals(model: AgentsViewModel, agent: AgentVM): RailTe
     return useMemo(() => railTerminals(terminals, project, showAll), [terminals, project, showAll]);
 }
 
+// A terminal row's menu, here and in the Agent tree: the actions an agent row offers, minus the agent-only wording (a
+// terminal duplicates into a fresh shell in the same cwd). Rename matters more here than on an agent row: a terminal
+// has no ai-title to name it, so without a rename it is stuck on the launch-time label it shares with every other
+// shell in the repo.
+export function showTerminalMenu(model: AgentsViewModel, terminal: AgentVM, e: React.MouseEvent): void {
+    const items: ContextMenuItem[] = [
+        { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(terminal.id) },
+        { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, terminal.id) },
+        {
+            label: "Copy name",
+            icon: <Copy size={15} />,
+            click: () => void navigator.clipboard.writeText(terminal.name),
+        },
+        { type: "separator" },
+        {
+            label: "Close terminal",
+            icon: <X size={15} />,
+            danger: true,
+            click: () => confirmCloseSession(terminal),
+        },
+    ];
+    ContextMenuModel.getInstance().showContextMenu(items, e);
+}
+
 function TerminalRailRow({
     model,
     terminal,
@@ -57,28 +81,7 @@ function TerminalRailRow({
         globalStore.set(model.focusReplyAtom, false);
         showTerminal();
     };
-    // The actions an agent row offers, minus the agent-only wording: a terminal duplicates into a fresh shell in the
-    // same cwd. Rename matters more here than on an agent row: a terminal has no ai-title to name it, so without a
-    // rename it is stuck on the launch-time label it shares with every other shell in the repo.
-    const onContextMenu = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [
-            { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(terminal.id) },
-            { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, terminal.id) },
-            {
-                label: "Copy name",
-                icon: <Copy size={15} />,
-                click: () => void navigator.clipboard.writeText(terminal.name),
-            },
-            { type: "separator" },
-            {
-                label: "Close terminal",
-                icon: <X size={15} />,
-                danger: true,
-                click: () => confirmCloseSession(terminal),
-            },
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
-    };
+    const onContextMenu = (e: React.MouseEvent) => showTerminalMenu(model, terminal, e);
     // Enter and Space act as a click, but only on the row itself: the rename box is a child, and a Space typed in it
     // must not select
     const onKeyDown = (e: React.KeyboardEvent) => {
@@ -163,9 +166,7 @@ export function TerminalsSection({
 }
 
 // The rail of a focused terminal: the Terminals section alone, in the same rail (same aside, same toggle) as an
-// agent's, so `d` and the header button behave the same. Its section id is the agent rail's too, so a stored
-// collapse (railSectionOpenAtom) carries over: closing the list on one rail means the same on the other, and one
-// click on its header opens it.
+// agent's, so `d` and the header button behave the same.
 export function TerminalRail({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const view = useRailTerminals(model, agent);
     const sections: RailSection[] = planTerminalRail({

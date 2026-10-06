@@ -21,7 +21,7 @@ export type ScopeId =
     | "commands";
 
 // a command row that opens a sub-list instead of acting
-export type DrillId = "theme" | "focus";
+export type DrillId = "theme";
 
 export interface ScopeDef {
     id: ScopeId;
@@ -62,8 +62,8 @@ export const SCOPES: ScopeDef[] = [
 // the mockup names a few, not all nine; Needs you and Commands are the ones worth teaching first
 const ALL_EMPTY_PLACEHOLDER = "Search, or type a goal · n: r: a: c: … narrow to one kind";
 
-export const DRILL_LABELS: Record<DrillId, string> = { theme: "Theme", focus: "Focus on task" };
-export const DRILL_PLACEHOLDERS: Record<DrillId, string> = { theme: "Pick a theme…", focus: "Pick a task…" };
+export const DRILL_LABELS: Record<DrillId, string> = { theme: "Theme" };
+export const DRILL_PLACEHOLDERS: Record<DrillId, string> = { theme: "Pick a theme…" };
 
 export function scopeDef(id: ScopeId): ScopeDef {
     return SCOPES.find((s) => s.id === id)!;

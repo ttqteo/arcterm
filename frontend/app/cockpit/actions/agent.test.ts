@@ -7,12 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AGENT_KIND, type AgentThing } from "./agent";
 import { actionsFor } from "./types";
 
-const enterFocusFor = vi.fn();
-vi.mock("@/app/view/agents/focusstore", async (importOriginal) => ({
-    ...(await importOriginal<object>()),
-    enterFocusFor: (...a: any[]) => enterFocusFor(...a),
-}));
-
 const openInSplit = vi.fn();
 vi.mock("@/app/view/agents/gridstore", async (importOriginal) => ({
     ...(await importOriginal<object>()),
@@ -116,16 +110,6 @@ describe("agent actions", () => {
             split(model);
             expect(openInSplit).not.toHaveBeenCalled();
             expect(model.openTerminal).toHaveBeenCalledWith("tab1");
-        });
-    });
-    it("focus enters the agent's name and project", () => {
-        enterFocusFor.mockClear();
-        const model = {} as any;
-        AGENT_KIND.actions.find((a) => a.id === "agent:focus")!.run(thing({ project: "arc" }), { model });
-        expect(enterFocusFor).toHaveBeenCalledWith(model, {
-            ref: { kind: "agent", id: "tab1" },
-            label: "loom",
-            project: "arc",
         });
     });
     it("lists what does not apply now", () => {

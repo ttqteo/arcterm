@@ -10,12 +10,6 @@ import { describe, expect, it, vi } from "vitest";
 import { allRunsAtom } from "../palette-data";
 import { buildRunThing, RUN_KIND, type RunThing } from "./run";
 
-const enterFocusFor = vi.fn();
-vi.mock("@/app/view/agents/focusstore", async (importOriginal) => ({
-    ...(await importOriginal<object>()),
-    enterFocusFor: (...a: any[]) => enterFocusFor(...a),
-}));
-
 function phase(over: Partial<RunPhase> = {}): RunPhase {
     return { kind: "execute", state: "pending", ...over };
 }
@@ -167,22 +161,6 @@ describe("run actions", () => {
         await expect(
             action("run:workers").run(thing(orchestrator(), [lead], lin), { model: null }, "2")
         ).rejects.toThrow(/run finished/);
-    });
-
-    it("focus applies to a run the focus switcher lists: one with a worker in the roster", () => {
-        expect(applies("run:focus", thing(orchestrator()))).toBe(true);
-        expect(applies("run:focus", thing(orchestrator(), [agent("other", { runId: "r9" })]))).toBe(false);
-    });
-
-    it("focus enters the switcher row's label and project", () => {
-        enterFocusFor.mockClear();
-        const model = {} as AgentsViewModel;
-        RUN_KIND.actions.find((a) => a.id === "run:focus")!.run(thing(orchestrator()), { model });
-        expect(enterFocusFor).toHaveBeenCalledWith(model, {
-            ref: { kind: "run", id: "r1" },
-            label: "lead",
-            project: "arc",
-        });
     });
 
     it("stop a worker lists a cancelled run's survivors", () => {

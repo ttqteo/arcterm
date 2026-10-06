@@ -12,8 +12,6 @@ import { contextLevel, offersContextReset, railAction } from "@/app/view/agents/
 import { muteMode } from "@/app/view/agents/agentrowmodel";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { diffStatsByIdAtom } from "@/app/view/agents/cardgitstore";
-import { focusForAgent } from "@/app/view/agents/focusfor";
-import { enterFocusFor } from "@/app/view/agents/focusstore";
 import { openInSplit } from "@/app/view/agents/gridstore";
 import { rosterSeededAtom } from "@/app/view/agents/liveagents";
 import { isEndedWorkerId } from "@/app/view/agents/runlineage";
@@ -118,13 +116,6 @@ const actions: ThingAction<AgentThing>[] = [
         group: "steer",
         applies: ({ agent }) => muteMode(agent.state) === "dismiss",
         run: ({ agent }, { model }) => dismissAgent(model, agent),
-    },
-    {
-        id: "agent:focus",
-        label: "Focus the cockpit on it",
-        group: "steer",
-        applies: () => true,
-        run: ({ agent }, { model }) => enterFocusFor(model, focusForAgent(agent)),
     },
     {
         id: "agent:close",

@@ -6,8 +6,6 @@
 // phase strip, the unverified line and the task list. A quick run has no plan, so it has no strip and no list.
 
 import { formatTokens } from "@/app/view/agents/agentsviewmodel";
-import { focusForRun } from "@/app/view/agents/focusfor";
-import type { FocusRowVM } from "@/app/view/agents/focusswitchermodel";
 import { shortModel } from "@/app/view/agents/modelname";
 import { runProgress, runTitle } from "@/app/view/agents/runlineage";
 import { isOrchestrator, runStatusView, type RunStatusTone } from "@/app/view/agents/runmodel";
@@ -208,10 +206,6 @@ export function buildRunPeek(input: PeekRunInput): PeekRunView {
     };
 }
 
-// row: the focus switcher's row for the run (runRows), which is what makes a run focusable
-export function runPeekFacts(run: Run | undefined, row: FocusRowVM | undefined): PeekFacts {
-    if (run == null) {
-        return { gone: true, focus: null };
-    }
-    return { gone: false, focus: focusForRun(row) };
+export function runPeekFacts(run: Run | undefined): PeekFacts {
+    return { gone: run == null };
 }

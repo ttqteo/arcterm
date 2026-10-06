@@ -10,12 +10,12 @@ import type { PeekFacts } from "../peekstore";
 // A report that is gone, or a finding no longer in it, is gone. A radar finding has nothing to focus on.
 export function radarPeekFacts(report: RadarReport | null | undefined, findingId?: string): PeekFacts {
     if (report == null) {
-        return { gone: true, focus: null };
+        return { gone: true };
     }
     if (findingId != null && !(report.findings ?? []).some((f) => f.id === findingId)) {
-        return { gone: true, focus: null };
+        return { gone: true };
     }
-    return { gone: false, focus: null };
+    return { gone: false };
 }
 
 // place: where the signal points. Findings carry no line numbers, so a signal's first path stands in for the

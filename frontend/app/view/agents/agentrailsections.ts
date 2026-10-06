@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Agent details rail's sections: which show, in what order, with which counts. Attention first (needs you,
-// subagents, changed files), then what the agent holds (artifacts, uploads, background tasks, terminals), then what
-// it did (tools), its run, and the facts last, closed by default. Counted sections stay listed at 0 so the rail
-// keeps one shape from agent to agent. Rendered by agentdetailsrail.tsx; a focused terminal's rail is
-// planTerminalRail, rendered by terminalsrail.tsx.
+// subagents, changed files), then what the agent holds (artifacts, uploads, background tasks), then what it did
+// (tools), its run, and the facts last, closed by default. Counted sections stay listed at 0 so the rail keeps one
+// shape from agent to agent. Plain terminals are not an agent's: the Agent tree lists them in a section of its own.
+// Rendered by agentdetailsrail.tsx; a focused terminal's rail is planTerminalRail, rendered by terminalsrail.tsx.
 
 import type { RailSectionHeader } from "@/app/element/railsections";
 import type { BackgroundTaskStatus } from "./transcriptprojection";
@@ -18,7 +18,6 @@ export type AgentRailSectionId =
     | "artifacts"
     | "uploads"
     | "bgtasks"
-    | "terminals"
     | "tools"
     | "run"
     | "details"
@@ -32,8 +31,6 @@ export interface AgentRailInput {
     artifacts: number; // the agent's canvas boards
     uploads: number; // files attached to the agent (paste, drop, Attach)
     bgTasks: number;
-    terminals: number; // plain terminals the rail lists: the agent's project's, or all of them on request
-    terminalsOther: number; // plain terminals of other projects, counted whether or not the list is widened
     tools: number;
     hasRun: boolean; // the agent leads or works a run
 }
@@ -41,6 +38,11 @@ export interface AgentRailInput {
 export interface AgentRailSectionPlan {
     id: AgentRailSectionId;
     header?: RailSectionHeader; // absent: the section draws its own heading and does not collapse
+}
+
+export interface TerminalRailInput {
+    terminals: number; // plain terminals the rail lists: the focused terminal's project's, or all of them on request
+    terminalsOther: number; // plain terminals of other projects, counted whether or not the list is widened
 }
 
 // a counted section whose empty state carries an action stays openable at 0. Uploads (Attach) also starts closed
@@ -68,7 +70,6 @@ export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
         out.push({ id: "artifacts", header: { count: i.artifacts } });
         out.push({ id: "uploads", header: uploadsHeader(i.uploads) });
         out.push({ id: "bgtasks", header: { count: i.bgTasks } });
-        out.push({ id: "terminals", header: terminalsHeader(i.terminals, i.terminalsOther) });
     }
     out.push({ id: "tools", header: { count: i.tools } });
     if (!i.inSubagent && i.hasRun) {
@@ -81,7 +82,7 @@ export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
 
 // A focused terminal has no tools, files, run or usage of its own: its rail is the list that gets you to another
 // terminal, so the Terminals section is all of it
-export function planTerminalRail(i: Pick<AgentRailInput, "terminals" | "terminalsOther">): AgentRailSectionPlan[] {
+export function planTerminalRail(i: TerminalRailInput): { id: "terminals"; header: RailSectionHeader }[] {
     return [{ id: "terminals", header: terminalsHeader(i.terminals, i.terminalsOther) }];
 }
 

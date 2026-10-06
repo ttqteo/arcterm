@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { globalStore } from "@/app/store/jotaiStore";
 import {
     mergeRateLimitWindows,
     readSavedRateLimits,
     recordRateLimit,
+    savedRateLimitsAtom,
     topProviderUsage,
     type SavedSnapshot,
 } from "./ratelimitstore";
@@ -179,6 +181,20 @@ describe("recordRateLimit + readSavedRateLimits round-trip", () => {
     it("is a no-op for usage without window fields", () => {
         recordRateLimit("claude", { contextpct: 70, costusd: 1.2 });
         expect(readSavedRateLimits()).toEqual({});
+    });
+
+    it("stamps a reading with the time it is as of, when the caller knows it", () => {
+        globalStore.set(savedRateLimitsAtom, {});
+        recordRateLimit("claude", { fivehourpct: 50, weekpct: 41 }, 1_759_700_000_000);
+        expect(readSavedRateLimits().claude).toMatchObject({ fivehourpct: 50, capturedAt: 1_759_700_000_000 });
+    });
+
+    it("keeps a newer snapshot over an older reading", () => {
+        globalStore.set(savedRateLimitsAtom, {});
+        recordRateLimit("claude", { fivehourpct: 50 }, 2000);
+        recordRateLimit("claude", { fivehourpct: 20 }, 1000);
+        expect(readSavedRateLimits().claude).toMatchObject({ fivehourpct: 50, capturedAt: 2000 });
+        expect(globalStore.get(savedRateLimitsAtom).claude.fivehourpct).toBe(50);
     });
 
     it("corrupt localStorage reads back as empty", () => {

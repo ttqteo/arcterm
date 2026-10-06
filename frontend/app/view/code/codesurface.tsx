@@ -13,7 +13,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { buildCodeBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { DivergenceBanner } from "@/app/view/agents/focusbanner";
+import { DivergenceBanner } from "@/app/view/agents/divergencebanner";
 import { subjectDecision } from "@/app/view/agents/focussubject";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { SurfaceEmptyState, SurfaceError, SurfaceHeader } from "@/app/view/agents/surfacescaffold";
@@ -318,7 +318,6 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
             {/* Not in CodePathBar (which the plan named): that bar early-returns with no open file, so
                 the banner would be invisible on exactly the freshly-switched project that diverged. */}
             <DivergenceBanner
-                scope="project"
                 decision={decision}
                 onRejoin={() => {
                     const target = registeredProjects(registry).find((p) => p.name === filter);

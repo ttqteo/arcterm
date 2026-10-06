@@ -77,7 +77,6 @@ export interface ExtraDeps {
 export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     return [
         { key: "cmd:new-project", title: "New project", group: "Global", run: deps.openNewProject },
-        { key: "cmd:focus", title: "Focus on task…", group: "Global", drill: "focus", run: () => {} },
         { key: "cmd:theme", title: "Switch theme…", group: "Appearance", drill: "theme", run: () => {} },
     ];
 }

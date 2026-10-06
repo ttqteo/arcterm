@@ -28,7 +28,7 @@ export const SESSION_KIND: ThingKindDef<SessionThing> = {
             label: "Open session",
             group: "open",
             applies: () => true,
-            // a session reads in the Agent surface's centre; one a run launched reads in History, where the run detail is.
+            // a session reads in the Agent surface's centre, and one a run launched in its run's pane there.
             // Neither has a router target, so this writes the selection as the sidebar's rows and History's list do
             run: (t, { model }) => {
                 const to = sessionSelection(t.session);

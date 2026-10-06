@@ -11,6 +11,7 @@
 // surface owns its keys (see listnav.ts), and the shared "moving is selecting" contract would make
 // every cursor step read a file over RPC.
 
+import { FileIcon } from "@/app/element/fileicon";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { focusClaimed } from "@/app/store/keybindings/dispatcher";
@@ -18,7 +19,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, File, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { nameErrorMessage, provisionalIndex, validateName } from "./codemutate";
 import { statusGlyph, type CodeStatus } from "./codestatus";
@@ -174,8 +175,11 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     <ChevronRight size={13} strokeWidth={1.8} className="flex-none" />
                 )
             ) : (
-                <File size={13} strokeWidth={1.8} className="flex-none opacity-50" />
+                // the chevron's width, so a file's icon lines up with its sibling folders' icons
+                <span className="w-[13px] flex-none" />
             )}
+            <FileIcon path={row.path} dir={row.kind === "dir"} expanded={row.kind === "dir" && row.expanded} />
+
             {edit?.kind === "rename" && edit.path === row.path ? (
                 <NameInput
                     initial={row.name}

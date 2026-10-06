@@ -15,8 +15,7 @@ export interface RailSectionHeader {
     emptyOpenable?: boolean;
 }
 
-// per section id; ids are unique across the rails that use headers, except "terminals", which the agent rail and the
-// focused-terminal rail deliberately share, so its open state is shared too
+// per section id; ids are unique across the rails that use headers
 export const railSectionOpenAtom = atomWithStorage<Record<string, boolean>>("cockpit.rail.sections", {});
 
 export function sectionExpandable(h: RailSectionHeader): boolean {

@@ -29,8 +29,8 @@ describe("centerForSelection", () => {
         expect(centerForSelection("claude:abc")).toBe("session");
         expect(centerForSelection("pi:s9")).toBe("session");
     });
-    it("leaves a run and the merged feed to History, which draws their detail", () => {
-        expect(centerForSelection("run:r1")).toBe("history");
+    it("reads a run in the run pane, and leaves the merged feed to History, which draws its detail", () => {
+        expect(centerForSelection("run:r1")).toBe("run");
         expect(centerForSelection("all")).toBe("history");
     });
 });
@@ -58,11 +58,11 @@ describe("openers", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 
-    it("showSession sends a run's session to History with its member in view", () => {
+    it("showSession opens a run's session in the run pane with its member in view", () => {
         const model = stub();
         showSession(model, "run:r1", "t-2");
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
-        expect(globalStore.get(centerModeAtom)).toBe("history");
+        expect(globalStore.get(centerModeAtom)).toBe("run");
     });
 });

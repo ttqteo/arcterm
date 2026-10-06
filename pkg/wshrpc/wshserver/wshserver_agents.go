@@ -12,6 +12,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
+	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -180,6 +181,30 @@ func (ws *WshServer) GetWindowTokensCommand(ctx context.Context, data wshrpc.Com
 		return nil, fmt.Errorf("summing window tokens: %w", err)
 	}
 	return &wshrpc.CommandGetWindowTokensRtnData{FiveHourTokens: sums[0], WeekTokens: sums[1]}, nil
+}
+
+func (ws *WshServer) ScanClaudeProjectsCommand(ctx context.Context) (*wshrpc.CommandScanClaudeProjectsRtnData, error) {
+	found := agentsessions.ScanClaudeProjects()
+	projects := make([]wshrpc.ClaudeProjectData, 0, len(found))
+	for _, p := range found {
+		projects = append(projects, wshrpc.ClaudeProjectData{Path: p.Path, Name: p.Name, LastActiveTs: p.LastActiveTs, Sessions: p.Sessions})
+	}
+	return &wshrpc.CommandScanClaudeProjectsRtnData{Projects: projects}, nil
+}
+
+func (ws *WshServer) GetClaudeQuotaCommand(ctx context.Context) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
+	q := claudequota.Get(ctx)
+	if q == nil {
+		return &wshrpc.CommandGetClaudeQuotaRtnData{}, nil
+	}
+	return &wshrpc.CommandGetClaudeQuotaRtnData{
+		FiveHourPct:   q.FiveHourPct,
+		FiveHourReset: q.FiveHourReset,
+		WeekPct:       q.WeekPct,
+		WeekReset:     q.WeekReset,
+		CapturedAt:    q.CapturedAt.UnixMilli(),
+		Source:        q.Source,
+	}, nil
 }
 
 // AgentControlCommand streams what the engine sends a block's agent session for as long as the caller

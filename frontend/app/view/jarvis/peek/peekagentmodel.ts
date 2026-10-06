@@ -6,7 +6,6 @@
 
 import { filesSummary } from "@/app/view/agents/agentrailmodel";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { focusForAgent } from "@/app/view/agents/focusfor";
 import type { GitChange } from "@/app/view/agents/gitstatus";
 import type { PeekFacts } from "../peekstore";
 
@@ -44,5 +43,5 @@ export function sessionLabel(agent: Pick<AgentVM, "sessionId" | "transcriptPath"
 }
 
 export function agentPeekFacts(agent: AgentVM | undefined): PeekFacts {
-    return agent == null ? { gone: true, focus: null } : { gone: false, focus: focusForAgent(agent) };
+    return { gone: agent == null };
 }

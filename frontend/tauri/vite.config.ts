@@ -32,5 +32,12 @@ export default defineConfig({
         // font) is refused with a 403 in a worktree's dev app
         fs: { allow: [searchForWorkspaceRoot(process.cwd()), realpathSync(resolve(fe, "../node_modules"))] },
     },
-    build: { outDir: resolve(__dirname, "dist"), emptyOutDir: true },
+    build: {
+        outDir: resolve(__dirname, "dist"),
+        emptyOutDir: true,
+        // the file tree's ~1,250 Material icons are nearly all under the 4 KB inline limit, which would
+        // put every one into the JS bundle as base64; emitted as files, a tree loads only what it shows
+        assetsInlineLimit: (file) =>
+            file.replace(/\\/g, "/").includes("/material-icon-theme/icons/") ? false : undefined,
+    },
 });

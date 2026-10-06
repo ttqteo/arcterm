@@ -17,7 +17,6 @@ import { useDocCompileSync } from "./docpdfstore";
 import { DocReviewDialog } from "./docreviewdialog";
 import { useDocReviewSync } from "./docreviewstore";
 import { FilesSurface } from "./filessurface";
-import { reresolveFocus } from "./focusstore";
 import { setupRosterSeededLatch } from "./liveagents";
 import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
 import { NavRail } from "./navrail";
@@ -110,10 +109,6 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     // the roster's first-load gate; here rather than at boot, because boot subscribes before the workspace loads
     useEffect(() => setupRosterSeededLatch(), []);
     const surface = useAtomValue(model.surfaceAtom);
-    // The scope bundle is a snapshot; arriving at a surface that consumes it is when a stale one shows.
-    useEffect(() => {
-        reresolveFocus(surface);
-    }, [surface]);
     return (
         <div className="flex h-full w-full">
             <NavRail model={model} />

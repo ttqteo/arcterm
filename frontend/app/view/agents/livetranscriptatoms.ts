@@ -19,12 +19,17 @@ export const liveEntriesByIdAtom = atom<Record<string, AgentEntry[]>>({}) as Pri
 export const lastActivityByIdAtom = atom<Record<string, number>>({}) as PrimitiveAtom<Record<string, number>>;
 // latest TodoWrite task list per agent, projected from the same open stream (card task chip)
 export const tasksByIdAtom = atom<Record<string, CardTask[]>>({}) as PrimitiveAtom<Record<string, CardTask[]>>;
+// each pasted image file's [Image #N] per agent, from the same stream (imagepasteids.ts; Uploads names its pastes by it)
+export const imagePastesByIdAtom = atom<Record<string, ReadonlyMap<string, number>>>({}) as PrimitiveAtom<
+    Record<string, ReadonlyMap<string, number>>
+>;
 
 const EMPTY_ENTRIES: AgentEntry[] = [];
 
 const entriesFamily = atomFamily((id: string) => selectAtom(liveEntriesByIdAtom, (m) => m[id] ?? EMPTY_ENTRIES));
 const activityFamily = atomFamily((id: string) => selectAtom(lastActivityByIdAtom, (m) => m[id]));
 const tasksFamily = atomFamily((id: string) => selectAtom(tasksByIdAtom, (m) => m[id]));
+const imagePastesFamily = atomFamily((id: string) => selectAtom(imagePastesByIdAtom, (m) => m[id]));
 
 function sameSet(a: Set<string>, b: Set<string>): boolean {
     return a.size === b.size && [...a].every((id) => b.has(id));
@@ -41,6 +46,7 @@ export const idsWithEntriesAtom: Atom<Set<string>> = selectAtom(
 export const entriesAtomFor = (id: string): Atom<AgentEntry[]> => entriesFamily(id);
 export const activityAtomFor = (id: string): Atom<number | undefined> => activityFamily(id);
 export const tasksAtomFor = (id: string): Atom<CardTask[] | undefined> => tasksFamily(id);
+export const imagePastesAtomFor = (id: string): Atom<ReadonlyMap<string, number> | undefined> => imagePastesFamily(id);
 
 type Store = Pick<typeof globalStore, "get" | "set">;
 
@@ -59,7 +65,9 @@ export function dropLiveId(id: string, store: Store = globalStore): void {
     dropFromMap(store, liveEntriesByIdAtom, id);
     dropFromMap(store, lastActivityByIdAtom, id);
     dropFromMap(store, tasksByIdAtom, id);
+    dropFromMap(store, imagePastesByIdAtom, id);
     entriesFamily.remove(id);
     activityFamily.remove(id);
     tasksFamily.remove(id);
+    imagePastesFamily.remove(id);
 }

@@ -6,11 +6,11 @@ import { noteMetaLine, notePeekFacts } from "./peeknotemodel";
 
 describe("notePeekFacts", () => {
     it("is gone when the read was rejected", () => {
-        expect(notePeekFacts("error")).toEqual({ gone: true, focus: null });
+        expect(notePeekFacts("error")).toEqual({ gone: true });
     });
 
     it("is present, with nothing to focus, when the read landed", () => {
-        expect(notePeekFacts("ok")).toEqual({ gone: false, focus: null });
+        expect(notePeekFacts("ok")).toEqual({ gone: false });
     });
 });
 

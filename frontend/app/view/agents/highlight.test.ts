@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { highlightLine } from "./highlight";
+import { highlightLine, isPlainLang } from "./highlight";
 
 describe("highlightLine", () => {
     it("classifies keyword, ident, punctuation and string", () => {
@@ -28,5 +28,37 @@ describe("highlightLine", () => {
 
     it("never returns an empty token list (blank line yields one space)", () => {
         expect(highlightLine("")).toEqual([{ t: " ", cls: "text-syntax-ident" }]);
+    });
+
+    it("keeps a word with non-ASCII letters whole, not split into punctuation", () => {
+        expect(highlightLine("Kiểm tra")).toEqual([
+            { t: "Kiểm", cls: "text-syntax-ident" },
+            { t: " ", cls: "text-syntax-ident" },
+            { t: "tra", cls: "text-syntax-ident" },
+        ]);
+    });
+
+    it("never drops a character (a digit glued to a letter used to vanish)", () => {
+        for (const line of ["0x1F", "1st pass", "Ưu tiên 2: §res-why → L381"]) {
+            expect(
+                highlightLine(line)
+                    .map((tk) => tk.t)
+                    .join("")
+            ).toBe(line);
+        }
+    });
+});
+
+describe("isPlainLang", () => {
+    it("treats an untagged fence and the prose languages as plain text", () => {
+        for (const lang of [undefined, "", "text", "txt", "plain", "plaintext", "md", "markdown", "Markdown"]) {
+            expect(isPlainLang(lang), String(lang)).toBe(true);
+        }
+    });
+
+    it("highlights a tagged code language", () => {
+        for (const lang of ["ts", "go", "bash", "json"]) {
+            expect(isPlainLang(lang), lang).toBe(false);
+        }
     });
 });

@@ -3,26 +3,33 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    activeRows,
+    activeView,
     agentExited,
     ALL_PROJECTS,
     CONVERSATION_PAGE,
+    conversationCount,
     conversationProjects,
-    conversationRows,
-    effectiveProject,
-    endedSessionsByProject,
+    conversationTree,
+    endedConversationsByProject,
+    recencyBucket,
     scanDue,
     sessionAgeLabel,
     sessionTitle,
+    startOfDay,
+    terminalTree,
     UNTITLED_SESSION,
+    type ConversationEntry,
+    type ConversationTreeRow,
     type EndedSessionRow,
-    type MoreConversationsRow,
 } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 const NOW = 1_800_000_000_000;
+// a day boundary a day before NOW, so every fixture minutes old is Today whatever the test machine's time zone
+const TODAY = NOW - DAY;
 
 const session = (id: string, over: Partial<SessionActivity> = {}): SessionActivity => ({
     id,
@@ -62,16 +69,22 @@ const label = (r: AgentTreeRow): string => (r.kind === "group" ? `group:${r.proj
 const labels = (rows: AgentTreeRow[]) => rows.map(label);
 const groupsOf = (rows: AgentTreeRow[]) => rows.flatMap((r) => (r.kind === "group" ? [r.project] : []));
 
-// the Conversations list as session ids, a more row as "more:<hidden>"
-const ids = (rows: (EndedSessionRow | MoreConversationsRow)[]) =>
-    rows.map((r) => (r.kind === "more" ? `more:${r.hidden}` : r.session.id));
+// an entry as its session id, or "run:<id>" for a run
+const entryId = (r: ConversationEntry) => (r.kind === "run" ? `run:${r.group.runId}` : r.session.id);
+
+// the Conversations section as entry ids, a folder row as "folder:<project>", a more row as "more:<project>:<hidden>";
+// recency headings are left out (see headed for them)
+const rowId = (r: Exclude<ConversationTreeRow, { kind: "bucket" }>) =>
+    r.kind === "folder" ? `folder:${r.project}` : r.kind === "more" ? `more:${r.project}:${r.hidden}` : entryId(r);
+const rowIds = (rows: ConversationTreeRow[]) => rows.flatMap((r) => (r.kind === "bucket" ? [] : [rowId(r)]));
+const noHeadings = (rows: ConversationTreeRow[]) => rows.filter((r) => r.kind !== "bucket");
 
 const treeOf = (agents: AgentVM[]) =>
     buildAgentTree(
         agents,
         agents.map((a) => a.id)
     );
-const endedOf = (list: SessionActivity[], roster: AgentVM[] = []) => endedSessionsByProject(list, roster);
+const endedOf = (list: SessionActivity[], roster: AgentVM[] = []) => endedConversationsByProject(list, roster);
 
 describe("sessionTitle", () => {
     it("is the first prompt with its whitespace collapsed", () => {
@@ -80,6 +93,31 @@ describe("sessionTitle", () => {
     it("falls back for a blank prompt", () => {
         expect(sessionTitle("")).toBe(UNTITLED_SESSION);
         expect(sessionTitle("\n  \n")).toBe(UNTITLED_SESSION);
+    });
+});
+
+describe("recencyBucket", () => {
+    const today = startOfDay(NOW);
+    const daysBefore = (n: number) => {
+        const d = new Date(today);
+        d.setDate(d.getDate() - n);
+        return d.getTime();
+    };
+    it("reads calendar days back from the start of today", () => {
+        expect(recencyBucket(today, today)).toBe("today");
+        expect(recencyBucket(today - 1, today)).toBe("yesterday");
+        expect(recencyBucket(daysBefore(1), today)).toBe("yesterday");
+        expect(recencyBucket(daysBefore(1) - 1, today)).toBe("week");
+        expect(recencyBucket(daysBefore(7), today)).toBe("week");
+        expect(recencyBucket(daysBefore(7) - 1, today)).toBe("earlier");
+    });
+    it("reads a clock-skewed future stamp as today", () => {
+        expect(recencyBucket(NOW + DAY, today)).toBe("today");
+    });
+    it("starts the day at local midnight", () => {
+        expect(new Date(today).getHours()).toBe(0);
+        expect(today).toBeLessThanOrEqual(NOW);
+        expect(NOW - today).toBeLessThan(DAY + 60 * MIN);
     });
 });
 
@@ -94,9 +132,9 @@ describe("sessionAgeLabel", () => {
     });
 });
 
-describe("endedSessionsByProject", () => {
+describe("endedConversationsByProject", () => {
     it("is empty until the scan has loaded", () => {
-        expect(endedSessionsByProject(null, []).size).toBe(0);
+        expect(endedConversationsByProject(null, []).size).toBe(0);
     });
 
     it("groups ended sessions by project, newest first", () => {
@@ -106,17 +144,14 @@ describe("endedSessionsByProject", () => {
             session("other", { projectname: "loom", lastactivets: NOW - 2 * MIN }),
         ]);
         expect([...out.keys()].sort()).toEqual(["loom", "waveterm"]);
-        expect(out.get("waveterm")!.map((r) => r.session.id)).toEqual(["new", "old"]);
+        expect(out.get("waveterm")!.map(entryId)).toEqual(["new", "old"]);
     });
 
     it("breaks a tie on the time by session key, whatever order the scan listed them in", () => {
         const a = session("a", { lastactivets: NOW - MIN });
         const b = session("b", { lastactivets: NOW - MIN });
         const c = session("c", { lastactivets: NOW - MIN });
-        const ids = (list: SessionActivity[]) =>
-            endedOf(list)
-                .get("waveterm")!
-                .map((r) => r.session.id);
+        const ids = (list: SessionActivity[]) => endedOf(list).get("waveterm")!.map(entryId);
         expect(ids([c, a, b])).toEqual(["a", "b", "c"]);
         expect(ids([b, c, a])).toEqual(["a", "b", "c"]);
     });
@@ -129,9 +164,31 @@ describe("endedSessionsByProject", () => {
         expect(endedOf([ended], []).get("waveterm")).toHaveLength(1);
     });
 
-    it("leaves out a session an orchestrator run launched", () => {
-        const out = endedOf([session("a"), session("b", { runid: "r1", role: "worker", taskid: "t-1" })]);
-        expect(out.get("waveterm")!.map((r) => r.session.id)).toEqual(["a"]);
+    it("folds the sessions an orchestrator run launched into one entry, filed under its lead's project", () => {
+        const out = endedOf([
+            session("a", { lastactivets: NOW - 5 * MIN }),
+            session("lead", { runid: "r1", role: "lead", projectname: "loom", lastactivets: NOW - 9 * MIN }),
+            session("w", { runid: "r1", role: "worker", taskid: "t-1", lastactivets: NOW - 2 * MIN }),
+        ]);
+        expect(out.get("waveterm")!.map(entryId)).toEqual(["a"]);
+        const [run] = out.get("loom")!;
+        expect(run).toMatchObject({ kind: "run", project: "loom", key: "run:r1", lastactivets: NOW - 2 * MIN });
+        expect(run.kind === "run" && run.group.sessions.map((s) => s.id).sort()).toEqual(["lead", "w"]);
+    });
+
+    it("files a leadless run under its newest session's project", () => {
+        const out = endedOf([
+            session("w1", { runid: "r1", taskid: "t-1", projectname: "old", lastactivets: NOW - 9 * MIN }),
+            session("w2", { runid: "r1", taskid: "t-2", projectname: "new", lastactivets: NOW - MIN }),
+        ]);
+        expect([...out.keys()]).toEqual(["new"]);
+    });
+
+    it("leaves out a run while any of its sessions is live: Active holds it", () => {
+        const w = session("w", { runid: "r1", role: "worker", taskid: "t-1" });
+        const lead = session("lead", { runid: "r1", role: "lead" });
+        expect(endedOf([w, lead], [agent("t1", w.transcriptpath)]).size).toBe(0);
+        expect(endedOf([w, lead]).get("waveterm")!.map(entryId)).toEqual(["run:r1"]);
     });
 
     it("files a session with no project under ungrouped, like a live agent with none", () => {
@@ -153,10 +210,32 @@ describe("endedSessionsByProject", () => {
 // The tree files a live agent under projectOf(agent): the registered project name it was launched into
 // (session:project), else the last hyphen segment of its transcript folder. The scan names a session by the last
 // segment of its cwd. Both are for one project, so a conversation must carry the name its live agents' folder does.
-describe("endedSessionsByProject project keys", () => {
+describe("endedConversationsByProject project keys", () => {
+    // the engine runs each task in <project>/.waveterm/worktrees/<run id>-<task>, and the scan names the session for that
+    // last segment
+    const WT = "D:\\projects\\arcterm\\.waveterm\\worktrees\\75a28a71-1888-4c17-8feb-2ec031b5e3a4-t-1";
+    const worker = (id: string, over: Partial<SessionActivity> = {}) =>
+        session(id, { projectpath: WT, projectname: "75a28a71-1888-4c17-8feb-2ec031b5e3a4-t-1", ...over });
+
+    it("files a session in an engine worktree under the project the tree was made from", () => {
+        expect([...endedOf([worker("w")]).keys()]).toEqual(["arcterm"]);
+        const ended = endedConversationsByProject([worker("w")], [], { Arc: { path: "d:/projects/arcterm" } });
+        expect([...ended.keys()]).toEqual(["Arc"]);
+    });
+
+    it("files a leadless run under its workers' project, not their worktree's name", () => {
+        const ended = endedConversationsByProject(
+            [worker("w1", { runid: "r1", taskid: "t-1" }), worker("w2", { runid: "r1", taskid: "t-2" })],
+            [],
+            { arcterm: { path: "D:/projects/arcterm" } }
+        );
+        expect([...ended.keys()]).toEqual(["arcterm"]);
+        expect(ended.get("arcterm")!.map(entryId)).toEqual(["run:r1"]);
+    });
+
     it("files a session under the registered project its path belongs to, not under its folder's name", () => {
         const launched = agent("a", undefined, "Arc");
-        const ended = endedSessionsByProject(
+        const ended = endedConversationsByProject(
             [session("s", { projectpath: "D:\\projects\\arcterm", projectname: "arcterm" })],
             [launched],
             { Arc: { path: "d:/projects/arcterm/" } }
@@ -167,7 +246,7 @@ describe("endedSessionsByProject project keys", () => {
     });
 
     it("gives a registered project with only ended sessions its registered name", () => {
-        const ended = endedSessionsByProject(
+        const ended = endedConversationsByProject(
             [session("s", { projectpath: "/work/arcterm", projectname: "arcterm" })],
             [],
             { Arc: { path: "/work/arcterm" } }
@@ -176,7 +255,7 @@ describe("endedSessionsByProject project keys", () => {
     });
 
     it("ignores a registered project with no path, and a session with no path", () => {
-        const ended = endedSessionsByProject([session("s", { projectpath: "", projectname: "loom" })], [], {
+        const ended = endedConversationsByProject([session("s", { projectpath: "", projectname: "loom" })], [], {
             Arc: {},
             Odd: { path: "" },
         });
@@ -190,7 +269,7 @@ describe("endedSessionsByProject project keys", () => {
             project: undefined,
         };
         expect(groupsOf(treeOf([external]))).toEqual(["fork"]);
-        const ended = endedSessionsByProject(
+        const ended = endedConversationsByProject(
             [
                 session("s", {
                     projectpath: "D:\\projects\\arcterm-fork",
@@ -208,7 +287,7 @@ describe("endedSessionsByProject project keys", () => {
     it("does not read two sessions as one project because their transcripts share a date folder", () => {
         // codex writes one folder per day, whatever the project
         const codexAgent = agent("a", "/home/u/.codex/sessions/2026/10/05/rollout-live.jsonl", "waveterm");
-        const ended = endedSessionsByProject(
+        const ended = endedConversationsByProject(
             [
                 session("s", {
                     runtime: "codex",
@@ -222,7 +301,7 @@ describe("endedSessionsByProject project keys", () => {
     });
 
     it("falls back to the scan's folder name for a project that is neither registered nor live", () => {
-        const ended = endedSessionsByProject(
+        const ended = endedConversationsByProject(
             [session("s", { projectpath: "/elsewhere/loom", projectname: "loom" })],
             [agent("a")],
             { Arc: { path: "/work/arcterm" } }
@@ -231,38 +310,147 @@ describe("endedSessionsByProject project keys", () => {
     });
 });
 
-describe("activeRows", () => {
+describe("activeView", () => {
     const noneCollapsed = new Set<string>();
+    const view = (tree: AgentTreeRow[], filter = ALL_PROJECTS, collapsed: ReadonlySet<string> = noneCollapsed) =>
+        activeView(tree, filter, collapsed);
 
     it("is the tree as it is when no project is collapsed", () => {
         const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
-        expect(activeRows(tree, noneCollapsed)).toEqual(tree);
-        expect(labels(activeRows(tree, noneCollapsed))).toEqual(["group:waveterm", "parent", "group:loom", "parent"]);
+        expect(view(tree).rows).toEqual(tree);
+        expect(labels(view(tree).rows)).toEqual(["group:waveterm", "parent", "group:loom", "parent"]);
     });
 
     it("hides a collapsed project's rows, keeping its folder row", () => {
         const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
-        expect(labels(activeRows(tree, new Set(["waveterm"])))).toEqual(["group:waveterm", "group:loom", "parent"]);
-        expect(labels(activeRows(tree, new Set(["loom"])))).toEqual(["group:waveterm", "parent", "group:loom"]);
-        expect(labels(activeRows(tree, new Set(["waveterm", "loom"])))).toEqual(["group:waveterm", "group:loom"]);
+        expect(labels(view(tree, ALL_PROJECTS, new Set(["waveterm"])).rows)).toEqual([
+            "group:waveterm",
+            "group:loom",
+            "parent",
+        ]);
+        expect(labels(view(tree, ALL_PROJECTS, new Set(["loom"])).rows)).toEqual([
+            "group:waveterm",
+            "parent",
+            "group:loom",
+        ]);
+        expect(labels(view(tree, ALL_PROJECTS, new Set(["waveterm", "loom"])).rows)).toEqual([
+            "group:waveterm",
+            "group:loom",
+        ]);
     });
 
     it("keeps the count and attention a collapsed folder row carries", () => {
         const asking: AgentVM = { ...agent("a"), state: "asking" };
-        const rows = activeRows(treeOf([asking, agent("b")]), new Set(["waveterm"]));
+        const rows = view(treeOf([asking, agent("b")]), ALL_PROJECTS, new Set(["waveterm"])).rows;
         expect(rows).toHaveLength(1);
         expect(rows[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 1 });
     });
 
     it("ignores a collapsed name no live project has, and is empty with no live agent", () => {
         const tree = treeOf([agent("a")]);
-        expect(activeRows(tree, new Set(["loom"]))).toEqual(tree);
-        expect(activeRows([], new Set(["loom"]))).toEqual([]);
+        expect(view(tree, ALL_PROJECTS, new Set(["loom"])).rows).toEqual(tree);
+        expect(view([], ALL_PROJECTS, new Set(["loom"]))).toEqual({
+            rows: [],
+            count: 0,
+            elsewhere: { agents: 0, asking: 0 },
+        });
+    });
+
+    it("counts every folder's agents, a collapsed one included, with nothing elsewhere", () => {
+        const tree = treeOf([agent("a"), agent("b"), agent("c", undefined, "loom")]);
+        expect(view(tree, ALL_PROJECTS, new Set(["waveterm"]))).toMatchObject({
+            count: 3,
+            elsewhere: { agents: 0, asking: 0 },
+        });
+    });
+
+    it("narrows to the chosen project's rows, flat: one project needs no folder row", () => {
+        const tree = treeOf([agent("a"), agent("b", undefined, "loom"), agent("c")]);
+        const v = view(tree, "waveterm");
+        expect(labels(v.rows)).toEqual(["parent", "parent"]);
+        expect(v.rows.map((r) => (r.kind === "parent" ? r.agent.id : r.kind))).toEqual(["a", "c"]);
+        expect(v.count).toBe(2);
+    });
+
+    it("counts the agents a filter hides, and how many of them are asking", () => {
+        const asking = (id: string, project: string): AgentVM => ({
+            ...agent(id, undefined, project),
+            state: "asking",
+        });
+        const tree = treeOf([agent("a"), asking("b", "loom"), agent("c", undefined, "loom"), asking("d", "zeta")]);
+        expect(view(tree, "waveterm").elsewhere).toEqual({ agents: 3, asking: 2 });
+        // an agent with no project is in none of them, so a filter hides it too
+        expect(view(treeOf([agent("a"), agent("u", undefined, "")]), "waveterm").elsewhere).toEqual({
+            agents: 1,
+            asking: 0,
+        });
+    });
+
+    it("unfolds the chosen project even when its folder was collapsed: with no folder row it could not be opened", () => {
+        const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
+        expect(labels(view(tree, "waveterm", new Set(["waveterm"])).rows)).toEqual(["parent"]);
+    });
+
+    it("is empty for a project with no live agent, which still counts the others", () => {
+        const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
+        expect(view(tree, "nowhere")).toEqual({ rows: [], count: 0, elsewhere: { agents: 2, asking: 0 } });
     });
 });
 
-describe("conversationRows", () => {
-    it("lists every project's ended sessions in one list, newest first", () => {
+describe("conversationTree", () => {
+    const open = new Set<string>();
+    const unpressed = new Map<string, number>();
+    const tree = (
+        ended: ReadonlyMap<string, ConversationEntry[]>,
+        filter = ALL_PROJECTS,
+        collapsed: ReadonlySet<string> = open,
+        presses: ReadonlyMap<string, number> = unpressed,
+        today = TODAY
+    ) => conversationTree(ended, filter, collapsed, presses, today);
+    // the rows with each recency heading as "#<bucket>"
+    const headed = (rows: ConversationTreeRow[]) => rows.map((r) => (r.kind === "bucket" ? `#${r.bucket}` : rowId(r)));
+
+    it("heads each recency bucket's first shown entry, inside each folder", () => {
+        const today = startOfDay(NOW);
+        const ago = (days: number) => {
+            const d = new Date(today);
+            d.setDate(d.getDate() - days);
+            return d.getTime() + 60 * MIN;
+        };
+        const ended = endedOf([
+            session("t", { lastactivets: today + MIN }),
+            session("y", { lastactivets: ago(1) }),
+            session("w3", { lastactivets: ago(3) }),
+            session("w7", { lastactivets: ago(7) }),
+            session("e", { lastactivets: ago(8) }),
+            session("l", { projectname: "loom", lastactivets: ago(3) }),
+        ]);
+        expect(headed(tree(ended, ALL_PROJECTS, open, unpressed, today))).toEqual([
+            "folder:waveterm",
+            "#today",
+            "t",
+            "#yesterday",
+            "y",
+            "#week",
+            "w3",
+            "w7",
+            "#earlier",
+            "e",
+            "folder:loom",
+            "#week",
+            "l",
+        ]);
+        expect(headed(tree(ended, "loom", open, unpressed, today))).toEqual(["#week", "l"]);
+    });
+
+    it("heads only the entries a page shows, and none in a folded folder", () => {
+        const ended = endedOf([...solos(12), session("old", { lastactivets: TODAY - 3 * DAY })]);
+        expect(headed(tree(ended)).filter((r) => r.startsWith("#"))).toEqual(["#today"]);
+        expect(headed(tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 1]]))).slice(-2)).toEqual(["#week", "old"]);
+        expect(headed(tree(ended, ALL_PROJECTS, new Set(["waveterm"])))).toEqual(["folder:waveterm"]);
+    });
+
+    it("files each project's ended sessions under its folder, the folder with the newest conversation first", () => {
         const ended = endedOf([
             session("w-old", { lastactivets: NOW - 9 * MIN }),
             session("l-mid", { projectname: "loom", lastactivets: NOW - 5 * MIN }),
@@ -270,80 +458,113 @@ describe("conversationRows", () => {
             session("z-newest", { projectname: "zeta", lastactivets: NOW - 10_000 }),
             session("l-old", { projectname: "loom", lastactivets: NOW - 30 * MIN }),
         ]);
-        expect(ids(conversationRows(ended, ALL_PROJECTS, 0))).toEqual(["z-newest", "w-new", "l-mid", "w-old", "l-old"]);
+        expect(rowIds(tree(ended))).toEqual([
+            "folder:zeta",
+            "z-newest",
+            "folder:waveterm",
+            "w-new",
+            "w-old",
+            "folder:loom",
+            "l-mid",
+            "l-old",
+        ]);
     });
 
-    it("keeps each row's own project, which is what its second line names", () => {
-        const ended = endedOf([session("w"), session("l", { projectname: "loom", lastactivets: NOW - 2 * MIN })]);
-        const rows = conversationRows(ended, ALL_PROJECTS, 0);
-        expect(rows.map((r) => (r.kind === "session" ? r.project : r.kind))).toEqual(["waveterm", "loom"]);
+    it("counts a folder's conversations and those waiting on you, and says whether it is open", () => {
+        const ended = endedOf([
+            session("a", { status: "waiting" }),
+            session("b", { lastactivets: NOW - 2 * MIN }),
+            session("c", { projectname: "loom", lastactivets: NOW - 5 * MIN }),
+        ]);
+        expect(tree(ended).filter((r) => r.kind === "folder")).toEqual([
+            { kind: "folder", project: "waveterm", count: 2, attn: 1, open: true },
+            { kind: "folder", project: "loom", count: 1, attn: 0, open: true },
+        ]);
     });
 
-    it("narrows to one project, and to nothing for a project with no conversation", () => {
+    it("folds a collapsed project to its folder row, which keeps its count", () => {
+        const ended = endedOf([...solos(2), ...solos(2, "zeta", "l")]);
+        const rows = tree(ended, ALL_PROJECTS, new Set(["waveterm"]));
+        expect(rowIds(rows)).toEqual(["folder:waveterm", "folder:zeta", "l1", "l2"]);
+        expect(rows[0]).toEqual({ kind: "folder", project: "waveterm", count: 2, attn: 0, open: false });
+    });
+
+    it("narrows to the chosen project, flat, and to nothing for a project with no conversation", () => {
         const ended = endedOf([...solos(2), ...solos(2, "loom", "l")]);
-        expect(ids(conversationRows(ended, "loom", 0))).toEqual(["l1", "l2"]);
-        expect(ids(conversationRows(ended, "waveterm", 0))).toEqual(["s1", "s2"]);
-        expect(conversationRows(ended, "nowhere", 0)).toEqual([]);
+        expect(rowIds(tree(ended, "loom"))).toEqual(["l1", "l2"]);
+        expect(rowIds(tree(ended, "waveterm"))).toEqual(["s1", "s2"]);
+        // the app bar offers every registered project, not only those with a conversation: the list stays empty
+        expect(tree(ended, "nowhere")).toEqual([]);
+    });
+
+    it("unfolds the chosen project even when its folder was collapsed, and pages it", () => {
+        const ended = endedOf([...solos(14), ...solos(2, "loom", "l")]);
+        const rows = tree(ended, "waveterm", new Set(["waveterm"]));
+        expect(rowIds(rows)).toEqual([
+            ...rowIds(tree(ended, "waveterm")).slice(0, CONVERSATION_PAGE),
+            "more:waveterm:4",
+        ]);
+        expect(rowIds(tree(ended, "waveterm", open, new Map([["waveterm", 1]])))).toHaveLength(14);
     });
 
     it("is empty when nothing has ended, or the scan has not loaded", () => {
-        expect(conversationRows(new Map(), ALL_PROJECTS, 0)).toEqual([]);
-        expect(conversationRows(endedSessionsByProject(null, []), ALL_PROJECTS, 0)).toEqual([]);
-        expect(conversationRows(new Map([["loom", []]]), ALL_PROJECTS, 0)).toEqual([]);
+        expect(tree(new Map())).toEqual([]);
+        expect(tree(endedConversationsByProject(null, []))).toEqual([]);
+        expect(tree(new Map([["loom", []]]))).toEqual([]);
     });
 
-    it("shows a page then a more row counting the rest", () => {
-        const rows = conversationRows(endedOf(solos(25)), ALL_PROJECTS, 0);
-        expect(CONVERSATION_PAGE).toBe(20);
-        expect(rows).toHaveLength(CONVERSATION_PAGE + 1);
-        expect(ids(rows).slice(0, 3)).toEqual(["s1", "s2", "s3"]);
-        expect(ids(rows)[CONVERSATION_PAGE - 1]).toBe("s20");
-        expect(rows[CONVERSATION_PAGE]).toEqual({ kind: "more", hidden: 5 });
+    it("shows a page of each project then a more row counting the rest", () => {
+        expect(CONVERSATION_PAGE).toBe(10);
+        const rows = tree(endedOf([...solos(14), ...solos(3, "zeta", "l")]));
+        const ids = rowIds(rows);
+        expect(ids[0]).toBe("folder:waveterm");
+        expect(ids.slice(1, 4)).toEqual(["s1", "s2", "s3"]);
+        expect(ids[CONVERSATION_PAGE]).toBe("s10");
+        expect(noHeadings(rows)[CONVERSATION_PAGE + 1]).toEqual({ kind: "more", project: "waveterm", hidden: 4 });
+        expect(ids.slice(CONVERSATION_PAGE + 2)).toEqual(["folder:zeta", "l1", "l2", "l3"]);
     });
 
     it("has no more row when everything fits, a page exactly included", () => {
-        expect(ids(conversationRows(endedOf(solos(3)), ALL_PROJECTS, 0))).toEqual(["s1", "s2", "s3"]);
-        const exact = conversationRows(endedOf(solos(CONVERSATION_PAGE)), ALL_PROJECTS, 0);
-        expect(exact).toHaveLength(CONVERSATION_PAGE);
+        expect(rowIds(tree(endedOf(solos(3))))).toEqual(["folder:waveterm", "s1", "s2", "s3"]);
+        const exact = noHeadings(tree(endedOf(solos(CONVERSATION_PAGE))));
+        expect(exact).toHaveLength(CONVERSATION_PAGE + 1);
         expect(exact.some((r) => r.kind === "more")).toBe(false);
     });
 
-    it("shows one page more per press and drops the more row once nothing is hidden", () => {
-        const ended = endedOf(solos(45));
-        const once = conversationRows(ended, ALL_PROJECTS, 1);
-        expect(once).toHaveLength(2 * CONVERSATION_PAGE + 1);
-        expect(once[once.length - 1]).toEqual({ kind: "more", hidden: 5 });
-        const twice = conversationRows(ended, ALL_PROJECTS, 2);
-        expect(twice).toHaveLength(45);
-        expect(twice.some((r) => r.kind === "more")).toBe(false);
+    it("shows one page more per press of that project, and drops the more row once nothing is hidden", () => {
+        const ended = endedOf([...solos(25), ...solos(12, "zeta", "l")]);
+        const inWaveterm = (rows: ConversationTreeRow[]) =>
+            rows.filter((r) => r.kind !== "folder" && r.kind !== "bucket" && r.project === "waveterm");
+        const once = tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 1]]));
+        expect(inWaveterm(once)).toHaveLength(2 * CONVERSATION_PAGE + 1);
+        expect(inWaveterm(once).at(-1)).toEqual({ kind: "more", project: "waveterm", hidden: 5 });
+        // zeta was not pressed, so it still shows one page
+        expect(once.at(-1)).toEqual({ kind: "more", project: "zeta", hidden: 2 });
+        const twice = tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 2]]));
+        expect(inWaveterm(twice)).toHaveLength(25);
+        expect(inWaveterm(twice).some((r) => r.kind === "more")).toBe(false);
         // pressing past the end changes nothing
-        expect(conversationRows(ended, ALL_PROJECTS, 9)).toEqual(twice);
-    });
-
-    it("pages the filtered list, not the whole archive", () => {
-        const ended = endedOf([...solos(30), ...solos(7, "loom", "l")]);
-        expect(ids(conversationRows(ended, "loom", 0))).toEqual(["l1", "l2", "l3", "l4", "l5", "l6", "l7"]);
-        const waveterm = conversationRows(ended, "waveterm", 0);
-        expect(waveterm[waveterm.length - 1]).toEqual({ kind: "more", hidden: 10 });
+        expect(tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 9]]))).toEqual(twice);
     });
 
     it("reads a press count below zero as none", () => {
-        expect(conversationRows(endedOf(solos(25)), ALL_PROJECTS, -3)).toHaveLength(CONVERSATION_PAGE + 1);
+        const rows = tree(endedOf(solos(25)), ALL_PROJECTS, open, new Map([["waveterm", -3]]));
+        expect(noHeadings(rows)).toHaveLength(CONVERSATION_PAGE + 2);
     });
 
-    it("breaks a tie on the time by key, whatever order the sessions arrived in", () => {
+    it("breaks a tie on the time by key within a folder, and between folders by name, whatever the input order", () => {
         const mk = (id: string, project: string) =>
             session(id, { projectname: project, lastactivets: NOW - MIN, transcriptpath: `/t/${project}/${id}.jsonl` });
         const a = mk("a", "zeta");
         const b = mk("b", "alpha");
-        const c = mk("c", "mid");
+        const c = mk("c", "alpha");
         for (const order of [
             [a, b, c],
             [c, b, a],
             [b, c, a],
             [c, a, b],
         ]) {
-            expect(ids(conversationRows(endedOf(order), ALL_PROJECTS, 0))).toEqual(["a", "b", "c"]);
+            expect(rowIds(tree(endedOf(order)))).toEqual(["folder:alpha", "b", "c", "folder:zeta", "a"]);
         }
     });
 
@@ -359,22 +580,72 @@ describe("conversationRows", () => {
         });
         const list = [rowOf("old", NOW - 5 * MIN), rowOf("new", NOW - MIN)];
         const ended = new Map([["p", list]]);
-        expect(ids(conversationRows(ended, ALL_PROJECTS, 0))).toEqual(["new", "old"]);
-        expect(list.map((r) => r.session.id)).toEqual(["old", "new"]);
+        expect(rowIds(tree(ended))).toEqual(["folder:p", "new", "old"]);
+        expect(list.map(entryId)).toEqual(["old", "new"]);
     });
 
     it("takes a project named like an Object property for what it is", () => {
         for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
             const ended = endedOf([...solos(2, name, "p"), ...solos(1, "loom", "l")]);
-            expect(ids(conversationRows(ended, name, 0))).toEqual(["p1", "p2"]);
-            expect(ids(conversationRows(ended, "loom", 0))).toEqual(["l1"]);
-            expect(ids(conversationRows(ended, ALL_PROJECTS, 0))).toEqual(["l1", "p1", "p2"]);
+            expect(rowIds(tree(ended, name))).toEqual(["p1", "p2"]);
+            expect(rowIds(tree(ended, "loom"))).toEqual(["l1"]);
+            // the two folders tie on time, so their order is the names'; what matters is that only this one folded
+            const folded = rowIds(tree(ended, ALL_PROJECTS, new Set([name])));
+            expect([...folded].sort()).toEqual([`folder:${name}`, "folder:loom", "l1"].sort());
+            expect(rowIds(tree(ended, ALL_PROJECTS, open, new Map([[name, 0]])))).toHaveLength(5);
         }
         // and one that is not there is not read off the Map's or Object's own members
         const ended = endedOf(solos(1));
         for (const name of ["constructor", "toString", "__proto__", "size"]) {
-            expect(conversationRows(ended, name, 0)).toEqual([]);
+            expect(tree(ended, name)).toEqual([]);
         }
+    });
+});
+
+describe("conversationCount", () => {
+    it("counts the ended conversations the filter keeps", () => {
+        const ended = endedOf([...solos(3), ...solos(2, "loom", "l")]);
+        expect(conversationCount(ended, ALL_PROJECTS)).toBe(5);
+        expect(conversationCount(ended, "loom")).toBe(2);
+        expect(conversationCount(ended, "nowhere")).toBe(0);
+        expect(conversationCount(endedConversationsByProject(null, []), ALL_PROJECTS)).toBe(0);
+    });
+});
+
+describe("terminalTree", () => {
+    const term = (id: string, project = "waveterm"): AgentVM => ({
+        ...agent(id, undefined, project),
+        kind: "terminal",
+    });
+    const shape = (rows: ReturnType<typeof terminalTree>) =>
+        rows.map((r) => (r.kind === "folder" ? `folder:${r.project}:${r.count}:${r.open}` : r.terminal.id));
+
+    it("files each terminal under its project's folder, the projects in the roster's order", () => {
+        const rows = terminalTree([term("t1"), term("t2", "loom"), term("t3")], ALL_PROJECTS, new Set());
+        expect(shape(rows)).toEqual(["folder:waveterm:2:true", "t1", "t3", "folder:loom:1:true", "t2"]);
+    });
+
+    it("folds a collapsed project to its folder row, which keeps its count", () => {
+        const rows = terminalTree([term("t1"), term("t2", "loom")], ALL_PROJECTS, new Set(["waveterm"]));
+        expect(shape(rows)).toEqual(["folder:waveterm:1:false", "folder:loom:1:true", "t2"]);
+    });
+
+    it("files a terminal with no project under ungrouped, like an agent with none", () => {
+        expect(shape(terminalTree([term("t1", "")], ALL_PROJECTS, new Set()))).toEqual([
+            `folder:${UNGROUPED_PROJECT}:1:true`,
+            "t1",
+        ]);
+    });
+
+    it("narrows to the chosen project's terminals, flat and unfolded, keeping one that names no project", () => {
+        const terminals = [term("t1"), term("t2", "loom"), term("u", ""), term("t3")];
+        expect(shape(terminalTree(terminals, "waveterm", new Set(["waveterm"])))).toEqual(["t1", "u", "t3"]);
+        expect(shape(terminalTree(terminals, "zeta", new Set()))).toEqual(["u"]);
+    });
+
+    it("is empty with no terminal", () => {
+        expect(terminalTree([], ALL_PROJECTS, new Set(["waveterm"]))).toEqual([]);
+        expect(terminalTree([], "waveterm", new Set())).toEqual([]);
     });
 });
 
@@ -397,7 +668,7 @@ describe("conversationProjects", () => {
 
     it("leaves out a project whose list is empty, and is empty until the scan has loaded", () => {
         expect(conversationProjects(new Map([["loom", []]]))).toEqual([]);
-        expect(conversationProjects(endedSessionsByProject(null, []))).toEqual([]);
+        expect(conversationProjects(endedConversationsByProject(null, []))).toEqual([]);
     });
 
     it("finds the newest conversation of a list that is not sorted", () => {
@@ -408,18 +679,6 @@ describe("conversationProjects", () => {
             ["y", [rowOf("y1", NOW - 5 * MIN)]],
         ]);
         expect(conversationProjects(ended)).toEqual(["x", "y"]);
-    });
-});
-
-describe("effectiveProject", () => {
-    it("keeps no filter, and a project that has conversations", () => {
-        expect(effectiveProject(ALL_PROJECTS, ["loom"])).toBe(ALL_PROJECTS);
-        expect(effectiveProject("loom", ["loom", "alpha"])).toBe("loom");
-    });
-
-    it("falls back to every project when the chosen one has no conversation left or nothing has loaded", () => {
-        expect(effectiveProject("loom", ["alpha"])).toBe(ALL_PROJECTS);
-        expect(effectiveProject("loom", [])).toBe(ALL_PROJECTS);
     });
 });
 

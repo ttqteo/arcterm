@@ -101,7 +101,11 @@ of starting a second one. What it does **not** do is capture where a session was
 
 From `docs/superpowers/specs/2026-09-22-cockpit-focus-and-peek-design.md`. Slice 1 landed the posture
 enforcement, the widened `(Kind, Id)` resolver, the seed/aligned/diverged decision and the divergence
-banner. These were scoped out of it deliberately:
+banner. **The Focus control itself was removed on 2026-10-06** (the app bar's Focus switcher, the focus
+store and its banners, the palette's "Focus on task…", the `.` / `Shift+.` keys and the peek's "Focus
+this"): the project switcher, the Agent sidebar and the run pane covered what it narrowed to. The
+project divergence banner stays, and `ResolveFocusScope` stays for Jarvis's dossier bloom. These were
+scoped out of slice 1 deliberately:
 
 - **Relationship annotation.** Surfaces marking up each other's content in place — an editing-agent and
   open-finding marker in Code, a finding badge on a Files hunk, "cited by N runs" under a memory note, a
@@ -116,8 +120,6 @@ banner. These were scoped out of it deliberately:
   post-mortem** that peek and focus cannot serve.
 - **Drag courier** — dragging a finding or file onto an agent in the roster. Shares machinery with the
   pet's deferred courier gestures; **build the store and the gestures together or not at all.**
-- **Jarvis focus support.** `SURFACE_CONTEXT.jarvis.space` stays `unsupported` until there is a decision
-  on what a focus should hide among the inline tracker's rows (see the Jarvis rows above).
 - **Jarvis *project* subject wiring.** Declared `project: "subject"`, and left unwired in slice 1 — not
   an oversight. The plan named `briefScopeAtom` as "the Brief's own scope", but that atom is a *recall
   query* scope (`JarvisScope { mode, chips, attached }`, `jarviscontract.ts:66`), not a project name.

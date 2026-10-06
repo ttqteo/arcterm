@@ -1,14 +1,8 @@
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
 import { createStore } from "jotai";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { RECORD_KIND } from "./record";
-
-const enterFocusFor = vi.fn();
-vi.mock("@/app/view/agents/focusstore", async (importOriginal) => ({
-    ...(await importOriginal<object>()),
-    enterFocusFor: (...a: any[]) => enterFocusFor(...a),
-}));
 
 const rec = (over: Partial<SpaceSummary> = {}): SpaceSummary => ({
     id: "d1",
@@ -32,21 +26,6 @@ describe("record actions", () => {
     });
     it("change status does not apply to a status with no legal transition", () => {
         expect(action("record:status").applies(rec({ status: "bogus" }))).toBe(false);
-    });
-    it("focus applies only to what the focus drill offers: active and paused", () => {
-        expect(action("record:focus").applies(rec())).toBe(true);
-        expect(action("record:focus").applies(rec({ status: "paused" }))).toBe(true);
-        expect(action("record:focus").applies(rec({ status: "completed" }))).toBe(false);
-        expect(action("record:focus").applies(rec({ status: "archived" }))).toBe(false);
-    });
-    it("focus enters the record as a task, leaving the project alone", () => {
-        enterFocusFor.mockClear();
-        action("record:focus").run(rec(), { model });
-        expect(enterFocusFor).toHaveBeenCalledWith(model, {
-            ref: { kind: "task", id: "d1" },
-            label: "ship it",
-            project: "",
-        });
     });
     it("open always applies", () => {
         expect(action("record:open").applies(rec({ status: "archived" }))).toBe(true);

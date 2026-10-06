@@ -40,20 +40,20 @@ function report(findings: RadarFinding[], signals: RadarSignal[] = []): RadarRep
 
 describe("radarPeekFacts", () => {
     it("is gone when the report is missing", () => {
-        expect(radarPeekFacts(undefined, "f-1")).toEqual({ gone: true, focus: null });
-        expect(radarPeekFacts(null)).toEqual({ gone: true, focus: null });
+        expect(radarPeekFacts(undefined, "f-1")).toEqual({ gone: true });
+        expect(radarPeekFacts(null)).toEqual({ gone: true });
     });
 
     it("is gone when the finding is absent from its report", () => {
-        expect(radarPeekFacts(report([finding("f-2")]), "f-1")).toEqual({ gone: true, focus: null });
+        expect(radarPeekFacts(report([finding("f-2")]), "f-1")).toEqual({ gone: true });
     });
 
     it("is present, with nothing to focus, when the finding is in its report", () => {
-        expect(radarPeekFacts(report([finding("f-1")]), "f-1")).toEqual({ gone: false, focus: null });
+        expect(radarPeekFacts(report([finding("f-1")]), "f-1")).toEqual({ gone: false });
     });
 
     it("a report peeked without a finding is present while the report is", () => {
-        expect(radarPeekFacts(report([]))).toEqual({ gone: false, focus: null });
+        expect(radarPeekFacts(report([]))).toEqual({ gone: false });
     });
 });
 

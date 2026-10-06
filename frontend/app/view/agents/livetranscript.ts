@@ -11,7 +11,14 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { addWSReconnectHandler, removeWSReconnectHandler } from "@/app/store/ws";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { dropLiveId, lastActivityByIdAtom, liveEntriesByIdAtom, tasksByIdAtom } from "./livetranscriptatoms";
+import { imagePasteNumbers, samePasteNumbers } from "./imagepasteids";
+import {
+    dropLiveId,
+    imagePastesByIdAtom,
+    lastActivityByIdAtom,
+    liveEntriesByIdAtom,
+    tasksByIdAtom,
+} from "./livetranscriptatoms";
 import { projectorFor } from "./transcriptregistry";
 
 const STREAM_TAIL_LINES = 300;
@@ -85,6 +92,15 @@ export function startTranscriptStream(id: string, path: string, agent?: string):
                 const tasks = projector.extractTasks?.(lines);
                 if (tasks != null) {
                     globalStore.set(tasksByIdAtom, { ...globalStore.get(tasksByIdAtom), [id]: tasks });
+                }
+                // only Claude Code numbers its pasted images; written only when a number is new, so no chunk re-renders
+                // the rail for nothing
+                if (!isPi) {
+                    const pastes = imagePasteNumbers(lines);
+                    const known = globalStore.get(imagePastesByIdAtom);
+                    if (pastes.size > 0 && !samePasteNumbers(known[id], pastes)) {
+                        globalStore.set(imagePastesByIdAtom, { ...known, [id]: pastes });
+                    }
                 }
             }
         } catch {

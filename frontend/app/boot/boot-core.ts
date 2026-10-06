@@ -12,6 +12,7 @@ import { initWshrpc, TabRpcClient } from "@/app/store/wshrpcutil";
 import { setupAgentAskSubscription } from "@/app/view/agents/agentaskstore";
 import { setupControllerStatusSubscription } from "@/app/view/agents/agentcontrollerstore";
 import { setupChildAskSubscription } from "@/app/view/agents/childaskstore";
+import { startClaudeQuotaPolling } from "@/app/view/agents/claudequota";
 import { setupAgentStatusSubscription } from "@/app/view/agents/session-models/agentstatusstore";
 import {
     atoms,
@@ -53,6 +54,8 @@ export async function bootWaveCore(initOpts: WaveInitOpts): Promise<void> {
         setupAgentAskSubscription();
         setupControllerStatusSubscription();
         setupChildAskSubscription();
+        // the Claude account's 5-hour and weekly windows, known before any claude session runs
+        startClaudeQuotaPolling();
         const [_client, waveWindow, initialTab] = await Promise.all([
             WOS.loadAndPinWaveObject<Client>(WOS.makeORef("client", initOpts.clientId)),
             WOS.loadAndPinWaveObject<WaveWindow>(WOS.makeORef("window", initOpts.windowId)),

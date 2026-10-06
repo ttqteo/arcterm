@@ -14,18 +14,11 @@ const summary = (status: string): SpaceSummary => ({
 
 describe("recordPeekFacts", () => {
     it("is gone once the list no longer has the record", () => {
-        expect(recordPeekFacts(undefined)).toEqual({ gone: true, focus: null });
+        expect(recordPeekFacts(undefined)).toEqual({ gone: true });
     });
 
-    it("has nothing to focus on for a status the focus list leaves out", () => {
-        expect(recordPeekFacts(summary("completed"))).toEqual({ gone: false, focus: null });
-        expect(recordPeekFacts(summary("archived"))).toEqual({ gone: false, focus: null });
-    });
-
-    it("focuses a live record as a task, leaving the project alone", () => {
-        expect(recordPeekFacts(summary("active"))).toEqual({
-            gone: false,
-            focus: { ref: { kind: "task", id: "d1" }, label: "Ship the vault sync", project: "" },
-        });
+    it("is present while the list has the record, whatever its status", () => {
+        expect(recordPeekFacts(summary("active"))).toEqual({ gone: false });
+        expect(recordPeekFacts(summary("archived"))).toEqual({ gone: false });
     });
 });

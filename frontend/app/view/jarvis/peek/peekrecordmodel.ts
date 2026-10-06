@@ -4,13 +4,9 @@
 // What the record body tells the item view. The body itself is the Brief's record peek (briefpeek.ts); the list
 // is what can say a record is gone, because the detail cache keeps a record it once loaded.
 
-import { focusForRecord } from "@/app/view/agents/focusfor";
 import type { PeekFacts } from "../peekstore";
 
 // summary: the record's row in taskListAtom, undefined once the list no longer has it
 export function recordPeekFacts(summary: SpaceSummary | undefined): PeekFacts {
-    if (summary == null) {
-        return { gone: true, focus: null };
-    }
-    return { gone: false, focus: focusForRecord(summary) };
+    return { gone: summary == null };
 }

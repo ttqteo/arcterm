@@ -8,12 +8,32 @@
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Plus } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { imagePasteNames } from "./imagepasteids";
+import { imagePastesAtomFor } from "./livetranscriptatoms";
 import { pickAndAttach } from "./uploadsingest";
 import { UploadsList } from "./uploadslist";
-import { uploadsAtom } from "./uploadsstore";
+import { updateUploads, uploadsAtom } from "./uploadsstore";
 
-export function UploadsSection({ blockId, now }: { blockId: string | undefined; now: number }) {
-    const records = useAtomValue(uploadsAtom(blockId ?? ""));
+export function UploadsSection({
+    agentId,
+    blockId,
+    now,
+}: {
+    agentId: string;
+    blockId: string | undefined;
+    now: number;
+}) {
+    const stored = useAtomValue(uploadsAtom(blockId ?? ""));
+    // a pasted image is named by the [Image #N] Claude Code gave it, read off the agent's transcript stream; the name is
+    // written back to the store, so it outlives the stream's window and a reload
+    const pastes = useAtomValue(imagePastesAtomFor(agentId));
+    const records = useMemo(() => (pastes ? imagePasteNames(stored, pastes) : stored), [stored, pastes]);
+    useEffect(() => {
+        if (blockId && pastes) {
+            updateUploads(blockId, (list) => imagePasteNames(list, pastes));
+        }
+    }, [blockId, pastes]);
     return (
         <div data-rail-uploads className="flex flex-col gap-[8px]">
             <button

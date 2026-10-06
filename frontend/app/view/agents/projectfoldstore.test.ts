@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { toggleProject } from "./projectfoldstore";
+import { toggleFold } from "./projectfoldstore";
 
-describe("toggleProject", () => {
-    it("adds a project that is not in the list", () => {
-        expect(toggleProject(["a"], "b")).toEqual(["a", "b"]);
+describe("toggleFold", () => {
+    it("adds a name that is not in the list", () => {
+        expect(toggleFold(["a"], "b")).toEqual(["a", "b"]);
     });
-    it("removes a project that is in the list and leaves the others", () => {
-        expect(toggleProject(["a", "b", "c"], "b")).toEqual(["a", "c"]);
+    it("removes a name that is in the list and leaves the others", () => {
+        expect(toggleFold(["a", "b", "c"], "b")).toEqual(["a", "c"]);
     });
 });

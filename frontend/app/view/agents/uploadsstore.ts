@@ -277,6 +277,23 @@ function ownerList(map: UploadsByOwner, owner: string): UploadRecord[] | undefin
 // one agent's uploads, by its terminal block id
 export const uploadsAtom = atomFamily((owner: string) => atom((get) => ownerList(get(uploadsMapAtom), owner) ?? EMPTY));
 
+// one agent's records changed in place (a pasted image named by its number), persisted like a new record. `update`
+// returns the list it was given when nothing changes, and then nothing is written
+export function updateUploads(owner: string, update: (list: UploadRecord[]) => UploadRecord[]): void {
+    const prev = globalStore.get(uploadsMapAtom);
+    const list = ownerList(prev, owner);
+    if (list == null) {
+        return;
+    }
+    const nextList = update(list);
+    if (nextList === list) {
+        return;
+    }
+    const next = { ...prev, [owner]: nextList };
+    globalStore.set(uploadsMapAtom, next);
+    writeStored(next);
+}
+
 export function recordUpload(owner: string, record: UploadRecord, thumb?: string | null): void {
     const prev = globalStore.get(uploadsMapAtom);
     const next = pruneOwners({ ...prev, [owner]: addRecord(ownerList(prev, owner) ?? [], record) });

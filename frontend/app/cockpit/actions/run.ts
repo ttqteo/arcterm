@@ -10,9 +10,6 @@ import { diffScopeOfRun, openDiff } from "@/app/view/agents/agentdiffnav";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { steerWorker } from "@/app/view/agents/channelactions";
 import { jumpToAgent } from "@/app/view/agents/channelsprimitives";
-import { focusForRun } from "@/app/view/agents/focusfor";
-import { enterFocusFor } from "@/app/view/agents/focusstore";
-import { runRows, type FocusRowVM } from "@/app/view/agents/focusswitchermodel";
 import { setRunParallelism } from "@/app/view/agents/leadcardactions";
 import { isLeadDown, runAdjustable } from "@/app/view/agents/leadcardmodel";
 import {
@@ -44,7 +41,6 @@ export interface RunThing {
     survivors: AgentVM[]; // a cancelled run's workers still running
     leadDown: boolean;
     cancelling: boolean;
-    focus?: FocusRowVM; // the focus switcher's row for this run
     resumePhase: number; // the phase the blocked card resumes
     agents: AgentVM[]; // steerWorker resolves the lead's terminal from the roster
 }
@@ -66,7 +62,6 @@ export function buildRunThing(p: ProjectRun, agents: AgentVM[], lineage: Lineage
         survivors: cancelSurvivors(run, agents),
         leadDown: isLeadDown(extra.events ?? []),
         cancelling: extra.cancelling ?? false,
-        focus: runRows(agents).find((r) => r.id === run.id),
         resumePhase: currentPhaseIndex(run),
         agents,
     };
@@ -173,13 +168,6 @@ const RUN_ACTIONS: ThingAction<RunThing>[] = [
                 taskid: "",
                 action: "relaunch-lead",
             }),
-    },
-    {
-        id: "run:focus",
-        label: "Focus the cockpit on it",
-        group: "steer",
-        applies: (t) => t.focus != null,
-        run: (t, { model }) => enterFocusFor(model, focusForRun(t.focus)),
     },
     {
         id: "run:resume",

@@ -657,9 +657,11 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                             </div>
                         ) : (
                             <p className="mb-6 rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
-                                No quota reading{all ? "" : ` for ${providerLabel(sel)}`}. Windows are known only while
-                                an agent that publishes them runs; the last snapshot is kept per provider, and rolls to
-                                empty once its window passes. History below is unaffected.
+                                No quota reading{all ? "" : ` for ${providerLabel(sel)}`}. Claude&apos;s windows are
+                                read from your Claude Code login with no session running, once it has signed in; other
+                                providers&apos; are known only while an agent that publishes them runs. The last
+                                snapshot is kept per provider, and rolls to empty once its window passes. History below
+                                is unaffected.
                             </p>
                         )}
 

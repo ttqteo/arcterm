@@ -17,9 +17,19 @@ const KEYWORDS = new Set([
     "undefined", "this", "void", "type", "interface",
 ]);
 
-// group order matters: comment | string | number | ident | whitespace | punctuation
+// group order matters: comment | string | number | ident | whitespace | punctuation. Identifiers are
+// Unicode letters (so "Kiểm" stays one word, not "Ki" + punct "ể" + "m"); punctuation is any other single
+// non-space char, so a char no earlier group takes (the "0" of "0x1F") still renders.
 const TOKEN_RE =
-    /(\/\/[^\n]*)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)|(\s+)|([^\sA-Za-z0-9_$])/g;
+    /(\/\/[^\n]*)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|([\p{L}_$][\p{L}\p{M}\p{N}_$]*)|(\s+)|(\S)/gu;
+
+// Fence languages that are prose, not code: an untagged fence (a pasted prompt, a file tree) and the
+// text/markdown tags render in one colour, as GitHub does, instead of painting its numbers and quotes.
+const PLAIN_LANGS = new Set(["", "text", "txt", "plain", "plaintext", "md", "markdown"]);
+
+export function isPlainLang(lang: string | undefined): boolean {
+    return PLAIN_LANGS.has((lang ?? "").toLowerCase());
+}
 
 export function highlightLine(line: string): CodeToken[] {
     const toks: CodeToken[] = [];

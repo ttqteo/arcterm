@@ -11,7 +11,7 @@ import { AlertTriangle, Check, ChevronDown, RefreshCw, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
-import { DivergenceBanner } from "./focusbanner";
+import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { projectListAtom, projectsAtom } from "./projectsstore";
 import { RadarFindingDetail, runPrimaryAction } from "./radarfindingdetail";
@@ -370,7 +370,7 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
             <div className="flex h-full w-full flex-col bg-background">
                 {/* Above the subject bar, as on Diff: a divergence is worth saying whether or not this
                     project has ever been scanned. */}
-                <DivergenceBanner scope="project" decision={decision} onRejoin={rejoin} />
+                <DivergenceBanner decision={decision} onRejoin={rejoin} />
                 {loadError != null ? (
                     <SurfaceError message={loadError} onRetry={() => fireAndForget(retryRadarLoad)} />
                 ) : null}

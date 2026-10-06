@@ -5,7 +5,7 @@ import { isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
-import { FocusSwitcher } from "@/app/view/agents/focusswitcher";
+import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { formatChordString } from "@/util/keysym";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtomValue } from "jotai";
@@ -37,10 +37,6 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     /
                 </span>
                 <ProjectSwitcher model={model} variant="bar" />
-                <span data-tauri-drag-region className="text-[13px] text-muted">
-                    /
-                </span>
-                <FocusSwitcher model={model} />
             </div>
 
             <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-center">
@@ -62,6 +58,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
             <div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
+                <HeaderUsageMeters model={model} />
                 {/* secondary, so New agent stays the one primary action. data-new-run: the Brief's `r` key
                     presses this (buildJarvisBindings). */}
                 <button

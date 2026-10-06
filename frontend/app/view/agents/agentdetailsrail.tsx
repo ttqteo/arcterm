@@ -47,7 +47,6 @@ import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrails
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
-import { TerminalsSection, useRailTerminals } from "./terminalsrail";
 import { TokenUsageSection } from "./tokenusagesection";
 import type { BackgroundTask } from "./transcriptprojection";
 import { loadSessionUsage } from "./transcriptusagestore";
@@ -303,7 +302,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const endedWorker = useAtomValue(model.endedWorkerAtom);
     const ended = endedWorker?.agent.id === agent.id ? endedWorker : undefined;
     const artifacts = artifactsView(useAtomValue(canvasStateAtom(agent.id)));
-    const terminalsView = useRailTerminals(model, agent);
     const panels = useAtomValue(railPanelsAtom);
     const defaultTab = useAtomValue(railTabDefaultAtom);
     const panel = panelFor(panels, agent.id, defaultTab);
@@ -372,8 +370,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: artifacts.rows.length,
         uploads: uploads.length,
         bgTasks: bgTasks.length,
-        terminals: terminalsView.rows.length,
-        terminalsOther: terminalsView.other,
         tools: tools.length,
         hasRun: role != null && roleRun != null,
     });
@@ -385,7 +381,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: "Artifacts",
         uploads: "Uploads",
         bgtasks: "Background tasks",
-        terminals: "Terminals",
         tools: "Tools used",
         run: role?.kind === "worker" ? "Task" : "Run",
         details: "Details",
@@ -399,7 +394,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         artifacts: RAIL_ICON.artifacts,
         uploads: RAIL_ICON.attach,
         bgtasks: RAIL_ICON.terminal,
-        terminals: RAIL_ICON.terminal,
         tools: RAIL_ICON.tools,
         run: RAIL_ICON.autonomy,
         details: RAIL_ICON.info,
@@ -550,7 +544,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        uploads: () => <UploadsSection blockId={agent.blockId} now={now} />,
+        uploads: () => <UploadsSection agentId={agent.id} blockId={agent.blockId} now={now} />,
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (
@@ -558,7 +552,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ))}
             </div>
         ),
-        terminals: () => <TerminalsSection model={model} view={terminalsView} />,
         tools: () => (
             <div className="flex flex-wrap gap-[7px]">
                 {tools.map((t) => (

@@ -335,9 +335,24 @@ export function runView(input: RunViewInput): RunView {
     };
 }
 
-// defaultMember is the member a run opens on: the task asking you, else the first that needs you, else the lead
+// defaultMember is the member a run opens on: the task asking you, else the first that needs you, else the lead, unless
+// the run has no lead session (a plan run the engine started on its own), whose first member with a session it opens on
 export function defaultMember(view: RunView): string {
-    return view.ask?.member ?? view.needs[0]?.key ?? LEAD_MEMBER;
+    const lead = view.members.find((m) => m.key === LEAD_MEMBER);
+    const fallback =
+        lead?.session != null ? LEAD_MEMBER : (view.members.find((m) => m.session != null)?.key ?? LEAD_MEMBER);
+    return view.ask?.member ?? view.needs[0]?.key ?? fallback;
+}
+
+// memberLiveSession is the session a run member opens: its own, else the live roster agent of its child run (the lead's
+// being the run's own) the scan has not picked up yet
+export function memberLiveSession(m: RunMember, runId: string, roster: AgentVM[]): LiveSession | undefined {
+    if (m.session) {
+        return m.session;
+    }
+    const childRunId = m.key === LEAD_MEMBER ? runId : m.childRunId;
+    const agent = childRunId ? roster.find((a) => a.runId === childRunId) : undefined;
+    return agent ? rosterSession(agent) : undefined;
 }
 
 // memberOfSession is where a session sits in its run, for a click that names a session (a feed event)

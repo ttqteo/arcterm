@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -21,6 +23,30 @@ func writeJSONL(t *testing.T, dir, name string, lines ...string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// recordReads swaps readLines for one that records the name of each file it reads, from any goroutine, and returns a
+// func giving the reads so far in name order: candidates are parsed in parallel, so the order they are read in is not
+// fixed.
+func recordReads(t *testing.T) func() []string {
+	t.Helper()
+	orig := readLines
+	var mu sync.Mutex
+	var reads []string
+	readLines = func(path string) []string {
+		mu.Lock()
+		reads = append(reads, filepath.Base(path))
+		mu.Unlock()
+		return orig(path)
+	}
+	t.Cleanup(func() { readLines = orig })
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := slices.Clone(reads)
+		slices.Sort(out)
+		return out
+	}
 }
 
 func TestScanRoot_parsesAndSortsNewestFirst(t *testing.T) {
@@ -96,9 +122,14 @@ func TestScanRoot_skipsSubagentTranscripts(t *testing.T) {
 		`{"type":"user","isSidechain":true,"agentId":"a3f6fcb8fdd0390b8","cwd":"/x","message":{"role":"user","content":"You are implementing **Task 28: The Uploads list**"}}`,
 		`{"type":"assistant","isSidechain":true,"message":{"model":"claude-opus-4-8"}}`,
 	)
+	reads := recordReads(t)
 	got := scanProvider(claudeProvider(dir), 0, 10)
 	if len(got) != 1 || got[0].ID != "parent" || got[0].Task != "Build the uploads list" {
 		t.Fatalf("want only the parent, titled by its own prompt, got %+v", got)
+	}
+	// a third of a real scan's bytes were subagent files parsed only to be dropped: the walk skips their folder
+	if r := reads(); !reflect.DeepEqual(r, []string{"parent.jsonl"}) {
+		t.Errorf("a subagents folder must not be read, read %v", r)
 	}
 }
 
@@ -141,20 +172,83 @@ func TestScanRoot_readsOnlyNewestUpToLimit(t *testing.T) {
 	mk("old.jsonl", 3)
 
 	// instrument content reads: only the newest `limit` files should be read, not all 3.
-	orig := readLines
-	var reads []string
-	readLines = func(path string) []string {
-		reads = append(reads, filepath.Base(path))
-		return orig(path)
-	}
-	defer func() { readLines = orig }()
+	reads := recordReads(t)
 
 	got := scanProvider(claudeProvider(dir), 0, 2)
 	if len(got) != 2 || got[0].ID != "new" || got[1].ID != "mid" {
 		t.Fatalf("want newest [new mid], got %+v", got)
 	}
-	if len(reads) != 2 {
-		t.Errorf("want only 2 content reads (newest up to limit), got %d: %v", len(reads), reads)
+	if r := reads(); !reflect.DeepEqual(r, []string{"mid.jsonl", "new.jsonl"}) {
+		t.Errorf("want only the newest 2 read (newest up to limit), read %v", r)
+	}
+}
+
+// A file that is no session does not count toward the limit, so the scan reads past it, and only as far as the limit
+// still needs: here one more file, never the oldest.
+func TestScanRoot_readsPastNonSessionsOnlyAsFarAsNeeded(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name, content string, agoHours int) {
+		p := writeJSONL(t, dir, name, content)
+		ts := time.Now().Add(-time.Duration(agoHours) * time.Hour)
+		if err := os.Chtimes(p, ts, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("new.jsonl", `{"type":"user","cwd":"/x","message":{"content":"hi new"}}`, 1)
+	mk("toolonly.jsonl", `{"type":"user","cwd":"/x","message":{"content":[{"type":"tool_result","content":"ok"}]}}`, 2)
+	mk("mid.jsonl", `{"type":"user","cwd":"/x","message":{"content":"hi mid"}}`, 3)
+	mk("old.jsonl", `{"type":"user","cwd":"/x","message":{"content":"hi old"}}`, 4)
+	reads := recordReads(t)
+
+	got := scanProvider(claudeProvider(dir), 0, 2)
+	if len(got) != 2 || got[0].ID != "new" || got[1].ID != "mid" {
+		t.Fatalf("want [new mid], got %+v", got)
+	}
+	if r := reads(); !reflect.DeepEqual(r, []string{"mid.jsonl", "new.jsonl", "toolonly.jsonl"}) {
+		t.Errorf("want the newest files up to the limit plus the non-session between them, read %v", r)
+	}
+}
+
+// Parsing is CPU-bound and a cold scan parses hundreds of MB, so candidates are parsed at the same time: each read
+// here waits until another is in flight, which a one-at-a-time scan never reaches.
+func TestScanRoot_parsesCandidatesConcurrently(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"a", "b", "c", "d"} {
+		writeJSONL(t, dir, n+".jsonl", `{"type":"user","cwd":"/x","message":{"content":"hi `+n+`"}}`)
+	}
+	origWorkers := parseWorkers
+	parseWorkers = 4
+	t.Cleanup(func() { parseWorkers = origWorkers })
+	orig := readLines
+	t.Cleanup(func() { readLines = orig })
+	var mu sync.Mutex
+	inFlight, peak := 0, 0
+	together := make(chan struct{})
+	// in flight can reach two more than once (two, back to one, two again), and a channel closes once
+	var meet sync.Once
+	readLines = func(path string) []string {
+		mu.Lock()
+		inFlight++
+		peak = max(peak, inFlight)
+		if inFlight == 2 {
+			meet.Do(func() { close(together) })
+		}
+		mu.Unlock()
+		select {
+		case <-together:
+		case <-time.After(2 * time.Second):
+		}
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return orig(path)
+	}
+
+	if got := scanProvider(claudeProvider(dir), 0, 4); len(got) != 4 {
+		t.Fatalf("want 4 sessions, got %d", len(got))
+	}
+	if peak < 2 {
+		t.Errorf("want candidates parsed concurrently, at most %d at once", peak)
 	}
 }
 
@@ -464,28 +558,21 @@ func TestScanCache_reusesUnchangedFiles(t *testing.T) {
 	writeJSONL(t, dir, "a.jsonl", `{"type":"user","cwd":"/x","message":{"content":"hi a"}}`)
 	writeJSONL(t, dir, "b.jsonl", `{"type":"user","cwd":"/x","message":{"content":"hi b"}}`)
 
-	orig := readLines
-	var reads []string
-	readLines = func(path string) []string {
-		reads = append(reads, filepath.Base(path))
-		return orig(path)
-	}
-	defer func() { readLines = orig }()
+	reads := recordReads(t)
 
 	first := scanProvider(claudeProvider(dir), 0, 10)
 	if len(first) != 2 {
 		t.Fatalf("first scan: want 2 sessions, got %d", len(first))
 	}
-	if len(reads) != 2 {
-		t.Fatalf("first scan must read both files, read %d: %v", len(reads), reads)
+	if r := reads(); len(r) != 2 {
+		t.Fatalf("first scan must read both files, read %v", r)
 	}
-	reads = nil
 	second := scanProvider(claudeProvider(dir), 0, 10)
 	if len(second) != 2 || second[0].ID != first[0].ID || second[1].Task != first[1].Task {
 		t.Fatalf("second scan mismatch: %+v vs %+v", second, first)
 	}
-	if len(reads) != 0 {
-		t.Errorf("unchanged files must be served from the cache (0 reads), read %d: %v", len(reads), reads)
+	if r := reads(); len(r) != 2 {
+		t.Errorf("unchanged files must be served from the cache (no new reads), read %v", r)
 	}
 }
 
@@ -531,13 +618,7 @@ func TestScanProviders_mergesByGlobalRecency(t *testing.T) {
 			`{"type":"event_msg","payload":{"type":"user_message","message":"newest codex"}}`, 30*time.Minute)
 	mk(filepath.Join(claudeDir, "claude-old.jsonl"), `{"type":"user","cwd":"/x","message":{"content":"older claude"}}`, 3*time.Hour)
 
-	orig := readLines
-	var reads []string
-	readLines = func(path string) []string {
-		reads = append(reads, filepath.Base(path))
-		return orig(path)
-	}
-	defer func() { readLines = orig }()
+	reads := recordReads(t)
 
 	// limit 2 across both providers: the newer codex session must outrank the older claude one, and
 	// only the global top-2 candidates may be read (claude-old never parsed).
@@ -551,8 +632,8 @@ func TestScanProviders_mergesByGlobalRecency(t *testing.T) {
 	if got[1].Runtime != "claude" || got[1].Task != "newest claude" {
 		t.Errorf("second must be the claude session, got %+v", got[1])
 	}
-	if len(reads) != 2 || reads[0] != "rollout-codex-new.jsonl" || reads[1] != "claude-new.jsonl" {
-		t.Errorf("only the global top-2 candidates may be read, read %d: %v", len(reads), reads)
+	if r := reads(); !reflect.DeepEqual(r, []string{"claude-new.jsonl", "rollout-codex-new.jsonl"}) {
+		t.Errorf("only the global top-2 candidates may be read, read %v", r)
 	}
 }
 

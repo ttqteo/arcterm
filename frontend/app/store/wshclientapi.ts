@@ -444,6 +444,12 @@ export class RpcApiType {
         return client.wshRpcCall("getchannels", null, opts);
     }
 
+    // command "getclaudequota" [call]
+    GetClaudeQuotaCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetClaudeQuotaRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getclaudequota", null, opts);
+        return client.wshRpcCall("getclaudequota", null, opts);
+    }
+
     // command "getdossier" [call]
     GetDossierCommand(client: WshClient, data: CommandGetDossierData, opts?: RpcOpts): Promise<DossierDetail> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getdossier", data, opts);
@@ -838,6 +844,12 @@ export class RpcApiType {
     RunUsageCommand(client: WshClient, data: CommandRunUsageData, opts?: RpcOpts): Promise<CommandRunUsageRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "runusage", data, opts);
         return client.wshRpcCall("runusage", data, opts);
+    }
+
+    // command "scanclaudeprojects" [call]
+    ScanClaudeProjectsCommand(client: WshClient, opts?: RpcOpts): Promise<CommandScanClaudeProjectsRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "scanclaudeprojects", null, opts);
+        return client.wshRpcCall("scanclaudeprojects", null, opts);
     }
 
     // command "sealrunevidence" [call]

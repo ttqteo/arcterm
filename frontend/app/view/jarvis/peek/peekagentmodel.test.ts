@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { focusForAgent } from "@/app/view/agents/focusfor";
 import { describe, expect, it } from "vitest";
 import { agentGridRows, agentPeekFacts, changedFilesSummary, sessionLabel } from "./peekagentmodel";
 
@@ -41,9 +40,9 @@ describe("sessionLabel", () => {
 
 describe("agentPeekFacts", () => {
     it("is gone when the agent is missing from the roster", () => {
-        expect(agentPeekFacts(undefined)).toEqual({ gone: true, focus: null });
+        expect(agentPeekFacts(undefined)).toEqual({ gone: true });
     });
-    it("carries the focus for a present agent", () => {
-        expect(agentPeekFacts(AGENT)).toEqual({ gone: false, focus: focusForAgent(AGENT) });
+    it("is present while the roster has the agent", () => {
+        expect(agentPeekFacts(AGENT)).toEqual({ gone: false });
     });
 });

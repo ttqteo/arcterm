@@ -438,6 +438,12 @@ func GetChannelsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Comman
 	return resp, err
 }
 
+// command "getclaudequota", wshserver.GetClaudeQuotaCommand
+func GetClaudeQuotaCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetClaudeQuotaRtnData](w, "getclaudequota", nil, opts)
+	return resp, err
+}
+
 // command "getdossier", wshserver.GetDossierCommand
 func GetDossierCommand(w *wshutil.WshRpc, data wshrpc.CommandGetDossierData, opts *wshrpc.RpcOpts) (*wshrpc.DossierDetail, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.DossierDetail](w, "getdossier", data, opts)
@@ -830,6 +836,12 @@ func RunTranscriptPathCommand(w *wshutil.WshRpc, data wshrpc.CommandRunTranscrip
 // command "runusage", wshserver.RunUsageCommand
 func RunUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandRunUsageData, opts *wshrpc.RpcOpts) (*wshrpc.CommandRunUsageRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandRunUsageRtnData](w, "runusage", data, opts)
+	return resp, err
+}
+
+// command "scanclaudeprojects", wshserver.ScanClaudeProjectsCommand
+func ScanClaudeProjectsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandScanClaudeProjectsRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandScanClaudeProjectsRtnData](w, "scanclaudeprojects", nil, opts)
 	return resp, err
 }
 

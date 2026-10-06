@@ -30,7 +30,7 @@ cells, session rows as grid cells, uploading directories, a Tauri-side drop-path
    `sessions*Atom`s keep their names; "session" is already overloaded in this codebase (workspace tab
    sessions, the Brief region) and a rename would be churn.
 3. **The sidebar is one tree per project.** Header: a full-width `+ New agent`, then `Conversation
-   History`. Under each project folder (fold state already persisted in `collapsedProjectsAtom`):
+   History` (2026-10-06: the `+ New agent` was dropped as a duplicate of the app bar's). Under each project folder (fold state already persisted in `collapsedProjectsAtom`):
    live agents first (today's rows, unchanged), then up to 5 ended sessions with a relative time
    (16m, 3d) and the session's first prompt as the title, then `Show more` (+5 per click).
    - **Revision 2026-10-06:** the ended sessions moved out of the project folders. The sidebar is now two
@@ -40,6 +40,14 @@ cells, session rows as grid cells, uploading directories, a Tauri-side drop-path
      the project's name) and a project filter on the section header narrows the list; `Show more` pages it
      20 at a time. Live and ended never mix, so what is running stays readable at a glance. The rest of
      this item (one row per live agent and session, runs excluded, no status filters) stands.
+   - **Revision 2 (2026-10-06):** every section folds from its header (persisted), and Conversations is a folder per
+     project again (the newest folder first; each folds on its own, apart from that project's Active folder) with
+     `Show more` per folder, 10 at a time. Plain terminals are back in the sidebar as a third section between the two
+     (see item 6). The app bar's project switcher (`projectFilterAtom`) narrows the whole sidebar, all three sections,
+     to one project, flat with no folder rows; Active then ends in a line counting the live agents the filter hides and
+     how many are asking, which widens back to every project. The Active header's asking badge counts every project. The
+     centre keeps the agent you chose (the divergence banner says when it is in another project), so Agent's project
+     posture is `filter` and the switcher names the project plainly instead of `Default · <project>`.
    - A live agent and its session record are one row, joined by normalized transcript path (the join
      `overlayLive` already does). When the agent exits, the tab auto-closes after about 2s and the row
      drops into the ended group.
@@ -65,6 +73,9 @@ cells, session rows as grid cells, uploading directories, a Tauri-side drop-path
      `session:project`, but `deriveTerminalVMs` drops it, so the plan adds it to the terminal VM. A terminal
      that names no project shows everywhere. A click selects that terminal; a focused terminal gets a rail
      with just this section, since the rail is otherwise hidden for terminals.
+     **Revision 2026-10-06:** an agent's rail no longer has this section. Hidden with the rail (History, a session,
+     canvas, a collapsed rail) and narrowed to one project, it left terminals out of sight; they are the sidebar's
+     Terminals section now, a folder per project. A focused terminal keeps its rail of this section alone.
 7. **Uploads** records, per agent, `{id, name, path, kind: image|file, source: paste|drop|attach, ts}`.
    Three ways in, one store keyed by the terminal block id (the paste hook can only see the block, and one live
    agent owns one block), persisted without thumbnails:

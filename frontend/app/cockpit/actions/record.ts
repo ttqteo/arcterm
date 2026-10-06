@@ -1,5 +1,3 @@
-import { focusForRecord } from "@/app/view/agents/focusfor";
-import { enterFocusFor } from "@/app/view/agents/focusstore";
 import { statusPickerRows } from "@/app/view/jarvis/briefpeek";
 import { openAddress } from "@/app/view/jarvis/openref";
 import { confirmDossierStatus } from "@/app/view/jarvis/recordactions";
@@ -42,13 +40,6 @@ export const RECORD_KIND: ThingKindDef<RecordThing> = {
                     confirmDossierStatus(r.id, value);
                 }
             },
-        },
-        {
-            id: "record:focus",
-            label: "Focus on it",
-            group: "steer",
-            applies: (r) => focusForRecord(r) != null,
-            run: (r, { model }) => enterFocusFor(model, focusForRecord(r)),
         },
     ],
     entries: (get) =>

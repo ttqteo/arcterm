@@ -6,6 +6,7 @@ import { useSettle } from "@/app/element/motionhooks";
 import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
@@ -22,10 +23,9 @@ import {
     Folder,
     FolderOpen,
     History as HistoryIcon,
-    ListFilter,
     Pencil,
     Play,
-    Plus,
+    SquareTerminal,
     Workflow,
     X,
 } from "lucide-react";
@@ -42,26 +42,40 @@ import { RenameBox, startRowRename } from "./rowrename";
 import { renamingRowAtom } from "./rowrenameatom";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
-    activeRows,
+    activeView,
     ALL_PROJECTS,
-    conversationProjects,
-    conversationRows,
-    effectiveProject,
-    endedSessionsByProject,
+    conversationCount,
+    conversationTree,
+    endedConversationsByProject,
+    RECENCY_LABEL,
     sessionAgeLabel,
+    startOfDay,
+    terminalTree,
+    type EndedRunRow,
     type EndedSessionRow,
+    type RecencyBucket,
 } from "./agentsidebarmodel";
 import { projectsAtom } from "./projectsstore";
+import { useRunObjects } from "./runobjects";
+import { runtimeMeta } from "./runtimemeta";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
-import { runSessionPrimary } from "./sessionsdetail";
+import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
+import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { askingCount, displayAgeMs, formatAgeShort, type AgentVM } from "./agentsviewmodel";
+import { askingCount, displayAgeMs, formatAgeShort, formatTokens, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { canOpenInSplit, openInSplit } from "./gridstore";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
 import { rosterSeededAtom } from "./liveagents";
-import { collapsedProjectsAtom, toggleProject } from "./projectfoldstore";
+import {
+    collapsedConversationProjectsAtom,
+    collapsedProjectsAtom,
+    collapsedSectionsAtom,
+    collapsedTerminalProjectsAtom,
+    toggleFold,
+    type SidebarSection,
+} from "./projectfoldstore";
 import {
     endedWorkerId,
     laneLabel,
@@ -93,6 +107,7 @@ import { subagentExpanded, visibleSubagents, type SubagentState } from "./sessio
 import { StatusDot } from "./statusdot";
 import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
+import { showTerminalMenu } from "./terminalsrail";
 
 const SUB_COLOR: Record<SubagentState, string> = {
     working: "var(--color-accent)",
@@ -101,17 +116,15 @@ const SUB_COLOR: Record<SubagentState, string> = {
     done: "var(--color-muted)",
 };
 
-// The Conversations list's project filter (ALL_PROJECTS, or a project's name) and how many times "Show more" was pressed
-// under it (one more page of ended sessions per press). Sidebar UI state in module-level atoms, so it outlives the tree's
-// re-renders and unmounts; neither is persisted. Cast like agentDragAtom: with strictNullChecks off, atom<string>(...)
-// resolves to the read-only overload.
-const conversationProjectAtom = atom<string>(ALL_PROJECTS) as PrimitiveAtom<string>;
-const conversationPressesAtom = atom<number>(0) as PrimitiveAtom<number>;
+// How many times "Show more" was pressed on each project's Conversations folder (one more page of ended sessions per
+// press). Sidebar UI state in a module-level atom, so it outlives the tree's re-renders and unmounts; not persisted. Cast
+// like agentDragAtom: with strictNullChecks off, atom<T>(...) resolves to the read-only overload.
+const conversationPressesAtom = atom<ReadonlyMap<string, number>>(new Map()) as PrimitiveAtom<
+    ReadonlyMap<string, number>
+>;
 
-// a project's list starts over at its first page
-function chooseConversationProject(project: string): void {
-    globalStore.set(conversationProjectAtom, project);
-    globalStore.set(conversationPressesAtom, 0);
+function showMoreConversations(project: string): void {
+    globalStore.set(conversationPressesAtom, (prev) => new Map(prev).set(project, (prev.get(project) ?? 0) + 1));
 }
 
 // choosing an agent's row brings its terminal back from a session or History
@@ -772,11 +785,82 @@ function FoldRow({
     );
 }
 
-// An ended conversation in the flat Conversations list: its first prompt and how long ago it last moved, and under them
-// the project it belongs to. A click reads its transcript in the centre, where Resume lives. It is not a live row, so
-// it carries no state dot (only a small one when it is waiting for you); the title is the prompt on one line and the
-// row's tooltip holds all of it. Memoized on strings and booleans: the list re-renders with the 1s clock, a row only when
-// its age label or its selection changes.
+// A conversation row's shell: two lines, filled while selected, the tooltip and menu its caller's
+function ConversationShell({
+    selected,
+    title,
+    onClick,
+    onContextMenu,
+    data,
+    children,
+}: {
+    selected: boolean;
+    title: string;
+    onClick: () => void;
+    onContextMenu: (e: React.MouseEvent) => void;
+    data: Record<string, string>;
+    children: React.ReactNode;
+}) {
+    return (
+        <div
+            {...data}
+            onClick={onClick}
+            onContextMenu={onContextMenu}
+            title={title}
+            className={cn(
+                "flex min-w-0 cursor-pointer flex-col gap-[3px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            {children}
+        </div>
+    );
+}
+
+// a conversation row's first line: its title, `mark` after it, and how long ago it last moved
+function ConversationHead({
+    selected,
+    title,
+    age,
+    icon,
+    mark,
+}: {
+    selected: boolean;
+    title: string;
+    age: string;
+    icon?: React.ReactNode;
+    mark?: React.ReactNode;
+}) {
+    return (
+        <div className="flex min-w-0 items-center gap-[6px]">
+            {icon}
+            <span className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}>
+                {title}
+            </span>
+            {mark}
+            <span data-agent-session-age className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                {age}
+            </span>
+        </div>
+    );
+}
+
+const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tabular-nums text-muted";
+
+function copyTitleItem(title: string): ContextMenuItem {
+    return {
+        label: "Copy title",
+        icon: <Copy size={15} />,
+        click: () => void navigator.clipboard.writeText(title),
+    };
+}
+
+// An ended conversation in the Conversations section, read like a History card on two lines: its first prompt and how
+// long ago it last moved, then its runtime, branch and tokens (the folder, or the app bar's filter, names the project).
+// A click reads its transcript in the centre, where Resume lives. It is not a live row, so it carries no state dot (only
+// a small one when it is waiting for you); the title is the prompt on one line and the row's tooltip holds all of it.
+// Memoized on strings and booleans: the list re-renders with the 1s clock, a row only when its age label or its
+// selection changes.
 const ConversationRow = memo(function ConversationRow({
     model,
     row,
@@ -788,67 +872,139 @@ const ConversationRow = memo(function ConversationRow({
     age: string;
     selected: boolean;
 }) {
+    const { session } = row;
+    const rt = runtimeMeta(session.runtime);
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [];
-        if (row.session.resumecommand) {
+        if (session.resumecommand) {
             items.push({
                 label: "Resume",
                 icon: <Play size={15} />,
-                click: () => runSessionPrimary(model, row.session),
+                click: () => runSessionPrimary(model, session),
             });
         }
-        items.push({
-            label: "Copy title",
-            icon: <Copy size={15} />,
-            click: () => void navigator.clipboard.writeText(row.title),
-        });
+        items.push(copyTitleItem(row.title));
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
     return (
-        <div
-            data-agent-session-row={row.key}
-            data-agent-session-project={row.project}
+        <ConversationShell
+            data={{ "data-agent-session-row": row.key, "data-agent-session-project": row.project }}
+            selected={selected}
+            title={row.tooltip}
             onClick={() => showSession(model, row.key)}
             onContextMenu={onContextMenu}
-            title={row.tooltip}
-            className={cn(
-                "flex cursor-pointer flex-col gap-[2px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
-                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
-            )}
         >
-            <div className="flex min-w-0 items-center gap-[6px]">
-                <span
-                    className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
-                >
-                    {row.title}
+            <ConversationHead
+                selected={selected}
+                title={row.title}
+                age={age}
+                mark={
+                    session.needsAttention ? (
+                        <span
+                            role="img"
+                            aria-label="waiting for you"
+                            className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
+                        />
+                    ) : null
+                }
+            />
+            <div className={CONVERSATION_META}>
+                <span className={cn("flex-none", rt.text)} title={rt.label}>
+                    {rt.glyph}
                 </span>
-                {row.session.needsAttention ? (
-                    <span
-                        role="img"
-                        aria-label="waiting for you"
-                        className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
-                    />
+                {session.branch ? (
+                    <span className="min-w-0 truncate" title={session.branch}>
+                        {session.branch}
+                    </span>
                 ) : null}
-                <span data-agent-session-age className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                    {age}
-                </span>
+                {session.tokenstotal > 0 ? (
+                    <>
+                        <span aria-hidden className="flex-none text-ink-faint">
+                            ·
+                        </span>
+                        <span className="flex-none whitespace-nowrap">{formatTokens(session.tokenstotal)} tok</span>
+                    </>
+                ) : null}
             </div>
-            <div className="flex min-w-0 items-center gap-[5px]">
-                <Folder size={11} aria-hidden className="flex-none text-ink-faint" />
-                <span className="min-w-0 truncate text-[11px] text-muted">{row.project}</span>
-            </div>
-        </div>
+        </ConversationShell>
     );
 });
 
-// One more page of ended conversations, with how many are still hidden
-function ShowMoreConversations({ hidden }: { hidden: number }) {
+// An ended orchestrator run in the Conversations section, read like History's run card: its title and age, then a
+// segment per task and how many landed, with its state when that is more than done (cancelled, a task that needs you).
+// A click reads its detail in the centre (the run pane), on the member it opens on.
+const RunConversationRow = memo(function RunConversationRow({
+    model,
+    row,
+    view,
+    age,
+    selected,
+}: {
+    model: AgentsViewModel;
+    row: EndedRunRow;
+    view: RunView;
+    age: string;
+    selected: boolean;
+}) {
+    const landed = view.total > 0 ? `${view.landed}/${view.total} landed` : view.complete ? "complete" : "no tasks";
+    return (
+        <ConversationShell
+            data={{ "data-agent-run-conversation": view.runId, "data-agent-session-project": row.project }}
+            selected={selected}
+            title={view.title}
+            onClick={() => showSession(model, row.key, defaultMember(view))}
+            onContextMenu={(e) => ContextMenuModel.getInstance().showContextMenu([copyTitleItem(view.title)], e)}
+        >
+            <ConversationHead
+                selected={selected}
+                title={view.title}
+                age={age}
+                icon={<Workflow size={12} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />}
+            />
+            <div className={CONVERSATION_META}>
+                {view.segs.length > 0 ? (
+                    <span aria-hidden className="flex w-[64px] flex-none gap-[2px]">
+                        {view.segs.map((k, i) => (
+                            <span
+                                key={i}
+                                className="h-[3px] min-w-[2px] flex-1 rounded-[1.5px]"
+                                style={{ backgroundColor: view.complete ? "var(--color-success)" : SEG_COLOR[k] }}
+                            />
+                        ))}
+                    </span>
+                ) : null}
+                {view.complete ? (
+                    <span className="flex min-w-0 items-center gap-[4px] text-success">
+                        <Check size={11} aria-hidden className="flex-none" />
+                        <span className="truncate">{landed}</span>
+                    </span>
+                ) : (
+                    <span className="min-w-0 truncate">{landed}</span>
+                )}
+                <span className="flex-1" />
+                {view.head.key !== "done" ? <StatusMark status={view.head} /> : null}
+            </div>
+        </ConversationShell>
+    );
+});
+
+// the heading over a recency bucket's first conversation in a folder, or in the flat filtered list
+function RecencyHeading({ bucket }: { bucket: RecencyBucket }) {
+    return (
+        <div data-agent-recency={bucket} className="px-[10px] pb-[2px] pt-[8px]">
+            <span className={cn(REGION_LABEL, "text-ink-faint")}>{RECENCY_LABEL[bucket]}</span>
+        </div>
+    );
+}
+
+// One more page of a project's ended conversations, with how many are still hidden
+function ShowMoreConversations({ project, hidden }: { project: string; hidden: number }) {
     return (
         <button
             type="button"
-            data-agent-sessions-more={ALL_PROJECTS}
-            aria-label="Show more conversations"
-            onClick={() => globalStore.set(conversationPressesAtom, (presses) => presses + 1)}
+            data-agent-sessions-more={project}
+            aria-label={`Show more ${project} conversations`}
+            onClick={() => showMoreConversations(project)}
             className="flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
         >
             <ChevronDown size={11} aria-hidden className="flex-none" />
@@ -860,93 +1016,328 @@ function ShowMoreConversations({ hidden }: { hidden: number }) {
 
 const SECTION_LABEL = "flex-none text-[11.5px] font-semibold text-muted";
 
-// The sidebar's second section: every ended conversation across projects, newest first, filtered by project. A plain
-// list, not the Active section's animated one: it can run past a hundred rows (a page at a time), and a row that slid
-// when the filter changed would be noise. The scan fills it after first paint, so nothing renders under the header
-// until the archive has loaded.
+// a row under a folder row sits one step in; a list the project filter left flat has no folder to sit under
+const UNDER_FOLDER = "pl-[14px]";
+const rowIndent = (filtered: boolean): string | undefined => (filtered ? undefined : UNDER_FOLDER);
+
+// A sidebar section's header: its label and count, and a chevron that folds the section, read like the details rail's
+// section headers. `trailing` sits at the far end and stays while the section is folded, so Active's asking badge is
+// never folded away.
+function SectionHeader({
+    section,
+    label,
+    count,
+    first,
+    trailing,
+}: {
+    section: SidebarSection;
+    label: string;
+    count: number;
+    first?: boolean;
+    trailing?: React.ReactNode;
+}) {
+    const collapsed = useAtomValue(collapsedSectionsAtom);
+    const open = !collapsed.includes(section);
+    return (
+        <div className={cn("flex items-center gap-[6px] px-[8px] pb-[2px]", first ? "pt-[4px]" : "pt-[14px]")}>
+            <button
+                type="button"
+                data-agent-section-toggle={section}
+                aria-expanded={open}
+                onClick={() => globalStore.set(collapsedSectionsAtom, toggleFold(collapsed, section))}
+                className="group flex min-w-0 cursor-pointer items-center gap-[6px] rounded-[5px] text-left"
+            >
+                <span className={cn(SECTION_LABEL, "group-hover:text-secondary")}>{label}</span>
+                {count > 0 ? <span className="text-[11px] tabular-nums text-ink-faint">{count}</span> : null}
+                <ChevronRight
+                    size={12}
+                    aria-hidden
+                    className={cn("flex-none text-ink-faint transition-transform", open && "rotate-90")}
+                />
+            </button>
+            {trailing}
+        </div>
+    );
+}
+
+// is a sidebar section open (its header folds it)
+function useSectionOpen(section: SidebarSection): boolean {
+    return !useAtomValue(collapsedSectionsAtom).includes(section);
+}
+
+// A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
+// and, at the far end, `trailing`, which a folded folder keeps (what in it wants you, how much it holds).
+function FolderRow({
+    section,
+    project,
+    open,
+    onToggle,
+    trailing,
+}: {
+    section: SidebarSection;
+    project: string;
+    open: boolean;
+    onToggle: () => void;
+    trailing?: React.ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            data-agent-folder={project}
+            data-agent-folder-section={section}
+            className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
+        >
+            <ChevronRight
+                size={12}
+                aria-hidden
+                className={cn("shrink-0 text-ink-faint transition-transform", open && "rotate-90")}
+            />
+            {open ? (
+                <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
+            ) : (
+                <Folder size={14} aria-hidden className="shrink-0 text-muted" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{project}</span>
+            {trailing}
+        </button>
+    );
+}
+
+// A plain terminal in the Terminals section: its name, filled while it is the focused one. A click focuses it the way
+// an agent's row does; its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only
+// agents are grid cells.
+function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
+    const selected = useSelectedRowId(model) === terminal.id;
+    const renaming = useAtomValue(renamingRowAtom) === terminal.id;
+    return (
+        <div
+            data-agent-terminal-row={terminal.id}
+            onClick={() => selectAgentRow(model, terminal.id)}
+            onContextMenu={(e) => showTerminalMenu(model, terminal, e)}
+            className={cn(
+                "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <Slot>
+                <SquareTerminal size={13} aria-hidden className="text-muted" />
+            </Slot>
+            {renaming ? (
+                <RenameBox tabId={terminal.id} />
+            ) : (
+                <span
+                    title={terminal.name}
+                    className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+                >
+                    {terminal.name}
+                </span>
+            )}
+        </div>
+    );
+}
+
+// The sidebar's Terminals section, pinned under the scrolling sections so it is in view however long Conversations runs:
+// the plain shells, in a folder per project, or the chosen project's alone (with those that name no project) when the
+// app bar narrows the sidebar. With no terminal in view it keeps its header and says so.
+function TerminalsSection({ model }: { model: AgentsViewModel }) {
+    const terminals = useAtomValue(model.terminalsAtom);
+    const filter = useAtomValue(model.projectFilterAtom);
+    const collapsedList = useAtomValue(collapsedTerminalProjectsAtom);
+    const open = useSectionOpen("terminals");
+    const rows = useMemo(
+        () => terminalTree(terminals, filter, new Set(collapsedList)),
+        [terminals, filter, collapsedList]
+    );
+    // filtered, the list is flat: every row is a terminal
+    const count = filter === ALL_PROJECTS ? terminals.length : rows.length;
+    return (
+        <div
+            data-agent-terminals
+            className="max-h-[40%] flex-none overflow-y-auto border-t border-border px-[8px] pb-[8px] pt-[6px]"
+        >
+            <SectionHeader section="terminals" label="Terminals" count={count} first />
+            {open && rows.length === 0 ? (
+                <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                    {filter !== ALL_PROJECTS ? `No terminals in ${filter}` : "No terminals open"}
+                </div>
+            ) : null}
+            {open && rows.length > 0 ? (
+                <div className="flex flex-col">
+                    {rows.map((r) =>
+                        r.kind === "folder" ? (
+                            <FolderRow
+                                key={`f-${r.project}`}
+                                section="terminals"
+                                project={r.project}
+                                open={r.open}
+                                onToggle={() =>
+                                    globalStore.set(collapsedTerminalProjectsAtom, toggleFold(collapsedList, r.project))
+                                }
+                                trailing={
+                                    r.open ? null : (
+                                        <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                                            {r.count}
+                                        </span>
+                                    )
+                                }
+                            />
+                        ) : (
+                            <div key={r.terminal.id} className={rowIndent(filter !== ALL_PROJECTS)}>
+                                <TerminalRow model={model} terminal={r.terminal} />
+                            </div>
+                        )
+                    )}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+// The sidebar's second section: every ended conversation and orchestrator run, in a folder per project (the one with the
+// newest conversation first) under recency headings, or the chosen project's alone when the app bar narrows the sidebar
+// (the switcher names it). A plain list, not the Active section's animated one: it can run
+// past a hundred rows (a page at a time per folder), and a row that slid when the filter changed would be noise. The scan
+// fills it after first paint, so nothing renders under the header until the archive has loaded.
 function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const archive = useAtomValue(sessionsArchiveAtom);
     const registered = useAtomValue(projectsAtom);
-    const chosen = useAtomValue(conversationProjectAtom);
+    const filter = useAtomValue(model.projectFilterAtom);
+    const collapsedList = useAtomValue(collapsedConversationProjectsAtom);
     const presses = useAtomValue(conversationPressesAtom);
     const now = useAtomValue(model.nowAtom);
     const mode = useAtomValue(centerModeAtom);
     const sel = useAtomValue(model.sessionsSelAtom);
+    const open = useSectionOpen("conversations");
     // filed under the project name the Active section's folders use (agentsidebarmodel.ts)
-    const ended = useMemo(() => endedSessionsByProject(archive, agents, registered), [archive, agents, registered]);
-    const projects = useMemo(() => conversationProjects(ended), [ended]);
-    const project = effectiveProject(chosen, projects);
-    const rows = useMemo(() => conversationRows(ended, project, presses), [ended, project, presses]);
-    const filtered = project !== ALL_PROJECTS;
-
-    const openFilter = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [
-            {
-                label: "All projects",
-                type: "radio",
-                checked: !filtered,
-                click: () => chooseConversationProject(ALL_PROJECTS),
-            },
-            ...(projects.length > 0 ? [{ type: "separator" as const }] : []),
-            ...projects.map(
-                (p): ContextMenuItem => ({
-                    label: p,
-                    type: "radio",
-                    checked: project === p,
-                    click: () => chooseConversationProject(p),
-                })
-            ),
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
-    };
+    const ended = useMemo(
+        () => endedConversationsByProject(archive, agents, registered),
+        [archive, agents, registered]
+    );
+    // the day changes the headings, not the clock's every tick
+    const today = startOfDay(now);
+    const rows = useMemo(
+        () => conversationTree(ended, filter, new Set(collapsedList), presses, today),
+        [ended, filter, collapsedList, presses, today]
+    );
+    // each shown run's view, from its own objects (loaded on first read); an ended run's dag no longer moves
+    const shownRuns = useMemo(() => rows.filter((r): r is EndedRunRow => r.kind === "run"), [rows]);
+    const runObjs = useRunObjects(shownRuns.map((r) => r.group.runId));
+    const runViews = useMemo(() => {
+        const out = new Map<string, RunView>();
+        for (const r of shownRuns) {
+            const o = runObjs[r.group.runId];
+            // `now` reads only into a done run's age text, which the row does not show: it shows its own
+            out.set(r.key, runView({ group: r.group, run: o?.run, dag: o?.dag, now: today }));
+        }
+        return out;
+    }, [shownRuns, runObjs, today]);
+    const filtered = filter !== ALL_PROJECTS;
 
     return (
         <div data-agent-conversations>
-            <div className="flex items-center gap-[6px] px-[8px] pb-[2px] pt-[14px]">
-                <span className={SECTION_LABEL}>Conversations</span>
-                {filtered ? (
-                    <span
-                        data-agent-conversations-filter={project}
-                        title={`Showing ${project} only`}
-                        className="min-w-0 truncate rounded-[5px] bg-surface-hover px-[6px] py-[1px] text-[10.5px] text-ink-mid"
-                    >
-                        {project}
-                    </span>
-                ) : null}
-                <button
-                    type="button"
-                    aria-label="Filter conversations by project"
-                    aria-haspopup="menu"
-                    onClick={openFilter}
-                    className={cn(
-                        "ml-auto flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] hover:bg-surface-hover",
-                        filtered ? "text-accent-soft" : "text-ink-faint hover:text-secondary"
-                    )}
-                >
-                    <ListFilter size={13} aria-hidden />
-                </button>
-            </div>
-            {archive == null ? null : rows.length === 0 ? (
-                <div className="px-[10px] py-[6px] text-[12px] text-muted">No past conversations</div>
+            <SectionHeader section="conversations" label="Conversations" count={conversationCount(ended, filter)} />
+            {!open || archive == null ? null : rows.length === 0 ? (
+                <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                    {filtered ? `No past conversations in ${filter}` : "No past conversations"}
+                </div>
             ) : (
                 <div className="flex flex-col">
-                    {rows.map((r) =>
-                        r.kind === "more" ? (
-                            <ShowMoreConversations key="more" hidden={r.hidden} />
-                        ) : (
-                            <ConversationRow
-                                key={r.key}
-                                model={model}
-                                row={r}
-                                age={sessionAgeLabel(r.lastactivets, now)}
-                                selected={mode === "session" && sel === r.key}
-                            />
-                        )
-                    )}
+                    {rows.map((r) => {
+                        switch (r.kind) {
+                            case "folder":
+                                return (
+                                    <FolderRow
+                                        key={`f-${r.project}`}
+                                        section="conversations"
+                                        project={r.project}
+                                        open={r.open}
+                                        onToggle={() =>
+                                            globalStore.set(
+                                                collapsedConversationProjectsAtom,
+                                                toggleFold(collapsedList, r.project)
+                                            )
+                                        }
+                                        trailing={
+                                            <>
+                                                {r.attn > 0 && !r.open ? (
+                                                    <span
+                                                        role="img"
+                                                        aria-label={`${r.attn} waiting for you`}
+                                                        className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
+                                                    />
+                                                ) : null}
+                                                <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+                                                    {r.count}
+                                                </span>
+                                            </>
+                                        }
+                                    />
+                                );
+                            case "more":
+                                return (
+                                    <div key={`more-${r.project}`} className={rowIndent(filtered)}>
+                                        <ShowMoreConversations project={r.project} hidden={r.hidden} />
+                                    </div>
+                                );
+                            case "bucket":
+                                return (
+                                    <div key={`b-${r.project}-${r.bucket}`} className={rowIndent(filtered)}>
+                                        <RecencyHeading bucket={r.bucket} />
+                                    </div>
+                                );
+                            case "run":
+                                return (
+                                    <div key={r.key} className={rowIndent(filtered)}>
+                                        <RunConversationRow
+                                            model={model}
+                                            row={r}
+                                            view={runViews.get(r.key)}
+                                            age={sessionAgeLabel(r.lastactivets, now)}
+                                            selected={mode === "run" && sel === r.key}
+                                        />
+                                    </div>
+                                );
+                            case "session":
+                                return (
+                                    <div key={r.key} className={rowIndent(filtered)}>
+                                        <ConversationRow
+                                            model={model}
+                                            row={r}
+                                            age={sessionAgeLabel(r.lastactivets, now)}
+                                            selected={mode === "session" && sel === r.key}
+                                        />
+                                    </div>
+                                );
+                        }
+                    })}
                 </div>
             )}
         </div>
+    );
+}
+
+// Under Active while the app bar narrows the sidebar to a project: how many live agents the filter hides, and how many
+// of them are asking, so one waiting in another project is not lost. A click widens the sidebar to every project.
+function ElsewhereRow({ model, agents, asking }: { model: AgentsViewModel; agents: number; asking: number }) {
+    return (
+        <button
+            type="button"
+            data-agent-elsewhere
+            title="Show every project"
+            onClick={() => globalStore.set(model.projectFilterAtom, ALL_PROJECTS)}
+            className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] tabular-nums text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
+        >
+            <span className="min-w-0 truncate">
+                {agents} in other {agents === 1 ? "project" : "projects"}
+            </span>
+            {asking > 0 ? (
+                <span className="whitespace-nowrap font-semibold text-warning">· {asking} asking</span>
+            ) : null}
+            <ArrowUpRight size={11} aria-hidden className="ml-auto flex-none" />
+        </button>
     );
 }
 
@@ -962,9 +1353,17 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const collapsedList = useAtomValue(collapsedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
     const collapsed = new Set(collapsedList);
+    const activeOpen = useSectionOpen("active");
     // the Active section: each project's live agents, a collapsed project folding to its folder row. The ended
-    // conversations are the section under it (ConversationsSection), never mixed in
-    const visibleRows = activeRows(buildAgentTree(agents, order, lineage, folds, focusId), collapsed);
+    // conversations are the section under it (ConversationsSection), and the plain terminals are pinned at the foot of
+    // the sidebar (TerminalsSection), never mixed in
+    const filter = useAtomValue(model.projectFilterAtom);
+    const filtered = filter !== ALL_PROJECTS;
+    const tree = buildAgentTree(agents, order, lineage, folds, focusId);
+    const active = activeView(tree, filter, collapsed);
+    const visibleRows = active.rows;
+    // every project's, whatever the filter: the badge stays on the header while the section is folded, so an agent asking
+    // in a project the filter hides is never out of sight
     const asking = askingCount(agents);
 
     useRunDigests(Object.values(lineage.runs));
@@ -985,14 +1384,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     return (
         <div data-agent-tree className="flex w-[248px] shrink-0 flex-col border-r border-border bg-surface">
             <div className="flex flex-col gap-[4px] px-[8px] pb-[4px] pt-[10px]">
-                <button
-                    type="button"
-                    onClick={() => globalStore.set(model.newAgentOpenAtom, true)}
-                    className="flex w-full cursor-pointer items-center gap-[8px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[7px] text-[13px] text-secondary hover:bg-surface-hover hover:text-primary"
-                >
-                    <Plus size={14} aria-hidden />
-                    New agent
-                </button>
+                {/* no New agent button here: the app bar's is always on screen above it */}
                 <button
                     type="button"
                     data-agent-history-open
@@ -1010,161 +1402,158 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-[8px]">
-                <div className="flex items-center gap-[6px] px-[8px] pb-[2px] pt-[4px]">
-                    <span className={SECTION_LABEL}>Active</span>
-                    {asking > 0 ? (
-                        <span className="ml-auto">
-                            <AskingBadge n={asking} />
-                        </span>
-                    ) : null}
-                </div>
+                <SectionHeader
+                    section="active"
+                    label="Active"
+                    count={active.count}
+                    first
+                    trailing={
+                        asking > 0 ? (
+                            <span className="ml-auto">
+                                <AskingBadge n={asking} />
+                            </span>
+                        ) : null
+                    }
+                />
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
-                    pops an exiting row out of flow in this wrapper's own coordinates */}
-                <div data-agent-active-rows className="relative">
-                    <AnimatePresence mode="popLayout" initial={false}>
-                        {visibleRows.map((r) => {
-                            if (r.kind === "group") {
-                                return (
-                                    <motion.div key={`g-${r.project}`} layout="position">
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                globalStore.set(
-                                                    collapsedProjectsAtom,
-                                                    toggleProject(collapsedList, r.project)
-                                                )
-                                            }
-                                            aria-expanded={!collapsed.has(r.project)}
-                                            className="flex w-full cursor-pointer items-center gap-[7px] rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
-                                        >
-                                            <ChevronRight
-                                                size={12}
-                                                aria-hidden
-                                                className={cn(
-                                                    "shrink-0 text-ink-faint transition-transform",
-                                                    !collapsed.has(r.project) && "rotate-90"
-                                                )}
+                    pops an exiting row out of flow in this wrapper's own coordinates. A folded section unmounts it, and
+                    its AnimatePresence starts over with initial={false}, so unfolding never replays the entrances */}
+                {activeOpen ? (
+                    <div data-agent-active-rows className="relative">
+                        <AnimatePresence mode="popLayout" initial={false}>
+                            {visibleRows.map((r) => {
+                                if (r.kind === "group") {
+                                    return (
+                                        <motion.div key={`g-${r.project}`} layout="position">
+                                            <FolderRow
+                                                section="active"
+                                                project={r.project}
+                                                open={!collapsed.has(r.project)}
+                                                onToggle={() =>
+                                                    globalStore.set(
+                                                        collapsedProjectsAtom,
+                                                        toggleFold(collapsedList, r.project)
+                                                    )
+                                                }
+                                                trailing={r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
                                             />
-                                            {collapsed.has(r.project) ? (
-                                                <Folder size={14} aria-hidden className="shrink-0 text-muted" />
-                                            ) : (
-                                                <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
-                                            )}
-                                            <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
-                                                {r.project}
-                                            </span>
-                                            {r.attn > 0 ? <AskingBadge n={r.attn} /> : null}
-                                        </button>
+                                        </motion.div>
+                                    );
+                                }
+                                // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
+                                // agent nesting once its run loads), so the move animates instead of remounting
+                                let key: string;
+                                let body: React.ReactNode;
+                                switch (r.kind) {
+                                    case "parent":
+                                        key = r.agent.id;
+                                        body = <ParentRow model={model} agent={r.agent} />;
+                                        break;
+                                    case "lead":
+                                        key = r.agent.id;
+                                        body = (
+                                            <ParentRow
+                                                model={model}
+                                                agent={r.agent}
+                                                lead={{ run: r.run, open: r.open, live: r.live }}
+                                            />
+                                        );
+                                        break;
+                                    case "run":
+                                        key = `run-${r.run.runId}`;
+                                        body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
+                                        break;
+                                    case "worker":
+                                        key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
+                                        body = (
+                                            <WorkerRow
+                                                model={model}
+                                                run={r.run}
+                                                task={r.task}
+                                                agent={r.agent}
+                                                nested={r.nested}
+                                                extras={
+                                                    r.nested
+                                                        ? undefined
+                                                        : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
+                                                }
+                                            />
+                                        );
+                                        break;
+                                    case "stage":
+                                        key = r.agent.id;
+                                        body = (
+                                            <StageRow
+                                                model={model}
+                                                agent={r.agent}
+                                                stageRole={r.stageRole}
+                                                outcome={r.outcome}
+                                            />
+                                        );
+                                        break;
+                                    case "done":
+                                        key = `done-${r.run.runId}`;
+                                        body = (
+                                            <FoldRow
+                                                glyph={<Check size={11} aria-hidden className="text-success" />}
+                                                label={[
+                                                    r.count > 0 ? `${r.count} done` : "",
+                                                    r.stages > 0
+                                                        ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}`
+                                                        : "",
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" · ")}
+                                                open={r.open}
+                                                onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
+                                            />
+                                        );
+                                        break;
+                                    case "queued":
+                                        key = `queued-${r.run.runId}`;
+                                        body = (
+                                            <FoldRow
+                                                glyph={
+                                                    <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
+                                                }
+                                                label={`${r.count} queued`}
+                                                open={r.open}
+                                                onToggle={() => toggleRunQueuedOpen(r.run.runId)}
+                                            />
+                                        );
+                                        break;
+                                }
+                                // layout="position" so a subagent expand doesn't scale-distort the row — only its
+                                // position animates on reflow. Must be the direct AnimatePresence child: popLayout
+                                // measures it via ref to pop an exiting row out of flow (else its space lingers).
+                                return (
+                                    <motion.div
+                                        key={key}
+                                        layout="position"
+                                        className={rowIndent(filtered)}
+                                        variants={cardVariants}
+                                        initial={entranceIds.has(key) ? "initial" : false}
+                                        animate="animate"
+                                        exit="exit"
+                                    >
+                                        {body}
                                     </motion.div>
                                 );
-                            }
-                            // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
-                            // agent nesting once its run loads), so the move animates instead of remounting
-                            let key: string;
-                            let body: React.ReactNode;
-                            switch (r.kind) {
-                                case "parent":
-                                    key = r.agent.id;
-                                    body = <ParentRow model={model} agent={r.agent} />;
-                                    break;
-                                case "lead":
-                                    key = r.agent.id;
-                                    body = (
-                                        <ParentRow
-                                            model={model}
-                                            agent={r.agent}
-                                            lead={{ run: r.run, open: r.open, live: r.live }}
-                                        />
-                                    );
-                                    break;
-                                case "run":
-                                    key = `run-${r.run.runId}`;
-                                    body = <RunRow model={model} run={r.run} open={r.open} live={r.live} />;
-                                    break;
-                                case "worker":
-                                    key = r.agent?.id ?? `task-${r.run.runId}-${r.task.id}`;
-                                    body = (
-                                        <WorkerRow
-                                            model={model}
-                                            run={r.run}
-                                            task={r.task}
-                                            agent={r.agent}
-                                            nested={r.nested}
-                                            extras={
-                                                r.nested
-                                                    ? undefined
-                                                    : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
-                                            }
-                                        />
-                                    );
-                                    break;
-                                case "stage":
-                                    key = r.agent.id;
-                                    body = (
-                                        <StageRow
-                                            model={model}
-                                            agent={r.agent}
-                                            stageRole={r.stageRole}
-                                            outcome={r.outcome}
-                                        />
-                                    );
-                                    break;
-                                case "done":
-                                    key = `done-${r.run.runId}`;
-                                    body = (
-                                        <FoldRow
-                                            glyph={<Check size={11} aria-hidden className="text-success" />}
-                                            label={[
-                                                r.count > 0 ? `${r.count} done` : "",
-                                                r.stages > 0
-                                                    ? `${r.stages} ${r.stages === 1 ? "review" : "reviews"}`
-                                                    : "",
-                                            ]
-                                                .filter(Boolean)
-                                                .join(" · ")}
-                                            open={r.open}
-                                            onToggle={() => toggleRunDoneOpen(r.run.runId, r.open, r.count)}
-                                        />
-                                    );
-                                    break;
-                                case "queued":
-                                    key = `queued-${r.run.runId}`;
-                                    body = (
-                                        <FoldRow
-                                            glyph={
-                                                <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
-                                            }
-                                            label={`${r.count} queued`}
-                                            open={r.open}
-                                            onToggle={() => toggleRunQueuedOpen(r.run.runId)}
-                                        />
-                                    );
-                                    break;
-                            }
-                            // layout="position" so a subagent expand doesn't scale-distort the row — only its
-                            // position animates on reflow. Must be the direct AnimatePresence child: popLayout
-                            // measures it via ref to pop an exiting row out of flow (else its space lingers).
-                            return (
-                                <motion.div
-                                    key={key}
-                                    layout="position"
-                                    className="pl-[14px]"
-                                    variants={cardVariants}
-                                    initial={entranceIds.has(key) ? "initial" : false}
-                                    animate="animate"
-                                    exit="exit"
-                                >
-                                    {body}
-                                </motion.div>
-                            );
-                        })}
-                    </AnimatePresence>
-                </div>
-                {visibleRows.length === 0 ? (
-                    <div className="px-[10px] py-[6px] text-[12px] text-muted">No agents running</div>
+                            })}
+                        </AnimatePresence>
+                    </div>
+                ) : null}
+                {activeOpen && visibleRows.length === 0 ? (
+                    <div className="px-[10px] py-[6px] text-[12px] text-muted">
+                        {filtered ? `No agents running in ${filter}` : "No agents running"}
+                    </div>
+                ) : null}
+                {activeOpen && active.elsewhere.agents > 0 ? (
+                    <ElsewhereRow model={model} agents={active.elsewhere.agents} asking={active.elsewhere.asking} />
                 ) : null}
                 <ConversationsSection model={model} />
             </div>
+            <TerminalsSection model={model} />
         </div>
     );
 });

@@ -29,8 +29,6 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Ctrl`+`N` | New agent |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |
 | `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
-| `.` | Focus the selected row (the cockpit narrows to that agent) |
-| `Shift`+`.` | Clear focus — back to Global |
 
 Setup and Settings have no `Ctrl`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `g` `.` and Settings with `g` `,`.
@@ -94,7 +92,6 @@ holding `Ctrl` underlines every link that can be peeked, and `Ctrl`+click on one
 | Keys | Action |
 |---|---|
 | `Enter` | Open the item on its own surface (absent for a memory note, which opens nowhere else) |
-| `f` | Focus this: narrow the cockpit to the item |
 | `Backspace` | Back to the avatar popup's hub |
 | `Esc` | Close the popup, or return to the hub if the item was opened from it |
 
@@ -160,7 +157,7 @@ cells keeps changing which of them show.
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
 Canvas mode, a review, the subagent view, Conversation History, an ended session's or a done worker's transcript, and a
-terminal focused from the rail's Terminals section each show one thing in place of the grid; the grid comes back as it
+terminal focused from the tree's Terminals section each show one thing in place of the grid; the grid comes back as it
 was.
 
 ### Agent: canvas mode
