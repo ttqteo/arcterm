@@ -15,6 +15,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/workercap"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -166,26 +167,40 @@ func blockRunning(blockId string) bool {
 	return blockShellStatus(blockId) == blockcontroller.Status_Running
 }
 
-// childCPUTime reads the CPU time (ms) used so far by a block's whole process tree, and whether a reading
-// exists. A var so tests can script it.
-var childCPUTime = sampleChildCPUTime
+// treeSample is one reading of a worker's whole process tree: the CPU time (ms) used so far and the resident
+// memory now.
+type treeSample struct {
+	CPUMs int64
+	RSS   uint64
+}
 
-func sampleChildCPUTime(blockId string) (int64, bool) {
+// childTreeSample reads a block's process tree, and whether a reading exists. A var so tests can script it.
+var childTreeSample = sampleChildTree
+
+// observeWorkerRSS feeds the worker-capacity estimate (pkg/workercap). A var so tests can capture it.
+var observeWorkerRSS = workercap.Observe
+
+func sampleChildTree(blockId string) (treeSample, bool) {
 	pid := blockcontroller.GetBlockControllerPid(blockId)
 	if pid <= 0 {
-		return 0, false
+		return treeSample{}, false
 	}
 	root, err := process.NewProcess(int32(pid))
 	if err != nil {
-		return 0, false
+		return treeSample{}, false
 	}
 	var totalSec float64
+	var rss uint64
+	// one walk for both: listing the tree is the costly part (on darwin Children() reads every process)
 	for _, p := range processTree(root) {
 		if times, err := p.Times(); err == nil {
 			totalSec += times.User + times.System
 		}
+		if m, err := p.MemoryInfo(); err == nil {
+			rss += m.RSS
+		}
 	}
-	return int64(totalSec * 1000), true
+	return treeSample{CPUMs: int64(totalSec * 1000), RSS: rss}, true
 }
 
 // processTree is root and every descendant. gopsutil lists only direct children, and a test run is a
@@ -239,10 +254,12 @@ func sampleWorkerCPU(ctx context.Context, t *waveobj.TaskNode, run *waveobj.Run,
 	if !alive {
 		return cpuNone
 	}
-	cpu, ok := childCPUTime(blockId)
+	s, ok := childTreeSample(blockId)
 	if !ok {
 		return cpuNone
 	}
+	observeWorkerRSS(blockId, s.RSS)
+	cpu := s.CPUMs
 	prev, prevTs := t.CPUSample, t.CPUSampleTs
 	t.CPUSample, t.CPUSampleTs = cpu, now
 	if prevTs == 0 {
