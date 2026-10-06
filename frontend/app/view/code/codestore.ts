@@ -15,7 +15,7 @@ import { parseGitChanges } from "@/app/view/agents/gitstatus";
 import { buildProjectList, projectsAtom } from "@/app/view/agents/projectsstore";
 import { joinRepoPath, repoBasename, sameRepoPath } from "@/util/paths";
 import { base64ToString, fireAndForget, stringToBase64 } from "@/util/util";
-import { atom, type PrimitiveAtom } from "jotai";
+import { atom, type Getter, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { debounce } from "throttle-debounce";
 import { classifyFile, hasNulByte, MAX_VIEW_BYTES } from "./codeclassify";
@@ -46,7 +46,7 @@ import { cleanPathInput, pathErrorMessage, statPathError, validatePathInput } fr
 import { pruneRecent, pushRecent } from "./coderecents";
 import { resetSearch } from "./codesearchstore";
 import { changedDirs, statusByPath, type CodeStatus } from "./codestatus";
-import { ancestorsOf, buildTree, visibleRows } from "./codetree";
+import { ancestorsOf, buildTree, dirsToList, lazyDirs, visibleRows } from "./codetree";
 
 export interface CodeProject {
     name: string;
@@ -55,6 +55,9 @@ export interface CodeProject {
 
 export interface CodeIndex {
     paths: string[];
+    // what .gitignore excludes, shown dimmed in the tree only (the finder and search skip it); a
+    // directory ignored as a whole is one entry ending in "/" (codetree.ts lazyDirs)
+    ignored: string[];
     isRepo: boolean;
     truncated: boolean;
 }
@@ -91,6 +94,8 @@ export const lastCodeProjectAtom = atomWithStorage<CodeProject | null>("code.pro
 export const codeIndexAtom = atom<CodeIndex | null>(null) as PrimitiveAtom<CodeIndex | null>;
 export const codeIndexErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 export const codeExpandedAtom = atom<Set<string>>(new Set<string>()) as PrimitiveAtom<Set<string>>;
+// an ignored directory's entries once it has been opened, keyed by the directory (see listIgnoredDirs)
+export const codeIgnoredListedAtom = atom<Map<string, string[]>>(new Map()) as PrimitiveAtom<Map<string, string[]>>;
 export const codeFileAtom = atom<CodeFile>({ kind: "none" }) as PrimitiveAtom<CodeFile>;
 export const codeHistoryAtom = atom<History>(EMPTY_HISTORY) as PrimitiveAtom<History>;
 // every checkout of the selected project's repository, main first; empty until loaded
@@ -206,8 +211,48 @@ export const codeStatusDirsAtom = atom((get) => changedDirs(get(codeStatusAtom)?
 // The rendered row list. Derived rather than memoized inside the pane, because the keyboard bindings
 // have to agree with the pane about which rows exist and cannot see a component's useMemo.
 export const codeRowsAtom = atom((get) =>
-    visibleRows(buildTree(get(codeIndexAtom)?.paths ?? []), get(codeExpandedAtom))
+    visibleRows(buildTree(get(codeIndexAtom)?.paths ?? [], codeIgnoredEntries(get)), get(codeExpandedAtom))
 );
+
+// the index's ignored entries plus what the opened ignored directories hold
+function codeIgnoredEntries(get: Getter): string[] {
+    const listed = get(codeIgnoredListedAtom);
+    const top = get(codeIndexAtom)?.ignored ?? [];
+    return listed.size === 0 ? top : [...top, ...[...listed.values()].flat()];
+}
+
+// Lists the expanded ignored directories nobody has listed yet. The tree pane runs it whenever the
+// expanded set or the index changes, so every way a directory opens (click, keys, a reveal) is covered.
+const listingIgnored = new Set<string>();
+export async function listIgnoredDirs(): Promise<void> {
+    const project = globalStore.get(codeProjectAtom);
+    if (project == null) {
+        return;
+    }
+    const listed = globalStore.get(codeIgnoredListedAtom);
+    const lazy = lazyDirs(codeIgnoredEntries(globalStore.get));
+    const todo = dirsToList(globalStore.get(codeExpandedAtom), lazy, new Set(listed.keys())).filter(
+        (d) => !listingIgnored.has(d)
+    );
+    await Promise.all(
+        todo.map(async (dir) => {
+            listingIgnored.add(dir);
+            try {
+                const res = await RpcApi.GitListIgnoredDirCommand(TabRpcClient, { cwd: project.path, dir });
+                // a project switch while the listing ran makes it someone else's directory
+                if (globalStore.get(codeProjectAtom)?.path !== project.path) {
+                    return;
+                }
+                globalStore.set(codeIgnoredListedAtom, (m) => new Map(m).set(dir, res.entries ?? []));
+            } catch {
+                // an unreadable directory opens empty rather than retrying on every render
+                globalStore.set(codeIgnoredListedAtom, (m) => new Map(m).set(dir, []));
+            } finally {
+                listingIgnored.delete(dir);
+            }
+        })
+    );
+}
 
 // the absolute path is the draft key; every draft-facing helper goes through this
 export function draftKey(project: CodeProject, rel: string): string {
@@ -228,6 +273,7 @@ export async function selectProject(p: CodeProject | null): Promise<void> {
         globalStore.set(lastCodeProjectAtom, p);
     }
     globalStore.set(codeExpandedAtom, new Set<string>());
+    globalStore.set(codeIgnoredListedAtom, new Map());
     globalStore.set(codeHistoryAtom, EMPTY_HISTORY);
     globalStore.set(codeFileAtom, { kind: "none" });
     globalStore.set(codeIndexErrorAtom, null);
@@ -306,7 +352,12 @@ export async function loadFileIndex(path: string): Promise<CodeIndex> {
         return cached;
     }
     const res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd: path });
-    const idx: CodeIndex = { paths: res.files ?? [], isRepo: res.isrepo, truncated: res.truncated ?? false };
+    const idx: CodeIndex = {
+        paths: res.files ?? [],
+        ignored: res.ignored ?? [],
+        isRepo: res.isrepo,
+        truncated: res.truncated ?? false,
+    };
     indexCache.set(path, idx);
     return idx;
 }
@@ -344,6 +395,8 @@ export async function refreshIndex(): Promise<void> {
     indexCache.delete(p.path);
     globalStore.set(codeIndexAtom, null);
     globalStore.set(codeIndexErrorAtom, null);
+    // the open ignored directories are listed again, through listIgnoredDirs, once the index lands
+    globalStore.set(codeIgnoredListedAtom, new Map());
     await loadIndex(p);
 }
 

@@ -17,10 +17,23 @@ import { DivergenceBanner } from "@/app/view/agents/divergencebanner";
 import { subjectDecision } from "@/app/view/agents/focussubject";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { SurfaceEmptyState, SurfaceError, SurfaceHeader } from "@/app/view/agents/surfacescaffold";
+import { formatChordString } from "@/util/keysym";
 import { sameRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowRight, ChevronDown, FilePlus, FolderGit2, FolderPlus, RotateCw, Save, Undo2 } from "lucide-react";
+import {
+    ArrowRight,
+    ChevronDown,
+    FilePlus,
+    FolderGit2,
+    FolderPlus,
+    FolderTree,
+    GitCompareArrows,
+    RotateCw,
+    Save,
+    Search,
+    Undo2,
+} from "lucide-react";
 import { useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CodeChangedPane } from "./codechangedpane";
 import { canBack, canForward } from "./codehistory";
@@ -174,8 +187,10 @@ export function CodeSurface({ model }: { model: AgentsViewModel }) {
     return (
         <div className="relative flex h-full w-full flex-col">
             <SurfaceHeader
+                compact
                 title="Code"
-                subtitle={project != null ? `${project.name} · ${project.path}` : "No project selected"}
+                // the project's name is on the picker beside it; the path is what the row adds
+                subtitle={project != null ? <span title={project.path}>{project.path}</span> : "No project selected"}
                 actions={
                     <>
                         <div className="relative">
@@ -511,6 +526,19 @@ function CodePanesSkeleton() {
 
 const CODE_SIDEBAR_PREFS_KEY = "code.sidebar.prefs";
 const CODE_SIDEBAR_MODES: readonly CodeSidebarMode[] = ["files", "search", "changed"];
+// icon tabs: the label is the accessible name and the tooltip, with the mode's binding (bindings.ts
+// code:focus-tree, code:search) when it has one. Chords are formatted at render: the platform glyphs
+// are not known at module load (keysym.ts).
+const CODE_SIDEBAR_TABS: Record<CodeSidebarMode, { label: string; chord?: string; icon: React.ReactNode }> = {
+    files: { label: "Files", chord: "Alt:t", icon: <FolderTree size={14} strokeWidth={1.8} /> },
+    search: { label: "Search", chord: "Ctrl:Shift:f", icon: <Search size={14} strokeWidth={1.8} /> },
+    changed: { label: "Changed files", icon: <GitCompareArrows size={14} strokeWidth={1.8} /> },
+};
+
+function codeSidebarTabTitle(m: CodeSidebarMode): string {
+    const { label, chord } = CODE_SIDEBAR_TABS[m];
+    return chord ? `${label} (${formatChordString(chord)})` : label;
+}
 
 function isCodeEditorFocused(element: Element | null): boolean {
     return (
@@ -721,12 +749,16 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
                                     setDragWidth(null);
                                     setMode(m);
                                 }}
+                                aria-label={CODE_SIDEBAR_TABS[m].label}
+                                title={codeSidebarTabTitle(m)}
                                 className={cn(
-                                    "cursor-pointer rounded-[6px] px-2 py-[3px] text-[11px] capitalize focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
-                                    m === mode ? "bg-accent/10 text-accent-soft" : "text-muted hover:text-primary"
+                                    "flex size-6 cursor-pointer items-center justify-center rounded-[6px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+                                    m === mode
+                                        ? "bg-accent/10 text-accent-soft"
+                                        : "text-muted hover:bg-surface-hover hover:text-primary"
                                 )}
                             >
-                                {m}
+                                {CODE_SIDEBAR_TABS[m].icon}
                             </button>
                         ))}
                     </div>

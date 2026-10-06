@@ -49,7 +49,7 @@ describe("registeredProjects", () => {
 
 describe("codeBodyPhase", () => {
     const alpha = { name: "alpha", path: "C:\\repos\\alpha" };
-    const idx = (isRepo: boolean) => ({ paths: [], isRepo, truncated: false });
+    const idx = (isRepo: boolean) => ({ paths: [], ignored: [], isRepo, truncated: false });
     const base = { registry, project: alpha, stored: null, index: idx(true), indexError: null };
 
     it("is loading while a stored project is about to be restored, not no-project", () => {

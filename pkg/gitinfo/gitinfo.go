@@ -1251,10 +1251,20 @@ func failureOf(args []string, err error) *GitFailure {
 // partial index reads as a complete one.
 const maxListFiles = 20000
 
+// maxIgnored caps the ignored entries the same way. They stay few in practice: a directory that is
+// ignored as a whole is one entry, however much it holds.
+const maxIgnored = 5000
+
 // FileList is every path git knows about in cwd: tracked files plus untracked files that
 // .gitignore does not exclude. Paths are repo-relative with forward slashes, sorted.
+//
+// Ignored is what .gitignore excludes, kept apart so the finder and search go on skipping it while the
+// tree shows it dimmed. A directory ignored as a whole is one entry ending in "/" and its contents are
+// listed only when it is opened (ListIgnoredDir); an ignored file inside a tracked directory is its
+// own entry.
 type FileList struct {
 	Paths     []string `json:"paths"`
+	Ignored   []string `json:"ignored"`
 	IsRepo    bool     `json:"isrepo"`
 	Truncated bool     `json:"truncated"`
 }
@@ -1274,12 +1284,7 @@ func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 	if err != nil {
 		return nil, err
 	}
-	paths := []string{}
-	for _, p := range strings.Split(out, "\x00") {
-		if p != "" {
-			paths = append(paths, p)
-		}
-	}
+	paths := splitNul(out)
 	// --cached and --others cannot overlap (others is untracked-only) but the concatenation is
 	// not globally ordered, so sort for a stable tree.
 	sort.Strings(paths)
@@ -1288,7 +1293,60 @@ func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 		paths = paths[:maxListFiles]
 		truncated = true
 	}
-	return &FileList{Paths: paths, IsRepo: true, Truncated: truncated}, nil
+	// --directory stops at a directory ignored as a whole instead of walking it (node_modules is one
+	// entry, not a hundred thousand). The tree is still usable without the ignored entries, so a
+	// failure here leaves them out rather than failing the listing.
+	ignored := []string{}
+	if out, err := run(ctx, cwd, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"); err == nil {
+		ignored = splitNul(out)
+		sort.Strings(ignored)
+		if len(ignored) > maxIgnored {
+			ignored = ignored[:maxIgnored]
+		}
+	}
+	return &FileList{Paths: paths, Ignored: ignored, IsRepo: true, Truncated: truncated}, nil
+}
+
+func splitNul(out string) []string {
+	parts := []string{}
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return parts
+}
+
+// ListIgnoredDir lists one level of an ignored directory for the tree, which opens those lazily (see
+// FileList.Ignored): repo-relative paths with forward slashes, a directory ending in "/", sorted, at
+// most maxIgnored. dir must stay inside cwd.
+func ListIgnoredDir(cwd, dir string) ([]string, error) {
+	rel := filepath.Clean(filepath.FromSlash(strings.TrimSuffix(dir, "/")))
+	if rel == "." || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("directory %q is outside the project", dir)
+	}
+	entries, err := os.ReadDir(filepath.Join(cwd, rel))
+	if err != nil {
+		return nil, err
+	}
+	base := filepath.ToSlash(rel)
+	out := []string{}
+	for _, e := range entries {
+		if e.Name() == ".git" {
+			continue
+		}
+		p := base + "/" + e.Name()
+		if e.IsDir() {
+			p += "/"
+		}
+		out = append(out, p)
+		if len(out) >= maxIgnored {
+			break
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 const maxGrepMatches = 500

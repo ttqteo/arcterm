@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { ancestorsOf, buildTree, visibleRows } from "./codetree";
+import { ancestorsOf, buildTree, dirsToList, lazyDirs, visibleRows } from "./codetree";
 
 const PATHS = ["README.md", "src/app/main.ts", "src/app/util.ts", "src/lib.ts", "docs/a/b/c.md"];
 
@@ -63,5 +63,44 @@ describe("ancestorsOf", () => {
 
     it("returns nothing for a root-level file", () => {
         expect(ancestorsOf("README.md")).toEqual([]);
+    });
+});
+
+describe("ignored entries", () => {
+    const tracked = ["src/a.ts", "README.md"];
+    const ignored = ["node_modules/", "src/debug.log", ".env"];
+
+    it("shows ignored files and directories, flagged", () => {
+        const rows = visibleRows(buildTree(tracked, ignored), new Set(["src"]));
+        expect(rows.map((r) => [r.path, r.kind, r.ignored ?? false])).toEqual([
+            ["node_modules", "dir", true],
+            ["src", "dir", false],
+            ["src/a.ts", "file", false],
+            ["src/debug.log", "file", true],
+            [".env", "file", true],
+            ["README.md", "file", false],
+        ]);
+    });
+
+    it("flags everything listed under an ignored directory", () => {
+        const listed = [...ignored, "node_modules/pkg/", "node_modules/top.js"];
+        const rows = visibleRows(buildTree(tracked, listed), new Set(["node_modules"]));
+        expect(rows.filter((r) => r.path.startsWith("node_modules/")).map((r) => [r.path, r.ignored])).toEqual([
+            ["node_modules/pkg", true],
+            ["node_modules/top.js", true],
+        ]);
+    });
+
+    it("keeps a tracked directory unflagged when ignored files sit in it", () => {
+        const rows = visibleRows(buildTree(tracked, ignored), new Set());
+        expect(rows.find((r) => r.path === "src")?.ignored).toBeUndefined();
+    });
+
+    it("lists only the expanded lazy directories not yet listed", () => {
+        const lazy = lazyDirs([...ignored, "node_modules/pkg/"]);
+        expect([...lazy]).toEqual(["node_modules", "node_modules/pkg"]);
+        expect(
+            dirsToList(new Set(["src", "node_modules", "node_modules/pkg"]), lazy, new Set(["node_modules"]))
+        ).toEqual(["node_modules/pkg"]);
     });
 });

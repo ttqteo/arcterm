@@ -19,13 +19,36 @@ export function SurfaceHeader({
     subtitle,
     actions,
     border = true,
+    compact = false,
 }: {
     title: string;
     badge?: ReactNode;
     subtitle?: ReactNode;
     actions?: ReactNode;
     border?: boolean;
+    // one tight row, the subtitle inline after the title: for a surface whose body needs the height
+    // (Code, an editor under its own sidebar)
+    compact?: boolean;
 }) {
+    if (compact) {
+        return (
+            <div
+                className={cn(
+                    "flex h-[42px] flex-none items-center justify-between gap-4 bg-background pl-4 pr-3",
+                    border && "border-b border-border"
+                )}
+            >
+                <div className="flex min-w-0 items-baseline gap-2.5">
+                    <h1 className="flex-none text-[15px] font-semibold tracking-[-0.01em] text-primary">{title}</h1>
+                    {badge}
+                    {subtitle != null ? (
+                        <div className="min-w-0 truncate text-[12px] text-muted">{subtitle}</div>
+                    ) : null}
+                </div>
+                {actions != null ? <div className="flex flex-none items-center gap-2">{actions}</div> : null}
+            </div>
+        );
+    }
     return (
         <div
             className={cn(

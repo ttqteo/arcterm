@@ -29,7 +29,9 @@ import {
     codeCursorAtom,
     codeDraftsAtom,
     codeEditAtom,
+    codeExpandedAtom,
     codeFileAtom,
+    codeIgnoredListedAtom,
     codeIndexAtom,
     codeProjectAtom,
     codeRowsAtom,
@@ -39,6 +41,7 @@ import {
     confirmDelete,
     createEntry,
     draftKey,
+    listIgnoredDirs,
     openPath,
     renamePath,
     startCreate,
@@ -60,6 +63,8 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     const changedDirSet = useAtomValue(codeStatusDirsAtom);
     const edit = useAtomValue(codeEditAtom);
     const index = useAtomValue(codeIndexAtom);
+    const expanded = useAtomValue(codeExpandedAtom);
+    const ignoredListed = useAtomValue(codeIgnoredListedAtom);
     const openFile = file.kind === "none" ? null : file.path;
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
     const treeRef = useRef<HTMLDivElement>(null);
@@ -71,6 +76,12 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
             treeRef.current?.focus({ preventScroll: true });
         }
     }, []);
+
+    // an ignored directory git reported as one entry shows its contents once listed; this covers every
+    // way a directory opens (click, keys, a reveal), and an opened one that a listing nested further
+    useEffect(() => {
+        fireAndForget(listIgnoredDirs);
+    }, [expanded, index, ignoredListed]);
 
     const paths = index?.paths ?? [];
     const provisional = edit?.kind === "create" ? provisionalIndex(rows, edit.dir) : -1;
@@ -164,6 +175,8 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
             style={{ paddingLeft: 8 + row.depth * 12 }}
             className={cn(
                 "flex w-full cursor-pointer items-center gap-1.5 py-[3px] pr-2 text-left text-[12.5px] text-secondary hover:bg-accent/10 hover:text-primary",
+                // dimmed like VS Code: there, but outside what git tracks
+                row.ignored && "text-muted",
                 row.path === openFile && "text-accent-soft",
                 row.path === cursor && "bg-accent/10"
             )}
@@ -178,7 +191,12 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 // the chevron's width, so a file's icon lines up with its sibling folders' icons
                 <span className="w-[13px] flex-none" />
             )}
-            <FileIcon path={row.path} dir={row.kind === "dir"} expanded={row.kind === "dir" && row.expanded} />
+            <FileIcon
+                path={row.path}
+                dir={row.kind === "dir"}
+                expanded={row.kind === "dir" && row.expanded}
+                className={row.ignored ? "opacity-50" : undefined}
+            />
 
             {edit?.kind === "rename" && edit.path === row.path ? (
                 <NameInput

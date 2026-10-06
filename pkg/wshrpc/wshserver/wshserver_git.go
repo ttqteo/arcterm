@@ -57,7 +57,15 @@ func (ws *WshServer) GitListFilesCommand(ctx context.Context, data wshrpc.Comman
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandGitListFilesRtnData{Files: fl.Paths, IsRepo: fl.IsRepo, Truncated: fl.Truncated}, nil
+	return &wshrpc.CommandGitListFilesRtnData{Files: fl.Paths, Ignored: fl.Ignored, IsRepo: fl.IsRepo, Truncated: fl.Truncated}, nil
+}
+
+func (ws *WshServer) GitListIgnoredDirCommand(ctx context.Context, data wshrpc.CommandGitListIgnoredDirData) (*wshrpc.CommandGitListIgnoredDirRtnData, error) {
+	entries, err := gitinfo.ListIgnoredDir(data.Cwd, data.Dir)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandGitListIgnoredDirRtnData{Entries: entries}, nil
 }
 
 func (ws *WshServer) GitListWorktreesCommand(ctx context.Context, data wshrpc.CommandGitListWorktreesData) (*wshrpc.CommandGitListWorktreesRtnData, error) {

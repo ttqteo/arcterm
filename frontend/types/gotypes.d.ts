@@ -1088,8 +1088,20 @@ declare global {
     // wshrpc.CommandGitListFilesRtnData
     type CommandGitListFilesRtnData = {
         files: string[];
+        ignored?: string[];
         isrepo: boolean;
         truncated?: boolean;
+    };
+
+    // wshrpc.CommandGitListIgnoredDirData
+    type CommandGitListIgnoredDirData = {
+        cwd: string;
+        dir: string;
+    };
+
+    // wshrpc.CommandGitListIgnoredDirRtnData
+    type CommandGitListIgnoredDirRtnData = {
+        entries: string[];
     };
 
     // wshrpc.CommandGitListWorktreesData

@@ -18,6 +18,7 @@ type GitCommands interface {
 	GitCommitChangesCommand(ctx context.Context, data CommandGitCommitChangesData) (*CommandGitCommitChangesRtnData, error)
 	GitCompareChangesCommand(ctx context.Context, data CommandGitCompareChangesData) (*CommandGitCompareChangesRtnData, error)
 	GitListFilesCommand(ctx context.Context, data CommandGitListFilesData) (*CommandGitListFilesRtnData, error)
+	GitListIgnoredDirCommand(ctx context.Context, data CommandGitListIgnoredDirData) (*CommandGitListIgnoredDirRtnData, error)
 	GitListWorktreesCommand(ctx context.Context, data CommandGitListWorktreesData) (*CommandGitListWorktreesRtnData, error)
 	GitGrepCommand(ctx context.Context, data CommandGitGrepData) (*CommandGitGrepRtnData, error)
 	GitFileAtRefCommand(ctx context.Context, data CommandGitFileAtRefData) (*CommandGitFileAtRefRtnData, error)
@@ -96,10 +97,24 @@ type CommandGitListFilesData struct {
 
 // Files are repo-relative, forward-slashed, sorted. Truncated reports that the repo exceeded the
 // server's cap and Files is a prefix, so the finder can say so instead of implying completeness.
+//
+// Ignored is what .gitignore excludes, for the tree to show dimmed: a directory ignored as a whole is one
+// entry ending in "/", listed on demand by GitListIgnoredDirCommand.
 type CommandGitListFilesRtnData struct {
 	Files     []string `json:"files"`
+	Ignored   []string `json:"ignored,omitempty"`
 	IsRepo    bool     `json:"isrepo"`
 	Truncated bool     `json:"truncated,omitempty"`
+}
+
+// Dir is repo-relative; the reply lists its entries one level deep, a directory ending in "/".
+type CommandGitListIgnoredDirData struct {
+	Cwd string `json:"cwd"`
+	Dir string `json:"dir"`
+}
+
+type CommandGitListIgnoredDirRtnData struct {
+	Entries []string `json:"entries"`
 }
 
 type CommandGitListWorktreesData struct {

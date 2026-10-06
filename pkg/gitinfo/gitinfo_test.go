@@ -1464,6 +1464,52 @@ func TestListFilesIncludesTrackedAndUntrackedButNotIgnored(t *testing.T) {
 	if strings.Join(fl.Paths, "|") != strings.Join(want, "|") {
 		t.Fatalf("Paths = %v, want %v", fl.Paths, want)
 	}
+	if strings.Join(fl.Ignored, "|") != "ignored.txt" {
+		t.Fatalf("Ignored = %v, want [ignored.txt]", fl.Ignored)
+	}
+}
+
+// A directory ignored as a whole comes back as one entry, not walked; an ignored file inside a tracked
+// directory is its own entry. Opening the directory lists one level of it.
+func TestListFilesIgnoredDirectoryIsOneEntryListedOnDemand(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	writeAt(t, dir, ".gitignore", "node_modules/\n*.log\n")
+	writeAt(t, dir, "src/a.go", "package a\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "init")
+	writeAt(t, dir, "node_modules/pkg/index.js", "x\n")
+	writeAt(t, dir, "node_modules/top.js", "x\n")
+	writeAt(t, dir, "src/debug.log", "x\n")
+
+	fl, err := ListFiles(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(fl.Ignored, "|"); got != "node_modules/|src/debug.log" {
+		t.Fatalf("Ignored = %q, want node_modules/|src/debug.log", got)
+	}
+
+	entries, err := ListIgnoredDir(dir, "node_modules/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(entries, "|"); got != "node_modules/pkg/|node_modules/top.js" {
+		t.Fatalf("entries = %q", got)
+	}
+	nested, err := ListIgnoredDir(dir, "node_modules/pkg/")
+	if err != nil || strings.Join(nested, "|") != "node_modules/pkg/index.js" {
+		t.Fatalf("nested = %v, %v", nested, err)
+	}
+}
+
+func TestListIgnoredDirRefusesPathsOutsideTheProject(t *testing.T) {
+	dir := t.TempDir()
+	for _, bad := range []string{"..", "../x", "a/../../x", "", ".", filepath.Join(dir, "x")} {
+		if _, err := ListIgnoredDir(dir, bad); err == nil {
+			t.Errorf("ListIgnoredDir(%q) must refuse", bad)
+		}
+	}
 }
 
 func TestListFilesNonRepoReportsIsRepoFalse(t *testing.T) {

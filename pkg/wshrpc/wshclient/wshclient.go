@@ -594,6 +594,12 @@ func GitListFilesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListFilesData,
 	return resp, err
 }
 
+// command "gitlistignoreddir", wshserver.GitListIgnoredDirCommand
+func GitListIgnoredDirCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListIgnoredDirData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitListIgnoredDirRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitListIgnoredDirRtnData](w, "gitlistignoreddir", data, opts)
+	return resp, err
+}
+
 // command "gitlistworktrees", wshserver.GitListWorktreesCommand
 func GitListWorktreesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListWorktreesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitListWorktreesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitListWorktreesRtnData](w, "gitlistworktrees", data, opts)

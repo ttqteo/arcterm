@@ -600,6 +600,12 @@ export class RpcApiType {
         return client.wshRpcCall("gitlistfiles", data, opts);
     }
 
+    // command "gitlistignoreddir" [call]
+    GitListIgnoredDirCommand(client: WshClient, data: CommandGitListIgnoredDirData, opts?: RpcOpts): Promise<CommandGitListIgnoredDirRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitlistignoreddir", data, opts);
+        return client.wshRpcCall("gitlistignoreddir", data, opts);
+    }
+
     // command "gitlistworktrees" [call]
     GitListWorktreesCommand(client: WshClient, data: CommandGitListWorktreesData, opts?: RpcOpts): Promise<CommandGitListWorktreesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitlistworktrees", data, opts);
