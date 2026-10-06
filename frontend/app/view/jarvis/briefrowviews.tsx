@@ -7,12 +7,12 @@
 // Behind you is two lines under a wording column.
 
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
+import { ChevronDown, ChevronRight, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
 import type { QueueAct } from "./briefingmodel";
 import type { BriefLine, RunRowFace } from "./briefrows";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
-import type { InitiativeResume } from "./initiativework";
+import { resumeIsBlank, type InitiativeResume } from "./initiativework";
 import { ProgressBar } from "./progressbar";
 
 const PULSE = "pulse-dot-slow";
@@ -160,16 +160,24 @@ export function InitiativeRow({
             )}
         >
             <div className="flex min-w-0 items-center gap-[13px]">
-                <span className="flex w-[92px] flex-none items-center gap-[7px]">
-                    <ProgressBar
-                        pct={p.pct}
-                        tone={line.stateTone === "asking" ? "asking" : "success"}
-                        className="h-1 min-w-0 flex-1 rounded-[2px]"
-                    />
-                    <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
-                        {p.done}/{p.total}
+                {line.idea ? (
+                    // same column width as the bar, so idea titles line up with tracker titles
+                    <span className="flex w-[92px] flex-none items-center gap-[5px] text-[10.5px] text-ink-faint">
+                        <Lightbulb size={12} aria-hidden className="flex-none" />
+                        idea
                     </span>
-                </span>
+                ) : (
+                    <span className="flex w-[92px] flex-none items-center gap-[7px]">
+                        <ProgressBar
+                            pct={p.pct}
+                            tone={line.stateTone === "asking" ? "asking" : "success"}
+                            className="h-1 min-w-0 flex-1 rounded-[2px]"
+                        />
+                        <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
+                            {p.done}/{p.total}
+                        </span>
+                    </span>
+                )}
                 {titleSlot ?? (
                     <span
                         title={line.note ? `${line.title} — ${line.note}` : line.title}
@@ -193,13 +201,32 @@ export function InitiativeRow({
                 {resume != null && onWork != null ? (
                     <WorkOnButton resume={resume} focused={focused} onWork={onWork} />
                 ) : null}
+                {onContextMenu != null ? (
+                    // the right-click menu, findable: shown by opacity like Work on, so the row never reflows
+                    <button
+                        type="button"
+                        data-jarvis-initiative-menu
+                        title="Initiative actions"
+                        aria-label={`Actions for ${line.title}`}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onContextMenu(e);
+                        }}
+                        className={cn(
+                            "flex flex-none cursor-pointer items-center justify-center rounded-[5px] p-0.5 text-muted opacity-0 hover:bg-surface-raised hover:text-ink-hi group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            (focused || expanded) && "opacity-100"
+                        )}
+                    >
+                        <Ellipsis size={14} aria-hidden />
+                    </button>
+                ) : null}
                 {expanded ? (
                     <ChevronDown size={12} aria-hidden className="flex-none text-muted" />
                 ) : (
                     <ChevronRight size={12} aria-hidden className="flex-none text-muted" />
                 )}
             </div>
-            {resume != null ? (
+            {resume != null && !(line.idea && resumeIsBlank(resume)) ? (
                 // lined up under the title, past the progress column
                 <div className={cn("flex min-w-0 items-baseline gap-2 pl-[105px] pr-[110px]", FAINT_TEXT)}>
                     <span

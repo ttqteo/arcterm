@@ -41,7 +41,19 @@ import { DagModal } from "@/app/view/orchestrate/dagmodal";
 import { setDagModalAgentsContext } from "@/app/view/orchestrate/dagmodalstate";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, useSetAtom, type Atom, type PrimitiveAtom } from "jotai";
-import { ArrowUpRight, Copy, Search, SlidersHorizontal, X } from "lucide-react";
+import {
+    Archive,
+    ArchiveRestore,
+    ArrowUpRight,
+    Copy,
+    Pause,
+    Pencil,
+    Play,
+    Search,
+    SlidersHorizontal,
+    Trash2,
+    X,
+} from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, type Variants } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AutonomyLadder } from "./autonomyladderview";
@@ -73,12 +85,14 @@ import {
     refreshBriefing,
 } from "./briefingstore";
 import { resolveBriefCursor } from "./briefnav";
+import { isArchivedStatus } from "./briefpalette";
 import { BriefPeek } from "./briefpeekview";
 import { BriefProfileModal } from "./briefprofileview";
 import { briefRestorePlan } from "./briefrestore";
 import {
     behindGroups,
     filterLines,
+    ideasLast,
     initiativeLine,
     keepsRunKind,
     lineOpenTarget,
@@ -379,10 +393,45 @@ function NoMatch() {
 // a mousedown inside a button starts a click, not a text selection. The expanded detail's id line
 // (inlinetrackerview) copies the bare id for the same reason.
 // A left click expands the row, so the activity sheet is opened from here instead.
-function showInitiativeMenu(line: BriefLine, ev: React.MouseEvent, openActivity: (oref: string) => void): void {
+// The row's own edits sit here too (the row's "..." opens the same menu), so renaming, archiving or
+// deleting an initiative does not mean expanding it to reach the detail's action bar first.
+type InitiativeManage = {
+    status: string;
+    rename: () => void;
+    details: () => void;
+    togglePause: () => void;
+    archive: () => void;
+    unarchive: () => void;
+    remove: () => void;
+};
+
+function showInitiativeMenu(
+    line: BriefLine,
+    ev: React.MouseEvent,
+    openActivity: (oref: string) => void,
+    manage?: InitiativeManage
+): void {
     const target = line.target;
     const oid = target != null && "oref" in target ? target.oref.replace(/^effort:/, "") : "";
     const items: ContextMenuItem[] = [];
+    if (manage != null) {
+        const archived = isArchivedStatus(manage.status);
+        items.push(
+            { label: "Rename", icon: <Pencil size={15} />, click: manage.rename },
+            { label: "Edit details…", icon: <SlidersHorizontal size={15} />, click: manage.details }
+        );
+        if (archived) {
+            items.push({ label: "Unarchive", icon: <ArchiveRestore size={15} />, click: manage.unarchive });
+        } else {
+            items.push(
+                manage.status === "paused"
+                    ? { label: "Resume", icon: <Play size={15} />, click: manage.togglePause }
+                    : { label: "Pause", icon: <Pause size={15} />, click: manage.togglePause },
+                { label: "Archive", icon: <Archive size={15} />, click: manage.archive }
+            );
+        }
+        items.push({ type: "separator" });
+    }
     if (oid !== "") {
         items.push({
             label: "Open activity",
@@ -401,6 +450,13 @@ function showInitiativeMenu(line: BriefLine, ev: React.MouseEvent, openActivity:
             icon: <Copy size={15} />,
             click: () => void navigator.clipboard.writeText("wsh effort show " + oid),
         });
+    }
+    if (manage != null) {
+        // no confirm step: the delete waits out the Brief's undo window like every other row delete
+        items.push(
+            { type: "separator" },
+            { label: "Delete", icon: <Trash2 size={15} />, danger: true, click: manage.remove }
+        );
     }
     ContextMenuModel.getInstance().showContextMenu(items, ev);
 }
@@ -641,7 +697,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const behindOpen = expanded.behind === true;
     const queueSummary = useMemo(() => summarizeAttentionQueue(queue, Date.now()), [queue]);
 
-    const effortWindow = useMemo(() => capRegion(efforts, EFFORT_CAP, initiativesOpen), [efforts, initiativesOpen]);
+    const effortWindow = useMemo(
+        () => capRegion(ideasLast(efforts), EFFORT_CAP, initiativesOpen),
+        [efforts, initiativesOpen]
+    );
     const [runKind, setRunKind] = useAtom(briefRunKindAtom);
     const sessions = useMemo(
         () =>
@@ -1124,6 +1183,56 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         const c = cardOf(l);
         return c != null ? initiativeResume(c.oref.replace(/^effort:/, ""), c.lastnote, agents, Date.now()) : undefined;
     };
+    const firstIdeaId = lines.initiatives.find((l) => l.idea)?.id;
+    const ideaCount = lines.initiatives.filter((l) => l.idea).length;
+    // the row menu's edits reach archived initiatives too (unarchive, delete), so they read both lists
+    const allCards = useMemo(
+        () => new Map([...efforts, ...archivedCards].map((e) => [e.oref, e])),
+        [efforts, archivedCards]
+    );
+    const manageOf = (l: BriefLine): InitiativeManage | undefined => {
+        const c = l.target != null && "oref" in l.target ? allCards.get(l.target.oref) : undefined;
+        if (c == null) {
+            return undefined;
+        }
+        const { oref, title, status } = c;
+        // rename and details live on the expanded row (the title input, the form fed by the effort detail)
+        const expand = () => {
+            setCursor(l.id);
+            if (openInitiative !== l.id) {
+                toggleInitiative(l.id);
+            }
+        };
+        return {
+            status,
+            rename: () => {
+                expand();
+                setRenamingTitle(title);
+            },
+            details: () => {
+                expand();
+                setDetailsOpen(true);
+            },
+            togglePause: () => {
+                const next = status === "paused" ? "active" : "paused";
+                runMutation(() => setEffortStatus(oref, next));
+                briefUndo.notify(next === "paused" ? "Paused" : "Resumed", () =>
+                    runMutation(() => setEffortStatus(oref, status))
+                );
+            },
+            archive: () => {
+                runMutation(() => setEffortStatus(oref, "archived"));
+                briefUndo.notify(`Archived “${title}”`, () => runMutation(() => unarchiveEffort(oref)));
+            },
+            unarchive: () => runMutation(() => unarchiveEffort(oref)),
+            remove: () => {
+                if (openInitiative === l.id) {
+                    setOpenInitiative(null);
+                }
+                briefUndo.schedule([effortKey(oref)], `Deleted “${title}”`, () => deleteEffort(oref));
+            },
+        };
+    };
     useEffect(() => {
         globalStore.set(
             briefRunListAtom,
@@ -1560,6 +1669,16 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                 l.id === openInitiative ? "relative z-10" : undefined
                                                             }
                                                         >
+                                                            {l.id === firstIdeaId ? (
+                                                                // the group label Behind you uses; inside the row's motion
+                                                                // wrapper so it travels with the first idea
+                                                                <div
+                                                                    data-jarvis-ideas-label
+                                                                    className="px-[11px] pb-0.5 pt-2.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted"
+                                                                >
+                                                                    Ideas · {ideaCount}
+                                                                </div>
+                                                            ) : null}
                                                             <InitiativeRow
                                                                 line={l}
                                                                 focused={cursor === l.id}
@@ -1573,8 +1692,11 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                     }
                                                                 }}
                                                                 onContextMenu={(ev) =>
-                                                                    showInitiativeMenu(l, ev, (oref) =>
-                                                                        openLine({ oref })
+                                                                    showInitiativeMenu(
+                                                                        l,
+                                                                        ev,
+                                                                        (oref) => openLine({ oref }),
+                                                                        manageOf(l)
                                                                     )
                                                                 }
                                                                 onOpen={() => {

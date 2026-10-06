@@ -52,6 +52,8 @@ export type BriefLine = {
     hasReport?: boolean;
     fresh?: boolean;
     group?: "delta" | "shipped";
+    // an initiative with no chunks yet: a captured idea, not a tracker, so it has no progress to draw
+    idea?: boolean;
 };
 
 export type LineGroup = { label: string; lines: BriefLine[] };
@@ -100,7 +102,32 @@ export function queueLine(q: QueueRow, now: number): BriefLine {
     };
 }
 
+// An initiative is a tracker once it has a plan. Until then it is a title written down to come back to —
+// an idea — and a 0/0 bar beside it, or an "active" state, would claim progress it cannot have.
+export function isIdea(card: EffortCardModel): boolean {
+    return card.status !== "archived" && card.done + card.remaining + card.skipped === 0;
+}
+
 export function initiativeLine(card: EffortCardModel): BriefLine {
+    if (isIdea(card)) {
+        return {
+            id: "initiatives:" + card.oref,
+            kind: "",
+            kindTone: "muted",
+            title: card.title,
+            note: "",
+            meta: joined([card.ticket, card.project || "no project"]),
+            // only a state worth saying: every idea is "active" until it is paused
+            state: card.status === "active" ? "" : card.status,
+            stateTone: "muted",
+            progress: null,
+            target: { oref: card.oref },
+            why: "",
+            age: "",
+            detail: "",
+            idea: true,
+        };
+    }
     const blocked = card.blockedChunks.length;
     // blocked first: it is the one state that is waiting on someone
     const [state, stateTone]: [string, LineTone] =
@@ -127,6 +154,12 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
         age: "",
         detail: "",
     };
+}
+
+// Trackers first, ideas after them under their own label; stable, so each group keeps the briefing's
+// order. Applied before the region's cap, so a pile of ideas never pushes a live tracker behind "Show more".
+export function ideasLast(cards: EffortCardModel[]): EffortCardModel[] {
+    return [...cards.filter((c) => !isIdea(c)), ...cards.filter(isIdea)];
 }
 
 const needsEyes = (row: ActiveWorkRow) =>

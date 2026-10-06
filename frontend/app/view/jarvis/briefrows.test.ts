@@ -6,6 +6,7 @@ import type { ActiveWorkRow, DeltaRow, QueueRow, RunRow } from "./briefingmodel"
 import {
     behindGroups,
     filterLines,
+    ideasLast,
     initiativeLine,
     keepsRunKind,
     lineOpenTarget,
@@ -18,7 +19,7 @@ import {
     sinceLabel,
     type BriefLine,
 } from "./briefrows";
-import { buildEffortCard } from "./effortmodel";
+import { buildEffortCard, type EffortCardModel } from "./effortmodel";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -130,6 +131,31 @@ describe("initiativeLine", () => {
     it("reads an archived initiative as archived, faint, ahead of a blocked chunk", () => {
         const card = buildEffortCard(summary([{ label: "B", status: "blocked" }], { status: "archived" }));
         expect(initiativeLine(card)).toMatchObject({ state: "archived", stateTone: "faint" });
+    });
+
+    it("reads an initiative with no chunks as an idea: no progress, no 'active' state", () => {
+        const line = initiativeLine(buildEffortCard(summary([], { chunks: undefined })));
+        expect(line).toMatchObject({ idea: true, progress: null, state: "", meta: "SIEM-1707 · cad" });
+        const paused = initiativeLine(buildEffortCard(summary([], { status: "paused" })));
+        expect(paused).toMatchObject({ idea: true, state: "paused" });
+    });
+
+    it("keeps a plan of only skipped chunks a tracker, and an archived empty one archived", () => {
+        expect(initiativeLine(buildEffortCard(summary([{ label: "A", status: "skipped" }]))).idea).toBeUndefined();
+        expect(initiativeLine(buildEffortCard(summary([], { status: "archived" })))).toMatchObject({
+            state: "archived",
+        });
+        expect(initiativeLine(buildEffortCard(summary([], { status: "archived" }))).idea).toBeUndefined();
+    });
+});
+
+describe("ideasLast", () => {
+    const card = (oref: string, done: number, remaining: number) =>
+        ({ oref, status: "active", done, remaining, skipped: 0 }) as EffortCardModel;
+
+    it("puts ideas after the trackers, each group in its own order", () => {
+        const out = ideasLast([card("i1", 0, 0), card("t1", 1, 2), card("i2", 0, 0), card("t2", 0, 3)]);
+        expect(out.map((c) => c.oref)).toEqual(["t1", "t2", "i1", "i2"]);
     });
 });
 

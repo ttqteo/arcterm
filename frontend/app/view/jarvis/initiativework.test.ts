@@ -6,6 +6,7 @@ import {
     noteStamp,
     openAgentFor,
     projectPathFor,
+    resumeIsBlank,
     workOnPrompt,
 } from "./initiativework";
 
@@ -121,5 +122,21 @@ describe("projectPathFor", () => {
         expect(projectPathFor(undefined, registry)).toBe("");
         expect(projectPathFor("nope", registry)).toBe("");
         expect(projectPathFor("bare", registry)).toBe("");
+    });
+});
+
+describe("resumeIsBlank", () => {
+    it("is blank with no agent open and no note but the creation stamp", () => {
+        expect(resumeIsBlank({ kind: "work", status: "no notes yet", when: "", note: "" })).toBe(true);
+        expect(resumeIsBlank({ kind: "work", status: "last note", when: "10-06 14:12", note: "effort created" })).toBe(
+            true
+        );
+    });
+
+    it("has something to say with a real note or an agent open on it", () => {
+        expect(resumeIsBlank({ kind: "work", status: "last note", when: "10-06 14:12", note: "spec drafted" })).toBe(
+            false
+        );
+        expect(resumeIsBlank({ kind: "go", agentId: "a1", status: "open · working" })).toBe(false);
     });
 });

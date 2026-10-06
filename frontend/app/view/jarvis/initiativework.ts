@@ -52,6 +52,15 @@ export function initiativeResume(
     return { kind: "work", status: "last note", when: noteStamp(lastNote.ts), note: lastNote.text };
 }
 
+// wshserver_effort.go stamps every new effort with this note, so it says nothing about where work was left
+const CREATED_NOTE = "effort created";
+
+// Whether the resume line has anything to say beyond "nobody has touched this": no agent open on it, and no
+// note but the creation stamp. An idea's row drops such a line rather than repeating it on every idea.
+export function resumeIsBlank(resume: InitiativeResume): boolean {
+    return resume.kind === "work" && (resume.note === "" || resume.note === CREATED_NOTE);
+}
+
 // The Agent header's link back to the initiative. A session launched from it is already named after it, so
 // the link then says only "initiative" rather than the title twice. No progress: the header reads the
 // initiative once, and a count would go stale while the agent works on it.
