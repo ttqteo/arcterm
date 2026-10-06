@@ -41,7 +41,9 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 <ProjectSwitcher model={model} variant="bar" />
             </div>
 
-            <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-center">
+            {/* the padding is drag room: at a narrow window the search otherwise fills the whole middle, and
+                the bar leaves nothing to grab but the wordmark and the 16px gaps */}
+            <div data-tauri-drag-region className="flex min-w-0 flex-1 justify-center px-[clamp(24px,5vw,72px)]">
                 <button
                     type="button"
                     onClick={() => globalStore.set(model.paletteOpenAtom, true)}
