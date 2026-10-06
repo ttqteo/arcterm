@@ -362,20 +362,40 @@ What happened, read from the two session transcripts under
 5. Nothing ages a `plan-review` stage whose reviewer has ended. `dag status` printed the same digest for 59 minutes, and
    `runs attention` stayed empty.
 
+**Cause.** The prompt was cut at its first double quote. The source line is
+`` `wsh jarvis dag forward <task> \"<what you checked, what you recommend>\"` `` (`leadprompt.go`). The lead received
+`` …dag forward <task> <what ``: the quote is gone and the argument ends at the next space.
+
+- A spawn passes its prompt as a `cmd:args` argument when it is under 16 KB (`launchPrompt`).
+- The block controller quotes that argument for PowerShell. This machine has no pwsh 7, so it runs Windows PowerShell
+  5.1 (`powershell.exe`).
+- 5.1 builds a native program's command line without escaping the quotes inside an argument, and `claude.exe`'s argv
+  parser ends the argument at the first one.
+- The plan reviewer's prompt was cut the same way, at `` `wsh jarvis dag planreview fail <findings: ``. It recovered by
+  reading `--help`.
+- Every task worker's prompt under 16 KB would have been cut too.
+
+**Fixed** in `6ba1ecdd`: under 5.1, a `cmd:args` argument is first escaped for the Windows argv parser.
+- `TestHardQuoteWindowsPowerShellArgRoundTrips` runs the real `powershell.exe` with this prompt line and gets it back
+  whole.
+- `powershell.exe` resolves `claude` to `~/.local/bin/claude.exe`, a native program, so the test's Go helper reads its
+  arguments the same way `claude.exe` does.
+- The fix takes effect only once Arc is rebuilt. The installed build was made at 11:05, before it.
+
 Open:
 
-- **Where the launch prompt was cut.** Not established. To reproduce, give a lead its first wake as a long text full of
-  quotes and backticks, as these findings were, and compare the `lead-launched` run event's text with the lead's first
-  transcript message.
-- **A failed plan review that no lead acts on is invisible.** The digest's `next` could name the failed review, or the
-  stage could age into `runs attention`, the way F16 aged the merge gate.
+- **A failed plan review that a live lead ignores is invisible.** The digest's `next` could name the failed review, or
+  the stage could age into `runs attention`, the way F16 aged the merge gate.
+  - A dead lead is already handed to the human (`lead-wake-failed`), so only a live, idle lead can strand the stage.
+  - With the cause fixed, the lead gets the wake. Not pursued until a live lead is seen ignoring one.
 
 Recovery, by the human's session:
 1. Read both transcripts.
 2. Cancel the run. It needed `--yes`, because the idle lead counted as a live worker.
 3. Remove its tree with `task worktree:cleanup`.
 4. Revise the plan from the reviewer's full findings (`abcccd05`).
-5. Start run `fe95d11e`.
+5. Start run `fe95d11e`, then cancel it during its own plan review, before any worker spawned: the installed build
+   would have cut the workers' prompts too.
 
 ## Constraints carried into the redesign
 
