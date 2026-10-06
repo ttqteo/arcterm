@@ -8,7 +8,7 @@
     "term:osc52": "always",
     "term:cursor": "bar",
     "term:cursorblink": true,
-    "term:fontsize": 16,
+    "term:fontsize": 14,
     "term:fontfamily": "\"JetBrains Mono\", monospace",
     "term:copyonselect": true,
     "term:trimtrailingwhitespace": true
