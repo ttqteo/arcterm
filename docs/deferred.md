@@ -7,6 +7,44 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > append-only rationale log — append the full deferral here, then mirror a one-line row there. Entries
 > marked RESOLVED/DECLINED below are kept for the reasoning, not as pending work.
 
+## (arcterm) Session scan cache on disk (deferred 2026-10-06)
+
+- **Deferred:** keeping the sessions scan's parsed results across wavesrv restarts, so the first Conversation History
+  or Agent sidebar load after a launch is as fast as every later one.
+- **Why:** `scanCache` in `pkg/agentsessions/agentsessions.go` is in memory only, so each launch's first
+  `GetSessionsActivity` re-parses every transcript it lists. On 2026-10-06 that was 2.9 s for 100 sessions: 324 MB of
+  JSON across 200 files, a third of it subagent transcripts that were dropped after being parsed. Two cheaper fixes
+  shipped instead and brought it to 0.5 s: the walk skips `subagents/` (the provider's `skipDir`), and
+  `parseCandidates` parses in batches on up to 8 workers (`parseWorkers`). A disk cache would add a file format, a
+  version stamp to bump whenever any provider's derivation changes (a stale entry would keep showing an old title or
+  status), and a write-back path, for a 0.5 s that happens once per launch.
+- **Plugs in:** `scanSessionCached`. Load the entries once from a file under `wavebase.GetWaveCachesDir()`, keyed by
+  path, valid only while mtime and size still match (the in-memory rule), and write back after a scan that parsed
+  anything new. Store a nil entry for a file that holds no session too, so non-sessions stay skipped. Keep the
+  version stamp in the file and drop the whole cache on a mismatch.
+- **Revive when** the first load is slow again: the scan's limit or window grows, or a cold `ScanSessions` measures
+  over about 1 s. Nothing was built for this, so there is nothing to recover from git.
+
+## (arcterm) In-app auto-update, Chrome style (deferred 2026-10-06)
+
+- **Deferred:** the app checking for a newer version itself, showing "Restart to update", downloading the installer
+  and running it, so an update closes arcterm, installs over it and reopens it with no installer pages.
+- **Why:** builds are made and installed on this machine; nothing publishes releases yet, so there is nothing to
+  check against. The installer already supports the update itself: Tauri's NSIS template (bundler 2.10.1) takes
+  `/P` (passive, no pages), `/UPDATE` (install over, skipping "Uninstall before installing") and `/R` (start the app
+  when done), and closes `wave-tauri.exe` through the Restart Manager. A plain double-click still defaults to
+  "Uninstall before installing" on an upgrade, which is why installing felt like uninstall plus reinstall.
+- **Plugs in:** `tauri-plugin-updater` (and `tauri-plugin-process` for the relaunch) in `src-tauri/`, a check on
+  launch, and a "Restart to update" prompt in the app bar. `bundle.createUpdaterArtifacts: true` and a signing key
+  pair (`TAURI_SIGNING_PRIVATE_KEY` at build time, the public key in `plugins.updater.pubkey`). Each release
+  publishes the installer, its `.sig` and a `latest.json` where the app can fetch them without signing in: GitHub
+  Releases of a public repo, or another host while the repo is private.
+- **Also needed either way:** an NSIS `installerHooks` file whose `NSIS_HOOK_PREINSTALL` stops the install
+  directory's own `wavesrv.x64.exe` (by path, never by image name, which would kill the dev app's), since the
+  Restart Manager closes only the main binary and a live wavesrv fails the overwrite.
+- **Revive when** releases are published somewhere fetchable. Until then the local stand-in is running the built
+  installer with `/P /UPDATE /R`. Nothing was built for this, so there is nothing to recover from git.
+
 ## Code and Diff in the nav rail (deferred 2026-10-06)
 
 - **Deferred:** taking Code and Diff out of the nav rail. The rail now groups them with Radar as tools, under Cockpit,
@@ -84,7 +122,7 @@ we" and points it at the initiative's newest note, and sends you to the agent al
 of starting a second one. What it does **not** do is capture where a session was when it closes.
 
 - **Deferred:** the close dialog (header ✕, tree "Close agent", double ctrl+c — all `confirmCloseSession`)
-  offering **Save place and close** for a session linked to an initiative. Arc would type a "record where
+  offering **Save place and close** for a session linked to an initiative. arcterm would type a "record where
   we are as one left-off note" prompt into the agent, wait for a note from that session with a new
   `--left-off` flag on `wsh effort note`, then close the tab; ctrl+c in the dialog closes without saving.
 - **Why:** agents already write where they are. Since note authorship shipped (2026-09-23), 23 sessions
@@ -933,9 +971,9 @@ expands each into a formal spec + plan and executes. Status:
 spec → plan → execute cycle. This entry holds the raw four-lane scan evidence; the briefs hold the resolved
 design decisions.
 
-## Arc Environment capability — declined (2026-07-16)
+## arcterm Environment capability — declined (2026-07-16)
 
-The Arc Environment roadmap (an agent-aware local dev-environment manager: discover services from
+The arcterm Environment roadmap (an agent-aware local dev-environment manager: discover services from
 project manifests, launch/observe/diagnose them in dependency order, and let agents share the same
 infrastructure instead of spawning duplicates) was captured 2026-07-15 as `docs/environment-roadmap.md`
 and **decided against 2026-07-16, before any implementation**. Nothing was built — the roadmap was the
@@ -1564,7 +1602,7 @@ Recovery: `git show 6061ff3d:frontend/app/view/jarvis/effortdetailview.tsx` has 
 
 Measured before removal, across 416 Claude Code sessions and 458 Pi sessions: note **bodies** were opened
 in 5.3% of sessions — the behaviour memory actually drove came from the one-line `MEMORY.md` index
-entries, not the 867 note bodies behind them. Pi was write-only (Arc regenerated an 87 KB projection per
+entries, not the 867 note bodies behind them. Pi was write-only (arcterm regenerated an 87 KB projection per
 session start that nothing read: `pi-memory` was not in `~/.pi/agent/settings.json` packages, qmd was not
 installed so `memory_search` could not run, and zero real `memory_search` calls appear in 458
 transcripts). Recall telemetry had never worked — `slugify` renamed `_`→`-` on harvest so every stamp
@@ -1579,14 +1617,14 @@ event and its `baseds` payload types), and `CaptureStatus.DistillQueue`.
 Kept, deliberately: `pkg/memroots` and `pkg/wavevault` (Jarvis's whole corpus reads through them, and
 `memory:vaultpath` is still the vault root's source of truth), `pkg/jarvisrecall` (decoupled — `ask.go`,
 `retrieve.go` and `judge.go` never touched memvault), `pkg/agentsync` (the steering projection Pi does
-receive), and `agentsync.memoryRegion`, which now only *preserves* an `ARC-MEMORY` block an older Arc
+receive), and `agentsync.memoryRegion`, which now only *preserves* an `ARC-MEMORY` block an older arcterm
 left in a steering file rather than writing one. (2026-09-25: `memoryRegion` is gone too, with the
 steering-sync cleanup; the leftover blocks in codex and opencode were deleted by hand.)
 
 Two self-healing cleanups ship with it, because a removed subcommand that is still referenced on disk
 keeps firing: the `agent-memory-*` forms stay in `isManagedCommand`'s allowlist (recognition is what lets
 a stale hook be *pruned*, not what preserves it), `mergeAgentHooks`/`configIsHealthy` now scan every event
-present in `settings.json` rather than only the ones Arc currently manages (`SessionEnd` left
+present in `settings.json` rather than only the ones arcterm currently manages (`SessionEnd` left
 `managedHooks` entirely with `agent-memory-hook`), and `install-agent-hooks` deletes a leftover
 `~/.pi/agent/extensions/waveterm-memory.ts`.
 
