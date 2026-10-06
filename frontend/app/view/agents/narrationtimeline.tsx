@@ -312,14 +312,14 @@ export function CommandChip({ name, args, isSkill }: { name: string; args?: stri
         <div className="mt-2 flex justify-end">
             <span
                 className={cn(
-                    "inline-flex max-w-[88%] flex-wrap items-baseline rounded-lg border px-[11px] py-[5px] font-mono",
+                    "inline-flex max-w-[88%] flex-wrap items-baseline rounded-lg border px-[11px] py-[5px]",
                     isSkill ? "border-skill/35 bg-skill/[0.08]" : "border-accent/35 bg-accent/[0.07]"
                 )}
             >
                 {isSkill ? <span className="mr-[7px] self-center text-[11px] text-skill">✦</span> : null}
                 <span className={cn("text-[12px] font-semibold", isSkill ? "text-skill-soft" : "text-accent-soft")}>{name}</span>
                 {args ? (
-                    <span className={cn("ml-2 border-l pl-2 text-[11.5px] text-feed-summary", isSkill ? "border-skill/25" : "border-accent/25")}>
+                    <span className={cn("ml-2 border-l pl-2 text-[12px] text-feed-summary", isSkill ? "border-skill/25" : "border-accent/25")}>
                         {args}
                     </span>
                 ) : null}
