@@ -145,13 +145,20 @@ func isProjectCandidate(path, tempDir string) bool {
 			return false
 		}
 	}
-	if tempDir != "" {
-		if rel, err := filepath.Rel(tempDir, path); err == nil && !strings.HasPrefix(rel, "..") {
-			return false
-		}
+	if isUnderDir(path, tempDir) {
+		return false
 	}
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// isUnderDir reports whether path is dir or inside it; an empty path or dir is never under anything.
+func isUnderDir(path, dir string) bool {
+	if path == "" || dir == "" {
+		return false
+	}
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && !strings.HasPrefix(rel, "..")
 }
 
 func pathKey(path string) string {

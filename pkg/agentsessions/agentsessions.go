@@ -1190,9 +1190,11 @@ var parseWorkers = min(runtime.GOMAXPROCS(0), 8)
 
 // parseCandidates derives sessions from candidates in mtime order until limit sessions are found
 // (nil candidates do not count, so the parse set can exceed limit when non-session files interleave).
+// A session whose cwd is under tempDir is a throwaway run (a test, a scratchpad), never history anyone
+// resumes, so it is dropped and does not count either.
 // Candidates are parsed in parallel batches, each the size of what the limit still needs, so the files read are the
 // same newest ones a one-at-a-time scan would read.
-func parseCandidates(cands []candidate, limit int) []SessionInfo {
+func parseCandidates(cands []candidate, limit int, tempDir string) []SessionInfo {
 	var out []SessionInfo
 	for next := 0; next < len(cands); {
 		n := len(cands) - next
@@ -1205,7 +1207,7 @@ func parseCandidates(cands []candidate, limit int) []SessionInfo {
 		batch := cands[next : next+n]
 		next += n
 		for i, r := range parseBatch(batch) {
-			if s := asSession(batch[i], r); s != nil {
+			if s := asSession(batch[i], r); s != nil && !isUnderDir(s.ProjectPath, tempDir) {
 				out = append(out, *s)
 			}
 		}
@@ -1299,7 +1301,7 @@ func ScanSessions(windowDays, limit int) ([]SessionInfo, error) {
 	if limit <= 0 {
 		limit = defaultLimit
 	}
-	return scanProviders(allProviders(), windowDays, limit), nil
+	return scanProviders(allProviders(), windowDays, limit, os.TempDir()), nil
 }
 
 // allProviders lists the four runtime transcript roots under the home dir.
@@ -1359,13 +1361,13 @@ func TranscriptForSession(root, runtime, cwd, sessionId string) string {
 // scanProviders merges every provider's candidates before parsing, so the limit is the global newest
 // sessions across runtimes — a provider that writes many files cannot crowd other runtimes' recent
 // sessions out of the parse set by quota alone.
-func scanProviders(providers []provider, windowDays, limit int) []SessionInfo {
+func scanProviders(providers []provider, windowDays, limit int, tempDir string) []SessionInfo {
 	var cands []candidate
 	for _, p := range providers {
 		cands = append(cands, walkCandidates(p, windowDays)...)
 	}
 	sort.Slice(cands, func(i, j int) bool { return cands[i].mtime.After(cands[j].mtime) })
-	out := parseCandidates(cands, limit)
+	out := parseCandidates(cands, limit, tempDir)
 	sort.Slice(out, func(i, j int) bool { return out[i].LastActiveTs > out[j].LastActiveTs })
 	return out
 }

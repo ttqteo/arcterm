@@ -5,6 +5,7 @@ package agentsessions
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -622,7 +623,7 @@ func TestScanProviders_mergesByGlobalRecency(t *testing.T) {
 
 	// limit 2 across both providers: the newer codex session must outrank the older claude one, and
 	// only the global top-2 candidates may be read (claude-old never parsed).
-	got := scanProviders([]provider{claudeProvider(claudeDir), codexProvider(codexDir)}, 0, 2)
+	got := scanProviders([]provider{claudeProvider(claudeDir), codexProvider(codexDir)}, 0, 2, "")
 	if len(got) != 2 {
 		t.Fatalf("want 2 sessions, got %d", len(got))
 	}
@@ -634,6 +635,28 @@ func TestScanProviders_mergesByGlobalRecency(t *testing.T) {
 	}
 	if r := reads(); !reflect.DeepEqual(r, []string{"claude-new.jsonl", "rollout-codex-new.jsonl"}) {
 		t.Errorf("only the global top-2 candidates may be read, read %v", r)
+	}
+}
+
+// a session run in the temp dir (an e2e test's scratch cwd) is not history: it is dropped and does not
+// use up the limit, so the next real session takes its place.
+func TestScanProvidersDropsTempDirSessions(t *testing.T) {
+	dir := t.TempDir()
+	tempDir := filepath.Join(dir, "Temp")
+	scratch, _ := json.Marshal(filepath.Join(tempDir, "scratchpad", "e2e", "cwd"))
+	mk := func(name, content string, ago time.Duration) {
+		path := writeJSONL(t, dir, name, content)
+		ts := time.Now().Add(-ago)
+		if err := os.Chtimes(path, ts, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("scratch.jsonl", `{"type":"user","cwd":`+string(scratch)+`,"message":{"content":"AskUserQuestion e2e"}}`, 1*time.Hour)
+	mk("real.jsonl", `{"type":"user","cwd":"/home/me/web","message":{"content":"Add a button"}}`, 2*time.Hour)
+
+	got := scanProviders([]provider{claudeProvider(dir)}, 0, 1, tempDir)
+	if len(got) != 1 || got[0].Task != "Add a button" {
+		t.Fatalf("want only the real session, got %+v", got)
 	}
 }
 
@@ -655,5 +678,5 @@ func extractClaudeEvents(lines []string) sessionEvents {
 // scanProvider returns up to limit sessions from one provider's root, newest-first (single-provider
 // form of the scan; ScanSessions merges providers first so the limit applies globally).
 func scanProvider(p provider, windowDays, limit int) []SessionInfo {
-	return parseCandidates(walkCandidates(p, windowDays), limit)
+	return parseCandidates(walkCandidates(p, windowDays), limit, "")
 }
