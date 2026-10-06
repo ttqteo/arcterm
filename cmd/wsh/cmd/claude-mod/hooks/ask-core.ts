@@ -1,7 +1,6 @@
-// the pure half of answering AskUserQuestion from Arc's cockpit card or the terminal's band: which
-// calls the card can take, what `wsh ask --wait` reads, the band picker's steps, and a reply mapped
-// onto the tool's answers. register.ts does the I/O, ask-band.tsx the drawing.
-import type { Picker, PickerSite } from "../types";
+// the pure half of answering AskUserQuestion from Arc's cockpit card beside claude's own dialog: which
+// calls the card can take, what `wsh ask --wait` reads, and the card's reply as the hook's answer.
+// register.ts does the I/O.
 
 export type AskOption = { label: string; description?: string; preview?: string };
 export type AskQuestion = {
@@ -14,8 +13,8 @@ export type AskQuestion = {
 export type AskAnswer = { selectedindexes?: number[]; text?: string };
 export type AskReply = { answers: AskAnswer[]; cancelled: boolean };
 
-// the card shows choice questions only, so one text or number question sends the whole call to
-// claude's own dialog
+// the card shows choice questions only, so one text or number question leaves the whole call to
+// claude's dialog alone
 export function cardCanAsk(questions: readonly AskQuestion[]): boolean {
     return (
         questions.length > 0 &&
@@ -51,62 +50,6 @@ export function parseAskReply(stdout: string): AskReply | null {
     }
 }
 
-// the terminal's picker: where it is drawn, the questions less their previews (the card shows
-// those), which one is up, the answers so far, and the options marked in a multi-select
-export function openPicker(questions: readonly AskQuestion[], site: PickerSite): Picker {
-    return {
-        site,
-        questions: questions.map((q) => ({
-            question: q.question,
-            header: q.header,
-            multiSelect: q.multiSelect,
-            options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description })),
-        })),
-        index: 0,
-        answers: [],
-        marked: [],
-    };
-}
-
-function answered(p: Picker, answer: AskAnswer): Picker {
-    return { ...p, answers: [...p.answers, answer], index: p.index + 1, marked: [] };
-}
-
-// a single-select pick answers the question; a multi-select pick toggles the option's mark
-export function pickOption(p: Picker, n: number): Picker {
-    const q = p.questions[p.index];
-    if (!q?.options[n]) {
-        return p;
-    }
-    if (!q.multiSelect) {
-        return answered(p, { selectedindexes: [n] });
-    }
-    const marked = p.marked.includes(n) ? p.marked.filter((m) => m !== n) : [...p.marked, n].sort((a, b) => a - b);
-    return { ...p, marked };
-}
-
-export function confirmMarked(p: Picker): Picker {
-    return p.marked.length === 0 || !p.questions[p.index] ? p : answered(p, { selectedindexes: p.marked });
-}
-
-export function typeOther(p: Picker, text: string): Picker {
-    const typed = text.trim();
-    return typed === "" || !p.questions[p.index] ? p : answered(p, { text: typed });
-}
-
-// header, question, Other and hint rows around the options
-const PICKER_CHROME_ROWS = 4;
-
-// body rows the picker needs for its tallest question
-export function pickerRows(p: Picker): number {
-    return Math.max(...p.questions.map((q) => q.options.length + (q.multiSelect ? 1 : 0))) + PICKER_CHROME_ROWS;
-}
-
-// the reply once every question is answered, in the shape `wsh ask --wait` prints
-export function pickerReply(p: Picker): AskReply | null {
-    return p.index >= p.questions.length ? { answers: p.answers, cancelled: false } : null;
-}
-
 // question text -> answer, as AskUserQuestion's result spells it: typed "Other" text verbatim, else the
 // chosen labels joined the way claude joins a multi-select
 export function answersFor(questions: readonly AskQuestion[], reply: AskReply): Record<string, string> {
@@ -123,4 +66,21 @@ export function answersFor(questions: readonly AskQuestion[], reply: AskReply): 
         }
     });
     return out;
+}
+
+export type CardAnswer<Q> = { deny: string } | { result: { questions: Q; answers: Record<string, string> } };
+
+// what the hook answers the call with once the card replied; null when it did not (wsh failed or hit
+// its ceiling), which leaves the question to claude's dialog
+export function cardAnswer<Q extends readonly AskQuestion[]>(
+    questions: Q,
+    reply: AskReply | null
+): CardAnswer<Q> | null {
+    if (!reply) {
+        return null;
+    }
+    if (reply.cancelled) {
+        return { deny: "The user dismissed the question." };
+    }
+    return { result: { questions, answers: answersFor(questions, reply) } };
 }

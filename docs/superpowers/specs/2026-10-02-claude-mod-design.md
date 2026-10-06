@@ -119,31 +119,44 @@ the settings file.
 ### Ask (`tool.call` on `AskUserQuestion`)
 
 Decision (2026-10-02): **the cockpit card is the answer surface for Claude agents.** The hook
-answers the call itself, so Claude's own dialog does not open. The API cannot cancel a dialog once
-`next(e)` opened it, so the two cannot race.
+answered the call itself, so Claude's own dialog did not open, on the belief that the API cannot
+cancel a dialog once `next(e)` opened it, so the two could not race.
 
-Amended (2026-10-04): **the terminal answers too.** The user is sometimes in the agent's terminal
-rather than the cockpit, so the hook also draws a picker there (`hooks/ask-band.tsx`) and takes
-whichever answer comes first. The mod draws and closes the picker itself, so it can race the card
-where Claude's dialog could not. It opens in a focused pane (`$.ui.open` with `focus` and
-`closeOnEscape`), where the arrows and Enter pick as in Claude's dialog, the first option holds
-the ring, a digit presses its option, and Esc dismisses the question. A pane a mod opens unasked
-is not drawn below 144 terminal columns (`isPlaced: false`); the picker then moves to the band
-above the prompt (`ui.render` on `AbovePrompt`), where a mod cannot take the keyboard, so a bare
-digit in an empty composer is the pick. A multi-select marks options and confirms with `Done`;
-`Other` is an `Input`. Previews stay on the card. A picker answer ends the `wsh ask --wait`
-stream, which kills the child, and the server's waiter cancel takes the card down; a card answer
-clears the picker state and closes the pane.
-The picker's steps are pure (`ask-core.ts`, vitest); the race was checked once with
-`claude plugin test` on a scratch copy (the runner and vitest both claim `*.test.ts`, so no
-engine-level test is checked in). Steps 2 to 5 below describe the card side, unchanged.
+Amended (2026-10-04): the terminal answered too, through a picker the mod drew (`hooks/ask-band.tsx`):
+a focused pane, or, where a pane the mod opens unasked is not placed (under 144 columns), the band
+above the prompt.
+
+Amended (2026-10-06): **Claude's own dialog is the terminal's answer surface, and the card races
+it.** The picker hid what it did not redraw. A cockpit terminal is under 144 columns, so the picker
+was always the band, capped at half the terminal's rows: wrapped option descriptions pushed its
+"Show previews" button out of view, and the engine arms a band hotkey only inside the view, so a
+question's previews could not be seen at all. Every addition to Claude's dialog (previews, notes,
+`Chat about this`, follow-ups) needed porting. A probe on 2.1.291 showed the 10-02 belief wrong: a
+`tool.call` hook that settles while `next(e)` still holds the dialog takes the dialog down (that
+`next(e)` resolves as a rejection within ~20 ms), the model reads only the hook's answer, and the
+keys go back to the prompt. So the hook calls `next(e)` and races it against `wsh ask --wait`:
+
+- **The dialog answers first** (a pick, notes, Esc): its result goes through as Claude made it, and
+  ending the wait kills `wsh`, whose waiter cancel takes the card down.
+- **The card answers or is dismissed first:** the hook's own answer (steps 3 and 4), which closes
+  the dialog.
+- `$.ui.notice` puts "Also answerable in Arc's ask card" under the dialog.
+
+Calling `next(e)` also runs the settings `PreToolUse` hooks, whose `wsh ask` projects a
+keystroke-answered card of its own over the one the hook waits on. So a `classic.PreToolUse` hook
+answers `{}` without `next` for the calls the mod races (the same predicate), which skips the settings
+hooks beneath, as the 10-02 path did by never calling `next`. The pure half (`ask-core.ts`: the
+predicate, the payload, the reply as the hook's answer) is vitest. The race was checked in a pty at
+68x25 and 68x40 against the real engine and a stub `wsh`, with a stub settings hook beside it: the
+card first, the dialog first, the card dismissed, and a control with the mod inactive in which the
+settings hook did run.
 
 1. **Questions the card cannot show go native.** Any question with `kind` `text` or `number`, or with
    no options, means the whole call goes to `next(e)` (the current path, unchanged).
 2. **Wait on the card.** `$.process.spawn({ argv: [wsh, 'ask', '--wait'], input: <questions json> })`
    (spawn, not `run`: `run` caps at ten minutes; stdin, not `--questions-json`: option previews can
-   outrun a Windows command line). `$.ui.status` shows a line pointing at the Arc
-   card while it waits, cleared when it ends. `next.signal` (an Esc interrupt) ends the spawn loop,
+   outrun a Windows command line). `$.ui.notice` shows a line under the dialog pointing at the
+   Arc card while it waits; core removes it when the call resolves. `next.signal` (an Esc interrupt) ends the spawn loop,
    which kills the child; the server's waiter cancel cleans the card up
    (`TestAskCommandWaitCancelCleansUp`).
 3. **Map the reply.** `wsh` prints `{ answers: AgentAnswerItem[], cancelled }`. Answers are in
@@ -152,14 +165,15 @@ engine-level test is checked in). Steps 2 to 5 below describe the card side, unc
    `{ result: { questions: e.questions, answers: { [question]: answer } } }`.
 4. **Cancelled** (dismissed in the cockpit): `{ deny: "The user dismissed the question." }`.
 5. **Failure** (wsh cannot start, RPC error, or its 30-minute `askWaitTimeout`): clear the card
-   with `wsh ask --clear`, then `next(e)`, so the question still reaches the user through the native
-   dialog. This is error handling, not a second answer surface. An interrupt is not a failure: it
-   clears the card and returns a deny, never opening the dialog.
+   with `wsh ask --clear`; the dialog, already up, answers alone. This is error handling, not a
+   second answer surface. An interrupt ends the dialog's `next(e)`, whose result goes through, and
+   the wait with it.
 
-The settings hooks for `AskUserQuestion` (`ask`, `ask --clear`) stay: they run beneath plugin
-`tool.call` hooks, so they never fire when the mod answers, and they keep the keystroke path working
-wherever the mod is not loaded. `pkg/agentask` keystroke injection stays for that fallback and for
-pi.
+The settings hooks for `AskUserQuestion` (`ask`, `ask --clear`) stay for sessions without the mod,
+and for calls it does not race; for a call it races, its `classic.PreToolUse` hook skips them, and
+`ask --clear` (PostToolUse) still runs when the dialog answers, clearing a card already gone. They
+keep the keystroke path working wherever the mod is not loaded. `pkg/agentask` keystroke injection
+stays for that fallback and for pi.
 
 ### To verify in implementation (not assumed)
 
@@ -171,10 +185,9 @@ pi.
 The rest need an interactive Claude session (`AskUserQuestion` is not offered under `claude -p`), so
 no run checks them; they are listed in `docs/open-issues.md` and stay the effort's live-verify chunk:
 
-- Settings `PreToolUse` hooks do not fire for a call the mod answers. The probe shows the answer
-  lands; it did not check the settings side. If `agent-hook`'s `Asking` state then never reaches the
-  cockpit, check whether the pending-ask publish from `AskCommand` already covers it before adding
-  anything.
+- ~~Settings `PreToolUse` hooks do not fire for a call the mod answers.~~ Checked 2026-10-06 in a pty
+  with a stub settings hook: skipped for a call the mod races, run for one it does not. The cockpit
+  still shows the agent waiting then, from the card's own `AskCommand` publish.
 - A dag child's ask still routes to its lead, and `wsh jarvis dag answer` resolves the waiter
   (`DeliverAnswer` resolves a waiter first, so it should).
 - The settings `env` plugin dir loads in an interactive session without the enable-hot-reloading

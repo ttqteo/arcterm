@@ -1,16 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-    answersFor,
-    askPayload,
-    cardCanAsk,
-    confirmMarked,
-    openPicker,
-    parseAskReply,
-    pickOption,
-    pickerReply,
-    pickerRows,
-    typeOther,
-} from "./ask-core";
+import { answersFor, askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
 
 const color = { question: "Which color?", header: "Color", multiSelect: false, options: [{ label: "Red" }, { label: "Blue" }] };
 const sizes = { question: "Which sizes?", header: "Sizes", multiSelect: true, options: [{ label: "S" }, { label: "M" }, { label: "L" }] };
@@ -61,52 +50,6 @@ describe("parseAskReply", () => {
     });
 });
 
-describe("band picker", () => {
-    it("drops previews and starts on the first question", () => {
-        const p = openPicker([{ ...color, options: [{ label: "Red", description: "warm", preview: "big" }, { label: "Blue" }] }], "pane");
-        expect(p).toEqual({
-            site: "pane",
-            questions: [{ question: "Which color?", header: "Color", multiSelect: false, options: [{ label: "Red", description: "warm" }, { label: "Blue" }] }],
-            index: 0,
-            answers: [],
-            marked: [],
-        });
-        expect(pickerReply(p)).toBeNull();
-    });
-    it("asks for rows enough for its tallest question", () => {
-        expect(pickerRows(openPicker([color, sizes], "pane"))).toBe(8);
-    });
-    it("answers a single-select on the pick and replies after the last question", () => {
-        let p = pickOption(openPicker([color, color], "band"), 1);
-        expect(p.index).toBe(1);
-        expect(pickerReply(p)).toBeNull();
-        p = pickOption(p, 0);
-        expect(pickerReply(p)).toEqual({ answers: [{ selectedindexes: [1] }, { selectedindexes: [0] }], cancelled: false });
-    });
-    it("toggles marks in a multi-select and answers on confirm, in option order", () => {
-        let p = pickOption(pickOption(pickOption(openPicker([sizes], "band"), 2), 0), 1);
-        p = pickOption(p, 1);
-        expect(p.marked).toEqual([0, 2]);
-        expect(p.index).toBe(0);
-        expect(pickerReply(confirmMarked(p))).toEqual({ answers: [{ selectedindexes: [0, 2] }], cancelled: false });
-    });
-    it("clears the marks between questions", () => {
-        const p = confirmMarked(pickOption(openPicker([sizes, sizes], "band"), 1));
-        expect(p).toMatchObject({ index: 1, marked: [] });
-    });
-    it("takes typed text for any question, trimmed", () => {
-        expect(pickerReply(typeOther(openPicker([sizes], "band"), "  XL  "))).toEqual({ answers: [{ text: "XL" }], cancelled: false });
-    });
-    it("ignores an option that is not there, an empty confirm and blank text", () => {
-        const p = openPicker([sizes], "band");
-        expect(pickOption(p, 7)).toBe(p);
-        expect(confirmMarked(p)).toBe(p);
-        expect(typeOther(p, "   ")).toBe(p);
-        const done = pickOption(openPicker([color], "band"), 0);
-        expect(pickOption(done, 0)).toBe(done);
-    });
-});
-
 describe("answersFor", () => {
     it("maps indexes to labels, joins a multi-select, and uses typed text verbatim", () => {
         expect(
@@ -118,5 +61,24 @@ describe("answersFor", () => {
     });
     it("leaves out an unanswered question and an index past the options", () => {
         expect(answersFor([color, sizes], { answers: [{ selectedindexes: [7] }], cancelled: false })).toEqual({});
+    });
+});
+
+describe("cardAnswer", () => {
+    it("answers the call with the card's picks", () => {
+        const questions = [color, sizes];
+        expect(
+            cardAnswer(questions, { answers: [{ selectedindexes: [0] }, { text: "XL" }], cancelled: false })
+        ).toEqual({
+            result: { questions, answers: { "Which color?": "Red", "Which sizes?": "XL" } },
+        });
+    });
+    it("refuses the call when the card was dismissed", () => {
+        expect(cardAnswer([color], { answers: [], cancelled: true })).toEqual({
+            deny: "The user dismissed the question.",
+        });
+    });
+    it("leaves the call to claude's dialog when the card never replied", () => {
+        expect(cardAnswer([color], null)).toBeNull();
     });
 });

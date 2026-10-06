@@ -1,23 +1,9 @@
 // Arc's Claude Code mod. `wsh install-agent-hooks` writes it to ~/.arc/claude-mod with the wsh path
 // substituted and lists that folder in CLAUDE_CODE_PLUGIN_DIRS, so every claude launch loads it.
 // outside an Arc block every hook passes straight through.
-import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
-import { drawAskPicker, drawNoQuestion } from "./ask-band";
-import {
-    answersFor,
-    askPayload,
-    cardCanAsk,
-    confirmMarked,
-    openPicker,
-    parseAskReply,
-    pickOption,
-    pickerReply,
-    pickerRows,
-    typeOther,
-} from "./ask-core";
-import type { AskReply } from "./ask-core";
-import type { Picker } from "../types";
+import type { AskQuestion } from "./ask-core";
+import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
 import { controlText, deliver, takeLines } from "./control-core";
 import { idleArgs } from "./status-core";
 import { usageArgs } from "./usage-core";
@@ -31,15 +17,14 @@ let active = false;
 // that replays the report still follows the file. null after a reload until the next prompt
 let transcriptPath: string | null = null;
 
-// the pane the picker opens in: focused, so the arrows and Enter pick as in claude's own dialog
-const ASK_PANE = "arc-ask";
+// the line under claude's dialog while the card asks beside it
+const ALSO_ON_CARD = "Also answerable in Arc's ask card";
 
-// the question the terminal's picker is showing; null when none is
-const picker = atom({ plugin: "arc", key: "picker" } as const, null);
-
-// resolves the tool.call hook waiting on the picker. a module variable: a reload drops it with the
-// dispatch it served
-let settlePicker: ((reply: AskReply) => void) | null = null;
+// the calls the card races claude's dialog for. one predicate for both hooks below, so the settings
+// hooks are skipped exactly where the mod has a card up
+function racesCard(questions: readonly AskQuestion[]): boolean {
+    return active && cardCanAsk(questions);
+}
 
 // true while the cockpit's prompt stream is held, so a second session.start (a /clear) opens no second one
 let listening = false;
@@ -129,63 +114,16 @@ export const register: Register = (on) => {
         return next(e);
     });
 
-    on("ui.render", { component: "Pane", requestId: ASK_PANE }, async ($, e) => {
-        const shown = await read($, picker);
-        const idle = drawNoQuestion($.ui.resolve(e));
-        if (e.surface === "mobile" || shown?.site !== "pane") {
-            return idle;
-        }
-        const step = async (change: (p: Picker) => Picker) => {
-            const after = await update($, picker, (p) => (p ? change(p) : p));
-            const reply = after ? pickerReply(after) : null;
-            if (reply) {
-                settlePicker?.(reply);
-            }
-        };
-        const drawn = drawAskPicker($.ui.resolve(e), shown, {
-            pick: (n) => void step((p) => pickOption(p, n)),
-            confirm: () => void step(confirmMarked),
-            other: (text) => void step((p) => typeOther(p, text)),
-        });
-        return drawn ?? idle;
-    });
-
-    // Esc in the pane, or its close mark, dismisses the question as Esc does in claude's own dialog
-    on("ui.close", { id: ASK_PANE }, ($, e, next) => {
-        if (e.origin.kind === "person") {
-            settlePicker?.({ answers: [], cancelled: true });
-        }
-        return next(e);
-    });
-
-    on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
-        const shown = await read($, picker);
-        if (e.surface === "mobile" || e.props.hasSurvey || shown?.site !== "band") {
-            return next(e);
-        }
-        const step = async (change: (p: Picker) => Picker) => {
-            const after = await update($, picker, (p) => (p ? change(p) : p));
-            const reply = after ? pickerReply(after) : null;
-            if (reply) {
-                settlePicker?.(reply);
-            }
-        };
-        const drawn = drawAskPicker($.ui.resolve(e), shown, {
-            pick: (n) => void step((p) => pickOption(p, n)),
-            confirm: () => void step(confirmMarked),
-            other: (text) => void step((p) => typeOther(p, text)),
-        });
-        return drawn ?? next(e);
-    });
-
-    // the hook answers the call itself, from the cockpit card or the terminal's picker, whichever the
-    // person uses first, so claude's dialog never opens. a dialog cannot be cancelled once next(e)
-    // opened it, so it could not race the card; the picker can, since the mod draws and closes it.
+    // claude's own dialog asks in the terminal while the cockpit card asks beside it, and the first answer
+    // wins. a hook that settles before next(e) takes the dialog down (probed on 2.1.291), so the terminal
+    // is always claude's current dialog, previews and all, and the mod draws no picker of its own
     on("tool.call", { tool: "AskUserQuestion" }, async ($, e, next) => {
-        if (!active || !cardCanAsk(e.questions)) {
+        if (!racesCard(e.questions)) {
             return next(e);
         }
-        $.ui.status("Waiting for your answer here or in Arc's ask card");
+        if (e.tool_use_id) {
+            $.ui.notice(e.tool_use_id, ALSO_ON_CARD);
+        }
         // spawn, not run: run gives up after ten minutes, and a question can wait longer
         const wait = $.process.spawn({ argv: [WSH, "ask", "--wait"], input: askPayload(e.questions) });
         const fromCard = (async () => {
@@ -201,64 +139,35 @@ export const register: Register = (on) => {
             }
             return parseAskReply(out);
         })();
-        let isFromPicker = false;
-        let reply: AskReply | null = null;
+        const fromDialog = next(e);
         try {
-            const fromPicker = new Promise<AskReply>((resolve) => {
-                settlePicker = (answered) => {
-                    isFromPicker = true;
-                    resolve(answered);
-                };
-            });
-            const opening = openPicker(e.questions, "pane");
-            await update($, picker, () => opening);
-            const opened = await $.ui.open({
-                id: ASK_PANE,
-                title: "Question",
-                focus: true,
-                closeOnEscape: true,
-                rows: pickerRows(opening),
-            });
-            if (!opened.isPlaced) {
-                // a pane the mod opens unasked is not drawn on a narrow terminal: the band is
-                await $.ui.close({ id: ASK_PANE });
-                await update($, picker, (p) => (p ? { ...p, site: "band" as const } : p));
+            const first = await Promise.race([
+                fromDialog.then((result) => ({ isDialog: true as const, result })),
+                fromCard.then((reply) => ({ isDialog: false as const, reply })),
+            ]);
+            if (first.isDialog) {
+                return first.result;
             }
-            reply = await Promise.race([fromPicker, fromCard]);
-        } catch (err) {
-            // no picker: the card alone answers
-            $.ui.log(`arc: ask picker failed: ${String(err)}`, { to: "debug" });
-            reply = await fromCard;
+            const answer = cardAnswer(e.questions, first.reply);
+            if (answer) {
+                return answer;
+            }
         } finally {
-            settlePicker = null;
-            $.ui.status(undefined);
-        }
-        try {
-            await update($, picker, () => null);
-            await $.ui.close({ id: ASK_PANE });
-        } catch (err) {
-            $.ui.log(`arc: closing the ask picker failed: ${String(err)}`, { to: "debug" });
-        }
-        if (isFromPicker) {
-            // ending the stream kills wsh, and the server's waiter cancel takes the card down
+            // answered or dismissed in the terminal: ending the stream kills wsh, and the server's waiter
+            // cancel takes the card down. a no-op once wsh has exited
             void wait.return(undefined as never).catch(() => undefined);
         }
-        if (reply?.cancelled) {
-            return { deny: "The user dismissed the question." };
-        }
-        if (reply) {
-            return { result: { questions: e.questions, answers: answersFor(e.questions, reply) } };
-        }
-        // no answer came back: take the card down so it cannot answer a question nobody is asking
+        // wsh failed or hit its 30-minute ceiling: take the card down, and the dialog still up answers alone
         try {
             await $.process.run([WSH, "ask", "--clear"]);
         } catch (err) {
             $.ui.log(`arc: wsh ask --clear failed: ${String(err)}`, { to: "debug" });
         }
-        if (next.signal.aborted) {
-            return { deny: "Interrupted by the user." };
-        }
-        // wsh failed or hit its 30-minute ceiling: the question still reaches the user, in claude's dialog
-        return next(e);
+        return fromDialog;
     });
+
+    // the settings hooks Arc installs for AskUserQuestion project a keystroke-answered card of their own
+    // (`wsh ask`), which would stand over the one the call above is waiting on. answering here without
+    // next(e) skips every settings PreToolUse hook beneath, so the call goes on to its dialog
+    on("classic.PreToolUse", { tool: "AskUserQuestion" }, ($, e, next) => (racesCard(e.questions) ? {} : next(e)));
 };
