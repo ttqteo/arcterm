@@ -56,6 +56,19 @@ type WshRpc struct {
 	Debug              bool
 	DebugName          string
 	ServerDone         bool
+	orderedReqCh       chan orderedRequest
+}
+
+// Requests whose order is their meaning, run one at a time in arrival order instead of each on its own
+// goroutine. Terminal input is one: an input method rewrites a letter by sending DEL and then the new
+// letter well under a millisecond apart, and handled concurrently the DEL can land second and erase it.
+type orderedRequest struct {
+	msg           *RpcMessage
+	ingressLinkId baseds.LinkId
+}
+
+func isOrderedCommand(command string) bool {
+	return command == wshrpc.Command_ControllerInput
 }
 
 type wshRpcContextKey struct{}
@@ -218,11 +231,22 @@ func MakeWshRpcWithChannels(inputCh chan baseds.RpcInputChType, outputCh chan []
 		EventListener:      MakeEventListener(),
 		ServerImpl:         serverImpl,
 		ResponseHandlerMap: make(map[string]*RpcResponseHandler),
+		orderedReqCh:       make(chan orderedRequest, DefaultInputChSize),
 	}
 	rtn.RpcContext.Store(&rpcCtx)
 	rtn.StreamBroker = streamclient.NewBroker(AdaptWshRpc(rtn))
+	go rtn.runOrderedRequests()
 	go rtn.runServer()
 	return rtn
+}
+
+func (w *WshRpc) runOrderedRequests() {
+	defer func() {
+		panichandler.PanicHandler("wshrpc.runOrderedRequests", recover())
+	}()
+	for req := range w.orderedReqCh {
+		w.handleRequest(req.msg, req.ingressLinkId)
+	}
 }
 
 func MakeWshRpc(rpcCtx wshrpc.RpcContext, serverImpl ServerImpl, debugName string) *WshRpc {
@@ -390,6 +414,7 @@ func (w *WshRpc) handleRequestInternal(req *RpcMessage, ingressLinkId baseds.Lin
 func (w *WshRpc) runServer() {
 	defer func() {
 		panichandler.PanicHandler("wshrpc.runServer", recover())
+		close(w.orderedReqCh)
 		close(w.OutputCh)
 		w.setServerDone()
 	}()
@@ -440,6 +465,10 @@ outer:
 			}
 
 			ingressLinkId := inputVal.IngressLinkId
+			if isOrderedCommand(msg.Command) {
+				w.orderedReqCh <- orderedRequest{msg: &msg, ingressLinkId: ingressLinkId}
+				continue
+			}
 			go func() {
 				defer func() {
 					panichandler.PanicHandler("handleRequest:goroutine", recover())
