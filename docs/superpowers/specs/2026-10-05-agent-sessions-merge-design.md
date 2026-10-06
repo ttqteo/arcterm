@@ -1,6 +1,6 @@
 # Merge Sessions into the Agent surface (Antigravity-style), with a 2x2 agent grid — design
 
-Status: design settled 2026-10-05. Not yet planned or implemented.
+Status: implemented 2026-10-06 on `main` (29 tasks, four stages). Nothing here has been run live: see the "never run live" row in `docs/open-issues.md`.
 
 ## Problem
 
@@ -64,7 +64,7 @@ cells, session rows as grid cells, uploading directories, a Tauri-side drop-path
    - Paste: `pasteHandler` already writes the image to a temp file and pastes the path; it also records.
    - Drop: OS files dropped on a terminal arrive as blobs without a path, because the window sets
      `dragDropEnabled: false` (which the grid's HTML5 drag needs). Each is copied to a temp file
-     (`WriteTempFileCommand`, 5MB cap like paste), then pasted by path. Over the cap or a directory: a
+     (`WriteTempFileCommand`, a 3.5 MiB cap: base64 inflates a copy by a third and the websocket silently drops a message over 5 MiB, so anything bigger would hang; a pasted image shares the cap), then pasted by path. Over the cap or a directory: a
      toast pointing at Attach.
    - Attach: `+ Attach` in the rail calls `@tauri-apps/plugin-dialog` `open({multiple: true})`, which
      already ships with `dialog:allow-open`, and pastes the real paths (double-quoted when they contain

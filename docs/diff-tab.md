@@ -317,7 +317,7 @@ stops — otherwise every later return to the surface would drag you back to the
 
 ## 11. The other diff — the Code surface
 
-The Code surface (`Ctrl`+`9`, or `g` `b`) has its own diff, and it answers a different question.
+The Code surface (`Ctrl`+`4`, or `g` `b`) has its own diff, and it answers a different question.
 
 | | Diff surface | Code surface's Diff mode |
 |---|---|---|
