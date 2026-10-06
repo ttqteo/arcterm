@@ -9,6 +9,7 @@ import { cardVariants, composerReveal } from "@/app/element/motiontokens";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { sayIfOverCapacity } from "@/app/view/jarvis/petcapacity";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { ArrowRight, Check, ChevronDown, ChevronRight, Network, SquareTerminal, Workflow } from "lucide-react";
@@ -570,7 +571,10 @@ export function LeadCard(p: LeadCardProps) {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    act("Parallelism", () => setRunParallelism(run, parValue));
+                                    act("Parallelism", async () => {
+                                        await setRunParallelism(run, parValue);
+                                        sayIfOverCapacity({ picked: parValue, extra: parExtra, live: true });
+                                    });
                                     setPanel(null);
                                 }}
                                 className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-accent px-[11px] text-[11.5px] font-semibold text-background"

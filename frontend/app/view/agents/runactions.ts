@@ -11,6 +11,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { sayIfOverCapacity } from "@/app/view/jarvis/petcapacity";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { PendingRunDraft } from "./radarmodel";
@@ -106,6 +107,9 @@ export async function createRun(channelId: string, goal: string, route: RoutePin
     if (rtn?.run == null) {
         // the launcher opens whatever comes back, and a null here surfaced as a TypeError about `id`
         throw new Error("creating the run returned no run");
+    }
+    if (opts?.mode === "orchestrator" && opts.parallelism) {
+        sayIfOverCapacity({ picked: opts.parallelism, extra: opts.parallelism, live: false });
     }
     return rtn.run;
 }

@@ -169,3 +169,21 @@ turns `text-warning`:
 - Persisting measured peaks across restarts.
 - A `wsh` command for the capacity (the RPC makes it a thin addition later).
 - Counting the lead agent or non-orchestrator agents in the estimate.
+
+## Revision 2026-10-07: a typical worker plus one heavy job
+
+Decision 2 (size every worker at the highest peak, 1.5 GiB by default) was replaced after measuring this
+repo's worker jobs on the 8 GB Mac (process-tree physical footprint, sampled every 0.5 s, plus the claude
+process's ~330 MB): idle or asking ~330 MB, `go test ./pkg/orchestrate` ~420 MB, the full vitest suite ~920 MB,
+headless Chromium on the cockpit ~940 MB, `tsc --noEmit` ~3.1 GB for about 55 s. Sizing every worker at the
+`tsc` peak read a machine with room for four workers as room for one.
+
+- `pkg/workercap` keeps each worker's mean as well as its peak. A typical worker is the mean of the workers'
+  means (live and the last 10 finished; default 1 GiB); the heaviest job is the highest peak (default 3 GiB).
+- `reserve = Σ max(0, typical − rss_i) + (heavy − typical)`, the heavy extra held back once rather than per
+  worker; `more = floor((available − reserve) / typical)`.
+- `CommandGetWorkerCapacityRtnData` gains `heavybytes`; `perworkerbytes` is now the typical size. The chip's
+  tooltip and Jarvis's ram-full line name both sizes.
+- The same day added Jarvis to the warning: a ram-full condition (the tired look) at `+0`, and a warning notice
+  when a new run or a live run's Adjust picks more workers than fit (`jarvis/petcapacity.ts`).
+

@@ -7,10 +7,13 @@ import {
     isWindowConstrained,
     postureFor,
     postureLine,
+    wearsTired,
     type PetSignals,
 } from "./petcondition";
 
 const HOT: PetSignals["rateLimit"] = { provider: "claude", pct: 94, resetAt: 1_800_000_000 };
+const GIB = 1024 ** 3;
+const FULL: PetSignals["memory"] = { more: 0, available: 1.3 * GIB, perWorker: 1 * GIB, heavy: 3 * GIB };
 
 describe("expressionFor — each rank fires in isolation", () => {
     it("rank 2: a depleting window is tired, carrying whose reading it is, the reading, and its reset", () => {
@@ -23,6 +26,27 @@ describe("expressionFor — each rank fires in isolation", () => {
     });
 });
 
+describe("expressionFor — a full RAM", () => {
+    it("is ram-full when no more worker fits, carrying the free RAM and the per-worker estimate", () => {
+        expect(expressionFor({ memory: FULL })).toEqual({
+            kind: "ram-full",
+            available: 1.3 * GIB,
+            perWorker: 1 * GIB,
+            heavy: 3 * GIB,
+        });
+    });
+
+    it("says nothing while another worker still fits", () => {
+        expect(expressionFor({ memory: { ...FULL, more: 1 } })).toEqual({ kind: "at-rest" });
+    });
+
+    it("wears the tired look, sweat drop and all, without new pixels", () => {
+        expect(wearsTired("ram-full")).toBe(true);
+        expect(wearsTired("tired")).toBe(true);
+        expect(wearsTired("at-rest")).toBe(false);
+    });
+});
+
 describe("expressionFor — strict precedence", () => {
     it("reads a window as constrained only past the cockpit's ok band", () => {
         expect(isWindowConstrained(HOT)).toBe(true);
@@ -31,7 +55,13 @@ describe("expressionFor — strict precedence", () => {
     });
 
     it("ranks the expressions in the design's order", () => {
+        expect(EXPRESSION_RANK["ram-full"]).toBeLessThan(EXPRESSION_RANK.tired);
         expect(EXPRESSION_RANK.tired).toBeLessThan(EXPRESSION_RANK["at-rest"]);
+    });
+
+    it("leads with a full RAM over a depleting window: fewer workers is a fix you can make now", () => {
+        expect(expressionFor({ rateLimit: HOT, memory: FULL }).kind).toBe("ram-full");
+        expect(conditionsFor({ rateLimit: HOT, memory: FULL }).map((c) => c.kind)).toEqual(["ram-full", "tired"]);
     });
 });
 
@@ -105,6 +135,12 @@ describe("wording", () => {
             "Claude's window is spent — back in 1h 0m."
         );
         expect(conditionLine({ kind: "tired", provider: "claude", pct: 100 }, now)).toBe("Claude's window is spent.");
+    });
+
+    it("words a full RAM with the free RAM, the estimate and what another worker would do", () => {
+        expect(conditionLine({ kind: "ram-full", available: 1.3 * GIB, perWorker: 1 * GIB, heavy: 3 * GIB }, now)).toBe(
+            "RAM is full — 1.3 GB free; a worker needs ~1 GB, a heavy job like tsc ~3 GB."
+        );
     });
 
     it("gives every expression and every posture a line", () => {
