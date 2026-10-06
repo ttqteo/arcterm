@@ -135,6 +135,9 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                         continue;
                     }
                     const action: ActionEntry = { kind: "action", verb: verbFor(block.name), target: targetFor(block.input) };
+                    if (typeof block.input?.file_path === "string" && block.input.file_path !== "") {
+                        action.path = block.input.file_path;
+                    }
                     if (block.name === "Edit" && block.input && typeof block.input.old_string === "string") {
                         action.detail = {
                             kind: "edit",

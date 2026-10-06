@@ -9,6 +9,8 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./codeblock";
 import { splitInsightBlocks } from "./insightblocks";
+import { PathLink } from "./pathlinkcontext";
+import { inlinePathOf } from "./pathlinks";
 
 // Lightweight inline markdown for narration lines. Deliberately NOT the full element/markdown.tsx
 // (which wraps every render in OverlayScrollbars + a TOC + rehypeRaw); raw HTML is not enabled here,
@@ -43,6 +45,18 @@ const MD_COMPONENTS: Components = {
         const lang = /language-(\w+)/.exec(className)?.[1];
         const raw = Array.isArray(props.children) ? props.children.join("") : String(props.children ?? "");
         return <CodeBlock code={raw} lang={lang} />;
+    },
+    code: ({ className, children }) => {
+        const text = typeof children === "string" ? children : null;
+        const found = className == null && text != null ? inlinePathOf(text) : null;
+        if (found == null) {
+            return <code className={className}>{children}</code>;
+        }
+        return (
+            <PathLink path={found.path} line={found.line}>
+                <code>{children}</code>
+            </PathLink>
+        );
     },
 };
 
