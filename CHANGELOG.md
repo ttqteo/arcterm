@@ -20,6 +20,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   at its typical footprint, and one heavy job's extra (a `tsc` run, say) is held back once.
 - The worker steppers in New run and on a run's lead card warn when the width you pick is more than
   fits in RAM; Jarvis says so too, and takes a "RAM full" state when there is no room left.
+- **Comments on markdown in the Agent panel.** The File tab shows a `.md` file rendered, with a Preview /
+  Source toggle. Select text and press `c`, click a block's `+` (Shift+click for a range), or hover an image
+  and click Comment; the tray sends every comment to the agent as one message (`Ctrl`+`Enter`), or copies it.
 - Code shows gitignored files in the tree, dimmed. A directory ignored as a whole is one entry that
   lists its contents on demand.
 - In Jarvis's brief, an initiative with no chunks reads as an idea, under an "Ideas" label. Each row's
@@ -46,6 +49,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
   don't exist; renaming a directory now carries its drafts with it.
 - The app bar keeps room to drag the window beside the search at narrow widths.
 - On macOS, a tooltip stays open through a screenshot shortcut (⌘⇧4, ⌘⇧5).
+- Code's markdown preview shows a file's relative images instead of `[img:…]` text.
 
 ## 0.15.0 — 2026-10-06
 
