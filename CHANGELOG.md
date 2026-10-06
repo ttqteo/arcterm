@@ -8,7 +8,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## 0.15.1 — Unreleased
+## 0.15.1 — 2026-10-07
 
 ### Added
 
@@ -34,6 +34,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - In the Agent sidebar, double-click a run's lead row to fold or unfold its workers, or an agent's row to fold its
   subagents; a single click still selects it.
 - Code blocks wrap long lines by default instead of scrolling sideways.
+- Jarvis's peek approves a gate or retries a failed task in place, as the brief does, instead of only
+  opening it.
 - Hover tooltips fade in over 90 ms from the side facing their control.
 - Code's header is one compact row, so the editor gets more height.
 - The default terminal font size is 14.
