@@ -210,6 +210,19 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
         };
     }
 
+    // node cuts a unix socket path past sun_path (104 bytes on macOS) instead of failing, so the lock file would not
+    // be where the stale-socket probe and drop look for it
+    it("keeps the posix lock path within a socket path, and the windows lock a named pipe", () => {
+        const long = join(tmpdir(), "x".repeat(120), "arc-final");
+        const posix = buildLockPath(long, "darwin");
+        expect(Buffer.byteLength(posix)).toBeLessThanOrEqual(104);
+        expect(buildLockPath(long, "linux")).toBe(posix);
+        expect(posix).toMatch(/arc-final-build-[0-9a-f]{8}\.sock$/);
+        const short = join("/home/u", ".cache", "arc-final");
+        expect(buildLockPath(short, "linux")).toMatch(/^\/home\/u\/\.cache\/arc-final\/build-[0-9a-f]{8}\.sock$/);
+        expect(buildLockPath(long, "win32")).toMatch(/^\\\\\.\\pipe\\arc-final-build-[0-9a-f]{8}$/);
+    });
+
     it("runs two final stages one after the other", async () => {
         dir = mkdtempSync(join(tmpdir(), "final-lock-"));
         const logFile = join(dir, "dev.log");

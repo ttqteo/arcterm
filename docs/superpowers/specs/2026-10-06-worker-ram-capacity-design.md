@@ -140,9 +140,10 @@ turns `text-warning`:
   RSS to `observeWorkerRSS`. Run `go test ./pkg/workercap ./pkg/orchestrate`.
 - **Frontend** — `workercapacity.test.ts` (vitest): `extraWorkers` for both pickers, `overCapacity` including
   `null`, `formatGB`, both tooltip strings. `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`.
-- **UI** — two scenarios in `scripts/cdp/scenarios.mjs`, which the plan's Final runs. `worker-capacity`
-  asserts the app bar chip renders `+N` with its tooltip. It then forces `+0` and asserts the chip's amber
-  tone and TriangleAlert. The real RAM decides whether the over state happens, so the scenario forces it by
+- **UI** — two scenarios in `scripts/cdp/scenarios.mjs`, run by
+  `node scripts/cdp/final-verify.mjs worker-capacity capacity-warn`. `worker-capacity` asserts the app bar
+  chip renders `+N` with its tooltip. It then forces `+0` and asserts the chip's amber tone and TriangleAlert.
+  The real RAM decides whether the over state happens, so the scenario forces it by
   mocking `getworkercapacity` in the page (`RpcApi.setMockRpcClient`, which the 5 s poll also reads) to
   return `moreworkers: 0`. `capacity-warn` keeps that mock and asserts the amber number and
   `[data-capacity-warn]` with its tooltip on New run's "Workers at once", on the Brief launcher's stepper, and
