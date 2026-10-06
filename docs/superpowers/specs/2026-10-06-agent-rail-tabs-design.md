@@ -206,8 +206,8 @@ Kept here so phase 1 leaves room for it. Not designed further until phase 1 has 
   terminal and agent with a block already has a pane mounted in the centre stack, and two term views on one block
   would fight over the PTY size, so the panel never shows a centre terminal.
 - A side terminal is an ordinary shell block in a workspace tab, created like a terminal launch (`cockpit-actions.ts`).
-  Its tab carries a new meta key, `session:sidepanel` (the cwd string), which keeps it out of the roster, the tree and
-  Overview's Terminals section (`deriveTerminalVMs` skips it). This needs the key in the Go meta types and
+  Its tab carries a new meta key, `session:sidepanel` (the cwd string), which keeps it out of the roster and the tree's
+  Terminals section (`deriveTerminalVMs` skips it). This needs the key in the Go meta types and
   `task generate`.
 - Side terminals are keyed by the agent's working directory. Opening the tab for a directory with none starts one; `+`
   starts another; the bin icon closes the selected one.
