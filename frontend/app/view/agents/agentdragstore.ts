@@ -5,10 +5,11 @@
 // (griddropoverlay.tsx) exist only while this is set, so nothing sits over xterm the rest of the time.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom } from "jotai";
+import { atom, type PrimitiveAtom } from "jotai";
 import { AGENT_DRAG_MIME } from "./griddrop";
 
-export const agentDragAtom = atom<{ id: string } | null>(null);
+// Cast like listNavAtom: with strictNullChecks off, atom<T | null>(null) resolves to the read-only overload.
+export const agentDragAtom = atom<{ id: string } | null>(null) as PrimitiveAtom<{ id: string } | null>;
 
 interface DragSource {
     dataTransfer: { setData(format: string, data: string): void; effectAllowed: string } | null;
