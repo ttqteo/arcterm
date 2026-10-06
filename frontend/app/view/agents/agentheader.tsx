@@ -16,22 +16,25 @@ import { openOrPeek } from "@/app/view/jarvis/openref";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronLeft, CircleStop, Maximize2, Minimize2, PanelRight, Workflow, X } from "lucide-react";
+import { ChevronLeft, CircleStop, Columns2, Maximize2, Minimize2, PanelRight, Plus, Workflow, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect } from "react";
 import { confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
-import { askSentKey, type AgentVM } from "./agentsviewmodel";
+import { askSentKey, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
+import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
+import { rosterSeededAtom } from "./liveagents";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
+import { splitMenuState } from "./splitmenu";
 import { StatusDot } from "./statusdot";
 
 const STATE_COLOR: Record<AgentVM["state"], string> = {
@@ -130,6 +133,72 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // a Doc review switches in the segmented control below; the amber button opens a Spec or Plan review's dialog
     const showDialogButton = review != null && review.kind !== "doc" && !dialogOpen;
     const view: AgentView = docReview?.mode === "review" ? "review" : canvas?.mode === "canvas" ? "canvas" : "terminal";
+
+    // The grid's cells, to tell the Split button whether a split is showing. Only agents with a terminal can be cells
+    // (gridstore.eligibleIds); a plain terminal has no Split button.
+    const gridState = useAtomValue(agentGridAtom);
+    const rosterSeeded = useAtomValue(rosterSeededAtom);
+    const rosterAgents = useAtomValue(model.agentsAtom);
+    const cellCount = gridState.ids.filter((id) => eligibleIds(rosterAgents).has(id)).length;
+    const splitShown = cellCount > 1;
+    const canSplit = blockId != null && agent.kind !== "terminal" && !ended;
+
+    // The visible way to a second cell: every other live agent, and what to do with none (dragging a sidebar row onto
+    // the terminal works too, but nothing on screen says so). Built when opened, from the grid as it is then.
+    const openSplitMenu = (e: React.MouseEvent) => {
+        const grid = currentGrid(model);
+        const s = splitMenuState(
+            globalStore.get(model.agentsAtom).map((a) => ({
+                id: a.id,
+                name: a.name,
+                blockId: a.blockId,
+                project: projectOf(a),
+            })),
+            grid.ids
+        );
+        const items: ContextMenuItem[] = [{ label: "Show beside this agent", type: "header" }];
+        if (s.full) {
+            items.push({ label: `The grid is full (${s.cells} of 4)`, enabled: false });
+        } else if (s.targets.length === 0) {
+            items.push({ label: "No other agent is running", enabled: false });
+        } else {
+            for (const t of s.targets) {
+                items.push({
+                    label: t.name,
+                    sublabel: t.project || undefined,
+                    icon: <Columns2 size={15} />,
+                    enabled: rosterSeeded,
+                    click: () => {
+                        if (!openInSplit(model, t.id)) {
+                            model.openTerminal(t.id);
+                        }
+                    },
+                });
+            }
+        }
+        items.push({ type: "separator" });
+        items.push({
+            label: "New agent…",
+            icon: <Plus size={15} />,
+            click: () => globalStore.set(model.newAgentOpenAtom, true),
+        });
+        if (s.cells > 1) {
+            items.push({
+                label: "Show only this agent",
+                icon: <Minimize2 size={15} />,
+                click: () => {
+                    for (const id of grid.ids) {
+                        if (id !== agent.id) {
+                            removeFromGrid(model, id);
+                        }
+                    }
+                },
+            });
+        }
+        items.push({ type: "separator" });
+        items.push({ label: "Or drag an agent from the sidebar onto the terminal", enabled: false });
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
 
     // Esc cancels the current Claude turn — same PTY-write path as the composer (ControllerInputCommand).
     const interrupt = () => interruptAgent(blockId);
@@ -326,6 +395,25 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         ]}
                         onChange={(v) => setAgentView(agent.id, v, Date.now())}
                     />
+                ) : null}
+                {canSplit ? (
+                    <button
+                        type="button"
+                        data-agent-split
+                        aria-haspopup="menu"
+                        aria-pressed={splitShown}
+                        onClick={openSplitMenu}
+                        title="Split: show another agent beside this one (or drag a row from the sidebar onto the terminal)"
+                        className={cn(
+                            "flex cursor-pointer items-center gap-[6px] rounded-[7px] border px-[9px] py-[6px] text-[12px]",
+                            splitShown
+                                ? "border-accent bg-accentbg text-accent"
+                                : cn(ICON_BTN, "hover:border-edge-strong")
+                        )}
+                    >
+                        <Columns2 size={16} strokeWidth={1.8} aria-hidden />
+                        {splitShown ? <span className="tabular-nums">{cellCount}</span> : null}
+                    </button>
                 ) : null}
                 {blockId != null ? (
                     <>
