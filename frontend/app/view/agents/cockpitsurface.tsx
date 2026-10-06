@@ -24,7 +24,6 @@ import {
     matchesProjectFilter,
     mergeOrder,
     partitionBackgrounded,
-    projectsFromAgents,
     providerPlanUsage,
     type AgentVM,
 } from "./agentsviewmodel";
@@ -71,7 +70,7 @@ import { ProjectSwitcher } from "./projectswitcher";
 import { mergeRateLimitWindows, savedRateLimitsAtom } from "./ratelimitstore";
 import { loadWindowTokens, windowTokensAtom } from "./windowtokenstore";
 import { useSubagentTracking } from "./subagenttracking";
-import { SurfaceHeader } from "./surfacescaffold";
+import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
 import { UsageMeters } from "./usagemeters";
 
 // Status tabs (mockup A3): a tab's count takes its status color while it has any, the selected tab underlines
@@ -98,11 +97,10 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const { asking, working, idle } = groupAgents(agents);
 
     // channel-aware "needs you": excludes asks Jarvis already auto-answered, so it matches the Channels
-    // rail dot and nav badge (raw asking historically over-counted). one answered set feeds both the
-    // header counter and the need-you tab (liveAsking) below.
+    // rail dot and nav badge (raw asking historically over-counted). it feeds the need-you tab (liveAsking)
+    // and each card's needs-you below.
     const channels = useAtomValue(channelsAtom);
     const answeredAsks = answeredAskIdsAcross(channels ?? []);
-    const needsYou = agents.filter((a) => needsHuman(a, answeredAsks)).length;
 
     // `structuralNow` feeds structural computations below (usage-window rollover, the idle-grace window,
     // and which transcripts stay streamed). Subscribe to the coarse (~15s) structural clock REACTIVELY —
@@ -224,8 +222,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const spaceScope = useAtomValue(focusScopeAtom);
     const activeSpace = useAtomValue(activeFocusAtom);
     const agentRevealed = useAtomValue(focusRevealAtom).has("agent");
-    // project + live-only first (global/needs-you counts read the unfiltered set — see needsYou above),
-    // then the Space lens. The banner's in-focus count ignores the reveal, so it still says how many
+    // project + live-only first, then the Space lens. The banner's in-focus count ignores the reveal, so it still says how many
     // rows are the focus's own after Show all.
     const projectScoped = filterAgents(orderedAgents, projectFilter, liveOnly);
     const visibleOrdered = filterByFocus(projectScoped, spaceScope, agentRevealed);
@@ -255,7 +252,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // agents with nothing to show stay off the grid and out of its counts until their first transcript entry
     const idsWithEntries = useAtomValue(idsWithEntriesAtom);
     const hidden = hiddenAgentIds(agents, idsWithEntries, lineage);
-    const counted = agents.filter((a) => !hidden.has(a.id));
     const liveVisible = visibleOrdered.filter((a) => !hidden.has(a.id));
     const allCards = buildGridCards(withActiveRunLeads(visibleOrdered, runScope, lineage), lineage, agents);
     const leadVMs = new Map<string, LeadCardVM & { down: boolean }>();
@@ -320,7 +316,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     const liveCount = liveVisible.length;
     const liveAsking = liveVisible.filter((a) => needsHuman(a, answeredAsks)).length;
     const liveWorking = liveVisible.filter((a) => a.state === "working").length;
-    const projectCount = projectsFromAgents(counted).length;
     // idle/backgrounded sections share the project scope; live-only hides the parked-idle section
     const shownParkedIdle = liveOnly ? [] : parkedIdle.filter((a) => matchesProjectFilter(a, projectFilter));
     const shownBackgrounded = backgrounded.filter((a) => matchesProjectFilter(a, projectFilter));
@@ -493,94 +488,84 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             className="relative flex h-full w-full text-secondary outline-none"
         >
             <div className="flex min-w-0 flex-1 flex-col bg-background">
-                <div className="sticky top-0 z-[5] shrink-0 border-b border-border bg-background px-[30px] pb-3 pt-4">
-                    <div className="mb-3 -mx-[30px] -mt-4">
-                        <SurfaceHeader
-                            border={false}
-                            title="Cockpit"
-                            subtitle={
-                                <>
-                                    {counted.length} agents · {projectCount} projects ·{" "}
-                                    <span className="font-semibold text-warning">
-                                        <RollingCount value={needsYou} /> need you
-                                    </span>
-                                </>
-                            }
-                            actions={
-                                <>
-                                    <UsageMeters
-                                        donuts={usageDonuts}
-                                        windowTokens={windowTokens}
-                                        now={structuralNow}
-                                        onOpen={() => globalStore.set(model.surfaceAtom, "usage")}
-                                    />
-                                    <ProjectSwitcher model={model} variant="header" />
-                                    <button
-                                        type="button"
-                                        onClick={() => globalStore.set(model.liveOnlyAtom, !liveOnly)}
-                                        className={cn(
-                                            "flex cursor-pointer items-center gap-[7px] rounded border px-2.5 py-1.5 text-[12px] font-medium",
-                                            liveOnly
-                                                ? "border-success/60 bg-success/10 text-success"
-                                                : "border-edge-mid bg-surface-raised text-muted-foreground hover:border-edge-strong"
-                                        )}
-                                    >
-                                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                                        Live only
-                                    </button>
-                                </>
-                            }
-                        />
-                    </div>
-                    {activeSpace != null ? (
-                        <FocusBanner
-                            surface="agent"
-                            copy={focusBannerCopy(
-                                activeSpace.label,
-                                spaceInScope,
-                                projectScoped.length,
-                                agentRevealed,
-                                "agents"
-                            )}
-                            revealed={agentRevealed}
-                        />
-                    ) : null}
-                    <div className="-mb-3 -ml-1 mt-1 flex flex-wrap gap-0.5">
-                        {(
-                            [
-                                ["asking", "need you", liveAsking],
-                                ["working", "working", liveWorking],
-                                ["idle", "ready for review", readyCount],
-                                ["all", "live", liveCount],
-                            ] as [ChipFilter, string, number][]
-                        ).map(([key, label, count]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                onClick={() => setChip(toggleChip(chip, key))}
-                                className={cn(
-                                    "flex cursor-pointer items-baseline gap-[7px] border-0 border-b-2 bg-transparent px-2.5 pb-[9px] pt-1.5 hover:bg-surface-hover",
-                                    chip === key ? TAB_TONE[key].line : "border-transparent"
-                                )}
-                            >
-                                <RollingCount
-                                    value={count}
+                {/* one row: the tabs carry the counts a subtitle used to repeat */}
+                <div className="sticky top-0 z-[5] shrink-0 bg-background">
+                    <div className="flex flex-wrap items-end gap-x-5 gap-y-1 border-b border-border px-5 pt-2.5">
+                        <h1 className={cn(SURFACE_TITLE_CLASS, "pb-2.5 leading-none")}>Cockpit</h1>
+                        <div className="-mb-px flex flex-wrap gap-0.5">
+                            {(
+                                [
+                                    ["asking", "need you", liveAsking],
+                                    ["working", "working", liveWorking],
+                                    ["idle", "ready for review", readyCount],
+                                    ["all", "live", liveCount],
+                                ] as [ChipFilter, string, number][]
+                            ).map(([key, label, count]) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => setChip(toggleChip(chip, key))}
                                     className={cn(
-                                        "text-[17px] font-semibold",
-                                        count > 0 || chip === key ? TAB_TONE[key].text : "text-muted"
-                                    )}
-                                />
-                                <span
-                                    className={cn(
-                                        "text-[12.5px] font-medium",
-                                        chip === key ? "text-primary" : "text-ink-mid"
+                                        "flex cursor-pointer items-baseline gap-1.5 border-0 border-b-2 bg-transparent px-2.5 pb-2 pt-1.5 hover:bg-surface-hover",
+                                        chip === key ? TAB_TONE[key].line : "border-transparent"
                                     )}
                                 >
-                                    {label}
-                                </span>
+                                    <RollingCount
+                                        value={count}
+                                        className={cn(
+                                            "text-[15px] font-semibold",
+                                            count > 0 || chip === key ? TAB_TONE[key].text : "text-muted"
+                                        )}
+                                    />
+                                    <span
+                                        className={cn(
+                                            "text-[12.5px] font-medium",
+                                            chip === key ? "text-primary" : "text-ink-mid"
+                                        )}
+                                    >
+                                        {label}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="mb-1.5 ml-auto flex flex-none items-center gap-2">
+                            <UsageMeters
+                                donuts={usageDonuts}
+                                windowTokens={windowTokens}
+                                now={structuralNow}
+                                onOpen={() => globalStore.set(model.surfaceAtom, "usage")}
+                            />
+                            <ProjectSwitcher model={model} variant="header" />
+                            <button
+                                type="button"
+                                onClick={() => globalStore.set(model.liveOnlyAtom, !liveOnly)}
+                                className={cn(
+                                    "flex cursor-pointer items-center gap-[7px] rounded border px-2.5 py-1.5 text-[12px] font-medium",
+                                    liveOnly
+                                        ? "border-success/60 bg-success/10 text-success"
+                                        : "border-edge-mid bg-surface-raised text-muted-foreground hover:border-edge-strong"
+                                )}
+                            >
+                                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                                Live only
                             </button>
-                        ))}
+                        </div>
                     </div>
+                    {activeSpace != null ? (
+                        <div className="px-4 pt-2.5">
+                            <FocusBanner
+                                surface="agent"
+                                copy={focusBannerCopy(
+                                    activeSpace.label,
+                                    spaceInScope,
+                                    projectScoped.length,
+                                    agentRevealed,
+                                    "agents"
+                                )}
+                                revealed={agentRevealed}
+                            />
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="relative flex min-h-0 flex-1 flex-col">
@@ -595,12 +580,12 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                         ) : null}
                     </AnimatePresence>
 
-                    <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-2.5">
-                        <div className="flex items-start gap-3.5">
+                    <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-3 pt-2.5">
+                        <div className="flex items-start gap-2.5">
                             {columns.map((col, ci) => (
                                 <div
                                     key={ci}
-                                    className="flex min-w-0 flex-1 flex-col gap-3.5"
+                                    className="flex min-w-0 flex-1 flex-col gap-2.5"
                                     style={{ minHeight: gridViewportPx }}
                                 >
                                     <AnimatePresence initial={false}>{col.map(renderCard)}</AnimatePresence>
@@ -609,7 +594,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                         </div>
                     </div>
 
-                    <div className="shrink-0 px-[18px]">
+                    <div className="shrink-0 px-5">
                         <BackgroundedSection agents={shownBackgrounded} onRestore={(id) => toggleBackground(id)} />
                         <IdleSection agents={shownParkedIdle} onOpen={(id) => model.openTerminal(id)} />
                         <BackgroundAgentsStrip model={model} />
@@ -637,9 +622,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 // Card-shaped placeholders in the grid's own gutters, so the first cards land where the skeleton was.
 function CockpitGridSkeleton() {
     return (
-        <div aria-hidden="true" className="absolute inset-0 z-[1] flex items-start gap-3.5 px-5 pt-2.5">
+        <div aria-hidden="true" className="absolute inset-0 z-[1] flex items-start gap-2.5 px-5 pt-2.5">
             {[0, 1, 2].map((col) => (
-                <div key={col} className="flex min-w-0 flex-1 flex-col gap-3.5">
+                <div key={col} className="flex min-w-0 flex-1 flex-col gap-2.5">
                     <Skeleton className="h-[148px] rounded-[13px]" />
                     {col < 2 ? <Skeleton className="h-[112px] rounded-[13px]" /> : null}
                 </div>

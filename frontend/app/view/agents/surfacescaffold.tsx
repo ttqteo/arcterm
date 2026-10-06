@@ -10,6 +10,9 @@ import { cn } from "@/util/util";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 
+// the Cockpit draws its title on its own row beside the status tabs, so the type is shared, not the header
+export const SURFACE_TITLE_CLASS = "text-[25px] font-bold tracking-[-0.02em] text-primary";
+
 export function SurfaceHeader({
     title,
     badge,
@@ -32,7 +35,7 @@ export function SurfaceHeader({
         >
             <div className="min-w-0">
                 <div className="flex items-center gap-2.5">
-                    <h1 className="text-[25px] font-bold tracking-[-0.02em] text-primary">{title}</h1>
+                    <h1 className={SURFACE_TITLE_CLASS}>{title}</h1>
                     {badge}
                 </div>
                 {subtitle != null ? <div className="mt-1 text-[13px] text-secondary">{subtitle}</div> : null}

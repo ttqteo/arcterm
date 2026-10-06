@@ -11,7 +11,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
-import { ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, SquareTerminal, Workflow } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, Network, SquareTerminal, Workflow } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { AgentComposer } from "./agentcomposer";
@@ -223,6 +223,21 @@ export function LeadCard(p: LeadCardProps) {
                         <span className="text-diff-removed">−{diff.dels}</span>
                     </button>
                 ) : null}
+                {run.dag ? (
+                    <button
+                        type="button"
+                        data-peek
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            openRunDag(model, run, undefined, e);
+                        }}
+                        title="Open the DAG"
+                        aria-label="Open the DAG"
+                        className={CTL_BOX}
+                    >
+                        <Network size={13} aria-hidden />
+                    </button>
+                ) : null}
                 {lead ? (
                     <button
                         type="button"
@@ -273,7 +288,7 @@ export function LeadCard(p: LeadCardProps) {
                 <AttentionBanner glyph="dot" pulse label="Waiting on you" meta={formatAge(displayAgeMs(lead))} />
             ) : null}
 
-            <div className="flex shrink-0 flex-col gap-2 px-[18px] pb-2.5 pt-3">
+            <div className="flex shrink-0 flex-col gap-2 px-[18px] pb-2 pt-2.5">
                 {vm.bar ? <LeadBar strip={vm.bar.strip} label={vm.bar.label} /> : null}
                 <div className="flex items-center gap-2 text-[11.5px] text-muted">
                     {vm.complete ? <Check size={12} aria-hidden className="shrink-0 text-success" /> : null}
@@ -285,7 +300,10 @@ export function LeadCard(p: LeadCardProps) {
                     >
                         {vm.activity}
                     </span>
-                    <span className="shrink-0 text-[10.5px] tabular-nums">
+                    <span
+                        title={[vm.settings, vm.settingsTitle].filter(Boolean).join("\n")}
+                        className="shrink-0 text-[10.5px] tabular-nums"
+                    >
                         {[vm.progress.total > 0 ? `${vm.progress.done}/${vm.progress.total}` : "", vm.elapsed, vm.cost]
                             .filter(Boolean)
                             .join(" · ")}
@@ -486,101 +504,92 @@ export function LeadCard(p: LeadCardProps) {
                 </motion.div>
             ) : null}
 
-            <div
-                onClick={(e) => e.stopPropagation()}
-                className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-edge-mid py-[7px] pl-3.5 pr-3"
-            >
-                <span
-                    title={vm.settingsTitle}
-                    className="min-w-[120px] flex-1 truncate text-[10.5px] tabular-nums text-muted"
+            {runAdjustable(run) || panel != null || error ? (
+                <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-edge-mid py-[7px] pl-3.5 pr-3"
                 >
-                    {vm.settings}
-                </span>
-                {runAdjustable(run) ? (
-                    <button
-                        type="button"
-                        onClick={() => setPanel((v) => (v === "adjust" ? null : "adjust"))}
-                        className={BTN}
+                    <span
+                        title={vm.settingsTitle}
+                        className="min-w-[120px] flex-1 truncate text-[10.5px] tabular-nums text-muted"
                     >
-                        Adjust
-                    </button>
-                ) : null}
-                {run.dag ? (
-                    <button
-                        type="button"
-                        data-peek
-                        onClick={(e) => openRunDag(model, run, undefined, e)}
-                        className={cn(BTN, "inline-flex items-center gap-[5px]")}
-                    >
-                        DAG
-                        <ArrowUpRight size={11} aria-hidden />
-                    </button>
-                ) : null}
-                {run.dag && !vm.finished ? (
-                    <button
-                        type="button"
-                        onClick={() => setPanel((v) => (v === "cancel" ? null : "cancel"))}
-                        className={cn(BTN, "text-error hover:border-error/45")}
-                    >
-                        Cancel run
-                    </button>
-                ) : null}
-                {panel === "adjust" ? (
-                    <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-background px-2.5 py-[7px]">
-                        <span className="text-[11.5px] text-muted">Worker parallelism</span>
+                        {vm.settings}
+                    </span>
+                    {runAdjustable(run) ? (
                         <button
                             type="button"
-                            onClick={() => setPar(clampParallelism(parValue - 1))}
-                            className={cn(BTN, "w-[23px] px-0")}
+                            onClick={() => setPanel((v) => (v === "adjust" ? null : "adjust"))}
+                            className={BTN}
                         >
-                            −
+                            Adjust
                         </button>
-                        <span className="min-w-[14px] text-center text-[12px] font-semibold tabular-nums text-primary">
-                            {parValue}
-                        </span>
+                    ) : null}
+                    {run.dag && !vm.finished ? (
                         <button
                             type="button"
-                            onClick={() => setPar(clampParallelism(parValue + 1))}
-                            className={cn(BTN, "w-[23px] px-0")}
-                        >
-                            +
-                        </button>
-                        <span className="min-w-0 flex-1 text-[11px] text-muted">applies to new dispatches</span>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                act("Parallelism", () => setRunParallelism(run, parValue));
-                                setPanel(null);
-                            }}
-                            className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-accent px-[11px] text-[11.5px] font-semibold text-background"
-                        >
-                            Save
-                        </button>
-                    </div>
-                ) : null}
-                {panel === "cancel" ? (
-                    <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-error/[0.08] px-2.5 py-2">
-                        <span className="min-w-[200px] flex-1 text-[11.5px] leading-[1.45] text-primary">
-                            Stop {runningCount(vm.rows)} running tasks and cancel this run? Landed tasks, transcripts
-                            and artifacts are kept.
-                        </span>
-                        <button type="button" onClick={() => setPanel(null)} className={BTN}>
-                            Keep running
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                dag("", "cancel");
-                                setPanel(null);
-                            }}
-                            className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-error px-[11px] text-[11.5px] font-bold text-background"
+                            onClick={() => setPanel((v) => (v === "cancel" ? null : "cancel"))}
+                            className={cn(BTN, "text-error hover:border-error/45")}
                         >
                             Cancel run
                         </button>
-                    </div>
-                ) : null}
-                {error ? <div className="w-full text-[11px] text-error">{error}</div> : null}
-            </div>
+                    ) : null}
+                    {panel === "adjust" ? (
+                        <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-background px-2.5 py-[7px]">
+                            <span className="text-[11.5px] text-muted">Worker parallelism</span>
+                            <button
+                                type="button"
+                                onClick={() => setPar(clampParallelism(parValue - 1))}
+                                className={cn(BTN, "w-[23px] px-0")}
+                            >
+                                −
+                            </button>
+                            <span className="min-w-[14px] text-center text-[12px] font-semibold tabular-nums text-primary">
+                                {parValue}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setPar(clampParallelism(parValue + 1))}
+                                className={cn(BTN, "w-[23px] px-0")}
+                            >
+                                +
+                            </button>
+                            <span className="min-w-0 flex-1 text-[11px] text-muted">applies to new dispatches</span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    act("Parallelism", () => setRunParallelism(run, parValue));
+                                    setPanel(null);
+                                }}
+                                className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-accent px-[11px] text-[11.5px] font-semibold text-background"
+                            >
+                                Save
+                            </button>
+                        </div>
+                    ) : null}
+                    {panel === "cancel" ? (
+                        <div className="flex w-full flex-wrap items-center gap-2 rounded-[7px] bg-error/[0.08] px-2.5 py-2">
+                            <span className="min-w-[200px] flex-1 text-[11.5px] leading-[1.45] text-primary">
+                                Stop {runningCount(vm.rows)} running tasks and cancel this run? Landed tasks,
+                                transcripts and artifacts are kept.
+                            </span>
+                            <button type="button" onClick={() => setPanel(null)} className={BTN}>
+                                Keep running
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    dag("", "cancel");
+                                    setPanel(null);
+                                }}
+                                className="h-[23px] cursor-pointer rounded-[6px] border-0 bg-error px-[11px] text-[11.5px] font-bold text-background"
+                            >
+                                Cancel run
+                            </button>
+                        </div>
+                    ) : null}
+                    {error ? <div className="w-full text-[11px] text-error">{error}</div> : null}
+                </div>
+            ) : null}
         </motion.div>
     );
 }
