@@ -21,17 +21,70 @@ function gate(): AttentionItem {
 
 describe("actsForAttention", () => {
     it("escorts to the waiting thing", () => {
-        expect(actsForAttention(gate()).map((a) => a.label)).toEqual(["Open"]);
-        expect(actsForAttention(gate())[0]).toMatchObject({ verb: "open", target: { kind: "oref", ref: "run:run1" } });
+        const escalation = { ...gate(), kind: "escalation", key: "escalation:m1" } as AttentionItem;
+        expect(actsForAttention(escalation).map((a) => a.label)).toEqual(["Open"]);
+        expect(actsForAttention(escalation)[0]).toMatchObject({
+            verb: "open",
+            target: { kind: "oref", ref: "run:run1" },
+        });
     });
 
-    // Slice 5c deleted the review gate; nothing but an unverified run is settled by a click, so every other
-    // kind offers the escort alone.
+    // a question needs a written answer or a picked option, and a blocked dag with no failed task (a failed
+    // final stage, a review or merge failure) needs a judgment: neither is a button
     it("offers an escort and nothing else for a kind a click cannot settle", () => {
-        for (const kind of ["gate", "escalation", "ask", "dag-blocked"]) {
+        for (const kind of ["escalation", "ask", "dag-blocked"]) {
             const it = { ...gate(), kind, key: `${kind}:m1` } as AttentionItem;
             expect(actsForAttention(it).map((a) => a.label)).toEqual(["Open"]);
         }
+    });
+
+    // the peek used to offer only Open here while the Brief's queue approved in place (attentionact.ts)
+    it("approves a run's gate in place, and still escorts to it for reading first", () => {
+        expect(actsForAttention(gate())).toEqual([
+            {
+                id: "gate:run1:approve",
+                verb: "approve-phase",
+                label: "Approve",
+                channelId: "ch1",
+                runId: "run1",
+                phaseIdx: 1,
+            },
+            { id: "gate:run1:open", verb: "open", label: "Open", target: { kind: "oref", ref: "run:run1" } },
+        ]);
+    });
+
+    it("approves a dag task's gate in place", () => {
+        const dagGate = { ...gate(), kind: "dag-gate", key: "dag-gate:g1:t-3", taskid: "t-3" } as AttentionItem;
+        expect(actsForAttention(dagGate)[0]).toEqual({
+            id: "dag-gate:g1:t-3:approve",
+            verb: "approve-task",
+            label: "Approve",
+            channelId: "ch1",
+            runId: "run1",
+            taskId: "t-3",
+        });
+        const unnamed = { ...dagGate, taskid: "" } as AttentionItem;
+        expect(actsForAttention(unnamed).map((a) => a.verb)).toEqual(["open"]);
+    });
+
+    it("retries a failed task in place, but only opens a blocked dag that names no failed task", () => {
+        const failed = {
+            ...gate(),
+            kind: "dag-blocked",
+            key: "dag-blocked:g2",
+            taskid: "t-4",
+            retry: true,
+        } as AttentionItem;
+        expect(actsForAttention(failed)[0]).toEqual({
+            id: "dag-blocked:g2:retry",
+            verb: "retry-task",
+            label: "Retry",
+            channelId: "ch1",
+            runId: "run1",
+            taskId: "t-4",
+        });
+        const finalFailed = { ...failed, taskid: "", retry: false } as AttentionItem;
+        expect(actsForAttention(finalFailed).map((a) => a.verb)).toEqual(["open"]);
     });
 
     // the button used to be an Open relabelled "Acknowledge", so pressing it never cleared the row

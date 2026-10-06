@@ -82,15 +82,16 @@ describe("queueRows — detail earns its line, it is not given one", () => {
 });
 
 describe("queueRows — the button says what the item needs, not how to get there", () => {
-    // actsForAttention returns exactly one act for any item with a run, and it is labelled "Open". "Review" / "Decide" / "Answer" is the same navigation named by its purpose.
+    // a kind no click settles gets the escort alone, labelled "Open"; "Review" / "Decide" / "Answer" is the same
+    // navigation named by its purpose
     it("labels the primary act from the item's own action verb", () => {
-        expect(queueRows([GATE])[0].primary?.label).toBe("Review");
+        expect(queueRows([DAG_BLOCKED])[0].primary?.label).toBe("Review");
         expect(queueRows([ESCALATION])[0].primary?.label).toBe("Decide");
         expect(queueRows([ASK])[0].primary?.label).toBe("Answer");
     });
 
     it("keeps the relabelled act pointed at the run it came from", () => {
-        const primary = queueRows([GATE])[0].primary;
+        const primary = queueRows([ESCALATION])[0].primary;
         if (primary?.verb !== "open") {
             throw new Error(`expected an open escort, got ${primary?.verb}`);
         }
@@ -123,7 +124,7 @@ describe("queueRows — the server's ranking is authoritative", () => {
     });
 
     it("gives every waiting row its escort, relabelled by what the item needs", () => {
-        const rows = queueRows([GATE]);
+        const rows = queueRows([DAG_BLOCKED]);
         expect(rows[0].primary?.label).toBe("Review");
     });
 });
@@ -211,8 +212,29 @@ describe("queueRows — an unverified run settles in place", () => {
         expect(row.secondary).toMatchObject({ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } });
     });
 
-    it("gives every other kind no second act", () => {
-        expect(queueRows([GATE, ESCALATION, ASK]).map((r) => r.secondary)).toEqual([null, null, null]);
+    it("gives a kind no click settles no second act", () => {
+        expect(queueRows([DAG_BLOCKED, ESCALATION, ASK]).map((r) => r.secondary)).toEqual([null, null, null]);
+    });
+});
+
+// the peek used to escort these away while the Brief's queue settled them in place (attentionact.ts)
+describe("queueRows — a gate and a failed task settle in place", () => {
+    it("puts Approve on a run's gate, keeps its label, and escorts beside it", () => {
+        const row = queueRows([GATE])[0];
+        expect(row.primary).toMatchObject({ verb: "approve-phase", label: "Approve", channelId: CH, runId: RUN, phaseIdx: 0 }); // prettier-ignore
+        expect(row.secondary).toMatchObject({ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } });
+    });
+
+    it("approves a dag task's gate", () => {
+        const row = queueRows([{ ...DAG_GATE, taskid: "t-3" }])[0];
+        expect(row.primary).toMatchObject({ verb: "approve-task", label: "Approve", taskId: "t-3" });
+    });
+
+    it("retries a failed task, but only escorts a blocked dag that names none", () => {
+        const failed = queueRows([{ ...DAG_BLOCKED, taskid: "t-4", retry: true }])[0];
+        expect(failed.primary).toMatchObject({ verb: "retry-task", label: "Retry", taskId: "t-4" });
+        expect(failed.secondary).toMatchObject({ verb: "open" });
+        expect(queueRows([DAG_BLOCKED])[0].primary).toMatchObject({ verb: "open", label: "Review" });
     });
 });
 
@@ -232,7 +254,9 @@ describe("queueRows — a held land", () => {
 describe("enterHintLabel", () => {
     it("names what Enter does to the focused row", () => {
         expect(enterHintLabel(queueRows([item({ kind: "run-unverified", key: "u" })])[0].primary)).toBe("acknowledge");
-        expect(enterHintLabel(queueRows([GATE])[0].primary)).toBe("open");
+        expect(enterHintLabel(queueRows([GATE])[0].primary)).toBe("approve");
+        expect(enterHintLabel(queueRows([{ ...DAG_BLOCKED, taskid: "t-4", retry: true }])[0].primary)).toBe("retry");
+        expect(enterHintLabel(queueRows([ESCALATION])[0].primary)).toBe("open");
         expect(enterHintLabel(queueRows([item({ kind: "run-land-held", key: "l" })])[0].primary)).toBe("land again");
         expect(enterHintLabel(null)).toBe("open");
     });

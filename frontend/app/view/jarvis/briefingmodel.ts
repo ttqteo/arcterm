@@ -6,6 +6,7 @@
 // here; React components do not reinterpret wire kinds inline.
 
 import { formatAge, type AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { attentionAct, type AttentionAct } from "./attentionact";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
 
 export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -330,31 +331,11 @@ export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "bloc
     }
 }
 
-export type QueueAct = {
-    label: "Approve" | "Retry" | "Acknowledge" | "Land again" | "Open";
-    kind: "approve-gate" | "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "open";
-};
+export type QueueAct = AttentionAct;
 
-// What the row's button does in place (design L1598-1609). Approve and Retry need the exact task or phase
-// the server named; without it the row opens its run rather than guessing one.
+// What the row's button does in place (design L1598-1609); the creature's peek offers the same one (attentionact.ts).
 export function queueAction(row: QueueRow): QueueAct {
-    if (row.wireKind === "gate" && row.channelId !== "" && row.runId != null) {
-        return { label: "Approve", kind: "approve-gate" };
-    }
-    if (row.wireKind === "dag-gate" && row.taskId !== "" && row.runId != null) {
-        return { label: "Approve", kind: "approve-dag" };
-    }
-    if (row.wireKind === "dag-blocked" && row.retry && row.taskId !== "" && row.runId != null) {
-        return { label: "Retry", kind: "retry-dag" };
-    }
-    if (row.wireKind === "run-unverified" && row.channelId !== "" && row.runId != null) {
-        return { label: "Acknowledge", kind: "ack-run" };
-    }
-    // a held land: the retry `wsh runs land` makes, once the human has cleared the reason the row names
-    if (row.wireKind === "run-land-held" && row.channelId !== "" && row.runId != null) {
-        return { label: "Land again", kind: "land-run" };
-    }
-    return { label: "Open", kind: "open" };
+    return attentionAct(row);
 }
 
 // the rows Acknowledge all settles: exactly the ones whose own button is Acknowledge
