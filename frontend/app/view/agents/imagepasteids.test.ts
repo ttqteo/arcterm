@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { imagePasteNames, imagePasteNumbers, normImagePath, samePasteNumbers } from "./imagepasteids";
+import {
+    hasUnnumberedPaste,
+    imagePasteNames,
+    imagePasteNumbers,
+    normImagePath,
+    samePasteNumbers,
+} from "./imagepasteids";
 import { makeRecord, type UploadRecord } from "./uploadsstore";
 
 const A = "C:\\Users\\u\\AppData\\Local\\Temp\\waveterm-attach-1\\waveterm_paste_1_aa.png";
@@ -111,5 +117,20 @@ describe("imagePasteNames", () => {
         const list = [rec(A, "paste", "Image #2")];
         expect(imagePasteNames(list, new Map([[normImagePath(A), 2]]))).toBe(list);
         expect(imagePasteNames(list, new Map())).toBe(list);
+    });
+});
+
+describe("hasUnnumberedPaste", () => {
+    const rec = (path: string, source: UploadRecord["source"], name?: string) =>
+        makeRecord({ path, source, now: 1, nonce: path.slice(-6), name, kind: "image" });
+
+    it("is true only while a pasted image still has the generic name", () => {
+        expect(hasUnnumberedPaste([rec(A, "paste", "Pasted image")], 0)).toBe(true);
+        expect(hasUnnumberedPaste([rec(A, "paste", "Image #3"), rec("D:\\pics\\x.png", "attach")], 0)).toBe(false);
+        expect(hasUnnumberedPaste([], 0)).toBe(false);
+    });
+
+    it("leaves out a paste made before `since`", () => {
+        expect(hasUnnumberedPaste([rec(A, "paste", "Pasted image")], 2)).toBe(false);
     });
 });

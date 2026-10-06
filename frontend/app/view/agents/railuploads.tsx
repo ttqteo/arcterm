@@ -5,35 +5,66 @@
 // is uploadslist.tsx). Keyed by the agent's terminal block id (uploadsstore.ts). The section is closed at 0 but stays
 // openable (emptyOpenable, agentrailsections.ts), so Attach is reachable before the first upload.
 
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { imagePasteNames } from "./imagepasteids";
+import type { AgentVM } from "./agentsviewmodel";
+import { hasUnnumberedPaste, imagePasteNames, imagePasteNumbers } from "./imagepasteids";
 import { imagePastesAtomFor } from "./livetranscriptatoms";
 import { pickAndAttach } from "./uploadsingest";
 import { UploadsList } from "./uploadslist";
 import { updateUploads, uploadsAtom } from "./uploadsstore";
 
-export function UploadsSection({
-    agentId,
-    blockId,
-    now,
-}: {
-    agentId: string;
-    blockId: string | undefined;
-    now: number;
-}) {
+// how much of the transcript the rail reads for a paste's number, and for how long after the paste it keeps looking: the
+// prompt is usually just behind, but the section may first render (opened, or the agent focused) a long turn later
+const PASTE_TAIL_LINES = 1000;
+const PASTE_LOOK_MS = 60 * 60 * 1000;
+// the prompt reaches the transcript just after the hook that flips the agent to working
+const PASTE_READ_DELAY_MS = 800;
+
+export function UploadsSection({ agent, now }: { agent: AgentVM; now: number }) {
+    const { blockId, transcriptPath } = agent;
     const stored = useAtomValue(uploadsAtom(blockId ?? ""));
     // a pasted image is named by the [Image #N] Claude Code gave it, read off the agent's transcript stream; the name is
     // written back to the store, so it outlives the stream's window and a reload
-    const pastes = useAtomValue(imagePastesAtomFor(agentId));
+    const pastes = useAtomValue(imagePastesAtomFor(agent.id));
     const records = useMemo(() => (pastes ? imagePasteNames(stored, pastes) : stored), [stored, pastes]);
     useEffect(() => {
         if (blockId && pastes) {
             updateUploads(blockId, (list) => imagePasteNames(list, pastes));
         }
     }, [blockId, pastes]);
+    // that stream is only open while the Cockpit surface shows, so the rail also reads the transcript's tail itself
+    // while a paste is unnumbered, again each time the agent moves on (the prompt is in the transcript by then)
+    const readKey =
+        blockId && transcriptPath && hasUnnumberedPaste(stored, now - PASTE_LOOK_MS)
+            ? `${transcriptPath}|${agent.state}|${agent.activity ?? ""}`
+            : "";
+    useEffect(() => {
+        if (!readKey) {
+            return;
+        }
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            fireAndForget(async () => {
+                const rtn = await RpcApi.GetAgentTranscriptCommand(TabRpcClient, {
+                    path: transcriptPath!,
+                    maxlines: PASTE_TAIL_LINES,
+                }).catch((): null => null);
+                if (!cancelled && rtn?.lines) {
+                    const numbers = imagePasteNumbers(rtn.lines);
+                    updateUploads(blockId!, (list) => imagePasteNames(list, numbers));
+                }
+            });
+        }, PASTE_READ_DELAY_MS);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [readKey]);
     return (
         <div data-rail-uploads className="flex flex-col gap-[8px]">
             <button

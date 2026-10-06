@@ -86,6 +86,14 @@ export function samePasteNumbers(a: ReadonlyMap<string, number> | undefined, b: 
     return true;
 }
 
+const NUMBERED_RE = /^Image #\d+$/;
+
+/** Pure: is any pasted image made since `since` still waiting for its [Image #N]? An older one went out with a prompt
+ *  that never got a number (one queued mid-turn), or before a /clear, so looking again would not find it. */
+export function hasUnnumberedPaste(list: readonly UploadRecord[], since: number): boolean {
+    return list.some((r) => r.source === "paste" && r.ts >= since && !NUMBERED_RE.test(r.name));
+}
+
 /** Pure: an agent's upload records with each pasted image named by its number ("Image #2"). The same list when no
  *  name changes, so the caller can skip a store write. */
 export function imagePasteNames(list: UploadRecord[], numbers: ReadonlyMap<string, number>): UploadRecord[] {
