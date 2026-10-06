@@ -21,18 +21,19 @@ export function visibleClasses(split: ClassUsage[]): ClassUsage[] {
     return split.filter((c) => c.tokens > 0 || c.spendUsd > 0);
 }
 
-// literal class strings, so Tailwind's scanner sees every one
-const LEGEND_COLS: Record<number, string> = {
-    1: "grid-cols-1",
-    2: "grid-cols-2",
-    3: "grid-cols-2 lg:grid-cols-3",
-    4: "grid-cols-2 xl:grid-cols-4",
-};
-
-export function legendGridClass(n: number): string {
-    return LEGEND_COLS[n] ?? "grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
+// Literal class strings, so Tailwind's scanner sees every one. Container queries, not media queries:
+// the harness rail eats window width, so only the detail pane's own width says whether tiles fit.
+export function statGridClass(n: number): string {
+    return n >= 4 ? "grid-cols-2 @2xl:grid-cols-4" : n === 3 ? "grid-cols-3" : "grid-cols-2";
 }
 
-export function statGridClass(n: number): string {
-    return n >= 4 ? "grid-cols-2 xl:grid-cols-4" : n === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2";
+// the live limits (always two tiles) and the historical stats share one row once the pane is wide
+// enough, each group's track sized to its tile count so every tile comes out the same width
+const KPI_COLS: Record<number, string> = {
+    3: "grid-cols-1 @6xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]",
+    4: "grid-cols-1 @6xl:grid-cols-[minmax(0,2fr)_minmax(0,4fr)]",
+};
+
+export function kpiGridClass(statCount: number): string {
+    return KPI_COLS[statCount] ?? "grid-cols-1 @6xl:grid-cols-2";
 }
