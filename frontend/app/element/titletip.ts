@@ -36,3 +36,12 @@ export function splitTitle(title: string): TipText {
     }
     return { label: text };
 }
+
+// A modifier pressed alone is not the user moving on: it is the start of a chord, and on macOS the screenshot
+// chords (⌘⇧4, ⌘⇧5) deliver their modifiers to the page before the system takes the last key. Dismissing on
+// those made a tooltip impossible to capture.
+const MODIFIER_KEYS = new Set(["Meta", "Shift", "Control", "Alt", "AltGraph", "CapsLock", "Fn", "FnLock", "OS"]);
+
+export function keyDismissesTip(key: string): boolean {
+    return !MODIFIER_KEYS.has(key);
+}

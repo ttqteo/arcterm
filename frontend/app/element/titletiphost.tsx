@@ -15,7 +15,7 @@
 
 import { autoUpdate, computePosition, flip, offset, shift, type Placement } from "@floating-ui/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { splitTitle } from "./titletip";
+import { keyDismissesTip, splitTitle } from "./titletip";
 
 const STASH = "data-arc-title";
 
@@ -92,21 +92,27 @@ export function TitleTipHost() {
                 release();
             }
         };
-        // a press, a key, a scroll or the window losing focus all mean the hint has done its job
+        // a press, a real key or a scroll means the hint has done its job. A modifier alone does not (titletip.ts),
+        // and neither does the window losing focus: a screenshot tool (⌘⇧5, CleanShot) takes focus to capture the
+        // screen, so a tip dropped on blur was never in the shot. Back in the window, the next pointer move
+        // releases a tip the pointer has left.
         const dismiss = () => setTip(null);
+        const onKey = (e: KeyboardEvent) => {
+            if (keyDismissesTip(e.key)) {
+                dismiss();
+            }
+        };
         document.addEventListener("pointerover", onOver, true);
         document.addEventListener("pointerout", onOut, true);
         document.addEventListener("pointerdown", dismiss, true);
-        document.addEventListener("keydown", dismiss, true);
+        document.addEventListener("keydown", onKey, true);
         document.addEventListener("scroll", dismiss, true);
-        window.addEventListener("blur", release);
         return () => {
             document.removeEventListener("pointerover", onOver, true);
             document.removeEventListener("pointerout", onOut, true);
             document.removeEventListener("pointerdown", dismiss, true);
-            document.removeEventListener("keydown", dismiss, true);
+            document.removeEventListener("keydown", onKey, true);
             document.removeEventListener("scroll", dismiss, true);
-            window.removeEventListener("blur", release);
             release();
         };
     }, []);

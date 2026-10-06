@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { splitTitle } from "./titletip";
+import { keyDismissesTip, splitTitle } from "./titletip";
 
 describe("splitTitle", () => {
     it("splits a trailing shortcut off the label", () => {
@@ -42,5 +42,19 @@ describe("splitTitle", () => {
 
     it("trims", () => {
         expect(splitTitle("  Copy path  ")).toEqual({ label: "Copy path" });
+    });
+});
+
+describe("keyDismissesTip", () => {
+    it("keeps the tip for a modifier pressed alone, so a screenshot chord (⌘⇧4) can capture it", () => {
+        for (const key of ["Meta", "Shift", "Control", "Alt", "CapsLock", "Fn", "OS"]) {
+            expect(keyDismissesTip(key)).toBe(false);
+        }
+    });
+
+    it("dismisses for a real key", () => {
+        for (const key of ["Escape", "a", "Enter", "Tab", " ", "ArrowDown", "4"]) {
+            expect(keyDismissesTip(key)).toBe(true);
+        }
     });
 });
