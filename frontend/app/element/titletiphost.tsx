@@ -12,10 +12,16 @@
 // while it is lifted, the observer lifts the new text.
 //
 // Placement: below the element, beside it in the nav rail, or whatever the nearest data-tip-placement says.
+//
+// Reveal: once placed, the chip fades and scales in from the side facing its anchor (motiontokens.tooltipReveal,
+// 90 ms). Each anchor gets its own reveal, keyed by the element, so moving to another control replays it while new
+// text on the same control (a chip whose title updates as you hover) does not. It leaves at once.
 
 import { autoUpdate, computePosition, flip, offset, shift, type Placement } from "@floating-ui/react";
+import { MotionConfig, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { keyDismissesTip, splitTitle } from "./titletip";
+import { tooltipReveal } from "./motiontokens";
+import { keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
 
 const STASH = "data-arc-title";
 
@@ -23,6 +29,18 @@ interface Tip {
     anchor: HTMLElement;
     text: string;
     placement: Placement;
+}
+
+const anchorKeys = new WeakMap<HTMLElement, number>();
+let lastAnchorKey = 0;
+
+function anchorKey(el: HTMLElement): number {
+    let key = anchorKeys.get(el);
+    if (key == null) {
+        key = ++lastAnchorKey;
+        anchorKeys.set(el, key);
+    }
+    return key;
 }
 
 function placementFor(el: HTMLElement): Placement {
@@ -35,6 +53,8 @@ function placementFor(el: HTMLElement): Placement {
 
 export function TitleTipHost() {
     const [tip, setTip] = useState<Tip | null>(null);
+    // the anchor whose chip has been placed, and the origin its reveal grows from
+    const [revealed, setRevealed] = useState<{ anchor: HTMLElement; origin: string } | null>(null);
     const tipRef = useRef<HTMLDivElement>(null);
     const currentRef = useRef<HTMLElement | null>(null);
     const observerRef = useRef<MutationObserver | null>(null);
@@ -127,9 +147,12 @@ export function TitleTipHost() {
                 strategy: "fixed",
                 placement: tip.placement,
                 middleware: [offset(6), flip(), shift({ padding: 8 })],
-            }).then(({ x, y }) => {
+            }).then(({ x, y, placement }) => {
                 floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
                 floating.style.visibility = "visible";
+                setRevealed((r) =>
+                    r?.anchor === tip.anchor ? r : { anchor: tip.anchor, origin: tooltipOrigin(placement) }
+                );
             });
         // the anchor can leave the DOM under the pointer (a click that re-renders), which fires no pointerout
         const stop = autoUpdate(tip.anchor, floating, () => {
@@ -146,16 +169,28 @@ export function TitleTipHost() {
         return null;
     }
     const { label, keys } = splitTitle(tip.text);
+    const shown = revealed?.anchor === tip.anchor ? revealed : null;
     return (
         <div
             ref={tipRef}
             role="tooltip"
             data-title-tip
             style={{ position: "fixed", left: 0, top: 0, visibility: "hidden" }}
-            className="pointer-events-none z-[1000] flex max-w-[360px] items-baseline gap-2.5 rounded-[6px] border border-edge-mid bg-surface-raised px-2 py-[5px] text-[12px] leading-[1.4] text-primary shadow-popover"
+            className="pointer-events-none z-[1000] max-w-[360px]"
         >
-            <span className="whitespace-pre-line">{label}</span>
-            {keys ? <span className="flex-none whitespace-nowrap text-[11.5px] text-muted">{keys}</span> : null}
+            <MotionConfig reducedMotion="user">
+                <motion.div
+                    key={anchorKey(tip.anchor)}
+                    variants={tooltipReveal}
+                    initial="initial"
+                    animate={shown != null ? "animate" : "initial"}
+                    style={{ transformOrigin: shown?.origin }}
+                    className="flex items-baseline gap-2.5 rounded-[6px] border border-edge-mid bg-surface-raised px-2 py-[5px] text-[12px] leading-[1.4] text-primary shadow-popover"
+                >
+                    <span className="whitespace-pre-line">{label}</span>
+                    {keys ? <span className="flex-none whitespace-nowrap text-[11.5px] text-muted">{keys}</span> : null}
+                </motion.div>
+            </MotionConfig>
         </div>
     );
 }

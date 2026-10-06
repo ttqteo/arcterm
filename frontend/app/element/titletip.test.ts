@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { keyDismissesTip, splitTitle } from "./titletip";
+import { keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
 
 describe("splitTitle", () => {
     it("splits a trailing shortcut off the label", () => {
@@ -56,5 +56,21 @@ describe("keyDismissesTip", () => {
         for (const key of ["Escape", "a", "Enter", "Tab", " ", "ArrowDown", "4"]) {
             expect(keyDismissesTip(key)).toBe(true);
         }
+    });
+});
+
+describe("tooltipOrigin", () => {
+    it("grows a tip out of the side that faces its anchor", () => {
+        expect(tooltipOrigin("bottom")).toBe("center top");
+        expect(tooltipOrigin("top")).toBe("center bottom");
+        expect(tooltipOrigin("right")).toBe("left center");
+        expect(tooltipOrigin("left")).toBe("right center");
+    });
+
+    it("keeps an aligned placement's corner", () => {
+        expect(tooltipOrigin("bottom-start")).toBe("left top");
+        expect(tooltipOrigin("bottom-end")).toBe("right top");
+        expect(tooltipOrigin("right-start")).toBe("left top");
+        expect(tooltipOrigin("left-end")).toBe("right bottom");
     });
 });
