@@ -15,7 +15,7 @@ export interface OpenFileRoute {
     rel: string | null;
 }
 
-function isUnderRoot(root: string, path: string): boolean {
+export function isUnderRoot(root: string, path: string): boolean {
     const nRoot = normalizeRepoPath(root);
     const nPath = normalizeRepoPath(path);
     // a bare "C:" prefix would swallow every path on the drive; a usable root has a separator
@@ -27,7 +27,7 @@ function isUnderRoot(root: string, path: string): boolean {
 
 // rel is git-style: forward slashes, no leading separator. Comparison is case/separator
 // insensitive (via isUnderRoot) but the returned segments keep their original case.
-function toRel(root: string, path: string): string {
+export function toRel(root: string, path: string): string {
     const segs = path.split(/[\\/]+/).filter((s) => s !== "");
     const rootSegs = root.split(/[\\/]+/).filter((s) => s !== "");
     return segs.slice(rootSegs.length).join("/");
