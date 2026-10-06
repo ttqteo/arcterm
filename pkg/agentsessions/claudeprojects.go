@@ -79,8 +79,10 @@ func scanClaudeProjects(root, headlessSlug, tempDir string) []ClaudeProject {
 	return out
 }
 
-// probeProjectDir reads one store folder: its session count, its newest transcript, and the cwd of the
-// newest transcript that names one.
+// probeProjectDir reads one store folder: its session count, its newest transcript, and its directory: the cwd of the
+// newest transcript that names the one the folder is named for, else (a slug Claude Code shortened) the cwd of the
+// newest transcript that names any. A session begun on another machine and resumed here opens on that machine's
+// checkout, which would leave the folder out as missing.
 func probeProjectDir(dir string) (ClaudeProject, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -105,18 +107,30 @@ func probeProjectDir(dir string) (ClaudeProject, bool) {
 		return ClaudeProject{}, false
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].mtime > files[j].mtime })
+	slug := filepath.Base(dir)
+	path := ""
 	for _, f := range files {
-		if cwd := transcriptCwd(f.path); cwd != "" {
-			return ClaudeProject{Path: cwd, LastActiveTs: files[0].mtime, Sessions: len(files)}, true
+		cwd, home := transcriptCwd(f.path, slug)
+		if home {
+			path = cwd
+			break
+		}
+		if path == "" {
+			path = cwd
 		}
 	}
-	return ClaudeProject{}, false
+	if path == "" {
+		return ClaudeProject{}, false
+	}
+	return ClaudeProject{Path: path, LastActiveTs: files[0].mtime, Sessions: len(files)}, true
 }
 
-func transcriptCwd(path string) string {
+// transcriptCwd reads the cwd a transcript's first records name: the first whose slug is the store folder's (home),
+// else the first.
+func transcriptCwd(path, slug string) (cwd string, home bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer f.Close()
 	r := bufio.NewReader(f)
@@ -127,15 +141,20 @@ func transcriptCwd(path string) string {
 			var rec struct {
 				Cwd string `json:"cwd"`
 			}
-			if json.Unmarshal(line, &rec) == nil && rec.Cwd != "" {
-				return rec.Cwd
+			if json.Unmarshal(line, &rec) == nil && rec.Cwd != "" && rec.Cwd != cwd {
+				if strings.EqualFold(agentobserve.SlugifyCwd(rec.Cwd), slug) {
+					return rec.Cwd, true
+				}
+				if cwd == "" {
+					cwd = rec.Cwd
+				}
 			}
 		}
 		if err != nil {
-			return ""
+			break
 		}
 	}
-	return ""
+	return cwd, false
 }
 
 func isProjectCandidate(path, tempDir string) bool {

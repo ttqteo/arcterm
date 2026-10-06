@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 )
 
 // writeProjectTranscript writes a store folder's transcript whose user record names cwd, after a record that
@@ -93,6 +95,40 @@ func TestScanClaudeProjectsMergesOneFolderUnderTwoSlugs(t *testing.T) {
 	got := scanClaudeProjects(root, "", "")
 	if len(got) != 1 || got[0].Sessions != 2 || got[0].Path != lower {
 		t.Fatalf("want one merged project at the newer spelling, got %+v", got)
+	}
+}
+
+// A session begun on another machine and resumed here opens on that machine's checkout, a path that does not exist
+// here, while its transcript is filed under the folder it was resumed in. The folder is the directory it is named for:
+// a transcript whose cwd matches the folder's slug wins over a newer one whose cwd does not, and a moved transcript
+// counts by its resumed cwd.
+func TestScanClaudeProjectsPrefersTheCwdTheFolderIsNamedFor(t *testing.T) {
+	root := t.TempDir()
+	work := t.TempDir()
+	now := time.Now().Truncate(time.Second)
+	alpha := mkdirAll(t, work, "mit-alpha")
+	beta := mkdirAll(t, work, "mit-beta")
+
+	writeProjectTranscript(t, root, agentobserve.SlugifyCwd(alpha), "native.jsonl", alpha, now.Add(-time.Hour))
+	writeProjectTranscript(t, root, agentobserve.SlugifyCwd(alpha), "moved.jsonl", "/Users/me/mac/alpha", now)
+
+	moved, _ := json.Marshal(map[string]any{"type": "user", "cwd": "/Users/me/mac/beta"})
+	resumed, _ := json.Marshal(map[string]any{"type": "user", "cwd": beta})
+	betaDir := mkdirAll(t, root, agentobserve.SlugifyCwd(beta))
+	body := string(moved) + "\n" + string(moved) + "\n" + string(resumed) + "\n"
+	if err := os.WriteFile(filepath.Join(betaDir, "moved.jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	byPath := map[string]ClaudeProject{}
+	for _, p := range scanClaudeProjects(root, "", "") {
+		byPath[p.Path] = p
+	}
+	if p, ok := byPath[alpha]; !ok || p.Sessions != 2 || p.LastActiveTs != now.UnixMilli() {
+		t.Errorf("alpha = %+v (found %v), want 2 sessions active at the moved transcript's mtime", p, ok)
+	}
+	if _, ok := byPath[beta]; !ok {
+		t.Errorf("beta missing: want it found at its resumed cwd, got %+v", byPath)
 	}
 }
 

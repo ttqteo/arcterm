@@ -145,8 +145,11 @@ func parseClaudeLines(lines []string) []claudeLine {
 	return recs
 }
 
-func claudeSessionFrom(id string, recs []claudeLine) *SessionInfo {
+// claudeSessionFrom folds one transcript into a session. folder is the name of the store folder it lives in, the slug
+// of the directory Claude Code files it under (agentobserve.SlugifyCwd), "" when unknown.
+func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 	s := &SessionInfo{ID: id}
+	atHome := false
 	hasTask := false
 	fallback := ""
 	aiTitle := ""
@@ -157,9 +160,15 @@ func claudeSessionFrom(id string, recs []claudeLine) *SessionInfo {
 		if rec.Type == "ai-title" && strings.TrimSpace(rec.AiTitle) != "" {
 			aiTitle = strings.TrimSpace(rec.AiTitle) // the last one is the session's current name
 		}
-		if s.ProjectPath == "" && rec.Cwd != "" {
-			s.ProjectPath = rec.Cwd
-			s.ProjectName = filepath.Base(rec.Cwd)
+		// the project is the cwd the store folder is named for: a session begun on another machine and resumed here
+		// opens on that machine's checkout, but it is filed, and resumes, under this one. The first cwd stands in when
+		// none matches the folder (a slug Claude Code shortened, or no folder known).
+		if !atHome && rec.Cwd != "" && rec.Cwd != s.ProjectPath {
+			atHome = folder != "" && strings.EqualFold(agentobserve.SlugifyCwd(rec.Cwd), folder)
+			if atHome || s.ProjectPath == "" {
+				s.ProjectPath = rec.Cwd
+				s.ProjectName = filepath.Base(rec.Cwd)
+			}
 		}
 		if s.Branch == "" && rec.GitBranch != "" {
 			s.Branch = rec.GitBranch
@@ -662,9 +671,9 @@ func claudeProvider(root string) provider {
 		// (claudeSessionFrom drops it), yet those files were a third of a cold scan's bytes
 		skipDir: func(name string) bool { return name == "subagents" },
 		// one shared unmarshal pass for both derivations — claude transcripts dominate the scan cost
-		fused: func(_ string, id string, lines []string) (*SessionInfo, sessionEvents) {
+		fused: func(path string, id string, lines []string) (*SessionInfo, sessionEvents) {
 			recs := parseClaudeLines(lines)
-			s := claudeSessionFrom(id, recs)
+			s := claudeSessionFrom(id, filepath.Base(filepath.Dir(path)), recs)
 			if s == nil {
 				return nil, sessionEvents{}
 			}

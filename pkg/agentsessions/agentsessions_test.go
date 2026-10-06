@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 )
 
 func writeJSONL(t *testing.T, dir, name string, lines ...string) string {
@@ -91,6 +93,36 @@ func TestScanRoot_parsesAndSortsNewestFirst(t *testing.T) {
 	}
 	if got[0].ResumeCommand != "claude --resume sess-a" {
 		t.Errorf("resumeCommand = %q", got[0].ResumeCommand)
+	}
+}
+
+// A session begun on another machine and resumed here keeps its first records' cwd (the other machine's checkout),
+// while Claude Code files the transcript under the folder it is resumed in. The session belongs to that folder's
+// directory, the one cwd whose slug is the folder name; the first cwd stands only when none matches.
+func TestScanRoot_projectIsTheCwdOfItsTranscriptFolder(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, agentobserve.SlugifyCwd("/home/me/my-project"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONL(t, dir, "moved.jsonl",
+		`{"type":"user","cwd":"/Users/me/mac/report","message":{"role":"user","content":"Evaluate the dataset"}}`,
+		`{"type":"user","cwd":"/Users/me/mac/report/paper","message":{"role":"user","content":"and the paper"}}`,
+		`{"type":"user","cwd":"/home/me/my-project","message":{"role":"user","content":"resumed here"}}`,
+		`{"type":"user","cwd":"/home/me/my-project/paper","message":{"role":"user","content":"in a subfolder"}}`,
+	)
+	writeJSONL(t, dir, "elsewhere.jsonl",
+		`{"type":"user","cwd":"/srv/other","message":{"role":"user","content":"no cwd matches the folder"}}`,
+	)
+	got := map[string]SessionInfo{}
+	for _, s := range scanProvider(claudeProvider(root), 0, 10) {
+		got[s.ID] = s
+	}
+	if s := got["moved"]; s.ProjectPath != "/home/me/my-project" || s.ProjectName != "my-project" {
+		t.Errorf("moved: project = %q (%q), want /home/me/my-project (my-project)", s.ProjectPath, s.ProjectName)
+	}
+	if s := got["elsewhere"]; s.ProjectPath != "/srv/other" || s.ProjectName != "other" {
+		t.Errorf("elsewhere: project = %q (%q), want the first cwd /srv/other", s.ProjectPath, s.ProjectName)
 	}
 }
 
@@ -665,7 +697,7 @@ func TestScanProvidersDropsTempDirSessions(t *testing.T) {
 // and when the transcript is a print-mode run — every model call Wave's own backend makes is print-mode,
 // so that one field excludes all of them without matching a word of any prompt.
 func extractClaudeSession(id string, lines []string) *SessionInfo {
-	return claudeSessionFrom(id, parseClaudeLines(lines))
+	return claudeSessionFrom(id, "", parseClaudeLines(lines))
 }
 
 // extractClaudeEvents ports frontend/app/view/agents/activityevents.ts:extractClaudeEvents. It does
