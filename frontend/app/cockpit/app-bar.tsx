@@ -10,6 +10,7 @@ import { formatChordString } from "@/util/keysym";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 import { versionInfoAtom } from "./versioninfo";
 
 // Handoff top app bar (46px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
@@ -19,6 +20,7 @@ import { versionInfoAtom } from "./versioninfo";
 // backdrops and dropdowns render inside it and would start a drag instead of closing.
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const win = getCurrentWindow();
+    const maximized = useWindowMaximized();
     return (
         <div
             data-tauri-drag-region
@@ -43,7 +45,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     onClick={() => globalStore.set(model.paletteOpenAtom, true)}
-                    className="flex w-[min(520px,42%)] cursor-text items-center gap-2.5 rounded-[9px] border border-edge-mid bg-surface-raised px-3 py-[7px] text-muted hover:border-edge-strong hover:bg-surface-hover"
+                    className="flex w-full max-w-[520px] cursor-text items-center gap-2.5 rounded-[9px] border border-edge-mid bg-surface-raised px-3 py-[7px] text-muted hover:border-edge-strong hover:bg-surface-hover"
                 >
                     <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <circle cx="5.5" cy="5.5" r="4" />
@@ -88,10 +90,10 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     </button>
                     <button
                         onClick={() => win.toggleMaximize()}
-                        aria-label="Maximize"
+                        aria-label={maximized ? "Restore" : "Maximize"}
                         className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
                     >
-                        &#x25A1;
+                        {maximized ? <RestoreGlyph /> : <>&#x25A1;</>}
                     </button>
                     <button
                         onClick={() => win.close()}
@@ -103,6 +105,36 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </div>
             </div>
         </div>
+    );
+}
+
+// Tracks the window's maximized state so the middle control reads Restore once maximized. Snapping, the
+// title-bar double-click and Win+Up maximize too, and each of them resizes the window, so onResized
+// catches every route rather than only this button.
+function useWindowMaximized(): boolean {
+    const [maximized, setMaximized] = useState(false);
+    useEffect(() => {
+        const win = getCurrentWindow();
+        let live = true;
+        const sync = () => win.isMaximized().then((m) => live && setMaximized(m));
+        sync();
+        const unlisten = win.onResized(sync);
+        return () => {
+            live = false;
+            unlisten.then((f) => f());
+        };
+    }, []);
+    return maximized;
+}
+
+// Windows' restore glyph: a front square with the back one peeking out top-right, sized to sit beside
+// the text glyphs of its neighbours.
+function RestoreGlyph() {
+    return (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true">
+            <rect x="0.5" y="2.5" width="7" height="7" />
+            <path d="M2.5 2.5V0.5h7v7h-2" />
+        </svg>
     );
 }
 

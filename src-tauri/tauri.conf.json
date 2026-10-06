@@ -11,7 +11,18 @@
   },
   "app": {
     "windows": [
-      { "label": "main", "title": "arcterm", "width": 1000, "height": 700, "decorations": false, "dragDropEnabled": false }
+      {
+        "label": "main",
+        "title": "arcterm",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 680,
+        "center": true,
+        "maximized": true,
+        "decorations": false,
+        "dragDropEnabled": false
+      }
     ],
     "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:*" }
   },
