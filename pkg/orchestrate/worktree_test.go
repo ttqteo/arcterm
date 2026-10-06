@@ -23,13 +23,24 @@ func gitCmd(t *testing.T, dir string, args ...string) string {
 
 func newGitRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := realTempDir(t)
 	gitCmd(t, dir, "init", "-b", "main")
 	gitCmd(t, dir, "config", "user.email", "t@test")
 	gitCmd(t, dir, "config", "user.name", "t")
 	os.WriteFile(filepath.Join(dir, "base.txt"), []byte("base\n"), 0o644)
 	gitCmd(t, dir, "add", ".")
 	gitCmd(t, dir, "commit", "-m", "base")
+	return dir
+}
+
+// realTempDir is t.TempDir with its symlinks resolved: on macOS the temp dir is under /var, a link to
+// /private/var, and git prints the resolved path, which a path built from the link is not inside.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }
 

@@ -540,6 +540,12 @@ func GetWindowTokensCommand(w *wshutil.WshRpc, data wshrpc.CommandGetWindowToken
 	return resp, err
 }
 
+// command "getworkercapacity", wshserver.GetWorkerCapacityCommand
+func GetWorkerCapacityCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetWorkerCapacityRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetWorkerCapacityRtnData](w, "getworkercapacity", nil, opts)
+	return resp, err
+}
+
 // command "gitchanges", wshserver.GitChangesCommand
 func GitChangesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitChangesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitChangesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitChangesRtnData](w, "gitchanges", data, opts)

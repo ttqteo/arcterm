@@ -20,7 +20,7 @@
 - UI copy is English.
 - Typecheck with `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` (8 GB Mac; ~2 min, give it a 5-minute timeout). Never `npx tsc`.
 - Format-check only the files you touched (`npx prettier --check <files>`, `gofmt -l <files>`); never `--write` the tree, and never run prettier on `scripts/**/*.mjs`.
-- Stop a dev app by PID, never by image name: the packaged arcterm shares its process names.
+- Never start a dev app (`task dev`, `cargo tauri dev`) in a task worktree: its `dist/bin` and `src-tauri/target` are symlinks into the main checkout (`.arc/setup`), so a build overwrites the main checkout's binaries, and a launch without `ARC_DEV_NO_GLOBAL_INSTALL=1` replaces `~/.arc/bin/wsh`, which every live agent's hooks run. The rendered UI is checked by the **Final** line's scenarios (`worker-capacity`, `capacity-warn`), which `final-verify.mjs` runs in an isolated dev app on Windows. On macOS (WKWebView, no CDP) Final exits 3 as unverified and the user checks the screenshot after landing. A task's UI acceptance is its scenario steps, which a worker writes and `node --check`s but does not run.
 
 ## Review Focus
 
@@ -29,8 +29,10 @@
 - A stale wavesrv without the command (the version-mismatch case) or any RPC error: the chip disappears, and the console gets one warning per failure streak, not one every 5 s. → Task 4 store test "warns once per failure streak".
 - The launcher's width left unset (`null`), or a live run's new width at or below its running tasks: no warning. → Task 4 `extraWorkers` tests.
 - Several consumers mounted at once: one interval, not one per consumer; the poll stops when the last unmounts, and a double release does not drive the count negative. → Task 4 store test "one poll however many users".
+- The scenarios' forced over state: the `getworkercapacity` mock goes in after the scenario's last reload (a reload drops it), passes every other command to the previous client, and is removed in teardown even when assert failed. → Task 5 `installCapacityMock` / `removeCapacityMock`, Task 6 `capacity-warn` teardown.
 
 **Verify:** `node scripts/verify.mjs ./pkg/workercap/... ./pkg/orchestrate/... ./pkg/wshrpc/...`
+**Final:** `if [ "$(uname)" = Darwin ]; then echo "UI not verified: no CDP on macOS (WKWebView); the user checks the screenshot after landing"; exit 3; fi; node scripts/cdp/final-verify.mjs worker-capacity capacity-warn`
 
 ---
 
@@ -996,11 +998,13 @@ git commit -m "feat(agents): worker capacity logic and a shared 5s poll"
 **Files:**
 - Create: `frontend/app/view/agents/workercapacitychip.tsx`
 - Modify: `frontend/app/cockpit/app-bar.tsx` (imports, lines 3-16; the right-hand group, line ~75, before `<HeaderUsageMeters model={model} />`)
-- Modify: `scripts/cdp/scenarios.mjs` (add the `workerCapacity` scenario before `export const SCENARIOS`, and append it to that array)
+- Modify: `scripts/cdp/scenarios.mjs` (add the capacity mock helpers and the `workerCapacity` scenario before `export const SCENARIOS`, and append it to that array)
 
 **Interfaces:**
-- Consumes: `useWorkerCapacity()`, `capacityTitle(cap)` (Task 4).
-- Produces: `WorkerCapacityChip()` (no props); DOM hook `[data-worker-capacity]` on the chip; scenario name `worker-capacity`.
+- Consumes: `useWorkerCapacity()`, `capacityTitle(cap)` (Task 4); in `scenarios.mjs`, the existing `ahResolveModules(h)` (~line 7855; resolves the url the app loads `wshclientapi.ts` by).
+- Produces: `WorkerCapacityChip()` (no props); DOM hook `[data-worker-capacity]` on the chip; scenario name `worker-capacity`; in `scenarios.mjs`: `CAPACITY_FULL` (a reading with `moreworkers: 0`), `installCapacityMock(h, reading)` (resolves `"installed"`, or a reason), `removeCapacityMock(h)`.
+
+**Acceptance (UI):** the `worker-capacity` scenario's steps, run by Final: "2. the app bar chip shows +N" (the chip renders), "3. its tooltip carries free RAM and the per-worker estimate", and "4. at +0 the chip turns amber with a TriangleAlert" (the chip's warning state, forced by the mock).
 
 - [ ] **Step 1: Write the chip**
 
@@ -1069,9 +1073,57 @@ to:
 In `scripts/cdp/scenarios.mjs`, add before `export const SCENARIOS = [` (do not run prettier on this file):
 
 ```js
+// A worker-capacity reading with no room left, for the scenarios that force the over-capacity state.
+const CAPACITY_FULL = {
+    totalbytes: 8 * 2 ** 30,
+    availablebytes: 2 ** 30,
+    perworkerbytes: 1.5 * 2 ** 30,
+    measured: false,
+    liveworkers: 0,
+    reservebytes: 0,
+    moreworkers: 0,
+};
+const CAPACITY_MOCK_KEY = "__arcCapacityMock";
+
+// Answers getworkercapacity with `reading` from the page, through RpcApi's mock client (installAhMock's pattern),
+// and passes every other command to what was there. Writing workerCapacityAtom would not hold: globalStore is
+// not on window, and the 5 s poll would overwrite it; the mock is what the poll itself reads. A reload drops it,
+// so install it after the scenario's last reload.
+async function installCapacityMock(h, reading) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CAPACITY_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const reading = ${JSON.stringify(reading)};
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getworkercapacity") return Promise.resolve(reading);
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CAPACITY_MOCK_KEY} = { api, prev };
+        return "installed";
+    })()`);
+}
+
+const removeCapacityMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CAPACITY_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${CAPACITY_MOCK_KEY};
+        return "restored";
+    })()`);
+
 // The app bar's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows its "+N"
-// with the numbers in its tooltip. The over-capacity tone depends on the machine's real RAM, so it is not
-// forced here; workercapacity.test.ts owns that logic.
+// with the numbers in its tooltip. The machine's real RAM decides whether that is +0, so step 4 forces +0 with
+// a mocked reading to see the warning tone.
 const workerCapacity = {
     name: "worker-capacity",
     surface: "cockpit",
@@ -1103,13 +1155,33 @@ const workerCapacity = {
             !!chip && chip.title.includes("free of") && chip.title.includes("per worker"),
             chip ? chip.title : ""
         );
+
+        const mocked = await installCapacityMock(h, CAPACITY_FULL);
+        let full = null;
+        for (let waited = 0; waited <= 8000; waited += 250) {
+            full = await h.ev(
+                `(() => { const c = document.querySelector("[data-worker-capacity]"); return c ? { text: c.textContent.trim(), amber: c.classList.contains("text-warning"), triangle: !!c.querySelector("svg.lucide-triangle-alert") } : null; })()`
+            );
+            if (full && full.text === "+0") break;
+            await settle(250);
+        }
+        await h.shot("cdp-shots/worker-capacity-full.png");
+        rec(
+            "4. at +0 the chip turns amber with a TriangleAlert",
+            mocked === "installed" && !!full && full.text === "+0" && full.amber && full.triangle,
+            `mock=${mocked} ${JSON.stringify(full)}`
+        );
         return steps;
     },
-    async teardown() {},
+    async teardown(h) {
+        await removeCapacityMock(h);
+    },
 };
 ```
 
 and append `workerCapacity,` as the last entry of the `SCENARIOS` array (after `agentRailTabs,`).
+
+(lucide-react 0.542 renders `TriangleAlert` as `svg.lucide-triangle-alert` and `MemoryStick` as `svg.lucide-memory-stick`.)
 
 - [ ] **Step 4: Typecheck, lint and format-check**
 
@@ -1121,15 +1193,9 @@ node --check scripts/cdp/scenarios.mjs
 ```
 Expected: all exit 0.
 
-- [ ] **Step 5: See it in the live app**
+Do not start a dev app to look at it (Global Constraints): Final runs `worker-capacity`. In your report, list the UI as not verified by you, naming the scenario steps above that check it.
 
-On Windows: start the dev app (`task dev`), then `task verify:ui -- worker-capacity`. Expected: three PASS rows, and the shot in `cdp-shots/index.html` shows the chip left of the usage donuts.
-
-On macOS (no CDP — Tauri renders through WKWebView): run `task dev` in the background, wait for the window, then `screencapture -x "$TMPDIR/worker-capacity-chip.png"` and look at the image. Expected: a small memory icon and `+N` to the left of the usage donuts in the top bar; hovering it shows the three-line tooltip. When done, stop the dev app by the PID whose path is under this checkout (`ps -axo pid,command | grep -E 'wave-tauri|wavesrv' | grep "$PWD"`), never by name.
-
-Report what you saw, with the screenshot path. Do not claim the UI is verified from the unit tests alone.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add frontend/app/view/agents/workercapacitychip.tsx frontend/app/cockpit/app-bar.tsx scripts/cdp/scenarios.mjs
@@ -1140,7 +1206,7 @@ git commit -m "feat(cockpit): app bar chip for how many more workers fit in RAM"
 
 ### Task 6: Over-capacity warning on the three worker steppers
 
-**Depends on:** Task 4
+**Depends on:** Task 4, Task 5
 
 **Files:**
 - Create: `frontend/app/view/agents/capacitywarn.tsx`
@@ -1148,10 +1214,13 @@ git commit -m "feat(cockpit): app bar chip for how many more workers fit in RAM"
 - Modify: `frontend/app/view/jarvis/newruncontrol.tsx` (`NewRunModal` body near `const parallelism = useAtomValue(parallelismAtom);` ~line 299; the "Workers at once" row ~lines 476-479)
 - Modify: `frontend/app/view/agents/leadcard.tsx` (the hooks at the top of `LeadCard`, ~lines 121-133; the "Worker parallelism" panel, ~lines 538-556)
 - Modify: `docs/orchestrator-guide.md` (after the + Run control table, ~line 160)
+- Modify: `scripts/cdp/scenarios.mjs` (add the `capacityWarn` scenario after Task 5's `workerCapacity`, and append it to `SCENARIOS` after `workerCapacity,`)
 
 **Interfaces:**
-- Consumes: `useWorkerCapacity()`, `extraWorkers(picked, running?)`, `overCapacity(cap, extra)`, `capacityWarnTitle(cap)`, `type WorkerCapacity` (Task 4); `runningCount(rows)` (existing, `leadcardmodel.ts:281`, already used in `leadcard.tsx`).
-- Produces: `CapacityWarn({ cap, extra }: { cap: WorkerCapacity | null; extra: number })`; `WorkerStepper` gains an optional `warn?: boolean` (default `false`); DOM hook `[data-capacity-warn]`.
+- Consumes: `useWorkerCapacity()`, `extraWorkers(picked, running?)`, `overCapacity(cap, extra)`, `capacityWarnTitle(cap)`, `type WorkerCapacity` (Task 4); `runningCount(rows)` (existing, `leadcardmodel.ts:281`, already used in `leadcard.tsx`); in `scenarios.mjs`: `CAPACITY_FULL`, `installCapacityMock(h, reading)`, `removeCapacityMock(h)` (Task 5), and the existing `arrangeFixtureRun`, `teardownFixtureRun`, `RUN_SHEET_POLISH_TASKS`, `COCKPIT_LEAD_CARD`, `NEW_RUN`, `polishWaitFor`, `polishNap`.
+- Produces: `CapacityWarn({ cap, extra }: { cap: WorkerCapacity | null; extra: number })`; `WorkerStepper` gains an optional `warn?: boolean` (default `false`); DOM hook `[data-capacity-warn]`; scenario name `capacity-warn`.
+
+**Acceptance (UI):** the `capacity-warn` scenario's steps, run by Final with the capacity mocked to `moreworkers: 0`: "1. the mocked reading reaches the chip (+0)", "2. New run's Workers at once warns: amber number and ⚠ with its tooltip", "3. the Brief launcher's workers stepper warns", "4. a live run's Adjust → Worker parallelism warns above its running tasks". Each one checks the number's `text-warning`, the `[data-capacity-warn]` right after its `+` button, and the tooltip `~0 more fit in RAM (1 GB free)`.
 
 - [ ] **Step 1: Write the warning component**
 
@@ -1350,15 +1419,47 @@ npx vitest run frontend/app/view/agents
 ```
 Expected: all exit 0.
 
-- [ ] **Step 8: See it in the live app**
+- [ ] **Step 8: Add the `capacity-warn` scenario**
 
-Open + New run with the Orchestrator shape and raise the workers stepper past the chip's `+N` (on an 8 GB machine with ~1-2 GB free that is 2 or 3). Expected: the number turns amber, a ⚠ appears after `+`, its tooltip reads `~N more fit in RAM (X GB free)`, and the Start button stays enabled. Lower it to `+N` or below: the ⚠ disappears.
+In `scripts/cdp/scenarios.mjs`, after Task 5's `workerCapacity` (do not run prettier on this file), add a scenario that forces the over state with Task 5's mock and checks all three steppers. With `moreworkers: 0`, any width of 1 or more is over, and the launcher's width defaults to `DEFAULT_PARALLELISM` (3), so New run and the launcher need no stepping.
 
-On macOS take the screenshot with `screencapture -x "$TMPDIR/worker-capacity-warn.png"` while the stepper is over, and look at it; on Windows the CDP harness can drive it the same way (`node scripts/cdp-shot.mjs <out.png>`). Stop the dev app by PID, never by name. Report what you saw with the screenshot path.
+Read the three steppers through one page expression keyed by the stepper's `+` button. `WorkerStepper` renders `−`, the number span, then `+` (`aria-label="More concurrent workers"`), and `CapacityWarn` comes right after `+`. The lead card's panel has the same order, with an unlabelled `+`:
+
+```js
+// a worker stepper read from its "+" button: the number before it and the CapacityWarn right after it
+const stepperWarnExpr = (plusExpr) => `(() => {
+    const plus = ${plusExpr};
+    if (!plus) return null;
+    const num = plus.previousElementSibling;
+    const next = plus.nextElementSibling;
+    const warn = next && next.matches("[data-capacity-warn]") ? next : null;
+    return { value: num ? num.textContent.trim() : null, amber: !!num && num.classList.contains("text-warning"), warn: !!warn, title: warn ? warn.title : null };
+})()`;
+const CAPACITY_WARN_TITLE = "~0 more fit in RAM (1 GB free)";
+const stepperWarned = (s) => !!s && s.amber && s.warn && s.title === CAPACITY_WARN_TITLE;
+```
+
+The scenario, `name: "capacity-warn"`, `surface: "cockpit"`:
+
+- **arrange** (a throw lands in `ctx.arrangeError` and still returns `ctx`, as every fixture scenario does). Make a temp dir. Run `arrangeFixtureRun(h, ctx, "capacity-warn", "capacity-warn lead")`, then `dagsubmit` with `parallelism: 1` and `RUN_SHEET_POLISH_TASKS`, as `arrangeTreeRail` does: `runAdjustable` shows Adjust only for a run with a DAG. That dispatches one real worker, which `teardownFixtureRun` deletes. Also `createchannel` a second channel on the temp dir with no run, `ctx.launcherChannelId`. A channel without a run opens the Brief sheet on its launcher (`briefsheetmodel.ts:27`, `body: "launcher"`). Then reload and wait for `nav button`: the fixture roster and the Brief's channel list are read at boot. Only after that last reload, call `installCapacityMock(h, CAPACITY_FULL)` and keep its result on `ctx.mock`.
+- **assert**, recording a step even when a lookup comes back null:
+  1. `"1. the mocked reading reaches the chip (+0)"`: `ctx.mock === "installed"`, and within 8 s `[data-worker-capacity]` reads `+0`.
+  2. `"2. New run's Workers at once warns: amber number and ⚠ with its tooltip"`: open New run as `new-run-window` does (`[data-new-run]` click, wait for `NEW_RUN`), pick the `orchestrator` shape (its `button[aria-pressed]` whose first child reads `orchestrator`), then `stepperWarned` on `stepperWarnExpr` of the `button[aria-label="More concurrent workers"]` inside `NEW_RUN` (the modal's only one: its Shape cards hide their own stepper). `h.shot("cdp-shots/capacity-warn-new-run.png")`, then close the dialog with Escape.
+  3. `"3. the Brief launcher's workers stepper warns"`: go to `jarvis` and open the launcher channel with `window.__openAddress("channel:<launcherChannelId>")`, as `arrangeSheetDagRun` opens a run. If that address does not open the channel's Brief sheet, open it the way the existing Brief-sheet scenarios do, around the `[data-jarvis-brief-sheet="channel"]` checks. Pick `orchestrator` in its Shape cards, then `stepperWarned` on the `button[aria-label="More concurrent workers"]` inside `[data-jarvis-brief-sheet="channel"]`. Take `h.shot("cdp-shots/capacity-warn-launcher.png")`.
+  4. `"4. a live run's Adjust → Worker parallelism warns above its running tasks"`: go to `cockpit`. Wait up to 15 s for `COCKPIT_LEAD_CARD` to show an `Adjust` button, click it, then click the panel's `+` once. Find that `+` as the button reading `+` whose parent's text includes `Worker parallelism`. After one step the width is at least 1 above the running tasks, whether or not t-1 is still running. Check `stepperWarned` on that `+` and take `h.shot("cdp-shots/capacity-warn-adjust.png")`. Never click Save: the change must stay local.
+- **teardown(h, ctx)**: `removeCapacityMock(h)`, then `deletechannel` on `ctx.launcherChannelId` (best-effort), then `teardownFixtureRun(h, ctx, "capacity-warn")`, which deletes the fixture roster, the run's worker and its channel, reloads, and removes the temp dir.
+
+Append `capacityWarn,` to `SCENARIOS` after `workerCapacity,`. Then:
+
+```bash
+node --check scripts/cdp/scenarios.mjs
+```
+
+Expected: exit 0. Do not start a dev app to run it (Global Constraints): Final runs `capacity-warn`. In your report, list the UI as not verified by you, naming the four steps.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add frontend/app/view/agents/capacitywarn.tsx frontend/app/view/agents/runlauncher.tsx frontend/app/view/jarvis/newruncontrol.tsx frontend/app/view/agents/leadcard.tsx docs/orchestrator-guide.md
+git add frontend/app/view/agents/capacitywarn.tsx frontend/app/view/agents/runlauncher.tsx frontend/app/view/jarvis/newruncontrol.tsx frontend/app/view/agents/leadcard.tsx docs/orchestrator-guide.md scripts/cdp/scenarios.mjs
 git commit -m "feat(agents): warn when a worker width is more than fits in RAM"
 ```
