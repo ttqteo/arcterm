@@ -6,6 +6,7 @@ mod estart;
 mod init;
 mod commands;
 mod paths;
+mod shellenv;
 
 use init::InitState;
 use std::io::{BufRead, BufReader};
@@ -35,21 +36,57 @@ unsafe impl Send for JobHandle {}
 #[cfg(windows)]
 unsafe impl Sync for JobHandle {}
 
+// The Taskfile names the Go binaries after the platform they run on: wavesrv.<arch><ext> and
+// wsh-<version>-<goos>.<arch><ext>, with amd64 spelled x64. The host runs the pair built for itself.
+const BIN_ARCH: &str = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
+const BIN_OS: &str = if cfg!(windows) {
+    "windows"
+} else if cfg!(target_os = "macos") {
+    "darwin"
+} else {
+    "linux"
+};
+
+fn wavesrv_name() -> String {
+    format!("wavesrv.{BIN_ARCH}{}", std::env::consts::EXE_SUFFIX)
+}
+
+fn wsh_suffix() -> String {
+    format!("{BIN_OS}.{BIN_ARCH}{}", std::env::consts::EXE_SUFFIX)
+}
+
+// The frontend names platforms as Node's process.platform does (isMacOS / isWindows in platformutil.ts).
+const FE_PLATFORM: &str = if cfg!(windows) { "win32" } else { BIN_OS };
+
+fn host_name() -> String {
+    if cfg!(windows) {
+        return std::env::var("COMPUTERNAME").unwrap_or_default();
+    }
+    Command::new("hostname")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
 // Returns Err (not a panic) so a missing/corrupted backend aborts setup visibly via Tauri's
 // startup error path instead of an opaque crash; packaged runs at least exit non-zero.
 fn spawn_wavesrv(
     auth_key: String,
     app_path: PathBuf,
     data_base: PathBuf,
+    child_path: Option<&str>,
     state: tauri::State<InitState>,
 ) -> Result<Child, String> {
     // Packaged: app_path = resource_dir(); dev: app_path = src-tauri/../dist (paths::resolve_app_path).
     // wavesrv + wsh both live under {app_path}/bin; wavesrv discovers wsh via WAVETERM_APP_PATH.
-    let exe = app_path.join("bin").join("wavesrv.x64.exe");
+    let exe = app_path.join("bin").join(wavesrv_name());
     let (data_home, config_home) = paths::data_home_dirs(&data_base);
     let _ = std::fs::create_dir_all(&data_home);
     let _ = std::fs::create_dir_all(&config_home);
     let mut cmd = Command::new(&exe);
+    if let Some(path) = child_path {
+        cmd.env("PATH", path);
+    }
     cmd.env("WAVETERM_AUTH_KEY", &auth_key)
         .env("WAVETERM_APP_PATH", &app_path)
         .env("WAVETERM_DATA_HOME", &data_home)
@@ -199,11 +236,12 @@ fn set_app_user_model_id(identifier: &str) {
 // The bundle ships wsh version-named (e.g. wsh-0.14.5-windows.x64.exe), not a plain
 // wsh.exe — find it by pattern in {app_path}/bin.
 fn find_wsh_binary(bin_dir: &std::path::Path) -> Option<PathBuf> {
+    let suffix = wsh_suffix();
     let entries = std::fs::read_dir(bin_dir).ok()?;
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with("wsh") && name.ends_with("windows.x64.exe") {
+        if name.starts_with("wsh") && name.ends_with(&suffix) {
             return Some(entry.path());
         }
     }
@@ -213,13 +251,16 @@ fn find_wsh_binary(bin_dir: &std::path::Path) -> Option<PathBuf> {
 // Fire-and-forget: idempotently provision arcterm's Claude Code hooks into the user's
 // ~/.claude/settings.json. Runs every launch; wsh does the idempotent merge. Any
 // failure is ignored — a missing hook only means degraded cockpit display.
-fn install_agent_hooks(app_path: &std::path::Path) {
+fn install_agent_hooks(app_path: &std::path::Path, child_path: Option<&str>) {
     let bin = app_path.join("bin");
     let Some(wsh) = find_wsh_binary(&bin) else {
         applog::log_line(&format!("[tauri] wsh not found under {:?}; skipping hook install", bin));
         return;
     };
     let mut cmd = Command::new(&wsh);
+    if let Some(path) = child_path {
+        cmd.env("PATH", path);
+    }
     cmd.arg("install-agent-hooks")
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -236,6 +277,7 @@ fn install_agent_hooks(app_path: &std::path::Path) {
 }
 
 fn main() {
+    let path_probe = shellenv::PathProbe::start();
     let context = tauri::generate_context!();
     #[cfg(all(windows, not(debug_assertions)))]
     set_app_user_model_id(&context.config().identifier);
@@ -282,10 +324,10 @@ fn main() {
                 let mut d = state.0.lock().unwrap();
                 d.auth_key = auth_key.clone();
                 d.app_version = app.package_info().version.to_string();
-                d.platform = "win32".to_string();
+                d.platform = FE_PLATFORM.to_string();
                 d.is_dev = cfg!(debug_assertions);
-                d.user_name = std::env::var("USERNAME").unwrap_or_default();
-                d.host_name = std::env::var("COMPUTERNAME").unwrap_or_default();
+                d.user_name = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
+                d.host_name = host_name();
             }
             let is_dev = cfg!(debug_assertions);
             let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -306,17 +348,25 @@ fn main() {
                     applog::log_line(&format!("[tauri] setting the dev window title failed: {}", e));
                 }
             }
+            let child_path = path_probe.finish();
+            if cfg!(target_os = "macos") {
+                applog::log_line(&match &child_path {
+                    Some(p) => format!("[tauri] PATH from the login shell: {p}"),
+                    None => "[tauri] login-shell PATH unavailable; children inherit ours".to_string(),
+                });
+            }
             if is_dev && std::env::var_os(paths::DEV_NO_GLOBAL_INSTALL_ENV).is_some() {
                 applog::log_line(
                     "[tauri] ARC_DEV_NO_GLOBAL_INSTALL is set; skipping the agent-hooks install",
                 );
             } else {
-                install_agent_hooks(&app_path);
+                install_agent_hooks(&app_path, child_path.as_deref());
             }
             let child = spawn_wavesrv(
                 auth_key.clone(),
                 app_path,
                 data_base,
+                child_path.as_deref(),
                 app.state::<InitState>(),
             )
             .map_err(|e| {
@@ -353,11 +403,14 @@ mod tests {
     fn finds_versioned_wsh_binary() {
         let dir = std::env::temp_dir().join(format!("arc-wsh-test-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        fs::write(dir.join("wavesrv.x64.exe"), b"x").unwrap();
-        fs::write(dir.join("wsh-0.14.5-windows.x64.exe"), b"x").unwrap();
+        let wsh = format!("wsh-0.14.5-{}", wsh_suffix());
+        fs::write(dir.join(wavesrv_name()), b"x").unwrap();
+        fs::write(dir.join(&wsh), b"x").unwrap();
+        // a wsh built for another platform must not match
+        fs::write(dir.join("wsh-0.14.5-linux.mips64"), b"x").unwrap();
 
         let got = find_wsh_binary(&dir).expect("should find wsh");
-        assert_eq!(got.file_name().unwrap(), "wsh-0.14.5-windows.x64.exe");
+        assert_eq!(got.file_name().unwrap().to_string_lossy(), wsh);
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -366,7 +419,7 @@ mod tests {
     fn returns_none_when_no_wsh() {
         let dir = std::env::temp_dir().join(format!("arc-wsh-none-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        fs::write(dir.join("wavesrv.x64.exe"), b"x").unwrap();
+        fs::write(dir.join(wavesrv_name()), b"x").unwrap();
         assert!(find_wsh_binary(&dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }

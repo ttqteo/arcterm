@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "arcterm",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 680,
+        "center": true,
+        "maximized": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 25 },
+        "dragDropEnabled": false
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.icns", "icons/icon.png"],
+    "resources": {
+      "../dist/bin/wavesrv.x64.exe": null,
+      "../dist/bin/wsh-*-windows.x64.exe": null,
+      "../dist/bin/wavesrv.arm64": "bin/wavesrv.arm64",
+      "../dist/bin/wsh-*-darwin.arm64": "bin/"
+    },
+    "macOS": { "signingIdentity": "-", "minimumSystemVersion": "13.0" }
+  }
+}

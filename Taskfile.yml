@@ -127,6 +127,10 @@ tasks:
             - task: build:server:internal
               vars:
                   ARCHS: arm64,amd64
+                  # without it clang stamps the build machine's macOS as the minimum; 13.0 is Go's own
+                  # floor and src-tauri/tauri.macos.conf.json's minimumSystemVersion. The flag rides in
+                  # CGO_CFLAGS because Go's build cache keys on that, not on MACOSX_DEPLOYMENT_TARGET.
+                  GO_ENV_VARS: CGO_CFLAGS="-O2 -g -mmacosx-version-min=13.0" MACOSX_DEPLOYMENT_TARGET=13.0
 
     build:server:quickdev:
         desc: Build the wavesrv component for quickdev (arm64 macOS only, no generate).

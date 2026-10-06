@@ -11,6 +11,7 @@ const zoomSubs: ((f: number) => void)[] = [];
 const fsSubs: ((b: boolean) => void)[] = [];
 const csSubs: ((b: boolean) => void)[] = [];
 let ctrlShift = false;
+let fullscreen = false;
 
 const noop = () => {};
 
@@ -38,11 +39,16 @@ export function zoomReset() {
 export function onFullScreenChange(cb: (b: boolean) => void) {
     fsSubs.push(cb);
 }
+function setFullscreenState(state: boolean) {
+    if (state === fullscreen) return;
+    fullscreen = state;
+    for (const cb of fsSubs) cb(state);
+}
 export async function toggleFullscreen() {
     const w = getCurrentWindow();
     const next = !(await w.isFullscreen());
     await w.setFullscreen(next);
-    for (const cb of fsSubs) cb(next);
+    setFullscreenState(next);
 }
 
 export function onControlShiftStateUpdate(cb: (b: boolean) => void) {
@@ -64,6 +70,12 @@ export function applyKeyToCtrlShift(e: { type: string; ctrl: boolean; shift: boo
 
 // DOM wiring (verified by observe-gates, not unit tests). Called once at boot from main.tsx.
 export function installChromeListeners() {
+    // macOS enters fullscreen from the green traffic light and the View menu too, never through F11;
+    // every route resizes the window, so the resize is what keeps the state current.
+    const win = getCurrentWindow();
+    const syncFullscreen = () => win.isFullscreen().then(setFullscreenState).catch(noop);
+    syncFullscreen();
+    win.onResized(syncFullscreen).catch(noop);
     window.addEventListener("keydown", (ev) => {
         if (ev.key === "F11") {
             ev.preventDefault();

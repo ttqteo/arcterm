@@ -11,7 +11,18 @@ import { installChromeListeners } from "./chrome";
 import { resolveBootIds } from "./bootids";
 import { loadFonts } from "@/util/fontutil";
 
-window.addEventListener("error", (e) => hlog("WINDOW ERROR: " + (e.error?.stack ?? e.message)));
+// WebKit (the macOS webview) has no requestIdleCallback; termwrap's terminal-state cache runs on it.
+if (!window.requestIdleCallback) {
+    window.requestIdleCallback = (cb) =>
+        window.setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), 1) as unknown as number;
+    window.cancelIdleCallback = (id) => window.clearTimeout(id);
+}
+
+// WebKit's stack is frames only, without the message line Chromium's starts with.
+window.addEventListener("error", (e) => {
+    const stack: string | undefined = e.error?.stack;
+    hlog("WINDOW ERROR: " + (stack?.includes(e.message) ? stack : `${e.message}\n${stack ?? ""}`));
+});
 window.addEventListener("unhandledrejection", (e) => hlog("UNHANDLED REJECTION: " + (e.reason?.stack ?? String(e.reason))));
 
 async function boot() {

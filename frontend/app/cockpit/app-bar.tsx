@@ -1,13 +1,15 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { isDev } from "@/app/store/global";
+import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { formatChordString } from "@/util/keysym";
+import { isMacOS } from "@/util/platformutil";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import clsx from "clsx";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -15,16 +17,25 @@ import { versionInfoAtom } from "./versioninfo";
 
 // Handoff top app bar (46px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
 // Windows adaptation (spec D1): functional min/max/close on the right; no mac traffic-lights.
+// macOS keeps its native traffic lights instead (tauri.macos.conf.json overlays them on this bar), so
+// the bar drops its own controls and leaves room for the lights on the left: 16px margin, the ~60px
+// lights, then the bar's own 16px gap before the mark. trafficLightPosition's y puts their centre on
+// the bar's centre line.
 // Window dragging: a bare data-tauri-drag-region only fires on a press directly on its own element,
 // so every non-interactive piece carries one. Not "deep" on the bar: the switchers' click-away
 // backdrops and dropdowns render inside it and would start a drag instead of closing.
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
-    const win = getCurrentWindow();
-    const maximized = useWindowMaximized();
+    const mac = isMacOS();
+    // the lights hide in macOS fullscreen, so their room goes with them
+    const fullscreen = useAtomValue(atoms.isFullScreen);
     return (
         <div
             data-tauri-drag-region
-            className="flex h-[46px] shrink-0 items-center gap-4 border-b border-border bg-surface pl-4"
+            className={clsx(
+                "flex h-[46px] shrink-0 items-center gap-4 border-b border-border bg-surface",
+                mac ? "pr-4" : null,
+                mac && !fullscreen ? "pl-[92px]" : "pl-4"
+            )}
         >
             <div data-tauri-drag-region className="flex items-center gap-[9px]">
                 <span data-tauri-drag-region className="flex shrink-0 text-primary">
@@ -82,30 +93,38 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     <span className="-mt-px text-[15px] leading-none">+</span>New agent
                 </button>
 
-                <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
-                    <button
-                        onClick={() => win.minimize()}
-                        aria-label="Minimize"
-                        className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
-                    >
-                        &#x2013;
-                    </button>
-                    <button
-                        onClick={() => win.toggleMaximize()}
-                        aria-label={maximized ? "Restore" : "Maximize"}
-                        className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
-                    >
-                        {maximized ? <RestoreGlyph /> : <>&#x25A1;</>}
-                    </button>
-                    <button
-                        onClick={() => win.close()}
-                        aria-label="Close"
-                        className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-error hover:text-white"
-                    >
-                        &#x2715;
-                    </button>
-                </div>
+                {mac ? null : <WindowControls />}
             </div>
+        </div>
+    );
+}
+
+function WindowControls() {
+    const win = getCurrentWindow();
+    const maximized = useWindowMaximized();
+    return (
+        <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
+            <button
+                onClick={() => win.minimize()}
+                aria-label="Minimize"
+                className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
+            >
+                &#x2013;
+            </button>
+            <button
+                onClick={() => win.toggleMaximize()}
+                aria-label={maximized ? "Restore" : "Maximize"}
+                className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
+            >
+                {maximized ? <RestoreGlyph /> : <>&#x25A1;</>}
+            </button>
+            <button
+                onClick={() => win.close()}
+                aria-label="Close"
+                className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-error hover:text-white"
+            >
+                &#x2715;
+            </button>
         </div>
     );
 }

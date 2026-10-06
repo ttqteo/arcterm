@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Writes src-tauri/icons/icon.ico: the arcterm "t>" mark drawn pixel-exact at every size Windows asks
-// for, instead of downscaling public/logos/arcterm.png, which smears pixel art at taskbar sizes.
+// Writes src-tauri/icons/icon.ico, icon.icns and icon.png: the arcterm "t>" mark drawn pixel-exact at
+// every size Windows and macOS ask for, instead of downscaling public/logos/arcterm.png, which smears
+// pixel art at taskbar sizes.
 //
 // The geometry is measured from public/logos/arcterm.png (2048px): a #111 tile with circular corners
 // of radius 400/2048, and a white glyph on a 12x9 cell grid (one cell = 91 source px) whose blocks
@@ -15,6 +16,8 @@ import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 
 const OUT = "src-tauri/icons/icon.ico";
+const ICNS_OUT = "src-tauri/icons/icon.icns";
+const PNG_OUT = "src-tauri/icons/icon.png";
 const TILE = [0x11, 0x11, 0x11];
 const GLYPH = [0xff, 0xff, 0xff];
 const CORNER = 400 / 2048;
@@ -43,19 +46,47 @@ const SIZES = [
     [256, 12, 13],
 ];
 
-function render(size, step, block) {
+// macOS: [size, tile, step, block]. From 128px up the tile sits on Apple's icon grid (824 of 1024, the
+// rest transparent margin) so it matches the Dock's other icons; smaller sizes stay full-bleed, where a
+// margin would leave no room for 2px strokes.
+const MAC_SIZES = [
+    [16, 16, 1, 2],
+    [32, 32, 2, 3],
+    [64, 64, 3, 4],
+    [128, 104, 5, 6],
+    [256, 206, 10, 11],
+    [512, 412, 20, 21],
+    [1024, 824, 40, 42],
+];
+
+// icns entry types per pixel size; the @2x types reuse the next size up
+const ICNS_TYPES = [
+    ["icp4", 16],
+    ["icp5", 32],
+    ["ic11", 32],
+    ["ic12", 64],
+    ["ic07", 128],
+    ["ic13", 256],
+    ["ic08", 256],
+    ["ic14", 512],
+    ["ic09", 512],
+    ["ic10", 1024],
+];
+
+function render(size, step, block, tile = size) {
     const px = new Uint8Array(size * size * 4);
-    const r = size * CORNER;
+    const r = tile * CORNER;
+    const inset = (size - tile) / 2;
     const SS = 4;
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             let hit = 0;
             for (let sy = 0; sy < SS; sy++) {
                 for (let sx = 0; sx < SS; sx++) {
-                    const fx = x + (sx + 0.5) / SS;
-                    const fy = y + (sy + 0.5) / SS;
-                    const dx = Math.max(r - fx, fx - (size - r), 0);
-                    const dy = Math.max(r - fy, fy - (size - r), 0);
+                    const fx = x - inset + (sx + 0.5) / SS;
+                    const fy = y - inset + (sy + 0.5) / SS;
+                    const dx = Math.max(r - fx, fx - (tile - r), 0);
+                    const dy = Math.max(r - fy, fy - (tile - r), 0);
                     if (dx * dx + dy * dy <= r * r) hit++;
                 }
             }
@@ -143,6 +174,20 @@ function ico(images) {
     return Buffer.concat([header, dir, ...images.map((i) => i.data)]);
 }
 
+// icns: a big-endian "icns" header, then one [type, length, PNG] entry per type
+function icns(pngs) {
+    const entries = ICNS_TYPES.map(([type, size]) => {
+        const head = Buffer.alloc(8);
+        head.write(type, 0, "ascii");
+        head.writeUInt32BE(8 + pngs.get(size).length, 4);
+        return Buffer.concat([head, pngs.get(size)]);
+    });
+    const header = Buffer.alloc(8);
+    header.write("icns", 0, "ascii");
+    header.writeUInt32BE(8 + entries.reduce((n, e) => n + e.length, 0), 4);
+    return Buffer.concat([header, ...entries]);
+}
+
 const previewDir = process.argv[2];
 if (previewDir) mkdirSync(previewDir, { recursive: true });
 const images = SIZES.map(([size, step, block]) => {
@@ -152,3 +197,16 @@ const images = SIZES.map(([size, step, block]) => {
 });
 writeFileSync(OUT, ico(images));
 console.log(`wrote ${OUT}: ${SIZES.map(([s]) => s).join(", ")}px`);
+
+const macPngs = new Map(
+    MAC_SIZES.map(([size, tile, step, block]) => {
+        const data = png(size, render(size, step, block, tile));
+        if (previewDir) writeFileSync(join(previewDir, `mac-${size}.png`), data);
+        return [size, data];
+    })
+);
+writeFileSync(ICNS_OUT, icns(macPngs));
+console.log(`wrote ${ICNS_OUT}: ${MAC_SIZES.map(([s]) => s).join(", ")}px`);
+// off Windows, Tauri's codegen needs a PNG for the window icon (the Dock icon of an unbundled `cargo tauri dev`)
+writeFileSync(PNG_OUT, macPngs.get(512));
+console.log(`wrote ${PNG_OUT}: 512px`);
