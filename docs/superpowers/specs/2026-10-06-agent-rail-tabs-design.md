@@ -48,7 +48,7 @@ Out of scope:
    file selected instead of leaving for the Diff surface.
 4. **Review is line review, scoped to the agent.** The Diff surface is getting a Review mode
    (`docs/superpowers/specs/2026-10-06-line-review-design.md`): every changed file in one scroll, unified rows rendered
-   by `reviewlist.tsx`, line and range comments, and a tray that sends them to the agent as one message. The panel's
+   by `reviewlistview.tsx`, line and range comments, and a tray that sends them to the agent as one message. The panel's
    Review tab renders that same list and tray, not a second diff view.
    - Scope: the agent's uncommitted changes, `GitReviewPatchCommand` with the agent's working directory (the worktree,
      for a worktree agent) and no hash. The tray sends to this agent.

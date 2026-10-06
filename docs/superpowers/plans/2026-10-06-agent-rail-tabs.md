@@ -63,7 +63,7 @@ This plan runs on Arc's engine (`wsh runs start --plan`).
   - Never run prettier on `scripts/*.mjs`.
   - Lint touched files: `npx eslint <paths>`.
 - **Not in this plan:**
-  - The **Review** tab. It reuses line review's `reviewlist.tsx` and tray, so it is a follow-up plan once line review
+  - The **Review** tab. It reuses line review's `reviewlistview.tsx` and tray, so it is a follow-up plan once line review
     has landed. Until then Files changed keeps opening the Diff surface.
   - The **Terminal** tab (phase 2 in the spec).
 
