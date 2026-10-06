@@ -27,20 +27,27 @@ Agent and Usage above the tools (Code, Diff, Radar).
 Monaco (`MonacoCodeEditor`), react-markdown components, CDP scenarios (`scripts/cdp/scenarios.mjs`). No Go changes, so
 no `task generate`.
 
+**Verify:** `node scripts/verify.mjs ./pkg/wconfig/...`
+
 ## How to work this plan
 
-- **Work on the current branch, `feat/agent-sessions-merge`.** That is where the user wants this work, and other
-  sessions commit there too.
-  - Stage exact paths only (`git add <file>…`), never `git add -A` or `.`. Other sessions leave uncommitted files in
-    this checkout (`claude/arc-mod/…`, `pkg/claudequota/…`).
+This plan runs on Arc's engine (`wsh runs start --plan`).
+
+- **Branches.** Each task works in its own lane worktree. The engine merges the lanes into `wave/<runId>`, and that
+  branch into the base (`feat/agent-sessions-merge`) when the run lands.
   - Each task ends with a commit step.
-- **No builds while developing** (the machine lags).
-  - Do not run `task build:*`, `cargo …`, the whole vitest suite, or `scripts/cdp/final-verify.mjs`.
-  - Test one file at a time: `npx vitest run <file>`.
-  - UI checks are CDP scenarios against the already-running `task dev` app (`task verify:ui -- <scenario>`). That is
-    why this plan has no `**Verify:**`, `**Check:**` or `**Final:**` line: `Final` cold-builds its own dev app.
-  - One `task check:ts` (about 2 minutes) is wanted at the very end. Ask the user first.
-- **Other work lands here while this runs.**
+  - Stage exact paths only (`git add <file>…`), never `git add -A` or `.`.
+- **Verify** runs at every merge, scoped to what the merge changed: `tsc` plus the vitest files related to the changed
+  TS. At the final stage it runs all of vitest; the Go pattern is only there because the script needs one.
+- **There is no `**Final:**` line.** Final cold-builds a dev app of its own, and the machine lags under a build.
+- **No builds while developing.** Do not run `task build:*`, `cargo …` or `scripts/cdp/final-verify.mjs`. Test one file
+  at a time: `npx vitest run <file>`.
+- **No CDP in a lane.**
+  - The dev app on port 9222 serves the main checkout, not your lane, so a scenario run from a lane would test the
+    wrong code.
+  - Task 9 writes the scenario and checks that it parses. It runs after the run lands, against the dev app, from the
+    checkout.
+- **Other work lands on the base while this runs.**
   - Line review (`docs/superpowers/specs/2026-10-06-line-review-design.md`) edits the Diff surface.
   - The sessions work edits transcripts (`compacttranscript.tsx`).
   - So edits here are anchored by symbol or quoted text, not line numbers. Re-read a file right before editing it.
@@ -50,12 +57,29 @@ no `task generate`.
   - Run `npx prettier --check` only on files this plan creates.
   - Never run prettier on `scripts/*.mjs`.
   - Lint touched files: `npx eslint <paths>`.
-- **The dev app's fixture.** `public/cockpit-fixtures/active.json` replaces the live roster. The user keeps one there.
-  Back it up before any CDP run and restore it after (Task 9 and Task 10 say how).
 - **Not in this plan:**
   - The **Review** tab. It reuses line review's `reviewlist.tsx` and tray, so it is a follow-up plan once line review
     has landed. Until then Files changed keeps opening the Diff surface.
   - The **Terminal** tab (phase 2 in the spec).
+
+## After the run lands (in the session that started it, not a task)
+
+The dev app serves the checkout, so these run once `wave/<runId>` has merged into `feat/agent-sessions-merge`.
+
+1. Back up the user's fixture: `cp public/cockpit-fixtures/active.json cdp-shots/active.json.bak`.
+2. Run `node scripts/cdp/verify.mjs agent-rail-tabs agent-rail-sections agent-history surface-smoke`.
+   - Expected: every step passes.
+   - Look at `cdp-shots/agent-rail-tabs-*.png`:
+     - **overview:** the strip with one icon, and the sections under it;
+     - **file:** a.txt at the wide width, with the grip on the left edge;
+     - **nav:** the divider between Usage and Code.
+3. Restore the fixture: `cp cdp-shots/active.json.bak public/cockpit-fixtures/active.json`.
+   - The restore is not optional: `agent-rail-sections` and `agent-history` delete the fixture in their teardown.
+4. Fix what fails on the branch, then tell the user:
+   - what changed;
+   - the screenshots;
+   - that the Review tab waits for line review, and the Terminal tab is phase 2.
+5. Keep `.superpowers/design/agent-rail-tabs/` until the Review tab ships: its Review board is that plan's reference.
 
 Tasks 1, 2 and 3 are independent. Task 4 needs 3. Task 5 needs 3 and 4. Task 6 needs 2 and 3. Tasks 7 and 8 need 6.
 Task 9 needs all of 1–8. Task 10 is last.
@@ -1467,8 +1491,8 @@ npx eslint frontend/app/element/collapsiblerail.tsx frontend/app/view/agents/age
 npx prettier --check frontend/app/view/agents/agentrailpanel.tsx
 ```
 
-Then check the dev app by eye: `node scripts/cdp-shot.mjs cdp-shots/rail-tabs.png` after opening the Agent surface. The
-rail's header must now be the tab strip (one Overview icon and the chevron), with today's sections under it.
+The dev app serves the main checkout, not this lane, so the strip is first seen in Task 9's scenario after the run
+lands.
 
 ```bash
 git add frontend/app/element/collapsiblerail.tsx frontend/app/view/agents/agentrailpanel.tsx frontend/app/view/agents/agentdetailsrail.tsx
@@ -1864,8 +1888,7 @@ git add frontend/app/view/agents/pathlinkroute.ts frontend/app/view/agents/pathl
 git commit -m "feat(term): file paths in terminal output open beside their agent on Ctrl+click"
 ```
 
-Check it by hand in the dev app, in an agent's terminal: print a path that exists, hover it, Ctrl+click it. The
-scenario in Task 9 checks it too.
+Task 9's scenario checks this after the run lands.
 
 ---
 
@@ -2422,23 +2445,14 @@ Before relying on the helpers, check three things:
 - **`openRailTerminal` sets the shell's cwd to `~`.** That is why the echo prints an absolute path: a relative one has
   nothing to resolve against.
 
-- [ ] **Step 2: Run it against the dev app**
+- [ ] **Step 2: Check that it parses (do not run it from the lane)**
 
-The dev app must be running (`task dev`) with this branch's frontend loaded through HMR. Back up the user's fixture
-first, run the scenario, then put the fixture back:
+Run: `node --check scripts/cdp/scenarios.mjs`. Expected: no output, exit 0.
 
-```bash
-cp public/cockpit-fixtures/active.json cdp-shots/active.json.bak 2>/dev/null; true
-node scripts/cdp/verify.mjs agent-rail-tabs
-cp cdp-shots/active.json.bak public/cockpit-fixtures/active.json 2>/dev/null; true
-```
+Then confirm the registration: `node -e "import('./scripts/cdp/scenarios.mjs').then(m => console.log(m.SCENARIOS.some(s => s.name === 'agent-rail-tabs')))"`
+prints `true`.
 
-Expected: steps 0–5 PASS. Open `cdp-shots/agent-rail-tabs-*.png` and look at each:
-- **overview:** the strip with one icon, and the sections under it.
-- **file:** a.txt at 520px, with the grip on the left edge.
-- **nav:** the divider between Usage and Code.
-
-A step that fails is a bug in the code or in the scenario's assumption. Find which before changing either.
+The scenario runs after the run lands, from the checkout, against the dev app (see "After the run lands" near the top).
 
 - [ ] **Step 3: Commit**
 
@@ -2449,42 +2463,19 @@ git commit -m "test(cdp): agent-rail-tabs, the panel's tabs and the file path li
 
 ---
 
-### Task 10: Check the whole and hand over
+### Task 10: Check the whole
 
 **Depends on:** Task 9
 
 - [ ] **Step 1: The touched tests, once more**
 
 ```bash
-npx vitest run frontend/app/view/agents/pathlinks.test.ts frontend/app/view/agents/agentrailtabs.test.ts \
-  frontend/app/view/agents/pathlinkroute.test.ts frontend/app/view/agents/transcriptprojection.test.ts \
-  frontend/app/view/agents/pitranscriptprojection.test.ts frontend/app/view/agents/opencodetranscriptprojection.test.ts \
-  frontend/app/view/agents/surfaceorder.test.ts frontend/app/view/agents/radarnav.test.ts \
-  frontend/app/store/keybindings/bindings.test.ts frontend/app/view/agents/agentsviewmodel.test.ts
+npx vitest run frontend/app/view/agents/pathlinks.test.ts frontend/app/view/agents/agentrailtabs.test.ts   frontend/app/view/agents/pathlinkroute.test.ts frontend/app/view/agents/transcriptprojection.test.ts   frontend/app/view/agents/pitranscriptprojection.test.ts frontend/app/view/agents/opencodetranscriptprojection.test.ts   frontend/app/view/agents/surfaceorder.test.ts frontend/app/view/agents/radarnav.test.ts   frontend/app/store/keybindings/bindings.test.ts frontend/app/view/agents/agentsviewmodel.test.ts
 ```
 
-Expected: all PASS.
+Expected: all PASS. (`tsc` runs in Verify at the merge.)
 
-- [ ] **Step 2: Typecheck (ask the user first: about 2 minutes, and the machine lags)**
-
-Run: `task check:ts` with a timeout above 2 minutes. Expected: exit 0. The baseline is clean, so any error is this
-plan's.
-
-- [ ] **Step 3: The neighbouring scenarios**
-
-Back up the fixture as in Task 9 (`cdp-shots/active.json.bak`), then run:
-
-```bash
-node scripts/cdp/verify.mjs agent-rail-tabs agent-rail-sections agent-history surface-smoke
-```
-
-Restore the fixture afterwards. `agent-rail-sections` and `agent-history` delete it in their teardown, so the restore is
-not optional.
-
-Expected: all PASS. `agent-rail-sections` still finds every section under the strip, and `agent-history` runs with the
-new chord numbers.
-
-- [ ] **Step 4: Shortcuts doc**
+- [ ] **Step 2: Shortcuts doc**
 
 In `docs/keyboard-shortcuts.md`'s Agent surface section, add two rows:
 - the panel's tab strip: `←` / `→` / `Home` / `End` while it has focus;
@@ -2494,13 +2485,3 @@ In `docs/keyboard-shortcuts.md`'s Agent surface section, add two rows:
 git add docs/keyboard-shortcuts.md
 git commit -m "docs: the Agent panel's tab keys"
 ```
-
-- [ ] **Step 5: Hand over**
-
-Tell the user:
-- what changed;
-- the scenario's screenshots (`cdp-shots/agent-rail-tabs-*.png`);
-- that the Review tab waits for line review, and the Terminal tab is phase 2.
-
-Keep the mockup folder `.superpowers/design/agent-rail-tabs/` until the Review tab ships, because its Review board is
-that plan's reference.
