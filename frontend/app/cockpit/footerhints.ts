@@ -55,6 +55,8 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     ],
     // ↑↓, ⏎ and g g left the footer for room; they still work and are in ? help.
     files: [
+        // first, so a narrow footer keeps it: shown only while line comments wait to be sent
+        { ids: ["files:review-send"], keys: "Ctrl:Enter", label: "send comments" },
         { ids: ["files:filter"], glyph: "/", label: "filter" },
         { ids: ["files:toggle-graph"], glyph: "⇧G", label: "graph" },
         { ids: ["files:change-refs"], glyph: "c", label: "change refs" }, // compare-only via its binding

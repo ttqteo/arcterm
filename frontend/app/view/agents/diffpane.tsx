@@ -24,6 +24,9 @@ import { diffPairAtom } from "./diffcontentstore";
 import { emptyDiffState, type EmptyDiff } from "./diffempty";
 import { changePosition, clearDiffNav, diffNavPosAtom, gotoChange, setDiffNav } from "./diffnav";
 import { ignoreWsAtom, paneHeaderLayout, paneOptions, splitViewAtom } from "./diffoptions";
+import { activeReviewKeyAtom, reviewModeAtom } from "./linecommentstore";
+import { LineReviewTray } from "./linereviewtray";
+import { ReviewList } from "./reviewlistview";
 import { fmtBytes } from "./runcompletion";
 
 const MonacoDiffViewer = lazy(() => import("@/app/monaco/monaco-react").then((m) => ({ default: m.MonacoDiffViewer })));
@@ -58,6 +61,15 @@ function PaneSkeleton() {
     );
 }
 
+export interface ReviewTarget {
+    source: string; // "worktree" or a commit hash
+    base: string; // FilesState.ref: what the Uncommitted row's file list diffs against
+    // changes when the working tree does, so Review re-reads it without blanking
+    refreshKey: string;
+    // the file the commit pane's list was last clicked on; n grows with each click
+    scrollTo: { path: string; n: number } | null;
+}
+
 export function DiffPane({
     path,
     adds,
@@ -66,6 +78,7 @@ export function DiffPane({
     repoCwd,
     model,
     nothingToCompare = null,
+    review = null,
 }: {
     path: string | null;
     adds: number;
@@ -75,13 +88,23 @@ export function DiffPane({
     model: AgentsViewModel;
     // compare's aggregate is selected and the two refs list no files
     nothingToCompare?: { base: string; head: string } | null;
+    // what Review would show: the Uncommitted row or one commit, never compare; null hides the File | Review control
+    review?: ReviewTarget | null;
 }) {
     const pair = useAtomValue(diffPairAtom);
     const split = useAtomValue(splitViewAtom);
     const ignoreWs = useAtomValue(ignoreWsAtom);
     const navPos = useAtomValue(diffNavPosAtom);
+    const mode = useAtomValue(reviewModeAtom);
     const hostRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
+    const reviewing = review != null && repoCwd != null && mode === "review";
+
+    // the tray and the send key read the comments of the repository this pane shows, in either mode
+    useEffect(() => {
+        globalStore.set(activeReviewKeyAtom, repoCwd ?? "");
+        return () => globalStore.set(activeReviewKeyAtom, "");
+    }, [repoCwd]);
 
     useEffect(() => {
         const el = hostRef.current;
@@ -99,6 +122,20 @@ export function DiffPane({
     const empty = emptyDiffState({ path, pair, nothingToCompare });
 
     const body = () => {
+        if (reviewing) {
+            return (
+                <ReviewList
+                    // a new repository or selection starts over: its folds, collapsed files and anchor are its own
+                    key={`${repoCwd}|${review.source}`}
+                    repoKey={repoCwd}
+                    source={review.source}
+                    base={review.base}
+                    refreshKey={review.refreshKey}
+                    scrollTo={review.scrollTo}
+                    loading={<PaneSkeleton />}
+                />
+            );
+        }
         if (empty) {
             return <EmptyState empty={empty} />;
         }
@@ -140,6 +177,41 @@ export function DiffPane({
             </Suspense>
         );
     };
+
+    const modeControl = () =>
+        review == null ? null : (
+            <div
+                role="group"
+                data-diff-mode={reviewing ? "review" : "file"}
+                title="One file, or every changed file to comment on"
+                className="flex h-[28px] flex-none overflow-hidden rounded-[8px] border border-edge-mid"
+            >
+                {(["file", "review"] as const).map((m) => (
+                    <button
+                        key={m}
+                        data-diff-mode-option={m}
+                        onClick={() => globalStore.set(reviewModeAtom, m)}
+                        aria-pressed={mode === m}
+                        className={cn(
+                            "px-[10px] text-[11.5px] font-semibold",
+                            mode === m ? "bg-surface-selected text-ink-hi" : "text-muted hover:text-ink-hi"
+                        )}
+                    >
+                        {m === "file" ? "File" : "Review"}
+                    </button>
+                ))}
+            </div>
+        );
+
+    const reviewHeader = () => (
+        <div className="flex h-[48px] flex-none items-center gap-[10px] border-b border-border pl-[18px] pr-[14px]">
+            <span className="min-w-0 truncate text-[12.5px] text-ink-mid">
+                {review.source === "worktree" ? "Every uncommitted change" : "Every file in this commit"}
+            </span>
+            <div className="flex-1" />
+            {modeControl()}
+        </div>
+    );
 
     const header = () => {
         const { dir, file } = splitRepoPath(path);
@@ -183,6 +255,7 @@ export function DiffPane({
                         </button>
                     </div>
                 ) : null}
+                {modeControl()}
                 {layout.split ? (
                     <div
                         role="group"
@@ -259,8 +332,9 @@ export function DiffPane({
             ref={hostRef}
             data-diff-pane
         >
-            {path ? header() : null}
+            {reviewing ? reviewHeader() : path ? header() : null}
             {body()}
+            {repoCwd ? <LineReviewTray repoKey={repoCwd} model={model} /> : null}
         </motion.div>
     );
 }

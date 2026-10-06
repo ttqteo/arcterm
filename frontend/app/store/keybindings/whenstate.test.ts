@@ -13,6 +13,7 @@ import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { setDocReviewMode, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
+import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
@@ -34,6 +35,8 @@ afterEach(() => {
     globalStore.set(listNavAtom, null);
     globalStore.set(renamingRowAtom, null);
     globalStore.set(focusSubagentAtom, null);
+    globalStore.set(lineReviewsAtom, {});
+    globalStore.set(activeReviewKeyAtom, "");
 });
 
 describe("whenVersionAtom", () => {
@@ -123,6 +126,19 @@ describe("whenVersionAtom", () => {
             transcriptPath: "/tmp/t.jsonl",
             label: "child",
         });
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+    });
+
+    // buildFilesBindings' files:review-send reads the line review drafts and the repository the Diff pane shows
+    it("bumps when a line comment is drafted", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(lineReviewsAtom, { "/r": { comments: [] } });
+        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+    });
+
+    it("bumps when the Diff pane shows another repository", () => {
+        const before = globalStore.get(whenVersionAtom);
+        globalStore.set(activeReviewKeyAtom, "/r");
         expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
     });
 });

@@ -41,6 +41,21 @@ function sourceRank(sources: CommentSource[]): (id: string) => number {
     return (id) => rank.get(id) ?? sources.length;
 }
 
+// The sources in the order they were first commented on, which is the order comments were added in. The Review
+// cards and the tray's message both build their sources here, so a card's number is the number the agent reads;
+// labelOf names each one for the message (the cards need no labels: only the ids affect the order).
+export function commentSources(comments: LineComment[], labelOf: (id: string) => string = () => ""): CommentSource[] {
+    const seen = new Set<string>();
+    const out: CommentSource[] = [];
+    for (const c of comments) {
+        if (!seen.has(c.source)) {
+            seen.add(c.source);
+            out.push({ id: c.source, label: labelOf(c.source) });
+        }
+    }
+    return out;
+}
+
 export function orderComments(comments: LineComment[], sources: CommentSource[]): LineComment[] {
     const rankOf = sourceRank(sources);
     return [...comments].sort(

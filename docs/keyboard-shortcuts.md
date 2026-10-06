@@ -220,6 +220,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `c` | In history: compare refs. In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
 | `Tab` | Switch compare side (in compare) |
+| `Ctrl`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
 | `Esc` | Clear filters, else leave compare, else back to the Cockpit |
 
 ### Files — Review mode

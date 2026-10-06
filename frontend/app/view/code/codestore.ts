@@ -392,8 +392,8 @@ export async function loadStatus(): Promise<void> {
     }
 }
 
-// The picker lists these and Send to agent resolves a browsed worktree's repository from them. Neither
-// is something the surface depends on, so a failure leaves the list empty instead of raising a banner.
+// The picker lists these. It is not something the surface depends on, so a failure leaves the list
+// empty instead of raising a banner.
 async function loadWorktrees(): Promise<void> {
     const p = globalStore.get(codeProjectAtom);
     if (p == null) {

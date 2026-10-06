@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { commentRef, formatLineComments, orderComments, type CommentSource, type LineComment } from "./linecomments";
+import {
+    commentRef,
+    commentSources,
+    formatLineComments,
+    orderComments,
+    type CommentSource,
+    type LineComment,
+} from "./linecomments";
 
 const WORKTREE: CommentSource = { id: "worktree", label: "your changes" };
 const COMMIT_A: CommentSource = { id: "abc1234def", label: "commit abc1234 (Add the merge step)" };
@@ -221,5 +228,19 @@ describe("orderComments", () => {
         const input = [a, b];
         orderComments(input, [WORKTREE]);
         expect(input).toEqual([a, b]);
+    });
+});
+
+describe("commentSources", () => {
+    it("lists each source once, in the order it was first commented on, labelled", () => {
+        const comments = [
+            lc({ source: COMMIT_B.id }),
+            lc({ source: "worktree" }),
+            lc({ source: COMMIT_B.id }),
+            lc({ source: COMMIT_A.id }),
+        ];
+        const labels: Record<string, string> = { [COMMIT_B.id]: COMMIT_B.label, [COMMIT_A.id]: COMMIT_A.label };
+        expect(commentSources(comments, (id) => labels[id] ?? "your changes")).toEqual([COMMIT_B, WORKTREE, COMMIT_A]);
+        expect(commentSources(comments).map((s) => s.label)).toEqual(["", "", ""]);
     });
 });
