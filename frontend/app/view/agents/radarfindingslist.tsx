@@ -222,7 +222,7 @@ function FindingRow({
                         {MODE_META[mode].short}
                     </span>
                 ) : null}
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
+                <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
                     {subsystemLabel(f.subsystem)}
                 </span>
                 <AmbientTags {...ambientRefForFinding(f)} />

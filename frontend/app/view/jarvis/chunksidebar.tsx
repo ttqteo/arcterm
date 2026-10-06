@@ -67,10 +67,9 @@ function RunRecord({ dag }: { dag: EvidenceDag | undefined }) {
                     key={n}
                     className={cn(
                         "whitespace-pre-wrap break-words",
-                        row.kind === "task" && "pt-1 font-mono text-[11px] text-ink-hi",
+                        row.kind === "task" && "pt-1 text-[11px] text-ink-hi",
                         row.kind === "section" && "pl-3 text-[12px] leading-[1.5] text-secondary",
-                        row.kind === "run" && "pt-1 text-[11px] tabular-nums text-ink-mid",
-                        row.kind === "run" && row.label === "left behind" && "font-mono"
+                        row.kind === "run" && "pt-1 text-[11px] tabular-nums text-ink-mid"
                     )}
                 >
                     {row.kind !== "task" && row.label != null ? (

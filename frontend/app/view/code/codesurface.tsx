@@ -364,7 +364,7 @@ function PickerRow({
             )}
         >
             <span className="text-[12.5px] text-primary">{label}</span>
-            <span className="font-mono text-[10.5px] text-muted">{detail}</span>
+            <span className="text-[10.5px] text-muted">{detail}</span>
         </button>
     );
 }

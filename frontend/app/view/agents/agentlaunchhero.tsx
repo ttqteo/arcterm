@@ -96,8 +96,8 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                                         {s.task || "(untitled session)"}
                                     </div>
                                     <div className="mt-[2px] truncate text-[10.5px] tabular-nums text-muted">
-                                        {s.projectname} · <span className="font-mono">{s.branch || "—"}</span> ·{" "}
-                                        <span className="font-mono">{s.model || "—"}</span> · {formatTokens(s.tokenstotal)} tok
+                                        {s.projectname} · {s.branch || "—"} · {s.model || "—"} ·{" "}
+                                        {formatTokens(s.tokenstotal)} tok
                                     </div>
                                 </div>
                                 <span className="shrink-0 text-[10.5px] tabular-nums text-muted">

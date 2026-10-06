@@ -183,7 +183,7 @@ export function EffortCreateForm({
                             value={ticket}
                             onChange={(e) => setTicket(e.target.value)}
                             placeholder="optional"
-                            className={cn(inputCls, "font-mono")}
+                            className={inputCls}
                         />
                     </div>
                     <div className="flex flex-col gap-1">

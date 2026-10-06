@@ -137,7 +137,7 @@ export function ProjectPicker({
             >
                 <span className="w-3 flex-none text-[11px] text-accent-soft">{on ? "✓" : ""}</span>
                 <span className="flex-none truncate text-[12.5px] font-medium text-ink-hi">{name}</span>
-                <span className="min-w-0 flex-1 truncate text-right font-mono text-[10.5px] text-muted">
+                <span className="min-w-0 flex-1 truncate text-right text-[10.5px] text-muted">
                     {whereOf(name)}
                 </span>
             </button>
@@ -160,7 +160,7 @@ export function ProjectPicker({
                 {picked != null ? (
                     <>
                         <span className="flex-none truncate text-[13px] font-semibold text-primary">{picked}</span>
-                        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted">
+                        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted">
                             {whereOf(picked)}
                         </span>
                     </>

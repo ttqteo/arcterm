@@ -85,7 +85,7 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
                                 value={path}
                                 onChange={(e) => setPath(e.target.value)}
                                 placeholder="~/code/my-service"
-                                className="flex-1 rounded border border-edge-mid bg-surface px-[13px] py-2.5 font-mono text-[12.5px] text-secondary outline-none focus:border-accent-700"
+                                className="flex-1 rounded border border-edge-mid bg-surface px-[13px] py-2.5 text-[12.5px] text-secondary outline-none focus:border-accent-700"
                             />
                             <button
                                 type="button"

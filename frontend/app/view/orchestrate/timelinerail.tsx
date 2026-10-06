@@ -482,7 +482,7 @@ function GroupRow({
                         {group.taskId && (
                             <span
                                 className={cn(
-                                    "flex-none rounded px-1.5 font-mono text-[10.5px] leading-4",
+                                    "flex-none rounded px-1.5 text-[10.5px] leading-4",
                                     selected ? "bg-accent/12 text-accent-soft" : "bg-pill text-ink-mid"
                                 )}
                             >

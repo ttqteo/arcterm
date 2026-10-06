@@ -62,7 +62,7 @@ function CommitHeader({ row }: { row: HistoryRow }) {
                         <span
                             key={r.label}
                             className={cn(
-                                "rounded-[4px] border px-[6px] py-[2px] font-mono text-[10.5px] font-semibold",
+                                "rounded-[4px] border px-[6px] py-[2px] text-[10.5px] font-semibold",
                                 refChipClass(r.kind)
                             )}
                         >

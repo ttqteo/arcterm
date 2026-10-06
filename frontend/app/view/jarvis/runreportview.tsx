@@ -93,7 +93,7 @@ export function RunReportView({ model, run, compact }: { model: AgentsViewModel;
                                         {it.text}
                                     </span>
                                     {it.tag !== "" ? (
-                                        <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 font-mono text-[10.5px] leading-[17px] text-ink-mid">
+                                        <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 text-[10.5px] leading-[17px] text-ink-mid">
                                             {it.tag}
                                         </span>
                                     ) : null}

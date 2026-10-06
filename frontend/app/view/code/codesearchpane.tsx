@@ -213,7 +213,7 @@ function SearchBody({
             <div className="min-h-0 flex-1 overflow-y-auto pb-2">
                 {groups.map((group) => (
                     <div key={group.path}>
-                        <div className="sticky top-0 bg-surface px-2 py-1 font-mono text-[10.5px] text-muted">
+                        <div className="sticky top-0 bg-surface px-2 py-1 text-[10.5px] text-muted">
                             {group.path}
                         </div>
                         {group.matches.map((match) => (

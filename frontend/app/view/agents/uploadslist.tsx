@@ -51,8 +51,6 @@ function UploadRow({
             <span
                 className={cn(
                     "min-w-0 flex-1 truncate text-[11.5px]",
-                    // a pasted image's name is a label ("Pasted image"); a dropped or attached file's is a file name
-                    record.source !== "paste" && "font-mono",
                     state.expired ? "text-muted" : "text-secondary"
                 )}
             >
@@ -98,8 +96,7 @@ function LightboxBody({ record, onClose }: { record: UploadRecord; onClose: () =
             <div className="flex flex-none items-center gap-[10px] border-b border-edge-mid px-[16px] py-[12px]">
                 <span
                     className={cn(
-                        "min-w-0 flex-1 truncate text-[12px] text-primary",
-                        record.source !== "paste" && "font-mono"
+                        "min-w-0 flex-1 truncate text-[12px] text-primary"
                     )}
                     title={record.path}
                 >
@@ -144,7 +141,7 @@ function LightboxBody({ record, onClose }: { record: UploadRecord; onClose: () =
                             // where it was, so the file can be found or restored
                             <span
                                 title={record.path}
-                                className="max-w-full break-all font-mono text-[10.5px] text-muted"
+                                className="max-w-full break-all text-[10.5px] text-muted"
                             >
                                 {record.path}
                             </span>

@@ -70,7 +70,7 @@ function FindingBody({
                         <div
                             key={row.id}
                             title={row.summary}
-                            className="truncate px-3 py-[7px] font-mono text-[11.5px] text-secondary"
+                            className="truncate px-3 py-[7px] text-[11.5px] text-secondary"
                         >
                             {row.place}
                         </div>

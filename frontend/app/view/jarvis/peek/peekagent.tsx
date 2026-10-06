@@ -123,10 +123,10 @@ export function PeekAgentBody({ model, target }: { model: AgentsViewModel; targe
                                 key={f.path}
                                 className="grid grid-cols-[14px_minmax(0,1fr)_auto_auto] items-center gap-2.5 px-3 py-1.5"
                             >
-                                <span className={cn("font-mono text-[10.5px] font-bold", statusColor(f.status))}>
+                                <span className={cn("text-[10.5px] font-bold", statusColor(f.status))}>
                                     {f.status}
                                 </span>
-                                <span className="truncate font-mono text-[11.5px] text-secondary">{f.path}</span>
+                                <span className="truncate text-[11.5px] text-secondary">{f.path}</span>
                                 <span className="text-[10.5px] tabular-nums text-diff-added">+{f.adds}</span>
                                 <span className="text-[10.5px] tabular-nums text-diff-removed">−{f.dels}</span>
                             </div>

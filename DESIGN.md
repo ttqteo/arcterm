@@ -174,7 +174,8 @@ and the running state) so it still reads as a signal. Status is semantic and
 never color-alone: amber = asking, green = working, red = error.
 
 Typography is **Inter** throughout the UI, with **JetBrains Mono** reserved for
-terminal, code and verbatim technical strings. Motion is functional-first: it exists only
+the terminal, code and diff bodies, keycaps, and verbatim machine tokens (SHAs,
+ids, config keys) — never for file paths, names or labels. Motion is functional-first: it exists only
 to make state changes more legible, honors `prefers-reduced-motion`, and draws
 exclusively from shared motion tokens.
 
@@ -302,10 +303,23 @@ default stays on Midnight.
   the body default, so most elements carry no font class at all. Falls back to
   `system-ui, sans-serif`. Rendered markdown uses it too.
 - **`font-mono` — JetBrains Mono** (the variable full-charset file
-  `public/fonts/jetbrains-mono-variable.woff2`) only for text a person would copy
-  into a shell or editor: terminal output, code and diffs, file paths, git
-  branches and SHAs, commands and flags, run/session ids, and keycaps. It is also
-  the terminal default. Never use it for labels, badges, metrics or meta text.
+  `public/fonts/jetbrains-mono-variable.woff2`) stays ONLY for:
+  1. code and diff BODIES (code blocks, diff/patch lines, file-content snippets,
+     grep match lines, shell command lines and their output, tool-detail bodies),
+     the terminal, the code editor, and inline `code` inside rendered markdown;
+  2. keycaps, `<kbd>` and shortcut hints;
+  3. raw machine tokens meant to be copied verbatim and read character by
+     character: git commit SHAs, UUID / run-id / session-id fragments, hashes,
+     env var names and config keys shown as such, JSON / TOML / YAML snippets.
+
+  Everything else is Inter — simply carry no `font-mono`: file names and file
+  PATHS in lists, rows, headers, breadcrumbs and chips, branch names, worktree
+  names, model names, project names, runtime names, labels, counts, durations,
+  timestamps, tab titles, verbs, badges and placeholders. A file path is mono only
+  when it is part of a code line (a diff, grep or read body row); as a row title,
+  header, chip or list item it is Inter. A shell command (the `$ cmd` line, a bash
+  tool's target) is mono; a non-shell tool's target (a file path, a pattern label)
+  is Inter. It is also the terminal default.
 - **Numbers** in Inter get `tabular-nums` wherever they align or update (usage
   meters, token and cost tables, durations, timestamps, diff stats) so columns do
   not jitter.

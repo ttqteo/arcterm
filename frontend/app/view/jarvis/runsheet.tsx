@@ -311,7 +311,7 @@ function FinalThumb({
             </span>
             <span className="flex min-w-0 items-center gap-[5px]">
                 <span className={cn("size-1.5 flex-none rounded-full", VERDICT_DOT[shot.verdict])} />
-                <span className="min-w-0 truncate font-mono text-[10px] text-secondary">{shot.name}</span>
+                <span className="min-w-0 truncate text-[10px] text-secondary">{shot.name}</span>
             </span>
         </button>
     );
@@ -607,7 +607,7 @@ function SheetBurstRow({ ctx, group }: { ctx: SheetCtx; group: EventGroup }) {
                 {eventTitle(group.head)}
             </span>
             {group.taskId ? (
-                <span className="flex-none rounded bg-pill px-1.5 font-mono text-[10.5px] leading-4 text-ink-mid">
+                <span className="flex-none rounded bg-pill px-1.5 text-[10.5px] leading-4 text-ink-mid">
                     {group.taskId}
                 </span>
             ) : null}
@@ -701,7 +701,7 @@ function TaskRow({
             data-run-sheet-row={task.id}
             className="grid grid-cols-[62px_minmax(0,1fr)_auto] items-baseline gap-3 border-b border-edge-faint py-[11px]"
         >
-            <span title={task.id} className="truncate font-mono text-[11px] font-medium text-ink-mid">
+            <span title={task.id} className="truncate text-[11px] font-medium text-ink-mid">
                 {task.id}
             </span>
             <div className="flex min-w-0 flex-col gap-[3px]">
@@ -899,7 +899,7 @@ function Evidence({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }) {
                               onClick={() => openDiff(model, diffScopeOfRun(run), f.path)}
                               className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 border-b border-edge-faint py-[9px] text-left hover:bg-surface-hover"
                           >
-                              <span className="truncate font-mono text-[11.5px] text-ink-hi">{f.path}</span>
+                              <span className="truncate text-[11.5px] text-ink-hi">{f.path}</span>
                               <span className="text-[10.5px] tabular-nums">
                                   <span className="text-diff-added">+{f.add}</span>{" "}
                                   <span className="text-diff-removed">−{f.del}</span>

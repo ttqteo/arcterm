@@ -73,7 +73,7 @@ export function NotARepoPanel({ path, onChooseSource }: { path: string; onChoose
         <div data-not-a-repo className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[10px] px-[40px]">
             <Folder size={26} className="text-muted" />
             <div className="text-[14px] font-semibold text-ink-hi">This folder isn’t a Git repository</div>
-            <div className="max-w-[560px] select-text truncate font-mono text-[11px] text-muted">{path}</div>
+            <div className="max-w-[560px] select-text truncate text-[11px] text-muted">{path}</div>
             <div className="max-w-[520px] text-center text-[12.5px] leading-[1.6] text-ink-mid">
                 There’s no history to show here. Pick another agent or project.
             </div>

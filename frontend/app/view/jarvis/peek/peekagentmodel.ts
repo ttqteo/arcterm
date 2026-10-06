@@ -17,8 +17,8 @@ type GridInput = { project?: string; branch?: string; cwd?: string; model?: stri
 // mockup order; a value nobody knows is left out rather than printed
 const GRID: { key: keyof GridInput; label: string; mono: boolean }[] = [
     { key: "project", label: "project", mono: false },
-    { key: "branch", label: "branch", mono: true },
-    { key: "cwd", label: "cwd", mono: true },
+    { key: "branch", label: "branch", mono: false },
+    { key: "cwd", label: "cwd", mono: false },
     { key: "model", label: "model", mono: false },
     { key: "session", label: "session", mono: true },
 ];

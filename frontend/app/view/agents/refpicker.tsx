@@ -53,7 +53,7 @@ function Suggestions({
                                 }}
                                 className="flex w-full items-center gap-[8px] px-[10px] py-[6px] text-left hover:bg-surface-hover"
                             >
-                                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-mid">
+                                <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-mid">
                                     {b.name}
                                 </span>
                                 <span className="flex-none text-[10.5px] text-muted">{b.age}</span>
@@ -127,7 +127,7 @@ export function RefPicker({
                     data-ref-pair
                     onClick={onEdit}
                     title="Change compare refs (c)"
-                    className="flex items-center gap-[8px] rounded-l-[9px] px-[10px] py-[6px] font-mono text-[12px] hover:bg-surface-hover"
+                    className="flex items-center gap-[8px] rounded-l-[9px] px-[10px] py-[6px] text-[12px] hover:bg-surface-hover"
                 >
                     <span className={cn("h-[7px] w-[7px] flex-none rounded-full", SIDE_DOT.base)} />
                     <span className={SIDE_TEXT.base}>{base || "—"}</span>
@@ -154,7 +154,7 @@ export function RefPicker({
             onCancel();
         }
     };
-    const field = "w-[150px] bg-transparent font-mono text-[12px] text-ink-hi outline-none placeholder:text-ink-faint";
+    const field = "w-[150px] bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-ink-faint";
 
     return (
         <div className={cn("relative flex items-center gap-[8px] px-[11px] py-[6px]", CHIP)}>

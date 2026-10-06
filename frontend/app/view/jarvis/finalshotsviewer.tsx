@@ -327,7 +327,7 @@ function ScenarioTabs({ round, current, onPick }: { round: ShotRound; current: n
                         )}
                     >
                         <Dot cls={VERDICT_DOT[sc.verdict]} />
-                        <span className="font-mono text-xs text-foreground">
+                        <span className="text-xs text-foreground">
                             {sc.verdict === "none" && sc.files[0] ? baseName(sc.files[0]) : sc.name}
                         </span>
                         {tally && (
@@ -388,7 +388,7 @@ function Shot({
     const img = useLocalImage(path);
     const meta = (
         <>
-            <span className="font-mono text-xs text-foreground">{baseName(file)}</span>
+            <span className="text-xs text-foreground">{baseName(file)}</span>
             <span className="text-xs text-ink-mid">
                 {pos}
                 {img.width != null && ` · ${img.width} × ${img.height}`}
@@ -417,7 +417,7 @@ function Shot({
                         ? "No longer on disk"
                         : `Cannot load${img.httpStatus != null ? ` · HTTP ${img.httpStatus}` : ""}`}
                 </span>
-                <span className="font-mono text-[10.5px] text-muted">{path}</span>
+                <span className="text-[10.5px] text-muted">{path}</span>
             </div>
         );
     } else if (img.url != null) {
@@ -466,7 +466,7 @@ function Filmstrip({
             ))}
             {file != null && (
                 // right-aligned ellipsis keeps the file name end of a long path in view
-                <span className="ml-auto min-w-0 max-w-[50%] overflow-hidden text-ellipsis whitespace-nowrap text-left font-mono text-[11px] text-muted [direction:rtl]">
+                <span className="ml-auto min-w-0 max-w-[50%] overflow-hidden text-ellipsis whitespace-nowrap text-left text-[11px] text-muted [direction:rtl]">
                     {shotPath(round, file)}
                 </span>
             )}
@@ -523,7 +523,7 @@ function StepsDrawer({ scenario }: { scenario: ShotScenario }) {
                                     {st.step}
                                 </span>
                                 {st.detail && (
-                                    <span className="break-words font-mono text-[11.5px] leading-normal text-ink-mid">
+                                    <span className="break-words text-[11.5px] leading-normal text-ink-mid">
                                         {st.detail}
                                     </span>
                                 )}

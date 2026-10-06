@@ -614,7 +614,7 @@ function SoloCard({
                 <span className="min-w-0 truncate text-secondary" title={session.projectname}>
                     {session.projectname}
                 </span>
-                <span className="min-w-0 truncate font-mono" title={session.branch || undefined}>
+                <span className="min-w-0 truncate" title={session.branch || undefined}>
                     {session.branch || "—"}
                 </span>
                 <span className="flex-1" />

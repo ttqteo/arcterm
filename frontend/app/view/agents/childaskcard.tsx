@@ -75,7 +75,7 @@ export function ChildAskCard({ channelId, runId }: { channelId: string; runId: s
                     const ready = canSubmitAsk(agent.ask?.questions ?? [], selections[key] ?? {}, texts[key] ?? {});
                     return (
                         <div key={key} className="rounded-[9px] border border-warning/20 bg-background px-3 py-2.5">
-                            <div className="font-mono text-[10.5px] text-ink-mid">{a.taskid}</div>
+                            <div className="text-[10.5px] text-ink-mid">{a.taskid}</div>
                             {a.note ? <div className="mt-1 text-[12px] text-secondary">{a.note}</div> : null}
                             <AnswerBar
                                 agent={agent}

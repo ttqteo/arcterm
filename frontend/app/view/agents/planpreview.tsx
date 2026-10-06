@@ -66,7 +66,7 @@ export function PlanPreview({ path, onEditorReady }: { path: string; onEditorRea
                     <span className="text-xxxs text-asking">{open ? "▼" : "▶"}</span>
                     <span className="text-[9px] font-semibold uppercase tracking-[.1em] text-asking">Plan</span>
                     <span className="truncate text-[10.5px] tabular-nums text-muted">
-                        <span className="font-mono">{filename}</span>
+                        {filename}
                         {load.status === "ok" ? ` · ${load.lines} lines` : ""}
                     </span>
                 </button>

@@ -222,7 +222,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             >
                                                 {f.stat}
                                             </span>
-                                            <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-secondary">
+                                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-secondary">
                                                 {f.path}
                                             </span>
                                             <span className="w-[34px] text-right text-[10.5px] font-semibold tabular-nums text-diff-added">
@@ -281,7 +281,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                                 {v.detail ? (
                                                     <span
                                                         title={v.detail}
-                                                        className="min-w-0 max-w-[45%] flex-none truncate font-mono text-[10.5px] text-muted"
+                                                        className="min-w-0 max-w-[45%] flex-none truncate text-[10.5px] text-muted"
                                                     >
                                                         {v.detail}
                                                     </span>
@@ -322,7 +322,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             >
                                                 {a.kind}
                                             </span>
-                                            <span className="font-mono text-[12px] text-secondary">{a.path}</span>
+                                            <span className="text-[12px] text-secondary">{a.path}</span>
                                             {a.size ? (
                                                 <span className="text-[10px] tabular-nums text-muted">
                                                     {fmtBytes(a.size)}
@@ -396,7 +396,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                             <div className="flex-1" />
                                             <span className="text-[10.5px] tabular-nums text-muted">{n.timeLabel}</span>
                                         </div>
-                                        <div className="mt-0.5 font-mono text-[11px] text-muted">{n.detail}</div>
+                                        <div className="mt-0.5 text-[11px] text-muted">{n.detail}</div>
                                         {n.artifacts.map((art) => (
                                             <button
                                                 key={art}
@@ -406,7 +406,7 @@ export function RunCompletion({ channel, run, model }: { channel: Channel; run: 
                                                 <span className="rounded bg-success/15 px-1.5 py-px text-xxxs font-bold text-success">
                                                     OUT
                                                 </span>
-                                                <span className="font-mono text-[11.5px] text-ink-mid">{art}</span>
+                                                <span className="text-[11.5px] text-ink-mid">{art}</span>
                                                 <span className="text-[10px] text-ink-faint">↗</span>
                                             </button>
                                         ))}

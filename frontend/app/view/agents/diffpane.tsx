@@ -145,7 +145,7 @@ export function DiffPane({
         const { dir, file } = splitRepoPath(path);
         return (
             <div className="flex h-[48px] flex-none items-center gap-[10px] border-b border-border pl-[18px] pr-[14px]">
-                <span className="flex min-w-0 items-baseline font-mono text-[12.5px]">
+                <span className="flex min-w-0 items-baseline text-[12.5px]">
                     {/* rtl truncates from the left, but alone it would move the directory's trailing "/"
                         to its front; the bdi keeps the text itself left-to-right */}
                     <span className="min-w-0 truncate text-muted [direction:rtl]">

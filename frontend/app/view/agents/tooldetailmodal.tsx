@@ -3,6 +3,7 @@
 
 import { ModalShell } from "@/app/modals/modalshell";
 import { modalsModel } from "@/app/store/modalmodel";
+import { cn } from "@/util/util";
 import type { AgentActionEntry } from "./agentsviewmodel";
 import { ToolDetailBody } from "./narrationtimeline";
 import { formatDuration } from "./tooldetail";
@@ -22,7 +23,14 @@ export function AgentToolDetailModal({ action }: { action: AgentActionEntry }) {
                     <span className="text-xxxs font-bold uppercase tracking-[0.06em] text-feed-label">
                         {action.verb}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-primary">{action.target}</span>
+                    <span
+                        className={cn(
+                            "min-w-0 flex-1 truncate text-[13px] text-primary",
+                            action.detail?.kind === "bash" && "font-mono"
+                        )}
+                    >
+                        {action.target}
+                    </span>
                     {action.durationMs ? (
                         <span className="text-[11px] tabular-nums text-muted">{formatDuration(action.durationMs)}</span>
                     ) : null}

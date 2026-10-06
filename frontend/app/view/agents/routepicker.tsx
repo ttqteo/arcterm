@@ -286,7 +286,7 @@ export function RoutePicker({
                                             )}
                                         >
                                             <span className="min-w-0 flex-1">
-                                                <span className={cn("block font-mono text-[11.5px]", selectedRow ? "text-accent" : "text-primary")}>{row.model}</span>
+                                                <span className={cn("block text-[11.5px]", selectedRow ? "text-accent" : "text-primary")}>{row.model}</span>
                                                 <span className="mt-[2px] block text-[10.5px] text-muted">
                                                     {pickerRowMeta(row)}
                                                 </span>
@@ -307,7 +307,7 @@ export function RoutePicker({
                                                 }
                                             }}
                                             aria-label={`Custom model id for ${section.label}`}
-                                            className="min-w-0 flex-1 rounded-[7px] border border-edge-mid bg-surface px-2 py-1 text-[11px] font-mono text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                            className="min-w-0 flex-1 rounded-[7px] border border-edge-mid bg-surface px-2 py-1 text-[11px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                         />
                                         <button
                                             type="button"

@@ -238,10 +238,10 @@ function PlanTable({ result, workers }: { result: CommandDagPlanPreviewRtnData; 
                         key={row.id}
                         className={cn(PLAN_GRID, "items-center py-1.5", i > 0 && "border-t border-edge-faint")}
                     >
-                        <span className="font-mono text-[10.5px] text-muted">{row.id}</span>
+                        <span className="text-[10.5px] text-muted">{row.id}</span>
                         <span className="truncate text-[12px] text-ink-hi">{row.title}</span>
                         <span className="text-[10.5px] tabular-nums text-ink-mid">{row.lane}</span>
-                        <span className="truncate font-mono text-[10.5px] text-muted">{row.needs}</span>
+                        <span className="truncate text-[10.5px] text-muted">{row.needs}</span>
                         <span title={row.model} className={cn("truncate text-[10.5px]", MODEL_TONE[row.tone])}>
                             {row.model}
                         </span>
@@ -275,7 +275,7 @@ function PlanPane({
                 aria-label="Plan file path"
                 onChange={(e) => setPlanPath(e.target.value)}
                 placeholder="Plan path, absolute or relative to the project"
-                className="w-full rounded-[7px] border border-edge-mid bg-background px-2.5 py-[7px] font-mono text-[11.5px] text-primary placeholder:text-muted outline-none focus:border-accent/60"
+                className="w-full rounded-[7px] border border-edge-mid bg-background px-2.5 py-[7px] text-[11.5px] text-primary placeholder:text-muted outline-none focus:border-accent/60"
             />
             {current?.error != null ? (
                 <span data-jarvis-plan-preview="error" className="text-[11px] leading-[1.45] text-error">
@@ -503,7 +503,7 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
                             {orchestrator && prototype !== "" ? (
                                 <div className="flex items-center gap-1.5">
                                     <span title={prototype} className="min-w-0 truncate text-[11px] text-muted">
-                                        Prototype · <span className="font-mono">{prototype}</span>
+                                        Prototype · {prototype}
                                     </span>
                                     <button
                                         type="button"

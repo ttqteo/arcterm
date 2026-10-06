@@ -20,14 +20,11 @@ function FilterChip({
     label,
     value,
     placeholder,
-    mono,
     onChange,
 }: {
     label: string;
     value: string;
     placeholder: string;
-    // the value is a path, not a name: set it in mono
-    mono?: boolean;
     onChange: (v: string) => void;
 }) {
     const [editing, setEditing] = useState(false);
@@ -47,10 +44,7 @@ function FilterChip({
                             setEditing(false);
                         }
                     }}
-                    className={cn(
-                        "w-[150px] bg-transparent text-[11.5px] text-ink-hi outline-none placeholder:text-muted",
-                        mono && "font-mono"
-                    )}
+                    className="w-[150px] bg-transparent text-[11.5px] text-ink-hi outline-none placeholder:text-muted"
                 />
             </span>
         );
@@ -64,7 +58,7 @@ function FilterChip({
         >
             <button onClick={() => setEditing(true)} className="flex items-center gap-[7px]">
                 <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">{label}</span>
-                <span className={cn("max-w-[170px] truncate text-[11.5px]", on && mono && "font-mono")}>
+                <span className="max-w-[170px] truncate text-[11.5px]">
                     {on ? value : placeholder}
                 </span>
             </button>
@@ -112,7 +106,6 @@ export function HistoryFilterRow() {
                 label="path"
                 value={filters.path}
                 placeholder="any"
-                mono
                 onChange={(v) => setHistoryFilter({ path: v })}
             />
         </div>

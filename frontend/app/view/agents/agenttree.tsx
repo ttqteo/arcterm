@@ -494,7 +494,7 @@ function ParentRow({
                                     <div className="truncate text-[11.5px] font-medium text-secondary">
                                         {s.type || "subagent"}
                                     </div>
-                                    <div className="mt-[3px] truncate font-mono text-[10.5px] text-muted">
+                                    <div className="mt-[3px] truncate text-[10.5px] text-muted">
                                         {s.model ?? ""}
                                     </div>
                                 </div>

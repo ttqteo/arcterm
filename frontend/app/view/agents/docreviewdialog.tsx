@@ -223,8 +223,8 @@ function FileCard(p: { path: string; icon: LucideIcon; action: string; onOpen: (
             <div className="flex items-center gap-2.5 rounded-[7px] border border-edge-mid bg-background px-2.5 py-2">
                 <p.icon size={15} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />
                 <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-[12px] font-semibold text-primary">{file}</div>
-                    <div className="truncate font-mono text-[10.5px] text-muted">{dir}</div>
+                    <div className="truncate text-[12px] font-semibold text-primary">{file}</div>
+                    <div className="truncate text-[10.5px] text-muted">{dir}</div>
                 </div>
                 <button
                     type="button"
@@ -249,7 +249,7 @@ function CanvasPane({ path, onOpen }: { path: string; onOpen: () => void }) {
                     The mockup settles this design, so there is no spec document: the decisions on the right are the
                     ones made beyond it. Open the canvas to review its boards.
                 </span>
-                <span className="break-all font-mono text-[11px] text-muted">{path}</span>
+                <span className="break-all text-[11px] text-muted">{path}</span>
             </div>
         </div>
     );
@@ -271,7 +271,7 @@ function DocumentPane({ path, onOpen }: { path: string; onOpen: () => void }) {
                 ) : load.status === "error" ? (
                     <div className="flex flex-col gap-1">
                         <span className="text-[13px] text-secondary">Couldn't read {file}</span>
-                        <span className="break-all font-mono text-[11px] text-muted">{path}</span>
+                        <span className="break-all text-[11px] text-muted">{path}</span>
                     </div>
                 ) : (
                     <MarkdownMessage text={load.text} className="text-[14px] leading-[1.65] text-secondary" />

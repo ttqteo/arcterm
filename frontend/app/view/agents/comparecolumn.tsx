@@ -79,7 +79,7 @@ function HeaderRowView({ row }: { row: CompareHeaderRow }) {
     return (
         <div className="flex items-center gap-[8px] pb-[6px] pl-[14px] pr-[12px] pt-[12px]">
             <span className={cn("h-[7px] w-[7px] flex-none rounded-full", SIDE_DOT[row.side])} />
-            <span className={cn("truncate font-mono text-[11.5px] font-semibold", SIDE_TEXT[row.side])}>{row.ref}</span>
+            <span className={cn("truncate text-[11.5px] font-semibold", SIDE_TEXT[row.side])}>{row.ref}</span>
             <span className="flex-none text-[11.5px] text-muted">{row.note}</span>
         </div>
     );

@@ -110,7 +110,7 @@ function HarnessMark({ runtime }: { runtime: string }) {
 function PathTail({ path }: { path: string }) {
     const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
     return (
-        <span title={path} className="flex min-w-0 font-mono text-[10.5px] text-muted">
+        <span title={path} className="flex min-w-0 text-[10.5px] text-muted">
             <span className="truncate">{path.slice(0, cut)}</span>
             <span className="flex-none">{path.slice(cut)}</span>
         </span>
@@ -207,7 +207,7 @@ function FileList({ rows }: { rows: AgentSyncHarness[] }) {
                             />
                         ) : null}
                     </span>
-                    <span className="font-mono text-[10.5px] text-muted">vault/steering/AGENTS.md</span>
+                    <span className="text-[10.5px] text-muted">vault/steering/AGENTS.md</span>
                 </span>
             </div>
 
@@ -281,7 +281,7 @@ function LineEditor({
     return (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-edge-mid bg-surface-code focus-within:ring-2 focus-within:ring-accent/25">
             <div className="flex h-[30px] flex-none items-center gap-2.5 border-b border-edge-faint px-3 text-[11px] tabular-nums text-muted">
-                <span title={path} className="min-w-0 truncate font-mono">
+                <span title={path} className="min-w-0 truncate">
                     {path}
                 </span>
                 <span className="flex-1" />
@@ -569,7 +569,7 @@ function SkillsMatrix({
                                         : "hover:bg-surface-hover"
                                 )}
                             >
-                                <span role="cell" className="truncate font-mono text-[12px] text-ink-hi">
+                                <span role="cell" className="truncate text-[12px] text-ink-hi">
                                     {r.name}
                                 </span>
                                 {r.cells.map((c) => (
@@ -630,7 +630,7 @@ function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: Sk
             className="flex w-[360px] flex-none flex-col gap-3.5 overflow-y-auto border-l border-border bg-surface p-4"
         >
             <div className="flex flex-col gap-1.5">
-                <div className="font-mono text-[14px] font-medium text-primary">{row.name}</div>
+                <div className="text-[14px] font-medium text-primary">{row.name}</div>
                 <div className="text-[12.5px] leading-[1.5] text-ink-mid">{skillNote(row)}</div>
             </div>
             <div className="flex flex-col gap-2">
@@ -639,7 +639,7 @@ function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: Sk
                     <>
                         <div className={card}>
                             <span className="text-[12.5px] font-semibold text-secondary">Arc vault</span>
-                            <span className="truncate font-mono text-[10.5px] text-muted">
+                            <span className="truncate text-[10.5px] text-muted">
                                 {skillFilePath(row, skillsroot, keep)}
                             </span>
                         </div>
@@ -649,7 +649,7 @@ function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: Sk
                                     <HarnessMark runtime={runtime} />
                                     {runtimeMeta(runtime).label}
                                 </span>
-                                <span className="font-mono text-[10.5px] text-muted">Overrides {over.join(", ")}</span>
+                                <span className="text-[10.5px] text-muted">Overrides {over.join(", ")}</span>
                             </div>
                         ))}
                     </>

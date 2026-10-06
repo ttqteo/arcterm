@@ -49,7 +49,7 @@ export function CodePathBar({ model }: { model: AgentsViewModel }) {
 
     return (
         <div className="flex flex-none items-center gap-2 border-b border-border px-3 py-1.5">
-            <span data-code-path={file.path} className="min-w-0 truncate font-mono text-[11.5px] text-secondary">
+            <span data-code-path={file.path} className="min-w-0 truncate text-[11.5px] text-secondary">
                 {file.path}
             </span>
             {dirty ? (

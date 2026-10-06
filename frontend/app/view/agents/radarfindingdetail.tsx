@@ -205,7 +205,7 @@ export function RadarFindingDetail({
                             </span>
                         ) : null}
                         {subsystemLabel(finding.subsystem) ? (
-                            <span className="font-mono text-[11.5px] text-ink-mid">{finding.subsystem}</span>
+                            <span className="text-[11.5px] text-ink-mid">{finding.subsystem}</span>
                         ) : null}
                         <AmbientTags {...ambientRefForFinding(finding)} />
                         <span className="flex-1" />
@@ -338,7 +338,7 @@ export function RadarFindingDetail({
                                                 <span className="text-[11px] tabular-nums text-muted">
                                                     {formatDate(s.observedts)}
                                                 </span>
-                                                <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.04em] text-ink-mid">
+                                                <span className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-ink-mid">
                                                     {s.collector}
                                                 </span>
                                                 <span className="text-[13px] leading-[1.45] text-secondary">
@@ -347,7 +347,7 @@ export function RadarFindingDetail({
                                                 {/* transcript refs carry a whole session uuid; uncapped, they squeezed the summary into a wrap */}
                                                 <span
                                                     title={s.sourceref}
-                                                    className="max-w-[220px] truncate font-mono text-[11px] text-muted"
+                                                    className="max-w-[220px] truncate text-[11px] text-muted"
                                                 >
                                                     {s.sourceref}
                                                 </span>
@@ -385,7 +385,7 @@ export function RadarFindingDetail({
                                         >
                                             <span
                                                 title={f}
-                                                className="min-w-0 flex-1 truncate font-mono text-xs text-ink-hi"
+                                                className="min-w-0 flex-1 truncate text-xs text-ink-hi"
                                             >
                                                 {f}
                                             </span>

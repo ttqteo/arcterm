@@ -189,7 +189,7 @@ function PlanPathField({ projectPath }: { projectPath: string }) {
                 aria-label="Plan file path"
                 onChange={(e) => setPlanPath(e.target.value)}
                 placeholder="Plan path, absolute or relative to the project"
-                className="w-full rounded-[7px] border border-edge-mid bg-background px-2.5 py-1.5 font-mono text-[11.5px] text-primary placeholder:text-muted outline-none focus:border-accent/60"
+                className="w-full rounded-[7px] border border-edge-mid bg-background px-2.5 py-1.5 text-[11.5px] text-primary placeholder:text-muted outline-none focus:border-accent/60"
             />
             {current?.error != null ? (
                 <span data-jarvis-plan-preview="error" className="text-[11px] leading-[1.45] text-error">

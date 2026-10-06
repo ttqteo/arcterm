@@ -76,7 +76,7 @@ function FileRow({
             </span>
             <span
                 className={cn(
-                    "min-w-0 flex-1 truncate font-mono text-[11.5px]",
+                    "min-w-0 flex-1 truncate text-[11.5px]",
                     selected ? "text-ink-hi" : "text-ink-mid"
                 )}
             >
@@ -101,7 +101,7 @@ function DirRow({ row, collapsed, onToggle }: { row: FileTreeRow; collapsed: boo
             ) : (
                 <ChevronDown size={12} className="flex-none text-muted" />
             )}
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-ink-mid">
+            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ink-mid">
                 {row.label}
             </span>
             <span className="flex-none text-[10.5px] tabular-nums text-muted">{row.files}</span>

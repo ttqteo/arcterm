@@ -175,7 +175,7 @@ function NeedsYouCard({
         <div className="rounded-[9px] border border-warning/45 bg-warning/[0.06] px-[11px] py-[9px]">
             <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap text-[10.5px] text-muted">
                 <span className="h-[7px] w-[7px] flex-none pulse-dot rounded-full bg-warning" />
-                <b className="font-mono font-semibold text-primary">{ask.taskid}</b>
+                <b className="font-semibold text-primary">{ask.taskid}</b>
                 <span className="truncate text-warning">waiting on you</span>
             </div>
             {first?.header ? <SubLabel className="mt-[6px] inline-block">{first.header}</SubLabel> : null}
@@ -258,7 +258,7 @@ function LeadAskCard({ model, run, ask }: { model: AgentsViewModel; run: RunInfo
         <div className="rounded-[9px] border border-edge-mid bg-surface-raised px-[11px] py-[9px]">
             <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                 <span className="h-[7px] w-[7px] flex-none pulse-dot rounded-full bg-warning" />
-                <b className="font-mono font-semibold text-primary">{ask.taskid}</b>
+                <b className="font-semibold text-primary">{ask.taskid}</b>
                 <span className="truncate">{leadAnswering(ask, now)}</span>
             </div>
             {first?.header ? <SubLabel className="mt-[6px] inline-block">{first.header}</SubLabel> : null}
@@ -351,7 +351,7 @@ function Lanes({ model, run, leadAsks }: { model: AgentsViewModel; run: RunInfo;
                                     {r.name}
                                 </div>
                                 {r.hist ? (
-                                    <div className="truncate font-mono text-[10.5px] text-muted">{r.hist}</div>
+                                    <div className="truncate text-[10.5px] text-muted">{r.hist}</div>
                                 ) : null}
                             </div>
                             <span

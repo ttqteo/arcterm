@@ -73,8 +73,8 @@ function Affordance({ toModal, open }: { toModal: boolean; open: boolean }) {
 }
 
 const TOOL_ROW = "flex items-center gap-2 rounded-[6px] px-1.5 py-[3px]";
-const VERB = "min-w-[50px] shrink-0 font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted";
-const TARGET = "min-w-0 truncate font-mono text-[11.5px] text-ink-mid";
+const VERB = "min-w-[50px] shrink-0 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted";
+const TARGET = "min-w-0 truncate text-[11.5px] text-ink-mid";
 // 30px = the row's 6px padding + the 16px status square + the 8px gap, so the panel sits under the target
 const DETAIL_PANEL = "mb-1.5 ml-[30px] mt-1 overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code";
 
@@ -156,7 +156,7 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
     if (detail.kind === "skill") {
         return (
             <div className={pad}>
-                <div className="flex items-center gap-2 font-mono text-[11.5px]">
+                <div className="flex items-center gap-2 text-[11.5px]">
                     <span className="text-syntax-keyword">skill</span>
                     <span className="text-primary">{detail.name}</span>
                 </div>
@@ -182,7 +182,7 @@ export function ToolDetailBody({ detail, variant }: { detail: ActionDetail; vari
                         >
                             {f.badge}
                         </span>
-                        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-hi">{f.path}</span>
+                        <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-hi">{f.path}</span>
                         <span className="text-[10.5px] font-bold tabular-nums text-diff-added">+{f.adds}</span>
                         <span className="text-[10.5px] font-bold tabular-nums text-diff-removed">−{f.dels}</span>
                     </div>
@@ -259,7 +259,7 @@ export function ToolLine({ action }: { action: AgentActionEntry }) {
             <div onClick={onClick} className={cn(TOOL_ROW, detail && "cursor-pointer hover:bg-surface-hover")}>
                 <StatusSquare ok={ok} />
                 <span className={VERB}>{action.verb}</span>
-                <span className={TARGET}>{action.target}</span>
+                <span className={cn(TARGET, detail?.kind === "bash" && "font-mono")}>{action.target}</span>
                 {action.summary ? (
                     <span className={cn("shrink-0 text-[10.5px] tabular-nums", ok ? "text-muted" : "text-error")}>
                         {action.summary}

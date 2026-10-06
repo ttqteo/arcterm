@@ -126,7 +126,7 @@ export function TaskDetail({
                         into two with half the Stage empty beside it. */}
                     <h1 className="text-[22px] font-bold tracking-[-0.02em] text-primary">{detail.objective}</h1>
                     {detail.ticket ? (
-                        <span className="flex-none rounded bg-surface-hover px-2 py-0.5 font-mono text-[11px] text-ink-mid">
+                        <span className="flex-none rounded bg-surface-hover px-2 py-0.5 text-[11px] text-ink-mid">
                             {detail.ticket}
                         </span>
                     ) : null}
@@ -177,7 +177,7 @@ export function TaskDetail({
                     ) : null}
                     {refs.length > 0 ? (
                         <MachineField label="Refs">
-                            <div className="flex flex-wrap gap-1.5 font-mono text-[11px]">
+                            <div className="flex flex-wrap gap-1.5 text-[11px]">
                                 {refs.map((r) => (
                                     <span key={r} className="rounded bg-surface-hover px-1.5 py-0.5">
                                         {r}

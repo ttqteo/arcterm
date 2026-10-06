@@ -64,7 +64,7 @@ const QI = 0;
 // the comment column beside each paragraph, as the mockup draws it; one column below COMMENT_COLUMN_MIN_PANE
 const GRID = "grid grid-cols-[minmax(0,1fr)_300px] gap-x-[40px]";
 const PROSE = "text-[15px] leading-[1.75] text-secondary";
-const MONO_META = "font-mono text-[10.5px] text-muted";
+const META_TEXT = "text-[10.5px] text-muted";
 
 const ACCENT_BTN =
     "flex cursor-pointer items-center gap-2 rounded-[8px] bg-accent px-3.5 py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
@@ -74,7 +74,7 @@ const OFF_BTN =
     "flex cursor-default items-center gap-2 rounded-[8px] bg-surface-hover px-3.5 py-[7px] text-[12.5px] font-semibold text-muted";
 const KBD = "rounded-[4px] bg-background/20 px-[5px] font-mono text-[10.5px]";
 const CHIP =
-    "inline-flex h-[17px] w-[17px] items-center justify-center rounded-full bg-accent font-mono text-[10.5px] font-bold leading-none text-background";
+    "inline-flex h-[17px] w-[17px] items-center justify-center rounded-full bg-accent text-[10.5px] font-bold leading-none text-background";
 
 // the selection reduced to one paragraph's sentences, and where its Comment button floats
 interface CommentTarget {
@@ -206,8 +206,8 @@ function Toolbar(p: {
     return (
         <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint bg-surface px-[22px] py-[8px]">
             <FileText size={15} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />
-            <span className="font-mono text-[12px] font-semibold text-secondary">{file}</span>
-            {!p.narrow ? <span className="min-w-0 truncate font-mono text-[10.5px] text-muted">{dir}</span> : null}
+            <span className="text-[12px] font-semibold text-secondary">{file}</span>
+            {!p.narrow ? <span className="min-w-0 truncate text-[10.5px] text-muted">{dir}</span> : null}
             {state.doc === "latex" ? (
                 <div className="ml-[6px]">
                     <Segmented
@@ -420,7 +420,7 @@ function Changes(p: {
                 ) : load.current == null ? (
                     <div data-doc-review-gone className="flex flex-col gap-1 pt-[26px]">
                         <span className="text-[13px] text-secondary">Couldn't read {file}</span>
-                        <span className="break-all font-mono text-[11px] text-muted">{state.path}</span>
+                        <span className="break-all text-[11px] text-muted">{state.path}</span>
                     </div>
                 ) : (
                     rows.map((row) => (
@@ -538,7 +538,7 @@ function Head(p: {
                                 onFocus={p.onFocus}
                                 className="flex items-baseline gap-2 text-left text-[13px] text-secondary"
                             >
-                                <span className="inline-flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border border-accent font-mono text-[10.5px] font-bold text-accent-soft">
+                                <span className="inline-flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border border-accent text-[10.5px] font-bold text-accent-soft">
                                     {item.n}
                                 </span>
                                 {item.text}
@@ -560,7 +560,7 @@ function Head(p: {
                                 >
                                     {lead != null ? (
                                         <>
-                                            <span className="font-mono text-[11px] text-muted">{lead.label}</span>
+                                            <span className="text-[11px] text-muted">{lead.label}</span>
                                             {lead.rest}
                                         </>
                                     ) : (
@@ -626,7 +626,7 @@ function Row(p: {
     if (row.kind === "unchanged") {
         return (
             <div data-doc-review-unchanged className="flex items-center gap-[10px] pt-[14px]">
-                <span className="font-mono text-[11px] text-muted">{row.label}</span>
+                <span className="text-[11px] text-muted">{row.label}</span>
                 <div className="h-px flex-1 bg-edge-mid" />
                 <button
                     type="button"
@@ -645,7 +645,7 @@ function Row(p: {
                 data-doc-section={s.status === "removed" ? undefined : s.index}
                 className={cn("flex items-baseline gap-[10px] pt-[26px]", s.status === "removed" && DELETED)}
             >
-                {showsLabel(s) ? <span className="font-mono text-[12px] text-muted">{s.label}</span> : null}
+                {showsLabel(s) ? <span className="text-[12px] text-muted">{s.label}</span> : null}
                 <h2
                     className={cn(
                         "m-0 text-[18px] font-semibold text-primary",
@@ -655,7 +655,7 @@ function Row(p: {
                 >
                     {s.title}
                 </h2>
-                {row.stats !== "" ? <span className={cn(MONO_META, "whitespace-nowrap")}>{row.stats}</span> : null}
+                {row.stats !== "" ? <span className={cn(META_TEXT, "whitespace-nowrap")}>{row.stats}</span> : null}
             </div>
         );
     }
@@ -785,7 +785,7 @@ function ImageFallback({ alt, path }: { alt: string; path: string }) {
             className="inline-flex max-w-full flex-col gap-1 rounded-[8px] border border-edge-mid px-3 py-2 align-top"
         >
             <span className="text-[12.5px] text-secondary">{alt || "Image"}</span>
-            <span className="break-all font-mono text-[11px] text-muted">{path}</span>
+            <span className="break-all text-[11px] text-muted">{path}</span>
         </span>
     );
 }
@@ -828,9 +828,9 @@ function ImageFigure({ mark, path, afterIndex }: { mark: ImageMark; path: string
             className="my-[6px] flex flex-col gap-[6px]"
         >
             {mark.kind === "added" ? (
-                <span className="font-mono text-[10.5px] text-diff-added">+ image · {mark.src}</span>
+                <span className="text-[10.5px] text-diff-added">+ image · {mark.src}</span>
             ) : mark.kind === "removed" ? (
-                <span className="font-mono text-[10.5px] text-diff-removed">− image · {mark.src}</span>
+                <span className="text-[10.5px] text-diff-removed">− image · {mark.src}</span>
             ) : null}
             {mark.kind !== "removed" ? (
                 <ImageBody alt={mark.alt} src={mark.src} path={path} added={mark.kind === "added"} />
@@ -854,7 +854,7 @@ function CommentCard({
     const head = (
         <div className="flex items-center gap-2">
             <span className={cn(CHIP, "h-[18px] w-[18px]")}>{n}</span>
-            <span className={MONO_META}>{loc}</span>
+            <span className={META_TEXT}>{loc}</span>
             <div className="flex-1" />
             {!comment.draft && !sent ? (
                 <button
@@ -868,7 +868,7 @@ function CommentCard({
             ) : null}
         </div>
     );
-    const quote = <div className="font-mono text-[11px] leading-[1.45] text-muted">"{comment.quote}"</div>;
+    const quote = <div className="text-[11px] leading-[1.45] text-muted">"{comment.quote}"</div>;
     if (!comment.draft) {
         return (
             <div
@@ -1073,7 +1073,7 @@ function AnswerButtons(p: {
                 className={ACCENT_BTN}
             >
                 Request changes
-                <span className="min-w-[16px] rounded-full bg-background px-[5px] text-center font-mono text-[10.5px] text-accent-soft">
+                <span className="min-w-[16px] rounded-full bg-background px-[5px] text-center text-[10.5px] text-accent-soft">
                     {p.tray.saved}
                 </span>
                 {p.kbd}

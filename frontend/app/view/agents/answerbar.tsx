@@ -79,7 +79,7 @@ export function DocReviewSummary({
                     </span>{" "}
                     · {n} {n === 1 ? one : many}
                 </div>
-                <div title={review.path} className="truncate font-mono text-[12px] font-semibold text-primary">
+                <div title={review.path} className="truncate text-[12px] font-semibold text-primary">
                     {file}
                 </div>
             </div>

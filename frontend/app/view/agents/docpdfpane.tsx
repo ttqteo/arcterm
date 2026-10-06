@@ -42,7 +42,7 @@ const ACCENT_BTN =
     "flex cursor-pointer items-center gap-2 rounded-[8px] bg-accent px-3 py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
 const SECONDARY_BTN =
     "flex flex-none cursor-pointer items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface-raised text-[12.5px] font-semibold text-primary hover:border-edge-strong disabled:cursor-default disabled:opacity-50";
-const META = "whitespace-nowrap font-mono text-[10.5px] text-muted";
+const META = "whitespace-nowrap text-[10.5px] text-muted";
 
 const baseName = (path: string) => path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
 
@@ -111,7 +111,7 @@ export function PdfToolbar(p: { agentId: string; review: DocReviewState; pageLim
             {r.pages > 0 ? (
                 <span
                     data-doc-review-pdf-pages
-                    className="flex-none whitespace-nowrap font-mono text-[11px] font-semibold text-secondary"
+                    className="flex-none whitespace-nowrap text-[11px] font-semibold text-secondary"
                 >
                     {pagesLabel(r.pages)}
                 </span>

@@ -114,7 +114,7 @@ export function RecordBand({
             ) : band.case === "one" ? (
                 <>
                     <MachineGlyph />
-                    <span className="flex-none font-mono text-[11px] font-semibold text-accent-soft">
+                    <span className="flex-none text-[11px] font-semibold text-accent-soft">
                         {band.edge.taskId}
                     </span>
                     <EdgeChip tag={band.edge} />

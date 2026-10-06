@@ -38,7 +38,7 @@ export function AggregatePane({
             <div className="flex-none border-b border-edge-faint px-[15px] pb-[11px] pt-[14px]">
                 {/* base first, the order `git diff base...head` reads in and the order the ref chip and
                     the range summary print — this pane was the last place still naming it backwards */}
-                <div className="flex flex-wrap items-center gap-[8px] font-mono text-[12px] text-ink-mid">
+                <div className="flex flex-wrap items-center gap-[8px] text-[12px] text-ink-mid">
                     <span className={SIDE_TEXT.base}>{base}</span>
                     <span className="text-ink-faint">→</span>
                     <span className={SIDE_TEXT.head}>{head}</span>
@@ -64,7 +64,7 @@ export function AggregatePane({
                             )}
                         >
                             {f === "mergebase" ? "Since the split" : "Tip to tip"}
-                            <span className="font-mono text-[10px] font-normal text-ink-faint">
+                            <span className="text-[10px] font-normal text-ink-faint">
                                 {f === "mergebase" ? "···" : "··"}
                             </span>
                         </button>

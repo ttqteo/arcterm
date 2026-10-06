@@ -95,7 +95,7 @@ function EventRow({
                 <span className="truncate">{eventText(event)}</span>
                 {artifacts.length > 0 && (
                     <span
-                        className="ml-auto shrink-0 cursor-pointer border-b border-dotted border-edge-strong font-mono text-[10px] text-accent-soft hover:text-accent"
+                        className="ml-auto shrink-0 cursor-pointer border-b border-dotted border-edge-strong text-[10px] text-accent-soft hover:text-accent"
                         onClick={(e) => {
                             e.stopPropagation(); // the row's own click target must not steal the artifact link
                             openArtifact(runTree(run), artifacts[0]);
@@ -110,7 +110,7 @@ function EventRow({
                 <div
                     key={p.taskid}
                     data-plan-review-pick={p.taskid}
-                    className="truncate pl-[52px] font-mono text-[10.5px] text-ink-mid"
+                    className="truncate pl-[52px] text-[10.5px] text-ink-mid"
                 >
                     {[p.taskid, p.model, p.reason].filter(Boolean).join(" · ")}
                 </div>

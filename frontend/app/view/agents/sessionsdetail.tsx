@@ -166,7 +166,7 @@ function Meta({ items, className }: { items: { k: string; v: string }[]; classNa
             {items.map((m) => (
                 <span key={m.k}>
                     <span className="text-muted">{m.k} </span>
-                    <span className={cn("text-secondary", m.k === "branch" && "font-mono")}>{m.v}</span>
+                    <span className="text-secondary">{m.v}</span>
                 </span>
             ))}
         </div>

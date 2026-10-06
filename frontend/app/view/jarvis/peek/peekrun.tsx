@@ -75,7 +75,7 @@ function PhaseCell({ phase }: { phase: PeekPhase }) {
 function TaskRowView({ row }: { row: PeekTaskRow }) {
     return (
         <div className="grid grid-cols-[26px_minmax(0,1fr)_12px_36px] items-center gap-[7px] px-3 py-[5px]">
-            <span className="truncate font-mono text-[10.5px] text-muted">{row.id}</span>
+            <span className="truncate text-[10.5px] text-muted">{row.id}</span>
             <span className="truncate text-[12.5px] text-secondary">{row.title}</span>
             <span aria-label={row.state} className={cn("flex justify-center", TONE_TEXT[row.mark])}>
                 <ToneMark tone={row.mark} size={12} />

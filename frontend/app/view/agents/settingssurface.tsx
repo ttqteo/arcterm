@@ -475,8 +475,8 @@ function Note({ tone = "warning", children }: { tone?: "warning" | "error"; chil
     );
 }
 
-function Mono({ children, warn }: { children: ReactNode; warn?: boolean }) {
-    return <span className={cn("font-mono text-[12.5px]", warn ? "text-warning" : "text-secondary")}>{children}</span>;
+function Value({ children, warn }: { children: ReactNode; warn?: boolean }) {
+    return <span className={cn("text-[12.5px]", warn ? "text-warning" : "text-secondary")}>{children}</span>;
 }
 
 function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
@@ -610,7 +610,7 @@ function CommitText({
                     }
                 }}
                 className={cn(
-                    "w-full rounded border border-edge-mid bg-surface-raised py-[6px] pl-2.5 font-mono text-[12px] text-primary outline-none focus:border-accent-700",
+                    "w-full rounded border border-edge-mid bg-surface-raised py-[6px] pl-2.5 text-[12px] text-primary outline-none focus:border-accent-700",
                     children != null ? "pr-9" : "pr-2.5",
                     disabled && "cursor-not-allowed opacity-40"
                 )}
@@ -653,7 +653,7 @@ function SecretInput({ placeholder, onCommit }: { placeholder: string; onCommit:
                     e.currentTarget.blur();
                 }
             }}
-            className="w-[300px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] font-mono text-[12px] text-primary outline-none focus:border-accent-700"
+            className="w-[300px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
         />
     );
 }
@@ -1183,7 +1183,7 @@ function HeadlessAISection() {
                                 >
                                     {o.label}
                                 </span>
-                                <span className="font-mono text-[10.5px] font-normal tracking-[0.02em] text-muted">
+                                <span className="text-[10.5px] font-normal tracking-[0.02em] text-muted">
                                     {o.mono}
                                 </span>
                                 <span
@@ -1258,16 +1258,16 @@ function AboutSection() {
     return (
         <div>
             <SettingRow id="about.app">
-                <Mono>{version.app}</Mono>
+                <Value>{version.app}</Value>
             </SettingRow>
             <SettingRow id="about.server">
-                <Mono warn={version.mismatch}>{version.server}</Mono>
+                <Value warn={version.mismatch}>{version.server}</Value>
             </SettingRow>
             <SettingRow id="about.buildtime">
                 <span className="text-[12.5px] tabular-nums text-secondary">{formatBuildTime(version.buildTime)}</span>
             </SettingRow>
             <SettingRow id="about.platform">
-                <Mono>{version.platform}</Mono>
+                <Value>{version.platform}</Value>
             </SettingRow>
             {version.mismatch ? (
                 <Note>

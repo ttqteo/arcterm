@@ -324,7 +324,7 @@ function DispatchedAgents({ model, leadId }: { model: AgentsViewModel; leadId: s
                                     {s.type || "subagent"}
                                 </div>
                                 {s.model ? (
-                                    <div className="truncate font-mono text-[9.5px] text-muted">{s.model}</div>
+                                    <div className="truncate text-[9.5px] text-muted">{s.model}</div>
                                 ) : null}
                             </div>
                             <span className={"shrink-0 whitespace-nowrap text-[9.5px] font-medium " + tone}>
@@ -538,7 +538,7 @@ export function PhaseRail({
                                     </span>
                                 </div>
                                 {p.skill ? (
-                                    <div className="mt-0.5 font-mono text-[11px] text-muted">{p.skill}</div>
+                                    <div className="mt-0.5 text-[11px] text-muted">{p.skill}</div>
                                 ) : null}
                                 {p.triage ? <TriageChip triage={p.triage} /> : null}
                                 {(p.artifacts ?? []).map((art) => (
@@ -547,7 +547,7 @@ export function PhaseRail({
                                         className="mt-2 inline-flex items-center gap-1.5 rounded-[7px] border border-border bg-background px-2.5 py-1"
                                     >
                                         <span className="text-[11px] text-muted">▸</span>
-                                        <span className="font-mono text-[11px] text-secondary">{art}</span>
+                                        <span className="text-[11px] text-secondary">{art}</span>
                                     </div>
                                 ))}
                                 {thread.showWorkers ? (

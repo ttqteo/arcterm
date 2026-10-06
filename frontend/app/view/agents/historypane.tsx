@@ -151,7 +151,7 @@ function Row({
                 <span
                     key={r.label}
                     className={cn(
-                        "max-w-[110px] flex-none truncate rounded-[4px] border px-[6px] py-[1px] font-mono text-[10.5px] font-semibold",
+                        "max-w-[110px] flex-none truncate rounded-[4px] border px-[6px] py-[1px] text-[10.5px] font-semibold",
                         refChipClass(r.kind)
                     )}
                 >

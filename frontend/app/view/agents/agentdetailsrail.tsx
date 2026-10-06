@@ -207,7 +207,7 @@ function FileRow({
     const body = (
         <>
             <span className={cn("flex-none font-bold", statusColor(status))}>{status}</span>
-            <span className="min-w-0 flex-1 truncate font-mono">{path}</span>
+            <span className="min-w-0 flex-1 truncate">{path}</span>
             <span className="flex-none text-[10.5px] tabular-nums text-diff-added">+{adds}</span>
             {dels > 0 ? <span className="flex-none text-[10.5px] tabular-nums text-diff-removed">−{dels}</span> : null}
         </>
@@ -455,7 +455,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 <div className="truncate text-[11.5px] font-semibold text-secondary">
                                     {s.type || "subagent"}
                                 </div>
-                                <div className="truncate font-mono text-[10.5px] text-muted">{s.model ?? ""}</div>
+                                <div className="truncate text-[10.5px] text-muted">{s.model ?? ""}</div>
                             </div>
                             <span
                                 className="whitespace-nowrap text-[10.5px] font-semibold"
@@ -514,7 +514,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 <div className="flex min-w-0 items-center gap-[6px]">
                     <span
                         title={artifacts.topic}
-                        className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted"
+                        className="min-w-0 flex-1 truncate text-[10.5px] text-muted"
                     >
                         {artifacts.topic}
                     </span>
@@ -581,11 +581,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <>
                         <DetailLine label="Project">{agentProject(lineage, agents, agent) || "—"}</DetailLine>
                         <DetailLine label="Branch" title={branch || undefined}>
-                            <span className="font-mono">{branch || "—"}</span>
+                            <span>{branch || "—"}</span>
                         </DetailLine>
                         {worktree ? (
                             <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
-                                <span className="font-mono">{worktree}</span>
+                                <span>{worktree}</span>
                             </DetailLine>
                         ) : null}
                         <DetailLine

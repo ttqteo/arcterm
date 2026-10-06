@@ -456,7 +456,7 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
                                                 }}
                                                 onFocus={() => setBranchListOpen(true)}
                                                 placeholder={currentBranch || "feat/new-agent"}
-                                                className="flex-1 bg-transparent px-3 py-2 font-mono text-[12.5px] text-secondary outline-none"
+                                                className="flex-1 bg-transparent px-3 py-2 text-[12.5px] text-secondary outline-none"
                                             />
                                             {branches.length > 0 ? (
                                                 <button
@@ -494,7 +494,7 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
                                                             b.name === effectiveBranch ? "bg-accent" : "bg-muted"
                                                         )}
                                                     />
-                                                    <span className="flex-1 truncate font-mono text-[12px]">{b.name}</span>
+                                                    <span className="flex-1 truncate text-[12px]">{b.name}</span>
                                                     {b.age ? (
                                                         <span className="shrink-0 text-[10.5px] text-muted">{b.age}</span>
                                                     ) : null}
@@ -534,7 +534,7 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
                 </div>
                 <div className="flex shrink-0 items-center gap-3 border-t border-border px-[18px] py-[13px]">
                     <div title={selectedPath || undefined} className="min-w-0 flex-1 truncate text-[12px] text-muted">
-                        Starts in <span className="font-mono text-[11px] text-ink-hi">{selectedPath || "—"}</span>
+                        Starts in <span className="text-[11px] text-ink-hi">{selectedPath || "—"}</span>
                         {footBranch ? ` · ${footBranch}` : null}
                     </div>
                     <DialogButton variant="secondary" hint="esc" onClick={close}>
