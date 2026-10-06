@@ -7,7 +7,7 @@
     "productName": "Wave",
     "description": "Open-Source AI-Native Terminal Built for Seamless Workflows",
     "license": "Apache-2.0",
-    "version": "0.14.22",
+    "version": "0.14.23",
     "homepage": "https://waveterm.dev",
     "private": true,
     "type": "module",
