@@ -9,9 +9,9 @@
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { composerReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, FileDiff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { burstRenderMode, conversationText, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import {
     filesChangedLabel,
@@ -71,6 +71,38 @@ function UserMessage({ text, onContextMenu }: { text: string; onContextMenu: (e:
     );
 }
 
+// the agent's prose: plain text, with a copy button that shows on hover (the thumbs Antigravity has beside it have
+// nothing to send to)
+function AssistantMessage({ text, onContextMenu }: { text: string; onContextMenu: (e: React.MouseEvent) => void }) {
+    const [copied, setCopied] = useState(false);
+    useEffect(() => {
+        if (!copied) {
+            return;
+        }
+        const t = window.setTimeout(() => setCopied(false), 1500);
+        return () => window.clearTimeout(t);
+    }, [copied]);
+    return (
+        <div data-compact-message onContextMenu={onContextMenu} className="group/msg mt-3">
+            <div className="text-[13px] leading-[1.6] text-secondary">
+                <MarkdownMessage text={text} />
+            </div>
+            <button
+                type="button"
+                aria-label={copied ? "Copied" : "Copy reply"}
+                title={copied ? "Copied" : "Copy reply"}
+                onClick={() => {
+                    void navigator.clipboard.writeText(text);
+                    setCopied(true);
+                }}
+                className="mt-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-[5px] text-ink-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-secondary focus-visible:opacity-100 group-hover/msg:opacity-100"
+            >
+                {copied ? <Check size={13} aria-hidden /> : <Copy size={13} aria-hidden />}
+            </button>
+        </div>
+    );
+}
+
 // "Worked for 24s ›": everything the agent did between two pieces of prose, folded; opens to its tool lines
 function WorkLine({
     work,
@@ -114,24 +146,48 @@ function WorkLine({
     );
 }
 
-// "1 file changed +647 −6 ›": what a stretch of work edited, opening to the diff
-function FilesChangedBar({ files, adds, dels }: { files: EditFile[]; adds: number; dels: number }) {
+// "1 file changed +647 −6 ›  [Review]": what a stretch of work edited, opening to the diff; Review goes to the Diff
+// surface for the project when the caller knows it
+function FilesChangedBar({
+    files,
+    adds,
+    dels,
+    onReview,
+}: {
+    files: EditFile[];
+    adds: number;
+    dels: number;
+    onReview?: () => void;
+}) {
     const [open, setOpen] = useState(false);
     return (
         <div data-compact-files className="mt-2 overflow-hidden rounded-[8px] border border-edge-mid bg-surface">
-            <button
-                type="button"
-                aria-expanded={open}
-                onClick={() => setOpen((v) => !v)}
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-[7px] text-left text-[12.5px] hover:bg-surface-hover"
-            >
-                <span className="text-secondary">{filesChangedLabel(files.length)}</span>
-                <span className="font-semibold tabular-nums text-diff-added">+{adds}</span>
-                <span className="font-semibold tabular-nums text-diff-removed">−{dels}</span>
-                <span className="ml-auto flex text-muted">
-                    <Caret open={open} />
-                </span>
-            </button>
+            <div className="flex items-center gap-2 pr-2 hover:bg-surface-hover">
+                <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpen((v) => !v)}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-[7px] text-left text-[12.5px]"
+                >
+                    <span className="text-secondary">{filesChangedLabel(files.length)}</span>
+                    <span className="font-semibold tabular-nums text-diff-added">+{adds}</span>
+                    <span className="font-semibold tabular-nums text-diff-removed">−{dels}</span>
+                    <span className="flex text-muted">
+                        <Caret open={open} />
+                    </span>
+                </button>
+                {onReview ? (
+                    <button
+                        type="button"
+                        data-compact-review
+                        onClick={onReview}
+                        className="flex flex-none cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-[9px] py-[3px] text-[12px] text-secondary hover:border-edge-strong hover:text-primary"
+                    >
+                        <FileDiff size={12} aria-hidden />
+                        Review
+                    </button>
+                ) : null}
+            </div>
             <AnimatePresence initial={false}>
                 {open ? (
                     <motion.div
@@ -155,10 +211,13 @@ function FilesChangedBar({ files, adds, dels }: { files: EditFile[]; adds: numbe
 export function CompactTranscript({
     entries,
     active,
+    onReview,
     className,
 }: {
     entries: AgentEntry[];
     active?: boolean;
+    // opens the changes in the Diff surface; without it the files bar has no Review button
+    onReview?: () => void;
     className?: string;
 }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
@@ -192,15 +251,7 @@ export function CompactTranscript({
                     case "user":
                         return <UserMessage key={item.index} text={item.text} onContextMenu={copyMenu(item.text)} />;
                     case "message":
-                        return (
-                            <div
-                                key={item.index}
-                                onContextMenu={copyMenu(item.text)}
-                                className="mt-3 text-[13px] leading-[1.6] text-secondary"
-                            >
-                                <MarkdownMessage text={item.text} />
-                            </div>
-                        );
+                        return <AssistantMessage key={item.index} text={item.text} onContextMenu={copyMenu(item.text)} />;
                     case "work":
                         return (
                             <Fragment key={"w" + item.startIndex}>
@@ -211,7 +262,7 @@ export function CompactTranscript({
                                     onToggle={() => toggle(item.startIndex)}
                                 />
                                 {item.files.length > 0 ? (
-                                    <FilesChangedBar files={item.files} adds={item.adds} dels={item.dels} />
+                                    <FilesChangedBar files={item.files} adds={item.adds} dels={item.dels} onReview={onReview} />
                                 ) : null}
                             </Fragment>
                         );

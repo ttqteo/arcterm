@@ -16,6 +16,7 @@ import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
+import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentEntry } from "./agentsviewmodel";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import type { Runtime } from "./launch";
@@ -275,7 +276,17 @@ function SessionBody({
     } else if (entries.length === 0) {
         body = <div className="py-4 text-[13px] text-muted">No transcript to show.</div>;
     } else {
-        body = <CompactTranscript entries={entries} active={session.live} />;
+        body = (
+            <CompactTranscript
+                entries={entries}
+                active={session.live}
+                onReview={
+                    session.projectpath
+                        ? () => openDiff(model, projectDiffScope(session.projectname || "project", session.projectpath))
+                        : undefined
+                }
+            />
+        );
     }
     return (
         <div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto", className)}>
