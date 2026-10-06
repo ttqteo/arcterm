@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -34,7 +33,7 @@ func TestCreateProjectCommandRejectsEmptyName(t *testing.T) {
 }
 
 func TestCreateProjectCommandWritesValid(t *testing.T) {
-	wavebase.ConfigHome_VarCache = t.TempDir()
+	withConfigHome(t, t.TempDir())
 	ws := &WshServer{}
 	dir := t.TempDir()
 	if err := ws.CreateProjectCommand(context.Background(), wshrpc.CommandCreateProjectData{
@@ -53,7 +52,7 @@ func TestCreateProjectCommandWritesValid(t *testing.T) {
 // group header RW-TEST-CHECKPOINT: the frontend resolves a channel's project by path, and two names at one
 // path leave it picking an arbitrary winner. Refuse the registration instead.
 func TestCreateProjectCommandRejectsADuplicatePath(t *testing.T) {
-	wavebase.ConfigHome_VarCache = t.TempDir()
+	withConfigHome(t, t.TempDir())
 	ws := &WshServer{}
 	dir := t.TempDir()
 	if err := ws.CreateProjectCommand(context.Background(), wshrpc.CommandCreateProjectData{Name: "waveterm", Path: dir}); err != nil {
@@ -73,7 +72,7 @@ func TestCreateProjectCommandRejectsADuplicatePath(t *testing.T) {
 // re-registering the same project at its own path is an update, not a collision: the launcher persists a
 // live-derived project on first launch and must not start failing once it is registered.
 func TestCreateProjectCommandAllowsReregisteringItself(t *testing.T) {
-	wavebase.ConfigHome_VarCache = t.TempDir()
+	withConfigHome(t, t.TempDir())
 	ws := &WshServer{}
 	dir := t.TempDir()
 	for i := 0; i < 2; i++ {
