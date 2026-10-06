@@ -24,21 +24,23 @@ press **+**, leave a comment, comment on a range of lines, and send all comments
 | 8 | Either side of a diff can be commented: an added or context line (new side) or a removed line (old side). | "Why did you delete this?" is a review comment too. |
 | 9 | Sending is blocked while the agent has an open ask. | Pasted text would land in the ask's answer field. |
 | 10 | Drafts live in a jotai atom per repository, in memory only. | They survive switching surfaces (the Diff surface unmounts), not a restart; they are drafts until sent. |
-| 11 | The Code surface's one-line "Send to agent" (`codepathbar.tsx` `SendToAgent`, `codehandoff.ts` `handoffLine`) is removed. | One way to send feedback on code. The Code surface gets line comments in a later stage, reusing this design's store, tray and format. |
+| 11 | The Code surface's one-line "Send to agent" (`codepathbar.tsx` `SendToAgent`) is removed. `handoffLine` stays: canvas marks send through it. | One way to send feedback on code. The Code surface gets line comments in a later stage, reusing this design's store, tray and format. |
 
 ## Data: `GitReviewPatchCommand`
 
 A new wshrpc command in `pkg/wshrpc` (`wshrpctypes_*.go`), then `task generate`.
 
-- Data: `{ cwd: string; hash?: string }`. No hash: the working tree against `HEAD`, untracked files
+- Data: `{ cwd: string; hash?: string; maxbytes: number }`, `maxbytes` per file as `GitFileAtRefCommand` takes it
+  (the frontend passes `MAX_DIFF_BYTES`). No hash: the working tree against `HEAD`, untracked files
   included. A hash: that commit against its first parent (the root commit against the empty tree).
 - Returns `{ isrepo: boolean; files: ReviewPatchFile[] }`, in `git diff`'s path order, where
-  `ReviewPatchFile` is `{ path; oldpath?; diff?; untracked?; content?; binary?; toolarge?; size? }`.
+  `ReviewPatchFile` is `{ path; oldpath?; diff?; untracked?; content?; toolarge?; size? }`.
   `diff` is that file's unified patch; an untracked file sends `content` instead.
 - The fields match `diffFileView` in `gitdiff.ts`, which turns each file into a `FileView` and has no
   caller today. It becomes the review's adapter.
-- A file over the existing per-file size cap sends `toolarge` and `size`, and renders as "too large to
-  show", never as an empty diff. A binary file sends `binary`.
+- A file whose patch is over `maxbytes` sends `toolarge` and `size`, and renders as "too large to show",
+  never as an empty diff. A binary file sends git's own patch text, which `parseUnifiedDiff` already reads as
+  binary.
 - The handler runs `git` once for the diff and splits it on `diff --git` headers, plus one read per
   untracked file. Errors return as errors; a non-repo cwd returns `isrepo: false`.
 
@@ -152,8 +154,8 @@ endLine; quote: string[]; note }`. The quote is taken when the comment is added.
 
 ## Removed
 
-- `SendToAgent` in `frontend/app/view/code/codepathbar.tsx` and `handoffLine` in `codehandoff.ts`, with
-  their tests. `liveAgentsForProject` stays: the tray uses it.
+- `SendToAgent` in `frontend/app/view/code/codepathbar.tsx`. `codehandoff.ts` stays whole: `handoffLine` sends
+  canvas marks (`canvasmarks.ts`) and the tray uses `liveAgentsForProject`.
 
 ## Later (not in this design)
 
