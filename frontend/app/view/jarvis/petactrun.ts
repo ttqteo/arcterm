@@ -51,16 +51,46 @@ async function escort(
     }
 }
 
-// An ack settles its row in place, so the peek stays open; the reload drops the row now instead of on the
-// next 10s poll.
-async function ack(act: Extract<PetAct, { verb: "ack" }>): Promise<void> {
+// An ack, an approve and a retry settle their row in place, so the peek stays open; the reload drops the row
+// now instead of on the next 10s poll. The calls are the Brief queue's own (briefsurface.tsx actOnQueue).
+async function settle(act: PetAct, call: () => Promise<unknown>): Promise<void> {
     setActState(act.id, { status: "running" });
     try {
-        await RpcApi.AckRunCommand(TabRpcClient, { channelid: act.channelId, runid: act.runId });
+        await call();
         setActState(act.id, { status: "done" });
         await loadAttention();
     } catch (e) {
         setActState(act.id, { status: "error", text: errText(e) });
+    }
+}
+
+function settleInPlace(act: PetAct): Promise<void> | null {
+    switch (act.verb) {
+        case "ack":
+            return settle(act, () =>
+                RpcApi.AckRunCommand(TabRpcClient, { channelid: act.channelId, runid: act.runId })
+            );
+        case "approve-phase":
+            return settle(act, () =>
+                RpcApi.AdvanceRunCommand(TabRpcClient, {
+                    channelid: act.channelId,
+                    runid: act.runId,
+                    phaseidx: act.phaseIdx,
+                    action: "approve",
+                })
+            );
+        case "approve-task":
+        case "retry-task":
+            return settle(act, () =>
+                RpcApi.DagActionCommand(TabRpcClient, {
+                    channelid: act.channelId,
+                    runid: act.runId,
+                    taskid: act.taskId,
+                    action: act.verb === "approve-task" ? "approve" : "retry",
+                })
+            );
+        default:
+            return null;
     }
 }
 
@@ -77,15 +107,18 @@ async function land(act: Extract<PetAct, { verb: "land" }>): Promise<void> {
 }
 
 export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: OpenGesture): Promise<void> {
-    if (act.verb === "ack") {
-        await ack(act);
+    const inPlace = settleInPlace(act);
+    if (inPlace != null) {
+        await inPlace;
         return;
     }
     if (act.verb === "land") {
         await land(act);
         return;
     }
-    await escort(model, act, gesture);
+    if (act.verb === "open") {
+        await escort(model, act, gesture);
+    }
 }
 
 // only an escort leaves the peek, and not when Ctrl turns it into a peek; the caller drops focus-return for it

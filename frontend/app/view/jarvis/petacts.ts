@@ -9,21 +9,22 @@
 // resolves it. A row with genuinely nothing to do returns [] and stays a readout — the rate-limit countdown
 // is that row, and it is honest rather than an omission.
 
-// type-only, so the purity above holds: petvoice.ts is itself pure, so PetEventSource adds no impure
-// dependency either
+// attentionact.ts is pure too, and petvoice.ts is type-only, so the purity above holds
+import { attentionAct } from "./attentionact";
 import type { PetEventSource } from "./petvoice";
 
 // Where an escort lands; every landing is an address that goes through openAddress.
 export type PetTarget = { kind: "oref"; ref: string; anchor?: string };
 
+// approve-phase approves a run's gate (the phase the server named); approve-task and retry-task act on one
+// task of a dag
 export type PetAct =
     | { id: string; verb: "open"; label: string; target: PetTarget }
     | { id: string; verb: "ack"; label: string; channelId: string; runId: string }
-    | { id: string; verb: "land"; label: string; channelId: string; runId: string };
-
-// pkg/jarvis/attention.go AttentionRunUnverified and AttentionRunLandHeld
-const RUN_UNVERIFIED_KIND = "run-unverified";
-const RUN_LAND_HELD_KIND = "run-land-held";
+    | { id: string; verb: "land"; label: string; channelId: string; runId: string }
+    | { id: string; verb: "approve-phase"; label: string; channelId: string; runId: string; phaseIdx: number }
+    | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
+    | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string };
 
 // An act's transient outcome, keyed by act id in petstore.ts. Transient on purpose: the row's real value
 // comes from its own poll, and letting an act's return value become the row's value would drift from the
@@ -35,10 +36,10 @@ export interface PetActState {
     text?: string;
 }
 
-// Two kinds a button settles, each with the Open escort after it for reading the run first. An unverified run:
-// acknowledging it is the whole resolution, the same in-place Acknowledge the Brief's queue offers. A held land:
-// once the human has cleared the reason, Land again is the retry `wsh runs land` makes. Everything else needs a
-// written answer or a picked option, neither of which is a button, so the escort alone covers it.
+// The button a click settles, the same one the Brief's queue offers (attentionact.ts), followed by the Open
+// escort for reading the run first: Approve a gate, Retry a failed task, Acknowledge an unverified run, Land a
+// held land again. Everything else needs a written answer, a picked option or a judgment, none of which is a
+// button, so the escort alone covers it.
 export function actsForAttention(item: AttentionItem): PetAct[] {
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved
@@ -49,19 +50,40 @@ export function actsForAttention(item: AttentionItem): PetAct[] {
         label: "Open",
         target: { kind: "oref", ref: `run:${item.runid}` },
     };
-    if (item.kind === RUN_UNVERIFIED_KIND && item.channelid) {
-        return [
-            { id: `${item.key}:ack`, verb: "ack", label: "Acknowledge", channelId: item.channelid, runId: item.runid },
-            escort,
-        ];
+    const channelId = item.channelid ?? "";
+    const runId = item.runid;
+    const taskId = item.taskid ?? "";
+    const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true });
+    switch (act.kind) {
+        case "approve-gate":
+            return [
+                {
+                    id: `${item.key}:approve`,
+                    verb: "approve-phase",
+                    label: act.label,
+                    channelId,
+                    runId,
+                    phaseIdx: item.phaseidx ?? 0,
+                },
+                escort,
+            ];
+        case "approve-dag":
+            return [
+                { id: `${item.key}:approve`, verb: "approve-task", label: act.label, channelId, runId, taskId },
+                escort,
+            ];
+        case "retry-dag":
+            return [
+                { id: `${item.key}:retry`, verb: "retry-task", label: act.label, channelId, runId, taskId },
+                escort,
+            ];
+        case "ack-run":
+            return [{ id: `${item.key}:ack`, verb: "ack", label: act.label, channelId, runId }, escort];
+        case "land-run":
+            return [{ id: `${item.key}:land`, verb: "land", label: act.label, channelId, runId }, escort];
+        default:
+            return [escort];
     }
-    if (item.kind === RUN_LAND_HELD_KIND && item.channelid) {
-        return [
-            { id: `${item.key}:land`, verb: "land", label: "Land again", channelId: item.channelid, runId: item.runid },
-            escort,
-        ];
-    }
-    return [escort];
 }
 
 // One Open per source the event carries.

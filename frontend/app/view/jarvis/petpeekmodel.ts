@@ -75,8 +75,8 @@ export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM>
     return (items ?? [])
         .filter((item) => item.kind !== PEEK_EXCLUDED_KIND)
         .map((item) => {
-            // actsForAttention returns [] with no runid, [ack, escort] for an unverified run, [land, escort] for a
-            // held land, [escort] otherwise
+            // actsForAttention returns [] with no runid, [in-place act, escort] for a gate, a retryable failed
+            // task, an unverified run or a held land, [escort] otherwise
             const [first, second] = actsForAttention(item);
             return {
                 key: item.key,
@@ -84,14 +84,15 @@ export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM>
                 source: item.source,
                 detail: DETAIL_KINDS.has(item.kind) ? item.text : null,
                 waitingsince: item.waitingsince,
-                // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. A
-                // land keeps its own label: the item's action ("Review") names the escort, not the retry.
+                // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. An
+                // in-place act keeps its own label: the item's action ("Review") names the escort, not the
+                // approve, retry, ack or land.
                 primary:
                     first == null
                         ? answerInAgent(item, agents)
-                        : first.verb === "land"
-                          ? first
-                          : ({ ...first, label: item.action } as PetAct),
+                        : first.verb === "open"
+                          ? ({ ...first, label: item.action } as PetAct)
+                          : first,
                 secondary: second ?? null,
             };
         });
@@ -152,7 +153,19 @@ export function rowPeekTarget(row: PeekRow | undefined): PetTarget | null {
 
 // The Enter hint names what Enter does to the focused row, which is not always a navigation.
 export function enterHintLabel(act: PetAct | null): string {
-    return act?.verb === "ack" ? "acknowledge" : act?.verb === "land" ? "land again" : "open";
+    switch (act?.verb) {
+        case "ack":
+            return "acknowledge";
+        case "land":
+            return "land again";
+        case "approve-phase":
+        case "approve-task":
+            return "approve";
+        case "retry-task":
+            return "retry";
+        default:
+            return "open";
+    }
 }
 
 export interface PeekCondition {
