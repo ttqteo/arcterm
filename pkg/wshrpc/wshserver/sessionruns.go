@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -64,8 +65,11 @@ func runLinkOf(run *waveobj.Run, dag *waveobj.TaskGroup) (sessionRunLink, bool) 
 	return sessionRunLink{}, false
 }
 
-// linkSessionsToRuns stamps each session an orchestrator run launched with its place in that run.
+// linkSessionsToRuns stamps each session an orchestrator run launched with its place in that run: from the run
+// recorded under its session id, else from what its transcript says (orchestrate.LaunchOriginOf), which places it
+// in the run with no channel when this store never saw the run.
 func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) error {
+	defer linkSessionsByOrigin(sessions)
 	ids := make([]string, 0, len(sessions))
 	for _, s := range sessions {
 		ids = append(ids, s.ID)
@@ -103,4 +107,17 @@ func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) 
 		sessions[i].TaskId, sessions[i].Role = link.TaskId, link.Role
 	}
 	return nil
+}
+
+// linkSessionsByOrigin places the sessions no recorded run claimed by their own transcript. It also runs when the
+// store read fails, so the run's sessions stay out of the plain list either way.
+func linkSessionsByOrigin(sessions []wshrpc.SessionActivity) {
+	for i := range sessions {
+		if sessions[i].RunId != "" {
+			continue
+		}
+		if o, ok := orchestrate.LaunchOriginOf(sessions[i].ProjectPath, sessions[i].Task); ok {
+			sessions[i].RunId, sessions[i].TaskId, sessions[i].Role = o.RunID, o.TaskID, o.Role
+		}
+	}
 }

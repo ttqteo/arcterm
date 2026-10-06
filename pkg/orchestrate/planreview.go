@@ -83,7 +83,7 @@ func advancePlanReview(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 // branch-landed dag committed them at submit.
 func planReviewPrompt(g *waveobj.TaskGroup, tree string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are the plan reviewer for run %s. Before any worker starts, judge whether the plan can be run as written.\n", g.RunID)
+	fmt.Fprintf(&b, "%s%s. Before any worker starts, judge whether the plan can be run as written.\n", planReviewerOpener, g.RunID)
 	switch {
 	case g.SpecPath != "":
 		fmt.Fprintf(&b, "Read the spec at %s, ", DocPath(g, tree, g.SpecPath))

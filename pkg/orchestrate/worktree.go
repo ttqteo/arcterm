@@ -91,6 +91,13 @@ func TaskWorktreeKey(ownerRunID, taskID string) string {
 	return ownerRunID + "-" + taskID
 }
 
+// finalTreeKey follows the run id in the key of the tree the Final stage and the final verifier run in.
+const finalTreeKey = "final"
+
+func FinalWorktreeKey(ownerRunID string) string {
+	return ownerRunID + "-" + finalTreeKey
+}
+
 // CreateRunWorktree links a worktree at <project>/.waveterm/worktrees/<runID> on branch
 // wave/<runID>, checked out at baseCommit (empty = current branch head).
 func CreateRunWorktree(ctx context.Context, projectPath, runID, baseCommit string) (string, error) {

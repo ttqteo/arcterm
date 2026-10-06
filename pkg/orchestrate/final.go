@@ -670,7 +670,7 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 	if !IsGitRepo(owner.ProjectPath) {
 		return "", nil, notGitRepo(owner.ProjectPath)
 	}
-	wt := worktreeDir(owner.ProjectPath, owner.ID+"-final")
+	wt := worktreeDir(owner.ProjectPath, FinalWorktreeKey(owner.ID))
 	// a tree a lost stage left behind would refuse the add
 	if _, err := os.Stat(wt); err == nil {
 		if err := removeWorktreeDir(ctx, owner.ProjectPath, wt); err != nil {
