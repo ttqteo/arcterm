@@ -16,6 +16,7 @@ import type { PetActState } from "./petacts";
 import type { PetEvent, PetWatermark } from "./petvoice";
 
 const CORNER_KEY = "wave:pet.corner";
+const HOME_KEY = "wave:pet.home";
 const WATERMARK_KEY = "wave:pet.watermark";
 
 // Corners rather than free x/y: an offset is measured against a viewport that changes size, while a
@@ -66,6 +67,37 @@ export function setPetCorner(corner: PetCorner): void {
         globalThis.localStorage?.setItem(CORNER_KEY, corner);
     } catch {
         // quota/disabled — the in-memory atom still holds it for this session
+    }
+}
+
+// Home: where on the footer ledge Sprout rests, as a fraction of the ledge's width (0 its left end, 1 its
+// right), so a resize keeps it in the same place relative to the ledge (sprout spec §3). A drop sets it.
+export const DEFAULT_PET_HOME = 0.9;
+
+// A missing, non-finite or out-of-range value is not clamped but read as the default: it was never a home
+// the user chose, so the nearest end of the ledge would be as arbitrary as any other place.
+function readHome(): number {
+    try {
+        const raw = globalThis.localStorage?.getItem(HOME_KEY);
+        if (raw == null || raw.trim() === "") {
+            return DEFAULT_PET_HOME;
+        }
+        const home = Number(raw);
+        return Number.isFinite(home) && home >= 0 && home <= 1 ? home : DEFAULT_PET_HOME;
+    } catch {
+        return DEFAULT_PET_HOME;
+    }
+}
+
+export const petHomeAtom = atom<number>(readHome()) as PrimitiveAtom<number>;
+
+export function setPetHome(fraction: number): void {
+    const home = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : DEFAULT_PET_HOME;
+    globalStore.set(petHomeAtom, home);
+    try {
+        globalThis.localStorage?.setItem(HOME_KEY, String(home));
+    } catch {
+        // as above
     }
 }
 

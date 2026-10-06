@@ -76,7 +76,7 @@ export function ComposerShell({
         }
     };
     return (
-        <div className="relative">
+        <div data-pet-avoid className="relative">
             {overlay}
             <div
                 className="relative rounded-lg border border-edge-mid bg-surface-raised px-[15px] py-3"

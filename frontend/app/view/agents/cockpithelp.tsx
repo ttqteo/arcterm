@@ -29,7 +29,10 @@ export function HintsBar({ onOpenHelp }: { onOpenHelp: () => void }) {
         [formatChordString("Ctrl:n"), "new"],
     ];
     return (
-        <div className="flex shrink-0 items-center gap-4 border-t border-border bg-background px-[18px] py-1.5 text-[11px] text-muted">
+        <div
+            data-pet-ledge
+            className="flex shrink-0 items-center gap-4 border-t border-border bg-background px-[18px] py-1.5 text-[11px] text-muted"
+        >
             {HINTS.map(([k, d]) => (
                 <span key={k} className="flex items-center gap-1">
                     <span className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-mono text-secondary">
