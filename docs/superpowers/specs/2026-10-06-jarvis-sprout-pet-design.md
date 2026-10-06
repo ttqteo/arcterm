@@ -149,7 +149,11 @@ Changed:
   bottom sits on the ledge. One timeout loop drives `stepWalker`; it measures the ledge on resize and on surface
   switch and the avoid spans when the walker asks for a rest spot. Drag uses motion's drag as now; on release the
   walker drops to the ledge and `setPetHome` persists the fraction. In DEV builds it publishes
-  `window.__jarvisPet = { state, pose, x, ledge: { top, left, right }, avoid, tokens }` for the CDP scenario.
+  `window.__jarvisPet = { state, pose, marks, x, ledge: { top, left, right }, avoid, tokens, force }` for the CDP
+  scenario. `force(override | null)` overrides the walker's inputs (`expression`, `posture`, `speaking`, and
+  `idle: true` to put it to sleep now) so every state can be shown without arranging a rate limit or an
+  attention item; `null` returns it to the live signals. Like the hologram's scene publisher, all of it is
+  folded out of production builds by `import.meta.env.DEV`.
 - **`petstore.ts`** — `petHomeAtom` (fraction) and `setPetHome` replace the corner atom, its key and
   `PET_CORNERS`; `petSpokeAtAtom`/`markPetSpoke` go (they only fed the hologram's ring surge).
 - **`hints-footer.tsx`**, **`cockpithelp.tsx`** — `data-pet-ledge` on the bar. **`composer-shell.tsx`** —
@@ -169,12 +173,16 @@ Removed: `avatarscene.ts`, `avatarthree.ts`, `avatarcanvas.ts` and their tests, 
   after 10 idle minutes and wakes on a posture; reduced motion never moves it off home; `delayMs` is `null` while
   it holds, rests or sleeps; home as a fraction lands at the same relative x after a resize. `petstore.test.ts`
   covers the home round-trip and a corrupt value falling back to the default.
-- **CDP** — `jarvis-avatar` becomes `jarvis-pet` in `scripts/cdp/scenarios.mjs`: the creature's bottom equals
-  the ledge top (±1 px) on Agent and on Cockpit; x stays within the ledge; every rendered fill is a
-  `var(--color-…)`; exactly one element is named "Jarvis condition"; after a rest spot is chosen on the Agent
-  surface, the creature's span does not overlap the terminal; a screenshot to `cdp-shots/jarvis-pet.png`. The
-  existing scenarios that open the peek and read the bubble (`surface-smoke`'s notify step, `peek-*`) must still
-  pass unchanged.
+- **CDP** — `jarvis-avatar` becomes `jarvis-pet` in `scripts/cdp/scenarios.mjs`, with a screenshot per step:
+  1. on Agent and on Cockpit, the creature's bottom equals the ledge top (±1 px) and x stays within the ledge;
+  2. every rendered fill is a `var(--color-…)`, and exactly one element is named "Jarvis condition";
+  3. walking: two samples a second apart differ in x and alternate `walk1`/`walk2`;
+  4. resting on the Agent surface: once the walker rests, the creature's span does not overlap the terminal;
+  5. through `force`: each posture shows its mark (`gate`, `escalation`, `blocked`) on `stand`, `tired` shows the
+     sweat drop, `speaking` shows `speak`, `idle` shows `sleep` with the `z`;
+  6. a real drag (CDP mouse events) shows `dangle`, and the release lands it on the ledge at the release x.
+  The existing scenarios that open the peek and read the bubble (`surface-smoke`'s notify step, `jarvis-peek`)
+  must still pass unchanged.
 
 ## 6. Out of scope
 
