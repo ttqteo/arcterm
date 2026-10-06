@@ -41,6 +41,7 @@ import {
 } from "./osc-handlers";
 import { registerTermHandle } from "./termpaste";
 import { hintFor, makePathLinkProvider, trackForDev } from "./termpathlinks";
+import { multiCharTextKey } from "./termtextkey";
 import {
     bufferLinesToText,
     createTempFileFromBlob,
@@ -279,6 +280,12 @@ export class TermWrap {
             })
         );
         this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+            const text = multiCharTextKey(e);
+            if (text != null) {
+                e.preventDefault();
+                this.terminal.input(text, true);
+                return false;
+            }
             if (!waveOptions.keydownHandler) {
                 return true;
             }
