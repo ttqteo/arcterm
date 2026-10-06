@@ -21,6 +21,7 @@ type GitCommands interface {
 	GitListWorktreesCommand(ctx context.Context, data CommandGitListWorktreesData) (*CommandGitListWorktreesRtnData, error)
 	GitGrepCommand(ctx context.Context, data CommandGitGrepData) (*CommandGitGrepRtnData, error)
 	GitFileAtRefCommand(ctx context.Context, data CommandGitFileAtRefData) (*CommandGitFileAtRefRtnData, error)
+	GitReviewPatchCommand(ctx context.Context, data CommandGitReviewPatchData) (*CommandGitReviewPatchRtnData, error)
 	GitFetchCommand(ctx context.Context, data CommandGitFetchData) (*CommandGitFetchRtnData, error)
 }
 
@@ -160,6 +161,20 @@ type CommandGitFileAtRefRtnData struct {
 	TooLarge bool   `json:"toolarge,omitempty"`
 	Size     int64  `json:"size,omitempty"`
 	IsRepo   bool   `json:"isrepo"`
+}
+
+type CommandGitReviewPatchData struct {
+	Cwd      string `json:"cwd"`
+	Hash     string `json:"hash,omitempty"` // "" = the working tree against Base, untracked files included
+	Base     string `json:"base,omitempty"` // "" = HEAD; ignored with a Hash
+	MaxBytes int64  `json:"maxbytes"`       // per file
+}
+
+// The Diff surface's Review mode: every changed file of a selection, each with its own full-context
+// patch (or an untracked file's text), sorted by path.
+type CommandGitReviewPatchRtnData struct {
+	IsRepo bool                      `json:"isrepo"`
+	Files  []gitinfo.ReviewPatchFile `json:"files"`
 }
 
 type CommandGitFetchData struct {

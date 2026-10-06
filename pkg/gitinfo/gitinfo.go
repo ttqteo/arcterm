@@ -963,6 +963,186 @@ func FileAtRef(ctx context.Context, cwd, ref, path string, maxBytes int64) (*Fil
 	return &FileContent{IsRepo: true, Content: out, Size: size}, nil
 }
 
+// ReviewPatchFile is one file of a selection's patch, in the shape the Diff surface's Review mode
+// turns into rows (gitdiff.ts diffFileView). A tracked file carries its own unified patch; an
+// untracked file has nothing to diff against, so it carries its text instead. TooLarge replaces
+// either with the size, so an oversized file is drawn as such rather than as an empty diff.
+type ReviewPatchFile struct {
+	Path      string `json:"path"`
+	OldPath   string `json:"oldpath,omitempty"`
+	Diff      string `json:"diff,omitempty"` // this file's unified patch, full context
+	Untracked bool   `json:"untracked,omitempty"`
+	Content   string `json:"content,omitempty"` // an untracked file's text
+	TooLarge  bool   `json:"toolarge,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+}
+
+type ReviewPatchResult struct {
+	IsRepo bool
+	Files  []ReviewPatchFile // sorted by path, byte order
+}
+
+// reviewContext is the --unified width that makes every file's patch one hunk holding the whole file,
+// so Review can unfold an unchanged run from text it already has. Far beyond any file under the cap,
+// and far below the int range git doubles it in.
+const reviewContext = 1 << 24
+
+// ReviewPatch returns a selection's patch split per file, for the Diff surface's Review mode. With a
+// hash it is that commit against its first parent (the root commit against the empty tree), as
+// CommitChanges measures it; without one it is the working tree against base ("" = HEAD) plus each
+// untracked file's text. git runs once for the whole diff, which is then split on its `diff --git`
+// headers. Paths are cwd-relative and scoped to cwd's subtree (--relative), matching the file list
+// GetChanges and CommitChanges produce, so every listed file names a section here. maxBytes caps each
+// file's patch or content (0 = no cap). IsRepo=false when cwd is not a repo; a git failure errors.
+func ReviewPatch(ctx context.Context, cwd, hash, base string, maxBytes int64) (*ReviewPatchResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
+	if err != nil || strings.TrimSpace(inside) != "true" {
+		return &ReviewPatchResult{IsRepo: false}, nil
+	}
+	var revs []string
+	if hash != "" {
+		parent, err := commitBase(ctx, cwd, hash)
+		if err != nil {
+			return nil, err
+		}
+		revs = []string{parent, hash}
+	} else {
+		if base == "" {
+			base = "HEAD"
+			// a repository with no commits has no HEAD; everything staged there is an addition
+			if _, err := run(ctx, cwd, "rev-parse", "--verify", "--quiet", "HEAD"); err != nil {
+				base = emptyTreeHash
+			}
+		}
+		revs = []string{base}
+	}
+	// quotePath off and the prefixes pinned, so a user's diff.noprefix or diff.mnemonicPrefix cannot
+	// change the headers the split reads paths from; ext-diff off so the text is git's own patch
+	args := append([]string{"-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M",
+		"--unified=" + strconv.Itoa(reviewContext), "--src-prefix=a/", "--dst-prefix=b/", "--relative"}, revs...)
+	out, err := runErr(ctx, cwd, append(args, "--")...)
+	if err != nil {
+		return nil, err
+	}
+	files := splitPatch(out)
+	for i := range files {
+		if size := int64(len(files[i].Diff)); maxBytes > 0 && size > maxBytes {
+			files[i].Diff, files[i].TooLarge, files[i].Size = "", true, size
+		}
+	}
+	if hash == "" {
+		// ls-files lists untracked paths relative to cwd and only under it, matching --relative above
+		listed, err := runErr(ctx, cwd, "ls-files", "--others", "--exclude-standard", "-z")
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range strings.Split(listed, "\x00") {
+			if p == "" {
+				continue
+			}
+			files = append(files, untrackedReviewFile(cwd, p, maxBytes))
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return &ReviewPatchResult{IsRepo: true, Files: files}, nil
+}
+
+// untrackedReviewFile reads one untracked file for Review, refusing it by size before reading it.
+// An unreadable file (removed since it was listed) is sent with no text rather than failing the read.
+func untrackedReviewFile(cwd, path string, maxBytes int64) ReviewPatchFile {
+	f := ReviewPatchFile{Path: path, Untracked: true}
+	full := filepath.Join(cwd, filepath.FromSlash(path))
+	info, err := os.Stat(full)
+	if err != nil {
+		return f
+	}
+	if size := info.Size(); maxBytes > 0 && size > maxBytes {
+		f.TooLarge, f.Size = true, size
+		return f
+	}
+	if content, err := os.ReadFile(full); err == nil {
+		f.Content = string(content)
+	}
+	return f
+}
+
+// splitPatch cuts a multi-file `git diff` into one ReviewPatchFile per `diff --git` header. Inside a
+// patch every content line starts with ' ', '+', '-' or '\', so a line starting "diff --git " is
+// always a header. The path comes from the rename lines when git detected a rename, else from the
+// header, which names the same path twice.
+func splitPatch(out string) []ReviewPatchFile {
+	var files []ReviewPatchFile
+	start := -1
+	flush := func(end int) {
+		if start >= 0 {
+			files = append(files, patchFile(out[start:end]))
+		}
+	}
+	for i := 0; i < len(out); {
+		if strings.HasPrefix(out[i:], "diff --git ") {
+			flush(i)
+			start = i
+		}
+		nl := strings.IndexByte(out[i:], '\n')
+		if nl < 0 {
+			break
+		}
+		i += nl + 1
+	}
+	flush(len(out))
+	return files
+}
+
+func patchFile(diff string) ReviewPatchFile {
+	f := ReviewPatchFile{Diff: diff}
+	lines := strings.Split(diff, "\n")
+	f.Path = headerPath(strings.TrimPrefix(lines[0], "diff --git "))
+	for _, l := range lines[1:] {
+		if strings.HasPrefix(l, "@@") || strings.HasPrefix(l, "--- ") || strings.HasPrefix(l, "Binary files ") {
+			break // past the extended header
+		}
+		if from, ok := strings.CutPrefix(l, "rename from "); ok {
+			f.OldPath = unquotePath(from)
+		} else if to, ok := strings.CutPrefix(l, "rename to "); ok {
+			f.Path = unquotePath(to)
+		}
+	}
+	return f
+}
+
+// headerPath reads the b-side path of a `diff --git a/<p> b/<p>` header (the "diff --git " already
+// cut). Unquoted, the two paths are the same, so the split is found by length: a path holding " b/"
+// still parses. A rename's two paths differ; its header path is overridden by "rename to".
+func headerPath(rest string) string {
+	if strings.HasPrefix(rest, `"`) {
+		// git quotes a path holding a quote, a backslash or a control character
+		if first, err := strconv.QuotedPrefix(rest); err == nil {
+			second := strings.TrimSpace(rest[len(first):])
+			return strings.TrimPrefix(unquotePath(second), "b/")
+		}
+	}
+	if n := (len(rest) - 5) / 2; n > 0 && len(rest) == 2*n+5 && rest[n+2:n+5] == " b/" && rest[2:n+2] == rest[n+5:] {
+		return rest[n+5:]
+	}
+	if i := strings.LastIndex(rest, " b/"); i >= 0 {
+		return unquotePath(rest[i+3:])
+	}
+	return rest
+}
+
+// unquotePath undoes git's C-style quoting (core.quotePath=false still quotes '"', '\' and control
+// characters); Go's Unquote reads the same escapes, octal included.
+func unquotePath(p string) string {
+	if strings.HasPrefix(p, `"`) {
+		if u, err := strconv.Unquote(p); err == nil {
+			return u
+		}
+	}
+	return p
+}
+
 // DefaultBranch resolves the repo's default branch as the ref the compare picker should open on:
 // origin/<name> when the remote publishes origin/HEAD, else a probe of local main then master.
 // Returns "" (not an error) when none resolve, so the base field just opens empty — the same

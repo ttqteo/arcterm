@@ -31,6 +31,7 @@ import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
+import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
@@ -55,6 +56,8 @@ export const whenVersionAtom = atom(0) as PrimitiveAtom<number>;
 export const PREDICATE_ATOMS: Atom<unknown>[] = [
     compareOnAtom, // buildFilesBindings: on/inCompare/inHistory/filtering, surface:back-home
     historyFiltersAtom, // buildFilesBindings: filtering, surface:back-home
+    lineReviewsAtom, // buildFilesBindings: files:review-send
+    activeReviewKeyAtom, // buildFilesBindings: files:review-send
     graphPeekOpenAtom, // buildJarvisBindings: onStage, surface:back-home
     noteChunkAtom, // buildJarvisBindings: jarvis:close-notes, and surface:back-home yields to it
     chunkMoveAtom, // buildJarvisBindings: jarvis:chunk-up / jarvis:chunk-down

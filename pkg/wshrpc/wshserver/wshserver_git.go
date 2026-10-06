@@ -103,6 +103,18 @@ func (ws *WshServer) GitFileAtRefCommand(ctx context.Context, data wshrpc.Comman
 	}, nil
 }
 
+func (ws *WshServer) GitReviewPatchCommand(ctx context.Context, data wshrpc.CommandGitReviewPatchData) (*wshrpc.CommandGitReviewPatchRtnData, error) {
+	r, err := gitinfo.ReviewPatch(ctx, data.Cwd, data.Hash, data.Base, data.MaxBytes)
+	if err != nil {
+		return nil, err
+	}
+	files := r.Files
+	if files == nil {
+		files = []gitinfo.ReviewPatchFile{} // `files` is never null on the wire: a clean tree is an empty list
+	}
+	return &wshrpc.CommandGitReviewPatchRtnData{IsRepo: r.IsRepo, Files: files}, nil
+}
+
 func (ws *WshServer) GitFetchCommand(ctx context.Context, data wshrpc.CommandGitFetchData) (*wshrpc.CommandGitFetchRtnData, error) {
 	r, err := gitinfo.Fetch(ctx, data.Cwd, data.Remote)
 	if err != nil {

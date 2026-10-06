@@ -219,17 +219,8 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `c` | In history: compare refs. In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
 | `Tab` | Switch compare side (in compare) |
+| `Ctrl`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
 | `Esc` | Clear filters, else leave compare, else back to the Cockpit |
-
-### Files — Review mode
-
-| Keys | Action |
-|---|---|
-| `a` | Accept the next hunk |
-| `r` | Reject the next hunk |
-| `u` | Undo the last decision |
-| `j` / `k` (or `↓` / `↑`) | Next / previous file |
-| `Enter` | Apply the review |
 
 ### Route DAG (the orchestrator run's graph)
 

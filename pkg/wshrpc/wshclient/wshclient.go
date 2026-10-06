@@ -606,6 +606,12 @@ func GitRevertCommand(w *wshutil.WshRpc, data wshrpc.CommandGitRevertData, opts 
 	return err
 }
 
+// command "gitreviewpatch", wshserver.GitReviewPatchCommand
+func GitReviewPatchCommand(w *wshutil.WshRpc, data wshrpc.CommandGitReviewPatchData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitReviewPatchRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitReviewPatchRtnData](w, "gitreviewpatch", data, opts)
+	return resp, err
+}
+
 // command "jarvisctx", wshserver.JarvisCtxCommand
 func JarvisCtxCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisCtxData, opts *wshrpc.RpcOpts) (*wshrpc.CommandJarvisCtxRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandJarvisCtxRtnData](w, "jarvisctx", data, opts)

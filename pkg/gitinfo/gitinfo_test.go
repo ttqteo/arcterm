@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1935,3 +1936,252 @@ func TestCompareChangesTipsIncludesBaseSideChanges(t *testing.T) {
 // cap exists for. Built once for the whole run rather than per test; three of the four tests below
 // write it.
 var hugeBody = strings.Repeat(strings.Repeat("x", 45)+"\n", 60000)
+
+// numbered returns n lines "line1\n".."lineN\n".
+func numbered(n int) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		b.WriteString("line" + strconv.Itoa(i) + "\n")
+	}
+	return b.String()
+}
+
+func reviewFile(t *testing.T, res *ReviewPatchResult, path string) ReviewPatchFile {
+	t.Helper()
+	for _, f := range res.Files {
+		if f.Path == path {
+			return f
+		}
+	}
+	t.Fatalf("no file %q in %+v", path, res.Files)
+	return ReviewPatchFile{}
+}
+
+func reviewPaths(res *ReviewPatchResult) []string {
+	var paths []string
+	for _, f := range res.Files {
+		paths = append(paths, f.Path)
+	}
+	return paths
+}
+
+// repoForReview commits a.txt (10 lines), d-removed.txt and old.txt, then leaves the working tree with
+// a.txt modified at line 5, c-added.txt staged, d-removed.txt deleted, old.txt renamed to new.txt, a
+// staged binary bin.dat and an untracked b-untracked.txt.
+func repoForReview(t *testing.T) string {
+	t.Helper()
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", numbered(10))
+	writeFile(t, dir, "d-removed.txt", "gone\n")
+	writeFile(t, dir, "old.txt", numbered(20))
+	commitAll(t, dir)
+	writeFile(t, dir, "a.txt", strings.Replace(numbered(10), "line5\n", "LINE FIVE\n", 1))
+	writeFile(t, dir, "c-added.txt", "fresh\n")
+	writeFile(t, dir, "bin.dat", "bin\x00ary\x00")
+	if err := os.Remove(filepath.Join(dir, "d-removed.txt")); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "mv", "old.txt", "new.txt")
+	git(t, dir, "add", "c-added.txt", "bin.dat")
+	writeFile(t, dir, "b-untracked.txt", "u1\nu2\n")
+	return dir
+}
+
+func TestReviewPatchWorkingTree(t *testing.T) {
+	dir := repoForReview(t)
+	res, err := ReviewPatch(context.Background(), dir, "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsRepo {
+		t.Fatal("IsRepo = false")
+	}
+	want := []string{"a.txt", "b-untracked.txt", "bin.dat", "c-added.txt", "d-removed.txt", "new.txt"}
+	if got := reviewPaths(res); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %v, want %v (byte order, untracked merged in)", got, want)
+	}
+
+	a := reviewFile(t, res, "a.txt")
+	if n := strings.Count(a.Diff, "\n@@ "); n != 1 {
+		t.Errorf("a.txt has %d hunks, want 1 (full context):\n%s", n, a.Diff)
+	}
+	if !strings.Contains(a.Diff, "@@ -1,10 +1,10 @@") {
+		t.Errorf("a.txt hunk does not span the whole file:\n%s", a.Diff)
+	}
+	for _, l := range []string{" line1\n", " line4\n", "-line5\n", "+LINE FIVE\n", " line6\n", " line10\n"} {
+		if !strings.Contains(a.Diff, l) {
+			t.Errorf("a.txt patch lacks %q:\n%s", l, a.Diff)
+		}
+	}
+	if !strings.HasPrefix(a.Diff, "diff --git a/a.txt b/a.txt\n") {
+		t.Errorf("a.txt patch does not start at its own header:\n%s", a.Diff)
+	}
+	if strings.Contains(a.Diff, "bin.dat") || strings.Contains(a.Diff, "c-added") {
+		t.Errorf("a.txt patch carries another file's text:\n%s", a.Diff)
+	}
+
+	if c := reviewFile(t, res, "c-added.txt"); !strings.Contains(c.Diff, "new file mode") || !strings.Contains(c.Diff, "+fresh\n") {
+		t.Errorf("c-added.txt patch:\n%s", c.Diff)
+	}
+	if d := reviewFile(t, res, "d-removed.txt"); !strings.Contains(d.Diff, "deleted file mode") || !strings.Contains(d.Diff, "-gone\n") {
+		t.Errorf("d-removed.txt patch:\n%s", d.Diff)
+	}
+	if n := reviewFile(t, res, "new.txt"); n.OldPath != "old.txt" || !strings.Contains(n.Diff, "rename from old.txt") {
+		t.Errorf("new.txt: OldPath = %q, patch:\n%s", n.OldPath, n.Diff)
+	}
+	if b := reviewFile(t, res, "bin.dat"); !strings.Contains(b.Diff, "Binary files") {
+		t.Errorf("bin.dat patch does not say binary:\n%s", b.Diff)
+	}
+	u := reviewFile(t, res, "b-untracked.txt")
+	if !u.Untracked || u.Content != "u1\nu2\n" || u.Diff != "" {
+		t.Errorf("b-untracked.txt = %+v", u)
+	}
+	for _, f := range res.Files {
+		if f.Path != "new.txt" && f.OldPath != "" {
+			t.Errorf("%s has OldPath %q", f.Path, f.OldPath)
+		}
+		if f.TooLarge {
+			t.Errorf("%s TooLarge with no cap", f.Path)
+		}
+	}
+}
+
+func TestReviewPatchCommitByHash(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", numbered(10))
+	writeFile(t, dir, "z.txt", "z\n")
+	commitAll(t, dir)
+	root := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "a.txt", strings.Replace(numbered(10), "line3\n", "line three\n", 1))
+	commitAll(t, dir)
+	second := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "z.txt", "uncommitted\n")
+	writeFile(t, dir, "u.txt", "untracked\n")
+
+	res, err := ReviewPatch(context.Background(), dir, second, "ignored-with-a-hash", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reviewPaths(res); strings.Join(got, ",") != "a.txt" {
+		t.Fatalf("commit paths = %v, want [a.txt] (no working tree, no untracked)", got)
+	}
+	a := res.Files[0]
+	if !strings.Contains(a.Diff, "@@ -1,10 +1,10 @@") || !strings.Contains(a.Diff, "+line three\n") || !strings.Contains(a.Diff, " line10\n") {
+		t.Errorf("commit patch:\n%s", a.Diff)
+	}
+
+	res, err = ReviewPatch(context.Background(), dir, root, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reviewPaths(res); strings.Join(got, ",") != "a.txt,z.txt" {
+		t.Fatalf("root commit paths = %v", got)
+	}
+	if a := res.Files[0]; !strings.Contains(a.Diff, "new file mode") || !strings.Contains(a.Diff, "+line10\n") {
+		t.Errorf("root commit patch is not against the empty tree:\n%s", a.Diff)
+	}
+}
+
+func TestReviewPatchBaseBehindHead(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "x.txt", "one\n")
+	commitAll(t, dir)
+	base := strings.TrimSpace(gitRun(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "x.txt", "one\ntwo\n")
+	commitAll(t, dir)
+
+	res, err := ReviewPatch(context.Background(), dir, "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 0 {
+		t.Fatalf("against HEAD a clean tree has no files, got %v", reviewPaths(res))
+	}
+	res, err = ReviewPatch(context.Background(), dir, "", base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 1 || !strings.Contains(res.Files[0].Diff, "+two\n") {
+		t.Fatalf("against base the committed change shows, got %+v", res.Files)
+	}
+}
+
+func TestReviewPatchTooLarge(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "big.txt", numbered(200))
+	writeFile(t, dir, "small.txt", "s\n")
+	commitAll(t, dir)
+	writeFile(t, dir, "big.txt", strings.Replace(numbered(200), "line100\n", "changed\n", 1))
+	writeFile(t, dir, "small.txt", "s2\n")
+	writeFile(t, dir, "untracked-big.txt", numbered(200))
+
+	const maxBytes = 1000
+	res, err := ReviewPatch(context.Background(), dir, "", "", maxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"big.txt", "untracked-big.txt"} {
+		f := reviewFile(t, res, p)
+		if !f.TooLarge || f.Size <= maxBytes || f.Diff != "" || f.Content != "" {
+			t.Errorf("%s = TooLarge %v Size %d Diff %d bytes Content %d bytes", p, f.TooLarge, f.Size, len(f.Diff), len(f.Content))
+		}
+	}
+	if f := reviewFile(t, res, "untracked-big.txt"); !f.Untracked {
+		t.Error("an oversized untracked file is still untracked")
+	}
+	if s := reviewFile(t, res, "small.txt"); s.TooLarge || !strings.Contains(s.Diff, "+s2\n") {
+		t.Errorf("small.txt = %+v", s)
+	}
+}
+
+// Paths are cwd-relative and scoped to cwd's subtree, like the file list's (GetChanges --relative), so
+// a file in the list names a section that exists.
+func TestReviewPatchSubdir(t *testing.T) {
+	dir := initRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, "svc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "root.txt", "r\n")
+	writeFile(t, dir, "svc/x.txt", "x\n")
+	commitAll(t, dir)
+	writeFile(t, dir, "root.txt", "r2\n")
+	writeFile(t, dir, "svc/x.txt", "x2\n")
+	writeFile(t, dir, "svc/new.txt", "n\n")
+
+	res, err := ReviewPatch(context.Background(), filepath.Join(dir, "svc"), "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reviewPaths(res); strings.Join(got, ",") != "new.txt,x.txt" {
+		t.Fatalf("paths = %v, want [new.txt x.txt]", got)
+	}
+}
+
+func TestReviewPatchSplitReadsHeaderPaths(t *testing.T) {
+	out := "diff --git a/my dir/x b/y.txt b/my dir/x b/y.txt\n--- a/my dir/x b/y.txt\n+++ b/my dir/x b/y.txt\n@@ -1 +1 @@\n-a\n+diff --git a/z b/z\n" +
+		"diff --git \"a/q\\\"uote.txt\" \"b/q\\\"uote.txt\"\nnew file mode 100644\n" +
+		"diff --git a/old name.txt b/new name.txt\nsimilarity index 100%\nrename from old name.txt\nrename to new name.txt\n"
+	files := splitPatch(out)
+	if len(files) != 3 {
+		t.Fatalf("split into %d files, want 3: %+v", len(files), files)
+	}
+	if files[0].Path != "my dir/x b/y.txt" || !strings.HasSuffix(files[0].Diff, "+diff --git a/z b/z\n") {
+		t.Errorf("file 0 = %+v", files[0])
+	}
+	if files[1].Path != `q"uote.txt` {
+		t.Errorf("file 1 path = %q", files[1].Path)
+	}
+	if files[2].Path != "new name.txt" || files[2].OldPath != "old name.txt" {
+		t.Errorf("file 2 = %+v", files[2])
+	}
+}
+
+func TestReviewPatchNotARepo(t *testing.T) {
+	res, err := ReviewPatch(context.Background(), t.TempDir(), "", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsRepo || len(res.Files) != 0 {
+		t.Fatalf("non-repo = %+v", res)
+	}
+}

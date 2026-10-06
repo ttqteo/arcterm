@@ -47,7 +47,7 @@ function sizeLabel(bytes: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Module-scoped rather than a ref: the path bar's handoff control needs the same instance, and the
+// Module-scoped rather than a ref: the store's caret-line reader needs the same instance, and the
 // surface unmounts on every nav switch. Cleared by the cleanup CodeEditor invokes on unmount.
 let editor: MonacoTypes.editor.IStandaloneCodeEditor | null = null;
 
@@ -64,14 +64,6 @@ interface KeptEditor {
 }
 
 const kept = new Map<string, KeptEditor>();
-
-export function codeEditorSelection(): { startLine: number; endLine: number } | null {
-    const sel = editor?.getSelection();
-    if (sel == null || sel.isEmpty()) {
-        return null;
-    }
-    return { startLine: sel.startLineNumber, endLine: sel.endLineNumber };
-}
 
 function applyPendingLine(ed: MonacoTypes.editor.IStandaloneCodeEditor): void {
     const line = globalStore.get(codePendingLineAtom);

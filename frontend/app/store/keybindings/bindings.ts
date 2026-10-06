@@ -29,6 +29,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -1215,6 +1216,26 @@ export function buildFilesBindings(): Binding[] {
             run: () => {
                 void reloadChanges(globalStore.get(filesStateAtom)?.cwd ?? null);
                 refreshHistory();
+            },
+        },
+        {
+            // Presses the line review tray's send button rather than sending from here: the tray owns the target, the
+            // ask block and the menu of agents. A box holding text, or a button that is disabled or absent, lets the
+            // key pass; in a box (editable) the box's own Ctrl+Enter adds the comment.
+            id: "files:review-send",
+            keys: "Ctrl:Enter",
+            group: "Diff",
+            label: "Send line comments",
+            when: (ctx) => {
+                const reviews = globalStore.get(lineReviewsAtom);
+                return on(ctx) && canSendKey(reviews[globalStore.get(activeReviewKeyAtom)]);
+            },
+            run: () => {
+                const el = document.querySelector<HTMLButtonElement>("[data-review-send]");
+                if (el == null || el.disabled) {
+                    return false;
+                }
+                el.click();
             },
         },
         {

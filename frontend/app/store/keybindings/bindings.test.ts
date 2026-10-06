@@ -22,6 +22,8 @@ import { docReviewAtom } from "@/app/view/agents/docreview";
 import { addComment, getDocReview, setGeneralNote, syncDocReview } from "@/app/view/agents/docreviewstore";
 import { graphOnAtom, historyFiltersAtom, historyScrollAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
+import type { LineComment } from "@/app/view/agents/linecomments";
+import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -546,6 +548,76 @@ describe("diff-surface history bindings", () => {
         });
         vi.stubGlobal("document", { querySelector: () => null });
         expect(find("files:change-refs").run(ctx)).toBe(false);
+    });
+});
+
+describe("diff-surface line review send", () => {
+    const nav = { surface: "files", editable: false, modalOpen: false, leader: null } as KeyContext;
+    const find = (id: string) => buildFilesBindings().find((b) => b.id === id)!;
+    const onKey = (keys: string, c: KeyContext = nav) =>
+        buildFilesBindings()
+            .filter((b) => b.keys === keys && (b.when?.(c) ?? true))
+            .map((b) => b.id);
+    const comment: LineComment = {
+        id: "c1",
+        source: "worktree",
+        file: "a.ts",
+        side: "new",
+        startLine: 3,
+        endLine: 3,
+        quote: ["x"],
+        note: "why",
+    };
+    const withReview = (state: LineReviewState, key = "C:/repo") => {
+        globalStore.set(lineReviewsAtom, { [key]: state });
+        globalStore.set(activeReviewKeyAtom, "C:/repo");
+    };
+
+    afterEach(() => {
+        globalStore.set(lineReviewsAtom, {});
+        globalStore.set(activeReviewKeyAtom, "");
+        vi.unstubAllGlobals();
+    });
+
+    it("Ctrl+Enter sends with comments under the active key and no box holding text", () => {
+        withReview({ comments: [comment] });
+        expect(onKey("Ctrl:Enter")).toEqual(["files:review-send"]);
+        withReview({
+            comments: [comment],
+            box: { file: "a.ts", side: "new", startLine: 4, endLine: 4, source: "worktree", text: "" },
+        });
+        expect(onKey("Ctrl:Enter")).toEqual(["files:review-send"]);
+    });
+
+    it("stands down in an editable target, with no comments, with a typed box, or under another key", () => {
+        withReview({ comments: [comment] });
+        expect(onKey("Ctrl:Enter", { ...nav, editable: true })).toEqual([]);
+        expect(onKey("Ctrl:Enter", { ...nav, modalOpen: true })).toEqual([]);
+        withReview({ comments: [] });
+        expect(onKey("Ctrl:Enter")).toEqual([]);
+        withReview({
+            comments: [comment],
+            box: { file: "a.ts", side: "new", startLine: 4, endLine: 4, source: "worktree", text: "half" },
+        });
+        expect(onKey("Ctrl:Enter")).toEqual([]);
+        withReview({ comments: [comment] }, "C:/other");
+        expect(onKey("Ctrl:Enter")).toEqual([]);
+    });
+
+    it("presses the tray's send button, and lets the key pass when it is missing or disabled", () => {
+        withReview({ comments: [comment] });
+        const click = vi.fn();
+        vi.stubGlobal("document", {
+            querySelector: (sel: string) => (sel === "[data-review-send]" ? { click, disabled: false } : null),
+        });
+        expect(find("files:review-send").run(nav)).not.toBe(false);
+        expect(click).toHaveBeenCalledOnce();
+
+        vi.stubGlobal("document", { querySelector: () => ({ click, disabled: true }) });
+        expect(find("files:review-send").run(nav)).toBe(false);
+        vi.stubGlobal("document", { querySelector: () => null });
+        expect(find("files:review-send").run(nav)).toBe(false);
+        expect(click).toHaveBeenCalledOnce();
     });
 });
 

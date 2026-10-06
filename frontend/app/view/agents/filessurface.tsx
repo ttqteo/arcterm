@@ -24,7 +24,14 @@ import { DiffPane } from "./diffpane";
 import type { CompareForm, DiffSelection } from "./diffcontent";
 import { clearDiffPair, loadDiffPair } from "./diffcontentstore";
 import { defaultFocusId, focusFollowAgent, sourceFor, type FilesSource } from "./diffsource";
-import { filesErrorAtom, filesStateAtom, loadFilesForScope, startChangesPoll, type FilesProject } from "./filesstore";
+import {
+    filesErrorAtom,
+    filesStateAtom,
+    loadFilesForScope,
+    startChangesPoll,
+    type FilesProject,
+    type FilesState,
+} from "./filesstore";
 import { availableRanges, historyOptsFor, rangeKey, scopeKey, summaryLine } from "./diffscope";
 import { agentDiffScope, projectDiffScope } from "./agentdiffnav";
 import { setDiffRange } from "./diffscopeatom";
@@ -92,6 +99,12 @@ import { WORKING_TREE, worktreeCaption } from "./historyrows";
 import { SourcePicker } from "./sourcepicker";
 import { SurfaceEmptyState, SurfaceError } from "./surfacescaffold";
 
+// What the change poll saw, as one string: Review re-reads the whole patch only when this moves, not on
+// every tick the way the single-file diff does (that one reads a single file).
+function liveChangesKey(s: FilesState): string {
+    return `${s.head}|${(s.changes?.files ?? []).map((f) => `${f.path}:${f.status}:${f.adds}:${f.dels}`).join(",")}`;
+}
+
 export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const focusId = useAtomValue(model.focusIdAtom);
     const agents = useAtomValue(model.agentsAtom);
@@ -123,6 +136,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const compareChanges = useAtomValue(compareActiveChangesAtom);
     // the ref picker's own open/closed state: `c` and a click on the chip open it, Enter/Escape close it
     const [pickerOpen, setPickerOpen] = useState(false);
+    // a file clicked in the commit pane's list, for Review to scroll to; n tells two clicks on one file apart
+    const [reviewScroll, setReviewScroll] = useState<{ path: string; n: number } | null>(null);
 
     // The history column folds to a rail below a width threshold. Measured on the surface root rather
     // than the window: the surface does not own the whole window, and the rail's whole purpose is to
@@ -618,9 +633,12 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                     }
                                     changes={activeChanges}
                                     selectedFile={selectedFile}
-                                    onSelectFile={(path) =>
-                                        selectedCommit != null && selectCommitFile(selectedCommit, path)
-                                    }
+                                    onSelectFile={(path) => {
+                                        if (selectedCommit != null) {
+                                            selectCommitFile(selectedCommit, path);
+                                        }
+                                        setReviewScroll((prev) => ({ path, n: (prev?.n ?? 0) + 1 }));
+                                    }}
                                 />
                             )}
                         </div>
@@ -643,6 +661,17 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                         : null
                                 }
                                 model={model}
+                                review={
+                                    compareOn || selectedCommit == null
+                                        ? null
+                                        : {
+                                              source: selectedCommit === WORKING_TREE ? "worktree" : selectedCommit,
+                                              // the file list's own base, so Review shows what the list shows
+                                              base: state?.ref ?? "",
+                                              refreshKey: liveTick == null ? "" : liveChangesKey(liveTick),
+                                              scrollTo: reviewScroll,
+                                          }
+                                }
                             />
                         </div>
                     </div>

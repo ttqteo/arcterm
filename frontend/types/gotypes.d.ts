@@ -1110,6 +1110,20 @@ declare global {
         patch?: string;
     };
 
+    // wshrpc.CommandGitReviewPatchData
+    type CommandGitReviewPatchData = {
+        cwd: string;
+        hash?: string;
+        base?: string;
+        maxbytes: number;
+    };
+
+    // wshrpc.CommandGitReviewPatchRtnData
+    type CommandGitReviewPatchRtnData = {
+        isrepo: boolean;
+        files: ReviewPatchFile[];
+    };
+
     // wshrpc.CommandJarvisCtxData
     type CommandJarvisCtxData = {
         blockoref?: string;
@@ -2332,6 +2346,17 @@ declare global {
         summary: string;
         status: string;
         updated: number;
+    };
+
+    // gitinfo.ReviewPatchFile
+    type ReviewPatchFile = {
+        path: string;
+        oldpath?: string;
+        diff?: string;
+        untracked?: boolean;
+        content?: string;
+        toolarge?: boolean;
+        size?: number;
     };
 
     // wshrpc.RouteCapabilityInfo

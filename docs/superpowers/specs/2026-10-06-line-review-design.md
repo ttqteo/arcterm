@@ -65,7 +65,7 @@ switches. Clicking a file in the commit pane's file list scrolls Review to that 
 While the patch loads, Review shows the pane's existing skeleton. A failed load shows one line in `text-error` with
 the error and a **Retry** button.
 
-### Layout (`reviewlist.tsx`, model in `reviewlist.ts`)
+### Layout (`reviewlistview.tsx`, model in `reviewlist.ts`)
 
 - One section per file:
   - **Header** (sticky while its file scrolls): chevron, file name, dimmed directory, `+N` in
@@ -145,7 +145,7 @@ Review comments on your changes (3):
 ```
 
 - The header names the selection: `your changes` for Uncommitted, `commit abc1234 (subject)` for a commit.
-- Paths are relative to the repository root.
+- Paths are relative to the scope's working directory, as in the Diff file list (`git diff --relative`); for an agent at the repository root that is the repository root.
 - A range quotes its first 3 lines, each cut at 120 characters, then `… (N more lines)`.
 - A removed-line comment uses the old file's line numbers and says `(removed line)` or `(removed lines)`.
 - A note keeps its own line breaks, indented under its comment.

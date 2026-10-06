@@ -4306,20 +4306,62 @@ const codeGitStatus = {
     },
 };
 
+// code-diff's own project: one committed file, modified in the working tree, so the Changed column has exactly
+// that file whatever else is registered
+const CODE_DIFF_PROJECT = "verify-code-diff";
+const CODE_DIFF_FILE = "notes.md";
+
 const codeDiff = {
     name: "code-diff",
     surface: "code",
-    async arrange() {
-        return {};
+    async arrange(h) {
+        const dir = mkdtempSync(join(tmpdir(), "verify-code-diff-"));
+        const ctx = { dir };
+        try {
+            git(dir, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(dir, CODE_DIFF_FILE), "# notes\n\nThe first line.\n");
+            git(dir, "add", ".");
+            git(dir, "commit", "-q", "-m", "seed the notes");
+            writeFileSync(join(dir, CODE_DIFF_FILE), "# notes\n\nThe first line, edited.\nA second line.\n");
+            await h.rpc("createproject", { name: CODE_DIFF_PROJECT, path: dir });
+            ctx.project = CODE_DIFF_PROJECT;
+            await waitForProjectInConfig(h, CODE_DIFF_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const steps = [];
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo and the project", ok: false, detail: ctx.arrangeError }];
+        }
         await h.goto("code");
-        if ((await openProjectPicker(h)) === true) {
-            await sleep(300);
-            await chooseProjectRow(h);
-            await sleep(1200);
+        // always through the picker, by name: another project may already be open, or listed first
+        const picked = await h.ev(`(async () => {
+            const chip = document.querySelector('[data-code-project-picker]');
+            if (!chip) return 'no picker';
+            chip.click();
+            const sel = '[data-code-picker-row=${JSON.stringify(CODE_DIFF_PROJECT)}]';
+            for (let i = 0; i < 40 && !document.querySelector(sel); i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            const row = document.querySelector(sel);
+            if (!row) return 'no row';
+            row.click();
+            // the chip names the open project; the column tabs may still be the previous project's
+            const shown = () => (document.querySelector('[data-code-project-picker]')?.textContent || '').trim();
+            for (let i = 0; i < 40 && shown() !== ${JSON.stringify(CODE_DIFF_PROJECT)}; i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            for (let i = 0; i < 40 && !document.querySelector('[data-code-column-tab]'); i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            return shown();
+        })()`);
+        if (picked !== CODE_DIFF_PROJECT) {
+            steps.push({ step: "pick the project in the Code picker", ok: false, detail: `picked=${picked}` });
         }
 
         // the Changed column guarantees the file we open actually differs from HEAD
@@ -4333,21 +4375,35 @@ const codeDiff = {
             rowPath = await h.ev(
                 `(() => { const r = document.querySelector('[data-code-changed-row]'); return r ? r.getAttribute('data-code-changed-row') : ''; })()`
             );
-            if (rowPath) break;
+            if (rowPath === CODE_DIFF_FILE) break;
             await sleep(500);
         }
         const opened = await h.ev(`(() => {
-            const r = document.querySelector('[data-code-changed-row]');
+            const r = document.querySelector('[data-code-changed-row=${JSON.stringify(CODE_DIFF_FILE)}]');
             if (!r) return false;
             r.click();
             return true;
         })()`);
         steps.push({
             step: "open a file that differs from HEAD",
-            ok: opened === true && rowPath !== "",
+            ok: opened === true && rowPath === CODE_DIFF_FILE,
             detail: `path=${rowPath || "(none)"}`,
         });
         await sleep(900);
+
+        // line review in the Diff surface replaced the path bar's one-line handoff
+        const handoff = await h.ev(`(() => {
+            const bar = document.querySelector('[data-code-path]')?.parentElement;
+            if (!bar) return null;
+            return [...bar.querySelectorAll('button')]
+                .map((b) => b.textContent.trim())
+                .filter((t) => t === 'Send to agent' || t === 'Copy reference');
+        })()`);
+        steps.push({
+            step: "the path bar has no Send to agent or Copy reference",
+            ok: Array.isArray(handoff) && handoff.length === 0,
+            detail: handoff == null ? "no path bar" : `found=${JSON.stringify(handoff)}`,
+        });
 
         const toDiff = await h.ev(`(() => {
             const b = document.querySelector('[data-code-view-mode="diff"]');
@@ -4382,8 +4438,40 @@ const codeDiff = {
         });
         return steps;
     },
-    async teardown(h) {
+    async teardown(h, ctx) {
         await h.goto("cockpit"); // leave the app where a human expects it
+        if (ctx?.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            try {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.dir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            } catch (e) {
+                console.error(`code-diff teardown: remove the project failed: ${e?.message ?? e}`);
+            }
+            // Code keeps the picked project in a module atom; a reload drops it, so no later scenario opens Code
+            // on a directory removed below
+            try {
+                await h.ev("location.reload()");
+            } catch {
+                /* the evaluate is cut off by the navigation it just started */
+            }
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+        }
+        if (ctx?.dir) {
+            try {
+                rmSync(ctx.dir, { recursive: true, force: true });
+            } catch {
+                /* a leftover temp repo is cheaper than a failed teardown */
+            }
+        }
     },
 };
 
@@ -10142,6 +10230,773 @@ const docReviewMode = {
     },
 };
 
+// --- line-review: the Diff surface's Review mode (docs/superpowers/specs/2026-10-06-line-review-design.md, plan
+// docs/superpowers/plans/2026-10-06-line-review.md Tasks 5-6). Arrange builds a temp repo the way git-history does: a
+// first commit, a second one holding a binary file, a pure rename and a file over MAX_DIFF_BYTES, then uncommitted work
+// in two files (src/policy.ts: two edited lines with a long unchanged run between them and 3 removed lines at the end;
+// README.md: 40 added lines, enough that the second file starts below the fold). A fixture agent whose project is the
+// scenario's project carries a transcript naming the repo as its cwd, so scoping the Diff surface to it resolves the
+// repo. Steps 1-12 are Task 5's, 13-20 Task 6's; the DEV hooks (__lineReviewFault, __lineReviewSink) are cleared in
+// teardown.
+const LR = "line-review";
+const LR_PROJECT = "verify-line-review";
+const LR_AGENT = { id: "fx-lr-agent", name: "review-writer" };
+const LR_README = "README.md";
+const LR_POLICY = "src/policy.ts";
+const LR_POLICY_LINES = Array.from({ length: 60 }, (_, i) => `export const line${i + 1} = ${i + 1};`);
+const LR_README_HEAD = "# Line review\n\nA fixture repo.\n";
+
+const LR_HEADER = (path) => `document.querySelector('[data-review-file=${JSON.stringify(path)}]')`;
+const LR_SEC = (path) => `${LR_HEADER(path)}?.parentElement`;
+const LR_ROW = (path, key) => `${LR_SEC(path)}?.querySelector('[data-review-row="${key}"]')`;
+const LR_ADD = (path, key) => `${LR_ROW(path, key)}?.querySelector("[data-review-add]")`;
+const LR_LIST = `document.querySelector("[data-review-list]")`;
+const LR_BOX = `document.querySelector("[data-review-box]")`;
+const LR_BOX_BTN = (label) =>
+    `[...(${LR_BOX}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
+const LR_MODE = (m) => `document.querySelector('[data-diff-mode-option="${m}"]')`;
+// the box's row: the row its wrapper starts with, and the file whose section holds it
+const LR_BOX_AT = `(() => {
+    const b = ${LR_BOX};
+    if (!b) return null;
+    return {
+        file: b.closest("section")?.querySelector("[data-review-file]")?.dataset.reviewFile ?? null,
+        row: b.parentElement?.querySelector("[data-review-row]")?.dataset.reviewRow ?? null,
+        text: b.querySelector("textarea")?.value ?? null,
+        focused: document.activeElement === b.querySelector("textarea"),
+    };
+})()`;
+const LR_CARDS = `[...document.querySelectorAll("[data-review-card]")].map((c) => ({
+    id: c.dataset.reviewCard,
+    n: c.querySelector("span")?.textContent.trim() ?? "",
+    ref: c.querySelector("[data-review-card-ref]")?.textContent.trim() ?? "",
+    note: c.querySelector("[data-review-card-note]")?.textContent.trim() ?? "",
+}))`;
+const lrTinted = (path, keys) =>
+    `${JSON.stringify(keys)}.map((k) => ${LR_SEC(path)}?.querySelector('[data-review-row="' + k + '"]')?.className.includes("bg-accent/10") ?? false)`;
+
+// The fixture roster: the scoped agent (no block, so it is never one of the project's live agents), optionally
+// asking, plus `live` agents on the same project that do have a block, for the tray's menu.
+function lrWriteRoster(ctx, { ask = null, live = [] } = {}) {
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                {
+                    id: LR_AGENT.id,
+                    name: LR_AGENT.name,
+                    project: LR_PROJECT,
+                    task: "edit the policy",
+                    state: ask ? "asking" : "working",
+                    agent: "claude",
+                    model: "opus",
+                    ...(ask ? { blockedMs: 60_000, ask } : { activeMs: 30_000 }),
+                    transcriptPath: ctx.transcriptPath,
+                    previousInfo: [{ kind: "message", text: "Edited the policy." }],
+                },
+                ...live.map((a) => ({
+                    id: a.id,
+                    name: a.name,
+                    project: LR_PROJECT,
+                    task: "help with the policy",
+                    state: "working",
+                    agent: "claude",
+                    model: "opus",
+                    blockId: a.blockId,
+                    activeMs: 20_000,
+                    previousInfo: [{ kind: "message", text: "Looking at the policy." }],
+                })),
+            ],
+            null,
+            2
+        )
+    );
+}
+
+const LR_LIVE = [
+    { id: "fx-lr-live-a", name: "lint-fixer", blockId: "fx-blk-lr-live-a" },
+    { id: "fx-lr-live-b", name: "test-writer", blockId: "fx-blk-lr-live-b" },
+];
+
+const LR_TRAY_STATE = `(() => {
+    const t = document.querySelector("[data-review-tray]");
+    if (!t) return null;
+    const b = t.querySelector("[data-review-send]");
+    const menu = document.querySelector("[data-review-agent-menu]");
+    return {
+        text: t.innerText.replace(/\\s+/g, " ").trim(),
+        button: b ? b.innerText.replace(/\\s+/g, " ").trim() : null,
+        disabled: b ? b.disabled : null,
+        line: t.querySelector("[data-review-tray-line]")?.innerText.trim() ?? null,
+        menu: menu ? [...menu.querySelectorAll("[role=menuitem]")].map((e) => e.innerText.trim()) : null,
+    };
+})()`;
+
+// the message the tray sends for the three worktree comments steps 4-9 leave (README.md:5 edited, README.md:6-8,
+// src/policy.ts:58 removed), in the order and form linecomments.ts writes it
+const LR_MESSAGE_13 = `Review comments on your changes (3):
+
+1. README.md:5
+   > Added line 2.
+   Say why this line is needed.
+
+2. README.md:6-8
+   > Added line 3.
+   > Added line 4.
+   > Added line 5.
+   These three read as one step.
+
+3. src/policy.ts:58 (removed line)
+   > export const line58 = 58;
+   Why drop these?`;
+
+// one comment on README.md line n, which reads "Added line n-3."
+const lrOneMessage = (line, note) =>
+    ["Review comments on your changes (1):", "", `1. README.md:${line}`, `   > Added line ${line - 3}.`, `   ${note}`].join(
+        "\n"
+    );
+
+async function arrangeLineReview(h) {
+    const base = mkdtempSync(join(tmpdir(), "verify-line-review-"));
+    const repo = join(base, "repo");
+    const ctx = { cwd: base, repo };
+    try {
+        mkdirSync(join(repo, "src"), { recursive: true });
+        mkdirSync(join(repo, "docs"), { recursive: true });
+        writeFileSync(join(repo, LR_POLICY), LR_POLICY_LINES.join("\n") + "\n");
+        writeFileSync(join(repo, LR_README), LR_README_HEAD);
+        writeFileSync(join(repo, "docs", "old-name.txt"), "renamed without changes\n");
+        git(repo, "init", "-q", "--initial-branch=main");
+        git(repo, "add", ".");
+        git(repo, "commit", "-q", "-m", "seed the line review fixture");
+
+        // the commit step 11 selects: a binary file, a pure rename and a file over MAX_DIFF_BYTES (2 MiB)
+        mkdirSync(join(repo, "assets"), { recursive: true });
+        mkdirSync(join(repo, "data"), { recursive: true });
+        writeFileSync(join(repo, "assets", "logo.bin"), Buffer.from([0, 1, 2, 3, 0, 255, 254, 0, 10, 0]));
+        git(repo, "mv", "docs/old-name.txt", "docs/new-name.txt");
+        writeFileSync(join(repo, "data", "big.txt"), "a line of filler text for the size cap\n".repeat(60000));
+        git(repo, "add", ".");
+        git(repo, "commit", "-q", "-m", "add a binary, a rename and a large file");
+
+        // the uncommitted work: lines 3 and 25 edited (21 unchanged lines between them), 58-60 removed
+        const edited = LR_POLICY_LINES.slice(0, 57);
+        edited[2] = "export const line3 = 300;";
+        edited[24] = "export const line25 = 2500;";
+        writeFileSync(join(repo, LR_POLICY), edited.join("\n") + "\n");
+        const added = Array.from({ length: 40 }, (_, i) => `Added line ${i + 1}.`);
+        writeFileSync(join(repo, LR_README), LR_README_HEAD + added.join("\n") + "\n");
+
+        // the Diff surface resolves an agent's repo from its block or its transcript; a fixture has no block
+        const transcriptPath = join(base, "session.jsonl");
+        writeFileSync(
+            transcriptPath,
+            JSON.stringify({ type: "user", cwd: repo, message: { role: "user", content: "edit the policy" } }) + "\n"
+        );
+        await h.rpc("createproject", { name: LR_PROJECT, path: repo });
+        ctx.project = LR_PROJECT;
+        await waitForProjectInConfig(h, LR_PROJECT);
+        mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+        ctx.transcriptPath = transcriptPath;
+        lrWriteRoster(ctx);
+        ctx.wroteFixture = true;
+        try {
+            await h.ev("location.reload()");
+        } catch {
+            /* the evaluate is cut off by the navigation it just started */
+        }
+        await h.ev(`(async () => {
+            for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        })()`);
+    } catch (e) {
+        ctx.arrangeError = String(e?.message ?? e);
+    }
+    return ctx;
+}
+
+const lineReview = {
+    name: LR,
+    surface: "files",
+    arrange: arrangeLineReview,
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo, the project and the fixture roster", ok: false, detail: ctx.arrangeError }];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+        const shot = (n) => h.shot(`cdp-shots/${LR}-${n}.png`);
+        const wait = (expr, ms = 5000) => docReviewWait(h, expr, ms);
+        const click = (expr) => h.ev(`(() => { const el = ${expr}; if (!el) return false; el.click(); return true; })()`);
+        const rowsIn = (path) => h.ev(`${LR_SEC(path)}?.querySelectorAll("[data-review-row]").length ?? -1`);
+        const cards = () => h.ev(LR_CARDS);
+        const addNote = async (text) => {
+            await drmType(h, "[data-review-box] textarea", text);
+            return click(LR_BOX_BTN("Add Comment"));
+        };
+
+        // 0. scope the Diff surface to the fixture agent
+        await click(`document.querySelector("[data-files-source-picker]")`);
+        await nap(200);
+        const picked = await click(
+            `[...document.querySelectorAll("button:not([data-files-source-picker])")].find((b) => [...b.querySelectorAll("span")].some((s) => s.textContent === ${JSON.stringify(LR_AGENT.name)}))`
+        );
+        const history = await wait(`document.querySelectorAll("[data-history-row]").length >= 3`, 15000);
+        if (!picked || !history) {
+            rec("0. the Diff surface scoped to the fixture agent lists the working tree and both commits", false, JSON.stringify({ picked, history }));
+            return;
+        }
+
+        // 1. Uncommitted, then Review
+        await click(`document.querySelectorAll("[data-history-row]")[0]?.querySelector("button")`);
+        const mode1 = await wait(`document.querySelector("[data-diff-mode]")`, 8000);
+        const fileMode1 = await h.ev(`document.querySelector("[data-diff-mode]")?.dataset.diffMode ?? null`);
+        await click(LR_MODE("review"));
+        const list1 = await wait(`${LR_HEADER(LR_POLICY)} && ${LR_HEADER(LR_README)}`, 8000);
+        const heads1 = await h.ev(
+            `[...document.querySelectorAll("[data-review-file]")].map((e) => e.innerText.replace(/\\s+/g, " ").trim())`
+        );
+        await shot("01-review");
+        rec(
+            "1. selecting Uncommitted shows the File | Review control; Review lists both files with their +N −M",
+            mode1 &&
+                fileMode1 === "file" &&
+                list1 &&
+                heads1.length === 2 &&
+                heads1[0].startsWith("README.md") &&
+                heads1[0].includes("+40") &&
+                heads1[0].includes("−0") &&
+                heads1[1].startsWith("policy.ts") &&
+                heads1[1].includes("+2") &&
+                heads1[1].includes("−5"),
+            JSON.stringify({ mode1, fileMode1, list1, heads1 })
+        );
+
+        // 2. loading, error and Retry, through the DEV fault hook
+        await click(LR_MODE("file"));
+        await nap(300);
+        await h.ev(`window.__lineReviewFault = "slow"`);
+        await click(LR_MODE("review"));
+        const loading2 = await wait(`document.querySelector("[data-review-loading]")`, 1500);
+        await shot("02-loading");
+        const loaded2 = await wait(LR_HEADER(LR_POLICY), 8000);
+        await click(LR_MODE("file"));
+        await nap(300);
+        await h.ev(`window.__lineReviewFault = "error"`);
+        await click(LR_MODE("review"));
+        const error2 = await wait(
+            `document.querySelector("[data-review-error]") && document.querySelector("[data-review-retry]")`,
+            5000
+        );
+        const errText2 = await h.ev(`document.querySelector("[data-review-error]")?.innerText.trim() ?? null`);
+        await shot("02-error");
+        const cleared2 = await h.ev(`window.__lineReviewFault === undefined`);
+        await click(`document.querySelector("[data-review-retry]")`);
+        const retried2 = await wait(`${LR_HEADER(LR_POLICY)} && !document.querySelector("[data-review-error]")`, 8000);
+        rec(
+            "2. a slow load shows the skeleton; a failed one an error line and Retry; Retry shows the list",
+            loading2 && loaded2 && error2 && cleared2 && retried2,
+            JSON.stringify({ loading2, loaded2, error2, errText2, cleared2, retried2 })
+        );
+
+        // 3. collapse and expand a file; the long unchanged run is a fold that expands in place
+        const before3 = await rowsIn(LR_POLICY);
+        await click(LR_HEADER(LR_POLICY));
+        await nap(200);
+        const collapsed3 = await rowsIn(LR_POLICY);
+        await shot("03-collapsed");
+        await click(LR_HEADER(LR_POLICY));
+        await nap(200);
+        const expanded3 = await rowsIn(LR_POLICY);
+        const FOLD = `${LR_SEC(LR_POLICY)}?.querySelector('[data-review-fold="src/policy.ts#new:7"]')`;
+        const fold3 = await h.ev(`${FOLD}?.textContent.trim() ?? null`);
+        const hidden3 = await h.ev(`!${LR_ROW(LR_POLICY, "new:7")}`);
+        await click(FOLD);
+        await nap(200);
+        const unfolded3 = await rowsIn(LR_POLICY);
+        const shown3 = await h.ev(`!!${LR_ROW(LR_POLICY, "new:7")} && !${FOLD}`);
+        await shot("03-fold");
+        rec(
+            "3. a file collapses and expands; the 21-line unchanged run folds to 3 + 3 and expands in place",
+            before3 > 0 &&
+                collapsed3 === 0 &&
+                expanded3 === before3 &&
+                (fold3 ?? "").includes("15 unchanged lines") &&
+                hidden3 &&
+                shown3 &&
+                unfolded3 === before3 + 15,
+            JSON.stringify({ before3, collapsed3, expanded3, fold3, hidden3, shown3, unfolded3 })
+        );
+
+        // 4. + opens the box; Cancel and Esc close it; Add Comment makes a card
+        await click(LR_ADD(LR_README, "new:5"));
+        const open4 = await wait(LR_BOX, 2000);
+        const at4 = await h.ev(LR_BOX_AT);
+        await shot("04-box");
+        await click(LR_BOX_BTN("Cancel"));
+        const cancel4 = await wait(`!${LR_BOX}`, 2000);
+        await click(LR_ADD(LR_README, "new:5"));
+        await wait(LR_BOX, 2000);
+        await drmKey(h, "Escape");
+        const esc4 = await wait(`!${LR_BOX}`, 2000);
+        await click(LR_ADD(LR_README, "new:5"));
+        await wait(LR_BOX, 2000);
+        await addNote("Say what this line is for.");
+        await wait(`!${LR_BOX}`, 2000);
+        const cards4 = await cards();
+        const card4 = cards4.find((c) => c.ref === "README.md:5");
+        ctx.card4 = card4?.id;
+        await shot("04-card");
+        rec(
+            "4. + on an added row opens the box under it; Cancel and Esc close it; Add Comment makes a card",
+            open4 &&
+                at4?.file === LR_README &&
+                at4.row === "new:5" &&
+                cancel4 &&
+                esc4 &&
+                card4?.note === "Say what this line is for.",
+            JSON.stringify({ open4, at4, cancel4, esc4, cards4 })
+        );
+
+        // 5. a 3-row range by shift-click, added with Ctrl+Enter
+        await click(LR_ADD(LR_README, "new:6"));
+        await wait(LR_BOX, 2000);
+        await h.ev(
+            `${LR_ADD(LR_README, "new:8")}?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }))`
+        );
+        await nap(250);
+        const tint5 = await h.ev(lrTinted(LR_README, ["new:6", "new:7", "new:8"]));
+        const at5 = await h.ev(LR_BOX_AT);
+        await shot("05-range");
+        await drmType(h, "[data-review-box] textarea", "These three read as one step.");
+        await h.ev(`document.querySelector("[data-review-box] textarea")?.focus()`);
+        await drmKey(h, "Enter", true);
+        await wait(`!${LR_BOX}`, 2000);
+        const cards5 = await cards();
+        rec(
+            "5. shift-click selects a 3-row range, tinted, with the box under its last row; Ctrl+Enter adds README.md:6-8",
+            tint5.every(Boolean) && at5?.row === "new:8" && cards5.some((c) => c.ref === "README.md:6-8"),
+            JSON.stringify({ tint5, at5, cards5 })
+        );
+
+        // 6. a range by dragging from a + across 2 more rows
+        await h.ev(`${LR_ROW(LR_POLICY, "new:23")}?.scrollIntoView({ block: "center" })`);
+        await nap(200);
+        const centre = (expr) =>
+            h.ev(`(() => { const el = ${expr}; if (!el) return null; const r = el.getBoundingClientRect();
+                return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`);
+        const from6 = await centre(LR_ADD(LR_POLICY, "new:22"));
+        const mid6 = await centre(LR_ROW(LR_POLICY, "new:23"));
+        const to6 = await centre(LR_ROW(LR_POLICY, "new:24"));
+        let tintDrag6 = null;
+        if (from6 && mid6 && to6) {
+            const mouse = (type, p, held) =>
+                h.cdp("Input.dispatchMouseEvent", {
+                    type,
+                    x: p.x,
+                    y: p.y,
+                    button: type === "mouseMoved" && !held ? "none" : "left",
+                    buttons: held ? 1 : 0,
+                    clickCount: type === "mouseMoved" ? 0 : 1,
+                });
+            await mouse("mouseMoved", from6, false);
+            await mouse("mousePressed", from6, true);
+            await mouse("mouseMoved", { x: from6.x - 200, y: mid6.y }, true);
+            await nap(80);
+            await mouse("mouseMoved", { x: from6.x - 200, y: to6.y }, true);
+            await nap(200);
+            tintDrag6 = await h.ev(lrTinted(LR_POLICY, ["new:22", "new:23", "new:24"]));
+            await shot("06-drag");
+            await mouse("mouseReleased", { x: from6.x - 200, y: to6.y }, false);
+        }
+        await nap(250);
+        const at6 = await h.ev(LR_BOX_AT);
+        const tint6 = await h.ev(lrTinted(LR_POLICY, ["new:22", "new:23", "new:24"]));
+        await addNote("Name this run of constants.");
+        await wait(`!${LR_BOX}`, 2000);
+        const cards6 = await cards();
+        const card6 = cards6.find((c) => c.ref === "src/policy.ts:22-24");
+        ctx.card6 = card6?.id;
+        rec(
+            "6. dragging from a + across 2 more rows tints them and its card reads src/policy.ts:22-24",
+            (tintDrag6 ?? []).length === 3 &&
+                tintDrag6.every(Boolean) &&
+                at6?.row === "new:24" &&
+                tint6.every(Boolean) &&
+                card6 != null,
+            JSON.stringify({ from6, tintDrag6, at6, tint6, cards6 })
+        );
+
+        // 7. a removed row
+        await click(LR_ADD(LR_POLICY, "old:58"));
+        await wait(LR_BOX, 2000);
+        await addNote("Why drop these?");
+        await wait(`!${LR_BOX}`, 2000);
+        const cards7 = await cards();
+        await shot("07-removed");
+        rec(
+            "7. + on a removed row makes a card reading (removed line)",
+            cards7.some((c) => c.ref === "src/policy.ts:58 (removed line)" && c.note === "Why drop these?"),
+            JSON.stringify(cards7)
+        );
+
+        // 8. a box with text stays where it is and takes focus
+        await click(LR_ADD(LR_POLICY, "new:26"));
+        await wait(LR_BOX, 2000);
+        await drmType(h, "[data-review-box] textarea", "a note not added yet");
+        await h.ev(`document.activeElement?.blur?.()`);
+        await click(LR_ADD(LR_README, "new:2"));
+        await nap(300);
+        const at8 = await h.ev(LR_BOX_AT);
+        const boxes8 = await h.ev(`document.querySelectorAll("[data-review-box]").length`);
+        await shot("08-kept");
+        await click(LR_BOX_BTN("Cancel"));
+        const closed8 = await wait(`!${LR_BOX}`, 2000);
+        rec(
+            "8. + on another row leaves a box holding text under its first row, with its text and focus",
+            boxes8 === 1 &&
+                at8?.file === LR_POLICY &&
+                at8.row === "new:26" &&
+                at8.text === "a note not added yet" &&
+                at8.focused &&
+                closed8,
+            JSON.stringify({ at8, boxes8, closed8 })
+        );
+
+        // 9. editing a card in place, and × on the step 6 card
+        await click(`document.querySelector('[data-review-card="${ctx.card4}"] [data-review-card-note]')`);
+        await wait(LR_BOX, 2000);
+        const at9 = await h.ev(LR_BOX_AT);
+        const hidden9 = await h.ev(`!document.querySelector('[data-review-card="${ctx.card4}"]')`);
+        await shot("09-edit");
+        await addNote("Say why this line is needed.");
+        await wait(`!${LR_BOX}`, 2000);
+        const edited9 = (await cards()).find((c) => c.id === ctx.card4);
+        await click(`document.querySelector('[data-review-card="${ctx.card6}"] [data-review-card-delete]')`);
+        await nap(200);
+        const cards9 = await cards();
+        rec(
+            "9. clicking a note opens the box on its text and adding updates the card; × removes the step 6 card",
+            at9?.text === "Say what this line is for." &&
+                at9.row === "new:5" &&
+                hidden9 &&
+                edited9?.note === "Say why this line is needed." &&
+                !cards9.some((c) => c.id === ctx.card6),
+            JSON.stringify({ at9, hidden9, edited9, cards9 })
+        );
+
+        // 10. a click in the commit pane's file list scrolls Review to that file
+        await h.ev(`(${LR_LIST}.scrollTop = 0, true)`);
+        await nap(200);
+        const offset = `(() => {
+            const s = ${LR_SEC(LR_POLICY)};
+            const l = ${LR_LIST};
+            if (!s || !l) return null;
+            return { top: Math.round(s.getBoundingClientRect().top - l.getBoundingClientRect().top), height: l.clientHeight };
+        })()`;
+        const before10 = await h.ev(offset);
+        await click(`document.querySelector('[data-changed-file-row="src/policy.ts"]')`);
+        await nap(500);
+        const after10 = await h.ev(offset);
+        const header10 = await h.ev(`(() => {
+            const r = ${LR_HEADER(LR_POLICY)}?.getBoundingClientRect();
+            const l = ${LR_LIST}?.getBoundingClientRect();
+            return !!r && !!l && r.top >= l.top - 1 && r.bottom <= l.bottom + 1;
+        })()`);
+        await shot("10-scrolled");
+        rec(
+            "10. clicking src/policy.ts in the commit pane scrolls Review to its header",
+            before10 != null && before10.top >= before10.height && Math.abs(after10?.top ?? 99) <= 2 && header10,
+            JSON.stringify({ before10, after10, header10 })
+        );
+
+        // 11. the second commit: each file without a text diff says why, and the worktree's cards are not drawn
+        await click(`document.querySelectorAll("[data-history-row]")[1]?.querySelector("button")`);
+        const list11 = await wait(LR_HEADER("assets/logo.bin"), 8000);
+        const empty11 = await h.ev(
+            `Object.fromEntries([...document.querySelectorAll("[data-review-file]")].map((e) => [e.dataset.reviewFile, e.parentElement.querySelector("[data-review-empty]")?.dataset.reviewEmpty ?? null]))`
+        );
+        const cards11 = await h.ev(`document.querySelectorAll("[data-review-card]").length`);
+        await shot("11-commit");
+        rec(
+            "11. the second commit in Review: the binary, the rename and the large file each say why; no worktree cards",
+            list11 &&
+                empty11["assets/logo.bin"] === "binary" &&
+                empty11["docs/new-name.txt"] === "renamed" &&
+                empty11["data/big.txt"] === "toolarge" &&
+                cards11 === 0,
+            JSON.stringify({ list11, empty11, cards11 })
+        );
+
+        // 12. compare hides the control; leaving it brings it back
+        await click(`document.querySelector('[data-range-chip="compare"]')`);
+        const hidden12 = await wait(
+            `document.querySelector("[data-compare-column], [data-history-rail]") && !document.querySelector("[data-diff-mode]")`,
+            8000
+        );
+        await shot("12-compare");
+        const esc = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
+        await h.ev(`document.activeElement?.blur?.()`);
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...esc });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...esc });
+        const back12 = await wait(`!!document.querySelector("[data-diff-mode]")`, 8000);
+        rec(
+            "12. entering compare hides the File | Review control; leaving compare brings it back",
+            hidden12 && back12,
+            JSON.stringify({ hidden12, back12 })
+        );
+
+        // Steps 13-20 are Task 6's: the tray, the send key, the blocks, the agent menu and Copy.
+        const tray = () => h.ev(LR_TRAY_STATE);
+        const trayWait = (cond, ms = 5000) =>
+            wait(`(() => { const t = ${LR_TRAY_STATE}; return !!t && (${cond}); })()`, ms);
+        const cardCount = () => h.ev(`document.querySelectorAll("[data-review-card]").length`);
+        const setSink = (mode) =>
+            h.ev(`(() => {
+                window.__lrSent = [];
+                window.__lineReviewSink = ${
+                    mode === "throw"
+                        ? `() => { throw new Error("fixture: the terminal is gone"); }`
+                        : `(text) => { window.__lrSent.push(text); }`
+                };
+                return true;
+            })()`);
+        const sent = () => h.ev(`window.__lrSent ?? null`);
+        const reloadRoster = async (opts) => {
+            lrWriteRoster(ctx, opts);
+            await h.ev(`window.__reloadDevMockRoster?.()`);
+        };
+        const comment = async (line, note) => {
+            await click(LR_ADD(LR_README, `new:${line}`));
+            await wait(LR_BOX, 2000);
+            await addNote(note);
+            return wait(`!${LR_BOX}`, 2000);
+        };
+        // Leaving compare (step 12) or switching scope (step 19) re-reads the change list, and until that
+        // read lands the history has no Uncommitted row: row 0 is then a commit, and a click on it is
+        // dropped. So wait for the Uncommitted row itself, click it, and confirm it is the selection.
+        const WT_BUTTON = `document.querySelector('[data-history-row="worktree"] button')`;
+        const toUncommittedReview = async () => {
+            if (!(await wait(`!!${WT_BUTTON}`, 15000))) {
+                return false;
+            }
+            await click(WT_BUTTON);
+            if (!(await wait(`${WT_BUTTON}?.className.includes("bg-surface-selected")`, 8000))) {
+                return false;
+            }
+            await wait(`document.querySelector("[data-diff-mode]")`, 8000);
+            if ((await h.ev(`document.querySelector("[data-diff-mode]")?.dataset.diffMode`)) !== "review") {
+                await click(LR_MODE("review"));
+            }
+            return wait(LR_HEADER(LR_README), 8000);
+        };
+        const sentLine = (name) => `t.line === ${JSON.stringify(`Sent to ${name}`)}`;
+
+        // 13. the tray in Review and in File mode
+        const at13 = await toUncommittedReview();
+        const cards13 = await cardCount();
+        const review13 = await trayWait(`t.text.includes("3 comments on 2 files")`);
+        const tray13 = await tray();
+        await shot("13-tray");
+        await click(LR_MODE("file"));
+        await nap(300);
+        const file13 = await trayWait(`t.text.includes("3 comments on 2 files")`, 3000);
+        await shot("13-tray-file");
+        await click(LR_MODE("review"));
+        const back13 = await wait(LR_HEADER(LR_README), 8000);
+        rec(
+            "13. the tray reads 3 comments on 2 files and Send 3 comments in Review, and stays in File mode",
+            at13 &&
+                cards13 === 3 &&
+                review13 &&
+                (tray13?.button ?? "").startsWith("Send 3 comments") &&
+                tray13.disabled === false &&
+                file13 &&
+                back13,
+            JSON.stringify({ at13, cards13, tray13, file13, back13 })
+        );
+
+        // 14. a box holding text blocks the send
+        await click(LR_ADD(LR_README, "new:10"));
+        await wait(LR_BOX, 2000);
+        await drmType(h, "[data-review-box] textarea", "half a thought");
+        const block14 = await trayWait(`t.line === "A comment is not added yet" && t.disabled === true`, 2000);
+        const tray14 = await tray();
+        await shot("14-draft");
+        await click(LR_BOX_BTN("Cancel"));
+        const free14 = await trayWait(`t.disabled === false && t.line === null`, 2000);
+        rec(
+            "14. with text typed in a box the send button is disabled and the tray reads A comment is not added yet; Cancel frees it",
+            block14 && free14,
+            JSON.stringify({ tray14, free14 })
+        );
+
+        // 15. Send delivers exactly the message, the tray says so and the cards go
+        await setSink("ok");
+        await click(`document.querySelector("[data-review-send]")`);
+        const done15 = await trayWait(sentLine(LR_AGENT.name));
+        const sent15 = await sent();
+        const cards15 = await cardCount();
+        const tray15 = await tray();
+        await shot("15-sent");
+        rec(
+            "15. Send hands the sink exactly the expected message; the tray reads Sent to review-writer; the cards are gone",
+            done15 && sent15?.length === 1 && sent15[0] === LR_MESSAGE_13 && cards15 === 0 && tray15?.button == null,
+            JSON.stringify({ tray15, cards15, sent15 })
+        );
+
+        // 16. a failed send keeps the comment
+        await comment(10, "Keep this line short.");
+        const cleared16 = await trayWait(`t.line === null`, 2000);
+        await setSink("throw");
+        await click(`document.querySelector("[data-review-send]")`);
+        const failed16 = await trayWait(`t.line === ${JSON.stringify(`Couldn't reach ${LR_AGENT.name} — comments kept`)}`);
+        const title16 = await h.ev(`document.querySelector("[data-review-tray-line]")?.title ?? null`);
+        const cards16 = await cardCount();
+        const tray16 = await tray();
+        await shot("16-failed");
+        rec(
+            "16. a sink that throws: the tray reads Couldn't reach review-writer — comments kept, the error in its tooltip; the card stays",
+            cleared16 && failed16 && (title16 ?? "").includes("the terminal is gone") && cards16 === 1,
+            JSON.stringify({ cleared16, failed16, title16, cards16, tray16 })
+        );
+
+        // 17. Ctrl+Enter from the surface sends
+        await setSink("ok");
+        await h.ev(`(document.activeElement?.blur?.(), true)`);
+        await drmKey(h, "Enter", true);
+        const done17 = await trayWait(sentLine(LR_AGENT.name));
+        const sent17 = await sent();
+        const cards17 = await cardCount();
+        await shot("17-key");
+        rec(
+            "17. with focus on the surface, Ctrl+Enter sends: the sink receives the message and the card is gone",
+            done17 && sent17?.length === 1 && sent17[0] === lrOneMessage(10, "Keep this line short.") && cards17 === 0,
+            JSON.stringify({ done17, sent17, cards17 })
+        );
+
+        // 18. the agent's open ask blocks the send
+        await comment(11, "Shorter, please.");
+        await reloadRoster({
+            ask: {
+                askId: `fx-lr-ask-${Date.now()}`,
+                questions: [
+                    { header: "Question", question: "Which name reads better?", options: [{ label: "A" }, { label: "B" }] },
+                ],
+            },
+        });
+        const asking18 = await trayWait(
+            `t.line === ${JSON.stringify(`${LR_AGENT.name} is waiting on a question — answer it first`)} && t.disabled === true`,
+            8000
+        );
+        const tray18 = await tray();
+        await shot("18-asking");
+        await reloadRoster({});
+        const free18 = await trayWait(`t.disabled === false`, 8000);
+        await click(`document.querySelector("[data-review-card-delete]")`);
+        const gone18 = await wait(`!document.querySelector("[data-review-card]")`, 2000);
+        rec(
+            "18. with the agent's ask open the send button is disabled and the tray reads review-writer is waiting on a question — answer it first",
+            asking18 && free18 && gone18,
+            JSON.stringify({ tray18, free18, gone18 })
+        );
+
+        // 19. scoped to the project, two live agents: Send opens a menu of both; picking one sends to it
+        await reloadRoster({ live: LR_LIVE });
+        await click(`document.querySelector("[data-files-source-picker]")`);
+        await nap(200);
+        const scoped19 = await click(`document.querySelector('[data-files-source-option=${JSON.stringify(LR_PROJECT)}]')`);
+        await nap(500); // the agent scope's history rows stay on screen until the project's load replaces them
+        const history19 = await wait(`document.querySelectorAll("[data-history-row]").length >= 3`, 15000);
+        const list19 = await toUncommittedReview();
+        await comment(12, "Pick one agent.");
+        await setSink("ok");
+        await click(`document.querySelector("[data-review-send]")`);
+        const menu19 = await trayWait(`(t.menu ?? []).length === 2`, 3000);
+        const tray19 = await tray();
+        await shot("19-menu");
+        await click(
+            `document.querySelector('[data-review-agent-menu] [data-review-agent-option=${JSON.stringify(LR_LIVE[1].id)}]')`
+        );
+        const done19 = await trayWait(sentLine(LR_LIVE[1].name));
+        const sent19 = await sent();
+        await shot("19-sent");
+        rec(
+            "19. scoped to the project with two live agents, Send opens data-review-agent-menu with both names; picking test-writer sends to it",
+            scoped19 &&
+                history19 &&
+                list19 &&
+                menu19 &&
+                tray19.menu.includes(LR_LIVE[0].name) &&
+                tray19.menu.includes(LR_LIVE[1].name) &&
+                done19 &&
+                sent19?.length === 1 &&
+                sent19[0] === lrOneMessage(12, "Pick one agent."),
+            JSON.stringify({ scoped19, history19, list19, tray19, done19, sent19 })
+        );
+
+        // 20. no live agent on the project: Copy writes the clipboard and keeps the comment
+        await reloadRoster({});
+        await comment(13, "Copy me.");
+        const copy20 = await trayWait(`(t.button ?? "").startsWith("Copy")`);
+        await h.ev(`(() => {
+            window.__lrCopied = [];
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: async (text) => { window.__lrCopied.push(text); } },
+            });
+            return true;
+        })()`);
+        await click(`document.querySelector("[data-review-send]")`);
+        const done20 = await trayWait(`t.line === "Copied — paste it to an agent"`);
+        const copied20 = await h.ev(`window.__lrCopied ?? null`);
+        const cards20 = await cardCount();
+        const tray20 = await tray();
+        await shot("20-copied");
+        rec(
+            "20. with no live agent on the project the button reads Copy; it copies the message, the tray reads Copied — paste it to an agent, and the card stays",
+            copy20 && done20 && copied20?.length === 1 && copied20[0] === lrOneMessage(13, "Copy me.") && cards20 === 1,
+            JSON.stringify({ copy20, tray20, copied20, cards20 })
+        );
+    },
+    async teardown(h, ctx) {
+        try {
+            // the clipboard stub from step 20 is an own property over Navigator's getter; deleting it restores that
+            await h.ev(
+                `(delete window.__lineReviewFault, delete window.__lineReviewSink, delete window.__lrSent, delete window.__lrCopied, delete navigator.clipboard, true)`
+            );
+        } catch (e) {
+            console.error(`${LR} teardown: clear the DEV hooks failed: ${e?.message ?? e}`);
+        }
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            try {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            } catch (e) {
+                console.error(`${LR} teardown: remove the project failed: ${e?.message ?? e}`);
+            }
+        }
+        // removes the fixture roster and reloads, which also resets the review mode, compare and the comments
+        await teardownFixtureRun(h, ctx, LR);
+    },
+};
+
 // The Cockpit on the brief type scale (docs/superpowers/specs/2026-09-29-cockpit-polish-design.md): nothing under
 // 10.5px, and the lead card leads with the Workflow icon. Same setup as agent-tree-rail: a fixture roster whose lead
 // carries a real orchestrator run held in planning. No dagsubmit (see TREE_RAIL_FIXTURE), so the card has no plan
@@ -14840,6 +15695,7 @@ export const SCENARIOS = [
     docReview,
     docReviewCanvas,
     docReviewMode,
+    lineReview,
     cockpitPolish,
     runSheetPolish,
     runTimingScenario,

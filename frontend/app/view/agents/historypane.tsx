@@ -338,7 +338,7 @@ export function HistoryPane({
                             <GraphGutter geom={geom} selectedIndex={laned.findIndex((r) => r.hash === selected)} />
                         ) : null}
                         {laned.map((row) => (
-                            <div key={row.hash || "__wt__"} data-history-row>
+                            <div key={row.hash || "__wt__"} data-history-row={row.workingTree ? "worktree" : row.hash}>
                                 <Row
                                     row={row}
                                     laneIndent={indent}

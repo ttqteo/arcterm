@@ -798,7 +798,7 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
                 <span className="h-full w-px bg-edge-mid group-hover:bg-accent group-focus-visible:bg-accent" />
             </div>
             <div className="flex min-w-0 flex-1 flex-col">
-                <CodePathBar model={model} />
+                <CodePathBar />
                 <CodeStaleBar />
                 <div className="min-h-0 flex-1">
                     <CodeViewer model={model} />
