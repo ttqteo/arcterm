@@ -11932,8 +11932,9 @@ const canvasTabsScenario = {
 
 // --- the details rail's sections: Artifacts, Uploads and Terminals, in the order the spec gives ---------------------
 // docs/superpowers/specs/2026-10-05-agent-sessions-merge-design.md, decision 6. The roster is one dev fixture agent;
-// the terminals are two real plain tabs in two projects; the agent owns a temp canvas with two boards. Uploads is the
-// placeholder this stage ships, so its Attach button is asserted disabled; the uploads work enables it.
+// the terminals are two real plain tabs in two projects; the agent owns a temp canvas with two boards. Uploads is a
+// counted 0 that opens to an enabled Attach (the fixture agent has a block to paste into); agent-uploads covers what the
+// section does once something is in it.
 const RAIL_SECTIONS_AGENT_ID = "fx-rail-sections";
 const RAIL_SECTIONS_AGENT_BLOCK = "fx-blk-rail-sections";
 const RAIL_SECTIONS_PROJECT_A = "verify-rail-a";
@@ -13076,6 +13077,507 @@ const agentGrid = {
     },
 };
 
+// --- agent uploads: paste, drop and the rail's Uploads section ----------------------------------------------
+// A shell terminal in a tab of its own, made an agent by publishing an agent:status event for its block (as agent-grid
+// does), so the Agent surface mounts its pane and gives it the details rail. Needs a live app (task dev).
+//
+// What is real: the paste is a ClipboardEvent on the terminal's connect element, which TermWrap.pasteHandler hears. It
+// reads clipboardData.items (extractAllClipboardData takes that branch before it would call navigator.clipboard.read), so
+// the image goes through the real temp-file write, bracketed paste and recordPastedImage. The drop is a DragEvent on the
+// same element: it bubbles through termwrap's dropGuard to CockpitFocusPane's own onDrop, which reads the script-built
+// DataTransfer and runs collectDroppedFiles and ingestFiles. Each carries a real DataTransfer holding a real File.
+//
+// What is not covered here, and what covers it instead:
+//  - Attach opens a native dialog, which CDP cannot drive. The record and the paste text are covered by planInserts
+//    (uploadsstore.test.ts) and by attachPaths and pickAndAttach (uploadsingest.test.ts); the row an attach record makes
+//    is covered by one seeded into storage (it must never read "expired"). Step 0 does assert Attach is enabled.
+//  - A dropped folder: webkitGetAsEntry needs a real drag, and a script-built item has no file-system entry behind it, so
+//    collectDroppedFiles' tests (uploadfile.test.ts) cover it.
+//  - A paste from the OS clipboard and a drag from Explorer, which are the browser's own events, not these.
+// Steps 1c and 3c read the shell's echo of the paste from the block's "term" file over HTTP (window.term is no longer set);
+// they skip, naming why, when that file has nothing in it.
+const UPLOADS_KEY = "agent.uploads";
+const UPLOADS_NAME = "verify-uploads";
+const UPLOADS_AGENT_WAIT_MS = 15000;
+const UPLOADS_SHELL_WAIT_MS = 15000;
+// MAX_UPLOAD_BYTES (uploadfile.ts), mirrored: step 5 drops a file one byte over it and reads the cap back out of the
+// toast, so a cap that moves fails there instead of passing on a stale number
+const UPLOADS_CAP_BYTES = 3.5 * 1024 * 1024;
+const UPLOADS_CAP_LABEL = `${UPLOADS_CAP_BYTES / (1024 * 1024)} MB`;
+const UPLOADS_DAY_MS = 24 * 3600 * 1000;
+const UPLOADS_SECTION = `document.querySelector('aside[aria-label="Agent details"] [data-rail-section="uploads"]')`;
+const UPLOADS_TOGGLE = `${UPLOADS_SECTION}?.querySelector("h3 button")`;
+const UPLOADS_ATTACH = `${UPLOADS_SECTION}?.querySelector("button[data-rail-attach]")`;
+// the lightbox is portaled to document.body, so it is not under the rail
+const UPLOADS_LIGHTBOX = `document.querySelector('[role="dialog"][aria-modal="true"] [data-upload-lightbox-img]')`;
+// the number after the section's label, null while the section is not drawn
+const UPLOADS_COUNT = `(() => {
+    const m = /(\\d+)\\s*$/.exec(${UPLOADS_SECTION}?.querySelector("h3")?.textContent ?? "");
+    return m ? Number(m[1]) : null;
+})()`;
+
+const publishUploadsStatus = (h, ctx) =>
+    h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${ctx.blockId}`],
+        persist: 1,
+        data: { oref: `block:${ctx.blockId}`, state: "working", agent: "claude", title: UPLOADS_NAME, ts: Date.now() },
+    });
+
+// a plain terminal in a tab of its own that reports as a Claude agent; the tab id is the agent id
+async function openUploadsAgent(h, ctx) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    // tracked as soon as it exists, so a failure in the calls below still lets teardown close the tab
+    ctx.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, UPLOADS_NAME, false]);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.tabId}`]);
+    ctx.blockId = tab?.blockids?.[0];
+    if (!ctx.blockId) throw new Error("the new tab has no block");
+    // the shell starts in ~, as canvas-swap's does: nothing in the app tree should hold a temp dir
+    await h.rpc("setmeta", { oref: `block:${ctx.blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", { oref: `tab:${ctx.tabId}`, meta: { "session:project": UPLOADS_NAME } });
+    await publishUploadsStatus(h, ctx);
+}
+
+// The agent's pane is the one shown (a lone cell, so shown is focused: the rail is that agent's) and its rail has the
+// Uploads section. Its tree row is clicked until then, so a click that lands before the roster has settled is not lost.
+async function focusUploadsAgent(h, ctx) {
+    await h.goto("agent");
+    return polishWaitFor(
+        h,
+        `(() => {
+            const pane = document.querySelector('[data-agent-terminal="${ctx.tabId}"]');
+            if (pane != null && !pane.classList.contains("hidden") && ${UPLOADS_SECTION} != null) return true;
+            document.querySelector('[data-agent-row="${ctx.tabId}"]')?.click();
+            return false;
+        })()`,
+        UPLOADS_AGENT_WAIT_MS
+    );
+}
+
+// a small PNG, drawn the way a screenshot is: a File of a real image type in a real DataTransfer
+const uploadsPasteExpr = (tabId) => `(async () => {
+    const el = document.querySelector('[data-agent-terminal="${tabId}"] .term-connectelem');
+    if (!el) return { ok: false };
+    const canvas = document.createElement("canvas");
+    canvas.width = 240;
+    canvas.height = 120;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "#5e9cff";
+    g.fillRect(0, 0, 240, 120);
+    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], "image.png", { type: "image/png" }));
+    const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+    // pasteHandler claims the event before its first await
+    return { ok: true, taken: ev.defaultPrevented };
+})()`;
+
+// kind: "dragover" (a file over the pane) or "drop"; bytes sizes the file, agentMime adds the grid's own MIME
+const uploadsDragExpr = (tabId, kind, { name = "notes with space.txt", bytes = 12, agentMime = false } = {}) => `(() => {
+    // dispatched on the terminal's own element, as a real drop would land: it bubbles up through termwrap's dropGuard
+    // (which only keeps the webview from navigating) to the pane's handler
+    const el = document.querySelector('[data-agent-terminal="${tabId}"] .term-connectelem');
+    if (!el) return { ok: false };
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(${bytes}).fill(97)], ${JSON.stringify(name)}, { type: "text/plain" }));
+    if (${agentMime}) dt.setData("application/x-arc-agent", "verify");
+    const ev = new DragEvent(${JSON.stringify(kind)}, { dataTransfer: dt, bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+    return { ok: true, taken: ev.defaultPrevented };
+})()`;
+
+// the section's rows, newest first (a closed section draws none)
+const uploadsRows = (h) =>
+    h.ev(`[...(${UPLOADS_SECTION}?.querySelectorAll("[data-upload-row]") ?? [])].map((r) => ({
+        name: r.querySelector("span.truncate")?.textContent ?? "",
+        source: r.getAttribute("data-upload-source"),
+        expired: r.getAttribute("data-upload-expired") === "true",
+        badge: [...r.querySelectorAll("span")].some((s) => s.children.length === 0 && s.textContent.trim() === "expired"),
+        thumb: r.querySelector("[data-upload-thumb]") != null,
+        button: r.tagName === "BUTTON",
+        path: r.getAttribute("title"),
+    }))`);
+
+const uploadsToasts = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-notification-toast]")].map((t) => t.textContent.trim())`);
+
+// the file name of a path, either separator
+const uploadsBaseName = (path) => path.split(/[\\/]/).pop();
+
+// What the shell has printed, kept by wavesrv in the block's "term" file; null when the file is missing, empty or cannot
+// be read. Colour, cursor and title sequences are stripped, and so are line breaks, so a path the shell redraws token
+// by token, or that the terminal wrapped, still reads whole.
+async function uploadsTermText(h, blockId) {
+    try {
+        const [endpoint, key] = await h.ev(`[window.api.getEnv("WAVE_SERVER_WEB_ENDPOINT"), window.api.getAuthKey()]`);
+        const res = await fetch(`http://${endpoint}/wave/file?zoneid=${blockId}&name=term`, { headers: { "x-authkey": key } });
+        if (res.status !== 200) return null;
+        const text = Buffer.from(await res.arrayBuffer())
+            .toString("utf8")
+            .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "") // eslint-disable-line no-control-regex
+            .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") // eslint-disable-line no-control-regex
+            .replace(/[\r\n]+/g, "");
+        return text === "" ? null : text;
+    } catch {
+        return null;
+    }
+}
+
+async function uploadsTermHas(h, blockId, needle) {
+    let text = null;
+    for (let waited = 0; waited < 5000; waited += 500) {
+        text = await uploadsTermText(h, blockId);
+        if (text != null && text.includes(needle)) return { seen: true, readable: true };
+        await polishNap(500);
+    }
+    return { seen: false, readable: text != null };
+}
+
+// The shell has printed something (its prompt). By then the terminal has loaded, and a drop is refused before that
+// (TermWrap takes no paste until its first load is done), and there is an echo to read.
+async function uploadsShellUp(h, blockId) {
+    for (let waited = 0; waited < UPLOADS_SHELL_WAIT_MS; waited += 500) {
+        if ((await uploadsTermText(h, blockId)) != null) return true;
+        await polishNap(500);
+    }
+    return false;
+}
+
+const agentUploads = {
+    name: "agent-uploads",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`),
+            prevUploads: await h.ev(`localStorage.getItem(${JSON.stringify(UPLOADS_KEY)})`),
+            prevSections: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`),
+            prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`),
+        };
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            ctx.skip =
+                "a cockpit fixture roster is active, so the agent this scenario makes never reaches the tree: run `npm run cockpit:fixtures -- --clear` and reload";
+            return ctx;
+        }
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(UPLOADS_KEY)})`);
+            // the sections' open state is persisted: start from each one's default (Uploads is closed at 0)
+            await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+            // an empty grid, so the agent made below is shown alone, and the user's own grid is not rearranged around it
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+            );
+            // all of them are read once per page load
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await openUploadsAgent(h, ctx);
+            ctx.focused = await focusUploadsAgent(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) {
+            return [skipStep("agent uploads", ctx.skip)];
+        }
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the agent and its Uploads section were made", ok: false, detail: ctx.arrangeError }];
+        }
+        if (ctx.focused !== true) {
+            return [
+                skipStep(
+                    "agent uploads",
+                    "could not verify: the agent never showed its Uploads rail section (does the roster list a working claude agent that has no transcript, and does the surface show it when its tree row is clicked?)"
+                ),
+            ];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const count = () => h.ev(UPLOADS_COUNT);
+        const waitCount = (n) => polishWaitFor(h, `${UPLOADS_COUNT} === ${n}`, 8000);
+        // the section's body, and with it every row, is drawn only while it is open
+        const openUploads = async () => {
+            await h.ev(`(() => { if (${UPLOADS_SECTION}?.dataset.open === "false") ${UPLOADS_TOGGLE}?.click(); })()`);
+            return polishWaitFor(h, `${UPLOADS_SECTION}?.dataset.open === "true"`, 3000);
+        };
+
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // a counted 0 that is closed by default but not inert: it opens to the empty state and an enabled Attach
+            const before = await h.ev(`(() => {
+                const s = ${UPLOADS_SECTION};
+                const t = ${UPLOADS_TOGGLE};
+                return s ? { open: s.dataset.open, toggleEnabled: t != null && !t.disabled } : null;
+            })()`);
+            const countBefore = await count();
+            const openedEmpty = await openUploads();
+            await polishWaitFor(h, `${UPLOADS_ATTACH} != null`, 3000);
+            const attach = await h.ev(`(() => {
+                const b = ${UPLOADS_ATTACH};
+                return b ? { text: b.textContent.trim(), disabled: b.disabled } : null;
+            })()`);
+            rec(
+                "0. Uploads starts as a closed 0 that opens to an enabled Attach",
+                countBefore === 0 &&
+                    before?.open === "false" &&
+                    before.toggleEnabled === true &&
+                    openedEmpty === true &&
+                    attach?.text === "Attach" &&
+                    attach.disabled === false,
+                { countBefore, before, openedEmpty, attach }
+            );
+
+            // the shell's prompt means the terminal has loaded (a drop is refused before that) and the echo can be read
+            const shellUp = await uploadsShellUp(h, ctx.blockId);
+
+            // --- paste an image: the real pasteHandler writes a temp file, pastes its path and records it ---------
+            const pasted = await h.ev(uploadsPasteExpr(ctx.tabId));
+            const gotPaste = await waitCount(1);
+            // the record carries its thumbnail, which reaches the DOM a render after the row does
+            await polishWaitFor(h, `${UPLOADS_SECTION}?.querySelector("[data-upload-row] [data-upload-thumb]") != null`, 3000);
+            const pasteRow = (await uploadsRows(h))[0];
+            rec(
+                "1. a pasted image is listed as Pasted image with a thumbnail, as a paste, not expired",
+                pasted?.ok === true &&
+                    pasted.taken === true &&
+                    gotPaste === true &&
+                    pasteRow?.source === "paste" &&
+                    pasteRow.name === "Pasted image" &&
+                    pasteRow.thumb === true &&
+                    pasteRow.expired === false &&
+                    pasteRow.button === true,
+                { pasted, row: pasteRow, toasts: await uploadsToasts(h) }
+            );
+            rec(
+                "1b. its temp file is on disk",
+                typeof pasteRow?.path === "string" && existsSync(pasteRow.path),
+                `path=${pasteRow?.path}`
+            );
+            // a record's name is a label, so the echo is looked for under the temp file's own name
+            const pasteFile = typeof pasteRow?.path === "string" ? uploadsBaseName(pasteRow.path) : null;
+            const echoed = pasteFile ? await uploadsTermHas(h, ctx.blockId, pasteFile) : { seen: false, readable: false };
+            if (!echoed.readable) {
+                steps.push(
+                    skipStep(
+                        "1c. the pasted path reached the terminal",
+                        `the block's term file had nothing to read (shell printed a prompt within ${UPLOADS_SHELL_WAIT_MS / 1000}s: ${shellUp}): start a shell that prints one, or read the pane in cdp-shots/agent-uploads.png`
+                    )
+                );
+            } else {
+                rec("1c. the pasted path reached the terminal as typed text", echoed.seen === true, `looked for: ${pasteFile}`);
+            }
+
+            // --- click the thumbnail: a lightbox with the full image, closed by Escape alone ---------------------
+            await h.ev(`${UPLOADS_SECTION}?.querySelector('button[data-upload-row]')?.click()`);
+            const opened = await polishWaitFor(h, `${UPLOADS_LIGHTBOX}?.src.startsWith("blob:") === true`, 6000);
+            // ModalShell focuses its panel on open; with focus there (not in the terminal, which is a text field) the
+            // Agent surface's own Escape binding is armed, and only the dispatcher counting the lightbox as a modal stops it
+            const focusIn = await h.ev(`document.activeElement?.closest('[role="dialog"]') != null`);
+            await h.shot("cdp-shots/agent-uploads-lightbox.png");
+            rec(
+                "2. clicking the thumbnail opens the image in a lightbox (a blob: image) that holds the keyboard focus",
+                opened === true && focusIn === true,
+                { opened, focusIn }
+            );
+            if (opened !== true || focusIn !== true) {
+                // a key presses only where it is meant to land: in the dialog, never in a terminal or another surface
+                steps.push(
+                    skipStep(
+                        "2b. Escape alone closes the lightbox",
+                        `step 2 failed (opened=${opened}, focus in the dialog=${focusIn}), so Escape was not pressed`
+                    )
+                );
+            } else {
+                // a key where the user's focus is, as a keypress would land. No fallback to the Close button: a lightbox that
+                // outlived Escape, or an Escape that left the surface, is the failure this step is for
+                await ahKey(h, "Escape", "Escape");
+                const closed = await polishWaitFor(h, `!${UPLOADS_LIGHTBOX}`, 3000);
+                const surface = await h.activeSurfaceLabel();
+                rec(
+                    "2b. Escape alone closes the lightbox, and the Agent surface stays up",
+                    closed === true && surface === SURFACE_LABEL.agent,
+                    { closed, surface }
+                );
+                // recorded above, so putting the page back cannot hide it: the steps after this one need the rail
+                if (surface !== SURFACE_LABEL.agent) await h.goto("agent");
+            }
+
+            // --- drop a file: the hint shows while it is over the pane, then the file is copied and pasted --------
+            await h.ev(uploadsDragExpr(ctx.tabId, "dragover"));
+            const hinted = await polishWaitFor(h, `document.querySelector("[data-upload-drop]") != null`, 3000);
+            const dropped = await h.ev(uploadsDragExpr(ctx.tabId, "drop"));
+            const gotDrop = await waitCount(2);
+            const hintGone = await polishWaitFor(h, `document.querySelector("[data-upload-drop]") == null`, 3000);
+            const dropRow = (await uploadsRows(h))[0];
+            rec(
+                "3. a dropped file shows the drop hint, then is listed as a drop with a generic icon",
+                hinted === true &&
+                    dropped?.ok === true &&
+                    gotDrop === true &&
+                    hintGone === true &&
+                    dropRow?.source === "drop" &&
+                    dropRow.name === "notes with space.txt" &&
+                    dropRow.thumb === false &&
+                    dropRow.button === false &&
+                    dropRow.expired === false,
+                { hinted, hintGone, dropped, row: dropRow, toasts: await uploadsToasts(h) }
+            );
+            rec(
+                "3b. its temp copy is on disk",
+                typeof dropRow?.path === "string" && existsSync(dropRow.path),
+                `path=${dropRow?.path}`
+            );
+            const quoted = await uploadsTermHas(h, ctx.blockId, 'notes with space.txt"');
+            if (!quoted.readable) {
+                steps.push(
+                    skipStep(
+                        "3c. the path with a space was quoted",
+                        `the block's term file had nothing to read (shell printed a prompt within ${UPLOADS_SHELL_WAIT_MS / 1000}s: ${shellUp}): start a shell that prints one, or read the pane in cdp-shots/agent-uploads.png`
+                    )
+                );
+            } else {
+                rec("3c. the path with a space went in double-quoted", quoted.seen === true, 'looked for: notes with space.txt"');
+            }
+
+            // --- what must not become an upload -------------------------------------------------------------------
+            const agentDrag = await h.ev(uploadsDragExpr(ctx.tabId, "drop", { name: "agent-drag.txt", agentMime: true }));
+            // a drop that was taken would show as a third row once its copy and paste were done; wait that out
+            const grew = await polishWaitFor(h, `${UPLOADS_COUNT} !== 2`, 2500);
+            const agentToasts = await uploadsToasts(h);
+            rec(
+                "4. a drop that carries the grid's agent MIME is not taken as a file",
+                agentDrag?.ok === true && grew === false && !agentToasts.some((t) => t.includes("agent-drag.txt")),
+                { agentDrag, grew, toasts: agentToasts }
+            );
+            // one byte over the cap: the smallest file that must be refused (a larger limit let such a file through, and
+            // the websocket then dropped its copy without a reply)
+            const big = await h.ev(uploadsDragExpr(ctx.tabId, "drop", { name: "big.bin", bytes: UPLOADS_CAP_BYTES + 1 }));
+            const toast = await polishWaitFor(
+                h,
+                `[...document.querySelectorAll("[data-notification-toast]")].some((t) =>
+                    t.textContent.includes("big.bin") &&
+                    t.textContent.includes("+ Attach") &&
+                    t.textContent.includes(${JSON.stringify(`over ${UPLOADS_CAP_LABEL}`)}))`,
+                4000
+            );
+            rec(
+                "5. a file over the cap is refused with a toast that names the cap and points at Attach, and is not listed",
+                big?.ok === true && toast === true && (await count()) === 2,
+                { big, toast, count: await count(), toasts: await uploadsToasts(h) }
+            );
+            await h.shot("cdp-shots/agent-uploads.png");
+
+            // --- storage and a reload: records survive, thumbnails do not, old temp copies read expired -----------
+            const stored = JSON.parse((await h.ev(`localStorage.getItem(${JSON.stringify(UPLOADS_KEY)})`)) ?? "{}");
+            const list = stored[ctx.blockId] ?? [];
+            const raw = JSON.stringify(stored);
+            rec(
+                "6. the records are in storage, without any thumbnail",
+                list.length === 2 && !raw.includes("data:") && list.every((r) => !("thumb" in r)),
+                { records: list.length, sources: list.map((r) => r.source) }
+            );
+
+            const now = Date.now();
+            const aged = list.map((r) => (r.source === "paste" ? { ...r, ts: now - 25 * 3600 * 1000 } : r));
+            // an attach never reads expired, however old: a record of one is seeded, since its dialog cannot be driven
+            aged.push({
+                id: "verify-attach",
+                name: "seeded attach.pdf",
+                path: "C:\\verify\\seeded attach.pdf",
+                kind: "file",
+                source: "attach",
+                ts: now - 3 * UPLOADS_DAY_MS,
+            });
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(UPLOADS_KEY)}, ${JSON.stringify(JSON.stringify({ [ctx.blockId]: aged }))})`
+            );
+            const reloaded = await ahReload(h);
+            await publishUploadsStatus(h, ctx);
+            const back = reloaded && (await focusUploadsAgent(h, ctx));
+            await openUploads();
+            await waitCount(3);
+            const rows = await uploadsRows(h);
+            const byName = (n) => rows.find((r) => r.name === n);
+            const oldPaste = rows.find((r) => r.source === "paste");
+            rec(
+                "7. after a reload the agent's rail lists all three records",
+                reloaded === true && back === true && rows.length === 3,
+                { reloaded, back, rows: rows.length }
+            );
+            rec(
+                "8. a paste older than a day reads expired, with the generic icon and no enlarge",
+                oldPaste?.expired === true && oldPaste.badge === true && oldPaste.thumb === false && oldPaste.button === false,
+                oldPaste ?? null
+            );
+            rec(
+                "9. a recent drop and an old attach do not read expired",
+                byName("notes with space.txt")?.expired === false &&
+                    byName("notes with space.txt")?.badge === false &&
+                    byName("seeded attach.pdf")?.expired === false &&
+                    byName("seeded attach.pdf")?.badge === false,
+                rows.map((r) => ({ name: r.name, expired: r.expired, badge: r.badge }))
+            );
+            await h.shot("cdp-shots/agent-uploads-expired.png");
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agent-uploads teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.skip) return;
+        // a lightbox a failed step left open is closed; the shell does not hold it past the reload below, but its
+        // backdrop would cover the page until then
+        await step("close a lightbox a failed step left open", () =>
+            h.ev(`document.querySelector('[role="dialog"][aria-modal="true"] button[aria-label="Close"]')?.click()`)
+        );
+        if (ctx.tabId) {
+            await step("close the terminal tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false]));
+            // the surface prunes the closed agent out of the saved grid as the roster catches up; the user's grid goes back
+            // only after that has been written, or the prune would write over it
+            await step("wait for the roster to drop the closed agent", () =>
+                polishWaitFor(h, `!document.querySelector('[data-agent-terminal="${ctx.tabId}"]')`, 10000)
+            );
+            await step("wait for the surface to prune it from the saved grid", () =>
+                polishWaitFor(
+                    h,
+                    `(() => {
+                        try {
+                            const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                            return !ids.includes(${JSON.stringify(ctx.tabId)});
+                        } catch {
+                            return true;
+                        }
+                    })()`,
+                    5000
+                )
+            );
+        }
+        await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        await step("restore the rail preference", () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)));
+        await step("restore the rail sections' open state", () => h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections)));
+        await step("restore the uploads records", () => h.ev(restoreStorageKey(UPLOADS_KEY, ctx.prevUploads)));
+        // the page holds what the scenario left in memory (records, the open section, the grid), and reads storage only on load
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) console.error("agent-uploads teardown: the page did not come back after the reload");
+        });
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -13139,4 +13641,5 @@ export const SCENARIOS = [
     canvasTabsScenario,
     agentRailSections,
     agentGrid,
+    agentUploads,
 ];
