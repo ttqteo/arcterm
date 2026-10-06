@@ -1,7 +1,8 @@
 # Comments on rendered markdown in the Agent panel — design
 
-Status: approved design 2026-10-06. Mockup (gitignored, deleted when this ships): `.superpowers/design/md-comments/`.
-This amends decision 5 of `docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md` for markdown files: the File
+Status: approved design 2026-10-06; implemented 2026-10-07 (run 74f0fa77). The UI has not run live: see the markdown
+comments row in `docs/open-issues.md`. Mockup (gitignored, deleted once the `md-comments` scenario has run on Windows):
+`.superpowers/design/md-comments/`. This amends decision 5 of `docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md` for markdown files: the File
 tab renders them instead of showing Monaco.
 
 ## Problem
@@ -57,7 +58,8 @@ Out of scope:
 2. **Body.** `Markdown` with `markdown-doc` styles at 14px. The text column is the panel's width, inset 36px on the
    left (room for the gutter `+`) and 22px on the right, on `bg-background`.
    - A frontmatter block renders as the Code preview's card (`splitFrontmatter`, `FrontmatterCard`).
-   - Images resolve with `resolveOpts` `{ connName: "", baseDir: <the file's directory> }`.
+   - Images resolve with `resolveOpts` `{ connName: "local", baseDir: <the file's directory> }` (`""` would build
+     `wsh:///…`).
    - A link to a relative `.md` file opens that file in the panel and pushes the current one onto Back (`openFile`).
      A `#anchor` link scrolls within the document. Any other link opens as it does in the Code preview.
 3. **At a line.** A file opened at a line (`ref.line`) scrolls the block that holds that line to the centre and marks it
@@ -105,6 +107,9 @@ Out of scope:
     takes the fill and bar from item 3 while it is open. One box at a time: a new comment replaces an open box that is
     empty. While the open box holds text, a new comment does not open; the open box takes focus instead, so no note is
     lost.
+    - The box belongs to its file and stays open when the panel opens another file. A new comment begun in another
+      file while the box holds text opens the box's file at the box (pushing the current file onto Back), in Preview,
+      with the caret in the box.
 12. **A card** shows its number, its reference, the quote and the note, with Edit (it reopens as the box) and Delete.
     - The number is the comment's position in the message (item 15), so a card's number and the agent's numbered item
       agree.
@@ -117,11 +122,15 @@ Out of scope:
 14. **The tray** sits at the bottom of the File tab, under both Preview and Source, styled like line review's tray.
     - With comments: `N comments on F files`, Copy, and "Send N comments ⌃↵". The button's tooltip names the agent.
     - Without comments: "Select text and press c, or hover a block and click +, to comment."
+    - Without comments while a box holds text (the first comment, being written): "No comments yet", Copy and "Send
+      ⌃↵" both disabled, and the reason line below.
     - Send is disabled, with the reason on a second line, while:
       - the agent is asking: "<agent> is waiting on a question — answer it first", after an `asking` dot (pasted text
         would land in the answer field);
-      - a box holds text: "Add or cancel the open comment first";
+      - a box holds text: "Add or cancel the open comment first". The line is a button that shows the box: it opens the
+        box's file when another file is shown, switches to Preview, and puts the caret in the box (item 11);
       - the agent has no terminal (an ended worker): Copy only.
+    - The tray stays under a file that is not markdown while the agent has comments, a send result or an open box.
     - After a send the comments clear and the tray reads "✓ Sent N comments to <agent>". A copy keeps them: "✓ Copied.
       The comments stay until you send or delete them." A failed send keeps them and shows line review's failure
       line.
@@ -155,7 +164,8 @@ Out of scope:
 17. Keys in the File tab, with focus in it:
     - `c`: comment on the selection.
     - Ctrl+Enter: add the comment inside a box; send when outside a box and Send is enabled.
-    - Esc: cancel an open box; otherwise close the file (today's key).
+    - Esc: cancel the open box when this file shows it; otherwise close the file (today's key). A box in another file
+      stays.
     - The gutter `+` follows the pointer, so it is a mouse gesture. The image's Comment button and each card's buttons
       are buttons Tab reaches.
 
@@ -173,7 +183,8 @@ Out of scope:
 | Body | reading, binary, too large, deleted | today's File tab states | — |
 | Tray | no comments | the hint line | Main, Select |
 | Tray | comments | count, Copy, Send | Cards, Image, Source |
-| Tray | blocked: asking, open box | Send disabled, reason line | TrayStates, Compose, Range |
+| Tray | blocked: asking, open box | Send disabled, reason line | TrayStates, Range |
+| Tray | first comment being written | "No comments yet", Copy and Send disabled, reason line | Compose |
 | Tray | no terminal | Copy only | — |
 | Tray | sent, copied, failed | status line | TrayStates (sent, copied) |
 
@@ -213,7 +224,8 @@ a three-row table, an image beside it under `images/`, and a link to `docs/other
 checks:
 - opening `docs/guide.md:<line of the second paragraph>`: Preview, that block marked, the image rendered (not
   `[img:…]`);
-- a selection, `c`, a note, Ctrl+Enter: a card under the block;
+- a selection, `c`, a note: the tray reads "No comments yet" with Send disabled and the reason; Ctrl+Enter: a card
+  under the block;
 - `+` on the first table row and Shift+click on the third: the box after the table, the reference `:a-b`;
 - the image's Comment button: a card after the image;
 - the link to `other.md`: it opens in the panel; a selection comment there; Back returns to `guide.md` with its
@@ -222,6 +234,11 @@ checks:
 - Send through `window.__lineReviewSink`: the message equals the expected text exactly, and the tray reads "Sent";
 - with the agent asking, Send is disabled with its reason;
 - Source: Monaco at the line, the tray still there;
-- the Code surface's preview of `docs/guide.md` rendering the image.
+- the Code surface's preview of `docs/guide.md` rendering the image;
+- a card's Edit reopening it as the box with its note, Ctrl+Enter keeping its number, and Delete renumbering the rest;
+- a new comment while the box holds text: the box stays and takes the caret;
+- the box held in `guide.md` while `other.md` shows: the reason line, and a new comment, each bring the panel back to
+  the box with the caret in it;
+- a send that fails (a throwing `__lineReviewSink`): the comments stay and the tray shows the failure line.
 
 A screenshot of each step goes to the contact sheet.

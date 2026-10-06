@@ -37,25 +37,11 @@ import {
     refreshIndex,
     setCaretLineReader,
 } from "./codestore";
+import { FrontmatterCard } from "./frontmattercard";
 
 // DESIGN.md's markdown size (14px text, 12px mono). It reads at that size because .markdown-doc holds the
 // document to a centred reading column instead of letting lines run the width of a maximized pane.
 const DOC_FONT_SIZE = 14;
-
-// A skill's or note's frontmatter as a quiet card above the document, so the fields that steer an agent
-// (name, description) stay readable without passing for the document's title.
-function FrontmatterCard({ fields }: { fields: [string, string][] }) {
-    return (
-        <dl className="mb-7 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 rounded-md border border-edge-mid bg-surface-raised px-4 py-3 text-[13px] leading-[1.55]">
-            {fields.map(([key, value]) => (
-                <div key={key} className="contents">
-                    <dt className="pt-px font-mono text-[11.5px] text-muted">{key}</dt>
-                    <dd className="min-w-0 break-words text-secondary">{value === "" ? "—" : value}</dd>
-                </div>
-            ))}
-        </dl>
-    );
-}
 
 function sizeLabel(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -202,6 +188,13 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                         className="markdown-doc h-full"
                         contentClassName="px-8 pb-12 pt-7"
                         fontSizeOverride={DOC_FONT_SIZE}
+                        resolveOpts={{
+                            connName: "local",
+                            baseDir: (project != null ? joinRepoPath(project.path, file.path) : file.path).replace(
+                                /[\\/][^\\/]*$/,
+                                ""
+                            ),
+                        }}
                         onClickLink={(href) => {
                             const target = project != null ? resolveDocLink(file.path, href) : null;
                             if (target == null) {

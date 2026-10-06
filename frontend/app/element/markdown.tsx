@@ -9,6 +9,7 @@ import {
     resolveSrcSet,
     transformBlocks,
 } from "@/app/element/markdown-util";
+import { rehypeSrcLines, withSrcLineAttributes } from "@/app/element/rehype-srclines";
 import remarkMermaidToTag from "@/app/element/remark-mermaid-to-tag";
 import { boundNumber, cn, useAtomValueSafe } from "@/util/util";
 import clsx from "clsx";
@@ -25,6 +26,15 @@ import remarkGfm from "remark-gfm";
 import { openLink } from "../store/global";
 import { IconButton } from "./iconbutton";
 import "./markdown.scss";
+
+// the source-line stamp (rehype-srclines.ts) an overridden component must keep on the element it renders
+function stampAttrs(props: object): Record<string, string> {
+    const p = props as Record<string, unknown>;
+    if (p["data-src-start"] == null) {
+        return {};
+    }
+    return { "data-src-start": String(p["data-src-start"]), "data-src-end": String(p["data-src-end"]) };
+}
 
 let mermaidInitialized = false;
 let mermaidInstance: any = null;
@@ -64,7 +74,7 @@ const Link = ({
 
 const Heading = ({ props, hnum }: { props: React.HTMLAttributes<HTMLHeadingElement>; hnum: number }) => {
     return (
-        <div id={props.id} className={clsx("heading", `is-${hnum}`)}>
+        <div id={props.id} className={clsx("heading", `is-${hnum}`)} {...stampAttrs(props)}>
             {props.children}
         </div>
     );
@@ -135,9 +145,10 @@ const Code = ({ className = "", children }: { className?: string; children: Reac
 type CodeBlockProps = {
     children: React.ReactNode;
     onClickExecute?: (cmd: string) => void;
+    attrs?: Record<string, string>;
 };
 
-const CodeBlock = ({ children, onClickExecute }: CodeBlockProps) => {
+const CodeBlock = ({ children, onClickExecute, attrs }: CodeBlockProps) => {
     const getTextContent = (children: any): string => {
         if (typeof children === "string") {
             return children;
@@ -165,7 +176,7 @@ const CodeBlock = ({ children, onClickExecute }: CodeBlockProps) => {
     };
 
     return (
-        <pre className="codeblock">
+        <pre className="codeblock" {...attrs}>
             {children}
             <div className="codeblock-actions">
                 <CopyButton onClick={handleCopy} title="Copy" />
@@ -288,7 +299,7 @@ const MarkdownImg = ({
         return <span>{resolvedStr}</span>;
     }
     if (resolvedSrc != null) {
-        return <img {...props} src={resolvedSrc} srcSet={resolvedSrcSet} />;
+        return <img {...props} src={resolvedSrc} srcSet={resolvedSrcSet} data-md-src={props.src} />;
     }
     return <span>[img]</span>;
 };
@@ -310,6 +321,12 @@ type MarkdownProps = {
     fixedFontSizeOverride?: number;
     // rendered above the document, inside its scroll area (the Code preview's frontmatter card)
     header?: React.ReactNode;
+    // turns on source-line stamps: the number of file lines above `text` (a frontmatter block lifted off the top)
+    srcLineOffset?: number;
+    // Wave's @@@start content blocks; off where line numbers must match the file, since the transform folds lines
+    contentBlocks?: boolean;
+    // rendered after every stamped block (inside an li, as its last child): the Agent panel's comment cards
+    blockAfter?: (tag: string) => React.ReactNode;
 };
 
 const Markdown = memo(function Markdown({
@@ -323,6 +340,9 @@ const Markdown = memo(function Markdown({
     fontSizeOverride,
     fixedFontSizeOverride,
     header,
+    srcLineOffset,
+    contentBlocks = true,
+    blockAfter,
     scrollable = true,
     rehype = true,
     onClickExecute,
@@ -338,41 +358,110 @@ const Markdown = memo(function Markdown({
     const [idPrefix] = useState<string>(crypto.randomUUID());
 
     text = textAtomValue ?? text ?? "";
-    const transformedOutput = transformBlocks(text);
+    const transformedOutput = contentBlocks
+        ? transformBlocks(text)
+        : { content: text, blocks: new Map<string, MarkdownContentBlockType>() };
     const transformedText = transformedOutput.content;
     const contentBlocksMap = transformedOutput.blocks;
 
     useEffect(() => {
-        if (focusedHeading && contentsOsRef.current && contentsOsRef.current.osInstance()) {
-            const { viewport } = contentsOsRef.current.osInstance().elements();
-            const heading = document.getElementById(idPrefix + focusedHeading.slice(1));
-            if (heading) {
-                const headingBoundingRect = heading.getBoundingClientRect();
-                const viewportBoundingRect = viewport.getBoundingClientRect();
-                const headingTop = headingBoundingRect.top - viewportBoundingRect.top;
-                viewport.scrollBy({ top: headingTop });
-            }
+        if (!focusedHeading) {
+            return;
+        }
+        const heading = document.getElementById(idPrefix + focusedHeading.slice(1));
+        if (heading == null) {
+            return;
+        }
+        const viewport = contentsOsRef.current?.osInstance()?.elements().viewport;
+        if (viewport != null) {
+            viewport.scrollBy({ top: heading.getBoundingClientRect().top - viewport.getBoundingClientRect().top });
+        } else {
+            // not scrollable: the host's scroller moves (the Agent panel's markdown Preview)
+            heading.scrollIntoView({ block: "start" });
         }
     }, [focusedHeading]);
 
+    const after = (tag: string, props: object) =>
+        blockAfter != null && (props as Record<string, unknown>)["data-src-start"] != null ? blockAfter(tag) : null;
     const markdownComponents: Partial<Components> = {
         a: (props: React.HTMLAttributes<HTMLAnchorElement>) => (
             <Link props={props} setFocusedHeading={setFocusedHeading} onClickLink={onClickLink} />
         ),
-        p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <div className="paragraph" {...props} />,
-        h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => <Heading props={props} hnum={1} />,
-        h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => <Heading props={props} hnum={2} />,
-        h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => <Heading props={props} hnum={3} />,
-        h4: (props: React.HTMLAttributes<HTMLHeadingElement>) => <Heading props={props} hnum={4} />,
-        h5: (props: React.HTMLAttributes<HTMLHeadingElement>) => <Heading props={props} hnum={5} />,
-        h6: (props: React.HTMLAttributes<HTMLHeadingElement>) => <Heading props={props} hnum={6} />,
-        img: (props: React.HTMLAttributes<HTMLImageElement>) => <MarkdownImg props={props} resolveOpts={resolveOpts} />,
+        p: ({ node, ...props }: any) => (
+            <>
+                <div className="paragraph" {...props} />
+                {after("p", props)}
+            </>
+        ),
+        h1: ({ node, ...props }: any) => (
+            <>
+                <Heading props={props} hnum={1} />
+                {after("h1", props)}
+            </>
+        ),
+        h2: ({ node, ...props }: any) => (
+            <>
+                <Heading props={props} hnum={2} />
+                {after("h2", props)}
+            </>
+        ),
+        h3: ({ node, ...props }: any) => (
+            <>
+                <Heading props={props} hnum={3} />
+                {after("h3", props)}
+            </>
+        ),
+        h4: ({ node, ...props }: any) => (
+            <>
+                <Heading props={props} hnum={4} />
+                {after("h4", props)}
+            </>
+        ),
+        h5: ({ node, ...props }: any) => (
+            <>
+                <Heading props={props} hnum={5} />
+                {after("h5", props)}
+            </>
+        ),
+        h6: ({ node, ...props }: any) => (
+            <>
+                <Heading props={props} hnum={6} />
+                {after("h6", props)}
+            </>
+        ),
+        li: ({ node, children, ...props }: any) => (
+            <li {...props}>
+                {children}
+                {after("li", props)}
+            </li>
+        ),
+        hr: ({ node, ...props }: any) => (
+            <>
+                <hr {...props} />
+                {after("hr", props)}
+            </>
+        ),
+        table: ({ node, children, ...props }: any) => (
+            <>
+                <table {...props}>{children}</table>
+                {after("table", props)}
+            </>
+        ),
+        img: ({ node, ...props }: any) => (
+            <>
+                <MarkdownImg props={props} resolveOpts={resolveOpts} />
+                {after("img", props)}
+            </>
+        ),
         source: (props: React.HTMLAttributes<HTMLSourceElement>) => (
             <MarkdownSource props={props} resolveOpts={resolveOpts} />
         ),
         code: Code,
-        pre: (props: React.HTMLAttributes<HTMLPreElement>) => (
-            <CodeBlock children={props.children} onClickExecute={onClickExecute} />
+        pre: ({ node, ...props }: any) => (
+            <>
+                <CodeBlock children={props.children} onClickExecute={onClickExecute} attrs={stampAttrs(props)} />
+                {after("pre", props)}
+            </>
         ),
     };
     markdownComponents["waveblock"] = (props: any) => <WaveBlock {...props} blockmap={contentBlocksMap} />;
@@ -423,34 +512,35 @@ const Markdown = memo(function Markdown({
     let rehypePlugins = null;
     if (rehype) {
         rehypePlugins = [
+            ...(srcLineOffset != null ? [[rehypeSrcLines, { offset: srcLineOffset }]] : []),
             rehypeRaw,
             rehypeHighlight,
             () =>
-                rehypeSanitize({
-                    ...defaultSchema,
-                    attributes: {
-                        ...defaultSchema.attributes,
-                        span: [
-                            ...(defaultSchema.attributes?.span || []),
-                            // Allow all class names starting with `hljs-`.
-                            ["className", /^hljs-./],
-                            ["srcset"],
-                            ["media"],
-                            ["type"],
-                            // Alternatively, to allow only certain class names:
-                            // ['className', 'hljs-number', 'hljs-title', 'hljs-variable']
+                rehypeSanitize(
+                    withSrcLineAttributes({
+                        ...defaultSchema,
+                        attributes: {
+                            ...defaultSchema.attributes,
+                            span: [
+                                ...(defaultSchema.attributes?.span || []),
+                                // Allow all class names starting with `hljs-`.
+                                ["className", /^hljs-./],
+                                ["srcset"],
+                                ["media"],
+                                ["type"],
+                            ],
+                            waveblock: [["blockkey"]],
+                        },
+                        tagNames: [
+                            ...(defaultSchema.tagNames || []),
+                            "span",
+                            "waveblock",
+                            "picture",
+                            "source",
+                            "mermaidblock",
                         ],
-                        waveblock: [["blockkey"]],
-                    },
-                    tagNames: [
-                        ...(defaultSchema.tagNames || []),
-                        "span",
-                        "waveblock",
-                        "picture",
-                        "source",
-                        "mermaidblock",
-                    ],
-                }),
+                    })
+                ),
             () => rehypeSlug({ prefix: idPrefix }),
         ];
     }

@@ -125,7 +125,9 @@ A link inside an item view does a full open, even with `Ctrl` held.
 | `Esc` | Back to Cockpit, or exit fullscreen first; from Conversation History or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, File) while its tab strip has focus; the agent keys stand down there |
-| `Esc` | In the panel's File tab, close the file |
+| `Esc` | In the panel's File tab: cancel the comment being written, else close the file |
+| `c` | In the File tab's Preview of a markdown file, comment on the selected text |
+| `Ctrl`+`Enter` | In the File tab: add the comment being written; outside a comment box, send the comments to the agent |
 
 ### Agent: Conversation History
 

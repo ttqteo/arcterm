@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent panel's state: per agent and in memory (the selected tab, the open file with its history), plus the two
-// persisted preferences (the tab an unseen agent opens on, the wide tabs' width).
+// The Agent panel's state: per agent and in memory (the selected tab, the open file with its history), plus the three
+// persisted preferences (the tab an unseen agent opens on, the wide tabs' width, how a markdown file shows).
 
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { openFileInCode } from "@/app/cockpit/openfilestore";
@@ -34,6 +34,12 @@ export const railTabDefaultAtom = atomWithStorage<RailTab>("agent.rail.tab", "ov
 export const railWideWidthAtom = atomWithStorage<number>("agent.rail.wideWidth", RAIL_WIDE_DEFAULT_PX, undefined, {
     getOnInit: true,
 }) as PrimitiveAtom<number>;
+
+// how the File tab shows a markdown file: rendered (Preview, where comments are made) or Monaco (Source); one choice
+// for every agent
+export const railMdModeAtom = atomWithStorage<"preview" | "source">("agent.rail.mdMode", "preview", undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<"preview" | "source">;
 
 // the width while the grip is dragged: committed to railWideWidthAtom on release
 export const railWideDragAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
