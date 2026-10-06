@@ -647,7 +647,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             tabs={<RailTabStrip agentId={agent.id} panel={panel} />}
             body={
                 panel.tab === "file" && fileRef != null ? (
-                    <FileTab model={model} agentId={agent.id} file={panel.file} />
+                    <FileTab model={model} agent={agent} file={panel.file} />
                 ) : undefined
             }
             edge={panel.tab !== "overview" ? <RailResizeGrip width={wide.width} max={wide.max} /> : undefined}

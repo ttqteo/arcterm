@@ -14274,6 +14274,507 @@ const agentRailTabs = {
     },
 };
 
+// md-comments (docs/superpowers/specs/2026-10-06-md-comments-design.md): an agent whose transcript names
+// docs/guide.md:9; guide.md has frontmatter (lines 1-3), a table (11-15) and an image (17), links docs/other.md (19),
+// and links #notes (21), a heading below enough filler that reaching it scrolls the Preview.
+const MDC_AGENT = "fx-md-comments";
+const MDC_BLOCK = "fx-blk-md-comments";
+const MDC_PROJECT = "verify-md-comments";
+const MDC_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode"];
+const MDC_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const MDC_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${MDC_AGENT}"]')`;
+const MDC_DOC = `${MDC_ASIDE}?.querySelector("[data-md-doc]")`;
+const MDC_GUIDE = [
+    "---",
+    "title: Guide",
+    "---",
+    "# Guide",
+    "",
+    "First paragraph line one,",
+    "still the first paragraph.",
+    "",
+    "Second paragraph, the one the link names.",
+    "",
+    "| Flow | Use |",
+    "|---|---|",
+    "| Quick | one worker |",
+    "| Goal | a lead |",
+    "| Plan | the engine |",
+    "",
+    "![Shot](images/shot.png)",
+    "",
+    "See [the other doc](other.md).",
+    "",
+    "Jump to [the notes](#notes).",
+    "",
+    ...Array.from({ length: 40 }, (_, i) => [`Filler paragraph ${i + 1}, here to push the notes below the fold.`, ""]).flat(),
+    "## Notes",
+    "",
+    "The notes close the guide.",
+    "",
+].join("\n");
+const MDC_OTHER = "# Other\n\nThe other doc's only paragraph.\n";
+// a 1x1 PNG
+const MDC_PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "base64"
+);
+const MDC_EXPECTED = [
+    "Comments on 2 files (4):",
+    "",
+    "1. docs/guide.md:9",
+    "   > the one the link names",
+    "   Name the link's target.",
+    "",
+    "2. docs/guide.md:13-15",
+    "   > | Quick | one worker |",
+    "   > | Goal | a lead |",
+    "   > | Plan | the engine |",
+    "   Add a column for cost.",
+    "",
+    "3. docs/guide.md:17 (image images/shot.png)",
+    "   Retake this shot.",
+    "",
+    "4. docs/other.md:3",
+    "   > only paragraph",
+    "   Say more here.",
+].join("\n");
+const MDC_COPY_EXPECTED = ["Comments on docs/guide.md (1):", "", "1. docs/guide.md:9", "   > the one the link names", "   Copy me."].join("\n");
+
+function mdcFixture(base) {
+    const repo = join(base, "repo");
+    mkdirSync(join(repo, "docs", "images"), { recursive: true });
+    writeFileSync(join(repo, "docs", "guide.md"), MDC_GUIDE);
+    writeFileSync(join(repo, "docs", "other.md"), MDC_OTHER);
+    writeFileSync(join(repo, "docs", "images", "shot.png"), MDC_PNG);
+    const transcript = join(base, "agent.jsonl");
+    const rec = (o) => JSON.stringify({ cwd: repo, ...o }) + "\n";
+    writeFileSync(
+        transcript,
+        rec({ type: "user", message: { role: "user", content: [{ type: "text", text: "tidy the guide" }] } }) +
+            rec({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Read `docs/guide.md:9` next." }] } })
+    );
+    return { repo, transcript };
+}
+
+// terminal false leaves the blockId out: an agent with no terminal, as an ended worker is
+function mdcRoster(ctx, state, terminal = true) {
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                {
+                    id: MDC_AGENT,
+                    name: "md writer",
+                    project: MDC_PROJECT,
+                    task: "tidy the guide",
+                    state,
+                    agent: "claude",
+                    model: "opus",
+                    activeMs: 60_000,
+                    ...(terminal ? { blockId: MDC_BLOCK } : {}),
+                    transcriptPath: ctx.transcript,
+                },
+            ],
+            null,
+            2
+        )
+    );
+}
+
+// clicks the Cockpit card's inline `docs/guide.md:9` (its data-path-link is the path alone), which opens the File tab
+// at line 9
+async function mdcOpenGuide(h) {
+    await h.goto("cockpit");
+    const found = await polishWaitFor(
+        h,
+        `[...(${MDC_CARD}?.querySelectorAll("[data-path-link]") ?? [])].some((b) => b.dataset.pathLink.endsWith("guide.md"))`,
+        15000
+    );
+    if (!found) return false;
+    await h.ev(`[...${MDC_CARD}.querySelectorAll("[data-path-link]")].find((b) => b.dataset.pathLink.endsWith("guide.md")).click()`);
+    return polishWaitFor(h, `!!${MDC_DOC}?.querySelector('[data-md-mark="hit"]')`, 10000);
+}
+
+// selects `words` inside the first stamped block whose text holds them, as a real drag would
+async function mdcSelect(h, words) {
+    return h.ev(`(() => {
+        const doc = ${MDC_DOC};
+        const el = [...(doc?.querySelectorAll("[data-src-start]") ?? [])].reverse().find((e) => e.textContent.includes(${JSON.stringify(words)}));
+        if (!el) return false;
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const i = n.textContent.indexOf(${JSON.stringify(words)});
+            if (i >= 0) {
+                doc.focus();
+                const r = document.createRange();
+                r.setStart(n, i);
+                r.setEnd(n, i + ${words.length});
+                const s = getSelection();
+                s.removeAllRanges();
+                s.addRange(r);
+                return true;
+            }
+        }
+        return false;
+    })()`);
+}
+
+// types a note into the open box
+async function mdcType(h, note) {
+    await h.ev(`${MDC_DOC}?.querySelector("[data-md-box] textarea")?.focus()`);
+    await h.cdp("Input.insertText", { text: note });
+}
+
+// types a note into the open box and adds it with Ctrl+Enter
+async function mdcNote(h, note) {
+    await mdcType(h, note);
+    await railTabsKey(h, "Enter", "Enter", 13, 2);
+}
+
+// the centre of the stamped block (as a selector over it) in viewport coordinates
+async function mdcCenter(h, expr) {
+    return h.ev(`(() => { const r = (${expr})?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+}
+
+// hovers the stamped block found by `expr` and clicks the gutter + (Shift with shift)
+async function mdcPlus(h, expr, shift) {
+    const c = await mdcCenter(h, expr);
+    if (c == null) return false;
+    await railTabsMouse(h, "mouseMoved", c.x, c.y, { button: "none" });
+    await railTabsNap(200);
+    const p = await mdcCenter(h, `${MDC_DOC}?.querySelector("[data-md-plus]")`);
+    if (p == null) return false;
+    await railTabsMouse(h, "mouseMoved", p.x, p.y, { button: "none" });
+    const modifiers = shift ? 8 : 0;
+    await railTabsMouse(h, "mousePressed", p.x, p.y, { modifiers });
+    await railTabsMouse(h, "mouseReleased", p.x, p.y, { modifiers });
+    await railTabsNap(300);
+    return true;
+}
+
+const mdcRow = (text) => `[...${MDC_DOC}.querySelectorAll("tr")].find((r) => r.textContent.includes(${JSON.stringify(text)}))`;
+const mdcTray = `(${MDC_ASIDE}?.querySelector("[data-md-tray]")?.innerText ?? "")`;
+// the image's Comment button is always in the DOM (Tab reaches it); this says whether it is seen
+const mdcImgBtnShown = `(() => { const b = ${MDC_DOC}?.querySelector("[data-md-image-comment]"); return b != null && getComputedStyle(b).opacity === "1"; })()`;
+
+const mdComments = {
+    name: "md-comments",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-md-comments-"));
+        const ctx = { base, prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null, prevKeys: {} };
+        try {
+            for (const k of MDC_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            Object.assign(ctx, mdcFixture(base));
+            await h.rpc("createproject", { name: MDC_PROJECT, path: ctx.repo });
+            ctx.project = MDC_PROJECT;
+            await waitForProjectInConfig(h, MDC_PROJECT);
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            mdcRoster(ctx, "working");
+            ctx.wroteFixture = true;
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                for (const k of ${JSON.stringify(["agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode"])}) localStorage.removeItem(k);
+            })()`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${MDC_AGENT}"]')`, 15000);
+            await h.rpc("uireveal", { address: `agent:${MDC_AGENT}` }, UI_ROUTE);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null || ctx.inRoster !== true) {
+            rec("0. the fixture agent is in the roster", false, ctx.arrangeError ?? "not in the roster");
+            return steps;
+        }
+
+        // 1. opened at a line
+        const opened = await mdcOpenGuide(h);
+        const hit = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="hit"]')?.dataset.lines ?? null`);
+        const img = await polishWaitFor(h, `!!${MDC_DOC}?.querySelector('img[data-md-src="images/shot.png"]')`, 8000);
+        const front = await h.ev(`(${MDC_DOC}?.innerText ?? "").includes("Guide") && !(${MDC_DOC}?.innerText ?? "").includes("title: Guide\\n---")`);
+        const tray1 = await h.ev(mdcTray);
+        await h.shot("cdp-shots/md-comments-open.png");
+        rec("1. docs/guide.md:9 opens in Preview with line 9's block marked, the image rendered, and the tray's hint line", opened && hit === "9-9" && img && front && tray1.includes("Select text and press"), JSON.stringify({ opened, hit, img, front, tray1 }));
+
+        // 2. a selection, c, a note: while the first note is unsaved the tray reads No comments yet with Copy and Send
+        // disabled and the reason (board Compose); Ctrl+Enter adds it
+        await mdcSelect(h, "the one the link names");
+        const floated = await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await h.shot("cdp-shots/md-comments-select.png");
+        await railTabsKey(h, "c", "KeyC", 67);
+        const boxRef = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
+        await mdcType(h, "Name the link's target.");
+        const draft2 = await polishWaitFor(h, `${mdcTray}.includes("No comments yet") && ${mdcTray}.includes("Add or cancel the open comment first") && !!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && !!${MDC_ASIDE}?.querySelector("[data-md-copy]")?.disabled`, 3000);
+        await h.shot("cdp-shots/md-comments-compose.png");
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        const card1 = await polishWaitFor(h, `${MDC_DOC}?.querySelectorAll("[data-md-card]").length === 1`, 5000);
+        const bar1 = await h.ev(`[...(${MDC_DOC}?.querySelectorAll("[data-md-bar]") ?? [])].map((b) => b.dataset.lines)`);
+        rec("2. a selection floats Comment; c opens the box at :9; the unsaved note blocks the tray (No comments yet, Copy and Send disabled, the reason); Ctrl+Enter adds card 1 with a gutter bar", floated && boxRef.includes("docs/guide.md:9") && draft2 && card1 && JSON.stringify(bar1) === JSON.stringify(["9-9"]), JSON.stringify({ floated, boxRef, draft2, card1, bar1 }));
+
+        // 3. a selection inside the card is not a comment target
+        await h.ev(`(() => { const n = ${MDC_DOC}.querySelector("[data-md-card] .whitespace-pre-wrap").firstChild; const r = document.createRange(); r.setStart(n, 0); r.setEnd(n, 4); getSelection().removeAllRanges(); getSelection().addRange(r); return true; })()`);
+        await railTabsNap(300);
+        const noFloat = await h.ev(`!${MDC_DOC}?.querySelector("[data-md-comment]")`);
+        await h.ev(`getSelection().removeAllRanges()`);
+        rec("3. selecting a card's own text floats no Comment button", noFloat, JSON.stringify({ noFloat }));
+
+        // 4. + on the first body row, Shift+click on the last (downward): one box after the table; while it holds
+        // text, Send is disabled with the reason
+        const plus1 = await mdcPlus(h, mdcRow("Quick"), false);
+        const plus2 = await mdcPlus(h, mdcRow("Plan"), true);
+        const box4 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
+        const afterTable = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.closest("[data-md-slot]")?.previousElementSibling?.tagName ?? ""`);
+        const target = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="target"]')?.dataset.lines ?? null`);
+        await mdcType(h, "Add a column for cost.");
+        const draftBlocked = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && ${mdcTray}.includes("Add or cancel the open comment first")`, 3000);
+        await h.shot("cdp-shots/md-comments-range.png");
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        rec("4. + then Shift+click downward covers rows 13-15, the box hangs after the table and quotes the rows; a typed note blocks Send", plus1 && plus2 && box4.includes("docs/guide.md:13-15") && box4.includes("| Plan | the engine |") && afterTable === "TABLE" && target === "13-15" && draftBlocked, JSON.stringify({ plus1, plus2, box4, afterTable, target, draftBlocked }));
+
+        // 5. the image: hovering shows its Comment; away from it the button hides but Tab still reaches it (and shows
+        // it); its box is labelled with the image, and its card hangs after the image
+        const ic = await mdcCenter(h, `${MDC_DOC}?.querySelector('img[data-md-src="images/shot.png"]')`);
+        await railTabsMouse(h, "mouseMoved", ic.x, ic.y, { button: "none" });
+        const imgBtn = await polishWaitFor(h, mdcImgBtnShown, 5000);
+        await h.shot("cdp-shots/md-comments-image.png");
+        await railTabsMouse(h, "mouseMoved", 1, 1, { button: "none" });
+        const imgHidden = await polishWaitFor(h, `!${mdcImgBtnShown}`, 3000);
+        await h.ev(`${MDC_DOC}?.focus()`);
+        let tabbed = false;
+        for (let i = 0; i < 20 && !tabbed; i++) {
+            await railTabsKey(h, "Tab", "Tab", 9);
+            tabbed = await h.ev(`document.activeElement?.matches?.("[data-md-image-comment]") === true`);
+        }
+        const focusShown = tabbed && (await h.ev(mdcImgBtnShown));
+        await h.ev(`document.activeElement?.matches?.("[data-md-image-comment]") && document.activeElement.click()`);
+        const box5 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
+        await mdcNote(h, "Retake this shot.");
+        const imgCard = await h.ev(`[...(${MDC_DOC}?.querySelectorAll("[data-md-card]") ?? [])].find((c) => c.innerText.includes("image shot.png"))?.closest("[data-md-slot]")?.previousElementSibling?.tagName ?? ""`);
+        await h.shot("cdp-shots/md-comments-image-card.png");
+        rec("5. hovering the image shows its Comment; Tab reaches and shows it; its box names the image with no quote; the card hangs after the image", imgBtn && imgHidden && tabbed && focusShown && box5.includes("docs/guide.md:17 · image shot.png") && imgCard === "IMG", JSON.stringify({ imgBtn, imgHidden, tabbed, focusShown, box5, imgCard }));
+
+        // 6. a link to other.md opens in the panel; a comment there; Back keeps guide.md's cards; hovering a block
+        // that has a card shows its + in the gutter
+        await h.ev(`[...${MDC_DOC}.querySelectorAll("a")].find((a) => a.textContent === "the other doc").click()`);
+        const other = await polishWaitFor(h, `(${MDC_DOC}?.innerText ?? "").includes("The other doc's only paragraph.")`, 8000);
+        await mdcSelect(h, "only paragraph");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        await mdcNote(h, "Say more here.");
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Back"]')?.click()`);
+        const back = await polishWaitFor(h, `${MDC_DOC}?.querySelectorAll("[data-md-card]").length === 3`, 8000);
+        const tray6 = await h.ev(mdcTray);
+        const p9 = await mdcCenter(h, `${MDC_DOC}?.querySelector('[data-src-start="9"]')`);
+        if (p9 != null) await railTabsMouse(h, "mouseMoved", p9.x, p9.y, { button: "none" });
+        const plus6 = await polishWaitFor(h, `(() => { const p = ${MDC_DOC}?.querySelector("[data-md-plus]")?.getBoundingClientRect(); const b = ${MDC_DOC}?.querySelector('[data-src-start="9"]')?.getBoundingClientRect(); return p != null && b != null && Math.abs(p.top - b.top) < 12; })()`, 3000);
+        await h.shot("cdp-shots/md-comments-cards.png");
+        rec("6. other.md opens in the panel, takes a comment, and Back returns to guide.md's 3 cards; the tray counts 4 on 2 files and offers Send 4 comments; a carded block's + shows on hover", other && back && tray6.includes("4 comments on 2 files") && tray6.includes("Send 4 comments") && plus6, JSON.stringify({ other, back, tray6, plus6 }));
+
+        // 7. Send through the DEV sink: the exact message, then the sent line
+        await h.ev(`(() => { window.__mdSent = []; window.__lineReviewSink = (t) => { window.__mdSent.push(t); }; return true; })()`);
+        await h.ev(`${MDC_DOC}?.focus()`);
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        const sent = await polishWaitFor(h, `(window.__mdSent ?? []).length === 1`, 5000);
+        const text = await h.ev(`(window.__mdSent ?? [])[0] ?? ""`);
+        const tray7 = await h.ev(mdcTray);
+        await h.shot("cdp-shots/md-comments-sent.png");
+        rec("7. Ctrl+Enter sends the exact message once and the tray reads Sent 4 comments", sent && text === MDC_EXPECTED && tray7.includes("Sent 4 comments"), JSON.stringify({ sent, text, tray7 }));
+
+        // 8. + on the last row, Shift+click on the first (upward): the same 13-15 range; then Esc with focus in the
+        // document cancels the box and leaves the file open
+        const up1 = await mdcPlus(h, mdcRow("Plan"), false);
+        const up2 = await mdcPlus(h, mdcRow("Quick"), true);
+        const box8 = await h.ev(`${MDC_DOC}?.querySelector("[data-md-box]")?.innerText ?? ""`);
+        const target8 = await h.ev(`${MDC_DOC}?.querySelector('[data-md-mark="target"]')?.dataset.lines ?? null`);
+        await h.shot("cdp-shots/md-comments-range-up.png");
+        await h.ev(`${MDC_DOC}?.focus()`);
+        await railTabsKey(h, "Escape", "Escape", 27);
+        const cancelled = await polishWaitFor(h, `!${MDC_DOC}?.querySelector("[data-md-box]")`, 3000);
+        const stillOpen = await h.ev(`!!${MDC_ASIDE}?.querySelector("[data-rail-file]") && !!${MDC_DOC}`);
+        rec("8. + on row 15 then Shift+click on row 13 covers 13-15; Esc in the document cancels the box and keeps the file open", up1 && up2 && box8.includes("docs/guide.md:13-15") && target8 === "13-15" && cancelled && stillOpen, JSON.stringify({ up1, up2, box8, target8, cancelled, stillOpen }));
+
+        // 9. a #anchor link scrolls the Preview to its heading: below the fold before the click, in view after it (the
+        // heading ends the document, so it lands in view, not at the top)
+        const notesInView = `(() => { const d = ${MDC_DOC}; const n = [...(d?.querySelectorAll(".heading") ?? [])].find((e) => e.textContent === "Notes"); if (d == null || n == null) return false; const r = n.getBoundingClientRect(); const v = d.getBoundingClientRect(); return r.top >= v.top && r.bottom <= v.bottom; })()`;
+        await h.ev(`${MDC_DOC}?.scrollTo(0, 0)`);
+        await railTabsNap(200);
+        const belowFold = await h.ev(`!${notesInView}`);
+        await h.ev(`[...${MDC_DOC}.querySelectorAll("a")].find((a) => a.textContent === "the notes").click()`);
+        const anchored = await polishWaitFor(h, notesInView, 3000);
+        await h.shot("cdp-shots/md-comments-anchor.png");
+        rec("9. the #notes link scrolls the Preview until the Notes heading is in view", belowFold && anchored, JSON.stringify({ belowFold, anchored }));
+
+        // 10. an asking agent: Send disabled with its reason, Copy still enabled
+        mdcRoster(ctx, "asking");
+        await ahReload(h);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${MDC_AGENT}"]')`, 15000);
+        await mdcOpenGuide(h);
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        await mdcNote(h, "Again.");
+        const disabled = await h.ev(`!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled`);
+        const copyOk = await h.ev(`${MDC_ASIDE}?.querySelector("[data-md-copy]")?.disabled === false`);
+        const tray10 = await h.ev(mdcTray);
+        await h.shot("cdp-shots/md-comments-asking.png");
+        rec("10. while the agent asks, Send is disabled with the reason and Copy stays enabled", disabled && copyOk && tray10.includes("is waiting on a question"), JSON.stringify({ disabled, copyOk, tray10 }));
+
+        // 11. Source: Monaco at the line (the File tab's accent mark on line 9, filetab.tsx HIT_MARK), and the tray
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="source"]')?.click()`);
+        const monaco = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-rail-file] .monaco-editor .border-accent")`, 8000);
+        const tray11 = await h.ev(mdcTray);
+        await h.shot("cdp-shots/md-comments-source.png");
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-md-mode="preview"]')?.click()`);
+        rec("11. Source shows Monaco with line 9 marked and keeps the tray", monaco && tray11.includes("1 comment on 1 file"), JSON.stringify({ monaco, tray11 }));
+
+        // 12. an agent with no terminal: the tray offers Copy alone; Copy writes the exact message, says so, and keeps
+        // the card. The reload drops step 10's comment (drafts are in memory only)
+        mdcRoster(ctx, "working", false);
+        await ahReload(h);
+        const opened12 = await mdcOpenGuide(h);
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        await mdcNote(h, "Copy me.");
+        const noSend = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-md-copy]") && !${MDC_ASIDE}?.querySelector("[data-md-send]")`, 3000);
+        await h.ev(`(() => {
+            window.__mdCopied = [];
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: async (text) => { window.__mdCopied.push(text); } },
+            });
+            return true;
+        })()`);
+        await h.ev(`${MDC_ASIDE}?.querySelector("[data-md-copy]")?.click()`);
+        const copied = await polishWaitFor(h, `(window.__mdCopied ?? []).length === 1`, 5000);
+        const text12 = await h.ev(`(window.__mdCopied ?? [])[0] ?? ""`);
+        const tray12 = await h.ev(mdcTray);
+        const cards12 = await h.ev(`${MDC_DOC}?.querySelectorAll("[data-md-card]").length ?? 0`);
+        await h.shot("cdp-shots/md-comments-copied.png");
+        rec("12. with no terminal the tray offers Copy alone; Copy writes the exact message, reads Copied, and keeps the card", opened12 && noSend && copied && text12 === MDC_COPY_EXPECTED && tray12.includes("Copied. The comments stay until you send or delete them.") && cards12 === 1, JSON.stringify({ opened12, noSend, copied, text12, tray12, cards12 }));
+
+        // 13. the Code preview renders the image too
+        await h.ev(`[...(${MDC_ASIDE}?.querySelectorAll("[data-rail-file] button") ?? [])].find((b) => b.textContent.includes("Open in Code"))?.click()`);
+        // the Agent surface stays mounted while hidden, so the panel's own image must not count
+        const codeImg = await polishWaitFor(h, `[...document.querySelectorAll('img[data-md-src="images/shot.png"]')].some((i) => !i.closest("aside") && i.checkVisibility())`, 10000);
+        const surface13 = await h.activeSurfaceLabel();
+        await h.shot("cdp-shots/md-comments-code-preview.png");
+        rec("13. the Code surface's preview of guide.md renders the image", surface13 === "Code" && codeImg, JSON.stringify({ surface13, codeImg }));
+
+        // 14. a terminal agent again (the reload drops step 12's comment): Edit reopens card 1 as the box holding its
+        // note, in the card's place; Ctrl+Enter saves it as card 1 again; Delete removes it and card 2 becomes 1
+        mdcRoster(ctx, "working");
+        await ahReload(h);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${MDC_AGENT}"]')`, 15000);
+        const opened14 = await mdcOpenGuide(h);
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        await mdcNote(h, "First note.");
+        await mdcPlus(h, mdcRow("Quick"), false);
+        await mdcNote(h, "Second note.");
+        const mdcCards = `[...(${MDC_DOC}?.querySelectorAll("[data-md-card]") ?? [])]`;
+        // a card's number is its first span (mdcommentcards.tsx CHIP)
+        const mdcCardNum = (c) => `${c}.querySelector("span")?.textContent`;
+        await h.ev(`${MDC_DOC}?.querySelector('button[aria-label="Edit comment 1"]')?.click()`);
+        const editBox = await polishWaitFor(h, `(() => { const t = ${MDC_DOC}?.querySelector("[data-md-box] textarea"); return t?.value === "First note." && document.activeElement === t && ${mdcCards}.length === 1; })()`, 3000);
+        await h.ev(`${MDC_DOC}?.querySelector("[data-md-box] textarea")?.select()`);
+        await h.cdp("Input.insertText", { text: "First note, edited." });
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        const edited = await polishWaitFor(h, `(() => { const c = ${mdcCards}; return c.length === 2 && c[0].innerText.includes("First note, edited.") && ${mdcCardNum("c[0]")} === "1"; })()`, 3000);
+        await h.shot("cdp-shots/md-comments-edited.png");
+        await h.ev(`${MDC_DOC}?.querySelector('button[aria-label="Delete comment 1"]')?.click()`);
+        const deleted = await polishWaitFor(h, `(() => { const c = ${mdcCards}; return c.length === 1 && c[0].innerText.includes("Second note.") && ${mdcCardNum("c[0]")} === "1"; })()`, 3000);
+        const tray14 = await h.ev(mdcTray);
+        rec("14. Edit reopens card 1 as the box holding its note; Ctrl+Enter saves it as card 1 again; Delete removes it, card 2 becomes 1, and the tray counts 1", opened14 && editBox && edited && deleted && tray14.includes("1 comment on 1 file"), JSON.stringify({ opened14, editBox, edited, deleted, tray14 }));
+
+        // 15. a box that holds text stays when another comment starts in its file: c opens nothing new, and the caret
+        // goes back to the box
+        await mdcPlus(h, mdcRow("Goal"), false);
+        await mdcType(h, "Half a thought");
+        await mdcSelect(h, "the one the link names");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        const mdcKeptBox = `(() => { const b = ${MDC_DOC}?.querySelectorAll("[data-md-box]") ?? []; const t = b[0]?.querySelector("textarea"); return b.length === 1 && b[0].innerText.includes("docs/guide.md:14") && t?.value === "Half a thought" && document.activeElement === t; })()`;
+        const kept = await polishWaitFor(h, mdcKeptBox, 3000);
+        await h.shot("cdp-shots/md-comments-kept.png");
+        rec("15. with a typed box open on :14, a selection and c keep that box, its text, and give it the caret", kept, JSON.stringify({ kept }));
+
+        // 16. the typed box belongs to guide.md: under other.md the tray is blocked, and its reason line brings the
+        // panel back to the box with the caret in it; so does a new comment begun in other.md. Esc in the box cancels it
+        await h.ev(`[...${MDC_DOC}.querySelectorAll("a")].find((a) => a.textContent === "the other doc").click()`);
+        const other16 = await polishWaitFor(h, `(${MDC_DOC}?.innerText ?? "").includes("The other doc's only paragraph.") && !${MDC_DOC}.querySelector("[data-md-box]")`, 8000);
+        const blocked16 = await h.ev(`!!${MDC_ASIDE}?.querySelector("[data-md-send]")?.disabled && !!${MDC_ASIDE}?.querySelector("[data-md-show-box]")`);
+        await h.shot("cdp-shots/md-comments-box-elsewhere.png");
+        await h.ev(`${MDC_ASIDE}?.querySelector("[data-md-show-box]")?.click()`);
+        const viaReason = await polishWaitFor(h, mdcKeptBox, 8000);
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Back"]')?.click()`);
+        await polishWaitFor(h, `(${MDC_DOC}?.innerText ?? "").includes("The other doc's only paragraph.")`, 8000);
+        await mdcSelect(h, "only paragraph");
+        await polishWaitFor(h, `!!${MDC_DOC}?.querySelector("[data-md-comment]")`, 5000);
+        await railTabsKey(h, "c", "KeyC", 67);
+        const viaComment = await polishWaitFor(h, mdcKeptBox, 8000);
+        await railTabsKey(h, "Escape", "Escape", 27);
+        const cancelled16 = await polishWaitFor(h, `!${MDC_DOC}?.querySelector("[data-md-box]") && !!${MDC_ASIDE}?.querySelector("[data-rail-file]")`, 3000);
+        rec("16. under other.md the box in guide.md blocks Send; the reason line, and a comment begun in other.md, each bring back guide.md with the caret in the box; Esc there cancels it", other16 && blocked16 && viaReason && viaComment && cancelled16, JSON.stringify({ other16, blocked16, viaReason, viaComment, cancelled16 }));
+
+        // 17. a send that fails keeps the comment and says so (the DEV sink throwing is a failed send)
+        await h.ev(`(() => { window.__lineReviewSink = () => { throw new Error("terminal gone"); }; return true; })()`);
+        await h.ev(`${MDC_DOC}?.focus()`);
+        await railTabsKey(h, "Enter", "Enter", 13, 2);
+        const failed = await polishWaitFor(h, `${mdcTray}.includes("Couldn't reach md writer — comments kept")`, 5000);
+        const cards17 = await h.ev(`${MDC_DOC}?.querySelectorAll("[data-md-card]").length ?? 0`);
+        const tray17 = await h.ev(mdcTray);
+        await h.shot("cdp-shots/md-comments-failed.png");
+        rec("17. a failed send keeps the comment and the tray reads Couldn't reach md writer — comments kept", failed && cards17 === 1 && tray17.includes("1 comment on 1 file"), JSON.stringify({ failed, cards17, tray17 }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`md-comments teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // the clipboard stub from step 12 is an own property over Navigator's getter; deleting it restores that
+        await step("clear the DEV hooks", () => h.ev(`(delete window.__lineReviewSink, delete window.__mdSent, delete window.__mdCopied, delete navigator.clipboard, true)`));
+        if (ctx.project) {
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+            }
+        });
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true }));
+    },
+};
+
 // The Cockpit's j/k/n/Enter are the container's own onKeyDown (usecockpitkeyboard.ts), so they work only
 // while focus is inside it. Arriving from the Agent surface left focus on <body> (the palette's restore
 // target, the xterm, is display:none by then) or on the nav button, and every Cockpit key was dead until a
@@ -15712,4 +16213,5 @@ export const SCENARIOS = [
     agentGrid,
     agentUploads,
     agentRailTabs,
+    mdComments,
 ];

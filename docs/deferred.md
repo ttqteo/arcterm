@@ -45,6 +45,15 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 - **Revive when** releases are published somewhere fetchable. Until then the local stand-in is running the built
   installer with `/P /UPDATE /R`. Nothing was built for this, so there is nothing to recover from git.
 
+## Markdown comments in the Agent panel — re-measure their use (deferred 2026-10-06)
+
+- **Deferred:** deciding whether the File tab's markdown comments stay
+  (`docs/superpowers/specs/2026-10-06-md-comments-design.md`).
+- **Why:** the 2026-10-01 brief counted the earlier send-to-agent features: 2 uses of Code's "Send to agent" since
+  August, 0 of canvas send-marks. These sit where the reading happens, but that is a bet.
+- **Revive when** around 2026-10-20: count the sends (agent transcripts holding a `Comments on … (N):` message).
+  Near zero: remove the comment gestures and the tray, and keep the Preview.
+
 ## Code and Diff in the nav rail (deferred 2026-10-06)
 
 - **Deferred:** taking Code and Diff out of the nav rail. The rail now groups them with Radar as tools, under Cockpit,
