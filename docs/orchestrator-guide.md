@@ -156,6 +156,14 @@ sealed.
 | **Reviewers model** | The reviewer route: task reviews, the plan review and the final verify. "Same as lead" unless set. |
 | **Goal** | What the lead starts from. |
 
+**RAM.** The chip left of the usage donuts in the top bar reads `+N`: how many more workers this machine's free
+RAM holds. Its tooltip gives free RAM, the per-worker estimate and how many workers run now. The estimate is
+the highest process-tree peak among the live workers and the last 10 finished ones (1.5 GB until one has been
+measured), and each live worker keeps room to grow to it: `more = (free − reserve) ÷ per-worker`, rounded
+down. When a width you pick on + Run, or on a live run's **Adjust → Worker parallelism**, adds more workers
+than that, the number turns amber with a ⚠ whose tooltip says how many fit. It only warns; the run starts as
+picked. The chip turns amber at `+0`.
+
 The route picker filters by harness (**All / Pi / Claude Code**) and accepts a custom model id:
 
 ![The Lead model picker filtered to Claude Code](images/orchestrator-guide/05-route-picker.png)

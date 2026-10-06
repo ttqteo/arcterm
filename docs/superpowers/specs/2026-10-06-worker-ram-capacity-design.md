@@ -147,8 +147,18 @@ turns `text-warning`:
   return `moreworkers: 0`. `capacity-warn` keeps that mock and asserts the amber number and
   `[data-capacity-warn]` with its tooltip on New run's "Workers at once", on the Brief launcher's stepper, and
   on a live run's Adjust → Worker parallelism. The CDP harness needs WebView2 (Windows). On macOS (WKWebView,
-  no CDP) Final exits 3 as unverified without building, and the user checks the change by screenshot after
-  landing. No task starts a dev app in its worktree.
+  no CDP) Final exits 3 as unverified without building, and a person makes these checks in the running app
+  after landing (the scenarios' forced `+0` is replaced by a real over pick, e.g. a width above the chip's
+  `+N` plus the tasks running):
+  1. The top bar chip reads `+N`; hovering it lists free of total RAM, the per-worker estimate (default or
+     measured) and the running workers.
+  2. + Run → orchestrator, with Workers at once above `+N`: the number is amber and a ⚠ follows the `+`
+     button; its tooltip reads `~N more fit in RAM (X GB free)`. At or below `+N` neither shows.
+  3. The Brief launcher on a channel with no run, orchestrator shape: the same amber number and ⚠ on its
+     workers stepper.
+  4. A live run's card → Adjust → Worker parallelism: stepping the width above the running tasks plus `+N`
+     turns the number amber with the ⚠. Nothing is disabled, and Save still works.
+  No task starts a dev app in its worktree.
 - **Docs** — `docs/orchestrator-guide.md` gains a short paragraph where it covers parallelism: what the chip
   and the warning mean, and the formula.
 

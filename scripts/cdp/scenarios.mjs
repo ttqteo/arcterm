@@ -15752,6 +15752,189 @@ const workerCapacity = {
     },
 };
 
+// --- capacity-warn: the three worker steppers' over-capacity mark, with the capacity mocked to +0
+// (docs/superpowers/specs/2026-10-06-worker-ram-capacity-design.md). At moreworkers 0 any width of 1 or more is
+// over, and the launcher's width defaults to DEFAULT_PARALLELISM, so New run and the launcher need no stepping.
+
+// a worker stepper read from its "+" button: the number before it and the CapacityWarn right after it
+const stepperWarnExpr = (plusExpr) => `(() => {
+    const plus = ${plusExpr};
+    if (!plus) return null;
+    const num = plus.previousElementSibling;
+    const next = plus.nextElementSibling;
+    const warn = next && next.matches("[data-capacity-warn]") ? next : null;
+    return { value: num ? num.textContent.trim() : null, amber: !!num && num.classList.contains("text-warning"), warn: !!warn, title: warn ? warn.title : null };
+})()`;
+const CAPACITY_WARN_TITLE = "~0 more fit in RAM (1 GB free)";
+const stepperWarned = (s) => !!s && s.amber && s.warn && s.title === CAPACITY_WARN_TITLE;
+const CAPACITY_PROJECT = "verify-capacity-warn";
+const CAPACITY_PLUS = (root) => `${root}?.querySelector('button[aria-label="More concurrent workers"]')`;
+const pickOrchestrator = (root) =>
+    `[...(${root}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`;
+
+const capacityWarn = {
+    name: "capacity-warn",
+    surface: "cockpit",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-capacity-warn-"));
+        const ctx = { cwd };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // a fresh Final store has no registered project, and New run needs one; createproject also makes the
+            // channel that opens the Brief on its launcher (a channel with no run)
+            ctx.projectDir = join(cwd, CAPACITY_PROJECT);
+            mkdirSync(ctx.projectDir, { recursive: true });
+            await h.rpc("createproject", { name: CAPACITY_PROJECT, path: ctx.projectDir });
+            ctx.project = CAPACITY_PROJECT;
+            await waitForProjectInConfig(h, CAPACITY_PROJECT);
+            await arrangeFixtureRun(h, ctx, "capacity-warn", "capacity-warn lead");
+            // runAdjustable shows Adjust only for a run with a DAG; t-1 dispatches one real worker, which
+            // teardownFixtureRun deletes
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: "verify capacity-warn",
+                parallelism: 1,
+                tasks: RUN_SHEET_POLISH_TASKS,
+            });
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            ctx.launcherChannelId = channels.find((c) => norm(c.projectpath) === norm(ctx.projectDir))?.oid ?? null;
+            // the fixture roster and the Brief's channel list are read at boot
+            await h.ev("location.reload()").catch(() => {});
+            await polishWaitFor(h, "!!window.TabRpcClient && !!document.querySelector('nav button')", 30000);
+            // a reload drops the mock, so it goes in after the last one
+            ctx.mock = await installCapacityMock(h, CAPACITY_FULL);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the project, its channel, a run with a plan and the capacity mock were set up", false, ctx.arrangeError);
+            return steps;
+        }
+
+        let chip = null;
+        for (let waited = 0; waited <= 8000; waited += 250) {
+            chip = await h.ev(`document.querySelector("[data-worker-capacity]")?.textContent.trim() ?? null`);
+            if (chip === "+0") break;
+            await polishNap(250);
+        }
+        rec("1. the mocked reading reaches the chip (+0)", ctx.mock === "installed" && chip === "+0", `mock=${ctx.mock} chip=${chip}`);
+
+        let newRun = null;
+        try {
+            await h.goto("cockpit");
+            await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+            const opened = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+            if (opened) {
+                await h.ev(pickOrchestrator(NEW_RUN));
+                await polishWaitFor(h, `!!${CAPACITY_PLUS(NEW_RUN)}`, 3000);
+                await polishNap(300);
+                newRun = await h.ev(stepperWarnExpr(CAPACITY_PLUS(NEW_RUN)));
+                await h.shot("cdp-shots/capacity-warn-new-run.png");
+            }
+        } catch (e) {
+            newRun = { error: String(e?.message ?? e) };
+        }
+        rec(
+            "2. New run's Workers at once warns: amber number and ⚠ with its tooltip",
+            stepperWarned(newRun),
+            JSON.stringify(newRun)
+        );
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await polishNap(300);
+
+        const SHEET = `document.querySelector('[data-jarvis-brief-sheet="channel"]')`;
+        let launcher = null;
+        try {
+            await h.goto("jarvis");
+            const opened = await h.ev(`(async () => {
+                for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                return window.__openAddress(${JSON.stringify(`channel:${ctx.launcherChannelId}`)});
+            })()`);
+            const shown = await polishWaitFor(h, `!!${SHEET}`, 8000);
+            if (shown) {
+                await h.ev(pickOrchestrator(SHEET));
+                await polishWaitFor(h, `!!${CAPACITY_PLUS(SHEET)}`, 3000);
+                await polishNap(300);
+                launcher = await h.ev(stepperWarnExpr(CAPACITY_PLUS(SHEET)));
+                await h.shot("cdp-shots/capacity-warn-launcher.png");
+            } else {
+                launcher = { error: `no channel sheet; open=${JSON.stringify(opened)}` };
+            }
+        } catch (e) {
+            launcher = { error: String(e?.message ?? e) };
+        }
+        rec("3. the Brief launcher's workers stepper warns", stepperWarned(launcher), JSON.stringify(launcher));
+
+        const ADJUST_PLUS = `[...(${COCKPIT_LEAD_CARD}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === '+' && b.parentElement?.textContent.includes('Worker parallelism'))`;
+        let adjust = null;
+        try {
+            await h.goto("cockpit");
+            const hasAdjust = await polishWaitFor(
+                h,
+                `[...(${COCKPIT_LEAD_CARD}?.querySelectorAll('button') ?? [])].some((b) => b.textContent.trim() === 'Adjust')`,
+                15000
+            );
+            if (hasAdjust) {
+                await h.ev(
+                    `[...(${COCKPIT_LEAD_CARD}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Adjust')?.click()`
+                );
+                await polishWaitFor(h, `!!${ADJUST_PLUS}`, 3000);
+                // one step puts the width at least 1 above the running tasks, whether or not t-1 still runs;
+                // Save is never clicked, so the change stays local
+                await h.ev(`${ADJUST_PLUS}?.click()`);
+                await polishNap(300);
+                adjust = await h.ev(stepperWarnExpr(ADJUST_PLUS));
+                await h.shot("cdp-shots/capacity-warn-adjust.png");
+            } else {
+                adjust = { error: "the lead card never showed an Adjust button" };
+            }
+        } catch (e) {
+            adjust = { error: String(e?.message ?? e) };
+        }
+        rec(
+            "4. a live run's Adjust → Worker parallelism warns above its running tasks",
+            stepperWarned(adjust),
+            JSON.stringify(adjust)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // the mock goes even when assert failed, and before anything that reloads
+        await removeCapacityMock(h).catch(() => {});
+        await h.ev(PEEKS_ESC).catch(() => {});
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`capacity-warn teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // deleteproject leaves the channel createproject made, so the channel at the project's path goes too
+        await step("delete the project", async () => {
+            if (ctx.project) await h.rpc("deleteproject", { name: ctx.project });
+        });
+        await step("delete the project's channel", async () => {
+            if (!ctx.projectDir) return;
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.projectDir))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        await teardownFixtureRun(h, ctx, "capacity-warn");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -15818,4 +16001,5 @@ export const SCENARIOS = [
     agentUploads,
     agentRailTabs,
     workerCapacity,
+    capacityWarn,
 ];
