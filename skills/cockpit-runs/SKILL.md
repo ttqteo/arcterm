@@ -21,7 +21,9 @@ Rules:
 - The project is the git repository you are in; a worktree resolves to its main checkout. It must be
   a project in the cockpit already, otherwise pass `--channel <id>`.
 - The lead route is the project's saved route unless you pass `--runtime`/`--model`. Pass one only
-  when the user asked for it.
+  when the user asked for it. With no saved route `start` fails with "no route": ask the user for the
+  harness and model (it is their cost to choose), pass what they pick, and suggest saving a route for
+  the project in the cockpit so the next start needs none.
 - `cancel` stops live workers, so it asks for `--yes` when there are any. Cancel only a run the user
   asked you to stop. A finished run cannot be cancelled.
 - Steer one task of a run (asks, approve, retry, merge, message a worker) with `wsh jarvis dag <cmd>
