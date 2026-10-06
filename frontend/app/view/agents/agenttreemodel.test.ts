@@ -4,7 +4,6 @@ import {
     buildAgentTree,
     foldCollapsedProjects,
     stageSubline,
-    treeAgentCount,
     UNGROUPED_PROJECT,
     type AgentTreeRow,
 } from "./agenttreemodel";
@@ -267,8 +266,6 @@ describe("buildAgentTree with run lineage", () => {
             "queued:1:false",
             "parent:solo",
         ]);
-        // a queued task has no session, so it is not counted as an agent
-        expect(treeAgentCount(rows)).toBe(4);
     });
 
     it("lists queued tasks when their fold is open", () => {
@@ -304,8 +301,6 @@ describe("buildAgentTree with run lineage", () => {
             { collapsed: new Set(), doneOpen: new Map([["run-1", 2]]), queuedOpen: new Set(), extrasOpen: new Set() }
         );
         expect(shape(rows)).toEqual(["group:waveterm:1:0", "lead:run-1:0", "done:2:true", "worker:t-1:w1", "worker:t-2:-"]);
-        // the header's total agrees with the group's, so a done worker's open session is counted in neither
-        expect(treeAgentCount(rows)).toBe(1);
     });
 
     describe("a done fold opened before a task landed", () => {

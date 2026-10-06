@@ -299,11 +299,6 @@ export function buildAgentTree(
     return rows;
 }
 
-/** Pure: the tree's total for its header, the sum of its groups' counts. */
-export function treeAgentCount(rows: AgentTreeRow[]): number {
-    return rows.reduce((n, r) => n + (r.kind === "group" ? r.count : 0), 0);
-}
-
 /** Pure: the tree with each collapsed project's body rows removed. Its group row stays, carrying the count
  *  and attention of what it hides, so a collapsed project still says when an agent in it waits on you. */
 export function foldCollapsedProjects(rows: AgentTreeRow[], collapsed: ReadonlySet<string>): AgentTreeRow[] {

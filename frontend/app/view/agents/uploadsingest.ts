@@ -49,7 +49,7 @@ let nextPasteAt = 0;
 
 // Pastes text into the block's terminal at its slot; false when the terminal is not mounted or not ready for input
 // (nothing was pasted).
-export async function deliver(blockId: string, text: string): Promise<boolean> {
+async function deliver(blockId: string, text: string): Promise<boolean> {
     const now = Date.now();
     const at = Math.max(now, nextPasteAt);
     nextPasteAt = at + PASTE_GAP_MS; // reserved before the first await, so a concurrent caller sees it
