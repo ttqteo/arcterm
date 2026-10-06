@@ -1,7 +1,8 @@
 # Agent rail tabs (Overview, Review, File), path links, and a regrouped nav rail — design
 
-Status: approved design 2026-10-06, not implemented. Phase 1 is everything below except the last section; phase 2 is
-the Terminal tab. Mockups (gitignored, deleted when each phase ships): `.superpowers/design/agent-rail-tabs/` (phase
+Status: approved design 2026-10-06. Phase 1 implemented 2026-10-06 (run adc0e838) except the Review tab, which waits
+on line review (see Order under decision 4); phase 2, the Terminal tab, not implemented. Phase 1 is everything below
+except the last section; phase 2 is the Terminal tab. Mockups (gitignored, deleted when each phase ships): `.superpowers/design/agent-rail-tabs/` (phase
 1), `.superpowers/design/agent-rail-terminal/` (phase 2).
 
 ## Problem
