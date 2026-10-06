@@ -9,7 +9,7 @@
 **Tech Stack:** React 19, jotai, Tailwind 4, react-markdown 9 / unified 11 (remark-rehype, rehype-raw, rehype-sanitize), lucide-react, vitest; the CDP scenario harness (`scripts/cdp/`).
 
 **Spec:** `docs/superpowers/specs/2026-10-06-md-comments-design.md`
-**Mockup:** `.superpowers/design/md-comments/project/` (gitignored; boards Main, Select, Compose, Cards, Range, Image, Source, TrayStates)
+**Mockup:** `/Users/me/projects/arcterm/.superpowers/design/md-comments/project/` (gitignored; boards Main, Select, Compose, Cards, Range, Image, Source, TrayStates)
 
 ## Global Constraints
 
@@ -34,7 +34,7 @@
 
 **Verify:** `node scripts/verify.mjs ./pkg/util/keyedmutex`
 **Check:** `NODE_OPTIONS=--max-old-space-size=4096 node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit`
-**Prototype:** .superpowers/design/md-comments/project/Main.dc.html
+**Prototype:** /Users/me/projects/arcterm/.superpowers/design/md-comments/project/Main.dc.html
 
 No Go changes: the Verify pattern names one small package so that the final stage runs the whole vitest suite. There is no Final line: on macOS `final-verify` waits for CDP, which WKWebView never answers. The UI is checked by hand after landing, and by `task verify:ui -- md-comments` on Windows.
 
