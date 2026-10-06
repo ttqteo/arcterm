@@ -546,6 +546,12 @@ export class RpcApiType {
         return client.wshRpcCall("getwindowtokens", data, opts);
     }
 
+    // command "getworkercapacity" [call]
+    GetWorkerCapacityCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetWorkerCapacityRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getworkercapacity", null, opts);
+        return client.wshRpcCall("getworkercapacity", null, opts);
+    }
+
     // command "gitchanges" [call]
     GitChangesCommand(client: WshClient, data: CommandGitChangesData, opts?: RpcOpts): Promise<CommandGitChangesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitchanges", data, opts);
