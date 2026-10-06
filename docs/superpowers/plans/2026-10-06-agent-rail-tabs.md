@@ -34,7 +34,7 @@ no `task generate`.
 This plan runs on Arc's engine (`wsh runs start --plan`).
 
 - **Branches.** Each task works in its own lane worktree. The engine merges the lanes into `wave/<runId>`, and that
-  branch into the base (`feat/agent-sessions-merge`) when the run lands.
+  branch into the base (the branch the checkout is on at launch, `main`) when the run lands.
   - Each task ends with a commit step.
   - Stage exact paths only (`git add <file>…`), never `git add -A` or `.`.
 - **Verify** runs at every merge, scoped to what the merge changed: `tsc` plus the vitest files related to the changed
@@ -69,7 +69,7 @@ This plan runs on Arc's engine (`wsh runs start --plan`).
 
 ## After the run lands (in the session that started it, not a task)
 
-The dev app serves the checkout, so these run once `wave/<runId>` has merged into `feat/agent-sessions-merge`.
+The dev app serves the checkout, so these run once `wave/<runId>` has merged into `main`.
 
 1. Back up the user's fixture: `cp public/cockpit-fixtures/active.json cdp-shots/active.json.bak`.
 2. Run `node scripts/cdp/verify.mjs agent-rail-tabs agent-rail-sections agent-history surface-smoke`.
