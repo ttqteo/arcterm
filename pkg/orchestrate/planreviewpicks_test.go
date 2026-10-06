@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -96,12 +97,17 @@ func TestPlanReviewPromptUnchangedWithoutPicks(t *testing.T) {
 
 // a mockup-driven plan comes with no spec: the canvas is the design the reviewer checks the plan against
 func TestPlanReviewPromptReadsTheCanvasWhenThereIsNoSpec(t *testing.T) {
-	g := &waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md", Prototype: "C:/repo/.superpowers/design/x/board.dc.html"}
+	// absolute on the host, so the brief names it as is rather than inside the tree
+	canvas := "/repo/.superpowers/design/x/board.dc.html"
+	if runtime.GOOS == "windows" {
+		canvas = "C:" + canvas
+	}
+	g := &waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md", Prototype: canvas}
 	prompt := planReviewPrompt(g, "tree")
-	if !strings.Contains(prompt, "There is no spec file: the design canvas at C:/repo/.superpowers/design/x/board.dc.html is the spec. Read it, the plan at") {
+	if !strings.Contains(prompt, "There is no spec file: the design canvas at "+canvas+" is the spec. Read it, the plan at") {
 		t.Fatalf("the brief must send the reviewer to the canvas:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "- every `.dc.html` board in the folder of C:/repo/.superpowers/design/x/board.dc.html has a step in a scenario Final runs") {
+	if !strings.Contains(prompt, "- every `.dc.html` board in the folder of "+canvas+" has a step in a scenario Final runs") {
 		t.Fatalf("with a canvas the reviewer maps every board to a Final scenario step:\n%s", prompt)
 	}
 	bare := planReviewPrompt(&waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md"}, "tree")
