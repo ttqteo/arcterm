@@ -5,7 +5,10 @@ package shellutil
 
 import (
 	"log"
+	"path/filepath"
 	"regexp"
+	"strings"
+	"unicode"
 )
 
 const (
@@ -107,6 +110,64 @@ func HardQuotePowerShell(s string) string {
 
 	buf = append(buf, '"')
 	return string(buf)
+}
+
+// IsWindowsPowerShell reports whether shellPath is Windows PowerShell (powershell.exe, 5.1) rather than
+// PowerShell 7 (pwsh): the two hand a native program its arguments differently (HardQuoteWindowsPowerShellArg).
+func IsWindowsPowerShell(shellPath string) bool {
+	return strings.HasPrefix(strings.ToLower(filepath.Base(shellPath)), "powershell")
+}
+
+// HardQuoteWindowsPowerShellArg quotes s as one argument of a native program that Windows PowerShell 5.1 runs.
+// 5.1 builds the program's command line without escaping the double quotes inside an argument, so the program's
+// argv parser ended the argument at the first one: every run lead's prompt was cut off at
+// `dag forward <task> "<what`. s is first escaped the way that parser reads it back.
+func HardQuoteWindowsPowerShellArg(s string) string {
+	return HardQuotePowerShell(escapeNativeArg(s))
+}
+
+// escapeNativeArg escapes s for the Windows argv parser (CommandLineToArgvW): a quote becomes \" and the
+// backslashes before it double. 5.1 wraps the argument in quotes when windowsPowerShellWraps says so, and then
+// trailing backslashes double too, or they would escape the closing quote. An argument whose every whitespace
+// follows an odd number of quotes is not wrapped, and no escaping keeps it whole: it still splits at the
+// whitespace, which a prompt, with words before its first quote, never does.
+func escapeNativeArg(s string) string {
+	var b strings.Builder
+	backslashes := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\\' {
+			backslashes++
+			continue
+		}
+		if c == '"' {
+			b.WriteString(strings.Repeat(`\`, 2*backslashes+1))
+		} else {
+			b.WriteString(strings.Repeat(`\`, backslashes))
+		}
+		b.WriteByte(c)
+		backslashes = 0
+	}
+	b.WriteString(strings.Repeat(`\`, backslashes))
+	escaped := b.String()
+	if windowsPowerShellWraps(escaped) {
+		escaped += strings.Repeat(`\`, backslashes)
+	}
+	return escaped
+}
+
+// windowsPowerShellWraps is 5.1's rule for wrapping a native argument in quotes: some whitespace follows an even
+// number of double quotes, escaped or not.
+func windowsPowerShellWraps(arg string) bool {
+	quotes := 0
+	for _, r := range arg {
+		if r == '"' {
+			quotes++
+		} else if unicode.IsSpace(r) && quotes%2 == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func checkQuoteSize(s string) bool {

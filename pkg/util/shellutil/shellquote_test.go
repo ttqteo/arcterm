@@ -115,3 +115,39 @@ func TestHardQuotePowerShell(t *testing.T) {
 		})
 	}
 }
+
+func TestIsWindowsPowerShell(t *testing.T) {
+	cases := map[string]bool{
+		`C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`: true,
+		"powershell":                             true,
+		`C:\Program Files\PowerShell\7\pwsh.exe`: false,
+		"/usr/bin/bash":                          false,
+		"":                                       false,
+	}
+	for path, want := range cases {
+		if got := IsWindowsPowerShell(path); got != want {
+			t.Errorf("IsWindowsPowerShell(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestEscapeNativeArg(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "a quote becomes backslash-quote", input: `forward <task> "<what>"`, want: `forward <task> \"<what>\"`},
+		{name: "backslashes before a quote double", input: `a\"b c`, want: `a\\\"b c`},
+		{name: "trailing backslashes double when 5.1 wraps", input: `C:\a dir\`, want: `C:\a dir\\`},
+		{name: "trailing backslashes stay when it does not wrap", input: `C:\nospace\`, want: `C:\nospace\`},
+		{name: "no quote and no backslash is untouched", input: "plain text\nnext line", want: "plain text\nnext line"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeNativeArg(tt.input); got != tt.want {
+				t.Errorf("escapeNativeArg(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
