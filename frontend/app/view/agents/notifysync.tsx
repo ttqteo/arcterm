@@ -31,6 +31,7 @@ import {
     parseTarget,
     routeNotify,
     snapshotOf,
+    toastOf,
     type NotifyEvent,
     type NotifyRoute,
     type NotifySnapshot,
@@ -91,10 +92,7 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
     const deliver = (route: NotifyRoute, e: NotifyEvent) => {
         if (route === "toast") {
             pushToast({
-                title: e.title,
-                message: e.body,
-                level: "info",
-                eyebrow: { label: e.label, tone: e.tone, meta: e.meta },
+                ...toastOf(e),
                 onOpen: e.target.kind === "none" ? undefined : () => openNotifyTarget(model, e.target),
             });
         } else if (route === "os") {

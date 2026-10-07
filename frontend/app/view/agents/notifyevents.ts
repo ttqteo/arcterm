@@ -6,6 +6,7 @@
 // while arcterm is in the background, an in-app toast while it is focused, or nowhere for the agent you are looking at;
 // coalesce folds a burst into one summary. NotifySync (notifysync.tsx) wires it up. No React, no store.
 
+import type { ToastEyebrow, ToastNotification } from "@/app/cockpit/notificationstore";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 
 export type NotifyTarget =
@@ -27,6 +28,8 @@ export interface NotifyEvent {
     body: string;
     // where it comes from: the agent's project, or the channel
     meta?: string;
+    // the agent's harness (claude, pi, …), for its mark beside the project
+    runtime?: string;
     // a sound and a taskbar flash: something is blocked on you
     loud: boolean;
 }
@@ -36,6 +39,7 @@ interface AgentSnap {
     name: string;
     task: string;
     project?: string;
+    runtime?: string;
     runId?: string;
     question?: string;
 }
@@ -72,6 +76,7 @@ export function snapshotOf(
                     name: a.name,
                     task: a.task,
                     project: a.project,
+                    runtime: a.agent,
                     runId: a.runId,
                     question: a.ask?.questions?.[0]?.question?.split("\n")[0],
                 },
@@ -103,6 +108,7 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
                 title: a.name,
                 body: a.question ?? "Waiting for your input",
                 meta: a.project,
+                runtime: a.runtime,
                 loud: true,
             });
         } else if (a.state === "idle" && before.state === "working" && a.runId == null) {
@@ -114,6 +120,7 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
                 title: a.name,
                 body: a.task && a.task !== a.name ? a.task : "",
                 meta: a.project,
+                runtime: a.runtime,
                 loud: false,
             });
         }
@@ -228,4 +235,26 @@ export function coalesce(events: NotifyEvent[]): NotifyEvent[] {
 export function osText(e: NotifyEvent): { title: string; body: string } {
     const title = e.kind === "summary" ? e.title : `${e.label}: ${e.title}`;
     return { title, body: [e.body, e.meta].filter(Boolean).join(" · ") };
+}
+
+const TOAST_ICON: Record<NotifyEvent["kind"], ToastEyebrow["icon"]> = {
+    request: "ask",
+    reply: "done",
+    attention: "decision",
+    notify: "message",
+    summary: "summary",
+};
+
+// something blocked on you stays up long enough to be read; a finished turn is the default six seconds
+export const ASKING_TOAST_TTL_MS = 15000;
+
+/** Pure: the in-app toast for an event, short of its open action. */
+export function toastOf(e: NotifyEvent): Omit<ToastNotification, "id" | "onOpen"> {
+    return {
+        title: e.title,
+        message: e.body,
+        level: "info",
+        eyebrow: { label: e.label, tone: e.tone, icon: TOAST_ICON[e.kind], meta: e.meta, runtime: e.runtime },
+        ttlMs: e.tone === "asking" ? ASKING_TOAST_TTL_MS : undefined,
+    };
 }

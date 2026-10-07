@@ -11,6 +11,7 @@ import {
     parseTarget,
     routeNotify,
     snapshotOf,
+    toastOf,
     type NotifyEvent,
     type RouteCtx,
 } from "./notifyevents";
@@ -206,5 +207,28 @@ describe("osText", () => {
         expect(osText(e({ kind: "summary", label: "Needs you", title: "2 waiting on you" })).title).toBe(
             "2 waiting on you"
         );
+    });
+});
+
+describe("toastOf", () => {
+    it("gives an ask the question icon, its harness and a longer life", () => {
+        const before = agent("a", "working", { agent: "claude", project: "arcterm" });
+        const [e] = diffEvents(snap([before]), snap([{ ...before, state: "asking" }]));
+        expect(toastOf(e)).toMatchObject({
+            title: "agent a",
+            eyebrow: { label: "Needs you", tone: "asking", icon: "ask", meta: "arcterm", runtime: "claude" },
+            ttlMs: 15000,
+        });
+    });
+    it("gives a finished turn the check icon and the default life", () => {
+        const before = agent("a", "working");
+        const [e] = diffEvents(snap([before]), snap([{ ...before, state: "idle" }]));
+        const t = toastOf(e);
+        expect(t.eyebrow?.icon).toBe("done");
+        expect(t.ttlMs).toBeUndefined();
+    });
+    it("marks a decision and a summary by their own icons", () => {
+        expect(toastOf({ ...ev("attention"), tone: "asking" }).eyebrow?.icon).toBe("decision");
+        expect(toastOf({ ...ev("summary"), tone: "done" }).eyebrow?.icon).toBe("summary");
     });
 });
