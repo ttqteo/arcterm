@@ -720,6 +720,12 @@ export class RpcApiType {
         return client.wshRpcCall("listdetachededges", data, opts);
     }
 
+    // command "listdevservers" [call]
+    ListDevServersCommand(client: WshClient, data: CommandListDevServersData, opts?: RpcOpts): Promise<CommandListDevServersRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listdevservers", data, opts);
+        return client.wshRpcCall("listdevservers", data, opts);
+    }
+
     // command "listdossiers" [call]
     ListDossiersCommand(client: WshClient, opts?: RpcOpts): Promise<CommandListDossiersRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listdossiers", null, opts);
@@ -1000,6 +1006,12 @@ export class RpcApiType {
     StartRadarScanCommand(client: WshClient, data: CommandStartRadarScanData, opts?: RpcOpts): Promise<CommandStartRadarScanRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "startradarscan", data, opts);
         return client.wshRpcCall("startradarscan", data, opts);
+    }
+
+    // command "stopdevserver" [call]
+    StopDevServerCommand(client: WshClient, data: CommandStopDevServerData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "stopdevserver", data, opts);
+        return client.wshRpcCall("stopdevserver", data, opts);
     }
 
     // command "stoprunworker" [call]

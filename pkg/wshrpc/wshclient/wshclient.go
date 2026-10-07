@@ -714,6 +714,12 @@ func ListDetachedEdgesCommand(w *wshutil.WshRpc, data wshrpc.CommandListDetached
 	return resp, err
 }
 
+// command "listdevservers", wshserver.ListDevServersCommand
+func ListDevServersCommand(w *wshutil.WshRpc, data wshrpc.CommandListDevServersData, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDevServersRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDevServersRtnData](w, "listdevservers", data, opts)
+	return resp, err
+}
+
 // command "listdossiers", wshserver.ListDossiersCommand
 func ListDossiersCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDossiersRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDossiersRtnData](w, "listdossiers", nil, opts)
@@ -993,6 +999,12 @@ func SetSecretsCommand(w *wshutil.WshRpc, data map[string]*string, opts *wshrpc.
 func StartRadarScanCommand(w *wshutil.WshRpc, data wshrpc.CommandStartRadarScanData, opts *wshrpc.RpcOpts) (*wshrpc.CommandStartRadarScanRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandStartRadarScanRtnData](w, "startradarscan", data, opts)
 	return resp, err
+}
+
+// command "stopdevserver", wshserver.StopDevServerCommand
+func StopDevServerCommand(w *wshutil.WshRpc, data wshrpc.CommandStopDevServerData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "stopdevserver", data, opts)
+	return err
 }
 
 // command "stoprunworker", wshserver.StopRunWorkerCommand

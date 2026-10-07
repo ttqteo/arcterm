@@ -1318,6 +1318,17 @@ declare global {
         edges: AmbientEdge[];
     };
 
+    // wshrpc.CommandListDevServersData
+    type CommandListDevServersData = {
+        cwd?: string;
+        blockid?: string;
+    };
+
+    // wshrpc.CommandListDevServersRtnData
+    type CommandListDevServersRtnData = {
+        servers: Server[];
+    };
+
     // wshrpc.CommandListDossiersRtnData
     type CommandListDossiersRtnData = {
         spaces: SpaceSummary[];
@@ -1559,6 +1570,12 @@ declare global {
     // wshrpc.CommandStartRadarScanRtnData
     type CommandStartRadarScanRtnData = {
         report: RadarReport;
+    };
+
+    // wshrpc.CommandStopDevServerData
+    type CommandStopDevServerData = {
+        pid: number;
+        createms: number;
     };
 
     // wshrpc.CommandStopRunWorkerData
@@ -2689,6 +2706,18 @@ declare global {
     type RuntimeOpts = {
         termsize?: TermSize;
         winsize?: WinSize;
+    };
+
+    // devservers.Server
+    type Server = {
+        pid: number;
+        createms: number;
+        ports: number[];
+        name: string;
+        cmdline: string;
+        cwd: string;
+        byagent: boolean;
+        launchercmdline?: string;
     };
 
     // wshrpc.SessionActivity
