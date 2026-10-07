@@ -5188,6 +5188,154 @@ const codeMarkdown = {
     },
 };
 
+// --- code-tex-pdf: a paper on the Code surface ---------------------------------------------------
+// A temp git repo holding a small paper (main.tex), the PDF built beside it (main.pdf) and a loose paper.pdf, opened
+// through the openfile event `wsh view` publishes. Covers the .tex Preview (title, authors, a \cite key, KaTeX math),
+// double-click to Source at the sentence's line, LaTeX highlighting, the Wrap toggle and Alt+Z, the .tex PDF mode with
+// its age line, and a .pdf opening in the viewer rather than "Binary file". The PDFs are minimal: WebView2's viewer
+// repairs their missing xref, and the steps check the frame, not the pages.
+const CODE_TEX_PAPER = String.raw`\documentclass{article}
+\title{Measuring What the Model Adds}
+\author{Ada Lovelace \and Alan Turing}
+\begin{document}
+\maketitle
+\section{Introduction}
+A proof of vulnerability is an input that makes a known defect show up in a running program, and this line runs long on purpose so that wrapping it is visible.
+Prior systems \cite{smith2020} report a success rate $r = k / n$ over $n$ programs.
+\end{document}
+`;
+const CODE_TEX_PDF = `%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj
+trailer<</Root 1 0 R>>
+%%EOF
+`;
+
+const codeTexPdf = {
+    name: "code-tex-pdf",
+    surface: "code",
+    async arrange() {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-code-tex-"));
+        execFileSync("git", ["init", "-q"], { cwd });
+        writeFileSync(join(cwd, "main.tex"), CODE_TEX_PAPER);
+        writeFileSync(join(cwd, "main.pdf"), CODE_TEX_PDF);
+        writeFileSync(join(cwd, "paper.pdf"), CODE_TEX_PDF);
+        return { cwd };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const wait = (expr, ms) => docReviewWait(h, expr, ms);
+        const open = (path) => h.rpc("eventpublish", { event: "openfile", data: { path } });
+        const altZ = () =>
+            h.ev(
+                `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', altKey: true, bubbles: true }))`
+            );
+        const wrapPressed = () => h.ev(`document.querySelector('[data-code-wrap]')?.getAttribute('aria-pressed')`);
+
+        await h.goto("code");
+        await open(join(ctx.cwd, "main.tex"));
+        const previewShown = await wait(`document.querySelector('[data-tex-preview]')`, 8000);
+        const preview = await h.ev(`(() => {
+            const root = document.querySelector('[data-tex-preview]');
+            return {
+                title: root?.querySelector('[data-tex-title] h1')?.textContent ?? null,
+                authors: root?.querySelector('[data-tex-authors]')?.textContent ?? null,
+                heading: root?.querySelector('h2')?.textContent ?? null,
+                cite: (root?.textContent ?? '').includes('smith2020'),
+                math: !!root?.querySelector('.katex'),
+            };
+        })()`);
+        rec(
+            "1. a .tex file opens as a preview with its title, authors, heading, cite key and math",
+            previewShown &&
+                preview?.title === "Measuring What the Model Adds" &&
+                preview?.authors === "Ada Lovelace · Alan Turing" &&
+                preview?.heading === "Introduction" &&
+                preview?.cite === true &&
+                preview?.math === true,
+            JSON.stringify(preview)
+        );
+        await h.shot("cdp-shots/code-tex-preview.png");
+
+        const pdfOffered = await wait(`document.querySelector('[data-code-view-mode="pdf"]')`, 5000);
+        await h.ev(`document.querySelector('[data-code-view-mode="pdf"]')?.click()`);
+        const pdfShown = await wait(`document.querySelector('iframe[data-code-tex-pdf]')`, 5000);
+        const meta = await h.ev(`document.querySelector('[data-code-tex-pdf-meta]')?.textContent ?? null`);
+        rec(
+            "2. the PDF mode shows the PDF built beside the root, with its age and root",
+            pdfOffered && pdfShown && meta != null && meta.startsWith("main.pdf · built ") && meta.endsWith("from main.tex"),
+            `offered=${pdfOffered} shown=${pdfShown} meta=${meta}`
+        );
+        await h.shot("cdp-shots/code-tex-pdf-mode.png");
+
+        await h.ev(`document.querySelector('[data-code-view-mode="preview"]')?.click()`);
+        await wait(`document.querySelector('[data-tex-s]')`, 3000);
+        const target = await h.ev(`(() => {
+            const s = [...document.querySelectorAll('[data-tex-s]')].find((e) => (e.textContent || '').includes('Prior systems'));
+            if (!s) return false;
+            s.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            return true;
+        })()`);
+        const sourceShown = await wait(
+            `document.querySelector('.monaco-editor .view-line') && !document.querySelector('[data-tex-preview]')`,
+            8000
+        );
+        // the caret lands on the sentence's line: line 8 of CODE_TEX_PAPER
+        const caretLine = await h.ev(`(() => {
+            const active = document.querySelector('.monaco-editor .line-numbers.active-line-number');
+            return active ? Number(active.textContent) : null;
+        })()`);
+        rec(
+            "3. double-clicking a sentence opens Source at its line",
+            target && sourceShown && caretLine === 8,
+            `dblclick=${target} source=${sourceShown} caretLine=${caretLine}`
+        );
+
+        const colours = await h.ev(`(() => {
+            const bs = String.fromCharCode(92);
+            const line = [...document.querySelectorAll('.monaco-editor .view-line')].find((l) =>
+                (l.textContent || '').includes(bs + 'section')
+            );
+            if (!line) return null;
+            return [...new Set([...line.querySelectorAll('span span')].map((s) => s.className))];
+        })()`);
+        rec(
+            "4. LaTeX is highlighted: the \\section line has several token colours",
+            Array.isArray(colours) && colours.length >= 3,
+            JSON.stringify(colours)
+        );
+
+        const wrapDefault = await wrapPressed();
+        await altZ();
+        await wait(`document.querySelector('[data-code-wrap]')?.getAttribute('aria-pressed') === 'false'`, 2000);
+        const wrapAfter = await wrapPressed();
+        rec(
+            "5. a .tex file wraps by default, and Alt+Z turns it off",
+            wrapDefault === "true" && wrapAfter === "false",
+            `default=${wrapDefault} afterAltZ=${wrapAfter}`
+        );
+        await h.shot("cdp-shots/code-tex-source.png");
+        await altZ(); // back to the default, so a later run starts from it
+
+        await open(join(ctx.cwd, "paper.pdf"));
+        const pdfFile = await wait(`document.querySelector('iframe[data-code-pdf]')`, 8000);
+        const binary = await h.ev(`(document.body.textContent || '').includes('Binary file')`);
+        rec("6. a .pdf opens in the viewer, not as a binary file", pdfFile && !binary, `frame=${pdfFile} binary=${binary}`);
+        await h.shot("cdp-shots/code-tex-pdf-file.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            rmSync(ctx.cwd, { recursive: true, force: true });
+        } catch {
+            // best-effort cleanup
+        }
+        await h.goto("cockpit");
+    },
+};
+
 // --- dag lifecycle: engine + graph surface ----------------------------------------------------
 // Drives the real DagSubmit/DagAction/DagMerge RPCs through an orchestrator-mode run, then opens
 // the graph surface and asserts the ReactFlow canvas renders the submitted nodes. Blast radius is
@@ -17054,6 +17202,7 @@ export const SCENARIOS = [
     codeGitStatus,
     codeDiff,
     codeMarkdown,
+    codeTexPdf,
     jarvisPet,
     briefSurface,
     briefPeek,
