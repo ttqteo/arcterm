@@ -37,6 +37,8 @@ function fakeModel() {
         pendingLaunchesAtom: atom([]),
         focusIdAtom: atom<string | undefined>(undefined),
         surfaceAtom: atom("cockpit"),
+        // launchAgent hands the new agent's terminal the keyboard through it, as AgentsViewModel's own does
+        typingFollowsAtom: atom<string | null>(null),
     } as any;
 }
 
@@ -63,6 +65,20 @@ describe("launchAgent", () => {
         expect(blockSetMeta[1].meta.controller).toBe("cmd");
         // ...and its stale FE cache must be refreshed so the roster recognizes it
         expect(reloadWaveObject).toHaveBeenCalledWith("block:blk-1");
+    });
+
+    it("opens the agent on the Agent surface with its terminal taking the keyboard", async () => {
+        const model = fakeModel();
+        await launchAgent(model, {
+            runtime: "claude",
+            startupCommand: "claude",
+            task: "",
+            projectPath: "C:/proj",
+            projectName: "proj",
+        });
+        expect(globalStore.get(model.focusIdAtom)).toBe("tab-1");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
     });
 
     it("preflights a missing Pi resumePath and refuses to create a tab", async () => {
