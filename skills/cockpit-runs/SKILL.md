@@ -14,8 +14,17 @@ description: Use when you need to start an arcterm run (quick, or orchestrator f
 - `wsh runs answer <run-id> '<answers-json>'` answers the run's own pending question (a lead's AskUserQuestion), which `wsh runs show` prints with numbered options.
 - `wsh runs cancel <run-id>` cancels a run.
 - `wsh runs attention` lists everything waiting on the user, across every project.
+- `wsh runs route` prints the lead, workers and reviewer routes a new run here would use, and where each
+  comes from. `wsh runs route [--global] --worker-runtime <h> --worker-model <m>` (or `--reviewer-picks`,
+  `--same-as-lead`) saves the workers default for this project, or for every project.
 
 Rules:
+- Before every `start`, run `wsh runs route` and tell the user the lead and worker models in one line.
+  When the workers show "same as lead" from the global default (nothing saved) and the lead model is
+  "(harness default model)", the run would put every worker on the harness's default (often the most
+  expensive model): ask which worker model to use, pass it as `--worker-runtime`/`--worker-model` (or
+  `--reviewer-picks`), and offer to save it with `wsh runs route --global ...` so the next start needs
+  no question. When a default is saved, use it without asking.
 - A launch can take minutes. If `start` reports no reply, the run may have started anyway:
   `wsh runs list` first, and start it again only when it is not there. A retry is a second full run.
 - The project is the git repository you are in; a worktree resolves to its main checkout. It must be
@@ -23,7 +32,8 @@ Rules:
 - The lead route is the project's saved route unless you pass `--runtime`/`--model`. Pass one only
   when the user asked for it. With no saved route `start` fails with "no route": ask the user for the
   harness and model (it is their cost to choose), pass what they pick, and suggest saving a route for
-  the project in the cockpit so the next start needs none.
+  the project in the cockpit so the next start needs none. Without a project route, the lead falls back
+  to the harness preference in settings, which can name no model.
 - `cancel` stops live workers, so it asks for `--yes` when there are any. Cancel only a run the user
   asked you to stop. A finished run cannot be cancelled.
 - Steer one task of a run (asks, approve, retry, merge, message a worker) with `wsh jarvis dag <cmd>

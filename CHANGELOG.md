@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- `wsh runs route` shows which models a new run's lead and workers will use, and saves the workers default
+  (`--global --worker-runtime claude --worker-model sonnet`) so runs started from an agent stop defaulting
+  every worker to the harness's default model.
 - LaTeX and BibTeX files are highlighted on Code and in the agent panel's File tab, and a **Wrap** toggle (`Alt+Z` on
   Code) wraps long lines; `.tex`, `.bib`, `.md` and `.txt` wrap by default. A `.pdf` now opens in a viewer instead of
   "Binary file".
