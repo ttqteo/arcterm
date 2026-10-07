@@ -32,6 +32,7 @@ import {
     startupSurfaceOptions,
     vaultPathError,
 } from "./cockpitprefsstore";
+import { createCommitGate } from "./commitgate";
 import { DEFAULT_MONO, DEFAULT_SANS, DEFAULT_TERM_FONT, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
 import { fontMonoAtom, fontSansAtom } from "./fontstore";
 import { harnessPickerItems } from "./harnesspicker";
@@ -633,16 +634,22 @@ function CommitText({
 }
 
 // Write-only key field. There is nothing to sync down from, so it keeps its own draft and clears only
-// once the key actually lands — a failed write leaves what you pasted in place.
+// once the key actually lands — a failed write leaves what you pasted in place. Enter blurs the field, so
+// Enter and the blur both commit; the gate drops the second while the first is in flight.
 function SecretInput({ placeholder, onCommit }: { placeholder: string; onCommit: (v: string) => Promise<boolean> }) {
     const [draft, setDraft] = useState("");
+    const [gate] = useState(createCommitGate);
     const commit = () => {
         const v = draft.trim();
         if (v === "") {
             return;
         }
+        const pending = gate.commit(v, onCommit);
+        if (pending == null) {
+            return;
+        }
         fireAndForget(async () => {
-            if (await onCommit(v)) {
+            if (await pending) {
                 setDraft("");
             }
         });
