@@ -1,4 +1,4 @@
-# LaTeX highlighting, word wrap and PDF viewing on the Code surface — design
+# LaTeX highlighting, reading preview, word wrap and PDF viewing on the Code surface — design
 
 Status: design settled 2026-10-07.
 
@@ -13,10 +13,14 @@ surface and the agent rail's File tab:
   only the Code surface editor reads it: the File tab has fixed options and the diff viewer ignores it.
 - A `.pdf` opens to a dead-end "Binary file" panel, although Doc review already shows compiled PDFs
   through WebView2's own viewer.
+- A paper can only be read as source. Markdown opens as a rendered document (the `preview` mode), but
+  `.tex` has no reading view on the Code surface, although Doc review already turns `.tex` into prose
+  (`docprose.ts`) and draws it with chips and KaTeX math (`prosetokens.tsx`).
 
 Out of scope: compiling from the Code surface (a later round; `pkg/doccompile` already compiles for Doc
 review with latexmk, else tectonic), bundling a TeX engine, an in-app or WASM LaTeX, pdf.js, SyncTeX,
-side-by-side source and PDF, and auto-refresh while the source is edited.
+side-by-side source and PDF, auto-refresh while the source is edited, and an editable visual mode like
+Overleaf's Visual Editor (deferred, see decision 10).
 
 ## Decisions
 
@@ -59,10 +63,29 @@ side-by-side source and PDF, and auto-refresh while the source is edited.
    - else `<root dir>/<root base>.pdf` → `source: "sibling"`.
    - else empty.
    `codeViewModeAtom` gains `"pdf"`. A pure `viewModesFor(path, hasPdf)` decides the toggle: `preview`
-   for markdown, `source` and `diff` for any text file, `pdf` for `.tex` with a found PDF. The PDF view
+   for markdown and `.tex`, `source` and `diff` for any text file, `pdf` for `.tex` with a found PDF. A
+   `.tex` file's modes are therefore Preview · Source · Diff · PDF. The PDF view
    has a one-line footer — `main.pdf · built 2h ago · from main.tex` (plus `· Doc review build` for
    `compiled`) — because it may be older than the source. `mtime` is the cache-busting `version`. The
    lookup runs when a `.tex` opens and again when the PDF mode is chosen.
+10. **`.tex` gets a read-only Preview, the default mode as for markdown.** It reuses Doc review's reader
+    rather than a new one: `toProse("latex", text)` gives sections → paragraphs → sentences of tokens, and
+    `ProseTokens` draws `em`/`strong`, `ref`/`cite` chips, links and math through KaTeX (`MathToken`). The
+    view is a new `TexPreview` beside the markdown preview in `codeviewer.tsx`:
+    - **Title block.** `\title{…}` (already extracted by `texSections`) and `\author{…}`, split on `\and`
+      with `\thanks`, `\affiliation` and `\email` dropped, render centred above the body. The author
+      extraction is a pure helper in `docprose.ts` with tests. No title → no block.
+    - **Headings** use the section level and the `§3.2` numbering `texSections` already computes.
+    - **Double-click a sentence → Source at its line.** Each sentence carries `source.start`, its offset in
+      the file; the view converts it to a line and switches to `source` with the editor revealing that line
+      (the same reveal path `openInCode` uses for `line`).
+    - The preview reads the draft text when there are unsaved edits, as the markdown preview does.
+    - Out of scope for it: following `\input`/`\include` (a chapter file previews on its own), figures and
+      tables beyond the placeholder token Doc review already draws, the bibliography, and editing.
+
+    An editable Overleaf-style visual mode is deferred (`docs/deferred.md`, 2026-10-07): Monaco can tint
+    and inject text but cannot replace a range with a widget, so it would need CodeMirror 6 beside Monaco
+    and Overleaf-scale work on cursor movement through widgets, undo and paste.
 
 ## Changes
 
@@ -74,7 +97,13 @@ side-by-side source and PDF, and auto-refresh while the source is edited.
   for PDFs, PDF lookup for `.tex`.
 - `frontend/app/view/code/codepathbar.tsx` — Wrap button, mode list from `viewModesFor`.
 - `frontend/app/view/code/codeviewer.tsx`, `frontend/app/view/codeeditor/codeeditor.tsx` — pass
-  `language` and the effective wrap; render `PdfFrame` for PDFs and the PDF mode.
+  `language` and the effective wrap; render `PdfFrame` for PDFs and the PDF mode, `TexPreview` for the
+  `.tex` preview mode.
+- `frontend/app/view/code/texpreview.tsx` (new) — title block, headings, paragraphs through
+  `ProseTokens`, double-click to source.
+- `frontend/app/view/agents/docprose.ts` — `texAuthors(text)`; tests in `docprose.test.ts`.
+- `frontend/app/view/agents/prosetokens.tsx` — import `katex/dist/katex.min.css` here (today only
+  `docreviewpane.tsx` does) so any view that renders math gets the styles.
 - `frontend/app/view/agents/filetab.tsx`, `filetabload.ts` — same for the File tab.
 - `frontend/app/monaco/monaco-react.tsx` — `wordWrap` and `language` on the diff viewer.
 - `frontend/app/view/agents/pdfframe.tsx` (new), `docpdfpane.tsx` — the shared frame.
@@ -87,8 +116,11 @@ side-by-side source and PDF, and auto-refresh while the source is edited.
 ## Verification
 
 - vitest: `classifyFile` (pdf before the size gate, `.latex`), `languageForPath` (`.cls`), `defaultWrap`,
-  `viewModesFor`.
+  `viewModesFor` (`.tex` with and without a PDF), `texAuthors` (`\and`, `\thanks`, ACM's one `\author`
+  per person), and the sentence offset → line conversion.
 - Go: `FindPdf` with a compiled PDF, with only a sibling PDF, with neither, and for a non-root chapter
   file that resolves to its root.
-- CDP scenario `code-tex-pdf`: open a fixture `.tex` (highlighted tokens present, wrap on), toggle `Alt+Z`,
-  open a fixture `.pdf` (iframe present, no binary panel), and the `.tex` PDF mode with its footer.
+- CDP scenario `code-tex-pdf`: open a fixture `.tex` (Preview by default, with the title block, a cite chip
+  and KaTeX math), double-click a sentence (Source at that line), check highlighted tokens and wrap on,
+  toggle `Alt+Z`, open a fixture `.pdf` (iframe present, no binary panel), and the `.tex` PDF mode with its
+  footer.

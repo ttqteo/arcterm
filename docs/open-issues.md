@@ -277,6 +277,10 @@ local default. Effort realistically L counting step 1. Full reference design in 
 
 ## 4 · Held — pick up only on the named trigger
 
+(arcterm) Editable LaTeX visual mode, Overleaf style (deferred 2026-10-07): a `.tex` mode that renders and edits at
+once. Needs CodeMirror 6 beside Monaco; the read-only `.tex` Preview covers reading. Revive when hand edits of papers
+in arcterm make switching Preview ↔ Source the complaint; full rationale in `docs/deferred.md`.
+
 (arcterm) Session scan cache on disk (deferred 2026-10-06): keep the sessions scan's parsed transcripts across
 wavesrv restarts, so the first History load after a launch skips its 0.5 s cold parse (2.9 s before the subagents skip
 and parallel parse). Revive when a cold `ScanSessions` measures over about 1 s; full rationale in `docs/deferred.md`.

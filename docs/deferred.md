@@ -7,6 +7,22 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > append-only rationale log — append the full deferral here, then mirror a one-line row there. Entries
 > marked RESOLVED/DECLINED below are kept for the reasoning, not as pending work.
 
+## (arcterm) Editable LaTeX visual mode, Overleaf style (deferred 2026-10-07)
+
+- **Deferred:** a `.tex` mode that is rendered and editable at once, as Overleaf's Visual Editor is: `\section{…}`,
+  `\textbf{…}` and `\cite{…}` drawn as a heading, bold text and a chip inside the editor, with the cursor still
+  typing into the source.
+- **Why:** Monaco can tint ranges and inject text but cannot replace a range with a widget, so this needs
+  CodeMirror 6 beside Monaco (two editors in the bundle) and Overleaf-scale work on cursor movement through
+  widgets, undo, copy/paste and user macros. In arcterm the agent edits a paper and the user reads and reviews
+  it; the read-only `.tex` Preview (spec `2026-10-07-tex-wrap-pdf-viewer-design.md`, decision 10) covers reading,
+  and double-click jumps to the source line for a hand edit.
+- **Where it would plug in:** a fifth Code surface view mode for `.tex` in `viewModesFor`
+  (`frontend/app/view/code/codeclassify.ts`), rendered by a CodeMirror 6 editor with decorations built from
+  `docprose.ts`'s token kinds.
+- **Revive when:** the user edits papers by hand in arcterm often enough that switching between Preview and
+  Source is the complaint.
+
 ## (arcterm) Session scan cache on disk (deferred 2026-10-06)
 
 - **Deferred:** keeping the sessions scan's parsed results across wavesrv restarts, so the first Conversation History
