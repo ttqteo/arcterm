@@ -37,11 +37,23 @@ func trustGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// realTempDir is t.TempDir with its symlinks resolved. On macOS the temp root /var is a symlink to
+// /private/var, and git writes a worktree's back-references with the resolved path, so a repository
+// built under the unresolved one fails claudeCanonicalRoot's exact gitdir check.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // newTrustRepo builds a real repository with one commit, so worktree resolution runs against git's
 // own on-disk shape rather than a hand-built imitation of it.
 func newTrustRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := realTempDir(t)
 	trustGit(t, dir, "init", "-b", "main")
 	trustGit(t, dir, "config", "user.email", "t@test")
 	trustGit(t, dir, "config", "user.name", "t")
@@ -109,7 +121,7 @@ func TestMainCheckout(t *testing.T) {
 	repo := newTrustRepo(t)
 	wt := newTrustWorktree(t, repo, "run-1")
 	// a worktree outside the main checkout, where a channel-path prefix cannot place it
-	outside := filepath.Join(t.TempDir(), "elsewhere")
+	outside := filepath.Join(realTempDir(t), "elsewhere")
 	trustGit(t, repo, "worktree", "add", "-b", "wave/outside", outside)
 	sub := filepath.Join(outside, "pkg")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -310,7 +322,7 @@ func TestApplyClaudeTrustRefusesMalformedConfig(t *testing.T) {
 }
 
 func TestNormalizeClaudePathIsAbsoluteWithForwardSlashes(t *testing.T) {
-	dir := t.TempDir()
+	dir := realTempDir(t)
 	key := normalizeClaudePath(dir)
 	if strings.Contains(key, `\`) {
 		t.Errorf("key %q still has backslashes", key)
