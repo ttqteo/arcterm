@@ -74,6 +74,9 @@ func TestDetailForTool(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if strings.Contains(tt.input, `C:\\`) {
+				skipUnlessWindows(t)
+			}
 			if got := detailForTool(tt.tool, json.RawMessage(tt.input)); got != tt.want {
 				t.Fatalf("detailForTool(%q) = %q, want %q", tt.tool, got, tt.want)
 			}
