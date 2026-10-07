@@ -10,6 +10,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- An agent that stops on one part of a walk-through, such as "Part 1/3", shows `1/3` at the end of its row in
+  place of the unread count, and keeps it until you reply, so a half-reviewed design is not forgotten.
+
 ### Changed
 
 - `g` `j` now goes to Jarvis (it was `g` `c`).

@@ -370,7 +370,10 @@ function ParentRow({
     // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
     // list shows unread messages, and the name reads bold
     const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
-    const unread = unreadCount > 0;
+    // an idle turn that stopped on part 1/3 of something waits on your reply: its step takes the count's place, and
+    // stays after you have read it, since that is when a reply gets forgotten
+    const step = agent.state === "idle" ? agent.step : undefined;
+    const unread = unreadCount > 0 || step != null;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
@@ -483,7 +486,8 @@ function ParentRow({
                         {lead ? subsChip : null}
                         <CanvasTag model={model} id={agent.id} />
                         {/* a row names its state in words only when it wants something; otherwise the dot says
-                            working or idle, and a count says how many finished turns you have not read */}
+                            working or idle, and a count says how many finished turns you have not read, or the
+                            part a turn stopped on waiting for your reply */}
                         {review ? (
                             // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
                             // focuses its agent in review mode itself, so the click must not reach the row either way
@@ -514,7 +518,15 @@ function ParentRow({
                                 <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
                                     {formatAgeShort(displayAgeMs(agent, now))}
                                 </span>
-                                {unread ? (
+                                {step ? (
+                                    <span
+                                        data-agent-step={step}
+                                        aria-label={`stopped on part ${step}, waiting on your reply`}
+                                        className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
+                                    >
+                                        {step}
+                                    </span>
+                                ) : unread ? (
                                     <span
                                         data-agent-unread={unreadCount}
                                         aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}

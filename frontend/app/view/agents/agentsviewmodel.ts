@@ -99,6 +99,7 @@ export interface AgentVM {
     runId?: string; // the run this agent works for, when a run spawned it: a lead's own run, a worker's child run
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
+    step?: string; // idle: the "n/m" part its last message stopped on ("1/3"), until you reply
 }
 
 const STATE_RANK: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
@@ -484,6 +485,7 @@ export interface LiveAgentInput {
     sessionId?: string; // pi control-channel session id (agentstatus --session-id)
     runORef?: string; // jarvis:runoref on the tab: "run:<id>"
     effortORef?: string; // session:effort on the tab: "effort:<oid>"
+    step?: string; // the status event's step: the "n/m" part an idle turn stopped on
 }
 
 /** Pure: one live row -> an AgentVM. `asking` (a pending AskUserQuestion) maps straight to asking so
@@ -527,6 +529,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
         vm.blockedMs = age;
     } else if (input.ts != null) {
         vm.idleSince = input.ts;
+    }
+    if (state === "idle" && input.step) {
+        vm.step = input.step;
     }
     return vm;
 }
