@@ -9,12 +9,14 @@
 // worth testing live in uploadfile.ts and uploadsstore.ts.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { globalStore } from "@/app/store/jotaiStore";
 import { localFileUrl } from "@/app/view/jarvis/localimage";
 import { focusTerm, pasteIntoTerm } from "@/app/view/term/termpaste";
 import { createTempFileFromFile } from "@/app/view/term/termutil";
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { fetch } from "@/util/fetchutil";
 import { fireAndForget, sleep } from "@/util/util";
+import { nameScreenPaste, newScreenNumber, screenImageNumbers, takenPasteNumbers } from "./imagepasteids";
 import { rejectionToast, THUMB_SOURCE_LIMIT_BYTES, UploadError, type Rejection } from "./uploadfile";
 import {
     baseName,
@@ -23,6 +25,8 @@ import {
     pasteTextFor,
     planInserts,
     recordUpload,
+    updateUploads,
+    uploadsAtom,
     type UploadKind,
 } from "./uploadsstore";
 import { makeThumbnail } from "./uploadthumb";
@@ -33,15 +37,50 @@ const PASTE_GAP_MS = 150;
 const THUMB_FETCH_TIMEOUT_MS = 10_000;
 const nonce = () => Math.random().toString(36).slice(2, 8);
 
-// termwrap.ts's pasteHandler has already written the image to a temp file and pasted its path
-export function recordPastedImage(blockId: string, path: string, image: Blob): void {
+// termwrap.ts's pasteHandler has already written the image to a temp file and pasted its path. `screenBefore` is the
+// terminal's lines from just before the paste and `readScreen` reads them again, so the record takes the [Image #N]
+// Claude Code draws in its prompt as soon as it shows; the transcript confirms it once the prompt is sent.
+export function recordPastedImage(
+    blockId: string,
+    path: string,
+    image: Blob,
+    screenBefore: readonly string[],
+    readScreen: () => string[]
+): void {
     const now = Date.now();
     fireAndForget(async () => {
         const thumb = await makeThumbnail(image);
-        // until the transcript says which [Image #N] it is (imagepasteids.ts renames it)
         const record = makeRecord({ path, source: "paste", now, nonce: nonce(), name: "Pasted image", kind: "image" });
         recordUpload(blockId, record, thumb);
+        const n = await waitForScreenNumber(blockId, path, now, screenImageNumbers(screenBefore), readScreen);
+        if (n != null) {
+            updateUploads(blockId, (list) => nameScreenPaste(list, path, n));
+        }
     });
+}
+
+// how long a paste's number may take to show in the prompt (a TUI that never numbers pastes, pi or a shell, ends here)
+const SCREEN_WAIT_MS = 3000;
+const SCREEN_POLL_MS = 150;
+// a paste older than this holds no number a new one could be given (Claude Code numbers per session)
+const TAKEN_WINDOW_MS = 10 * 60 * 1000;
+
+async function waitForScreenNumber(
+    blockId: string,
+    path: string,
+    pastedAt: number,
+    before: ReadonlySet<number>,
+    readScreen: () => string[]
+): Promise<number | undefined> {
+    for (let waited = 0; waited <= SCREEN_WAIT_MS; waited += SCREEN_POLL_MS) {
+        const taken = takenPasteNumbers(globalStore.get(uploadsAtom(blockId)), path, pastedAt - TAKEN_WINDOW_MS);
+        const n = newScreenNumber(before, screenImageNumbers(readScreen()), taken);
+        if (n != null) {
+            return n;
+        }
+        await sleep(SCREEN_POLL_MS);
+    }
+    return undefined;
 }
 
 // When the next paste may go in. Every paste takes the next free slot, PASTE_GAP_MS after the one before it, whichever

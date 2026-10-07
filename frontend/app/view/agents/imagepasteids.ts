@@ -5,7 +5,8 @@
 // recorded in Uploads as "Pasted image"; Claude Code numbers it in the prompt ("[Image #2]") and records two user
 // records under one promptId: the prompt, whose imagePasteIds lists the numbers in order, and an isMeta companion with
 // one "[Image: source: <path>]" text block per image, in the same order. Zipping the two names each file. A prompt
-// queued mid-turn reaches the transcript as an attachment with no companion, so its files keep the generic name. Pure.
+// queued mid-turn reaches the transcript as an attachment with no companion, so its files keep the generic name. Before
+// any of that, the paste is named off the terminal screen, where Claude Code shows "[Image #N]" in its prompt. Pure.
 
 import type { UploadRecord } from "./uploadsstore";
 
@@ -86,12 +87,67 @@ export function samePasteNumbers(a: ReadonlyMap<string, number> | undefined, b: 
     return true;
 }
 
-const NUMBERED_RE = /^Image #\d+$/;
+const NUMBERED_RE = /^Image #(\d+)$/;
 
 /** Pure: is any pasted image made since `since` still waiting for its [Image #N]? An older one went out with a prompt
  *  that never got a number (one queued mid-turn), or before a /clear, so looking again would not find it. */
 export function hasUnnumberedPaste(list: readonly UploadRecord[], since: number): boolean {
     return list.some((r) => r.source === "paste" && r.ts >= since && !NUMBERED_RE.test(r.name));
+}
+
+const SCREEN_RE = /\[Image #(\d+)\]/g;
+
+/** Pure: every [Image #N] a terminal's lines show. Claude Code draws a paste's number in its prompt as soon as the paste
+ *  lands, long before the prompt reaches the transcript. */
+export function screenImageNumbers(lines: readonly string[]): Set<number> {
+    const out = new Set<number>();
+    for (const line of lines) {
+        for (const m of line.matchAll(SCREEN_RE)) {
+            out.add(Number(m[1]));
+        }
+    }
+    return out;
+}
+
+/** Pure: the number a paste was given, from the screen before and after it: the lowest one that is new and not taken by
+ *  another paste (two pastes back to back can both be on screen by the time the first looks). */
+export function newScreenNumber(
+    before: ReadonlySet<number>,
+    after: ReadonlySet<number>,
+    taken: ReadonlySet<number>
+): number | undefined {
+    let best: number | undefined;
+    for (const n of after) {
+        if (!before.has(n) && !taken.has(n) && (best == null || n < best)) {
+            best = n;
+        }
+    }
+    return best;
+}
+
+/** Pure: the numbers this agent's other pastes made since `since` already hold. */
+export function takenPasteNumbers(list: readonly UploadRecord[], path: string, since: number): Set<number> {
+    const out = new Set<number>();
+    for (const r of list) {
+        const m = r.source === "paste" && r.path !== path && r.ts >= since ? NUMBERED_RE.exec(r.name) : null;
+        if (m) {
+            out.add(Number(m[1]));
+        }
+    }
+    return out;
+}
+
+/** Pure: the list with the paste at `path` named "Image #n", unless something already numbered it. */
+export function nameScreenPaste(list: UploadRecord[], path: string, n: number): UploadRecord[] {
+    let changed = false;
+    const out = list.map((r) => {
+        if (r.source !== "paste" || r.path !== path || NUMBERED_RE.test(r.name)) {
+            return r;
+        }
+        changed = true;
+        return { ...r, name: `Image #${n}` };
+    });
+    return changed ? out : list;
 }
 
 /** Pure: an agent's upload records with each pasted image named by its number ("Image #2"). The same list when no

@@ -6,8 +6,12 @@ import {
     hasUnnumberedPaste,
     imagePasteNames,
     imagePasteNumbers,
+    nameScreenPaste,
+    newScreenNumber,
     normImagePath,
     samePasteNumbers,
+    screenImageNumbers,
+    takenPasteNumbers,
 } from "./imagepasteids";
 import { makeRecord, type UploadRecord } from "./uploadsstore";
 
@@ -132,5 +136,39 @@ describe("hasUnnumberedPaste", () => {
 
     it("leaves out a paste made before `since`", () => {
         expect(hasUnnumberedPaste([rec(A, "paste", "Pasted image")], 2)).toBe(false);
+    });
+});
+
+describe("naming a paste off the screen", () => {
+    const C = "C:\\Users\\u\\AppData\\Local\\Temp\\waveterm-attach-3\\waveterm_paste_3_cc.png";
+    const rec = (path: string, name: string, ts = 1) =>
+        makeRecord({ path, source: "paste", now: ts, nonce: path.slice(-6), name, kind: "image" });
+
+    it("reads every [Image #N] the lines show", () => {
+        expect([...screenImageNumbers(["> [Image #1] old prompt", "> [Image #2] and [Image #3] new", "x"])]).toEqual([
+            1, 2, 3,
+        ]);
+    });
+
+    it("takes the lowest number that is new and not held by another paste", () => {
+        const s = (...n: number[]) => new Set(n);
+        expect(newScreenNumber(s(1), s(1, 2), s())).toBe(2);
+        // two pastes on screen by the time the first looks: it takes the lower
+        expect(newScreenNumber(s(), s(1, 2), s())).toBe(1);
+        // the second, whose screen-before missed the first's number, skips the one the first holds
+        expect(newScreenNumber(s(), s(1, 2), s(1))).toBe(2);
+        expect(newScreenNumber(s(1), s(1), s())).toBeUndefined();
+    });
+
+    it("counts only other recent pastes' numbers as taken", () => {
+        const list = [rec(A, "Image #4", 100), rec(B, "Image #1", 1), rec(C, "Pasted image", 100)];
+        expect([...takenPasteNumbers(list, C, 50)]).toEqual([4]);
+        expect([...takenPasteNumbers(list, A, 50)]).toEqual([]);
+    });
+
+    it("names the paste unless something already numbered it", () => {
+        const list = [rec(A, "Pasted image"), rec(B, "Image #1")];
+        expect(nameScreenPaste(list, A, 2).map((r) => r.name)).toEqual(["Image #2", "Image #1"]);
+        expect(nameScreenPaste(list, B, 5)).toBe(list);
     });
 });

@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A pasted image is listed in the right panel's Uploads as `Image #N`, the number Claude Code shows in its
+  prompt, as soon as you paste it, on any surface, instead of as Pasted image until the prompt is sent.
 - A prompt sent with a pasted image shows the image, in an agent's card and in a conversation's transcript, instead
   of only its `[Image #N]` label; click it to see it full width.
 - A Claude Code conversation's token total counted a reply once per block it wrote (text, each tool call), often

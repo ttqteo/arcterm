@@ -656,8 +656,9 @@ export class TermWrap {
                         await new Promise((r) => setTimeout(r, 150));
                     }
                     const tempPath = await createTempFileFromBlob(data.image);
+                    const screenBefore = this.recentLines();
                     this.terminal.paste(pasteTextFor(tempPath));
-                    recordPastedImage(this.blockId, tempPath, data.image);
+                    recordPastedImage(this.blockId, tempPath, data.image, screenBefore, () => this.recentLines());
                     firstImage = false;
                 }
                 if (data.text) {
@@ -671,6 +672,15 @@ export class TermWrap {
                 this.pasteActive = false;
             }, 30);
         }
+    }
+
+    // the bottom of the buffer, where a TUI draws its prompt
+    recentLines(count = 200): string[] {
+        const buffer = this.terminal?.buffer.active;
+        if (!buffer) {
+            return [];
+        }
+        return bufferLinesToText(buffer, Math.max(0, buffer.length - count), buffer.length);
     }
 
     getScrollbackContent(): string {
