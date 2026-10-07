@@ -151,6 +151,38 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             ],
         },
         {
+            id: "notifications",
+            name: "Notifications",
+            blurb: "When an agent needs you or finishes: an OS notification while arcterm is in the background, a toast while it is in front.",
+            group: "Cockpit",
+            rows: [
+                {
+                    id: "notifications.os",
+                    title: "OS notifications",
+                    desc: "Show a system notification while arcterm is in the background. Clicking it opens the agent.",
+                    key: "notify:os",
+                    scope: "synced",
+                    config: true,
+                },
+                {
+                    id: "notifications.toast",
+                    title: "In-app toasts",
+                    desc: "Show a toast while arcterm is in front, unless you are already looking at that agent.",
+                    key: "notify:toast",
+                    scope: "synced",
+                    config: true,
+                },
+                {
+                    id: "notifications.reply",
+                    title: "When an agent finishes",
+                    desc: "Also notify when an agent finishes its turn, not only when it needs you. Run workers never do.",
+                    key: "notify:reply",
+                    scope: "synced",
+                    config: true,
+                },
+            ],
+        },
+        {
             id: "newagent",
             name: "New Agent",
             blurb: "Launch flags reused for every new agent, per runtime.",

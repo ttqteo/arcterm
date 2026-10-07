@@ -127,6 +127,9 @@ describe("settingsSections", () => {
         const config = rows.filter((r) => r.config).map((r) => r.key);
         expect(config).toEqual([
             "term:fontfamily",
+            "notify:os",
+            "notify:toast",
+            "notify:reply",
             "term:fontsize",
             "term:cursor",
             "term:cursorblink",
