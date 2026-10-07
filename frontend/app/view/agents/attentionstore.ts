@@ -13,6 +13,9 @@ import { atom, type PrimitiveAtom } from "jotai";
 
 export const attentionAtom = atom<AttentionItem[]>([]) as PrimitiveAtom<AttentionItem[]>;
 
+// false until the first poll lands: the list it brings is what was already waiting, not news (notifyevents.ts)
+export const attentionLoadedAtom = atom(false) as PrimitiveAtom<boolean>;
+
 // loadAttention is now fired by events (ask cleared, block closed) as well as the poll, so two loads
 // can be in flight at once. Only the newest one may write: an in-flight poll that started before the
 // ask was answered would otherwise land after it and restore the count that was just cleared.
@@ -47,6 +50,7 @@ export async function loadAttention(): Promise<void> {
         const rtn = await RpcApi.GetAttentionCommand(TabRpcClient);
         if (loadId === latestAttentionLoad) {
             globalStore.set(attentionAtom, rtn.items ?? []);
+            globalStore.set(attentionLoadedAtom, true);
         }
     } catch {
         // keep the previous value
