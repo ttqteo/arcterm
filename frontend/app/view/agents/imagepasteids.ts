@@ -89,12 +89,6 @@ export function samePasteNumbers(a: ReadonlyMap<string, number> | undefined, b: 
 
 const NUMBERED_RE = /^Image #(\d+)$/;
 
-/** Pure: is any pasted image made since `since` still waiting for its [Image #N]? An older one went out with a prompt
- *  that never got a number (one queued mid-turn), or before a /clear, so looking again would not find it. */
-export function hasUnnumberedPaste(list: readonly UploadRecord[], since: number): boolean {
-    return list.some((r) => r.source === "paste" && r.ts >= since && !NUMBERED_RE.test(r.name));
-}
-
 const SCREEN_RE = /\[Image #(\d+)\]/g;
 
 /** Pure: every [Image #N] a terminal's lines show. Claude Code draws a paste's number in its prompt as soon as the paste
@@ -167,4 +161,66 @@ export function imagePasteNames(list: UploadRecord[], numbers: ReadonlyMap<strin
         return { ...r, name };
     });
     return changed ? out : list;
+}
+
+// a prompt that went out with pasted images: when, the numbers it carried, and the files its companion names
+export interface SentImagePrompt {
+    ts: number;
+    numbers: ReadonlySet<number>;
+    sources: ReadonlySet<string>; // normImagePath
+}
+
+/** Pure: every prompt in a Claude transcript's raw lines that carried pasted images, with its companion's files. */
+export function sentImagePrompts(lines: readonly string[]): SentImagePrompt[] {
+    const prompts = new Map<string, { ts: number; numbers: Set<number> }>();
+    const sources = new Map<string, Set<string>>();
+    for (const line of lines) {
+        if (!line.includes('"imagePasteIds"') && !line.includes("[Image: source: ")) {
+            continue;
+        }
+        let rec: any;
+        try {
+            rec = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        if (rec?.type !== "user" || typeof rec.promptId !== "string") {
+            continue;
+        }
+        if (Array.isArray(rec.imagePasteIds)) {
+            const ts = Date.parse(rec.timestamp);
+            const numbers = new Set<number>(rec.imagePasteIds.filter((n: unknown) => Number.isInteger(n)));
+            if (Number.isFinite(ts) && numbers.size > 0) {
+                prompts.set(rec.promptId, { ts, numbers });
+            }
+        } else if (rec.isMeta) {
+            sources.set(rec.promptId, new Set(companionSources(rec.message?.content).map(normImagePath)));
+        }
+    }
+    return [...prompts].map(([promptId, p]) => ({ ...p, sources: sources.get(promptId) ?? new Set() }));
+}
+
+/** Pure: the list without the pastes deleted from the prompt before it was sent. Claude Code numbers a paste as it lands
+ *  and never reuses the number, so a paste named "Image #N" that a later prompt with images went out without (neither its
+ *  number nor its file) was taken back out of the prompt. A prompt with no images, or one queued mid-turn that has no
+ *  numbers, says nothing either way. The same list when nothing goes, so the caller can skip a store write. */
+export function dropUnsentPastes(list: UploadRecord[], prompts: readonly SentImagePrompt[]): UploadRecord[] {
+    if (prompts.length === 0) {
+        return list;
+    }
+    const out = list.filter((r) => {
+        const m = r.source === "paste" ? NUMBERED_RE.exec(r.name) : null;
+        if (m == null) {
+            return true;
+        }
+        const n = Number(m[1]);
+        const path = normImagePath(r.path);
+        return !prompts.some((p) => p.ts > r.ts && !p.numbers.has(n) && !p.sources.has(path));
+    });
+    return out.length === list.length ? list : out;
+}
+
+/** Pure: was anything pasted since `since`? Until a prompt goes out, a paste may still be taken back out of it. */
+export function hasRecentPaste(list: readonly UploadRecord[], since: number): boolean {
+    return list.some((r) => r.source === "paste" && r.ts >= since);
 }

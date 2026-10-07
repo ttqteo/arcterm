@@ -9,6 +9,7 @@ import {
     CONVERSATION_PAGE,
     conversationCount,
     conversationProjects,
+    activeAgentIds,
     conversationTree,
     runsBesideOrigins,
     endedConversationsByProject,
@@ -438,6 +439,18 @@ describe("activeView", () => {
     it("is empty for a project with no live agent, which still counts the others", () => {
         const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
         expect(view(tree, "nowhere")).toEqual({ rows: [], count: 0, elsewhere: { agents: 2, asking: 0 } });
+    });
+});
+
+describe("activeAgentIds", () => {
+    it("lists the split's agents, then each shown agent row top to bottom, skipping rows with no session", () => {
+        const a = agent("a");
+        const rows: AgentTreeRow[] = [
+            { kind: "group", project: "waveterm", count: 2, attn: 0 },
+            { kind: "parent", agent: agent("b"), project: "waveterm" },
+            { kind: "parent", agent: agent("c"), project: "waveterm" },
+        ];
+        expect(activeAgentIds([a], rows)).toEqual(["a", "b", "c"]);
     });
 });
 

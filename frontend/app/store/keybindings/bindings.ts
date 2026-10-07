@@ -5,6 +5,7 @@ import { launchPiTab } from "@/app/cockpit/cockpit-actions";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
+import { activeNavOrder } from "@/app/view/agents/activenav";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
@@ -770,7 +771,7 @@ const agentNavStrict = (ctx: KeyContext) => navigateStrict(ctx) && ctx.surface =
 // is equivalent to the old closure over `agent.id`.
 export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const step = (delta: number) => {
-        const order = globalStore.get(model.orderAtom);
+        const order = activeNavOrder(model);
         const fid = globalStore.get(model.focusIdAtom);
         globalStore.set(model.focusIdAtom, moveCursor(order, fid, delta) ?? fid);
         globalStore.set(model.focusReplyAtom, false);

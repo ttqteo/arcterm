@@ -25,6 +25,7 @@ import type { SessionStatusFilter } from "./sessionsarchivestore";
 import { liveAgentsAtom, liveTerminalsAtom } from "./liveagents";
 import type { Lineage } from "./runlineage";
 import { endedWorkerAtomFor, lineageAtomFor, type EndedWorker } from "./runlineagestore";
+import { activeNavOrder } from "./activenav";
 import { usageBucketsAtom } from "./usagestore";
 import { aggregateBuckets, type HarnessFilter } from "./usagestats";
 
@@ -158,14 +159,14 @@ export class AgentsViewModel implements ViewModel {
         showTerminal();
     }
 
-    // Cycle the focused agent (Ctrl+Tab). askingOnly restricts to asking agents (Ctrl+Shift+Tab).
+    // Cycle the focused agent (Ctrl+Tab) through the Active section as it reads. askingOnly restricts to asking agents
+    // (Ctrl+Shift+Tab), which also reaches one a fold hides, since it is waiting on you.
     cycleFocus(askingOnly: boolean) {
         const agents = globalStore.get(this.agentsAtom);
-        const byId = new Map(agents.map((a) => [a.id, a]));
-        const ordered = globalStore.get(this.orderAtom).filter((id) => byId.has(id));
-        let ids = ordered.length ? ordered : agents.map((a) => a.id);
+        let ids = activeNavOrder(this);
         if (askingOnly) {
-            ids = ids.filter((id) => byId.get(id)?.state === "asking");
+            const asking = new Set(agents.filter((a) => a.state === "asking").map((a) => a.id));
+            ids = [...new Set([...ids, ...asking])].filter((id) => asking.has(id));
         }
         const next = cycleId(ids, globalStore.get(this.focusIdAtom), 1);
         if (next != null) {

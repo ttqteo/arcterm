@@ -95,6 +95,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - `Ctrl`+`Tab` pressed while typing in an agent's terminal keeps you typing in the next agent's terminal, instead of
   dropping the keyboard until you click it.
 - `↑` / `↓` move between agents on the Agent surface, as the hints bar always said; `←` / `→` and `j` / `k` still work.
+- `Ctrl`+`Tab` and the agent keys step through the Active list as it reads, top to bottom. They used to follow the
+  Cockpit's order, which was stale until you opened the Cockpit, so an agent started since then was skipped.
+- An image you paste into an agent's prompt and then delete before sending leaves Uploads once the prompt goes out
+  with images, instead of staying listed.
 
 ## 0.15.1 — 2026-10-07
 

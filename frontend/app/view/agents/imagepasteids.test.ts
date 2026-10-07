@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    hasUnnumberedPaste,
+    dropUnsentPastes,
+    hasRecentPaste,
     imagePasteNames,
     imagePasteNumbers,
     nameScreenPaste,
@@ -11,6 +12,7 @@ import {
     normImagePath,
     samePasteNumbers,
     screenImageNumbers,
+    sentImagePrompts,
     takenPasteNumbers,
 } from "./imagepasteids";
 import { makeRecord, type UploadRecord } from "./uploadsstore";
@@ -124,18 +126,45 @@ describe("imagePasteNames", () => {
     });
 });
 
-describe("hasUnnumberedPaste", () => {
+describe("hasRecentPaste", () => {
     const rec = (path: string, source: UploadRecord["source"], name?: string) =>
         makeRecord({ path, source, now: 1, nonce: path.slice(-6), name, kind: "image" });
 
-    it("is true only while a pasted image still has the generic name", () => {
-        expect(hasUnnumberedPaste([rec(A, "paste", "Pasted image")], 0)).toBe(true);
-        expect(hasUnnumberedPaste([rec(A, "paste", "Image #3"), rec("D:\\pics\\x.png", "attach")], 0)).toBe(false);
-        expect(hasUnnumberedPaste([], 0)).toBe(false);
+    it("is true while a paste made since `since` is listed, numbered or not", () => {
+        expect(hasRecentPaste([rec(A, "paste", "Pasted image")], 0)).toBe(true);
+        expect(hasRecentPaste([rec(A, "paste", "Image #3")], 0)).toBe(true);
+        expect(hasRecentPaste([rec("D:\\pics\\x.png", "attach")], 0)).toBe(false);
+        expect(hasRecentPaste([rec(A, "paste", "Image #3")], 2)).toBe(false);
+    });
+});
+
+describe("dropping a paste taken back out of the prompt", () => {
+    const T = Date.parse("2026-10-07T10:00:00.000Z");
+    const sent = (promptId: string, ids: number[], at: number) =>
+        JSON.stringify({ ...JSON.parse(prompt(promptId, ids, "x")), timestamp: new Date(at).toISOString() });
+    const rec = (path: string, name: string, ts: number) =>
+        makeRecord({ path, source: "paste", now: ts, nonce: path.slice(-6), name, kind: "image" });
+
+    it("drops a paste a later prompt went out without, and keeps the one it carried", () => {
+        // pasted twice (#1, #2), #1 deleted, sent with #2 only
+        const list = [rec(B, "Image #2", T - 2000), rec(A, "Image #1", T - 3000)];
+        const prompts = sentImagePrompts([sent("p1", [2], T), companion("p1", [B])]);
+        expect(dropUnsentPastes(list, prompts).map((r) => r.name)).toEqual(["Image #2"]);
     });
 
-    it("leaves out a paste made before `since`", () => {
-        expect(hasUnnumberedPaste([rec(A, "paste", "Pasted image")], 2)).toBe(false);
+    it("keeps a paste made after the prompt, or one the prompt names by file", () => {
+        const list = [rec(A, "Image #1", T + 1000)];
+        expect(dropUnsentPastes(list, sentImagePrompts([sent("p1", [2], T)]))).toBe(list);
+        const named = [rec(A, "Image #1", T - 1000)];
+        expect(dropUnsentPastes(named, sentImagePrompts([sent("p1", [3], T), companion("p1", [A])]))).toBe(named);
+    });
+
+    it("says nothing without a prompt that carried images, or about a paste with no number yet", () => {
+        const list = [rec(A, "Pasted image", T - 1000), rec(B, "Image #1", T - 1000)];
+        expect(dropUnsentPastes(list, sentImagePrompts([sent("p1", [], T)]))).toBe(list);
+        expect(dropUnsentPastes(list, sentImagePrompts([sent("p1", [2], T)])).map((r) => r.name)).toEqual([
+            "Pasted image",
+        ]);
     });
 });
 

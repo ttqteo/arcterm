@@ -265,6 +265,22 @@ export function activeView(tree: AgentTreeRow[], filter: string, collapsed: Read
     };
 }
 
+/** Pure: the agents the Active section shows, top to bottom: the split's, then each agent row's (a done task's row
+ *  with no session left has none). The agent keys and Ctrl+Tab step through this, so they move the way the list reads
+ *  and reach every agent it shows, wherever the agent sits in the Cockpit's order. */
+export function activeAgentIds(split: AgentVM[], rows: AgentTreeRow[]): string[] {
+    const ids = split.map((a) => a.id);
+    for (const r of rows) {
+        if (
+            (r.kind === "parent" || r.kind === "lead" || r.kind === "worker" || r.kind === "stage") &&
+            r.agent != null
+        ) {
+            ids.push(r.agent.id);
+        }
+    }
+    return ids;
+}
+
 export interface SplitActive {
     split: AgentVM[]; // the split's agents in cell order; empty when nothing is split
     rows: AgentTreeRow[]; // the Active rows without them

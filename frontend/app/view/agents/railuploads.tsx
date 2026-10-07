@@ -12,7 +12,13 @@ import { useAtomValue } from "jotai";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import type { AgentVM } from "./agentsviewmodel";
-import { hasUnnumberedPaste, imagePasteNames, imagePasteNumbers } from "./imagepasteids";
+import {
+    dropUnsentPastes,
+    hasRecentPaste,
+    imagePasteNames,
+    imagePasteNumbers,
+    sentImagePrompts,
+} from "./imagepasteids";
 import { imagePastesAtomFor } from "./livetranscriptatoms";
 import { pickAndAttach } from "./uploadsingest";
 import { UploadsList } from "./uploadslist";
@@ -38,9 +44,10 @@ export function UploadsSection({ agent, now }: { agent: AgentVM; now: number }) 
         }
     }, [blockId, pastes]);
     // that stream is only open while the Cockpit surface shows, so the rail also reads the transcript's tail itself
-    // while a paste is unnumbered, again each time the agent moves on (the prompt is in the transcript by then)
+    // while a paste is recent, again each time the agent moves on (the prompt is in the transcript by then): to number
+    // it, and to drop it once the prompt went out without it (deleted from the prompt before sending)
     const readKey =
-        blockId && transcriptPath && hasUnnumberedPaste(stored, now - PASTE_LOOK_MS)
+        blockId && transcriptPath && hasRecentPaste(stored, now - PASTE_LOOK_MS)
             ? `${transcriptPath}|${agent.state}|${agent.activity ?? ""}`
             : "";
     useEffect(() => {
@@ -56,7 +63,8 @@ export function UploadsSection({ agent, now }: { agent: AgentVM; now: number }) 
                 }).catch((): null => null);
                 if (!cancelled && rtn?.lines) {
                     const numbers = imagePasteNumbers(rtn.lines);
-                    updateUploads(blockId!, (list) => imagePasteNames(list, numbers));
+                    const sent = sentImagePrompts(rtn.lines);
+                    updateUploads(blockId!, (list) => dropUnsentPastes(imagePasteNames(list, numbers), sent));
                 }
             });
         }, PASTE_READ_DELAY_MS);
