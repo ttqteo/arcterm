@@ -156,7 +156,10 @@ export function RecordBand({
     return (
         // the inset goes on the rows, not on this wrapper: the expanded panel below is a scroller and
         // reserves the same 10px itself, so insetting both would end its content 10px short of the rows'.
-        <div className="flex-none border-b border-border bg-surface">
+        // capped at half the sheet: expanded, the panel (420px) plus a row per edge stood taller than the
+        // sheet, and the run beneath it — whose dock is flex-none — was pushed out of the sheet's clip. The
+        // cap makes the band's two disclosures shrink and scroll instead; the row above them never does.
+        <div className="flex max-h-[50%] min-h-0 flex-none flex-col border-b border-border bg-surface">
             {expandable ? (
                 // data-jarvis-band-toggle: the `e` key presses this button rather than re-deriving whether the
                 // band can open — the button exists only when it can (buildJarvisBindings).
@@ -167,13 +170,13 @@ export function RecordBand({
                     aria-expanded={open}
                     className={cn(
                         STAGE_BAND_INSET,
-                        "w-full cursor-pointer text-left transition-colors duration-[140ms] hover:bg-surface-hover"
+                        "w-full flex-none cursor-pointer text-left transition-colors duration-[140ms] hover:bg-surface-hover"
                     )}
                 >
                     <div className={rowClass}>{row}</div>
                 </button>
             ) : (
-                <div className={STAGE_BAND_INSET}>
+                <div className={cn(STAGE_BAND_INSET, "flex-none")}>
                     <div className={rowClass}>{row}</div>
                 </div>
             )}
@@ -188,9 +191,14 @@ export function RecordBand({
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="overflow-hidden"
+                        className="flex min-h-0 flex-col overflow-hidden"
                     >
-                        <div className={cn(STAGE_SCROLLER, "max-h-[420px] border-t border-border bg-background")}>
+                        <div
+                            className={cn(
+                                STAGE_SCROLLER,
+                                "max-h-[420px] min-h-0 flex-1 border-t border-border bg-background"
+                            )}
+                        >
                             <TaskDetail detail={detail} showDecisions={band.case !== "subject"} />
                         </div>
                     </motion.div>
@@ -205,9 +213,10 @@ export function RecordBand({
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="overflow-hidden"
+                        className="flex min-h-0 flex-col overflow-hidden"
                     >
-                        <div className={cn(STAGE_BAND_INSET, "border-t border-border")}>
+                        {/* a scroller like the panel above, so it reserves the same 10px the inset did */}
+                        <div className={cn(STAGE_SCROLLER, "min-h-0 flex-1 border-t border-border")}>
                             <div className={cn(STAGE_GUTTER, "flex flex-col gap-px py-2")}>
                                 {edges.map((e) => (
                                     <div
@@ -222,7 +231,9 @@ export function RecordBand({
                                             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                                         >
                                             <EdgeChip tag={e} />
-                                            <span className="text-[10.5px] text-muted">open this record</span>
+                                            <span className="flex-none whitespace-nowrap text-[10.5px] text-muted">
+                                                open this record
+                                            </span>
                                         </button>
                                         {runORef != null ? (
                                             <EdgeControls

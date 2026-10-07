@@ -42,6 +42,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Expanding a run's records in the Jarvis sheet no longer pushes the run's buttons (Open DAG, Cancel run…) off the
+  bottom of the sheet: the records take at most half the sheet and scroll.
 - An agent that has just finished its turn no longer shows as asking for about a minute, or sends a false
   **Needs you** notification.
 - A notification toast in the corner is no longer covered by Jarvis's pet; the pet walks off the stretch below it.
