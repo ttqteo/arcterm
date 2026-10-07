@@ -71,11 +71,12 @@ for run rows the shape description from `SHAPE_CARDS` on a second line. The sele
 with an accent check. The "Agent" label carries "↑↓ · 1–n" while the column has focus.
 
 **Project column** (`role="radiogroup"`, one tab stop). Projects in recent-first order
-(`recentFirst(projectListAtom, recentProjectsAtom)`), each row a keycap (first nine rows), the name, and the path
-with the home folder as `~` (`projectWhere`), muted and right-aligned. The header reads "last used first" when
+(`recentFirst(projectListAtom, recentProjectsAtom)`), each row a keycap (first nine rows), the name, and the folder
+it sits in (`projectWhere`: `code`, or `~` for one directly in home), muted and right-aligned. The header reads "last used first" when
 unfocused and "type to filter · 1–n" when focused. Typing shows a filter line (search icon, the query, "N of M") and
 narrows the rows by a case-insensitive substring of the name; the selection moves to the first match when the
-selected project is filtered out. No match: "No project matches “q”. Esc clears the filter." No projects
+selected project is filtered out. The filter clears when focus leaves the column, so a list is never narrowed by a
+query you cannot see. No match: "No project matches “q”. Esc clears the filter." No projects
 registered: "No projects yet. Agents and runs start in a project folder." and a Register a project button that
 opens New project (the launcher closes, keeping its draft).
 
@@ -159,7 +160,7 @@ keeps deciding the shape until the user touches it, exactly as it does for the s
 **The draft** is the pick, the project, the task, the goal, the command text per runtime, the worktree switch and
 branch, the plan path (already `planPathAtom`) and the prototype. It lives in jotai atoms in `launcherstore.ts`, in
 memory only, so it survives a close and a surface switch but not an app restart (today's New agent state is the same).
-The filter is not part of it; it clears on close.
+The filter is not part of it; it clears on close and whenever focus leaves the Project column.
 
 **After a launch** the task, goal, plan path, prototype, command override and worktree switch clear; the pick, the
 project and the flags (subject to Remember) stay. A run launch still calls `endRunConfigDraft`.
@@ -176,13 +177,15 @@ New, under `frontend/app/view/agents/`:
   `close`, `none`); whether "draft restored" shows.
 - `launcherstore.ts` + `launcherstore.test.ts` — the atoms above; `openLauncher`, `closeLauncher`,
   `clearLauncherDraft`, `endLauncherDraft`.
-- `launchermodal.tsx` — the ModalShell, header, the two columns and the footer, `data-launcher` on the panel.
-- `launcherfields.tsx` — the details sections: the agent fields moved out of `newagentmodal.tsx`; `ModelsSection`,
-  `StartToggle`, `PlanPane` and `PlanTable` moved out of `newruncontrol.tsx`.
+- `launchermodal.tsx` — the ModalShell, header, the two columns and the footer, `data-launcher` on the dialog's root.
+- `launcheragentfields.tsx` — the agent details, moved out of `newagentmodal.tsx`, and the branch reading as a hook.
+- `launcherrunfields.tsx` — the run details: `StartToggle`, `PlanPane` and `PlanTable` moved out of
+  `newruncontrol.tsx`, and the route pickers laid out as the Models row.
+- `launcherrun.ts` + `launcherrun.test.ts` — starting a run (below).
 
 Submit paths do not change: an agent row calls `launchAgent` (`cockpit-actions.ts`); a run row runs the body of
-today's `NewRunModal.start` (channel, route, `createRun`, `noteRecentProject`, `endRunConfigDraft`, `openTarget`),
-moved into `runactions.ts` as one exported function so the view stays thin.
+today's `NewRunModal.start` (channel, route, `createRun`, `noteRecentProject`, `endRunConfigDraft`), moved into
+`launcherrun.ts` as `startLauncherRun` so the view stays thin; the dialog then closes and calls `openTarget`.
 
 Changed openers: `agents.tsx`, `dispatcher.ts`, `bindings.ts` (`new-agent`, `new-run`), `app-bar.tsx`,
 `command-palette.tsx`, `actions/project.ts`, `canvaspane.tsx`, `agentheader.tsx`, `agentlaunchhero.tsx`,
@@ -199,11 +202,11 @@ moved); `projectpickerview.tsx`. `projectpicker.ts` keeps what the project colum
   the key table including digits past the end and filter edits, door picks from each kind of current pick, footer
   lines and blockers per pick, and the filter's selection rule. `launcherstore.test.ts` covers opening with each door
   and with a prefill, that every close keeps the draft, that a launch clears it, and Clear.
-- **CDP:** a new `launcher` scenario in `scripts/cdp/scenarios.mjs`: open with `Mod+N`; assert focus is on the Start
-  column; press a digit and assert the pick and title; Tab, type a filter and assert the rows; Tab into Task and type;
+- **CDP:** a new `launcher` scenario in `scripts/cdp/scenarios.mjs`: open with the app bar's New agent button (the
+  `Mod+N` binding itself is unit-tested in `bindings.test.ts`); assert focus is on the Start column; press a digit and assert the pick and title; Tab, type a filter and assert the rows; Tab into Task and type;
   Esc, reopen, assert "draft restored" and the text; mousedown on the backdrop and assert it closed. Screenshots of
-  the agent, Quick run, Orchestrate goal, Orchestrate plan and filter states. `new-run-window` and `capacity-warn`
-  move to the new selectors (`[data-launcher]`, a `data-start-row` attribute on each Start row).
+  the agent, Terminal, Quick run, Orchestrate goal, Orchestrate plan, filter and agent-options states. `new-run-window`,
+  `capacity-warn` and `palette-goal` move to the new selectors (`[data-launcher]`, a `data-start-row` attribute on each Start row).
 - `task check:ts`, and `npx eslint` / `npx prettier --check` on the touched files.
 
 ## Docs
