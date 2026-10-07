@@ -24,6 +24,7 @@ import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, 
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { formatAgeShort } from "./agentsviewmodel";
 import { restartCandidates, rowQuota } from "./claudeaccount";
+import { KnownEmailsDatalist } from "./claudeemails";
 import {
     coerceFontSize,
     coerceScrollback,
@@ -43,7 +44,13 @@ import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { ITEMS } from "./navrail";
 import { DEFAULT_RAIL_VISIBLE, railVisibleAtom } from "./railstore";
-import { savedRateLimitsAtom } from "./ratelimitstore";
+import {
+    claudeIdentityAtom,
+    claudeQuotaKey,
+    identityFromList,
+    savedRateLimitsAtom,
+    setClaudeIdentity,
+} from "./ratelimitstore";
 import { RoutePicker } from "./routepicker";
 import {
     changedCount,
@@ -589,6 +596,7 @@ function CommitText({
     placeholder,
     disabled,
     width = "w-[300px]",
+    list,
     onCommit,
     children,
 }: {
@@ -596,6 +604,7 @@ function CommitText({
     placeholder: string;
     disabled?: boolean;
     width?: string;
+    list?: string; // id of a <datalist> offering values
     onCommit: (v: string) => void;
     children?: ReactNode;
 }) {
@@ -621,6 +630,7 @@ function CommitText({
                 value={draft}
                 placeholder={placeholder}
                 disabled={disabled}
+                list={list}
                 spellCheck={false}
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commit}
@@ -960,6 +970,9 @@ const ClaudeSigninModal = lazy(() =>
     import("@/app/cockpit/claude-signin-modal").then((m) => ({ default: m.ClaudeSigninModal }))
 );
 
+// the emails the account rows and the paste form offer (KnownEmailsDatalist)
+const EMAIL_LIST_ID = "claude-known-emails";
+
 function quotaPct(pct: number | undefined): string {
     return pct == null ? "—" : `${Math.round(pct)}%`;
 }
@@ -972,10 +985,12 @@ function quotaPct(pct: number | undefined): string {
 function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     const setting = (useAtomValue(getSettingsKeyAtom("claude:activeaccount")) as string) ?? "";
     const saved = useAtomValue(savedRateLimitsAtom);
+    const identity = useAtomValue(claudeIdentityAtom);
     const [list, setList] = useState<CommandClaudeAccountListRtnData | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [pasteOpen, setPasteOpen] = useState(false);
     const [pasteLabel, setPasteLabel] = useState("");
+    const [pasteEmail, setPasteEmail] = useState("");
     const [pasteError, setPasteError] = useState<string | null>(null);
     const [signinOpen, setSigninOpen] = useState(false);
     // bumped when a rename is cleared to nothing: remounting the field puts the stored label back
@@ -984,7 +999,11 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     const reload = () =>
         fireAndForget(async () => {
             try {
-                setList(await RpcApi.ClaudeAccountListCommand(TabRpcClient));
+                const next = await RpcApi.ClaudeAccountListCommand(TabRpcClient);
+                setList(next);
+                // snapshots are filed under the accounts' emails: every add, rename, remove and set-email
+                // lands here, so the rest of the app learns the new identity too
+                setClaudeIdentity(identityFromList(next));
             } catch (e) {
                 setError(errorText(e));
             }
@@ -1016,6 +1035,16 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
             }
             reload();
         });
+    const setEmail = (id: string, email: string) =>
+        fireAndForget(async () => {
+            setError(null);
+            try {
+                await RpcApi.ClaudeAccountSetEmailCommand(TabRpcClient, { id, email });
+            } catch (e) {
+                setError(errorText(e));
+            }
+            reload();
+        });
     // the backend switches to Default first when the account is the active one
     const remove = (a: ClaudeAccountData) =>
         modalsModel.pushModal("ConfirmModal", {
@@ -1038,12 +1067,17 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     const add = async (token: string): Promise<boolean> => {
         setPasteError(null);
         try {
-            await RpcApi.ClaudeAccountAddCommand(TabRpcClient, { label: pasteLabel.trim(), token });
+            await RpcApi.ClaudeAccountAddCommand(TabRpcClient, {
+                label: pasteLabel.trim(),
+                token,
+                email: pasteEmail.trim(),
+            });
         } catch (e) {
             setPasteError(errorText(e));
             return false;
         }
         setPasteLabel("");
+        setPasteEmail("");
         reload();
         return true;
     };
@@ -1055,10 +1089,11 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     ];
     return (
         <div className="py-[15px]">
+            <KnownEmailsDatalist id={EMAIL_LIST_ID} />
             <div role="radiogroup" aria-label="claude account" className="flex flex-col gap-1.5">
                 {rows.map(({ id, account }) => {
                     const on = id === active;
-                    const quota = rowQuota(saved, id, now);
+                    const quota = rowQuota(saved, claudeQuotaKey(id, identity), now);
                     return (
                         <div
                             key={id || "default"}
@@ -1087,19 +1122,29 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                                 {on ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
                             </span>
                             {account == null ? (
-                                <span
-                                    className={cn(
-                                        "min-w-0 flex-1 truncate text-[13px] font-semibold",
-                                        on ? "text-primary" : "text-secondary"
-                                    )}
-                                >
-                                    Default (/login)
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                    <span
+                                        className={cn(
+                                            "truncate text-[13px] font-semibold",
+                                            on ? "text-primary" : "text-secondary"
+                                        )}
+                                    >
+                                        Default (/login)
+                                    </span>
+                                    {identity.loginEmail ? (
+                                        <span
+                                            data-claude-account-login-email
+                                            className="truncate text-[11px] text-muted"
+                                        >
+                                            {identity.loginEmail}
+                                        </span>
+                                    ) : null}
                                 </span>
                             ) : (
-                                // the rename field and Remove sit inside the row; their clicks must not select it
+                                // the rename and email fields and Remove sit inside the row; their clicks must not select it
                                 <span
                                     data-claude-account-rename={id}
-                                    className="min-w-0 flex-1"
+                                    className="flex min-w-0 flex-1 flex-col gap-1"
                                     onClick={(e) => e.stopPropagation()}
                                     onKeyDown={(e) => e.stopPropagation()}
                                 >
@@ -1110,6 +1155,15 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                                         width="w-[220px]"
                                         onCommit={(v) => (v === "" ? setRenameReset((n) => n + 1) : rename(id, v))}
                                     />
+                                    <span data-claude-account-email={id}>
+                                        <CommitText
+                                            value={account.email ?? ""}
+                                            placeholder="chưa gắn email"
+                                            width="w-[220px]"
+                                            list={EMAIL_LIST_ID}
+                                            onCommit={(v) => setEmail(id, v)}
+                                        />
+                                    </span>
                                 </span>
                             )}
                             <span className="flex-none text-[11px] tabular-nums text-muted">
@@ -1159,7 +1213,7 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                         Token từ <span className="font-mono">claude setup-token</span> (bắt đầu bằng{" "}
                         <span className="font-mono">sk-ant-oat</span>). Enter để lưu.
                     </div>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2.5">
                         <input
                             type="text"
                             data-claude-account-paste-label
@@ -1167,6 +1221,16 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                             placeholder="Label (mặc định Account N)"
                             spellCheck={false}
                             onChange={(e) => setPasteLabel(e.target.value)}
+                            className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
+                        />
+                        <input
+                            type="text"
+                            data-claude-account-paste-email
+                            value={pasteEmail}
+                            list={EMAIL_LIST_ID}
+                            placeholder="Email (không bắt buộc)"
+                            spellCheck={false}
+                            onChange={(e) => setPasteEmail(e.target.value)}
                             className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
                         />
                         <span data-claude-account-paste-token>

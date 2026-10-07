@@ -8,9 +8,12 @@
 // with no agent running, from the account's quota read (claudequota.ts), so it is known before one runs.
 // See docs/superpowers/specs/2026-06-26-ratelimit-donut-persistence-design.md.
 //
-// Claude windows belong to a Claude account, so claude snapshots are kept per account ("claude:<id>",
-// "claude:default" for the /login one) and readers see only the active account's, projected back to
-// "claude". Other providers keep their bare key. See 2026-10-07-claude-account-switch-design.md.
+// Claude windows belong to a Claude account, so claude snapshots are kept per real account and readers
+// see only the active account's, projected back to "claude". The key is the account's email when it is
+// known ("claude:<email>"), else the arcterm account id ("claude:<id>"), else "claude:default" for a
+// /login account whose email is not known yet: keyed by arcterm id alone, Default's snapshot changed
+// owner every time /login did. Other providers keep their bare key.
+// See 2026-10-07-claude-account-switch-design.md (decisions 6 and 8).
 
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -40,9 +43,92 @@ export interface ProviderDonuts {
     stale?: { capturedAt: number }; // present iff sourced from a saved (not-live) snapshot
 }
 
+// What arcterm knows of who the Claude accounts are: the /login account's email, and each token account
+// with the email it was tied to (if any).
+export interface ClaudeIdentity {
+    loginEmail: string;
+    accounts: { id: string; label: string; email?: string }[];
+}
+
+const NO_IDENTITY: ClaudeIdentity = { loginEmail: "", accounts: [] };
+
+export function normalizeEmail(email: string | undefined | null): string {
+    return (email ?? "").trim().toLowerCase();
+}
+
+// The identity as wavesrv lists it.
+export function identityFromList(list: CommandClaudeAccountListRtnData | null | undefined): ClaudeIdentity {
+    return {
+        loginEmail: normalizeEmail(list?.loginemail),
+        accounts: (list?.accounts ?? []).map((a) => ({
+            id: a.id,
+            label: a.label,
+            email: normalizeEmail(a.email) || undefined,
+        })),
+    };
+}
+
+// The saved key of a Claude account's snapshot. `accountId` is the arcterm account an agent runs on, or
+// "" / undefined for Default (the /login account). A token account tied to the email of the /login
+// account (or of any other) shares that account's key, so the two are one account to every reader.
+// `sessionLoginEmail` is a session's own answer to "which /login account": the one its process started
+// on, which differs from the current one once /login has moved (decision 9). It applies to Default only.
+export function claudeQuotaKey(
+    accountId: string | undefined,
+    identity: ClaudeIdentity,
+    sessionLoginEmail?: string
+): string {
+    if (!accountId) {
+        const email = normalizeEmail(sessionLoginEmail) || normalizeEmail(identity.loginEmail);
+        return email ? `claude:${email}` : "claude:default";
+    }
+    const email = normalizeEmail(identity.accounts.find((a) => a.id === accountId)?.email);
+    return email ? `claude:${email}` : `claude:${accountId}`;
+}
+
+// The key of the snapshot an agent's usage belongs to: its arcterm account (`usage.account`), and for a
+// Default one the /login email its session started with (the block's `agent:loginemail`).
+export function agentQuotaKey(
+    account: string | undefined,
+    sessionLoginEmail: string | undefined,
+    identity: ClaudeIdentity
+): string {
+    return claudeQuotaKey(account, identity, sessionLoginEmail);
+}
+
+// The /login email a claude session started on, as `wsh agent-hook` stamped it on the agent's block at
+// SessionStart; "" when the block is not loaded, was never stamped, or belongs to a token session.
+export function blockLoginEmail(block: Block | null | undefined): string {
+    const email = block?.meta?.["agent:loginemail"];
+    return typeof email === "string" ? normalizeEmail(email) : "";
+}
+
 // The saved key for a provider's windows: claude's are per account, every other provider's are not.
-export function rateLimitKey(provider: string, account?: string): string {
-    return provider === "claude" ? `claude:${account || "default"}` : provider;
+export function rateLimitKey(
+    provider: string,
+    account: string | undefined,
+    identity: ClaudeIdentity,
+    sessionLoginEmail?: string
+): string {
+    return provider === "claude" ? agentQuotaKey(account, sessionLoginEmail, identity) : provider;
+}
+
+// Once the /login account's email is known, the snapshot saved as "claude:default" is that account's: it
+// moves to its email key, unless a newer snapshot already sits there. Returns `saved` itself when there
+// is nothing to move.
+export function adoptDefaultSnapshot(
+    saved: Record<string, SavedSnapshot>,
+    loginEmail: string
+): Record<string, SavedSnapshot> {
+    const email = normalizeEmail(loginEmail);
+    const fromDefault = saved["claude:default"];
+    if (!email || fromDefault == null) {
+        return saved;
+    }
+    const { "claude:default": _gone, ...rest } = saved;
+    const key = `claude:${email}`;
+    const existing = rest[key];
+    return existing != null && existing.capturedAt >= fromDefault.capturedAt ? rest : { ...rest, [key]: fromDefault };
 }
 
 // A snapshot saved before accounts existed is the Default account's; one already saved under
@@ -56,11 +142,11 @@ export function migrateSaved(saved: Record<string, SavedSnapshot>): Record<strin
 }
 
 // What readers see: the active account's claude snapshot as "claude", other accounts' dropped.
+// `activeKey` is the active account's claudeQuotaKey.
 export function projectActiveAccount(
     saved: Record<string, SavedSnapshot>,
-    active: string
+    activeKey: string
 ): Record<string, SavedSnapshot> {
-    const activeKey = rateLimitKey("claude", active);
     const out: Record<string, SavedSnapshot> = {};
     for (const [key, snapshot] of Object.entries(saved)) {
         if (key === activeKey) {
@@ -74,6 +160,12 @@ export function projectActiveAccount(
 
 // The Claude account wavesrv runs new sessions on; "" is Default.
 export const activeClaudeAccountAtom = atom((get) => (get(getSettingsKeyAtom("claude:activeaccount")) as string) || "");
+
+// Who the accounts are, as wavesrv last said (claudeidentity.ts refreshes it).
+export const claudeIdentityAtom = atom<ClaudeIdentity>(NO_IDENTITY) as PrimitiveAtom<ClaudeIdentity>;
+
+// The saved key of the active account's snapshot.
+export const activeClaudeKeyAtom = atom((get) => claudeQuotaKey(get(activeClaudeAccountAtom), get(claudeIdentityAtom)));
 
 // Best-effort read; any failure (no localStorage, parse error) -> {}.
 export function readSavedRateLimits(): Record<string, SavedSnapshot> {
@@ -113,12 +205,35 @@ export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt 
         weekreset: usage.weekreset,
         capturedAt,
     };
-    const next = { ...saved, [provider]: snapshot };
+    persistSaved({ ...saved, [provider]: snapshot });
+}
+
+function persistSaved(next: Record<string, SavedSnapshot>): void {
     globalStore.set(savedRateLimitsAtom, next);
     try {
         globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
         // quota/disabled — the in-memory atom still serves this session
+    }
+}
+
+// Take a new identity from wavesrv. Once it names the /login account, the "claude:default" snapshot
+// saved before that was known moves to that account's key.
+export function setClaudeIdentity(identity: ClaudeIdentity): void {
+    globalStore.set(claudeIdentityAtom, identity);
+    const saved = globalStore.get(savedRateLimitsAtom);
+    const adopted = adoptDefaultSnapshot(saved, identity.loginEmail);
+    if (adopted !== saved) {
+        persistSaved(adopted);
+    }
+}
+
+// A quota answer names the /login account it read: learn it when the identity does not know it yet.
+export function noteLoginEmail(email: string | undefined): void {
+    const loginEmail = normalizeEmail(email);
+    const current = globalStore.get(claudeIdentityAtom);
+    if (loginEmail && loginEmail !== current.loginEmail) {
+        setClaudeIdentity({ ...current, loginEmail });
     }
 }
 
@@ -174,18 +289,22 @@ export function mergeRateLimitWindows(
         .sort((a, b) => (PROVIDER_RANK[a.provider] ?? 99) - (PROVIDER_RANK[b.provider] ?? 99));
 }
 
-// The plan-usage donuts for the active Claude account: claude agents on another account and other
-// accounts' snapshots are left out. Every other provider is unaffected.
+// The plan-usage donuts for the active Claude account (`activeKey`, its claudeQuotaKey): claude agents
+// on another account and other accounts' snapshots are left out. A token account and Default that name
+// the same email are one account, and a Default agent counts by the /login email it started on, not the
+// current one. Every other provider is unaffected.
 export function planDonuts(
     agents: AgentVM[],
     saved: Record<string, SavedSnapshot>,
-    active: string,
+    activeKey: string,
+    identity: ClaudeIdentity,
     now: number
 ): ProviderDonuts[] {
     const live = liveWindowAgents(agents).filter(
-        (a) => (a.agent || "claude") !== "claude" || (a.usage?.account || "") === active
+        (a) =>
+            (a.agent || "claude") !== "claude" || agentQuotaKey(a.usage?.account, a.loginEmail, identity) === activeKey
     );
-    return mergeRateLimitWindows(providerPlanUsage(live), projectActiveAccount(saved, active), now);
+    return mergeRateLimitWindows(providerPlanUsage(live), projectActiveAccount(saved, activeKey), now);
 }
 
 // Pure: the single most-utilized provider by 5-hour pct across the merged donuts, or undefined if none

@@ -16,7 +16,8 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import {
-    activeClaudeAccountAtom,
+    activeClaudeKeyAtom,
+    claudeIdentityAtom,
     planDonuts,
     savedRateLimitsAtom,
     topProviderUsage,
@@ -73,12 +74,13 @@ function count(items: AttentionItem[], kind: string): number {
 function usePetSignals(model: AgentsViewModel): PetSignals {
     const agents = useAtomValue(model.agentsAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
-    const activeAccount = useAtomValue(activeClaudeAccountAtom);
+    const activeKey = useAtomValue(activeClaudeKeyAtom);
+    const identity = useAtomValue(claudeIdentityAtom);
     const now = useAtomValue(model.nowAtom);
     const attention = useAtomValue(attentionAtom);
     const cap = useWorkerCapacity();
 
-    const donuts = planDonuts(agents, saved, activeAccount, now);
+    const donuts = planDonuts(agents, saved, activeKey, identity, now);
     const top = topProviderUsage(donuts);
     const rateLimit =
         top != null

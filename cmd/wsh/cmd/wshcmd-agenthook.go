@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -527,7 +528,9 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 	if agentHookShadow != "" {
 		em = agentEmission{State: agentHookState, AttachModelTitle: true}
 	}
-	if em.State == "" {
+	// a claude SessionStart reports no state of its own, but still tells the block which account it runs on
+	loginEmail, stampLoginEmail := loginEmailStamp(ev, agentHookAgent, agentHookShadow, os.Getenv("ARC_CLAUDE_ACCOUNT"), claudequota.LoginEmail)
+	if em.State == "" && !stampLoginEmail {
 		hookDebugLine("skip: no emission for event=" + ev.HookEventName)
 		return nil
 	}
@@ -558,6 +561,19 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		oref = target
+	}
+	if stampLoginEmail {
+		// best-effort like the transcript path below; a nil value clears the key
+		_ = wshclient.SetMetaCommand(RpcClient, wshrpc.CommandSetMetaData{
+			ORef: *oref,
+			Meta: waveobj.MetaMapType{waveobj.MetaKey_AgentLoginEmail: loginEmail},
+		}, &wshrpc.RpcOpts{Timeout: 2000})
+	}
+	if em.State == "" {
+		hookDebugLine("stamped login email, no emission for event=" + ev.HookEventName)
+		return nil
+	}
+	if agentHookShadow == "" {
 		releaseStaleStatus(envORef, oref, transcriptPath)
 	}
 	// stamp the transcript path so a gone-worker exit can derive its outcome from the transcript.

@@ -38,6 +38,7 @@ type WshRpcInterface interface {
 	GitCommands
 	AgentCommands
 	AgentSyncCommands
+	SessionCommands
 	ChannelCommands
 	RunCommands
 	DagCommands

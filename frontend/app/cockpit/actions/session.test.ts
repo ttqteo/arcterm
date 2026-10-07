@@ -52,6 +52,14 @@ describe("session actions", () => {
         expect(action("session:stop").applies(thing(mk({ live: true, liveId: "tab-gone" })))).toBe(false);
         expect(action("session:stop").destructive).toBe(true);
     });
+    it("delete applies only to an ended Claude session", () => {
+        expect(action("session:delete").applies(thing(mk()))).toBe(true);
+        expect(action("session:delete").applies(thing(mk({ live: true, liveId: "tab-1" }), agent))).toBe(false);
+        expect(action("session:delete").applies(thing(mk({ runtime: "pi" })))).toBe(false);
+        expect(action("session:delete").applies(thing(mk({ transcriptpath: "" })))).toBe(false);
+        expect(action("session:delete").label).toBe("Xoá session");
+        expect(action("session:delete").destructive).toBe(true);
+    });
     it("open session always applies", () => {
         expect(action("session:open").applies(thing(mk({ resumecommand: "" })))).toBe(true);
     });

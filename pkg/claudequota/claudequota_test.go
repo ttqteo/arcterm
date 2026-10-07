@@ -161,3 +161,134 @@ func TestNewerOfLiveAndCache(t *testing.T) {
 		t.Fatalf("want the live reading over an older cache, got %+v", q)
 	}
 }
+
+func TestLoginEmailFromTheConfigFile(t *testing.T) {
+	cfg := `{"numStartups":3,"oauthAccount":{"accountUuid":"u","emailAddress":"  Mozox@Example.COM ","displayName":"M"}}`
+	f := newFixture(t, "", cfg)
+	if got := f.reader.loginEmail(); got != "mozox@example.com" {
+		t.Fatalf("login email = %q", got)
+	}
+}
+
+func TestLoginEmailEmptyWhenUnknown(t *testing.T) {
+	for name, cfg := range map[string]string{
+		"no file":        "",
+		"no account":     `{"numStartups":3}`,
+		"no email":       `{"oauthAccount":{"accountUuid":"u"}}`,
+		"not json":       `{oops`,
+		"cache only":     cacheFile,
+		"email wrong ty": `{"oauthAccount":{"emailAddress":5}}`,
+	} {
+		f := newFixture(t, "", cfg)
+		if got := f.reader.loginEmail(); got != "" {
+			t.Errorf("%s: login email = %q, want empty", name, got)
+		}
+	}
+	r := &Reader{paths: func() (string, string, error) { return "", "", os.ErrNotExist }}
+	if got := r.loginEmail(); got != "" {
+		t.Errorf("paths error: login email = %q", got)
+	}
+}
+
+// Claude Code's cached copy is written by any session on any account, so a live answer from the last
+// hour outranks it even when the copy is newer; an older live answer does not
+func TestLiveWithinTheHourBeatsANewerCache(t *testing.T) {
+	cacheAt := time.Date(2026, 10, 6, 3, 1, 0, 0, time.UTC)
+	cache := `{"cachedUsageUtilization":{"fetchedAtMs":` + strconv.FormatInt(cacheAt.UnixMilli(), 10) +
+		`,"utilization":{"five_hour":{"utilization":20,"resets_at":"2026-10-05T14:40:00+00:00"}}}}`
+	f := newFixture(t, token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)), cache)
+	if q := f.reader.Get(context.Background()); q == nil || q.Source != SourceLive || *q.FiveHourPct != 50 {
+		t.Fatalf("want the live reading over a newer cache, got %+v", q)
+	}
+	f.now = f.now.Add(2 * time.Minute)
+	if q := f.reader.Get(context.Background()); q == nil || q.Source != SourceLive {
+		t.Fatalf("want the kept live reading, got %+v", q)
+	}
+}
+
+func TestLiveOlderThanAnHourLosesToANewerCache(t *testing.T) {
+	cacheAt := time.Date(2026, 10, 6, 4, 30, 0, 0, time.UTC)
+	cache := `{"cachedUsageUtilization":{"fetchedAtMs":` + strconv.FormatInt(cacheAt.UnixMilli(), 10) +
+		`,"utilization":{"five_hour":{"utilization":20,"resets_at":"2026-10-05T14:40:00+00:00"}}}}`
+	f := newFixture(t, token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)), cache)
+	f.reader.Get(context.Background())
+	f.status = http.StatusInternalServerError
+	f.now = f.now.Add(time.Hour + time.Minute)
+	if q := f.reader.Get(context.Background()); q == nil || q.Source != SourceCache {
+		t.Fatalf("want the newer cache once the live reading is over an hour old, got %+v", q)
+	}
+}
+
+func TestRefreshAsksAgainInsideTheInterval(t *testing.T) {
+	f := newFixture(t, token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)), "")
+	f.reader.Get(context.Background())
+	f.now = f.now.Add(time.Second)
+	q, retryAt := f.reader.Refresh(context.Background())
+	if f.calls != 2 {
+		t.Fatalf("calls = %d after a refresh inside the interval, want 2", f.calls)
+	}
+	if q == nil || q.Source != SourceLive || !q.CapturedAt.Equal(f.now) {
+		t.Fatalf("want a reading as of now, got %+v", q)
+	}
+	if !retryAt.IsZero() {
+		t.Errorf("retryAt = %v after an answer, want zero", retryAt)
+	}
+	// the refresh counts as the latest ask: a poll right behind it does not ask again
+	f.reader.Get(context.Background())
+	if f.calls != 2 {
+		t.Fatalf("calls = %d for a poll behind a refresh, want 2", f.calls)
+	}
+}
+
+func TestRefreshNeverBreaksABackoff(t *testing.T) {
+	f := newFixture(t, token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)), cacheFile)
+	f.status = http.StatusTooManyRequests
+	f.header = http.Header{"Retry-After": []string{"1800"}}
+	f.reader.Get(context.Background())
+	limitedAt := f.now
+	f.status = http.StatusOK
+	f.now = f.now.Add(time.Minute)
+	q, retryAt := f.reader.Refresh(context.Background())
+	if f.calls != 1 {
+		t.Fatalf("calls = %d for a refresh inside the backoff, want 1", f.calls)
+	}
+	if want := limitedAt.Add(30 * time.Minute); !retryAt.Equal(want) {
+		t.Errorf("retryAt = %v, want %v", retryAt, want)
+	}
+	if q == nil || q.Source != SourceCache {
+		t.Fatalf("want the cached reading while held, got %+v", q)
+	}
+	f.now = limitedAt.Add(30 * time.Minute)
+	q, retryAt = f.reader.Refresh(context.Background())
+	if f.calls != 2 || q == nil || q.Source != SourceLive || !retryAt.IsZero() {
+		t.Fatalf("after the backoff: calls=%d q=%+v retryAt=%v", f.calls, q, retryAt)
+	}
+}
+
+func TestRefreshThatIsRateLimitedSaysWhenToRetry(t *testing.T) {
+	f := newFixture(t, token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)), cacheFile)
+	f.reader.Get(context.Background())
+	f.status = http.StatusTooManyRequests
+	f.now = f.now.Add(time.Minute)
+	q, retryAt := f.reader.Refresh(context.Background())
+	if f.calls != 2 {
+		t.Fatalf("calls = %d, want 2", f.calls)
+	}
+	if want := f.now.Add(firstBackoff); !retryAt.Equal(want) {
+		t.Errorf("retryAt = %v, want %v", retryAt, want)
+	}
+	if q == nil || q.Source != SourceLive || *q.FiveHourPct != 50 {
+		t.Fatalf("want the kept live reading, got %+v", q)
+	}
+}
+
+func TestRefreshWithoutCredentialsAnswersTheCache(t *testing.T) {
+	f := newFixture(t, "", cacheFile)
+	q, retryAt := f.reader.Refresh(context.Background())
+	if f.calls != 0 || !retryAt.IsZero() {
+		t.Fatalf("calls=%d retryAt=%v, want none", f.calls, retryAt)
+	}
+	if q == nil || q.Source != SourceCache {
+		t.Fatalf("want the cached reading, got %+v", q)
+	}
+}

@@ -209,6 +209,14 @@ describe("agentVMFromInput", () => {
         expect(agentVMFromInput({ id: "tab-9", name: "x", status: "idle" }, NOW).effortId).toBeUndefined();
     });
 
+    it("carries the /login email the agent's session started on, only when it has one", () => {
+        const vm = agentVMFromInput({ id: "tab-9", name: "x", status: "idle", loginEmail: "old@x.io" }, NOW);
+        expect(vm.loginEmail).toBe("old@x.io");
+        expect(
+            agentVMFromInput({ id: "tab-9", name: "x", status: "idle", loginEmail: "" }, NOW).loginEmail
+        ).toBeUndefined();
+    });
+
     it("maps a working row: status->working, model label, activeMs from ts", () => {
         const input: LiveAgentInput = {
             id: "tab-1",

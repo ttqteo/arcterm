@@ -40,7 +40,7 @@ Setup and Settings have no `Ctrl`+number slot — the positions are bound to `SU
 
 | Keys | Surface |
 |---|---|
-| `g` `h` | Cockpit (home) |
+| `g` `c` | Cockpit (home) |
 | `g` `a` | Agent |
 | `g` `j` | Jarvis — channels, records, recall |
 | `g` `r` | Radar |

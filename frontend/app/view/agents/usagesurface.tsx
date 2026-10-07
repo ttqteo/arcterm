@@ -21,13 +21,20 @@ import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { MotionConfig, motion } from "motion/react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatReset, usageLevel } from "./agentsviewmodel";
 import { providerDot, providerLabel } from "./cockpitrailmodel";
 import { DailyChart } from "./dailychart";
 import { harnessesAtom } from "./harnessstore";
-import { activeClaudeAccountAtom, planDonuts, savedRateLimitsAtom, type DonutWindow } from "./ratelimitstore";
+import {
+    activeClaudeAccountAtom,
+    activeClaudeKeyAtom,
+    claudeIdentityAtom,
+    planDonuts,
+    savedRateLimitsAtom,
+    type DonutWindow,
+} from "./ratelimitstore";
 import { runtimeMeta } from "./runtimemeta";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
 import { kpiGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
@@ -40,6 +47,8 @@ import {
     type UsageRailGroup,
     type UsageRailRow,
 } from "./usagerail";
+import { showUsageRefresh } from "./usagerefresh";
+import { UsageRefreshButton } from "./usagerefreshbutton";
 import type { ClassUsage, ProviderUsage, UsageStats } from "./usagestats";
 import { CLASS_FILL, fmt, foldModels, modelGridClass, usd } from "./usagestats";
 import {
@@ -122,12 +131,23 @@ function stateMeta(row: UsageRailRow, now: number): { label: string; long: strin
 
 // An h3, not a styled span: these head real sections (and the by-model cards, where the heading IS the
 // provider name), so the heading level has to survive the eyebrow styling.
-function SectionRule({ label, meta, accent = false }: { label: string; meta?: string; accent?: boolean }) {
+function SectionRule({
+    label,
+    meta,
+    accent = false,
+    action,
+}: {
+    label: string;
+    meta?: string;
+    accent?: boolean;
+    action?: ReactNode;
+}) {
     return (
         <div className="mb-3 flex items-center gap-2.5">
             <h3 className={cn(REGION_LABEL, accent ? "text-accent-soft" : "text-muted")}>{label}</h3>
             <div className="h-px flex-1 bg-edge-faint" />
             {meta != null ? <span className="text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
+            {action}
         </div>
     );
 }
@@ -512,7 +532,9 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const loadError = useAtomValue(usageErrorAtom);
     const usageLoaded = useAtomValue(usageLoadedAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
+    const activeKey = useAtomValue(activeClaudeKeyAtom);
     const activeAccount = useAtomValue(activeClaudeAccountAtom);
+    const identity = useAtomValue(claudeIdentityAtom);
     const now = useAtomValue(model.nowAtom);
     const [usageWindow, setUsageWindow] = useAtom(usageWindowAtom);
     const [usageMetric, setUsageMetric] = useAtom(usageMetricAtom);
@@ -528,7 +550,11 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     const harnesses = useAtomValue(harnessesAtom);
     const catalogOrder = useMemo(() => harnesses.map((h) => h.runtime), [harnesses]);
-    const donuts = planDonuts(agents, saved, activeAccount, now);
+    const donuts = planDonuts(agents, saved, activeKey, identity, now);
+    const refreshShown = showUsageRefresh(
+        donuts.filter((d) => d.fivehour.pct != null || d.week.pct != null).map((d) => d.provider),
+        activeAccount
+    );
     const groups = useMemo(
         () => buildUsageRail(allStats.availableHarnesses, allStats.daily, donuts, catalogOrder),
         [allStats.availableHarnesses, allStats.daily, donuts, catalogOrder]
@@ -716,6 +742,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                     meta={
                                         all ? "highest reading · ephemeral" : selRow ? stateMeta(selRow, now).long : "—"
                                     }
+                                    action={refreshShown ? <UsageRefreshButton className="h-6 w-6" /> : null}
                                 />
                                 {hasLimits ? (
                                     <div className="grid grid-cols-2 gap-2.5">

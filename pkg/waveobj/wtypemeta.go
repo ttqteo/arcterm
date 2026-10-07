@@ -84,6 +84,7 @@ type MetaTSType struct {
 
 	// for agent hook-stamped metadata (Wave Agent Sessions fork)
 	AgentTranscriptPath string `json:"agent:transcriptpath,omitempty"` // block (path to the running agent's transcript file)
+	AgentLoginEmail     string `json:"agent:loginemail,omitempty"`     // block (a Default claude session's /login email at SessionStart, lowercased; its usage belongs to that account)
 
 	Count int `json:"count,omitempty"` // temp for cpu plot. will remove later
 }

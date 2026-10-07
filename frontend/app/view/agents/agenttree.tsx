@@ -25,6 +25,7 @@ import {
     Pencil,
     Play,
     SquareTerminal,
+    Trash2,
     Workflow,
     X,
 } from "lucide-react";
@@ -62,6 +63,7 @@ import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
 import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
+import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
 import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
@@ -998,6 +1000,17 @@ const ConversationRow = memo(function ConversationRow({
             });
         }
         items.push(copyTitleItem(row.title));
+        if (canDeleteSession(session)) {
+            items.push(
+                { type: "separator" },
+                {
+                    label: DELETE_SESSION_LABEL,
+                    icon: <Trash2 size={15} />,
+                    danger: true,
+                    click: () => confirmDeleteSession(session),
+                }
+            );
+        }
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
     return (

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -31,6 +32,8 @@ const (
 	firstBackoff = 10 * time.Minute
 	maxBackoff   = time.Hour
 	fetchTimeout = 10 * time.Second
+	// a live answer this recent outranks Claude Code's cached copy, however new the copy is
+	liveFreshness = time.Hour
 	// a token this close to expiring is treated as expired
 	expirySlack = time.Minute
 )
@@ -73,6 +76,10 @@ type configFile struct {
 		FetchedAtMs int64     `json:"fetchedAtMs"`
 		Utilization usageBody `json:"utilization"`
 	} `json:"cachedUsageUtilization"`
+	// the account /login stored
+	OauthAccount *struct {
+		EmailAddress string `json:"emailAddress"`
+	} `json:"oauthAccount"`
 }
 
 type rateLimitedError struct {
@@ -96,6 +103,8 @@ type Reader struct {
 	live    *Quota
 	nextTry time.Time
 	backoff time.Duration
+	// when the endpoint's last 429 lets it be asked again; zero once an answer came
+	limitedUntil time.Time
 }
 
 var defaultReader = &Reader{
@@ -105,8 +114,8 @@ var defaultReader = &Reader{
 	paths:    defaultPaths,
 }
 
-// Get answers the newest reading known: a live one, asking the endpoint when the interval allows,
-// or the cached one. nil when neither exists.
+// Get answers the reading to show: a live one, asking the endpoint when the interval allows, or the
+// cached one. nil when neither exists.
 func Get(ctx context.Context) *Quota {
 	return defaultReader.Get(ctx)
 }
@@ -117,6 +126,35 @@ func (r *Reader) Get(ctx context.Context) *Quota {
 	now := r.now()
 	if !now.Before(r.nextTry) {
 		r.tryFetch(ctx, now)
+	}
+	return r.best(now)
+}
+
+// Refresh asks the endpoint now, whatever the interval since the last ask, and answers as Get does.
+// A 429 backoff is not an interval: while one holds, the endpoint is not asked and retryAt says when it
+// may be (zero otherwise, also when the ask was itself refused with a 429, which sets a new backoff).
+func Refresh(ctx context.Context) (q *Quota, retryAt time.Time) {
+	return defaultReader.Refresh(ctx)
+}
+
+func (r *Reader) Refresh(ctx context.Context) (q *Quota, retryAt time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.now()
+	if !now.Before(r.limitedUntil) {
+		r.tryFetch(ctx, now)
+	}
+	if now.Before(r.limitedUntil) {
+		retryAt = r.limitedUntil
+	}
+	return r.best(now), retryAt
+}
+
+// the live reading while it is recent, since the cache may have been written by a session on another
+// account; else the newer of the two
+func (r *Reader) best(now time.Time) *Quota {
+	if r.live != nil && now.Sub(r.live.CapturedAt) < liveFreshness {
+		return r.live
 	}
 	return newer(r.live, r.cached())
 }
@@ -131,6 +169,7 @@ func (r *Reader) tryFetch(ctx context.Context, now time.Time) {
 	if limited, ok := err.(*rateLimitedError); ok {
 		r.backoff = min(max(2*r.backoff, firstBackoff), maxBackoff)
 		r.nextTry = now.Add(max(r.backoff, limited.retryAfter))
+		r.limitedUntil = r.nextTry
 		log.Printf("claudequota: %v; next try at %s\n", err, r.nextTry.Format(time.RFC3339))
 		return
 	}
@@ -139,6 +178,7 @@ func (r *Reader) tryFetch(ctx context.Context, now time.Time) {
 		return
 	}
 	r.backoff = 0
+	r.limitedUntil = time.Time{}
 	r.live = quotaFrom(body, now, SourceLive)
 }
 
@@ -205,6 +245,27 @@ func (r *Reader) cached() *Quota {
 	}
 	c := cfg.CachedUsageUtilization
 	return quotaFrom(c.Utilization, time.UnixMilli(c.FetchedAtMs), SourceCache)
+}
+
+// LoginEmail is the email of the account `/login` stored, lowercased; "" when it is not known.
+func LoginEmail() string {
+	return defaultReader.loginEmail()
+}
+
+func (r *Reader) loginEmail() string {
+	_, configPath, err := r.paths()
+	if err != nil {
+		return ""
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+	var cfg configFile
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.OauthAccount == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(cfg.OauthAccount.EmailAddress))
 }
 
 // nil when the answer carries neither window

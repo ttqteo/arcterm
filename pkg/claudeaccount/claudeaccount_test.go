@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func useTemp(t *testing.T) map[string]string {
 
 func TestAddListRenameRemove(t *testing.T) {
 	secrets := useTemp(t)
-	a, err := Add("Công ty", "sk-ant-oat01-abc")
+	a, err := Add("Công ty", "sk-ant-oat01-abc", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,8 +50,54 @@ func TestAddListRenameRemove(t *testing.T) {
 
 func TestAddRejectsNonOAuthToken(t *testing.T) {
 	useTemp(t)
-	if _, err := Add("x", "sk-ant-api03-nope"); err == nil {
+	if _, err := Add("x", "sk-ant-api03-nope", ""); err == nil {
 		t.Fatal("want an error for a non-setup-token value")
+	}
+}
+
+func TestAddStoresATrimmedLowercasedEmail(t *testing.T) {
+	useTemp(t)
+	a, err := Add("Mozox", "sk-ant-oat01-eee", "  Mozox@Example.COM ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Email != "mozox@example.com" {
+		t.Fatalf("returned email = %q", a.Email)
+	}
+	list, _ := List()
+	if len(list) != 1 || list[0].Email != "mozox@example.com" {
+		t.Fatalf("listed email = %+v", list)
+	}
+}
+
+func TestSetEmailSetsNormalizesAndClears(t *testing.T) {
+	useTemp(t)
+	a, _ := Add("A", "sk-ant-oat01-aaa", "")
+	if a.Email != "" {
+		t.Fatalf("email without one given = %q", a.Email)
+	}
+	if err := SetEmail(a.Id, " Me@Host.io "); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := List(); list[0].Email != "me@host.io" {
+		t.Fatalf("after set: %+v", list)
+	}
+	if err := SetEmail(a.Id, ""); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := List(); list[0].Email != "" {
+		t.Fatalf("after clear: %+v", list)
+	}
+	raw, _ := os.ReadFile(storePath())
+	if strings.Contains(string(raw), "email") {
+		t.Fatalf("a cleared email should leave the file (omitempty): %s", raw)
+	}
+}
+
+func TestSetEmailUnknownAccount(t *testing.T) {
+	useTemp(t)
+	if err := SetEmail("a00000000", "x@y.z"); err == nil {
+		t.Fatal("want an error for an unknown account")
 	}
 }
 
@@ -59,7 +106,7 @@ func TestApplyEnvSetsAndRestoresInherited(t *testing.T) {
 	t.Setenv(tokenVar, "inherited")
 	os.Unsetenv(accountVar)
 	captureInherited()
-	a, _ := Add("B", "sk-ant-oat01-bbb")
+	a, _ := Add("B", "sk-ant-oat01-bbb", "")
 
 	if got := ApplyEnv(a.Id); got != a.Id {
 		t.Fatalf("applied %q", got)
@@ -88,7 +135,7 @@ func TestApplyEnvReachesChildProcess(t *testing.T) {
 	useTemp(t)
 	os.Unsetenv(accountVar)
 	captureInherited()
-	a, _ := Add("C", "sk-ant-oat01-ccc")
+	a, _ := Add("C", "sk-ant-oat01-ccc", "")
 	child := func() string {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestApplyEnvReachesChildProcess$")
 		cmd.Env = append(os.Environ(), "CLAUDEACCOUNT_HELPER=1")

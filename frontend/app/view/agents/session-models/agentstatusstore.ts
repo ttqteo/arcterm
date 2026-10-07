@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
+import * as WOS from "@/app/store/wos";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
-import { rateLimitKey, recordRateLimit } from "../ratelimitstore";
+import { blockLoginEmail, claudeIdentityAtom, rateLimitKey, recordRateLimit } from "../ratelimitstore";
 import { persistResume } from "./agentresumestore";
 
 function invertPct(pct: number | undefined): number | undefined {
@@ -158,7 +159,13 @@ export function setupAgentStatusSubscription() {
                 const usage = normalizeAgentUsage(provider, data.usage);
                 globalStore.set(getAgentUsageAtom(data.oref), usage);
                 // persist account-level windows so the Usage donuts survive idle (no-op if none present)
-                recordRateLimit(rateLimitKey(provider, usage.account), usage);
+                // a Default agent's windows are its /login account's as of when it started: the email its block
+                // was stamped with, which can differ from the current /login one. An unloaded block has none
+                const loginEmail = blockLoginEmail(globalStore.get(WOS.getWaveObjectAtom<Block>(data.oref)));
+                recordRateLimit(
+                    rateLimitKey(provider, usage.account, globalStore.get(claudeIdentityAtom), loginEmail),
+                    usage
+                );
             }
             // a delta-only event carries an empty state; only a real state update should touch the parent atom
             if (data.state) {

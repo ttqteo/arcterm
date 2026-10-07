@@ -12,7 +12,14 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { resumeArgsForClaude, sessionIdFromTranscript } from "./launch";
-import { FIVE_HOUR_MS, rateLimitKey, WEEK_MS, windowFromSaved, type SavedSnapshot } from "./ratelimitstore";
+import {
+    FIVE_HOUR_MS,
+    normalizeEmail,
+    WEEK_MS,
+    windowFromSaved,
+    type ClaudeIdentity,
+    type SavedSnapshot,
+} from "./ratelimitstore";
 
 export interface RestartCandidate {
     tabId: string;
@@ -56,9 +63,10 @@ export interface RowQuota {
 }
 
 // The account's last snapshot, with a window that has rolled over since reading 0; null when no agent
-// on it has reported yet. `id` is the account id, "" for Default.
-export function rowQuota(saved: Record<string, SavedSnapshot>, id: string, now: number): RowQuota | null {
-    const s = saved[rateLimitKey("claude", id)];
+// on it has reported yet. `key` is the account's claudeQuotaKey, so a token account tied to the email of
+// an account that was once the /login one shows that account's snapshot.
+export function rowQuota(saved: Record<string, SavedSnapshot>, key: string, now: number): RowQuota | null {
+    const s = saved[key];
     if (s == null) {
         return null;
     }
@@ -67,6 +75,23 @@ export function rowQuota(saved: Record<string, SavedSnapshot>, id: string, now: 
         weekpct: windowFromSaved(s.weekpct, s.weekreset, s.capturedAt, WEEK_MS, now).pct,
         capturedAt: s.capturedAt,
     };
+}
+
+// The emails to offer when tying a token account to one: the /login account's, and every account whose
+// snapshot arcterm has saved (the ones it has seen). Sorted, no duplicates.
+export function knownClaudeEmails(saved: Record<string, SavedSnapshot>, identity: ClaudeIdentity): string[] {
+    const emails = new Set<string>();
+    const login = normalizeEmail(identity.loginEmail);
+    if (login) {
+        emails.add(login);
+    }
+    for (const key of Object.keys(saved)) {
+        const email = key.startsWith("claude:") ? key.slice("claude:".length) : "";
+        if (email.includes("@")) {
+            emails.add(email);
+        }
+    }
+    return [...emails].sort();
 }
 
 // Respawn the agent's block as `claude --resume <session>`, the same sequence as

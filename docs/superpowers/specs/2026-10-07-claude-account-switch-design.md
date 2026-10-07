@@ -68,6 +68,35 @@ profiles, macOS Keychain, and remote (ssh/wsl) connections.
    window past its reset, so a reset window reads 0%), or nothing for an account never used, until an
    agent on it finishes a turn.
 
+8. **Quota snapshots belong to the real account, not to "Default".** (Added 2026-10-07 after use.) Keyed by
+   arcterm account id, Default's snapshot changed owner whenever `/login` changed: the user's mozox
+   account hit its limit as the `/login` account, `/login` then moved to another account, and the new
+   account's numbers overwrote mozox's, so the picker showed nothing for mozox while it sat at 100%. And a
+   token account at its limit never finishes a turn, so it never reports on its own.
+   - wavesrv reads the `/login` account's email from `oauthAccount.emailAddress` in Claude Code's config
+     file (the file `claudequota` already reads) and returns it with the account list and with every
+     quota answer.
+   - A token account may carry an email (optional, picked when adding it or later on its row, from the
+     emails arcterm has seen plus free text). A token account for an account that was once the `/login`
+     one then shows that account's last snapshot.
+   - Snapshots are keyed `claude:<email>` (lowercased) when the email is known, else `claude:<id>` for a
+     token account with none, else `claude:default`. A live agent counts toward the active account when
+     its account resolves to the same key, so a token account and Default naming the same email are one.
+   - An existing `claude:default` snapshot moves to the `/login` email the first time it is known.
+   - Not done: noting a 429 "usage limit" from an agent as "exhausted until reset" (filed in
+     `docs/open-issues.md`).
+
+9. **An agent's usage carries the account its process really runs on.** (Added 2026-10-07.) A Default
+   agent started before a `/login` change keeps the previous account's token in memory but reported as
+   "Default", so the strip showed that account's 94% for a `/login` account at 4%. At `SessionStart`
+   (including a resume), `wsh agent-hook` reads the `/login` email from Claude Code's config file and sets
+   it on the agent's block as `agent:loginemail`; a Default agent's usage resolves through that email,
+   not the current `/login` one. A token agent keeps resolving through its arcterm account.
+10. **A manual refresh.** The Plan usage strip and the Usage surface get a refresh button that asks the
+    usage endpoint now (`RefreshClaudeQuotaCommand`), bypassing the 5-minute spacing but never a 429
+    backoff, which the button reports as "thử lại lúc HH:MM". A live answer always beats Claude Code's
+    cached copy in the config file, which any session, on any account, may have written.
+
 ## Settings UI
 
 A "Claude account" section in `settingssurface.tsx`:

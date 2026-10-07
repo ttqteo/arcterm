@@ -34,7 +34,12 @@ type Account struct {
 	Id        string `json:"id"`
 	Label     string `json:"label"`
 	CreatedTs int64  `json:"createdts"`
+	// the Claude account this token belongs to, lowercased; optional. Quota snapshots are keyed by it, so
+	// a token for an account that was once the /login one shows that account's last snapshot.
+	Email string `json:"email,omitempty"`
 }
+
+func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
 
 // swapped by tests
 var (
@@ -91,7 +96,7 @@ func List() ([]Account, error) {
 	return load()
 }
 
-func Add(label, token string) (Account, error) {
+func Add(label, token, email string) (Account, error) {
 	token = strings.TrimSpace(token)
 	if !strings.HasPrefix(token, TokenPrefix) {
 		return Account{}, fmt.Errorf("not a setup-token (want a value starting with %s)", TokenPrefix)
@@ -102,7 +107,7 @@ func Add(label, token string) (Account, error) {
 	if err != nil {
 		return Account{}, err
 	}
-	a := Account{Id: newId(), Label: strings.TrimSpace(label), CreatedTs: time.Now().UnixMilli()}
+	a := Account{Id: newId(), Label: strings.TrimSpace(label), CreatedTs: time.Now().UnixMilli(), Email: normalizeEmail(email)}
 	if a.Label == "" {
 		a.Label = fmt.Sprintf("Account %d", len(list)+1)
 	}
@@ -126,6 +131,23 @@ func Rename(id, label string) error {
 	for i := range list {
 		if list[i].Id == id {
 			list[i].Label = strings.TrimSpace(label)
+			return save(list)
+		}
+	}
+	return fmt.Errorf("no account %q", id)
+}
+
+// SetEmail ties account id to a Claude account's email; "" clears it.
+func SetEmail(id, email string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	list, err := load()
+	if err != nil {
+		return err
+	}
+	for i := range list {
+		if list[i].Id == id {
+			list[i].Email = normalizeEmail(email)
 			return save(list)
 		}
 	}

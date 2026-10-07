@@ -18,6 +18,7 @@ import * as WOS from "@/app/store/wos";
 import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { KnownEmailsDatalist } from "@/app/view/agents/claudeemails";
 import { setupTokenCommand, TokenScanner } from "@/app/view/agents/setuptokenscan";
 import { base64ToString, fireAndForget } from "@/util/util";
 import { useEffect, useRef, useState } from "react";
@@ -44,6 +45,7 @@ function devOverride(): string | null {
 export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
     const [phase, setPhase] = useState<Phase>({ kind: "starting" });
     const [label, setLabel] = useState("");
+    const [email, setEmail] = useState("");
     const [labelError, setLabelError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const onAddedRef = useRef(onAdded);
@@ -142,14 +144,20 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
             return;
         }
         const next = label.trim();
-        if (next === "" || next === phase.account.label) {
+        const nextEmail = email.trim();
+        if ((next === "" || next === phase.account.label) && nextEmail === "") {
             onClose();
             return;
         }
         setBusy(true);
         setLabelError(null);
         try {
-            await RpcApi.ClaudeAccountRenameCommand(TabRpcClient, { id: phase.account.id, label: next });
+            if (next !== "" && next !== phase.account.label) {
+                await RpcApi.ClaudeAccountRenameCommand(TabRpcClient, { id: phase.account.id, label: next });
+            }
+            if (nextEmail !== "") {
+                await RpcApi.ClaudeAccountSetEmailCommand(TabRpcClient, { id: phase.account.id, email: nextEmail });
+            }
         } catch (e) {
             setLabelError(errorText(e));
             setBusy(false);
@@ -212,6 +220,26 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                             }}
                             className="w-[280px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[13px] text-primary outline-none focus:border-accent-700"
                         />
+                        <div className="text-[12px] leading-[1.55] text-muted">
+                            Email của account này (không bắt buộc): để hiện lượng dùng gần nhất của nó.
+                        </div>
+                        <input
+                            type="text"
+                            data-claude-signin-email
+                            value={email}
+                            list="claude-signin-emails"
+                            placeholder="Email (không bắt buộc)"
+                            spellCheck={false}
+                            onChange={(e) => setEmail(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void save();
+                                }
+                            }}
+                            className="w-[280px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[13px] text-primary outline-none focus:border-accent-700"
+                        />
+                        <KnownEmailsDatalist id="claude-signin-emails" />
                         {labelError ? <div className="text-[12px] text-error">{labelError}</div> : null}
                     </div>
                 ) : (

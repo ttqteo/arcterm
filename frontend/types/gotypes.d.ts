@@ -323,6 +323,7 @@ declare global {
         id: string;
         label: string;
         createdts: number;
+        email?: string;
     };
 
     // wshrpc.ClaudeProjectData
@@ -526,12 +527,14 @@ declare global {
     type CommandClaudeAccountAddData = {
         label: string;
         token: string;
+        email?: string;
     };
 
     // wshrpc.CommandClaudeAccountListRtnData
     type CommandClaudeAccountListRtnData = {
         accounts: ClaudeAccountData[];
         active: string;
+        loginemail?: string;
     };
 
     // wshrpc.CommandClaudeAccountRemoveData
@@ -543,6 +546,12 @@ declare global {
     type CommandClaudeAccountRenameData = {
         id: string;
         label: string;
+    };
+
+    // wshrpc.CommandClaudeAccountSetEmailData
+    type CommandClaudeAccountSetEmailData = {
+        id: string;
+        email: string;
     };
 
     // wshrpc.CommandConsultData
@@ -713,6 +722,11 @@ declare global {
         planpath?: string;
         specpath?: string;
         round?: boolean;
+    };
+
+    // wshrpc.CommandDeleteAgentSessionData
+    type CommandDeleteAgentSessionData = {
+        transcriptpath: string;
     };
 
     // wshrpc.CommandDeleteBlockData
@@ -930,6 +944,8 @@ declare global {
         weekreset?: number;
         capturedat?: number;
         source?: string;
+        email?: string;
+        retryat?: number;
     };
 
     // wshrpc.CommandGetDossierData
@@ -2253,6 +2269,7 @@ declare global {
         "session:helper"?: boolean;
         "app:loom"?: boolean;
         "agent:transcriptpath"?: string;
+        "agent:loginemail"?: string;
         count?: number;
     };
 

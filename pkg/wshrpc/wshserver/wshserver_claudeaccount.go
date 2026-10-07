@@ -8,13 +8,14 @@ import (
 	"fmt"
 
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
+	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 func toClaudeAccountData(a claudeaccount.Account) wshrpc.ClaudeAccountData {
-	return wshrpc.ClaudeAccountData{Id: a.Id, Label: a.Label, CreatedTs: a.CreatedTs}
+	return wshrpc.ClaudeAccountData{Id: a.Id, Label: a.Label, CreatedTs: a.CreatedTs, Email: a.Email}
 }
 
 func (ws *WshServer) ClaudeAccountListCommand(ctx context.Context) (*wshrpc.CommandClaudeAccountListRtnData, error) {
@@ -26,11 +27,15 @@ func (ws *WshServer) ClaudeAccountListCommand(ctx context.Context) (*wshrpc.Comm
 	for _, a := range list {
 		accounts = append(accounts, toClaudeAccountData(a))
 	}
-	return &wshrpc.CommandClaudeAccountListRtnData{Accounts: accounts, Active: claudeaccount.Active()}, nil
+	return &wshrpc.CommandClaudeAccountListRtnData{
+		Accounts:   accounts,
+		Active:     claudeaccount.Active(),
+		LoginEmail: claudequota.LoginEmail(),
+	}, nil
 }
 
 func (ws *WshServer) ClaudeAccountAddCommand(ctx context.Context, data wshrpc.CommandClaudeAccountAddData) (*wshrpc.ClaudeAccountData, error) {
-	a, err := claudeaccount.Add(data.Label, data.Token)
+	a, err := claudeaccount.Add(data.Label, data.Token, data.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +45,10 @@ func (ws *WshServer) ClaudeAccountAddCommand(ctx context.Context, data wshrpc.Co
 
 func (ws *WshServer) ClaudeAccountRenameCommand(ctx context.Context, data wshrpc.CommandClaudeAccountRenameData) error {
 	return claudeaccount.Rename(data.Id, data.Label)
+}
+
+func (ws *WshServer) ClaudeAccountSetEmailCommand(ctx context.Context, data wshrpc.CommandClaudeAccountSetEmailData) error {
+	return claudeaccount.SetEmail(data.Id, data.Email)
 }
 
 func (ws *WshServer) ClaudeAccountRemoveCommand(ctx context.Context, data wshrpc.CommandClaudeAccountRemoveData) error {

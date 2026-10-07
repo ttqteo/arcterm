@@ -22,10 +22,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A Claude agent in arcterm is refused commands that kill arcterm by image name, or push or move branches in a run's
   worktree.
 - The run sheet's header puts the run line under the project, and the run id is a chip that copies it.
+- An ended Claude session can be deleted from Conversation History, the sidebar's right-click menu or the command
+  palette (**Xoá session**): its transcript moves to `~/.arc/trash` and is removed for good after 7 days.
+- The plan usage strip and the Usage tab have a **Refresh usage** button that reads Claude's windows now instead of
+  waiting for the next check; if Anthropic is rate-limiting the read, it says when to try again.
 - Submitting a plan whose parallel tasks list the same file is refused.
 
 ### Changed
 
+- **`g` `c`** opens the Cockpit (it was `g` `h`).
 - Claude tool calls no longer wait on arcterm's status reports.
 - Usage, attention and channel views load faster on long histories.
 - An orchestrator run's last merge leaves its Verify to the final stage.
@@ -34,6 +39,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - After an update, a crash or a quit, the claude, pi and opencode agents that were running come back on their own,
   each in its own session, instead of staying gone until reopened from history.
+- Claude plan usage now follows the real account (its email) across `/login` changes, and a token account can be tied
+  to an email so it shows that account's last usage.
+- A Claude agent started before a `/login` change no longer reports its old account's usage as the new one's.
 - The installed app shows the Final check's screenshots.
 - Deleting a channel deletes its runs and their DAGs.
 - Orchestrator runs: a worker waiting on a question no longer stalls, a stuck engine tick is reported without stopping

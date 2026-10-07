@@ -22,6 +22,7 @@ import { getAgentAskAtom } from "./agentaskstore";
 import { fetchPreviousInfo } from "./previousinfo";
 import { registeredProjectFor } from "./projectlabel";
 import { projectsAtom } from "./projectsstore";
+import { blockLoginEmail } from "./ratelimitstore";
 import { isLayoutLoaded, isRosterSeeded, latchWhenTrue } from "./rosterseed";
 
 interface PreviousInfoEntry {
@@ -69,6 +70,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 effortORef: row.effortORef,
                 sessionId: status.sessionid,
                 step: status.step,
+                loginEmail: blockLoginEmail(get(WOS.getWaveObjectAtom<Block>(row.termBlockOref))),
             },
             now
         );

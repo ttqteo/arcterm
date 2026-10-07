@@ -186,6 +186,12 @@ export class RpcApiType {
         return client.wshRpcCall("claudeaccountrename", data, opts);
     }
 
+    // command "claudeaccountsetemail" [call]
+    ClaudeAccountSetEmailCommand(client: WshClient, data: CommandClaudeAccountSetEmailData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudeaccountsetemail", data, opts);
+        return client.wshRpcCall("claudeaccountsetemail", data, opts);
+    }
+
     // command "consult" [responsestream]
 	ConsultCommand(client: WshClient, data: CommandConsultData, opts?: RpcOpts): AsyncGenerator<ConsultChunk, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "consult", data, opts);
@@ -298,6 +304,12 @@ export class RpcApiType {
     DagSubmitCommand(client: WshClient, data: CommandDagSubmitData, opts?: RpcOpts): Promise<TaskGroup> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "dagsubmit", data, opts);
         return client.wshRpcCall("dagsubmit", data, opts);
+    }
+
+    // command "deleteagentsession" [call]
+    DeleteAgentSessionCommand(client: WshClient, data: CommandDeleteAgentSessionData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "deleteagentsession", data, opts);
+        return client.wshRpcCall("deleteagentsession", data, opts);
     }
 
     // command "deleteblock" [call]
@@ -772,6 +784,12 @@ export class RpcApiType {
     ReadVaultNoteCommand(client: WshClient, data: CommandReadVaultNoteData, opts?: RpcOpts): Promise<CommandReadVaultNoteRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "readvaultnote", data, opts);
         return client.wshRpcCall("readvaultnote", data, opts);
+    }
+
+    // command "refreshclaudequota" [call]
+    RefreshClaudeQuotaCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetClaudeQuotaRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "refreshclaudequota", null, opts);
+        return client.wshRpcCall("refreshclaudequota", null, opts);
     }
 
     // command "refreshroutecatalog" [call]

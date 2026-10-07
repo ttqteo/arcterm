@@ -104,7 +104,7 @@ function focusCodeSearchInput(): void {
 // g-leader surface teleports (collision-free letters; see design spec). Conversation History is a mode of the Agent
 // surface, not a surface, so its target carries its own id and opens History.
 const GO_TARGETS: { letter: string; surface: SurfaceKey; label: string; id?: string; history?: boolean }[] = [
-    { letter: "h", surface: "cockpit", label: "Cockpit (home)" },
+    { letter: "c", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
     { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
     { letter: "r", surface: "radar", label: "Radar" },
@@ -1214,8 +1214,7 @@ export function buildFilesBindings(): Binding[] {
             run: () => clearHistoryFilters(),
         },
         {
-            // The mockup's footer says "g h" for top-of-history, but g h is already the chord for
-            // Cockpit (home) in GO_TARGETS. g g is free and is the vim idiom for "top".
+            // The mockup's footer says "g h" for top-of-history; g g is the vim idiom for "top".
             id: "files:top",
             keys: "g g",
             group: "Diff",

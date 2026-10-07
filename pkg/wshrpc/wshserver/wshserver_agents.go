@@ -197,25 +197,52 @@ func (ws *WshServer) GetClaudeQuotaCommand(ctx context.Context) (*wshrpc.Command
 	return claudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Get), nil
 }
 
+// RefreshClaudeQuotaCommand is GetClaudeQuotaCommand asking the usage endpoint now: the Usage surface's
+// refresh button. Only a 429 backoff holds it back, and RetryAt then says until when.
+func (ws *WshServer) RefreshClaudeQuotaCommand(ctx context.Context) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
+	return refreshClaudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Refresh), nil
+}
+
 // a setup-token cannot read the usage endpoint (403), and the credentials file and Claude Code's
-// cached answer belong to the /login account: say nothing rather than another account's numbers
+// cached answer belong to the /login account: say nothing rather than another account's numbers.
+// The answer carries that account's email, so the frontend files the numbers under the real account
+// rather than under "Default", whose owner changes whenever /login does.
 func claudeQuotaFor(ctx context.Context, active string, get func(context.Context) *claudequota.Quota) *wshrpc.CommandGetClaudeQuotaRtnData {
 	if active != "" {
 		return &wshrpc.CommandGetClaudeQuotaRtnData{}
 	}
-	q := get(ctx)
-	if q == nil {
+	return claudeQuotaAnswer(get(ctx), time.Time{})
+}
+
+// claudeQuotaFor for a refresh: a token account's answer is empty without asking anyone, as there
+func refreshClaudeQuotaFor(ctx context.Context, active string, refresh func(context.Context) (*claudequota.Quota, time.Time)) *wshrpc.CommandGetClaudeQuotaRtnData {
+	if active != "" {
 		return &wshrpc.CommandGetClaudeQuotaRtnData{}
 	}
-	return &wshrpc.CommandGetClaudeQuotaRtnData{
-		FiveHourPct:   q.FiveHourPct,
-		FiveHourReset: q.FiveHourReset,
-		WeekPct:       q.WeekPct,
-		WeekReset:     q.WeekReset,
-		CapturedAt:    q.CapturedAt.UnixMilli(),
-		Source:        q.Source,
-	}
+	return claudeQuotaAnswer(refresh(ctx))
 }
+
+// the answer carries RetryAt even when no reading is known, so a refresh held by a 429 can say so
+func claudeQuotaAnswer(q *claudequota.Quota, retryAt time.Time) *wshrpc.CommandGetClaudeQuotaRtnData {
+	out := &wshrpc.CommandGetClaudeQuotaRtnData{}
+	if !retryAt.IsZero() {
+		out.RetryAt = retryAt.UnixMilli()
+	}
+	if q == nil {
+		return out
+	}
+	out.FiveHourPct = q.FiveHourPct
+	out.FiveHourReset = q.FiveHourReset
+	out.WeekPct = q.WeekPct
+	out.WeekReset = q.WeekReset
+	out.CapturedAt = q.CapturedAt.UnixMilli()
+	out.Source = q.Source
+	out.Email = loginEmail()
+	return out
+}
+
+// swapped by tests
+var loginEmail = claudequota.LoginEmail
 
 // AgentControlCommand streams what the engine sends a block's agent session for as long as the caller
 // (`wsh agentctl`, held by the session's mod) stays connected.

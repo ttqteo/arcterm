@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { globalStore } from "@/app/store/jotaiStore";
 import {
+    adoptDefaultSnapshot,
+    agentQuotaKey,
+    blockLoginEmail,
+    claudeQuotaKey,
+    identityFromList,
     mergeRateLimitWindows,
     migrateSaved,
     planDonuts,
@@ -10,15 +15,133 @@ import {
     recordRateLimit,
     savedRateLimitsAtom,
     topProviderUsage,
+    type ClaudeIdentity,
     type SavedSnapshot,
 } from "./ratelimitstore";
 import { liveWindowAgents, providerPlanUsage, type AgentVM } from "./agentsviewmodel";
 
+const NO_IDENTITY: ClaudeIdentity = { loginEmail: "", accounts: [] };
+const identity = (loginEmail: string, ...accounts: ClaudeIdentity["accounts"]): ClaudeIdentity => ({
+    loginEmail,
+    accounts,
+});
+
+describe("claudeQuotaKey", () => {
+    it("is claude:default for Default while the login email is unknown", () => {
+        expect(claudeQuotaKey(undefined, NO_IDENTITY)).toBe("claude:default");
+        expect(claudeQuotaKey("", NO_IDENTITY)).toBe("claude:default");
+    });
+    it("is the login email for Default once it is known, lowercased", () => {
+        expect(claudeQuotaKey("", identity("Mozox@Example.com"))).toBe("claude:mozox@example.com");
+    });
+    it("is the account's email when it has one, lowercased", () => {
+        const id = identity("", { id: "a1", label: "Work", email: "Mozox@Example.com" });
+        expect(claudeQuotaKey("a1", id)).toBe("claude:mozox@example.com");
+    });
+    it("is the account id when it has no email, or is unknown", () => {
+        const id = identity("me@x.io", { id: "a1", label: "Work" }, { id: "a2", label: "Blank", email: "  " });
+        expect(claudeQuotaKey("a1", id)).toBe("claude:a1");
+        expect(claudeQuotaKey("a2", id)).toBe("claude:a2");
+        expect(claudeQuotaKey("a9", id)).toBe("claude:a9");
+    });
+    it("names one account whether it is Default or a token account with the login email", () => {
+        const id = identity("mozox@example.com", { id: "a1", label: "Work", email: "MOZOX@example.com" });
+        expect(claudeQuotaKey("a1", id)).toBe(claudeQuotaKey("", id));
+    });
+});
+
+describe("claudeQuotaKey for a session", () => {
+    const id = identity("new@x.io", { id: "a1", label: "Work", email: "work@x.io" });
+    it("is the /login email the session started with, not the current one, for Default", () => {
+        expect(claudeQuotaKey("", id, "Old@X.io")).toBe("claude:old@x.io");
+        expect(agentQuotaKey("", "Old@X.io", id)).toBe("claude:old@x.io");
+        expect(agentQuotaKey(undefined, "old@x.io", NO_IDENTITY)).toBe("claude:old@x.io");
+    });
+    it("is the current /login email when the session has none", () => {
+        expect(agentQuotaKey("", undefined, id)).toBe("claude:new@x.io");
+        expect(agentQuotaKey("", "  ", id)).toBe("claude:new@x.io");
+        expect(agentQuotaKey("", "", NO_IDENTITY)).toBe("claude:default");
+    });
+    it("leaves a token account to its arcterm account", () => {
+        expect(agentQuotaKey("a1", "old@x.io", id)).toBe("claude:work@x.io");
+        expect(agentQuotaKey("a2", "old@x.io", id)).toBe("claude:a2");
+    });
+});
+
+describe("blockLoginEmail", () => {
+    it("reads agent:loginemail from a block's meta, lowercased", () => {
+        expect(blockLoginEmail({ meta: { "agent:loginemail": "Old@X.io" } } as Block)).toBe("old@x.io");
+    });
+    it("is empty when the block, its meta or the key is missing", () => {
+        expect(blockLoginEmail(null)).toBe("");
+        expect(blockLoginEmail({} as Block)).toBe("");
+        expect(blockLoginEmail({ meta: {} } as Block)).toBe("");
+        expect(blockLoginEmail({ meta: { "agent:loginemail": 5 } } as unknown as Block)).toBe("");
+    });
+});
+
+describe("adoptDefaultSnapshot", () => {
+    const snap = (capturedAt: number, fivehourpct = 10): SavedSnapshot => ({ capturedAt, fivehourpct });
+    it("moves claude:default to the login email", () => {
+        const saved = { "claude:default": snap(5), codex: snap(1) };
+        expect(adoptDefaultSnapshot(saved, "Mozox@Example.com")).toEqual({
+            "claude:mozox@example.com": snap(5),
+            codex: snap(1),
+        });
+    });
+    it("changes nothing while the login email is unknown", () => {
+        const saved = { "claude:default": snap(5) };
+        expect(adoptDefaultSnapshot(saved, "")).toBe(saved);
+    });
+    it("changes nothing when there is no claude:default", () => {
+        const saved = { "claude:a@b.c": snap(5) };
+        expect(adoptDefaultSnapshot(saved, "a@b.c")).toBe(saved);
+    });
+    it("keeps a newer snapshot already under the email, and drops the default", () => {
+        const saved = { "claude:default": snap(5, 10), "claude:a@b.c": snap(9, 90) };
+        expect(adoptDefaultSnapshot(saved, "a@b.c")).toEqual({ "claude:a@b.c": snap(9, 90) });
+    });
+    it("replaces an older snapshot under the email", () => {
+        const saved = { "claude:default": snap(9, 10), "claude:a@b.c": snap(5, 90) };
+        expect(adoptDefaultSnapshot(saved, "a@b.c")).toEqual({ "claude:a@b.c": snap(9, 10) });
+    });
+    it("does not mutate its input", () => {
+        const saved = { "claude:default": snap(5) };
+        adoptDefaultSnapshot(saved, "a@b.c");
+        expect(Object.keys(saved)).toEqual(["claude:default"]);
+    });
+});
+
+describe("identityFromList", () => {
+    it("lowercases emails and leaves an unset one out", () => {
+        expect(
+            identityFromList({
+                accounts: [
+                    { id: "a1", label: "Work", createdts: 1, email: "Mozox@Example.com" },
+                    { id: "a2", label: "Home", createdts: 2 },
+                ],
+                active: "",
+                loginemail: "Me@X.io",
+            })
+        ).toEqual({
+            loginEmail: "me@x.io",
+            accounts: [
+                { id: "a1", label: "Work", email: "mozox@example.com" },
+                { id: "a2", label: "Home", email: undefined },
+            ],
+        });
+    });
+    it("is empty for no answer", () => {
+        expect(identityFromList(null)).toEqual({ loginEmail: "", accounts: [] });
+    });
+});
+
 describe("per-account claude snapshots", () => {
-    it("keys claude by account", () => {
-        expect(rateLimitKey("claude", undefined)).toBe("claude:default");
-        expect(rateLimitKey("claude", "a1b2c3d4")).toBe("claude:a1b2c3d4");
-        expect(rateLimitKey("codex", "a1b2c3d4")).toBe("codex");
+    it("keys claude by the real account, other providers by name", () => {
+        expect(rateLimitKey("claude", undefined, NO_IDENTITY)).toBe("claude:default");
+        expect(rateLimitKey("claude", "a1b2c3d4", NO_IDENTITY)).toBe("claude:a1b2c3d4");
+        expect(rateLimitKey("claude", "", identity("me@x.io"))).toBe("claude:me@x.io");
+        expect(rateLimitKey("codex", "a1b2c3d4", identity("me@x.io"))).toBe("codex");
     });
     it("migrates a bare claude snapshot to claude:default", () => {
         const s = { capturedAt: 1, fivehourpct: 10 };
@@ -33,16 +156,81 @@ describe("per-account claude snapshots", () => {
         const a = { capturedAt: 1, fivehourpct: 10 };
         const b = { capturedAt: 2, fivehourpct: 90 };
         const saved = { "claude:default": a, "claude:a1": b, codex: a };
-        expect(projectActiveAccount(saved, "a1")).toEqual({ claude: b, codex: a });
-        expect(projectActiveAccount(saved, "")).toEqual({ claude: a, codex: a });
+        expect(projectActiveAccount(saved, "claude:a1")).toEqual({ claude: b, codex: a });
+        expect(projectActiveAccount(saved, "claude:default")).toEqual({ claude: a, codex: a });
+        expect(projectActiveAccount(saved, "claude:me@x.io")).toEqual({ codex: a });
     });
     it("planDonuts drops claude agents on another account", () => {
         const agents = [
             { id: "1", state: "working", agent: "claude", usage: { fivehourpct: 97, account: "" } },
             { id: "2", state: "working", agent: "claude", usage: { fivehourpct: 5, account: "a1" } },
         ] as AgentVM[];
-        const d = planDonuts(agents, {}, "a1", 0);
+        const d = planDonuts(agents, {}, "claude:a1", NO_IDENTITY, 0);
         expect(d.find((x) => x.provider === "claude")?.fivehour.pct).toBe(5);
+    });
+    it("planDonuts counts a token account with the login email as the same account as Default", () => {
+        const id = identity("mozox@example.com", { id: "a1", label: "Work", email: "mozox@example.com" });
+        const agent = (n: string, pct: number, account: string) =>
+            ({ id: n, state: "working", agent: "claude", usage: { fivehourpct: pct, account } }) as AgentVM;
+        const pctWith = (agents: AgentVM[], activeId: string) =>
+            planDonuts(agents, {}, claudeQuotaKey(activeId, id), id, 0).find((x) => x.provider === "claude")?.fivehour
+                .pct;
+        for (const activeId of ["", "a1"]) {
+            expect(pctWith([agent("1", 97, "")], activeId)).toBe(97);
+            expect(pctWith([agent("2", 99, "a1")], activeId)).toBe(99);
+            // a token account with no email is another account
+            expect(pctWith([agent("3", 1, "a2")], activeId)).toBeUndefined();
+        }
+    });
+    it("planDonuts leaves out a Default agent that started on an earlier /login account", () => {
+        const id = identity("new@x.io");
+        const saved = { "claude:new@x.io": { capturedAt: 100, fivehourpct: 4, fivehourreset: 1_000_000 } };
+        const agent = (n: string, pct: number, loginEmail?: string) =>
+            ({
+                id: n,
+                state: "working",
+                agent: "claude",
+                loginEmail,
+                usage: { fivehourpct: pct, account: "" },
+            }) as AgentVM;
+        const claude = (agents: AgentVM[]) =>
+            planDonuts(agents, saved, "claude:new@x.io", id, 200_000).find((x) => x.provider === "claude");
+        // its 94% is the old account's: the strip keeps the new account's saved 4%
+        const old = claude([agent("1", 94, "old@x.io")]);
+        expect(old?.fivehour.pct).toBe(4);
+        expect(old?.stale?.capturedAt).toBe(100);
+        // one on the current account is live and counts, as is one the hook never stamped
+        expect(claude([agent("2", 30, "NEW@x.io")])?.fivehour.pct).toBe(30);
+        expect(claude([agent("3", 40)])?.fivehour.pct).toBe(40);
+        expect(claude([agent("1", 94, "old@x.io"), agent("2", 30, "new@x.io")])?.fivehour.pct).toBe(30);
+    });
+    it("planDonuts shows the old account's agent when that account is the active one", () => {
+        const id = identity("new@x.io");
+        const agents = [
+            {
+                id: "1",
+                state: "working",
+                agent: "claude",
+                loginEmail: "old@x.io",
+                usage: { fivehourpct: 94, account: "" },
+            },
+        ] as AgentVM[];
+        const d = planDonuts(agents, {}, "claude:old@x.io", id, 0).find((x) => x.provider === "claude");
+        expect(d?.fivehour.pct).toBe(94);
+    });
+    it("files a Default agent's snapshot under the email its session started on", () => {
+        expect(rateLimitKey("claude", "", identity("new@x.io"), "old@x.io")).toBe("claude:old@x.io");
+        expect(rateLimitKey("claude", "", identity("new@x.io"))).toBe("claude:new@x.io");
+        expect(rateLimitKey("claude", "a1", identity("new@x.io"), "old@x.io")).toBe("claude:a1");
+        expect(rateLimitKey("codex", "", identity("new@x.io"), "old@x.io")).toBe("codex");
+    });
+    it("planDonuts shows a token account the snapshot saved while its email was the /login account", () => {
+        const id = identity("other@example.com", { id: "a1", label: "Work", email: "mozox@example.com" });
+        const saved = { "claude:mozox@example.com": { capturedAt: 100, fivehourpct: 100, fivehourreset: 1_000_000 } };
+        const d = planDonuts([], saved, claudeQuotaKey("a1", id), id, 200_000);
+        const claude = d.find((x) => x.provider === "claude");
+        expect(claude?.fivehour.pct).toBe(100);
+        expect(claude?.stale?.capturedAt).toBe(100);
     });
 });
 

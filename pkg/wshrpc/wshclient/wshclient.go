@@ -181,6 +181,12 @@ func ClaudeAccountRenameCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAcco
 	return err
 }
 
+// command "claudeaccountsetemail", wshserver.ClaudeAccountSetEmailCommand
+func ClaudeAccountSetEmailCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountSetEmailData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "claudeaccountsetemail", data, opts)
+	return err
+}
+
 // command "consult", wshserver.ConsultCommand
 func ConsultCommand(w *wshutil.WshRpc, data wshrpc.CommandConsultData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.ConsultChunk] {
 	return sendRpcRequestResponseStreamHelper[wshrpc.ConsultChunk](w, "consult", data, opts)
@@ -292,6 +298,12 @@ func DagStatusCommand(w *wshutil.WshRpc, data wshrpc.CommandDagStatusData, opts 
 func DagSubmitCommand(w *wshutil.WshRpc, data wshrpc.CommandDagSubmitData, opts *wshrpc.RpcOpts) (*waveobj.TaskGroup, error) {
 	resp, err := sendRpcRequestCallHelper[*waveobj.TaskGroup](w, "dagsubmit", data, opts)
 	return resp, err
+}
+
+// command "deleteagentsession", wshserver.DeleteAgentSessionCommand
+func DeleteAgentSessionCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteAgentSessionData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "deleteagentsession", data, opts)
+	return err
 }
 
 // command "deleteblock", wshserver.DeleteBlockCommand
@@ -765,6 +777,12 @@ func PostChannelMessageCommand(w *wshutil.WshRpc, data wshrpc.CommandPostChannel
 // command "readvaultnote", wshserver.ReadVaultNoteCommand
 func ReadVaultNoteCommand(w *wshutil.WshRpc, data wshrpc.CommandReadVaultNoteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandReadVaultNoteRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandReadVaultNoteRtnData](w, "readvaultnote", data, opts)
+	return resp, err
+}
+
+// command "refreshclaudequota", wshserver.RefreshClaudeQuotaCommand
+func RefreshClaudeQuotaCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetClaudeQuotaRtnData](w, "refreshclaudequota", nil, opts)
 	return resp, err
 }
 

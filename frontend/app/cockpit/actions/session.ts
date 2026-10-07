@@ -1,6 +1,7 @@
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "@/app/view/agents/sessiondelete";
 import { overlayLive, sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
 import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
 import { sessionPrimary, sessionSelection } from "@/app/view/agents/sessionsruns";
@@ -42,6 +43,15 @@ export const SESSION_KIND: ThingKindDef<SessionThing> = {
             destructive: true,
             applies: (t) => t.agent != null,
             run: (t, { model }) => confirmCloseSession(t.agent, model),
+        },
+        {
+            // an ended Claude session only: its transcript moves to ~/.arc/trash, kept 7 days
+            id: "session:delete",
+            label: DELETE_SESSION_LABEL,
+            group: "stop",
+            destructive: true,
+            applies: (t) => canDeleteSession(t.session),
+            run: (t) => confirmDeleteSession(t.session),
         },
     ],
     // resumable ones only, as the palette's session rows

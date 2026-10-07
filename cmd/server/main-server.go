@@ -29,6 +29,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
 	"github.com/wavetermdev/waveterm/pkg/service"
+	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/util/sigutil"
@@ -357,6 +358,8 @@ func main() {
 	maybeStartPprofServer()
 	go stdinReadWatch()
 	go tempAttachmentCleanupLoop()
+	// trashed sessions older than 7 days are removed: now, then daily
+	sessiontrash.StartPurgeLoop(context.Background())
 	orchestrate.SealRunEvidenceHook = wshserver.SealDoneRunEvidenceAsync // a run the engine closed itself gets the same evidence snapshot `wsh jarvis complete` produces; before StartWatchdog, whose first tick is immediate and can be the tick that closes one
 	orchestrate.LaunchLeadHook = wshserver.LaunchPlanLead                // a run submitted with no lead gets one at its first judgment event; before StartWatchdog, whose first tick can deliver one
 	orchestrate.MarkInterruptedRuns(context.Background())                // no worker survives a restart; the previous wavesrv's non-dag runs would otherwise read executing forever

@@ -78,6 +78,7 @@ const (
 	MetaKey_AppLoom                          = "app:loom"
 
 	MetaKey_AgentTranscriptPath              = "agent:transcriptpath"
+	MetaKey_AgentLoginEmail                  = "agent:loginemail"
 
 	MetaKey_Count                            = "count"
 )

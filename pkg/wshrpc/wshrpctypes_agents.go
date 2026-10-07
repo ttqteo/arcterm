@@ -15,7 +15,8 @@ type AgentCommands interface {
 	GetTranscriptTokensCommand(ctx context.Context, data CommandGetTranscriptTokensData) (*CommandGetTranscriptTokensRtnData, error)
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
 	GetWindowTokensCommand(ctx context.Context, data CommandGetWindowTokensData) (*CommandGetWindowTokensRtnData, error)
-	GetClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error) // the Claude account's 5-hour and weekly windows with no session running
+	GetClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error)     // the Claude account's 5-hour and weekly windows with no session running
+	RefreshClaudeQuotaCommand(ctx context.Context) (*CommandGetClaudeQuotaRtnData, error) // the same, asking the usage endpoint now (a 429 backoff still holds: RetryAt says until when)
 	GetCacheStatusCommand(ctx context.Context, data CommandGetCacheStatusData) (*CommandGetCacheStatusRtnData, error)
 	GetBackgroundAgentsCommand(ctx context.Context, data CommandGetBackgroundAgentsData) (*CommandGetBackgroundAgentsRtnData, error)
 	// the folders Claude Code has sessions in, for the New project picker
@@ -163,6 +164,8 @@ type CommandGetClaudeQuotaRtnData struct {
 	WeekReset     *int64   `json:"weekreset,omitempty"`  // epoch seconds
 	CapturedAt    int64    `json:"capturedat,omitempty"` // epoch ms the reading is as of
 	Source        string   `json:"source,omitempty"`     // "live" or "cache"
+	Email         string   `json:"email,omitempty"`      // the /login account these numbers belong to, lowercased
+	RetryAt       int64    `json:"retryat,omitempty"`    // epoch ms the usage endpoint may be asked again, set when a 429 backoff holds it
 }
 
 type CommandGetCacheStatusData struct {

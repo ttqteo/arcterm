@@ -100,6 +100,7 @@ export interface AgentVM {
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
     step?: string; // idle: the "n/m" part its last message stopped on ("1/3"), until you reply
+    loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
 }
 
 const STATE_RANK: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
@@ -486,6 +487,7 @@ export interface LiveAgentInput {
     runORef?: string; // jarvis:runoref on the tab: "run:<id>"
     effortORef?: string; // session:effort on the tab: "effort:<oid>"
     step?: string; // the status event's step: the "n/m" part an idle turn stopped on
+    loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
 }
 
 /** Pure: one live row -> an AgentVM. `asking` (a pending AskUserQuestion) maps straight to asking so
@@ -514,6 +516,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
         project: input.project,
         sessionId: input.sessionId,
     };
+    if (input.loginEmail) {
+        vm.loginEmail = input.loginEmail;
+    }
     if (input.runORef?.startsWith("run:")) {
         vm.runId = input.runORef.slice("run:".length);
     }

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { restartCandidates, rowQuota } from "./claudeaccount";
+import { knownClaudeEmails, restartCandidates, rowQuota } from "./claudeaccount";
 
 describe("restartCandidates", () => {
     it("lists resumable claude agents not on the new account; idle pre-checked, working and asking not", () => {
@@ -77,12 +77,12 @@ describe("rowQuota", () => {
     const now = 10 * 60 * 60 * 1000;
 
     it("null when the account was never used", () => {
-        expect(rowQuota({}, "a1", now)).toBeNull();
+        expect(rowQuota({}, "claude:a1", now)).toBeNull();
     });
 
     it("reads a current snapshot", () => {
         const saved = { "claude:a1": { capturedAt: now - 60_000, fivehourpct: 97, weekpct: 40 } };
-        expect(rowQuota(saved, "a1", now)).toEqual({ fivehourpct: 97, weekpct: 40, capturedAt: now - 60_000 });
+        expect(rowQuota(saved, "claude:a1", now)).toEqual({ fivehourpct: 97, weekpct: 40, capturedAt: now - 60_000 });
     });
 
     it("a window past its reset reads 0", () => {
@@ -94,6 +94,55 @@ describe("rowQuota", () => {
                 weekpct: 40,
             },
         };
-        expect(rowQuota(saved, "", now)).toEqual({ fivehourpct: 0, weekpct: 40, capturedAt: now - 60_000 });
+        expect(rowQuota(saved, "claude:default", now)).toEqual({
+            fivehourpct: 0,
+            weekpct: 40,
+            capturedAt: now - 60_000,
+        });
+    });
+});
+
+describe("rowQuota by email key", () => {
+    const now = 10 * 60 * 60 * 1000;
+
+    it("reads the snapshot saved under an email, with its age", () => {
+        const saved = { "claude:mozox@example.com": { capturedAt: now - 3_600_000, fivehourpct: 100, weekpct: 62 } };
+        expect(rowQuota(saved, "claude:mozox@example.com", now)).toEqual({
+            fivehourpct: 100,
+            weekpct: 62,
+            capturedAt: now - 3_600_000,
+        });
+    });
+
+    it("rolls a window over once its reset has passed", () => {
+        const saved = {
+            "claude:mozox@example.com": {
+                capturedAt: now - 3_600_000,
+                fivehourpct: 100,
+                fivehourreset: (now - 1000) / 1000,
+                weekpct: 62,
+            },
+        };
+        expect(rowQuota(saved, "claude:mozox@example.com", now)?.fivehourpct).toBe(0);
+    });
+});
+
+describe("knownClaudeEmails", () => {
+    const snap = { capturedAt: 1, fivehourpct: 1 };
+
+    it("is the login email plus every email a snapshot was saved under, sorted, without duplicates", () => {
+        const saved = {
+            "claude:zed@x.io": snap,
+            "claude:me@x.io": snap,
+            "claude:default": snap,
+            "claude:a1b2c3d4": snap,
+            codex: snap,
+            "codex:odd@x.io": snap,
+        };
+        expect(knownClaudeEmails(saved, { loginEmail: "Me@x.io", accounts: [] })).toEqual(["me@x.io", "zed@x.io"]);
+    });
+
+    it("is empty when nothing is known", () => {
+        expect(knownClaudeEmails({}, { loginEmail: "", accounts: [] })).toEqual([]);
     });
 });

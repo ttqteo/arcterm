@@ -12,7 +12,15 @@ import { Fragment, useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
 import { usageLevel } from "./agentsviewmodel";
 import { meterTitle, providerDot, usageBarVisible, windowUsedTokens } from "./cockpitrailmodel";
-import { activeClaudeAccountAtom, planDonuts, savedRateLimitsAtom } from "./ratelimitstore";
+import {
+    activeClaudeAccountAtom,
+    activeClaudeKeyAtom,
+    claudeIdentityAtom,
+    planDonuts,
+    savedRateLimitsAtom,
+} from "./ratelimitstore";
+import { showUsageRefresh } from "./usagerefresh";
+import { UsageRefreshButton } from "./usagerefreshbutton";
 import { loadWindowTokens, windowTokensAtom, type WindowTokens } from "./windowtokenstore";
 
 const LEVEL_BAR: Record<"ok" | "warn" | "hot", string> = { ok: "bg-accent", warn: "bg-warning", hot: "bg-error" };
@@ -32,10 +40,12 @@ const WINDOWS = [
 export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
+    const activeKey = useAtomValue(activeClaudeKeyAtom);
     const activeAccount = useAtomValue(activeClaudeAccountAtom);
+    const identity = useAtomValue(claudeIdentityAtom);
     const windowTokens = useAtomValue(windowTokensAtom);
     const now = useAtomValue(model.nowAtom);
-    const donuts = planDonuts(agents, saved, activeAccount, now);
+    const donuts = planDonuts(agents, saved, activeKey, identity, now);
     const claude = donuts.find((d) => d.provider === "claude");
     useEffect(() => {
         if (claude == null) {
@@ -48,6 +58,7 @@ export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
             donuts={donuts}
             windowTokens={windowTokens}
             now={now}
+            activeAccount={activeAccount}
             onOpen={() => globalStore.set(model.surfaceAtom, "usage")}
         />
     );
@@ -57,11 +68,13 @@ function UsageMeters({
     donuts,
     windowTokens,
     now,
+    activeAccount,
     onOpen,
 }: {
     donuts: ReturnType<typeof planDonuts>;
     windowTokens: WindowTokens | null;
     now: number;
+    activeAccount: string;
     onOpen: () => void;
 }) {
     const items = donuts.flatMap((d) =>
@@ -74,33 +87,43 @@ function UsageMeters({
             title: meterTitle(label, d[w].pct!, windowUsedTokens(d.provider, windowTokens, w), d[w].reset, now),
         }))
     );
+    // a sibling of the open button, not inside it: a button does not nest
+    const refresh = showUsageRefresh(
+        items.map((m) => m.provider),
+        activeAccount
+    ) ? (
+        <UsageRefreshButton />
+    ) : null;
     if (items.length === 0) {
-        return null;
+        return refresh;
     }
     const multi = new Set(items.map((m) => m.provider)).size > 1;
     return (
-        <button
-            type="button"
-            onClick={onOpen}
-            title={[...items.map((m) => m.title), "Open Usage"].join("\n")}
-            className="flex h-[30px] cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
-        >
-            {items.map((m, i) => {
-                const lvl = usageLevel(m.pct);
-                return (
-                    <Fragment key={m.key}>
-                        {i > 0 ? <span className="h-3.5 w-px bg-edge-mid" /> : null}
-                        {multi && m.first ? (
-                            <span className={cn("h-1.5 w-1.5 rounded-full", providerDot(m.provider))} />
-                        ) : null}
-                        <span className="text-[10.5px] text-muted">{m.short}</span>
-                        <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={5} radius={3} className="w-11" />
-                        <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
-                            {Math.round(m.pct)}%
-                        </span>
-                    </Fragment>
-                );
-            })}
-        </button>
+        <div className="flex items-center gap-1.5">
+            <button
+                type="button"
+                onClick={onOpen}
+                title={[...items.map((m) => m.title), "Open Usage"].join("\n")}
+                className="flex h-[30px] cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
+            >
+                {items.map((m, i) => {
+                    const lvl = usageLevel(m.pct);
+                    return (
+                        <Fragment key={m.key}>
+                            {i > 0 ? <span className="h-3.5 w-px bg-edge-mid" /> : null}
+                            {multi && m.first ? (
+                                <span className={cn("h-1.5 w-1.5 rounded-full", providerDot(m.provider))} />
+                            ) : null}
+                            <span className="text-[10.5px] text-muted">{m.short}</span>
+                            <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={5} radius={3} className="w-11" />
+                            <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
+                                {Math.round(m.pct)}%
+                            </span>
+                        </Fragment>
+                    );
+                })}
+            </button>
+            {refresh}
+        </div>
     );
 }

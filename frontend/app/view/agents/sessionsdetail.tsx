@@ -12,7 +12,7 @@ import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
@@ -24,6 +24,7 @@ import type { Runtime } from "./launch";
 import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
 import { activityAtomFor } from "./livetranscriptatoms";
 import { runtimeMeta } from "./runtimemeta";
+import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import type { LiveSession } from "./sessionsarchivestore";
 import { LEAD_MEMBER, sessionPrimary, type RunMember, type RunView, type Status, type StatusKey } from "./sessionsruns";
 import { atBottom } from "./transcriptfollow";
@@ -130,6 +131,25 @@ function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; ses
             )}
         >
             {primary === "jump" ? "Jump →" : "Resume →"}
+        </button>
+    );
+}
+
+// Xoá session: an ended Claude session's transcript goes to ~/.arc/trash (sessiondelete.ts). Nothing when it cannot be
+function DeleteSessionButton({ session, onDeleted }: { session: LiveSession; onDeleted?: () => void }) {
+    if (!canDeleteSession(session)) {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-agent-session-delete
+            onClick={() => confirmDeleteSession(session, onDeleted)}
+            title={DELETE_SESSION_LABEL}
+            aria-label={DELETE_SESSION_LABEL}
+            className="flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[7px] border border-edge-strong bg-surface-raised text-muted hover:border-error hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            <Trash2 size={13} aria-hidden />
         </button>
     );
 }
@@ -430,6 +450,11 @@ export function SoloDetail({
                     />
                 </div>
                 <ViewToggle model={model} />
+                {/* the session is gone: read on from the terminal (the centre pane), or from the whole feed (History) */}
+                <DeleteSessionButton
+                    session={session}
+                    onDeleted={() => (onBack ? onBack() : globalStore.set(model.sessionsSelAtom, "all"))}
+                />
                 <PrimaryButton model={model} session={session} strong />
             </div>
             <SessionBody model={model} session={session} empty="" className="pb-2" />
@@ -592,6 +617,7 @@ export function RunDetail({
                         <div className="mb-1.5 flex items-center gap-3">
                             <h3 className="min-w-0 flex-1 truncate text-[15px] font-bold text-primary">{title}</h3>
                             <ViewToggle model={model} />
+                            {memberSession ? <DeleteSessionButton session={memberSession} /> : null}
                             {memberSession ? <PrimaryButton model={model} session={memberSession} /> : null}
                         </div>
                         <Meta items={sessionMeta(memberSession, [{ k: "status", v: member.status.text }])} />
