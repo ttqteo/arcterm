@@ -11,7 +11,7 @@ import { initKeybindingDispatcher } from "@/app/store/keybindings/dispatcher";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { getTabModelByTabId } from "@/app/store/tab-model";
 import { AgentsViewModel } from "@/app/view/agents/agents";
-import { coerceStartupSurface, startupSurfaceAtom } from "@/app/view/agents/cockpitprefsstore";
+import { bootSurface, lastSurfaceAtom, rememberSurface, startupSurfaceAtom } from "@/app/view/agents/cockpitprefsstore";
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { useApplyCockpitFonts } from "@/app/view/agents/fontstore";
 import { CockpitShell } from "@/app/view/agents/cockpitshell";
@@ -67,8 +67,11 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             tabModel: getTabModelByTabId(tabIdRef.current, waveEnv),
             waveEnv,
         });
-        // Open the user's chosen startup surface (defaults to "cockpit", matching prior behavior).
-        globalStore.set(model.surfaceAtom, coerceStartupSurface(globalStore.get(startupSurfaceAtom)));
+        // Open the user's chosen startup surface: by default the one open when the app last closed.
+        globalStore.set(
+            model.surfaceAtom,
+            bootSurface(globalStore.get(startupSurfaceAtom), globalStore.get(lastSurfaceAtom))
+        );
         agentsModelRef.current = model;
     }
     const model = agentsModelRef.current;
@@ -83,6 +86,17 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         return () => setPathLinkModel(null);
     }, [model]);
     useEffect(() => setupUiClient(model), [model]);
+    // remember every switch, so the next launch can reopen where this one left off
+    useEffect(
+        () =>
+            globalStore.sub(model.surfaceAtom, () => {
+                const next = rememberSurface(globalStore.get(model.surfaceAtom));
+                if (next != null) {
+                    globalStore.set(lastSurfaceAtom, next);
+                }
+            }),
+        [model]
+    );
     // Kill the native browser context menu app-wide so it never leaks on elements without a themed
     // handler (e.g. navrail items). Themed menus (ContextMenuModel) render via portal and are
     // unaffected — preventDefault only suppresses the native menu. Native stays only inside editable

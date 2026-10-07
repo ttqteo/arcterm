@@ -3,10 +3,12 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    bootSurface,
     coerceFontSize,
     coerceScrollback,
     coerceStartupSurface,
     coerceTransparency,
+    rememberSurface,
     startupSurfaceOptions,
     vaultPathError,
 } from "./cockpitprefsstore";
@@ -18,6 +20,39 @@ describe("startupSurfaceOptions", () => {
         expect(opts).not.toContain("settings");
         expect(opts).toContain("cockpit");
         expect(opts).toContain("usage");
+    });
+    it("offers the last opened surface first", () => {
+        expect(startupSurfaceOptions()[0]).toBe("last");
+    });
+});
+
+describe("bootSurface", () => {
+    it("reopens the remembered surface when the choice is last", () => {
+        expect(bootSurface("last", "agent")).toBe("agent");
+        expect(bootSurface("last", "radar")).toBe("radar");
+    });
+    it("falls back to the cockpit for a remembered value that is not a surface", () => {
+        expect(bootSurface("last", "nope")).toBe("cockpit");
+        expect(bootSurface("last", undefined)).toBe("cockpit");
+        expect(bootSurface("last", "settings")).toBe("cockpit");
+    });
+    it("sends a remembered retired surface to the Agent surface", () => {
+        expect(bootSurface("last", "sessions")).toBe("agent");
+    });
+    it("opens a picked surface whatever was last open", () => {
+        expect(bootSurface("usage", "agent")).toBe("usage");
+        expect(bootSurface("activity", "radar")).toBe("agent");
+    });
+});
+
+describe("rememberSurface", () => {
+    it("remembers a numbered surface", () => {
+        expect(rememberSurface("agent")).toBe("agent");
+        expect(rememberSurface("cockpit")).toBe("cockpit");
+    });
+    it("keeps the stored one for Setup and Settings", () => {
+        expect(rememberSurface("setup")).toBeNull();
+        expect(rememberSurface("settings")).toBeNull();
     });
 });
 

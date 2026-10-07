@@ -32,6 +32,7 @@ import {
     startupSurfaceAtom,
     startupSurfaceOptions,
     vaultPathError,
+    type StartupSurface,
 } from "./cockpitprefsstore";
 import { createCommitGate } from "./commitgate";
 import { DEFAULT_MONO, DEFAULT_SANS, DEFAULT_TERM_FONT, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
@@ -79,6 +80,9 @@ const LABEL: Record<SurfaceKey, string> = Object.fromEntries(ITEMS.map((i) => [i
     SurfaceKey,
     string
 >;
+
+// a startup choice's button label: a surface by its nav name, "last" by what it does
+const startupLabel = (k: StartupSurface) => (k === "last" ? "Last opened" : (LABEL[k] ?? k));
 
 // Runtimes the flag editor lists. Terminal stays out (it isn't an agent); pi is included even though
 // its catalog is empty so its no-flags state renders in the editor instead of the row vanishing.
@@ -892,7 +896,7 @@ function GeneralSection() {
                                 startup === k ? "bg-accentbg text-accent" : "text-secondary hover:text-primary"
                             )}
                         >
-                            {LABEL[k] ?? k}
+                            {startupLabel(k)}
                         </button>
                     ))}
                 </div>

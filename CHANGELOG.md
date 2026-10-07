@@ -14,6 +14,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A background task's output opens in the panel following live and wrapped, finished or not, and drops the
   **Open in Code** button.
+- arcterm reopens on the surface you left it on. Settings → Startup surface has **Last opened** as its new default,
+  and a surface picked there now actually opens at launch.
 
 ### Fixed
 

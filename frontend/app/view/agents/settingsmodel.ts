@@ -154,7 +154,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                 {
                     id: "general.startup",
                     title: "Startup surface",
-                    desc: "Which surface opens when the app launches.",
+                    desc: "Which surface opens when the app launches. Last opened reopens the one you left.",
                     key: "cockpit.startup.surface",
                     scope: "local",
                 },

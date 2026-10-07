@@ -4,13 +4,34 @@
 // Cockpit-native preferences persisted to localStorage (the atomWithStorage convention established
 // by railstore.ts). The Settings surface edits these; the cockpit reads them on boot.
 
+import type { PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { SURFACE_ORDER, type SurfaceKey } from "./agents";
 
-// Which surface opens on launch. Defaults to the cockpit overview (matches prior hardcoded behavior).
-export const DEFAULT_STARTUP_SURFACE: SurfaceKey = "cockpit";
+// Which surface opens on launch: a surface, or "last" for the one that was open when the app last closed.
+export type StartupSurface = SurfaceKey | "last";
 
-export const startupSurfaceAtom = atomWithStorage<SurfaceKey>("cockpit.startup.surface", DEFAULT_STARTUP_SURFACE);
+export const DEFAULT_STARTUP_SURFACE: StartupSurface = "last";
+
+// getOnInit is load-bearing: the boot reads this once, before anything mounts it, and without it that read got the
+// default instead of the stored choice. The cast is railstore.ts's (jotai 2.9.3 otherwise types it as a promise).
+export const startupSurfaceAtom = atomWithStorage<StartupSurface>(
+    "cockpit.startup.surface",
+    DEFAULT_STARTUP_SURFACE,
+    undefined,
+    { getOnInit: true }
+) as PrimitiveAtom<StartupSurface>;
+
+// The last surface of SURFACE_ORDER that was open, written on every switch (rememberSurface). Setup and Settings are not
+// remembered, so a launch after closing on one of them reopens on the surface you came to it from.
+export const lastSurfaceAtom = atomWithStorage<string>("cockpit.last.surface", "cockpit", undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<string>;
+
+// Pure: the value to remember for a switch to `surface`, or null to keep the one stored.
+export function rememberSurface(surface: SurfaceKey): SurfaceKey | null {
+    return SURFACE_ORDER.includes(surface) ? surface : null;
+}
 
 // A persisted "activity" or "sessions" (retired surfaces: Activity folded into Sessions, Sessions into Agent's Conversation
 // History) coerces to "agent", so a stored legacy startup value boots into the Agent surface (the Settings picker then
@@ -20,11 +41,23 @@ export function coerceStartupSurface(k: SurfaceKey | "activity" | "sessions"): S
     return (k as string) === "activity" || (k as string) === "sessions" ? "agent" : (k as SurfaceKey);
 }
 
-// Surfaces offered as a startup choice: the numbered workflow set minus "agent", which is not offered as a picked default
-// (it is only meaningful with a live agent). A legacy value that coerces to "agent" above still boots there.
-// "settings" is naturally absent — it was never in SURFACE_ORDER.
-export function startupSurfaceOptions(): SurfaceKey[] {
-    return SURFACE_ORDER.filter((k) => k !== "agent");
+// Pure: the surface a launch opens on. "last" reopens the remembered surface; whatever is stored there is read, not
+// trusted (a hand edit, a surface since removed), and anything that is not a current surface falls back to the cockpit.
+export function bootSurface(startup: StartupSurface | "activity" | "sessions", last: unknown): SurfaceKey {
+    if (startup !== "last") {
+        return coerceStartupSurface(startup);
+    }
+    if (last === "activity" || last === "sessions") {
+        return "agent";
+    }
+    return SURFACE_ORDER.find((k) => k === last) ?? "cockpit";
+}
+
+// Choices offered for the startup surface: "last" first, then the numbered workflow set minus "agent", which is not
+// offered as a picked default (it is only meaningful with a live agent); "last" still reopens it. A legacy value that
+// coerces to "agent" above still boots there. "settings" is naturally absent — it was never in SURFACE_ORDER.
+export function startupSurfaceOptions(): StartupSurface[] {
+    return ["last", ...SURFACE_ORDER.filter((k) => k !== "agent")];
 }
 
 const FONT_SIZE_MIN = 6;
