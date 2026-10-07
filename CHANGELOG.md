@@ -20,6 +20,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- A run a session starts with `wsh runs start` is listed right under that session in the sidebar, so you can tell
+  which conversation launched it. Runs started before this update keep their old place.
 - `g` `j` now goes to Jarvis (it was `g` `c`).
 - On Windows, shortcuts are spelled out in words, `ctrl+shift+p` and `shift+g`, instead of `^⇧P` and `⇧G`; macOS
   keeps its ⌘ ⌃ ⌥ ⇧ symbols.

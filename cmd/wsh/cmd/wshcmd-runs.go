@@ -218,6 +218,7 @@ func runsStartRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	data.ChannelId = ch.OID
+	data.OriginTabId = getTabIdFromEnv()
 	rtn, err := wshclient.CreateRunCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: runsStartTimeoutMs})
 	if err != nil {
 		return runsStartErr(err)

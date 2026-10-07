@@ -23,6 +23,8 @@ export interface RunInfo {
     project: string;
     // whether the run has ever had a lead session, so a run with none in the roster can say which it is
     leadStarted?: boolean;
+    // the tab of the session that started the run with `wsh runs start`, which the tree lists it under
+    originId?: string;
     // the run's own status, the only truth for a run that has no dag to measure progress against
     status?: string;
     // the run's own wave/<runId> tree, when its lanes land there instead of the checkout

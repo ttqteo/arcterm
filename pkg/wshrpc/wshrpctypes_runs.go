@@ -54,6 +54,8 @@ type CommandCreateRunData struct {
 	// Prototype is the design canvas the run's final verifier compares against. It wins over the plan's
 	// **Prototype:** line; an orchestrator run only.
 	Prototype string `json:"prototype,omitempty"`
+	// OriginTabId is the tab of the session that ran `wsh runs start`; empty from the cockpit.
+	OriginTabId string `json:"origintabid,omitempty"`
 }
 
 type CommandCreateRunRtnData struct {

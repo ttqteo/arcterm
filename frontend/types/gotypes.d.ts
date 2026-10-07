@@ -543,6 +543,7 @@ declare global {
         deferstart?: boolean;
         planpath?: string;
         prototype?: string;
+        origintabid?: string;
     };
 
     // wshrpc.CommandCreateRunRtnData
@@ -2470,6 +2471,7 @@ declare global {
         land?: RunLand;
         verificationackts?: number;
         parentleadoref?: string;
+        origintabid?: string;
         effortref?: RunEffortRef;
         dagoref?: string;
         sessionid?: string;

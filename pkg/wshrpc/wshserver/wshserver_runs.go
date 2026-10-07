@@ -445,6 +445,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 		run.BaseBranch, _ = gitinfo.CurrentBranch(ctx, ch.ProjectPath)
 	}
 	run.RadarOrigin = data.RadarOrigin // nil for normal runs; set only from a Radar handoff
+	run.OriginTabId = data.OriginTabId
 	run.EffortRef = effortRef
 	if err := wstore.AppendRun(ctx, data.ChannelId, run); err != nil {
 		return nil, fmt.Errorf("appending run: %w", err)

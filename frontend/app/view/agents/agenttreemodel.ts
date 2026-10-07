@@ -198,6 +198,34 @@ function runRows(
     return { rows, members: agents, attn };
 }
 
+// besideOrigins moves each run a session started with `wsh runs start` to just after that session, so the two read
+// as one piece of work. Runs from one session keep their order; a run whose session is gone, or in another
+// project's group, stays where `order` put it.
+function besideOrigins(items: TopItem[]): TopItem[] {
+    const ids = new Set(items.flatMap((it) => (it.kind === "run" ? [] : [it.agent.id])));
+    const anchored = (it: TopItem): it is Exclude<TopItem, { kind: "parent" }> =>
+        it.kind !== "parent" && it.run.originId != null && ids.has(it.run.originId);
+    const out: TopItem[] = [];
+    const place = (it: TopItem) => {
+        out.push(it);
+        if (it.kind === "run") {
+            return;
+        }
+        for (const child of items) {
+            if (anchored(child) && child.run.originId === it.agent.id) {
+                place(child);
+            }
+        }
+    };
+    for (const it of items) {
+        if (!anchored(it)) {
+            place(it);
+        }
+    }
+    // a cycle of runs started from one another has no unanchored root; keep its runs rather than drop them
+    return out.length === items.length ? out : [...out, ...items.filter((it) => !out.includes(it))];
+}
+
 /** Pure: roster + anchored order -> [group, ...rows] per project. Projects appear in the first-seen order
  *  of `order`; top-level rows within a group follow `order` (ids absent from `order` sort last). A run's
  *  workers follow its lead in plan order, and a run with no lead in the roster takes the place of its first
@@ -273,6 +301,7 @@ export function buildAgentTree(
 
     const rows: AgentTreeRow[] = [];
     for (const g of groups) {
+        g.items = besideOrigins(g.items);
         const body: AgentTreeRow[] = [];
         let count = 0;
         let attn = 0;
