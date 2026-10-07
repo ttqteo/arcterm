@@ -27,6 +27,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The plan usage strip and the Usage tab have a **Refresh usage** button that reads Claude's windows now instead of
   waiting for the next check; if Anthropic is rate-limiting the read, it says when to try again.
 - Submitting a plan whose parallel tasks list the same file is refused.
+- The agent rail lists the servers listening in the agent's project — port, command, who started it and for how
+  long — with open, log, copy and stop.
 
 ### Changed
 

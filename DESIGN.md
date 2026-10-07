@@ -359,7 +359,7 @@ content is always fluid.
   amber fill would make the list shout.
 - **Details rail** — the tab strip counts the agent's lists after its tabs,
   an icon and a number each in one fixed order (Subagents, Files changed,
-  Artifacts, Uploads, Background tasks), dimmed at 0, so the rail keeps one
+  Artifacts, Uploads, Servers, Background tasks), dimmed at 0, so the rail keeps one
   shape as work arrives; a count opens its section, an empty Uploads
   attaches. The body opens on a one-line status (a context ring with its
   percent and tokens, then the session's spend), then Needs you, the counted

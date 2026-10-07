@@ -14,6 +14,7 @@ import {
     Info,
     LayoutTemplate,
     Paperclip,
+    Server,
     Settings,
     SquareTerminal,
     Users,
@@ -38,4 +39,5 @@ export const RAIL_ICON: Record<string, ReactNode> = {
     folder: <Folder {...iconProps} />,
     artifacts: <LayoutTemplate {...iconProps} />,
     attach: <Paperclip {...iconProps} />,
+    server: <Server {...iconProps} />,
 };
