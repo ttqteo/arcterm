@@ -317,7 +317,7 @@ tasks:
         internal: true
 
     build:wsh:
-        desc: Build the wsh component for windows x64, the only target the installer bundles.
+        desc: Build the wsh component for the one target this host's bundle ships — darwin arm64 on a Mac (tauri.macos.conf.json), windows x64 elsewhere (NSIS).
         cmds:
             - cmd: rm -f dist/bin/wsh*
               platforms: [darwin, linux]
@@ -327,8 +327,8 @@ tasks:
               ignore_error: true
             - task: build:wsh:internal
               vars:
-                  GOOS: windows
-                  GOARCH: amd64
+                  GOOS: '{{if eq OS "darwin"}}darwin{{else}}windows{{end}}'
+                  GOARCH: '{{if eq OS "darwin"}}arm64{{else}}amd64{{end}}'
         deps:
             - go:mod:tidy
             - generate
