@@ -49,6 +49,23 @@ describe("buildEffortCard", () => {
         expect(m.blockedChunks).toEqual(["Phase 5"]);
     });
 
+    it("draws every chunk but the skipped ones as a bar segment, in plan order", () => {
+        const m = buildEffortCard(base);
+        expect(m.segments).toEqual(["done", "done", "active", "deferred", "blocked", "pending", "pending"]);
+        const many = Array.from({ length: 30 }, (_, i) => ({ label: `c${i}`, status: "pending" }));
+        expect(buildEffortCard({ ...base, total: 30, chunks: many } as EffortSummary).segments).toHaveLength(30);
+    });
+
+    it("marks the active chunk's segment even while its stored status is still pending", () => {
+        const chunks = [
+            { label: "a", status: "done" },
+            { label: "b", status: "pending" },
+            { label: "c", status: "pending" },
+        ];
+        const m = buildEffortCard({ ...base, total: 3, done: 1, activechunk: "b", chunks } as EffortSummary);
+        expect(m.segments).toEqual(["done", "active", "pending"]);
+    });
+
     it("caps chips at 12 with an overflow count", () => {
         const chunks = Array.from({ length: 15 }, (_, i) => ({ label: `c${i}`, status: "pending" }));
         const m = buildEffortCard({ ...base, total: 15, chunks } as EffortSummary);

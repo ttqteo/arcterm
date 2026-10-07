@@ -434,6 +434,15 @@ describe("unified active work", () => {
         expect(byKind.agent!.ts).toBe(T0 - 5 * HOUR);
     });
 
+    it("names an agent once when its task is empty or repeats its name", () => {
+        const names = (over: Partial<AgentRow>) =>
+            mergeActiveWork({ activeRuns: [], blockers: [], directAgents: [agentRow(over)] })[0].name;
+        expect(names({ name: "Màu mờ khó đọc", task: "Màu mờ khó đọc" })).toBe("Màu mờ khó đọc");
+        expect(names({ task: "" })).toBe("loom");
+        expect(names({ task: "  loom " })).toBe("loom");
+        expect(names({ task: "the task" })).toBe("loom · the task");
+    });
+
     it("stays deterministic when timestamps collide", () => {
         const rows = mergeActiveWork({
             activeRuns: [run({ oref: "run:z", ts: T0 }), run({ oref: "run:a", ts: T0 })],

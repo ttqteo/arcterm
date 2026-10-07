@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Jarvis shows each initiative as a card with a bar of its chunks and the one to do next, and lists ideas in
+  their own column beside the cards; an initiative's menu is always shown, and Waiting on you is hidden while
+  nothing waits.
 - An Active agent's row shows its session's token total after the model, as a Conversations row does, updated each
   time a turn ends.
 - In an agent's card and a conversation's transcript, your prompt pins to the top once its turn's reply scrolls it
@@ -21,6 +24,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A run in Jarvis no longer repeats an agent's name ("X · X") when the agent has no task of its own.
 - A pasted image is listed in the right panel's Uploads as `Image #N`, the number Claude Code shows in its
   prompt, as soon as you paste it, on any surface, instead of as Pasted image until the prompt is sent.
 - A prompt sent with a pasted image shows the image, in an agent's card and in a conversation's transcript, instead

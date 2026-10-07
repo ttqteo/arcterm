@@ -30,6 +30,8 @@ export type EffortCardModel = {
     activeTone?: ChunkTone;
     chips: ChunkChip[];
     chipOverflow: number;
+    // every chunk's tone in plan order, the skipped ones left out as the count's denominator leaves them out
+    segments: ChunkTone[];
     blockedChunks: string[];
     shortId: string;
     // each chunk's stage by label, for rows that name a chunk without its effort detail loaded
@@ -74,6 +76,14 @@ export function buildEffortCard(e: EffortSummary): EffortCardModel {
             e.activechunk != null ? chunkTone(chunks.find((c) => c.label === e.activechunk)?.status ?? "") : undefined,
         chips,
         chipOverflow: Math.max(0, chunks.length - CHIP_CAP),
+        // the active chunk is often still stored as pending: it is the one the next agent picks up, so it
+        // reads as active on the bar whatever its status says
+        segments: chunks
+            .filter((c) => c.status !== "skipped")
+            .map((c) => {
+                const tone = chunkTone(c.status);
+                return tone === "pending" && c.label === e.activechunk ? "active" : tone;
+            }),
         blockedChunks: chunks.filter((c) => c.status === "blocked").map((c) => c.label),
         shortId: e.oref.replace(/^effort:/, "").slice(0, 8),
         chunkStages: Object.fromEntries(chunks.map((c) => [c.label, c.stage ?? ""])),

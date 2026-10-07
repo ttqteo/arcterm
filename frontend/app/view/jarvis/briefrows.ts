@@ -26,7 +26,7 @@ import {
     type ShippedRow,
 } from "./briefingmodel";
 import { headline, noteBody } from "./effortfeed";
-import type { EffortCardModel } from "./effortmodel";
+import type { ChunkTone, EffortCardModel } from "./effortmodel";
 
 export type LineTone = "ok" | "active" | "asking" | "error" | "muted" | "faint";
 export type LineTarget = { queue: QueueOpenTarget } | { oref: string } | null;
@@ -54,6 +54,9 @@ export type BriefLine = {
     group?: "delta" | "shipped";
     // an initiative with no chunks yet: a captured idea, not a tracker, so it has no progress to draw
     idea?: boolean;
+    // a tracker card's chunk line: what note names, and each chunk's tone for its segmented bar
+    noteLabel?: "Next" | "Blocked on" | "Done";
+    segments?: ChunkTone[];
 };
 
 export type LineGroup = { label: string; lines: BriefLine[] };
@@ -129,26 +132,42 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
         };
     }
     const blocked = card.blockedChunks.length;
-    // blocked first: it is the one state that is waiting on someone
+    const finished = card.remaining === 0 && card.done > 0;
+    // blocked first: it is the one state that is waiting on someone. Plain active says nothing: it is
+    // every live card's state, so a chip for it would only repeat down the grid.
     const [state, stateTone]: [string, LineTone] =
         card.status === "archived"
             ? ["archived", "faint"]
             : blocked > 0
               ? [`${blocked} blocked`, "asking"]
-              : card.activeTone === "deferred"
-                ? ["deferred", "muted"]
-                : [card.status, card.status === "paused" ? "muted" : "ok"];
+              : finished || card.status === "done"
+                ? ["done", "ok"]
+                : card.activeTone === "deferred"
+                  ? ["deferred", "muted"]
+                  : card.status === "paused"
+                    ? ["paused", "muted"]
+                    : ["", "ok"];
+    const [noteLabel, note]: [BriefLine["noteLabel"], string] =
+        blocked > 0
+            ? ["Blocked on", card.blockedChunks[0]]
+            : finished
+              ? ["Done", `all ${plural(card.done, "chunk")} done`]
+              : card.activeChunk != null
+                ? ["Next", card.activeChunk]
+                : [undefined, ""];
     return {
         id: "initiatives:" + card.oref,
         kind: "",
         kindTone: "muted",
         title: card.title,
-        // chunk labels run long as "<name> - <detail>"; the name is what fits beside a title
-        note: card.activeChunk?.split(" - ")[0] ?? "",
+        // the whole label: the card gives it a line of its own and truncates it there
+        note,
+        noteLabel,
         meta: joined([card.ticket, card.project || "no project"]),
         state,
         stateTone,
         progress: { done: card.done, total: card.done + card.remaining, pct: card.progressPct },
+        segments: card.segments,
         target: { oref: card.oref },
         why: "",
         age: "",
@@ -156,10 +175,10 @@ export function initiativeLine(card: EffortCardModel): BriefLine {
     };
 }
 
-// Trackers first, ideas after them under their own label; stable, so each group keeps the briefing's
-// order. Applied before the region's cap, so a pile of ideas never pushes a live tracker behind "Show more".
-export function ideasLast(cards: EffortCardModel[]): EffortCardModel[] {
-    return [...cards.filter((c) => !isIdea(c)), ...cards.filter(isIdea)];
+// Trackers and ideas, each in the briefing's order. Split before the caps, which are per group, so a pile
+// of ideas never pushes a live tracker behind "Show more" and the reverse.
+export function splitIdeas(cards: EffortCardModel[]): { trackers: EffortCardModel[]; ideas: EffortCardModel[] } {
+    return { trackers: cards.filter((c) => !isIdea(c)), ideas: cards.filter(isIdea) };
 }
 
 const needsEyes = (row: ActiveWorkRow) =>

@@ -15,6 +15,8 @@ export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 // the Brief shows before its regions are expanded, so the hidden rows stay addressable rather than
 // being discarded here. capRegion applies them.
 export const EFFORT_CAP = 6;
+// the ideas column caps on its own, so a pile of ideas never hides a live tracker
+export const IDEA_CAP = 6;
 export const ACTIVE_CAP = 8;
 export const DELTA_CAP = 10;
 export const SHIPPED_CAP = 3;
@@ -394,7 +396,7 @@ export function mergeActiveWork(input: {
             key: "agent:" + a.id,
             kind: "agent" as const,
             oref: a.oref,
-            name: a.name + " · " + (a.task || a.name),
+            name: agentRowName(a.name, a.task),
             meta: [a.runtime, a.project].filter(Boolean).join(" · "),
             chip: { label: a.state, tone: a.state === "asking" ? ("asking" as const) : ("running" as const) },
             ts: a.startedTs,
@@ -436,6 +438,12 @@ export interface BriefingModel {
 
 // the ledger retains no dossier status-transition history; "Record updated · current status: X" is
 // the honest shape of a dossier's UpdatedTs event (detail arrives as "status: X").
+// an agent whose task is empty or only its own name would read "loom · loom"
+function agentRowName(name: string, task: string | undefined): string {
+    const t = (task ?? "").trim();
+    return t === "" || t === name.trim() ? name : name + " · " + t;
+}
+
 function dossierWording(detail: string | undefined): string {
     if (detail != null && detail.startsWith("status: ")) {
         return "Record updated · current status: " + detail.slice("status: ".length);

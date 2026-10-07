@@ -7,13 +7,13 @@
 // Behind you is two lines under a wording column.
 
 import { cn } from "@/util/util";
-import { ChevronDown, ChevronRight, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
+import { CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
 import type { QueueAct } from "./briefingmodel";
 import type { BriefLine, RunRowFace } from "./briefrows";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
-import { resumeIsBlank, type InitiativeResume } from "./initiativework";
-import { ProgressBar } from "./progressbar";
+import type { ChunkTone } from "./effortmodel";
+import type { InitiativeResume } from "./initiativework";
 
 const PULSE = "pulse-dot-slow";
 
@@ -91,7 +91,18 @@ export function WaitingRow({
 
 // Work on / Go to it. In flow at a fixed width and shown by opacity, so the row never reflows under the
 // cursor, and a hidden button can still be tabbed to.
-function WorkOnButton({ resume, focused, onWork }: { resume: InitiativeResume; focused: boolean; onWork: () => void }) {
+function WorkOnButton({
+    resume,
+    focused,
+    onWork,
+    always,
+}: {
+    resume: InitiativeResume;
+    focused: boolean;
+    onWork: () => void;
+    // on a card it is always shown: the card is the place to start
+    always?: boolean;
+}) {
     const go = resume.kind === "go";
     return (
         <button
@@ -107,7 +118,7 @@ function WorkOnButton({ resume, focused, onWork }: { resume: InitiativeResume; f
                 go
                     ? "border-success/45 bg-success/12 text-success"
                     : "border-accent/45 bg-accentbg text-accent-soft hover:text-accent-50",
-                focused && "opacity-100"
+                (focused || always) && "opacity-100"
             )}
         >
             {go ? "Go to it" : "Work on"}
@@ -116,7 +127,75 @@ function WorkOnButton({ resume, focused, onWork }: { resume: InitiativeResume; f
     );
 }
 
-export function InitiativeRow({
+// each chunk in plan order, coloured by where it stands. Past SEGMENT_GAP_LIMIT chunks the gaps would eat
+// the segments, so the bar reads as one strip of the same colours.
+const SEGMENT_GAP_LIMIT = 24;
+const SEGMENT_BG: Record<ChunkTone, string> = {
+    done: "bg-success",
+    active: "bg-accent",
+    blocked: "bg-asking",
+    deferred: "bg-ink-faint",
+    skipped: "bg-ink-faint",
+    pending: "bg-edge-strong",
+};
+
+export function SegmentBar({ segments, className }: { segments: ChunkTone[]; className?: string }) {
+    const gapless = segments.length > SEGMENT_GAP_LIMIT;
+    return (
+        <span
+            aria-hidden
+            data-jarvis-segment-bar
+            className={cn(
+                "flex h-1.5 min-w-0",
+                gapless ? "gap-0 overflow-hidden rounded-[2px]" : "gap-[3px]",
+                className
+            )}
+        >
+            {segments.map((tone, i) => (
+                <span key={i} className={cn("min-w-0 flex-1", !gapless && "rounded-[2px]", SEGMENT_BG[tone])} />
+            ))}
+        </span>
+    );
+}
+
+const NOTE_LABEL_TEXT: Record<NonNullable<BriefLine["noteLabel"]>, string> = {
+    Next: "text-accent",
+    "Blocked on": "text-asking",
+    Done: "text-success",
+};
+
+function MenuButton({
+    title,
+    onMenu,
+    className,
+}: {
+    title: string;
+    onMenu: (e: React.MouseEvent) => void;
+    className?: string;
+}) {
+    return (
+        <button
+            type="button"
+            data-jarvis-initiative-menu
+            title="Rename, edit, pause, archive or delete"
+            aria-label={`Actions for ${title}`}
+            onClick={(e) => {
+                e.stopPropagation();
+                onMenu(e);
+            }}
+            className={cn(
+                "flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                className
+            )}
+        >
+            <Ellipsis size={14} aria-hidden />
+        </button>
+    );
+}
+
+// A tracker: an initiative with a plan. Opened, it holds its chunk editor; the grid gives the opened card the
+// whole row, so the editor keeps the width it had as a row.
+export function InitiativeCard({
     line,
     focused,
     fresh,
@@ -126,133 +205,184 @@ export function InitiativeRow({
     onOpen,
     onWork,
     onContextMenu,
+    children,
 }: {
     line: BriefLine;
     focused: boolean;
     fresh: boolean;
     expanded: boolean;
-    // the rename input replaces the title in place, keeping the progress, meta and state columns
+    // the rename input replaces the title in place
     titleSlot?: ReactNode;
     // where the initiative was left and what Work on does; absent on an archived initiative
     resume?: InitiativeResume;
     onOpen: () => void;
     onWork?: () => void;
     onContextMenu?: (e: React.MouseEvent) => void;
+    // the opened card's detail
+    children?: ReactNode;
 }) {
     const p = line.progress ?? { done: 0, total: 0, pct: 0 };
+    // a paused or archived initiative is not where the next hour goes
+    const resting = line.state === "paused" || line.state === "archived";
     return (
         <div
-            role="button"
-            tabIndex={-1}
-            aria-expanded={expanded}
-            aria-label={expanded ? `Collapse ${line.title}` : `Open ${line.title}`}
             data-jarvis-brief-row="initiative"
+            data-jarvis-initiative-card={expanded ? "open" : "closed"}
             {...cursorAttrs(focused)}
-            onClick={onOpen}
             onContextMenu={onContextMenu}
             className={cn(
-                "group relative flex cursor-pointer flex-col gap-[3px] border px-[11px] py-[7px]",
-                expanded
-                    ? "rounded-t-[10px] border-border bg-surface-selected"
-                    : "rounded-[9px] border-transparent border-b-edge-faint hover:bg-surface-hover",
+                "group relative flex min-w-0 flex-col rounded-[10px] border bg-surface-raised",
+                expanded ? "border-edge-strong" : "border-edge-mid hover:border-edge-strong",
                 focused && CURSOR_RING,
                 fresh && "fresh-mark"
             )}
         >
-            <div className="flex min-w-0 items-center gap-[13px]">
-                {line.idea ? (
-                    // same column width as the bar, so idea titles line up with tracker titles
-                    <span className="flex w-[92px] flex-none items-center gap-[5px] text-[10.5px] text-ink-faint">
-                        <Lightbulb size={12} aria-hidden className="flex-none" />
-                        idea
-                    </span>
-                ) : (
-                    <span className="flex w-[92px] flex-none items-center gap-[7px]">
-                        <ProgressBar
-                            pct={p.pct}
-                            tone={line.stateTone === "asking" ? "asking" : "success"}
-                            className="h-1 min-w-0 flex-1 rounded-[2px]"
-                        />
-                        <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
-                            {p.done}/{p.total}
-                        </span>
-                    </span>
-                )}
-                {titleSlot ?? (
-                    <span
-                        title={line.note ? `${line.title} — ${line.note}` : line.title}
-                        className="min-w-0 flex-1 truncate text-[13px] text-ink-hi"
-                    >
-                        {line.title}
-                        {line.note ? <span className="text-ink-mid"> — {line.note}</span> : null}
-                    </span>
-                )}
-                <span className="w-[190px] flex-none truncate text-right text-[11px] tabular-nums text-ink-mid">
-                    {line.meta}
-                </span>
-                <span
-                    className={cn(
-                        "w-[76px] flex-none truncate text-right text-[11px] font-semibold tabular-nums",
-                        TONE_TEXT[line.stateTone]
-                    )}
-                >
-                    {line.state}
-                </span>
-                {resume != null && onWork != null ? (
-                    <WorkOnButton resume={resume} focused={focused} onWork={onWork} />
-                ) : null}
-                {onContextMenu != null ? (
-                    // the right-click menu, findable: shown by opacity like Work on, so the row never reflows
-                    <button
-                        type="button"
-                        data-jarvis-initiative-menu
-                        title="Initiative actions"
-                        aria-label={`Actions for ${line.title}`}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onContextMenu(e);
-                        }}
-                        className={cn(
-                            "flex flex-none cursor-pointer items-center justify-center rounded-[5px] p-0.5 text-muted opacity-0 hover:bg-surface-raised hover:text-ink-hi group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                            (focused || expanded) && "opacity-100"
-                        )}
-                    >
-                        <Ellipsis size={14} aria-hidden />
-                    </button>
-                ) : null}
-                {expanded ? (
-                    <ChevronDown size={12} aria-hidden className="flex-none text-muted" />
-                ) : (
-                    <ChevronRight size={12} aria-hidden className="flex-none text-muted" />
-                )}
-            </div>
-            {resume != null && !(line.idea && resumeIsBlank(resume)) ? (
-                // lined up under the title, past the progress column
-                <div className={cn("flex min-w-0 items-baseline gap-2 pl-[105px] pr-[110px]", FAINT_TEXT)}>
-                    <span
-                        className={cn(
-                            "flex flex-none items-center gap-[5px]",
-                            resume.kind === "go" ? "text-success" : "text-ink-mid"
-                        )}
-                    >
-                        <span
-                            className={cn(
-                                "h-1.5 w-1.5 rounded-full",
-                                resume.kind === "go" ? "bg-success" : "bg-ink-faint"
-                            )}
-                        />
-                        {resume.status}
-                    </span>
-                    {resume.kind === "work" && resume.when !== "" ? (
-                        <>
-                            <span className="flex-none text-ink-mid">{resume.when}</span>
-                            <span title={resume.note} className="min-w-0 truncate">
-                                {resume.note}
+            <div
+                role="button"
+                tabIndex={-1}
+                aria-expanded={expanded}
+                aria-label={expanded ? `Collapse ${line.title}` : `Open ${line.title}`}
+                onClick={onOpen}
+                className={cn("flex cursor-pointer flex-col gap-[11px] px-4 pb-3 pt-3.5", resting && "opacity-60")}
+            >
+                <div className="flex min-w-0 items-start gap-2.5">
+                    <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                        {titleSlot ?? (
+                            <span title={line.title} className="truncate text-[14px] font-semibold text-ink-hi">
+                                {line.title}
                             </span>
-                        </>
+                        )}
+                        <span className="truncate text-[11px] text-muted">{line.meta}</span>
+                    </div>
+                    {line.state !== "" ? (
+                        <span
+                            data-jarvis-initiative-state
+                            className={cn(
+                                "flex flex-none items-center gap-[5px] rounded-[5px] border border-current/35 px-[7px] py-px text-[10.5px] font-semibold",
+                                TONE_TEXT[line.stateTone]
+                            )}
+                        >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                            {line.state}
+                        </span>
                     ) : null}
+                    {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
+                </div>
+                <div className="flex items-center gap-2.5">
+                    <SegmentBar segments={line.segments ?? []} className="flex-1" />
+                    <span className="flex-none text-[11.5px] font-semibold tabular-nums text-secondary">
+                        {p.done}/{p.total}
+                    </span>
+                </div>
+                {line.noteLabel != null ? (
+                    <div className="flex min-w-0 items-baseline gap-2">
+                        <span className={cn("flex-none text-[10.5px] font-semibold", NOTE_LABEL_TEXT[line.noteLabel])}>
+                            {line.noteLabel}
+                        </span>
+                        <span title={line.note} className="min-w-0 truncate text-[12.5px] text-secondary">
+                            {line.note}
+                        </span>
+                    </div>
+                ) : null}
+                {resume != null ? (
+                    <div className="flex min-w-0 items-center gap-2.5 border-t border-edge-mid pt-2.5">
+                        <span className={cn("flex min-w-0 flex-1 items-baseline gap-2", FAINT_TEXT)}>
+                            <span
+                                className={cn(
+                                    "flex flex-none items-center gap-[5px]",
+                                    resume.kind === "go" ? "text-success" : "text-ink-mid"
+                                )}
+                            >
+                                <span
+                                    className={cn(
+                                        "h-1.5 w-1.5 rounded-full",
+                                        resume.kind === "go" ? "bg-success" : "bg-ink-faint"
+                                    )}
+                                />
+                                {resume.status}
+                            </span>
+                            {resume.kind === "work" && resume.when !== "" ? (
+                                <>
+                                    <span className="flex-none tabular-nums text-ink-mid">{resume.when}</span>
+                                    <span title={resume.note} className="min-w-0 truncate">
+                                        {resume.note}
+                                    </span>
+                                </>
+                            ) : null}
+                        </span>
+                        {onWork != null ? (
+                            <WorkOnButton resume={resume} focused={focused} onWork={onWork} always />
+                        ) : null}
+                    </div>
+                ) : null}
+            </div>
+            {expanded && children != null ? (
+                // the editor's own clicks must not fold the card
+                <div className="border-t border-edge-mid" onClick={(e) => e.stopPropagation()}>
+                    {children}
                 </div>
             ) : null}
+        </div>
+    );
+}
+
+// An idea: a title written down to come back to, with no plan yet. One quiet row in the ideas column; the
+// title wraps to two lines because the column is narrow.
+export function IdeaRow({
+    line,
+    focused,
+    fresh,
+    expanded,
+    titleSlot,
+    onOpen,
+    onContextMenu,
+    children,
+}: {
+    line: BriefLine;
+    focused: boolean;
+    fresh: boolean;
+    expanded: boolean;
+    titleSlot?: ReactNode;
+    onOpen: () => void;
+    onContextMenu?: (e: React.MouseEvent) => void;
+    children?: ReactNode;
+}) {
+    return (
+        <div
+            data-jarvis-brief-row="initiative"
+            data-jarvis-idea-row={expanded ? "open" : "closed"}
+            {...cursorAttrs(focused)}
+            onContextMenu={onContextMenu}
+            className={cn(
+                "group flex flex-col border-b border-edge-faint last:border-b-0",
+                expanded && "rounded-[8px] bg-surface-selected",
+                focused && CURSOR_RING,
+                fresh && "fresh-mark"
+            )}
+        >
+            <div
+                role="button"
+                tabIndex={-1}
+                aria-expanded={expanded}
+                aria-label={expanded ? `Collapse ${line.title}` : `Open ${line.title}`}
+                onClick={onOpen}
+                className="flex cursor-pointer items-start gap-[9px] rounded-[8px] py-[9px] pl-2.5 pr-1.5 hover:bg-surface-hover"
+            >
+                <Lightbulb size={13} aria-hidden className="mt-0.5 flex-none text-muted" />
+                <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                    {titleSlot ?? (
+                        <span title={line.title} className="line-clamp-2 text-[12.5px] leading-[17px] text-primary">
+                            {line.title}
+                        </span>
+                    )}
+                    <span className="truncate text-[11px] text-muted">
+                        {line.meta}
+                        {line.state !== "" ? ` · ${line.state}` : ""}
+                    </span>
+                </div>
+                {onContextMenu != null ? <MenuButton title={line.title} onMenu={onContextMenu} /> : null}
+            </div>
+            {expanded && children != null ? <div onClick={(e) => e.stopPropagation()}>{children}</div> : null}
         </div>
     );
 }

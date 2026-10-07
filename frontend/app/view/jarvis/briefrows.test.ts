@@ -6,7 +6,6 @@ import type { ActiveWorkRow, DeltaRow, QueueRow, RunRow } from "./briefingmodel"
 import {
     behindGroups,
     filterLines,
-    ideasLast,
     initiativeLine,
     keepsRunKind,
     lineOpenTarget,
@@ -17,6 +16,7 @@ import {
     sessionLine,
     sessionWindow,
     sinceLabel,
+    splitIdeas,
     type BriefLine,
 } from "./briefrows";
 import { buildEffortCard, type EffortCardModel } from "./effortmodel";
@@ -84,7 +84,7 @@ describe("initiativeLine", () => {
             ...over,
         }) as EffortSummary;
 
-    it("shows progress, the next chunk's short name, and ticket and project", () => {
+    it("shows progress, segments, the next chunk in full, and ticket and project; plain active says nothing", () => {
         const card = buildEffortCard(
             summary([
                 { label: "A", status: "done" },
@@ -96,12 +96,39 @@ describe("initiativeLine", () => {
         expect(initiativeLine(card)).toMatchObject({
             id: "initiatives:effort:e1",
             title: "SIEM",
-            note: "S8 item #2 deep-dive",
+            note: "S8 item #2 deep-dive - narration spec",
+            noteLabel: "Next",
             meta: "SIEM-1707 · cad",
-            state: "active",
-            stateTone: "ok",
+            state: "",
             progress: { done: 1, total: 3, pct: 33 },
+            segments: ["done", "active", "pending"],
             target: { oref: "effort:e1" },
+        });
+    });
+
+    it("names the blocked chunk instead of the next one when something is blocked", () => {
+        const card = buildEffortCard(
+            summary([
+                { label: "A", status: "active" },
+                { label: "B needs the key", status: "blocked" },
+            ])
+        );
+        expect(initiativeLine(card)).toMatchObject({ noteLabel: "Blocked on", note: "B needs the key" });
+    });
+
+    it("says done once every chunk is done", () => {
+        const card = buildEffortCard(
+            summary([
+                { label: "A", status: "done" },
+                { label: "B", status: "done" },
+                { label: "C", status: "skipped" },
+            ])
+        );
+        expect(initiativeLine(card)).toMatchObject({
+            state: "done",
+            stateTone: "ok",
+            noteLabel: "Done",
+            note: "all 2 chunks done",
         });
     });
 
@@ -149,13 +176,14 @@ describe("initiativeLine", () => {
     });
 });
 
-describe("ideasLast", () => {
+describe("splitIdeas", () => {
     const card = (oref: string, done: number, remaining: number) =>
         ({ oref, status: "active", done, remaining, skipped: 0 }) as EffortCardModel;
 
-    it("puts ideas after the trackers, each group in its own order", () => {
-        const out = ideasLast([card("i1", 0, 0), card("t1", 1, 2), card("i2", 0, 0), card("t2", 0, 3)]);
-        expect(out.map((c) => c.oref)).toEqual(["t1", "t2", "i1", "i2"]);
+    it("separates trackers from ideas, each group in its own order", () => {
+        const out = splitIdeas([card("i1", 0, 0), card("t1", 1, 2), card("i2", 0, 0), card("t2", 0, 3)]);
+        expect(out.trackers.map((c) => c.oref)).toEqual(["t1", "t2"]);
+        expect(out.ideas.map((c) => c.oref)).toEqual(["i1", "i2"]);
     });
 });
 
