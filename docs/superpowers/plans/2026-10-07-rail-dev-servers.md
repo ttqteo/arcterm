@@ -250,8 +250,8 @@ exits 0. Commit.
     `live: "on"`), Copy (`navigator.clipboard.writeText(copyText(row))`), Stop (first click shows "Stop?" for 3 s,
     a second click within that calls `stopDevServer`; `data-dev-server-stop`).
   - When `failed` is true, one muted line above the rows: "Could not read listening ports".
-- `CHANGELOG.md`: the top section is dated (`## 0.15.3 — 2026-10-07`), so open `## Unreleased` above it with
-  `### Added` and one line: "The agent rail lists the servers listening in the agent's project — port, command, who
+- `CHANGELOG.md`: under the top section's `### Added` (it is `## Unreleased`; if it has since been dated, open a new
+  `## Unreleased` with `### Added` above it), one line: "The agent rail lists the servers listening in the agent's project — port, command, who
   started it and for how long — with open, log, copy and stop."
 - Update the spec's decision 5 to read "while the rail is visible" instead of "while the Servers section is open"
   (the section's open state lives inside `CollapsibleRail`; rail visibility is `railVisibleAtom`).
