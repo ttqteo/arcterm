@@ -1874,7 +1874,12 @@ const usageCharts = {
             ).length;
             const hasLimitText = (bar.textContent || "").includes("5h limit");
             const min = !!bar.querySelector('[aria-label="Minimize"]');
-            const max = !!bar.querySelector('[aria-label="Maximize"]');
+            // Reads "Restore" when the window opened maximized.
+            const max = bar.querySelector('[aria-label="Maximize"]')
+                ? "Maximize"
+                : bar.querySelector('[aria-label="Restore"]')
+                  ? "Restore"
+                  : null;
             const close = !!bar.querySelector('[aria-label="Close"]');
             return { found: true, usageArcs, hasLimitText, min, max, close };
         })()`);
