@@ -6,7 +6,7 @@
     "productName": "arcterm",
     "description": "An agent cockpit for driving and supervising coding agents",
     "license": "Apache-2.0",
-    "version": "0.15.3",
+    "version": "0.15.4",
     "private": true,
     "type": "module",
     "browserslist": [
