@@ -37,6 +37,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - An agent that has just finished its turn no longer shows as asking for about a minute, or sends a false
   **Needs you** notification.
+- A notification toast in the corner is no longer covered by Jarvis's pet; the pet walks off the stretch below it.
 
 ## 0.15.2 — 2026-10-07
 

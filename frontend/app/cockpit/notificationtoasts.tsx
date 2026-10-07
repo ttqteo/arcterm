@@ -62,7 +62,9 @@ export function NotificationToasts(): React.JSX.Element {
     const toasts = useAtomValue(toastsAtom);
     if (toasts.length === 0) return <></>;
     return (
-        <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2">
+        // above the pet (z-60) and its bubble (z-61), below its open peek (z-64): a toast is never covered by a sprite
+        // passing under it, and data-pet-avoid sends the pet off the stretch of ledge beneath the stack
+        <div data-pet-avoid className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2">
             {toasts.map((t) => (
                 <button
                     key={t.id}
