@@ -13,6 +13,7 @@ import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
 import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import tsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
+import { registerLatexLanguages } from "./latexlang";
 import { monacoThemeFromTokens, readChromeRoles, readSyntaxTokens } from "./monacotheme";
 
 let monacoConfigured = false;
@@ -40,6 +41,8 @@ export function loadMonaco() {
         return;
     }
     monacoConfigured = true;
+    // before any model exists: a model takes its language when it is created
+    registerLatexLanguages(monaco);
     // theme definitions now come from the cockpit's own tokens (see monacotheme.ts); computed-style
     // reads are safe here because loadMonaco runs at first editor mount, long after cockpit-root's
     // pre-paint theme application, so the values are settled
