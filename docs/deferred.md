@@ -39,10 +39,12 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   pair (`TAURI_SIGNING_PRIVATE_KEY` at build time, the public key in `plugins.updater.pubkey`). Each release
   publishes the installer, its `.sig` and a `latest.json` where the app can fetch them without signing in: GitHub
   Releases of a public repo, or another host while the repo is private.
-- **Done 2026-10-07, needed either way:** `src-tauri/installer-hooks.nsh` (`NSIS_HOOK_PREINSTALL`) stops the install
-  directory's own `wave-tauri.exe` and `wavesrv.x64.exe` by path on a passive or `/UPDATE` install, since the Restart
-  Manager closes only the main binary and a live wavesrv fails the overwrite. `task install` runs the last build's
-  installer with `/P /UPDATE /R`, the local stand-in for the updater.
+- **Done 2026-10-07, needed either way:** `src-tauri/installer-hooks.nsh` (`NSIS_HOOK_PREINSTALL` and
+  `NSIS_HOOK_PREUNINSTALL`) stops the install directory's own `wave-tauri.exe` and `wavesrv.x64.exe` by path before
+  the copy or delete, asking first when the installer shows pages, since the Restart Manager closes only the main
+  binary and a live wavesrv fails the overwrite halfway (a double-click install over 0.15.1 broke this way and had to
+  be run again). `task install` runs the last build's installer with `/P /UPDATE /R`, the local stand-in for the
+  updater. An uninstaller from before 0.15.2 has no hook, so "Uninstall before installing" over one can still fail.
 - **Revive when** releases are published somewhere fetchable. The updater itself was not built, so there is nothing
   to recover from git.
 
