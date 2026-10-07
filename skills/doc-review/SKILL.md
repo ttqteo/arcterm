@@ -51,6 +51,20 @@ General: §3 still reads like a tutorial.
 `[§3.2 ¶2]` is the section and paragraph (a markdown note reads `[5. ¶2]`). The `General:` line is
 about the file as a whole and appears only when the user wrote one.
 
+An item can also be an edit the user wrote into the paragraph's source:
+
+```
+3. [§1 ¶1] Edit: replace
+   "a defect show up in a running"
+   with
+   "a defect manifest in a running"
+   → optional note
+```
+
+The old text occurs exactly once in the file. Apply it as written; if it would break the document
+(an unbalanced brace, a removed `\label` something refers to), apply what you can and say why in
+the next review's lines.
+
 ## Handling Request changes
 
 1. Find each quote in the file and handle its comment, then the general note.

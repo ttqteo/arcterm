@@ -185,6 +185,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `r` | Back to the terminal |
 | `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
 | `c` | Comment on the selected text |
+| `e` | Suggest an edit: open the selected text's paragraph as source; `Ctrl`+`Enter` saves the suggestion, `Esc` cancels. The file is not changed; the agent is sent `Edit: replace "…" with "…"` |
 | `Ctrl`+`Enter` | Approve, while there is no comment and no note to send. Inside a comment being written it adds that comment instead |
 | `Ctrl`+`Enter` | Request changes, once there is a comment or a note. Inside a comment being written it adds that comment instead |
 

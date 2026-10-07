@@ -15,7 +15,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, FileText, MessageSquarePlus, X } from "lucide-react";
+import { Check, FileText, MessageSquarePlus, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { askSentKey, type AgentVM } from "./agentsviewmodel";
@@ -53,7 +53,16 @@ import {
     type SentenceMark,
     type TrayState,
 } from "./docreviewview";
-import { anchorFor, clipSelection, formatRequest, type ProseComment, type SelPoint } from "./proseanchor";
+import {
+    anchorFor,
+    clipSelection,
+    formatRequest,
+    paragraphSpan,
+    replacementFor,
+    wordDiff,
+    type ProseComment,
+    type SelPoint,
+} from "./proseanchor";
 import { diffProse, type SectionChange, type SentenceChange } from "./prosediff";
 import { DELETED, INSERTED, ProseTokens, type OpToken } from "./prosetokens";
 
@@ -109,6 +118,59 @@ function afterSentences(sentences: SentenceChange[]): ProseSentence[] {
 
 const randomId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `c${Date.now()}${Math.random()}`;
+
+// Opens a paragraph's source for a suggested edit: the paragraph's existing suggestion again, or a new one anchored
+// to the whole paragraph. A suggestion is a draft comment while it is being edited, so nothing sends it half-done.
+function startSuggestion(
+    agentId: string,
+    source: string,
+    para: { section: SectionChange; index: number; after: ProseSentence[] },
+    existing: ProseComment | undefined
+): void {
+    if (existing != null) {
+        updateComment(agentId, existing.id, { draft: true });
+        return;
+    }
+    if (para.after.length === 0 || para.after.some((s) => s == null)) {
+        return;
+    }
+    const span = paragraphSpan(para.after);
+    const from = source.slice(span.start, span.end);
+    const anchor = anchorFor(
+        source,
+        { sectionIndex: para.section.index, label: para.section.label, index: para.index, sentences: para.after },
+        0,
+        para.after.length - 1,
+        ""
+    );
+    addComment(agentId, {
+        ...anchor,
+        id: randomId(),
+        note: "",
+        draft: true,
+        suggestion: { from, to: from, old: "", new: "" },
+    });
+}
+
+// Save: an unchanged paragraph is no suggestion, so it goes; anything else keeps the smallest unique replacement
+function saveSuggestion(agentId: string, source: string, c: ProseComment, text: string): void {
+    const s = c.suggestion!;
+    if (text === s.from) {
+        removeComment(agentId, c.id);
+        return;
+    }
+    const r = replacementFor(source, s.from, text);
+    updateComment(agentId, c.id, { draft: false, suggestion: { from: s.from, to: text, old: r.old, new: r.new } });
+}
+
+// Cancel: a new suggestion goes; one being edited again keeps what it was
+function cancelSuggestion(agentId: string, c: ProseComment): void {
+    if (c.suggestion!.to === c.suggestion!.from) {
+        removeComment(agentId, c.id);
+    } else {
+        updateComment(agentId, c.id, { draft: false });
+    }
+}
 
 export function DocReviewPane({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const state = useAtomValue(docReviewStateAtom(agent.id));
@@ -357,6 +419,25 @@ function Changes(p: {
         setSel(null);
     };
 
+    // the selection's paragraph, opened for a suggested edit (its existing suggestion if it has one)
+    const suggest = () => {
+        const para = sel != null ? paras.get(`${sel.section}:${sel.paragraph}`) : null;
+        if (sel == null || para == null || load?.current == null) {
+            return;
+        }
+        const existing = state.comments.find(
+            (c) => c.suggestion != null && c.sectionIndex === sel.section && c.paragraph === sel.paragraph
+        );
+        startSuggestion(
+            agent.id,
+            load.current,
+            { section: para.section, index: sel.paragraph, after: para.after },
+            existing
+        );
+        window.getSelection()?.removeAllRanges();
+        setSel(null);
+    };
+
     // a focus item or an #anchor names a section that may be folded away: show the whole file, then scroll once
     // it has rendered
     const scrollTo = (target: { sectionIndex: number; paragraph?: number }) => {
@@ -427,6 +508,7 @@ function Changes(p: {
                             key={row.key}
                             row={row}
                             agentId={agent.id}
+                            source={load.current!}
                             path={state.path}
                             numbers={numbers}
                             sent={sent}
@@ -450,6 +532,21 @@ function Changes(p: {
                     <MessageSquarePlus size={13} strokeWidth={2.2} aria-hidden />
                     Comment
                     <span className={KBD}>{formatChordString("c")}</span>
+                </button>
+            ) : null}
+            {sel != null ? (
+                <button
+                    type="button"
+                    data-doc-review-edit-sel
+                    title={`Suggest an edit to this paragraph's source (${formatChordString("e")})`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={suggest}
+                    className="absolute z-10 flex cursor-pointer items-center gap-[6px] rounded-[7px] border border-edge-mid bg-surface-raised px-[10px] py-[4px] text-[12.5px] font-semibold text-secondary shadow-lg hover:border-edge-strong hover:text-primary"
+                    style={{ top: sel.top, left: sel.left + 128 }}
+                >
+                    <Pencil size={12} strokeWidth={2.2} aria-hidden />
+                    Edit
+                    <span className={cn(KBD, "bg-surface-hover")}>{formatChordString("e")}</span>
                 </button>
             ) : null}
         </div>
@@ -615,6 +712,7 @@ function FocusLink(p: {
 function Row(p: {
     row: ReviewRow;
     agentId: string;
+    source: string;
     path: string;
     numbers: Map<string, number>;
     sent: boolean;
@@ -664,6 +762,7 @@ function Row(p: {
 function ParagraphRow(p: {
     row: Extract<ReviewRow, { kind: "paragraph" }>;
     agentId: string;
+    source: string;
     path: string;
     numbers: Map<string, number>;
     sent: boolean;
@@ -674,6 +773,24 @@ function ParagraphRow(p: {
     const selectable = section.status !== "removed" && paragraph.status !== "removed";
     const marks = sentenceMarks(comments, p.numbers);
     const shown = p.sent ? comments.filter((c) => !c.draft) : comments;
+    // one suggestion per paragraph: the pencil reopens it rather than starting a second
+    const suggestion = comments.find((c) => c.suggestion != null);
+    const editing = suggestion != null && suggestion.draft && !p.sent;
+    const [text, setText] = useState("");
+    useEffect(() => {
+        if (editing) {
+            setText(suggestion.suggestion!.to);
+        }
+    }, [editing]);
+    const save = () => saveSuggestion(p.agentId, p.source, suggestion!, text);
+    const cancel = () => cancelSuggestion(p.agentId, suggestion!);
+    const edit = () =>
+        startSuggestion(
+            p.agentId,
+            p.source,
+            { section, index: paragraph.index, after: afterSentences(paragraph.sentences) },
+            suggestion
+        );
     const sentences = paragraph.sentences.map((change, k) => (
         <SentenceView
             key={k}
@@ -686,29 +803,193 @@ function ParagraphRow(p: {
     ));
     return (
         <div className={cn(p.narrow ? "flex flex-col gap-[10px]" : cn(GRID, "items-start"), "pt-[14px]")}>
-            <div
-                data-section={selectable ? section.index : undefined}
-                data-p={selectable ? paragraph.index : undefined}
-                className={cn("min-w-0", PROSE)}
-            >
-                {paragraph.list ? (
-                    <ul className="m-0 list-disc pl-[22px]">
-                        <li>{sentences}</li>
-                    </ul>
-                ) : (
-                    sentences
+            {editing ? (
+                // the paragraph's own source, LaTeX or markdown as it is in the file; the view cannot be edited in
+                // place because it drops the markup (spec: doc-review suggested edits, decision 2)
+                <div data-doc-review-draft className="min-w-0">
+                    <textarea
+                        data-doc-review-edit-box
+                        autoFocus
+                        value={text}
+                        rows={Math.min(16, Math.max(4, Math.ceil(text.length / 80) + text.split("\n").length))}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                e.preventDefault();
+                                save();
+                            } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                cancel();
+                            }
+                        }}
+                        className="w-full resize-y rounded-[7px] border border-accent bg-surface-code px-[10px] py-[8px] font-mono text-[12.5px] leading-[1.6] text-primary outline-none"
+                    />
+                </div>
+            ) : (
+                <div
+                    data-section={selectable ? section.index : undefined}
+                    data-p={selectable ? paragraph.index : undefined}
+                    className={cn("group/para relative min-w-0", PROSE)}
+                >
+                    {paragraph.list ? (
+                        <ul className="m-0 list-disc pl-[22px]">
+                            <li>{sentences}</li>
+                        </ul>
+                    ) : (
+                        sentences
+                    )}
+                    {selectable && !p.sent ? (
+                        <button
+                            type="button"
+                            data-doc-review-edit
+                            title="Suggest an edit to this paragraph's source"
+                            aria-label="Suggest an edit to this paragraph"
+                            onClick={edit}
+                            className="absolute -left-[26px] top-[6px] hidden cursor-pointer rounded-[5px] p-[3px] text-muted hover:bg-surface-hover hover:text-primary group-hover/para:flex"
+                        >
+                            <Pencil size={13} strokeWidth={2} aria-hidden />
+                        </button>
+                    ) : null}
+                </div>
+            )}
+            <div className="flex min-w-0 flex-col gap-[10px]">
+                {shown.map((c) =>
+                    c.suggestion != null ? (
+                        <SuggestionCard
+                            key={c.id}
+                            comment={c}
+                            n={p.numbers.get(c.id) ?? 0}
+                            agentId={p.agentId}
+                            sent={p.sent}
+                            text={text}
+                            onSave={save}
+                            onCancel={cancel}
+                            onEdit={edit}
+                        />
+                    ) : (
+                        <CommentCard
+                            key={c.id}
+                            comment={c}
+                            n={p.numbers.get(c.id) ?? 0}
+                            agentId={p.agentId}
+                            sent={p.sent}
+                        />
+                    )
                 )}
             </div>
-            <div className="flex min-w-0 flex-col gap-[10px]">
-                {shown.map((c) => (
-                    <CommentCard
-                        key={c.id}
-                        comment={c}
-                        n={p.numbers.get(c.id) ?? 0}
-                        agentId={p.agentId}
-                        sent={p.sent}
-                    />
-                ))}
+        </div>
+    );
+}
+
+// A suggested edit beside its paragraph: while editing, Save and Cancel and an optional note; once saved, the change
+// word by word and the note, with Edit and remove.
+function SuggestionCard(p: {
+    comment: ProseComment;
+    n: number;
+    agentId: string;
+    sent: boolean;
+    text: string;
+    onSave: () => void;
+    onCancel: () => void;
+    onEdit: () => void;
+}) {
+    const { comment, n } = p;
+    const s = comment.suggestion!;
+    const head = (
+        <div className="flex items-center gap-2">
+            <span className={cn(CHIP, "h-[18px] w-[18px]")}>{n}</span>
+            <span className={META_TEXT}>
+                {comment.sectionLabel} ¶{comment.paragraph} · suggested edit
+            </span>
+            <div className="flex-1" />
+            {!comment.draft && !p.sent ? (
+                <>
+                    <button
+                        type="button"
+                        aria-label={`Edit suggestion ${n}`}
+                        onClick={p.onEdit}
+                        className="flex cursor-pointer p-[2px] text-muted hover:text-primary"
+                    >
+                        <Pencil size={12} strokeWidth={2} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Remove suggestion ${n}`}
+                        onClick={() => removeComment(p.agentId, comment.id)}
+                        className="flex cursor-pointer p-[2px] text-muted hover:text-primary"
+                    >
+                        <X size={13} strokeWidth={2} aria-hidden />
+                    </button>
+                </>
+            ) : null}
+        </div>
+    );
+    if (!comment.draft || p.sent) {
+        return (
+            <div
+                data-doc-review-card={comment.id}
+                data-doc-review-suggestion
+                className="flex flex-col gap-[6px] rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[10px]"
+            >
+                {head}
+                <div className="whitespace-pre-wrap break-words font-mono text-[11.5px] leading-[1.55] text-secondary">
+                    {wordDiff(s.from, s.to).map((w, i) => (
+                        <span
+                            key={i}
+                            className={w.op === "delete" ? DELETED : w.op === "insert" ? INSERTED : undefined}
+                        >
+                            {w.text}
+                        </span>
+                    ))}
+                </div>
+                {comment.note !== "" ? (
+                    <div className="whitespace-pre-wrap text-[13px] leading-[1.5] text-primary">{comment.note}</div>
+                ) : null}
+            </div>
+        );
+    }
+    return (
+        <div
+            data-doc-review-card={comment.id}
+            data-doc-review-draft
+            className="flex flex-col gap-2 rounded-[8px] border border-accent bg-surface-raised px-3 py-[10px]"
+        >
+            {head}
+            <div className="text-[11.5px] leading-[1.45] text-muted">
+                Edit the source on the left. The file is not changed: {formatChordString("Ctrl:Enter")} saves this as a
+                suggestion the agent applies.
+            </div>
+            <textarea
+                rows={2}
+                value={comment.note}
+                placeholder="A note for the agent (optional)"
+                onChange={(e) => updateComment(p.agentId, comment.id, { note: e.target.value })}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        p.onSave();
+                    }
+                }}
+                className="resize-none rounded-[7px] border border-edge-mid bg-background px-[9px] py-[7px] text-[13px] leading-[1.5] text-primary outline-none placeholder:text-muted focus:border-accent"
+            />
+            <div className="flex gap-2">
+                <button
+                    type="button"
+                    data-doc-review-edit-save
+                    disabled={p.text === s.from}
+                    onClick={p.onSave}
+                    className={cn(ACCENT_BTN, "px-[11px] py-[5px] text-[12px]")}
+                >
+                    Save suggestion
+                </button>
+                <button
+                    type="button"
+                    onClick={p.onCancel}
+                    className={cn(SECONDARY_BTN, "px-[11px] py-[5px] text-[12px]")}
+                >
+                    Cancel
+                </button>
             </div>
         </div>
     );

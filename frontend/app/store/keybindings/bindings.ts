@@ -1058,6 +1058,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: inReview,
             run: () => clickThrough("[data-doc-review-comment]"),
         },
+        {
+            id: "agent:review-edit",
+            keys: "e",
+            group: "Agent",
+            label: "Suggest an edit to the selection's paragraph",
+            when: inReview,
+            run: () => clickThrough("[data-doc-review-edit-sel]"),
+        },
         // Ctrl+Enter sends whichever answer is the tray's accent button: Request changes once there is something
         // to send, else Approve. Two bindings with exclusive when()s so the footer chip names the answer
         {

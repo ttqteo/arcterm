@@ -9,7 +9,10 @@ import {
     clipSelection,
     formatRequest,
     orderComments,
+    paragraphSpan,
     QUOTE_MAX,
+    replacementFor,
+    wordDiff,
     type ProseComment,
     type SelPoint,
 } from "./proseanchor";
@@ -288,5 +291,123 @@ describe("clipSelection", () => {
             last: 3,
             clipped: true,
         });
+    });
+});
+
+describe("paragraphSpan", () => {
+    it("runs from the earliest start to the latest end, since one macro's sentences share a span", () => {
+        const s = (start: number, end: number) => ({ tokens: [], text: "", source: { start, end } });
+        expect(paragraphSpan([s(10, 20), s(5, 30), s(22, 25)])).toEqual({ start: 5, end: 30 });
+    });
+});
+
+describe("replacementFor", () => {
+    const FILE = "Intro line.\n\nA proof is an input that makes a defect show up in a running program.\n";
+    const PARA = "A proof is an input that makes a defect show up in a running program.";
+
+    // what the agent needs: the old text found exactly once, long enough to spot, holding the change
+    const checks = (file: string, para: string, before: string, after: string) => {
+        const r = replacementFor(file, para, para.replace(before, after));
+        expect(file.split(r.old).length - 1).toBe(1);
+        expect(r.old.length).toBeGreaterThanOrEqual(16);
+        expect(r.old.length).toBeLessThan(para.length);
+        expect(r.old).toBe(r.old.trim());
+        expect(r.new).toBe(r.old.replace(before, after));
+    };
+
+    it("keeps the change with a little context, not the whole paragraph", () => {
+        checks(FILE, PARA, "show up", "manifest");
+    });
+
+    it("widens the context until the old text occurs once", () => {
+        const file = "is an input that works. A proof is an input that works and more.\n";
+        checks(file, "A proof is an input that works and more.", "an input", "a test input");
+    });
+
+    it("anchors an insertion to its neighbours", () => {
+        checks(FILE, PARA, "a running", "a real running");
+    });
+
+    it("handles a change at the start and at the end", () => {
+        checks(FILE, PARA, "A proof", "One proof");
+        checks(FILE, PARA, "program.", "process.");
+    });
+
+    it("falls back to the whole paragraph when nothing shorter is unique", () => {
+        const file = "same same\nsame same\n";
+        const r = replacementFor(file, "same same", "same other");
+        expect(r).toEqual({ old: "same same", new: "same other" });
+    });
+});
+
+describe("wordDiff", () => {
+    it("marks removed and added words and keeps the rest", () => {
+        expect(wordDiff("a defect show up here", "a defect manifest here")).toEqual([
+            { op: "same", text: "a defect " },
+            { op: "delete", text: "show up " },
+            { op: "insert", text: "manifest " },
+            { op: "same", text: "here" },
+        ]);
+    });
+});
+
+describe("formatRequest with a suggestion", () => {
+    const base = { sectionIndex: 1, sectionLabel: "§1", paragraph: 1, sentences: [0, 2] as [number, number] };
+    it("writes the exact old and new text, unclipped, among the comments in document order", () => {
+        const comments: ProseComment[] = [
+            {
+                ...base,
+                sectionIndex: 2,
+                sectionLabel: "§2",
+                id: "c",
+                note: "Why?",
+                draft: false,
+                quote: "q",
+                selectedText: "q",
+            },
+            {
+                ...base,
+                id: "s",
+                note: "",
+                draft: false,
+                quote: "q",
+                selectedText: "",
+                suggestion: { from: "show up in it", to: "manifest in it", old: "show up", new: "manifest" },
+            },
+        ];
+        expect(formatRequest(comments, "")).toBe(
+            [
+                "Request changes",
+                "1. [§1 ¶1] Edit: replace",
+                '   "show up"',
+                "   with",
+                '   "manifest"',
+                '2. [§2 ¶1] "q"',
+                "   → Why?",
+            ].join("\n")
+        );
+    });
+
+    it("indents a multi-line replacement and adds the note", () => {
+        const c: ProseComment = {
+            ...base,
+            id: "s",
+            note: "Shorter.",
+            draft: false,
+            quote: "q",
+            selectedText: "",
+            suggestion: { from: "x", to: "y", old: "one\ntwo", new: "three" },
+        };
+        expect(formatRequest([c], "")).toBe(
+            [
+                "Request changes",
+                "1. [§1 ¶1] Edit: replace",
+                '   "one',
+                '   two"',
+                "   with",
+                '   "three"',
+                "   → Shorter.",
+            ].join("\n")
+        );
     });
 });
