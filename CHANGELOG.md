@@ -23,6 +23,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
   **Finished**, with the project and the agent's harness on the right, instead of tacking "finished" onto the name.
   A toast stays while the pointer is on it, and one that needs you stays 15 seconds instead of 6.
 
+### Fixed
+
+- An agent that has just finished its turn no longer shows as asking for about a minute, or sends a false
+  **Needs you** notification.
+
 ## 0.15.2 — 2026-10-07
 
 ### Added
