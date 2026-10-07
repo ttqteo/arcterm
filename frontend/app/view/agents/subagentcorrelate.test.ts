@@ -63,4 +63,12 @@ describe("correlateSubagents", () => {
         const out = correlateSubagents([], [file({ firstprompt: "Investigate the crash\nmore detail" })]);
         expect(out[0].type).toBe("Investigate the crash");
     });
+
+    it("takes the model from the child's own file, matched or not", () => {
+        expect(correlateSubagents([spawn({})], [file({ model: "claude-opus-5-5" })])[0].model).toBe("claude-opus-5-5");
+        expect(correlateSubagents([], [file({ firstprompt: "orphan", model: "claude-haiku-4-5" })])[0].model).toBe(
+            "claude-haiku-4-5"
+        );
+        expect(correlateSubagents([spawn({})], [file({})])[0].model).toBeUndefined();
+    });
 });

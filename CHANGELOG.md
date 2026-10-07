@@ -53,6 +53,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The Jarvis pet no longer stays hidden under a **Needs you** toast: it no longer repeats the toast's question in its
   own bubble (it keeps the `?` mark), and while it speaks it walks out from under a toast or a terminal instead of
   standing still there.
+- A subagent's **Model** in the agent rail names the model it runs on again, instead of always showing `—`.
 
 ## 0.15.4 — 2026-10-07
 

@@ -208,7 +208,8 @@ type SubagentFileInfo struct {
 	TranscriptPath string `json:"transcriptpath"`
 	FirstPrompt    string `json:"firstprompt"`
 	StartedAtMs    int64  `json:"startedatms"`
-	Done           bool   `json:"done"` // last record is a terminal assistant turn (finished; outcome unknown)
+	Done           bool   `json:"done"`            // last record is a terminal assistant turn (finished; outcome unknown)
+	Model          string `json:"model,omitempty"` // the model of the child's latest assistant turn; "" before its first
 }
 
 type UsageBucket struct {

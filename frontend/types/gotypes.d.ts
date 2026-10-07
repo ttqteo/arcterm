@@ -2916,6 +2916,7 @@ declare global {
         firstprompt: string;
         startedatms: number;
         done: boolean;
+        model?: string;
     };
 
     // wps.SubscriptionRequest

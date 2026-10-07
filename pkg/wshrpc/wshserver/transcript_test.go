@@ -457,3 +457,48 @@ func TestSubagentDoneSignalReadsTodaysEndings(t *testing.T) {
 		}
 	}
 }
+
+// A subagent's model is the one its latest assistant turn names; claude's "<synthetic>" stand-in turns (an
+// interrupt, an API error) name none, and a child that has not answered yet has no model.
+func TestSubagentModel(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "sess.jsonl")
+	if err := os.WriteFile(parent, []byte(`{"type":"user"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	subdir := filepath.Join(dir, "sess", "subagents")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRecs := func(id string, recs ...string) {
+		if err := os.WriteFile(filepath.Join(subdir, "agent-"+id+".jsonl"), []byte(strings.Join(recs, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeRecs("answered",
+		`{"agentId":"answered","type":"user","message":{"content":"Explore"}}`,
+		`{"type":"assistant","message":{"model":"claude-haiku-4-5","content":[{"type":"tool_use","id":"r1","name":"Read"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r1","content":"ok"}]}}`,
+		`{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"result"}]}}`,
+		`{"type":"attachment","attachment":{"type":"hook_success"}}`)
+	writeRecs("synthetic",
+		`{"agentId":"synthetic","type":"user","message":{"content":"Plan"}}`,
+		`{"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[{"type":"tool_use","id":"r1","name":"Read"}]}}`,
+		`{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"API Error"}]}}`)
+	writeRecs("fresh",
+		`{"agentId":"fresh","type":"user","message":{"content":"Fix it"}}`)
+
+	infos, err := listSubagents(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byId := map[string]wshrpc.SubagentFileInfo{}
+	for _, in := range infos {
+		byId[in.AgentId] = in
+	}
+	for id, want := range map[string]string{"answered": "claude-opus-5-5", "synthetic": "claude-sonnet-5-5", "fresh": ""} {
+		if byId[id].Model != want {
+			t.Errorf("%s: Model = %q, want %q", id, byId[id].Model, want)
+		}
+	}
+}
