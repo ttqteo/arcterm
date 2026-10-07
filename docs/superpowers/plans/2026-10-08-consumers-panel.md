@@ -12,12 +12,13 @@
 
 **Verify:** `node scripts/verify.mjs ./pkg/memusage/... ./pkg/usagestats/... ./pkg/orchestrate/... ./pkg/wshrpc/...`
 
-**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: consumers-popover needs CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs consumers-popover`
+**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: consumers-popover and worker-capacity need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs consumers-popover worker-capacity`
 
 ## Global Constraints
 
 - The panel polls `GetConsumersCommand` every **5 s** while it is open and **never** while it is closed.
 - Tokens are counted over the last **10 minutes** (`ConsumersTokenWindow`).
+- The panel's token count (row figure, Tokens sort, burn warning) is input + output + reasoning + cache writes; **cache reads are left out** (spec decision 3). The estimated cost still prices every class.
 - The burn warning goes to the single agent with the most tokens in the window, only when that count passes **500K** (`BURN_WARN_TOKENS`).
 - On darwin a process's memory is `proc_pid_rusage(RUSAGE_INFO_V2).ri_phys_footprint`; elsewhere gopsutil's RSS. A value that could not be read is **absent, never zero** (Go: nil pointer or missing map key; TS: `undefined`, drawn as "—").
 - arcterm's own rows (**Interface**, **Server**, **Host**) are read-only.
@@ -37,6 +38,7 @@
 - **The poll fails while the panel is open** (wavesrv restarting). The last reading stays, dimmed, under "Couldn't read usage · last at 12:03". Pinned in Task 6 (`staleLine`) and Task 7 (`loadConsumers keeps the last reading when a poll fails`).
 - **Stop on a worker whose task finished a moment ago.** The engine refuses with its reason and the task is untouched. Pinned in Task 4 (`TestStopRefusesATaskWithNoWorker`).
 - **→ Sonnet for a pi agent, or a model string that is not one word.** The server refuses and sends nothing; the panel never offers it for pi. Pinned in Task 5 (`TestAgentsSetModelRefusesPi`, `TestAgentsSetModelRefusesAMultiWordModel`) and Task 6 (`offers → Sonnet only to Claude on Opus`).
+- **→ Sonnet for an agent asking a question with no control stream.** Typed into its terminal, `/model sonnet` would answer the question; the server refuses as `AgentsSendCommand` does and the panel's toast shows why. Pinned in Task 5 (`TestAgentsSetModelRefusesAnAskingAgentWithNoStream`).
 
 ## File Structure
 
@@ -74,15 +76,15 @@
 
 ### Task 1: Spike — does `/model` apply inside a running turn?
 **Depends on:** none
+**Files:** `docs/superpowers/plans/2026-10-08-consumers-panel.md`
 
 This answers spec decision 9's open question. It changes no product code: its output is a line in this plan's **Execution notes** (bottom of the file), which Task 7 reads. It needs a Claude Code session the worker can type into; if the worker cannot drive one, it records `unverified` and why.
 
-**Files:** `docs/superpowers/plans/2026-10-08-consumers-panel.md`
 - Modify: `docs/superpowers/plans/2026-10-08-consumers-panel.md` (the Execution notes section only)
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the Execution notes line `model-switch-midturn: yes|no|unverified — <evidence>`. Task 7 sets `MODEL_SWITCH_APPLIES_MIDTURN` from it (`yes` → `true`; `no` or `unverified` → `false`).
+- Produces: the Execution notes line `model-switch-midturn: yes|no|unverified — <evidence>`. Task 7 sets `MODEL_SWITCH_APPLIES_MIDTURN` from it (`yes` → `true`; `no` or `unverified` → `false`). Whatever it finds, nothing else in the plan changes: with `no`, → Sonnet's toast says "from its next turn", and re-running a worker's task on Sonnet stays out of this work (spec decision 9).
 
 - [ ] **Step 1: Check that tmux and claude are on PATH**
 
@@ -91,8 +93,11 @@ Expected: two paths. If either is missing, go to Step 6 with `unverified — tmu
 
 - [ ] **Step 2: Start a throwaway Claude session in tmux, on Opus, in a temp directory**
 
+Shell state does not carry between your commands, so the spike uses one fixed directory, `$TMPDIR/arc-model-spike`, in every step.
+
 ```bash
-SPIKE_DIR=$(mktemp -d)
+SPIKE_DIR="${TMPDIR:-/tmp}/arc-model-spike"
+rm -rf "$SPIKE_DIR" && mkdir -p "$SPIKE_DIR"
 tmux new-session -d -s modelspike -x 200 -y 50 "cd $SPIKE_DIR && claude --model opus"
 sleep 8
 tmux capture-pane -p -t modelspike | tail -5
@@ -111,17 +116,20 @@ sleep 10
 ```bash
 tmux send-keys -t modelspike "/model sonnet" Enter
 sleep 60
-tmux capture-pane -p -S -200 -t modelspike > "$SPIKE_DIR/pane.txt"
+tmux capture-pane -p -S -200 -t modelspike > "${TMPDIR:-/tmp}/arc-model-spike/pane.txt"
 ```
 
 - [ ] **Step 5: Read which model answered each step from the transcript**
 
+The spike's transcript is in its own project directory, which Claude Code names after the session's cwd with every non-alphanumeric character turned into `-`, so it ends in `arc-model-spike`. Never take the machine's newest transcript: that is your own session.
+
 ```bash
-T=$(ls -t ~/.claude/projects/*/*.jsonl | head -1)
+T=$(ls -t ~/.claude/projects/*arc-model-spike/*.jsonl | head -1)
+echo "$T"
 grep -o '"model":"[^"]*"' "$T" | uniq -c
 grep -n '/model' "$T" | head -5
 ```
-Expected: the assistant messages' `"model"` values in order. If a `claude-sonnet-*` model answers a step **before** the turn's last message, write `yes`; if every message of that turn is `claude-opus-*` and Sonnet appears only in a later turn (or the command waited in the queue until the turn ended), write `no`.
+Expected: one path under a directory ending in `arc-model-spike`; if none matches, record `unverified — the spike's transcript was not found`. Then the assistant messages' `"model"` values in order. If a `claude-sonnet-*` model answers a step **before** the turn's last message, write `yes`; if every message of that turn is `claude-opus-*` and Sonnet appears only in a later turn (or the command waited in the queue until the turn ended), write `no`.
 
 - [ ] **Step 6: Record the result and clean up**
 
@@ -134,7 +142,7 @@ model-switch-midturn: unverified — <why the worker could not drive a session>
 ```
 
 ```bash
-tmux kill-session -t modelspike 2>/dev/null; rm -rf "$SPIKE_DIR"
+tmux kill-session -t modelspike 2>/dev/null; rm -rf "${TMPDIR:-/tmp}/arc-model-spike"
 git add docs/superpowers/plans/2026-10-08-consumers-panel.md
 git commit -m "docs(plan): record whether /model applies inside a running turn"
 ```
@@ -598,7 +606,7 @@ Expected: no output (no other caller, test or not). If a test calls `processTree
 
 - [ ] **Step 8: Build every binary that imports it**
 
-Run: `go build ./cmd/server/ && CGO_ENABLED=0 go build -o /dev/null ./cmd/wsh/ && go vet ./pkg/memusage/ ./pkg/orchestrate/ && gofmt -l pkg/memusage pkg/orchestrate/liveness.go`
+Run: `go build -o /dev/null ./cmd/server/ && CGO_ENABLED=0 go build -o /dev/null ./cmd/wsh/ && go vet ./pkg/memusage/ ./pkg/orchestrate/ && gofmt -l pkg/memusage pkg/orchestrate/liveness.go`
 Expected: no output from gofmt, no errors.
 
 - [ ] **Step 9: Run the liveness tests**
@@ -944,12 +952,12 @@ git commit -m "feat(usagestats): read a transcript's last minutes incrementally"
 
 ### Task 4: Engine action `stop` — end a worker's task without a retry
 **Depends on:** none
+**Files:** `pkg/orchestrate/retry.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/jarvis/leadprompt.go`, `cmd/wsh/cmd/wshcmd-jarvisdag.go`, `cmd/wsh/cmd/wshcmd-jarvisdag_test.go`, `pkg/wshrpc/wshrpctypes_dag.go`, `docs/orchestrator-guide.md`
 
-The spec (decision 8) says "marks the task Cancelled". The engine forbids that: one Cancelled task turns the whole dag Cancelled (`RecomputeDagStatus`, `pkg/orchestrate/dag.go`), and a task that keeps its cancelled run is mapped back to Cancelled by `DeriveTaskStates`. So `stop` cancels and stops the worker's run exactly as `retry` and `skip` do (`prepareActionLocked` → `cancelTaskRun`, then `stopRunWorkers`), and leaves the task **Failed** with `LastFailureKind = "stopped-by-human"` and no run: the dag holds as Blocked, the scheduler dispatches nothing for it, and `retry`, `skip` and `escalate` all accept a Failed task. The lead is told to leave such a task to the human. A reviewing task has no worker to stop and is refused.
+Spec decision 8: `stop` marks a running or stalled task **Failed** with the failure kind `stopped-by-human`, never Cancelled, because one Cancelled task turns the whole dag Cancelled (`RecomputeDagStatus`, `pkg/orchestrate/dag.go`), and a task that keeps its cancelled run is mapped back to Cancelled by `DeriveTaskStates`. So `stop` cancels and stops the worker's run exactly as `retry` and `skip` do (`prepareActionLocked` → `cancelTaskRun`, then `stopRunWorkers`), and leaves the task Failed with `LastFailureKind = "stopped-by-human"` and no run: the dag holds as Blocked, the scheduler dispatches nothing for it, and `retry`, `skip` and `escalate` all accept a Failed task. The lead is told to leave such a task to the human. A reviewing task has no worker to stop and is refused.
 
-**Files:** `pkg/orchestrate/retry.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/jarvis/leadprompt.go`, `pkg/jarvis/leadprompt_test.go`, `cmd/wsh/cmd/wshcmd-jarvisdag.go`, `cmd/wsh/cmd/wshcmd-jarvisdag_test.go`, `pkg/wshrpc/wshrpctypes_dag.go`, `docs/orchestrator-guide.md`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`
-- Modify: `pkg/orchestrate/retry.go` (the first const block), `pkg/orchestrate/mutation.go` (`prepareActionLocked`, `applyActionLocked`), `pkg/orchestrate/mutation_test.go`
-- Modify: `pkg/jarvis/leadprompt.go:75`, `pkg/jarvis/leadprompt_test.go`
+- Modify: `pkg/orchestrate/retry.go` (the first const block), `pkg/orchestrate/mutation.go` (`prepareActionLocked`, `applyActionLocked`), `pkg/orchestrate/mutation_test.go` (its tests, including the lead-prompt one, which reads `jarvis.OrchestrationRules`)
+- Modify: `pkg/jarvis/leadprompt.go:75`
 - Modify: `cmd/wsh/cmd/wshcmd-jarvisdag.go` (`dagDoneLines`, the `jarvisDagCmd.AddCommand` line), `cmd/wsh/cmd/wshcmd-jarvisdag_test.go` (`TestDagDoneLineCoversEveryAction`)
 - Modify: `pkg/wshrpc/wshrpctypes_dag.go:86` (the Action comment), `docs/orchestrator-guide.md` (the dag command table, after the `dag retry`/`dag skip` row)
 
@@ -1364,6 +1372,18 @@ func TestAgentsSetModelRefusesPi(t *testing.T) {
 	}
 }
 
+// AgentsSendCommand's guard: with no control stream the command is typed into the terminal, where an open question
+// would take it as its answer
+func TestAgentsSetModelRefusesAnAskingAgentWithNoStream(t *testing.T) {
+	asking := threeAgents()
+	asking.Tabs[1].OpenAsk = true // B is a Claude agent with a question open and no stream
+	sent := scriptAgents(t, asking)
+	_, err := (&WshServer{}).AgentsSetModelCommand(context.Background(), wshrpc.CommandAgentsSetModelData{Tab: agentsTabB, Model: "sonnet"})
+	if err == nil || !strings.Contains(err.Error(), "question open") || len(*sent) != 0 {
+		t.Fatalf("asking with no stream: err=%v sent=%v, want a refusal and nothing sent", err, *sent)
+	}
+}
+
 func TestAgentsSetModelRefusesAMultiWordModel(t *testing.T) {
 	sent := scriptAgents(t, threeAgents())
 	for _, model := range []string{"", "sonnet; rm -rf ~", "son net"} {
@@ -1503,6 +1523,10 @@ func (ws *WshServer) AgentsSetModelCommand(ctx context.Context, data wshrpc.Comm
 	if target.Harness != "claude" {
 		return nil, fmt.Errorf("agent %q runs %s; only a Claude session switches its model with /model", target.Name, target.Harness)
 	}
+	// AgentsSendCommand's guard: typed into the terminal, the command would answer the open question
+	if target.State == wshrpc.AgentsState_Asking && !target.hasStream {
+		return nil, fmt.Errorf("agent %q has a question open in its terminal, and a typed /model would answer it; switch it once the question is answered", target.Name)
+	}
 	deliverAgentMessage(target.blockId, "/model "+data.Model)
 	return &wshrpc.CommandAgentsSetModelRtnData{
 		TabId:      target.TabId,
@@ -1575,7 +1599,7 @@ const vm = (id: string, over: Partial<AgentVM> = {}): AgentVM => ({
     ...over,
 });
 
-const bucket = (model: string, output: number): UsageBucket => ({
+const bucket = (model: string, output: number, cacheread = 0): UsageBucket => ({
     harness: "claude",
     provider: "anthropic",
     model,
@@ -1583,7 +1607,7 @@ const bucket = (model: string, output: number): UsageBucket => ({
     input: 0,
     output,
     reasoning: 0,
-    cacheread: 0,
+    cacheread,
     cachecreate: 0,
     cachecreate1h: 0,
     msgs: 1,
@@ -1636,6 +1660,21 @@ describe("buildConsumers", () => {
         expect(ids(view.groups[0].rows)).toEqual(["b", "a"]);
         expect(view.groups[0].rows[0].tokens).toBe(5000);
         expect(view.groups[0].rows[0].spendUsd).toBeGreaterThan(0);
+    });
+
+    it("counts tokens without cache reads, and prices every class", () => {
+        const view = buildConsumers(
+            reading([
+                agent("a", { tokens: [bucket("claude-opus-4-8", 1000)] }),
+                agent("b", { tokens: [bucket("claude-opus-4-8", 1000, 5_000_000)] }),
+            ]),
+            [vm("a"), vm("b")],
+            "tokens"
+        );
+        const byId = Object.fromEntries(view.groups[0].rows.map((r) => [r.id, r]));
+        expect(byId.b.tokens).toBe(1000);
+        expect(byId.b.spendUsd).toBeGreaterThan(byId.a.spendUsd ?? 0);
+        expect(byId.b.burn).toBe(false); // 5M cache reads are not a burn
     });
 
     it("leaves tokens absent when the transcript was not read", () => {
@@ -1742,13 +1781,19 @@ Expected: FAIL — `Failed to resolve import "./consumers"`.
 
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 import { fmtClock } from "./runcompletion";
-import { aggregateSessionUsage } from "./sessionusage";
+import { aggregateSessionUsage, type SessionUsage } from "./sessionusage";
 import { formatGB } from "./workercapacity";
 
 export type ConsumersSort = "ram" | "tokens";
 
-// past this many tokens in the window, the busiest agent gets the burn warning
+// past this many tokens in the window (cache reads left out), the busiest agent gets the burn warning
 export const BURN_WARN_TOKENS = 500_000;
+
+// The panel's token count: every class but cache reads, which re-read the same context at a tenth of input's price
+// and would put nearly every working agent past BURN_WARN_TOKENS (spec decision 3). The cost still prices them.
+function countedTokens(u: SessionUsage): number {
+    return u.classes.reduce((n, c) => (c.cls === "cacheRead" ? n : n + c.tokens), 0);
+}
 
 // the roster's state dots (runstrip.ts SEG_FILL's colors)
 export const STATE_DOT: Record<AgentState, string> = {
@@ -1764,7 +1809,7 @@ export interface ConsumerRow {
     state: AgentState;
     model?: string; // short family label ("opus")
     ramBytes?: number;
-    tokens?: number; // tokens of the window
+    tokens?: number; // tokens of the window, cache reads left out (countedTokens)
     spendUsd?: number; // their client-side cost estimate, as the rail prices it
     opus: boolean; // a Claude agent on Opus
     burn: boolean; // the busiest agent, past BURN_WARN_TOKENS
@@ -1828,7 +1873,7 @@ export function buildConsumers(data: CommandGetConsumersRtnData, agents: AgentVM
             state: vm.state,
             model: vm.model,
             ramBytes: c.rambytes,
-            tokens: usage?.totalTokens,
+            tokens: usage === undefined ? undefined : countedTokens(usage),
             spendUsd: usage?.totalSpendUsd,
             opus,
             burn: false,
@@ -1912,7 +1957,26 @@ git commit -m "feat(agents): the Consumers panel's model: rows by RAM or tokens,
 
 **Interfaces:**
 - Consumes: Task 6's `buildConsumers`, `ramLabel`, `staleLine`, `STATE_DOT`, `stopWorkerMessage`, `switchToastText`, `ConsumerRow`, `ConsumersSort`; Task 5's `RpcApi.GetConsumersCommand`, `RpcApi.AgentsSetModelCommand`; Task 4's dag action `"stop"` through `RpcApi.DagActionCommand`; `confirmCloseSession` (`agentactions.ts`), `openTarget` (`jarvis/openref.ts`), `pushToast` (`cockpit/notificationstore.ts`), `modalsModel.pushModal("ConfirmModal", …)`, `PopoverReveal`, `Segmented`, `SkeletonLine`, `planDonuts` (via `usePlanDonuts`), `fmt`, `usd` (`usagestats.ts`), `formatGB`.
-- Produces: `consumersOpenAtom`, `consumersReadingAtom`, `CONSUMERS_POLL_MS`, `loadConsumers`, `toggleConsumers`, `useConsumersPoll`, `ConsumersPanel`, `usePlanDonuts`; DOM hooks for Task 8: `[data-consumers-panel][data-sort]`, `[data-consumer-row]`, `[data-consumer-opus]`, `[data-consumer-burn]`, `[data-consumer-sonnet]`, `[data-consumer-stop]`, `[data-consumers-own]`, `[data-consumers-stale]`, `[data-usage-meters]`, and `[data-worker-capacity]` (kept).
+- Produces: `consumersOpenAtom`, `consumersReadingAtom`, `CONSUMERS_POLL_MS`, `loadConsumers`, `toggleConsumers`, `useConsumersPoll`, `ConsumersPanel`, `usePlanDonuts`; DOM hooks for Task 8: `[data-consumers-panel][data-sort]`, `[data-consumers-header]`, `[data-consumers-list]`, `[data-consumers-loading]`, `[data-consumers-empty]`, `[data-consumers-backdrop]`, `[data-consumer-row]`, `[data-consumer-open]`, `[data-consumer-opus]`, `[data-consumer-burn]`, `[data-consumer-sonnet]`, `[data-consumer-stop]`, `[data-consumers-own]`, `[data-consumers-stale]`, `[data-consumers-open-usage]`, `[data-usage-meters]`, and `[data-worker-capacity]` (kept).
+
+**Shown by** (Task 8's `consumers-popover` steps, which the Final runs; `worker-capacity` steps 2–5 still read the chip, now a button):
+
+| What this task builds | Step |
+|---|---|
+| The RAM chip opens the panel sorted by RAM; the loading lines before the first reading | 2 |
+| Rows by RAM, a run's workers under `Run <id>`, the header's free RAM and 5-hour quota | 3 |
+| Interface, Server and Host below | 4 |
+| The Opus label, the burn ⚠, → Sonnet only on Claude-on-Opus, Stop on every row, an unread value as "—" | 5 |
+| The RAM \| Tokens toggle | 6 |
+| → Sonnet: the RPC it sends and its toast | 7 |
+| Stop on a worker: the run confirm, the `stop` dag action, its toast | 8 |
+| Stop on an agent you opened: the Close agent confirm, Cancel | 9 |
+| A failed poll: the rows kept, dimmed, under the stale line | 10 |
+| Esc, the opener again, a click outside | 11, 12, 13 |
+| No agents running | 14 |
+| The plan-usage meters open it sorted by tokens | 15 |
+| Open Usage | 16 |
+| A click on an agent's name opens it | 17 |
 
 - [ ] **Step 1: Write the failing store tests**
 
@@ -2205,6 +2269,7 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
             <span className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])} aria-label={row.state} />
             <button
                 type="button"
+                data-consumer-open
                 title={`Open ${row.name}`}
                 onClick={() => {
                     close();
@@ -2280,7 +2345,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const view = reading.data != null && sort != null ? buildConsumers(reading.data, agents, sort) : null;
     return (
         <>
-            {open ? <div className="fixed inset-0 z-50" onClick={close} /> : null}
+            {open ? <div data-consumers-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}
             <PopoverReveal
                 open={open}
                 origin="top right"
@@ -2288,7 +2353,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
             >
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                        <span className="flex-1 text-[12px] text-secondary">
+                        <span data-consumers-header className="flex-1 text-[12px] text-secondary">
                             {view ? `${formatGB(view.freeBytes)} free of ${formatGB(view.totalBytes)}` : "Reading…"}
                             {fiveHour != null ? ` · 5h quota ${Math.round(fiveHour)}%` : ""}
                         </span>
@@ -2304,14 +2369,19 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                             {staleLine(reading.lastOkMs)}
                         </div>
                     ) : null}
-                    <div className={cn("max-h-[56vh] overflow-y-auto py-1", reading.failed && "opacity-60")}>
+                    <div
+                        data-consumers-list
+                        className={cn("max-h-[56vh] overflow-y-auto py-1", reading.failed && "opacity-60")}
+                    >
                         {view == null ? (
-                            <div className="flex flex-col gap-2 px-3 py-2">
+                            <div data-consumers-loading className="flex flex-col gap-2 px-3 py-2">
                                 <SkeletonLine className="w-3/4" />
                                 <SkeletonLine className="w-2/3" />
                             </div>
                         ) : view.groups.length === 0 ? (
-                            <div className="px-3 py-2 text-[12px] text-muted">No agents running.</div>
+                            <div data-consumers-empty className="px-3 py-2 text-[12px] text-muted">
+                                No agents running.
+                            </div>
                         ) : (
                             view.groups.map((g) => (
                                 <div key={g.key}>
@@ -2343,6 +2413,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                     <div className="flex justify-end border-t border-border px-3 py-1.5">
                         <button
                             type="button"
+                            data-consumers-open-usage
                             onClick={() => {
                                 close();
                                 globalStore.set(model.surfaceAtom, "usage");
@@ -2405,24 +2476,29 @@ git commit -m "feat(agents): the Consumers panel: agents by RAM or tokens, Stop 
 - Modify: `scripts/cdp/scenarios.mjs` (a new scenario beside `workerCapacity`, its registration in `SCENARIOS`)
 
 **Interfaces:**
-- Consumes: Task 7's DOM hooks; the fixture roster file `TREE_RAIL_FIXTURE` (`public/cockpit-fixtures/active.json`); `ahResolveModules`; the `h` harness (`h.rpc`, `h.ev`, `h.shot`).
-- Produces: the scenario the plan's Final names, writing `cdp-shots/consumers-ram.png` and `cdp-shots/consumers-tokens.png`.
+- Consumes: Task 7's DOM hooks (its **Shown by** table maps each to a step here); the fixture roster file `TREE_RAIL_FIXTURE` (`public/cockpit-fixtures/active.json`); the saved plan windows in `localStorage["wave:ratelimits"]` (`ratelimitstore.ts`, seeded as `usage-charts` does); `ahResolveModules`, `ahReload`, `polishWaitFor`, `restoreStorageKey`, `DRM_HEADER_NAME`; the `h` harness (`h.rpc`, `h.ev`, `h.cdp`, `h.shot`, `h.goto`, `h.activeSurfaceLabel`), `SURFACE_LABEL`.
+- Produces: the scenario the plan's Final names, writing `cdp-shots/consumers-{loading,ram,tokens,stop-worker,stop-agent,stale,empty}.png`.
+
+The scenario drives every control and state Task 7 builds. `getconsumers`, `agentssetmodel` and `dagaction` are mocked through RpcApi's mock client, so nothing real is stopped or switched and each call the panel makes is recorded. Plan windows are seeded so the plan-usage meters are always drawn: their step fails, never skips. The spec's by-hand Mac checks (the numbers against Activity Monitor, Stop on a live agent) belong to no task. This task's report lists them under **Not verified**.
 
 - [ ] **Step 1: Add the scenario**
 
 In `scripts/cdp/scenarios.mjs`, after the `workerCapacity` scenario's closing `};`, add (4-space indent, matching the file; never run prettier on it):
 
 ```js
-// --- consumers-popover: the RAM chip opens the Consumers panel (docs/superpowers/specs/2026-10-08-consumers-panel-design.md).
-// The roster is a fixture (three agents: one you opened, a run worker on Opus, a pi agent) and GetConsumers is mocked
-// with their RAM and tokens, so the panel's order, grouping, warnings and actions are known.
+// --- consumers-popover: the Consumers panel (docs/superpowers/specs/2026-10-08-consumers-panel-design.md), opened from
+// the RAM chip and the plan-usage meters. The roster is a fixture (an agent you opened, a run worker on Opus, a pi
+// agent); getconsumers, agentssetmodel and dagaction are mocked, so the order, grouping, warnings and every action are
+// known and nothing real is stopped. A saved plan window makes the meters draw.
 const CONSUMERS_MOCK_KEY = "__arcConsumersMock";
+const CONSUMERS_RATE_KEY = "wave:ratelimits";
+const CONSUMERS_MINE = "tối ưu RAM";
 const CONSUMERS_FIXTURE = [
-    { id: "fx-consumers-mine", name: "tối ưu RAM", project: "arcterm", task: "", state: "working", agent: "claude", model: "sonnet", blockId: "fx-blk-mine" },
+    { id: "fx-consumers-mine", name: CONSUMERS_MINE, project: "arcterm", task: "", state: "working", agent: "claude", model: "sonnet", blockId: "fx-blk-mine" },
     { id: "fx-consumers-worker", name: "worker t-3", project: "arcterm", task: "", state: "working", agent: "claude", model: "opus", blockId: "fx-blk-worker", runId: "fx-child-run" },
     { id: "fx-consumers-pi", name: "pi scout", project: "arcterm", task: "", state: "idle", agent: "pi", model: "opus", blockId: "fx-blk-pi" },
 ];
-const consumersBucket = (model, output) => ({ harness: "claude", provider: "anthropic", model, day: "2026-10-08", input: 0, output, reasoning: 0, cacheread: 0, cachecreate: 0, cachecreate1h: 0, msgs: 1 });
+const consumersBucket = (model, output, cacheread = 0) => ({ harness: "claude", provider: "anthropic", model, day: "2026-10-08", input: 0, output, reasoning: 0, cacheread, cachecreate: 0, cachecreate1h: 0, msgs: 1 });
 const CONSUMERS_READING = {
     totalbytes: 8 * 2 ** 30,
     availablebytes: 1.3 * 2 ** 30,
@@ -2431,15 +2507,21 @@ const CONSUMERS_READING = {
     serverbytes: 121 * 2 ** 20,
     hostbytes: 47 * 2 ** 20,
     agents: [
-        { tabid: "fx-consumers-mine", blockid: "fx-blk-mine", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-sonnet-4-6", 80_000)] },
+        // 80K counted, and 9M cache reads that the count leaves out: no burn
+        { tabid: "fx-consumers-mine", blockid: "fx-blk-mine", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-sonnet-4-6", 80_000, 9_000_000)] },
         { tabid: "fx-consumers-worker", blockid: "fx-blk-worker", rambytes: 2.5 * 2 ** 30, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 1_200_000)], dag: { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" } },
         { tabid: "fx-consumers-pi", blockid: "fx-blk-pi", rambytes: 200 * 2 ** 20, tokensread: false },
     ],
 };
+const CONSUMERS_STOP_WORKER =
+    "Stop worker t-3 of run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run.";
+const CONSUMERS_STOP_MINE = `End the session for "${CONSUMERS_MINE}"? This stops the agent and can't be undone.`;
 
-// Answers getconsumers with `reading` through RpcApi's mock client (installCapacityMock's pattern) and passes every
-// other command on. A reload drops it, so install it after the scenario's last reload.
-async function installConsumersMock(h, reading) {
+// One mock for the whole scenario. `mode` picks getconsumers' answer: "hold" keeps the poll waiting (the loading
+// state) until consumersMode moves on, "reading" answers CONSUMERS_READING, "empty" no agents, "fail" an error.
+// agentssetmodel and dagaction answer as the server would and are recorded in `calls`. A reload drops it, so
+// install it after the scenario's last reload.
+async function installConsumersMock(h) {
     const resolved = await ahResolveModules(h);
     if (resolved.error) return `unresolved: ${resolved.error}`;
     return h.ev(`(async () => {
@@ -2447,20 +2529,43 @@ async function installConsumersMock(h, reading) {
         if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
         if (window.${CONSUMERS_MOCK_KEY}) return "already-installed";
         const prev = api.mockClient ?? null;
-        const reading = ${JSON.stringify(reading)};
+        const m = { api, prev, mode: "hold", reading: ${JSON.stringify(CONSUMERS_READING)}, held: [], calls: [] };
+        const answer = () => {
+            if (m.mode === "hold") return new Promise((resolve) => m.held.push(resolve));
+            if (m.mode === "fail") return Promise.reject(new Error("wavesrv restarting"));
+            return Promise.resolve(m.mode === "empty" ? { ...m.reading, agents: [] } : m.reading);
+        };
         api.setMockRpcClient({
             mockWshRpcCall(client, command, data, opts) {
-                if (command === "getconsumers") return Promise.resolve(reading);
+                if (command === "getconsumers") return answer();
+                if (command === "agentssetmodel") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve({ tabid: data.tab, midturn: true, overstream: true });
+                }
+                if (command === "dagaction") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(null);
+                }
                 return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
             },
             mockWshRpcStream(client, command, data, opts) {
                 return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
             },
         });
-        window.${CONSUMERS_MOCK_KEY} = { api, prev };
+        window.${CONSUMERS_MOCK_KEY} = m;
         return "installed";
     })()`);
 }
+
+// sets getconsumers' answer; leaving "hold" answers the polls that were held with the reading
+const consumersMode = (h, mode) =>
+    h.ev(`(() => {
+        const m = window.${CONSUMERS_MOCK_KEY};
+        if (!m) return false;
+        m.mode = ${JSON.stringify(mode)};
+        if (m.mode !== "hold") for (const resolve of m.held.splice(0)) resolve(m.reading);
+        return true;
+    })()`);
 
 const removeConsumersMock = (h) =>
     h.ev(`(() => {
@@ -2471,17 +2576,46 @@ const removeConsumersMock = (h) =>
         return "restored";
     })()`);
 
+// the panel's sort, or null once it is closed (the exit animation keeps it a moment with an empty data-sort)
+const CONSUMERS_SORT = `(document.querySelector("[data-consumers-panel]")?.dataset.sort || null)`;
+const consumersRowExpr = (id) => `document.querySelector('[data-consumer-row="${id}"]')`;
+const consumersDialogExpr = (text) =>
+    `[...document.querySelectorAll('[role="dialog"]')].find((d) => !d.matches("[data-consumers-panel]") && d.textContent.includes(${JSON.stringify(text)}))`;
+const consumersToastExpr = (...parts) =>
+    `[...document.querySelectorAll("[data-notification-toast]")].some((t) => ${JSON.stringify(parts)}.every((p) => t.textContent.includes(p)))`;
+
+// a person's click at a point: CDP's mouse events hit-test, so the panel's backdrop takes a click that lands on the chip
+async function consumersMouseClick(h, pt) {
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+    }
+}
+const consumersCentre = (h, selector) =>
+    h.ev(`(() => {
+        const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+        return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+    })()`);
+
 const consumersPopover = {
     name: "consumers-popover",
     surface: "cockpit",
     async arrange(h) {
-        const ctx = {};
+        const ctx = { prevRate: await h.ev(`localStorage.getItem(${JSON.stringify(CONSUMERS_RATE_KEY)})`) };
         try {
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(CONSUMERS_FIXTURE, null, 2));
             ctx.wroteFixture = true;
-            await h.ev("location.reload()");
-            await h.ev("new Promise((r) => setTimeout(r, 2500))");
+            // a current Default-account window with future resets, so the meters draw and the header shows 62%
+            const nowSec = Math.floor(Date.now() / 1000);
+            const rate = {
+                "claude:default": { fivehourpct: 62, fivehourreset: nowSec + 3 * 3600, weekpct: 41, weekreset: nowSec + 6 * 24 * 3600, capturedAt: Date.now() },
+            };
+            await h.ev(`localStorage.setItem(${JSON.stringify(CONSUMERS_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`);
+            // the fixture roster and the saved windows are read at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.mock = await installConsumersMock(h);
+            if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -2491,11 +2625,20 @@ const consumersPopover = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const sort = () => h.ev(CONSUMERS_SORT);
+        const waitClosed = () => polishWaitFor(h, `${CONSUMERS_SORT} === null`, 2000);
+        const calls = () => h.ev(`window.${CONSUMERS_MOCK_KEY}?.calls ?? []`);
+        const rows = () => h.ev(`[...document.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow)`);
+        const openFromChip = async () => {
+            await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+            return polishWaitFor(h, `${CONSUMERS_SORT} === "ram"`, 3000);
+        };
         if (ctx.arrangeError != null) {
-            rec("0. arrange the fixture roster", false, ctx.arrangeError);
+            rec("0. the fixture roster, the saved plan window and the mock", false, ctx.arrangeError);
             return steps;
         }
 
+        // h.rpc calls TabRpcClient.wshRpcCall straight, past RpcApi's mock, so this reads the live server
         const live = await h.rpc("getconsumers", null);
         rec(
             "1. GetConsumersCommand reads the machine",
@@ -2503,88 +2646,190 @@ const consumersPopover = {
             JSON.stringify(live).slice(0, 300)
         );
 
-        const mocked = await installConsumersMock(h, CONSUMERS_READING);
-        await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
-        let panel = null;
-        for (let waited = 0; waited <= 8000; waited += 250) {
-            panel = await h.ev(`(() => {
-                const p = document.querySelector("[data-consumers-panel]");
-                if (!p) return null;
-                return {
-                    sort: p.dataset.sort,
-                    rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
-                    own: [...p.querySelectorAll("[data-consumers-own]")].map((o) => o.dataset.consumersOwn),
-                };
-            })()`);
-            if (panel && panel.rows.length === 3) break;
-            await settle(250);
-        }
+        // the mock starts in "hold": the first poll waits, so the panel shows its loading lines
+        const chipReady = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        const opened = chipReady && (await openFromChip());
+        const loading = await h.ev(`!!document.querySelector("[data-consumers-panel] [data-consumers-loading]")`);
+        await h.shot("cdp-shots/consumers-loading.png");
+        rec(
+            "2. the RAM chip opens the panel sorted by RAM, with loading lines until the first reading",
+            opened && loading === true,
+            JSON.stringify({ chipReady, opened, loading })
+        );
+
+        await consumersMode(h, "reading");
+        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 3`, 5000);
+        const ram = await h.ev(`(() => {
+            const p = document.querySelector("[data-consumers-panel]");
+            if (!p) return null;
+            return {
+                rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
+                header: p.querySelector("[data-consumers-header]")?.textContent ?? "",
+                runLabel: p.textContent.toLowerCase().includes("run 85548d0b"),
+            };
+        })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "2. the RAM chip opens the panel sorted by RAM, the run's worker first",
-            mocked === "installed" && !!panel && panel.sort === "ram" && panel.rows[0] === "fx-consumers-worker",
-            `mock=${mocked} ${JSON.stringify(panel)}`
+            "3. rows by RAM: the run's worker first under its run, with free RAM and the 5-hour quota in the header",
+            !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 3 && ram.runLabel &&
+                ram.header.includes("free of") && ram.header.includes("5h quota 62%"),
+            JSON.stringify(ram)
         );
+
+        const own = await h.ev(`[...document.querySelectorAll("[data-consumers-own]")].map((o) => [o.dataset.consumersOwn, o.textContent])`);
         rec(
-            "3. arcterm's own processes are listed below",
-            !!panel && JSON.stringify(panel.own) === JSON.stringify(["Interface", "Server", "Host"]),
-            JSON.stringify(panel?.own)
+            "4. arcterm's own processes are listed below with their RAM",
+            JSON.stringify(own.map((o) => o[0])) === JSON.stringify(["Interface", "Server", "Host"]) &&
+                own[0][1].includes("684 MB") && own[1][1].includes("121 MB") && own[2][1].includes("47 MB"),
+            JSON.stringify(own)
         );
 
         const marks = await h.ev(`(() => {
-            const row = (id) => document.querySelector('[data-consumer-row="' + id + '"]');
-            const w = row("fx-consumers-worker");
-            const pi = row("fx-consumers-pi");
+            const w = ${consumersRowExpr("fx-consumers-worker")};
+            const mine = ${consumersRowExpr("fx-consumers-mine")};
+            const pi = ${consumersRowExpr("fx-consumers-pi")};
             return {
                 workerOpus: !!w?.querySelector("[data-consumer-opus]"),
                 workerBurn: !!w?.querySelector("[data-consumer-burn]"),
                 workerSonnet: !!w?.querySelector("[data-consumer-sonnet]"),
+                mineBurn: !!mine?.querySelector("[data-consumer-burn]"),
+                mineSonnet: !!mine?.querySelector("[data-consumer-sonnet]"),
                 piSonnet: !!pi?.querySelector("[data-consumer-sonnet]"),
-                piStop: !!pi?.querySelector("[data-consumer-stop]"),
+                stops: [w, mine, pi].every((r) => !!r?.querySelector("[data-consumer-stop]")),
                 piTokens: pi?.textContent.includes("—") ?? false,
             };
         })()`);
         rec(
-            "4. the Opus worker is marked, burns fastest and offers → Sonnet; the pi agent only Stop, its tokens unread",
-            marks.workerOpus && marks.workerBurn && marks.workerSonnet && !marks.piSonnet && marks.piStop && marks.piTokens,
+            "5. the Opus worker is marked, burns fastest and offers → Sonnet; every row has Stop; the pi agent's tokens are unread",
+            marks.workerOpus && marks.workerBurn && marks.workerSonnet && !marks.mineBurn && !marks.mineSonnet &&
+                !marks.piSonnet && marks.stops && marks.piTokens,
             JSON.stringify(marks)
         );
 
         await h.ev(`[...document.querySelectorAll("[data-consumers-panel] button")].find((b) => b.textContent.trim() === "Tokens")?.click()`);
         await settle(300);
-        const tokens = await h.ev(`(() => {
-            const p = document.querySelector("[data-consumers-panel]");
-            return p ? { sort: p.dataset.sort, first: p.querySelector("[data-consumer-row]")?.dataset.consumerRow } : null;
-        })()`);
+        const tokens = { sort: await sort(), first: (await rows())[0] };
         await h.shot("cdp-shots/consumers-tokens.png");
-        rec("5. the sort toggle ranks by tokens", tokens?.sort === "tokens" && tokens.first === "fx-consumers-worker", JSON.stringify(tokens));
+        rec("6. the sort toggle ranks by tokens", tokens.sort === "tokens" && tokens.first === "fx-consumers-worker", JSON.stringify(tokens));
+
+        await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-sonnet]")?.click()`);
+        const sonnetToast = await polishWaitFor(h, consumersToastExpr("worker t-3 switch", "Sonnet"), 3000);
+        const sonnetCall = (await calls()).find((c) => c.command === "agentssetmodel");
+        rec(
+            "7. → Sonnet sends /model sonnet to the worker's tab and a toast says so",
+            sonnetToast && sonnetCall?.data?.tab === "fx-consumers-worker" && sonnetCall?.data?.model === "sonnet",
+            JSON.stringify({ sonnetToast, sonnetCall })
+        );
+
+        await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
+        const workerConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
+        await h.shot("cdp-shots/consumers-stop-worker.png");
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_WORKER)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Stop worker")?.click()`);
+        const stopToast = await polishWaitFor(h, consumersToastExpr("worker t-3 stopped"), 3000);
+        const stopCall = (await calls()).find((c) => c.command === "dagaction");
+        rec(
+            "8. Stop on a worker asks the run confirm, then sends the stop dag action for its task",
+            workerConfirm && stopToast &&
+                JSON.stringify(stopCall?.data) === JSON.stringify({ channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3", action: "stop" }),
+            JSON.stringify({ workerConfirm, stopToast, stopCall })
+        );
+
+        await h.ev(`${consumersRowExpr("fx-consumers-mine")}?.querySelector("[data-consumer-stop]")?.click()`);
+        const mineConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_MINE)}`, 3000);
+        await h.shot("cdp-shots/consumers-stop-agent.png");
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_MINE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Cancel")?.click()`);
+        const cancelled = await polishWaitFor(h, `!${consumersDialogExpr(CONSUMERS_STOP_MINE)} && !!${consumersRowExpr("fx-consumers-mine")}`, 3000);
+        rec(
+            "9. Stop on an agent you opened asks the Close agent confirm; Cancel keeps it",
+            mineConfirm && cancelled,
+            JSON.stringify({ mineConfirm, cancelled })
+        );
+
+        // the next poll fails: within one CONSUMERS_POLL_MS (5 s) the rows stay, dimmed, under the stale line
+        await consumersMode(h, "fail");
+        const staleShown = await polishWaitFor(h, `!!document.querySelector("[data-consumers-stale]")`, 7000);
+        const stale = await h.ev(`({
+            line: document.querySelector("[data-consumers-stale]")?.textContent ?? null,
+            dimmed: document.querySelector("[data-consumers-list]")?.classList.contains("opacity-60") ?? false,
+            rows: document.querySelectorAll("[data-consumer-row]").length,
+        })`);
+        await h.shot("cdp-shots/consumers-stale.png");
+        rec(
+            "10. a failed poll keeps the last reading, dimmed, under \"Couldn't read usage · last at HH:MM\"",
+            staleShown && /^Couldn't read usage · last at \d{2}:\d{2}$/.test(stale.line ?? "") && stale.dimmed && stale.rows === 3,
+            JSON.stringify(stale)
+        );
+        await consumersMode(h, "reading");
 
         await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
-        await settle(500);
-        const closed = await h.ev(`!document.querySelector("[data-consumers-panel]")`);
-        rec("6. Escape closes it", closed === true, String(closed));
+        rec("11. Escape closes it", await waitClosed(), String(await sort()));
 
-        const meters = await h.ev(`!!document.querySelector("[data-usage-meters]")`);
-        if (meters) {
-            await h.ev(`document.querySelector("[data-usage-meters]").click()`);
-            await settle(500);
-            const sort = await h.ev(`document.querySelector("[data-consumers-panel]")?.dataset.sort ?? null`);
-            rec("7. the plan-usage meters open it sorted by tokens", sort === "tokens", String(sort));
-            await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
-        } else {
-            rec("7. the plan-usage meters open it sorted by tokens", true, "skipped: no plan reading, so the meters are not drawn");
-        }
+        const reopened = await openFromChip();
+        const chipAt = await consumersCentre(h, "[data-worker-capacity]");
+        if (chipAt) await consumersMouseClick(h, chipAt);
+        rec("12. a second click on the RAM chip closes it", reopened && !!chipAt && (await waitClosed()), JSON.stringify({ reopened, chipAt }));
+
+        const reopened2 = await openFromChip();
+        const outside = await h.ev(`({ x: 40, y: Math.round(window.innerHeight / 2) })`);
+        await consumersMouseClick(h, outside);
+        rec("13. a click outside the panel closes it", reopened2 && (await waitClosed()), JSON.stringify({ reopened2, outside }));
+
+        await consumersMode(h, "empty");
+        await openFromChip();
+        const empty = await polishWaitFor(h, `!!document.querySelector("[data-consumers-panel] [data-consumers-empty]")`, 7000);
+        await h.shot("cdp-shots/consumers-empty.png");
+        rec(
+            "14. with no agents running the panel says so",
+            empty && (await h.ev(`document.querySelector("[data-consumers-empty]")?.textContent.trim()`)) === "No agents running.",
+            String(empty)
+        );
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await waitClosed();
+        await consumersMode(h, "reading");
+
+        // the saved window makes the meters draw; their absence is a failure, not a skip
+        const meters = await polishWaitFor(h, `!!document.querySelector("[data-usage-meters]")`, 5000);
+        if (meters) await h.ev(`document.querySelector("[data-usage-meters]").click()`);
+        const metersSort = meters && (await polishWaitFor(h, `${CONSUMERS_SORT} === "tokens"`, 3000));
+        rec("15. the plan-usage meters open it sorted by tokens", meters && metersSort, JSON.stringify({ meters, sort: await sort() }));
+
+        await polishWaitFor(h, `!!document.querySelector("[data-consumers-open-usage]")`, 3000);
+        await h.ev(`document.querySelector("[data-consumers-open-usage]")?.click()`);
+        const usageClosed = await waitClosed();
+        const usageSurface = await h.activeSurfaceLabel();
+        rec(
+            "16. Open Usage closes it and lands on the Usage surface",
+            usageClosed && usageSurface === SURFACE_LABEL.usage,
+            JSON.stringify({ usageClosed, usageSurface })
+        );
+
+        await h.goto("cockpit");
+        await openFromChip();
+        await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-mine")}`, 5000);
+        await h.ev(`${consumersRowExpr("fx-consumers-mine")}?.querySelector("[data-consumer-open]")?.click()`);
+        const nameClosed = await waitClosed();
+        await polishWaitFor(h, `${DRM_HEADER_NAME} === ${JSON.stringify(CONSUMERS_MINE)}`, 5000);
+        const landed = { surface: await h.activeSurfaceLabel(), name: await h.ev(DRM_HEADER_NAME) };
+        rec(
+            "17. a click on an agent's name closes the panel and opens that agent",
+            nameClosed && landed.surface === SURFACE_LABEL.agent && landed.name === CONSUMERS_MINE,
+            JSON.stringify({ nameClosed, ...landed })
+        );
         return steps;
     },
     async teardown(h, ctx) {
         await removeConsumersMock(h);
         if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
-        await h.ev("location.reload()");
+        await h.ev(restoreStorageKey(CONSUMERS_RATE_KEY, ctx.prevRate ?? null));
+        if (!(await ahReload(h))) console.error("consumers-popover teardown: the page did not come back after the reload");
+        await h.goto("cockpit");
     },
 };
 ```
 
 Then add `consumersPopover,` to the `SCENARIOS` array right after `workerCapacity,`.
+
+If a selector or wording above does not match what Task 7 shipped (a confirm button's label, a toast's text, `DRM_HEADER_NAME` on a fixture agent), match the scenario to the shipped UI, not the other way round. Then say so in the task's report. Never weaken a step to a skip.
 
 - [ ] **Step 2: Check the file parses**
 
@@ -2594,17 +2839,13 @@ Expected: no syntax error, then `true`.
 - [ ] **Step 3: Run it where CDP answers**
 
 On Windows (WebView2 answers CDP): start the dev app (`task dev`), then `task verify:ui -- consumers-popover worker-capacity`.
-Expected: every step PASS; `cdp-shots/consumers-ram.png` shows the worker row first under `RUN 85548D0B` with its amber `opus`, ⚠ and `→ Sonnet`, and Interface/Server/Host below. On a Mac this step cannot run (WKWebView answers no CDP): say so in the task's report and leave it to the Final.
+Expected: all 17 `consumers-popover` steps and the `worker-capacity` steps PASS. The shots show the panel in each state: `consumers-ram.png` has the worker row first under `RUN 85548D0B`, with its amber `opus`, its ⚠ and `→ Sonnet`, and Interface/Server/Host below. On a Mac this step cannot run (WKWebView answers no CDP). Say so in the task's report and leave it to the Final.
 
-- [ ] **Step 4: By hand on the Mac (report what you saw)**
-
-With the installed build carrying these changes: open the panel from the RAM chip; compare each agent's RAM and the Interface row with Activity Monitor (Memory column, `wave-tauri`'s WebKit helpers); Stop an idle agent you opened and watch free RAM rise; if a Claude agent runs on Opus, press → Sonnet and read its next status's model. Write the results in the task's report; a worker without a live app reports this step as not done.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add scripts/cdp/scenarios.mjs
-git commit -m "test(cdp): consumers-popover opens the panel over a fixture roster"
+git commit -m "test(cdp): consumers-popover drives the Consumers panel over a fixture roster"
 ```
 
 ---

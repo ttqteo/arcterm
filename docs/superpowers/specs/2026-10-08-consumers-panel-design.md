@@ -46,7 +46,11 @@ the likely cause; a separate investigation).
 
 3. **Warnings.** A Claude agent on Opus shows its model label in the warning tone. The agent with the most
    tokens in the window gets a ⚠ when that count passes 500K. Both are computed in the pure model
-   (decision 10), with the threshold as one named constant.
+   (decision 10), with the threshold as one named constant. The panel's token count (each row's figure, the
+   Tokens sort and this warning) is input, output, reasoning and cache writes; cache reads are left out. They
+   re-read the same context at a tenth of input's price, and counting them put 98% of a working agent's
+   10-minute windows past 500K (this Mac's transcripts, 2026-10-08); without them the median is 64K and 0.6% pass
+   500K. The estimated cost still prices every class.
 
 4. **One RPC: `GetConsumersCommand`.** It takes no arguments and returns the machine's total and free RAM,
    one entry per live agent block (block id, RAM bytes, and the window's tokens split by model and by class:
@@ -106,8 +110,8 @@ the likely cause; a separate investigation).
    agent keeps its progress. No confirm; a toast says it was sent, and the model label changes with the
    agent's next status. Whether `/model` applies inside a running turn is verified in the plan's first task;
    if it only applies from the next turn, the toast says "from the next turn". Re-running a worker's task on
-   Sonnet (the existing `escalate`) is not added unless that check shows the in-session switch cannot help a
-   long worker turn.
+   Sonnet (the existing `escalate`) is not part of this work either way; if the check finds the switch waits for
+   the turn, that fallback is filed as follow-up work.
 
 10. **Pure model, thin view.** `frontend/app/view/agents/consumers.ts` joins the RPC with the roster
     (`agentsAtom`: name, project, state, model, run), sorts by RAM or tokens, groups workers by run, sets the
@@ -124,12 +128,17 @@ the likely cause; a separate investigation).
   agent; Interface by responsible pid, excluding agent and server trees; a missing footprint or
   responsible-pid call leaving the value absent. The token reader: appended records counted, records past
   the window dropped, a truncated file re-read, a forgotten path's reader dropped.
-- **Go, `pkg/orchestrate`:** `stop` on a running task makes it Cancelled and closes its worker's tab; the next
-  tick does not relaunch it; a stalled and a reviewing task stop too; done, pending and skipped tasks are
-  refused.
+- **Go, `pkg/orchestrate`:** `stop` on a running or stalled task makes it Failed with the failure kind
+  `stopped-by-human` and closes its worker's tab; the dag is not Cancelled; the next tick does not relaunch it;
+  a stopped task can still be skipped; reviewing, done, pending and skipped tasks are refused.
 - **Vitest, `consumers.test.ts`:** the join with the roster; both sorts; grouping under runs; the Opus and
   burn warnings; Stop on every agent row and → Sonnet only on Claude-on-Opus; absent values staying absent.
-- **CDP:** a `consumers-popover` scenario in `scripts/cdp/scenarios.mjs` opens the panel over fixture data.
+- **CDP:** a `consumers-popover` scenario in `scripts/cdp/scenarios.mjs` opens the panel over fixture data and
+  drives every control (both openers, the sort, Stop on a worker and on an agent, → Sonnet, a name, Open Usage,
+  Esc, a click outside, the opener again), with the loading, empty and stale states; `worker-capacity` still
+  passes on the chip it turns into a button.
   It runs on Windows; on a Mac the plan's Final guards it as AGENTS.md says (WKWebView answers no CDP).
-- **By hand on the Mac:** the panel's numbers against Activity Monitor; Stop on an idle agent; `/model
-  sonnet` sent to an agent mid-turn (decision 9's check).
+- **Decision 9's check:** the plan's first task sends `/model sonnet` to a throwaway Claude session mid-turn and
+  reads which model answered from its transcript.
+- **By hand on the Mac, after the land:** the panel's numbers against Activity Monitor; Stop on an idle agent.
+  No run task can drive the installed app, so the run reports these as not verified and the person checks them.
