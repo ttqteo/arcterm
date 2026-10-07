@@ -98,7 +98,7 @@ export const CLASS_LABEL: Record<TokenClass, string> = {
 };
 
 // Tailwind fill utility per token class. Single source of truth — this was previously duplicated
-// verbatim in usagesurface.tsx and tokenusagesection.tsx as inline var(--color-*) strings. Same
+// verbatim in usagesurface.tsx and sessionsection.tsx as inline var(--color-*) strings. Same
 // existing design-system tokens as before, just named once: --color-cacheread carries the grey
 // "low-value, high-volume" read of cache reads, and the other three keep their long-standing pairing.
 export const CLASS_FILL: Record<TokenClass, string> = {

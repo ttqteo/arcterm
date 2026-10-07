@@ -363,8 +363,9 @@ content is always fluid.
   shape as work arrives; a count opens its section, an empty Uploads
   attaches. The body opens on a one-line status (a context ring with its
   percent and tokens, then the session's spend), then Needs you, the counted
-  sections that hold something, Run/Task, and Token usage and Details,
-  closed by default (Details' header reads project · branch while closed).
+  sections that hold something, Run/Task, and Session, closed by default
+  (its header reads project · branch while closed): the tokens and spend on
+  one line over their bar, then the facts, then the breakdown toggle.
   The footer is the session's state and cache with Resume or Stop. Each
   figure shows once.
 - **Surfaces** — absolutely stacked (`absolute inset-0`) under a

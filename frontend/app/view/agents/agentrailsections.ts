@@ -3,10 +3,10 @@
 //
 // The Agent details rail's sections: which show, in what order, with which counts. The status line first (context
 // and spend), then attention (needs you), then the lists the agent holds (subagents, changed files, artifacts,
-// uploads, servers, background tasks), its run, and token usage and the facts last, closed by default. Every list is
-// counted in the tab strip in one fixed order (planRailStats), empty or not, so the rail keeps one shape from agent to
-// agent; the body lists only the ones with something in them. Plain terminals are not an agent's: the Agent tree lists
-// them in a section of its own.
+// uploads, servers, background tasks), its run, and the session last (its token usage and its facts), closed by
+// default. Every list is counted in the tab strip in one fixed order (planRailStats), empty or not, so the rail keeps
+// one shape from agent to agent; the body lists only the ones with something in them. Plain terminals are not an
+// agent's: the Agent tree lists them in a section of its own.
 // Rendered by agentdetailsrail.tsx. A plain terminal has no rail.
 
 import type { RailSectionHeader } from "@/app/element/railsections";
@@ -15,7 +15,7 @@ import type { BackgroundTaskStatus } from "./transcriptprojection";
 // the lists the tab strip counts, in its order
 export type AgentRailStatId = "subagents" | "files" | "artifacts" | "uploads" | "servers" | "bgtasks";
 
-export type AgentRailSectionId = "subagent" | "status" | "needs" | AgentRailStatId | "run" | "usage" | "details";
+export type AgentRailSectionId = "subagent" | "status" | "needs" | AgentRailStatId | "run" | "session";
 
 export interface AgentRailInput {
     inSubagent: boolean; // a subagent's interior is open in place of the parent
@@ -79,8 +79,7 @@ export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
     if (!i.inSubagent && i.hasRun) {
         out.push({ id: "run" });
     }
-    out.push({ id: "usage", header: { defaultOpen: false } });
-    out.push({ id: "details", header: { defaultOpen: false } });
+    out.push({ id: "session", header: { defaultOpen: false } });
     return out;
 }
 

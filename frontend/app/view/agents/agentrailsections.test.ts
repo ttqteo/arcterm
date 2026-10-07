@@ -23,9 +23,9 @@ const ids = (i: AgentRailInput) => planAgentRail(i).map((s) => s.id);
 const header = (i: AgentRailInput, id: AgentRailSectionId) => planAgentRail(i).find((s) => s.id === id)?.header;
 
 describe("planAgentRail", () => {
-    it("opens on the status line, lists only the counted sections that hold something, and ends on usage then details", () => {
-        // no Terminals: plain terminals are the Agent tree's own section. No Tools: they are a line in Details
-        expect(ids(base)).toEqual(["status", "files", "bgtasks", "usage", "details"]);
+    it("opens on the status line, lists only the counted sections that hold something, and ends on the session", () => {
+        // no Terminals: plain terminals are the Agent tree's own section. No Tools: they are a line in Session
+        expect(ids(base)).toEqual(["status", "files", "bgtasks", "session"]);
         expect(header(base, "files")).toEqual({ count: 3 });
         expect(planAgentRail(base)[0].header).toBeUndefined();
     });
@@ -42,28 +42,25 @@ describe("planAgentRail", () => {
             "uploads",
             "servers",
             "bgtasks",
-            "usage",
-            "details",
+            "session",
         ]);
         expect(header({ ...base, uploads: 4 }, "uploads")).toEqual({ count: 4 });
     });
     it("the run section sits after the counted ones", () => {
-        expect(ids({ ...base, hasRun: true })).toEqual(["status", "files", "bgtasks", "run", "usage", "details"]);
+        expect(ids({ ...base, hasRun: true })).toEqual(["status", "files", "bgtasks", "run", "session"]);
     });
-    it("token usage and details start closed", () => {
-        expect(header(base, "usage")).toEqual({ defaultOpen: false });
-        expect(header(base, "details")).toEqual({ defaultOpen: false });
+    it("the session (token usage and facts) starts closed", () => {
+        expect(header(base, "session")).toEqual({ defaultOpen: false });
     });
     it("files with no count (loading, not a repo) stays listed with a header but no number", () => {
         expect(header({ ...base, files: null }, "files")).toEqual({});
         expect(ids({ ...base, files: 0 })).not.toContain("files");
     });
-    it("a subagent interior shows its head, the status line, usage and details only", () => {
+    it("a subagent interior shows its head, the status line and the session only", () => {
         expect(ids({ ...base, inSubagent: true, needsYou: 1, hasRun: true, artifacts: 2, uploads: 1 })).toEqual([
             "subagent",
             "status",
-            "usage",
-            "details",
+            "session",
         ]);
     });
 });

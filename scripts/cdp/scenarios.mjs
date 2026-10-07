@@ -7751,7 +7751,7 @@ const agentTreeRail = {
             const out = {};
             for (const h3 of rail.querySelectorAll("h3")) {
                 const t = h3.textContent.trim();
-                if (t === "Details" || t === "Run") {
+                if (t === "Session" || t === "Run") {
                     const cs = getComputedStyle(h3);
                     out[t] = { size: cs.fontSize, weight: cs.fontWeight };
                 }
@@ -7864,15 +7864,15 @@ const agentTreeRail = {
         // no Terminals: plain terminals are the Agent tree's own section
         const shape = await h.ev(railShape(RAIL));
         rec(
-            "10. the lead's strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; its body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
+            "10. the lead's strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; its body lists none at 0, no Terminals or Tools, and ends on Session",
             railShapeOk(shape),
             JSON.stringify(shape)
         );
         const byId = Object.fromEntries((sections ?? []).map((s) => [s.id, s]));
         rec(
-            "11. Details and Token usage start closed; the header labels are 12px",
-            byId.details?.open === false && byId.usage?.open === false && byId.details?.size === "12px",
-            JSON.stringify({ details: byId.details, usage: byId.usage })
+            "11. Session starts closed; the header labels are 12px",
+            byId.session?.open === false && byId.session?.size === "12px",
+            JSON.stringify({ session: byId.session })
         );
         const theme = await h.ev(`(() => ({
             preset: localStorage.getItem("cockpit.theme.preset"),
@@ -15478,7 +15478,7 @@ const canvasTabsScenario = {
 // section does once something is in it. Plain terminals left the agent's rail for a section of the Agent tree, and a
 // focused terminal's own rail still lists them.
 // The Agent details rail's shape (agentrailsections.ts): the strip counts every list in one fixed order, the body lists
-// only the counted sections holding something, and Token usage then Details close it
+// only the counted sections holding something, and Session closes it
 const RAIL_STATS_ORDER = ["subagents", "files", "artifacts", "uploads", "servers", "bgtasks"];
 function railShape(railExpr) {
     return `(() => {
@@ -15498,7 +15498,9 @@ function railShapeOk(shape) {
         emptyListed.length === 0 &&
         !shape.sections.includes("terminals") &&
         !shape.sections.includes("tools") &&
-        JSON.stringify(shape.sections.slice(-2)) === JSON.stringify(["usage", "details"])
+        shape.sections.at(-1) === "session" &&
+        !shape.sections.includes("usage") &&
+        !shape.sections.includes("details")
     );
 }
 
@@ -15651,7 +15653,7 @@ const agentRailSections = {
 
         const shape = await h.ev(railShape(RAIL_ASIDE));
         rec(
-            "1. the strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; the body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
+            "1. the strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; the body lists none at 0, no Terminals or Tools, and ends on Session",
             railShapeOk(shape),
             JSON.stringify(shape)
         );

@@ -60,8 +60,8 @@ export const terminalDockMaxAtom = atom(false);
 // the height while the dock's edge is being dragged, committed to terminalDockHeightAtom on release
 export const terminalDockDragAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
 
-// whether the rail's Token usage section shows its per-class and per-model breakdown. Session-scoped, not
-// persisted; global so it holds while the surface unmounts.
+// whether the rail's Session section shows its token usage's per-class and per-model breakdown. Not persisted;
+// global so it holds while the surface unmounts.
 export const usageBreakdownAtom = atom(false);
 
 export const railStateAtom = atom<RailGitState | null>(null) as PrimitiveAtom<RailGitState | null>;

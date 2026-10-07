@@ -51,16 +51,16 @@ import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { ServersSection } from "./railservers";
-import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
+import { loadRailForAgent, railStateAtom, railVisibleAtom, usageBreakdownAtom } from "./railstore";
 import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
 import { SubLabel } from "./sectionlabel";
 import type { SubagentState } from "./session-models/sessionviewmodel";
+import { SessionSection } from "./sessionsection";
 import { spendHeadline } from "./sessionusage";
 import { StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
-import { TokenUsageSection } from "./tokenusagesection";
 import type { BackgroundTask } from "./transcriptprojection";
 import { loadSessionUsage, sessionUsageAtom, UsageUnavailable } from "./transcriptusagestore";
 import { pickAndAttach } from "./uploadsingest";
@@ -89,8 +89,8 @@ const SUB_COLOR: Record<SubagentState, string> = {
 const RailFilesCap = 8; // a 296px rail can't show a large worktree; the summary line under it counts them all
 const USAGE_REFRESH_MS = 15_000;
 
-// Details is the rail's facts about the session: its project, its branch and the worktree it works in, how long it
-// has been in its state, and how full its context window is.
+// A fact line of the Session section, under its token usage: the project, the branch and the worktree the agent
+// works in, its model, or a subagent's state.
 function DetailLine({
     label,
     title,
@@ -153,8 +153,8 @@ function ContextRing({ pct, level }: { pct: number; level: "ok" | "warn" | "hot"
 }
 
 // StatusLine is the rail's first row: the context window (ring, percent and the tokens in it) on the left, the
-// session's spend on the right, opening Token usage. The context's note is its tooltip. onReset, when given, offers
-// Compact and Clear under the row: they shrink what every turn re-reads.
+// session's spend on the right, opening Session on its breakdown. The context's note is its tooltip. onReset, when
+// given, offers Compact and Clear under the row: they shrink what every turn re-reads.
 function StatusLine({
     ctx,
     spend,
@@ -544,8 +544,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         servers: "Servers",
         bgtasks: "Background tasks",
         run: role?.kind === "worker" ? "Task" : "Run",
-        details: "Details",
-        usage: "Token usage",
+        session: "Session",
     };
     const ICON: Record<AgentRailSectionId, ReactNode> = {
         subagent: RAIL_ICON.subagents,
@@ -558,8 +557,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         servers: RAIL_ICON.server,
         bgtasks: RAIL_ICON.terminal,
         run: RAIL_ICON.autonomy,
-        details: RAIL_ICON.info,
-        usage: RAIL_ICON.usage,
+        session: RAIL_ICON.info,
     };
     // thunks: a section the plan leaves out is never built (run would touch a roleRun that may not exist)
     const CONTENT: Record<AgentRailSectionId, () => ReactNode> = {
@@ -593,7 +591,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 ctx={!sub && ctxPct != null ? { pct: ctxPct, max: usage?.contextmax } : undefined}
                 spend={spend}
                 onReset={offerReset ? drive : undefined}
-                onSpend={() => openSection("usage")}
+                onSpend={() => {
+                    globalStore.set(usageBreakdownAtom, true);
+                    openSection("session");
+                }}
             />
         ),
         // only the lead's rail: a worker's own question is already on screen, in its terminal's picker
@@ -753,51 +754,52 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             ) : (
                 <RunSection key={agent.id} model={model} run={roleRun!} asks={asks} />
             ),
-        details: () => (
-            <div className="flex flex-col gap-[6px]">
-                {sub ? (
-                    <>
-                        <DetailLine label="Model">{subVM?.model ? prettyModel(subVM.model) : "—"}</DetailLine>
-                        <DetailLine label="Session">
-                            {subVM == null ? "—" : subVM.state === "failure" ? "failed" : subVM.state}
-                        </DetailLine>
-                    </>
-                ) : (
-                    <>
-                        <DetailLine label="Project">{project || "—"}</DetailLine>
-                        <DetailLine label="Branch" title={branch || undefined}>
-                            <span>{branch || "—"}</span>
-                        </DetailLine>
-                        {worktree ? (
-                            <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
-                                <span>{worktree}</span>
+        session: () => (
+            <SessionSection>
+                <div className="flex flex-col gap-[6px]">
+                    {sub ? (
+                        <>
+                            <DetailLine label="Model">{subVM?.model ? prettyModel(subVM.model) : "—"}</DetailLine>
+                            <DetailLine label="State">
+                                {subVM == null ? "—" : subVM.state === "failure" ? "failed" : subVM.state}
                             </DetailLine>
-                        ) : null}
-                        {modelLabel ? <DetailLine label="Model">{modelLabel}</DetailLine> : null}
-                    </>
-                )}
-                {tools.length > 0 ? (
-                    <div className="flex min-w-0 items-baseline gap-[10px]">
-                        <span className="w-[52px] shrink-0 text-[12px] text-muted">Tools</span>
-                        <div className="flex min-w-0 flex-1 flex-wrap gap-[5px]">
-                            {tools.map((t) => (
-                                <span
-                                    key={t.verb}
-                                    className="flex items-baseline gap-[4px] rounded-sm border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-medium tabular-nums"
-                                >
-                                    <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
-                                    <span className="text-muted">×{t.count}</span>
-                                </span>
-                            ))}
+                        </>
+                    ) : (
+                        <>
+                            <DetailLine label="Project">{project || "—"}</DetailLine>
+                            <DetailLine label="Branch" title={branch || undefined}>
+                                <span>{branch || "—"}</span>
+                            </DetailLine>
+                            {worktree ? (
+                                <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
+                                    <span>{worktree}</span>
+                                </DetailLine>
+                            ) : null}
+                            {modelLabel ? <DetailLine label="Model">{modelLabel}</DetailLine> : null}
+                        </>
+                    )}
+                    {tools.length > 0 ? (
+                        <div className="flex min-w-0 items-baseline gap-[10px]">
+                            <span className="w-[52px] shrink-0 text-[12px] text-muted">Tools</span>
+                            <div className="flex min-w-0 flex-1 flex-wrap gap-[5px]">
+                                {tools.map((t) => (
+                                    <span
+                                        key={t.verb}
+                                        className="flex items-baseline gap-[4px] rounded-sm border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-medium tabular-nums"
+                                    >
+                                        <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
+                                        <span className="text-muted">×{t.count}</span>
+                                    </span>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ) : null}
-            </div>
+                    ) : null}
+                </div>
+            </SessionSection>
         ),
-        usage: () => <TokenUsageSection />,
     };
-    // closed, Details reads as where the agent works: its project and branch, or a subagent's model
-    const detailsSummary = sub
+    // closed, Session reads as where the agent works: its project and branch, or a subagent's model
+    const sessionSummary = sub
         ? subVM?.model
             ? prettyModel(subVM.model)
             : ""
@@ -806,7 +808,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         id: p.id,
         label: LABEL[p.id],
         icon: ICON[p.id],
-        header: p.id === "details" && p.header ? { ...p.header, summary: detailsSummary || undefined } : p.header,
+        header: p.id === "session" && p.header ? { ...p.header, summary: sessionSummary || undefined } : p.header,
         content: CONTENT[p.id](),
     }));
 
