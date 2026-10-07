@@ -40,6 +40,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A notification toast in the corner is no longer covered by Jarvis's pet; the pet walks off the stretch below it.
 - Code no longer fails with "Could not list files: exit status 1" the first time it opens a large project;
   a listing that really does run out of time now says so.
+- Shortcuts work with a Vietnamese input method such as EVKey or Unikey left on Telex: outside a text field or the
+  terminal, a letter it rewrites ("đ" for `dd`, "ư" for `w`, "á" for `a` `s`) acts as the key you pressed.
 
 ## 0.15.2 — 2026-10-07
 

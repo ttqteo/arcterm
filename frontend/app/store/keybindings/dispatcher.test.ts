@@ -21,6 +21,7 @@ import {
 import { deriveKeyContext, focusClaimed, initKeybindingDispatcher, isEditableTarget, ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
+import { bindingsAtom } from "./store";
 
 // Element stubs rather than jsdom: the suite runs in vitest's node environment, and the three fields
 // this predicate reads are the whole contract.
@@ -338,6 +339,88 @@ describe("the Final check viewer over the Jarvis surface", () => {
         expect(picked("ArrowDown")).toBe("list:next");
         expect(picked("Escape")).toBe("surface:back-home");
         expect(picked("z")).not.toBe("final-shots:zoom");
+        unbind();
+    });
+});
+
+describe("a Vietnamese input method rewriting keys outside a field", () => {
+    afterEach(() => {
+        globalStore.set(bindingsAtom, []);
+        vi.unstubAllGlobals();
+    });
+
+    // EVKey or Unikey with Telex on: the second d of `dd` arrives as Backspace then "đ", wherever focus is
+    function setup(activeElement: Element | null = null) {
+        const listeners: Record<string, (e: KeyboardEvent) => void> = {};
+        vi.stubGlobal("window", {
+            addEventListener: (type: string, fn: (e: KeyboardEvent) => void) => (listeners[type] = fn),
+            removeEventListener: () => {},
+        });
+        vi.stubGlobal("document", { activeElement });
+        const ran: string[] = [];
+        const bind = (id: string, keys: string) => ({
+            id,
+            keys,
+            group: "Test",
+            label: id,
+            run: () => void ran.push(id),
+        });
+        globalStore.set(bindingsAtom, [bind("rail", "d"), bind("jarvis", "g j")]);
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            paletteOpenAtom: atom(false),
+            newAgentOpenAtom: atom(false),
+            newRunOpenAtom: atom(false),
+            newInitiativeOpenAtom: atom(false),
+            newProjectOpenAtom: atom(false),
+        } as unknown as AgentsViewModel;
+        const unbind = initKeybindingDispatcher(model);
+        const send = (type: "keydown" | "keypress", key: string) =>
+            listeners[type]({
+                type,
+                key,
+                code: "",
+                ctrlKey: false,
+                shiftKey: false,
+                altKey: false,
+                metaKey: false,
+                preventDefault: () => {},
+                stopImmediatePropagation: () => {},
+            } as unknown as KeyboardEvent);
+        return { ran, send, unbind };
+    }
+
+    it("reads the rewritten letter as the key that made it", () => {
+        const { ran, send, unbind } = setup();
+        send("keydown", "Backspace");
+        send("keydown", "đ");
+        expect(ran).toEqual(["rail"]);
+        unbind();
+    });
+
+    it("reads it off the keypress when its keydown carried no character, once", () => {
+        const { ran, send, unbind } = setup();
+        send("keydown", "Unidentified");
+        send("keypress", "đ");
+        send("keydown", "d");
+        send("keypress", "d");
+        expect(ran).toEqual(["rail", "rail"]);
+        unbind();
+    });
+
+    it("keeps a pending g through the Backspace the input method sends", () => {
+        const { ran, send, unbind } = setup();
+        send("keydown", "g");
+        send("keydown", "Backspace");
+        send("keydown", "j");
+        expect(ran).toEqual(["jarvis"]);
+        unbind();
+    });
+
+    it("leaves the letter alone in a field, where it is text", () => {
+        const { ran, send, unbind } = setup(el("TEXTAREA"));
+        send("keydown", "đ");
+        expect(ran).toEqual([]);
         unbind();
     });
 });

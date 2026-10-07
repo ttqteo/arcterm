@@ -13,6 +13,9 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 - **Postures.** There is no global "mode" to track. Focus determines behavior:
   - **Navigate** — focus is on a surface region (not a text field). Single keys move a cursor and act on it.
   - **Type** — focus is in a text field, composer, or the terminal. Keys type normally. Press `Esc` to return to Navigate.
+  - A Vietnamese input method left on Telex (EVKey, Unikey) does not get in Navigate's way: a letter it rewrites there
+    ("đ" for `dd`, "ư" for `w`, "á" for `a` `s`) acts as the key pressed. One that moves a tone back onto an earlier
+    vowel (free tone placement) sends more than one letter, and only the last counts.
 - **Leader (`g`, "go").** Press `g` (while not typing), then a letter, to teleport. A hint bar
   appears at the bottom of the screen showing the available next keys.
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
