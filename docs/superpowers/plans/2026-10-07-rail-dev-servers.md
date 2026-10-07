@@ -4,7 +4,7 @@
 shorter; the two agree on every interface below.
 **Verify:** `node scripts/verify.mjs ./pkg/devservers/... ./pkg/wshrpc/...`
 **Check:** `task check:ts`
-**Final:** `node scripts/cdp/final-verify.mjs rail-servers agent-rail-sections`
+**Final:** `node scripts/cdp/final-verify.mjs rail-servers agent-rail-sections agent-tree-rail`
 
 Every frontend task follows DESIGN.md: colours only through `--color-*` tokens / Tailwind theme classes, pure logic
 in a `.ts` with a `.test.ts` beside it, no jsdom render tests. Never hand-edit generated files
@@ -228,7 +228,9 @@ exits 0. Commit.
   blockid: blockId })` at once and then every `pollMs(railVisible)`, skipping a tick while `document.hidden`. A
   success writes `{ servers, failed: false }`; a failure keeps the last `servers` and sets `failed: true`. It clears
   its timer on unmount and when its inputs change, and ignores a reply that arrives after that (a stale agent).
-  Returns the agent's entry or `{ servers: [], failed: false }`.
+  A DEV-only fault hook lets the CDP scenario reach the failed state: when `import.meta.env.DEV &&
+  (window as any).__arcDevServersFail`, a poll throws before the RPC and is handled as a failure (the `DEV` gate
+  tree-shakes it out of a build, as `devmock.ts` does). Returns the agent's entry or `{ servers: [], failed: false }`.
 - `stopDevServer(row: DevServerRow)`: `RpcApi.StopDevServerCommand(TabRpcClient, { pid: row.pid, createms:
   row.createms })`, then drops the row from the atom so it leaves at once (the next poll confirms).
 
@@ -237,7 +239,8 @@ exits 0. Commit.
 - Call `useDevServers(agent.id, railState?.cwd ?? null, agent.blockId, railVisible)` (read `railVisibleAtom`).
   For a subagent interior or an ended session pass no cwd and no block id, so nothing polls.
 - `railInput.servers = servers.length`.
-- Replace the `servers` placeholder with a `DevServerRow` list component (in a new
+- Replace the `servers` placeholder with a `DevServerItem` list component — not `DevServerRow`, which is Task 3's
+  row type and would clash on import (TS2440) — (in a new
   `frontend/app/view/agents/railservers.tsx`, like `railuploads.tsx`), each row `data-dev-server={pid}`, laid out as
   the spec's decision 7 and styled like `BackgroundTaskRow` (`bg-surface-raised`, 11.5px label, 10.5px mono meta,
   6px dot `bg-success`):
@@ -248,13 +251,26 @@ exits 0. Commit.
   - actions on hover/focus at the row's right, icon buttons with `title`s: Log (only when `matchLogTask(row,
     bgTasks)` returns a task: open its `outputFile` with `openFileInPanel` exactly as the `bgtasks` section does,
     `live: "on"`), Copy (`navigator.clipboard.writeText(copyText(row))`), Stop (first click shows "Stop?" for 3 s,
-    a second click within that calls `stopDevServer`; `data-dev-server-stop`).
-  - When `failed` is true, one muted line above the rows: "Could not read listening ports".
+    a second click within that calls `stopDevServer`; `data-dev-server-stop`; `data-dev-server-copy` on Copy).
+  - When `failed` is true, one muted line above the rows: "Could not read listening ports" (`data-dev-servers-failed`).
 - `CHANGELOG.md`: under the top section's `### Added` (it is `## Unreleased`; if it has since been dated, open a new
   `## Unreleased` with `### Added` above it), one line: "The agent rail lists the servers listening in the agent's project — port, command, who
   started it and for how long — with open, log, copy and stop."
-- Update the spec's decision 5 to read "while the rail is visible" instead of "while the Servers section is open"
-  (the section's open state lives inside `CollapsibleRail`; rail visibility is `railVisibleAtom`).
+- Update the spec to match this plan:
+  - decision 1: the RPC takes the project root from the rail (`railState.cwd`, the transcript's cwd) and the block
+    id; the root falls back to the agent process's cwd from `EnumerateAgents` when the rail has none, and the block
+    id still finds the agent's process for `byAgent`. A process named `claude` / `claude.exe` is never listed (a
+    Claude Code process may listen for IDE integration).
+  - decision 3: `List(ctx, cwd, blockId)` instead of `List(blockId)`.
+  - decision 5: every 5 s "while the rail is visible" instead of "while the Servers section is open" (the section's
+    open state lives inside `CollapsibleRail`; rail visibility is `railVisibleAtom`), every 30 s otherwise, and no
+    call at all while the window is hidden (`document.hidden`).
+
+Acceptance: the rendered states are shown by Task 6's `rail-servers` steps — the row (steps 2–3), Open on a port
+click (step 4), Copy (step 5), the failed line (step 6), the "Stop?" confirm (step 7) and the stop itself (step 8).
+The Log button and the "this agent" owner need a live `claude` process, which the fixture has none of; only unit
+tests cover them (`matchLogTask` in `devserversmodel.test.ts`, `ByAgent` / `LauncherCmdline` in Task 1's `Select`
+tests).
 
 `task check:ts` exits 0; `npx vitest run frontend/app/view/agents/` passes. Commit.
 
@@ -279,9 +295,23 @@ Add a scenario `rail-servers` to `scripts/cdp/scenarios.mjs` (register it in `SC
      `[data-dev-server-port="<port>"]` button, and the text `already running` (the fixture has no claude process, so
      the row is matched by cwd);
   3. shot `cdp-shots/rail-servers.png`;
-  4. clicking Stop twice (`[data-dev-server-stop]`) ends the child process (poll `process.kill(pid, 0)` throwing)
-     and the row leaves within 8 s.
-- **teardown:** kill the child if still alive, remove the fixture, restore the rail keys, remove the temp dir.
+  4. Open: stub `window.api.openExternal` to record its argument (save the original, restore it in teardown;
+     `getApi()` reads `window.api` on each call), click `[data-dev-server-port="<port>"]`, assert exactly one call
+     with `http://localhost:<port>`;
+  5. Copy: stub `navigator.clipboard` with `Object.defineProperty(navigator, "clipboard", { configurable: true,
+     value: { writeText: async (t) => { window.__rsCopied.push(t); } } })` (as the copy step near
+     `scenarios.mjs:11936` does), hover the row, click `[data-dev-server-copy]`, assert one write equal to
+     `` `PID ${pid}
+${cmdline}` `` where `cmdline` is the row's `title` on its label;
+  6. failed: set `window.__arcDevServersFail = true`, wait up to 8 s for `[data-dev-servers-failed]` with the text
+     "Could not read listening ports" while the row is still listed (the last result is kept), shot
+     `cdp-shots/rail-servers-failed.png`, then delete the flag and wait for the line to leave;
+  7. Stop confirm: click `[data-dev-server-stop]` once, assert it reads "Stop?" and the child is still alive, shot
+     `cdp-shots/rail-servers-stop-confirm.png`;
+  8. click it again within 3 s: the child process ends (poll `process.kill(pid, 0)` throwing) and the row leaves
+     within 8 s.
+- **teardown:** kill the child if still alive, delete `window.__arcDevServersFail`, restore `window.api.openExternal`,
+  remove the fixture, restore the rail keys, remove the temp dir.
 
-Run `CDP_PORT=<port> task verify:ui -- rail-servers agent-rail-sections` against a dev app if one is running for
+Run `CDP_PORT=<port> task verify:ui -- rail-servers agent-rail-sections agent-tree-rail` against a dev app if one is running for
 you; otherwise the plan's Final runs them. Commit.
