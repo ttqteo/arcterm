@@ -6,10 +6,10 @@
 Settings → About with one click.
 
 **Architecture:** A new Go package `pkg/harnessupdate` reads each checkable harness's latest version from the npm
-registry (`dist-tags`), holds it in memory, announces each new version once (persisted in the data dir), and runs the
-harness's own update command on request. `ListHarnessesCommand` carries the latest version; a new
-`UpdateHarnessCommand` runs the update. The frontend shows installed/latest per harness in Settings → About from a
-pure row-state model.
+registry (`dist-tags.<channel>` of `https://registry.npmjs.org/<package>`, as the spec says), holds it in memory,
+announces each new version once (persisted in the data dir), and runs the harness's own update command on request.
+`ListHarnessesCommand` carries the latest version; a new `UpdateHarnessCommand` runs the update. The frontend shows
+installed/latest per harness in Settings → About from a pure row-state model.
 
 **Tech Stack:** Go (net/http, os/exec), wshrpc + `task generate`, React 19 + jotai, vitest, CDP scenario.
 
@@ -167,8 +167,11 @@ import (
 func serveTags(t *testing.T, status int, body string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/-/package/@anthropic-ai%2Fclaude-code/dist-tags" && r.URL.EscapedPath() != "/-/package/@anthropic-ai%2Fclaude-code/dist-tags" {
+		if r.URL.EscapedPath() != "/@anthropic-ai%2Fclaude-code" {
 			t.Errorf("path = %q", r.URL.EscapedPath())
+		}
+		if r.Header.Get("Accept") != abbreviatedDoc {
+			t.Errorf("Accept = %q, want the abbreviated package document", r.Header.Get("Accept"))
 		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
@@ -180,7 +183,7 @@ func serveTags(t *testing.T, status int, body string) {
 }
 
 func TestLatestVersion_readsTheChannelTag(t *testing.T) {
-	serveTags(t, 200, `{"latest":"2.1.300","stable":"2.1.280","next":"2.2.0-beta.1"}`)
+	serveTags(t, 200, `{"name":"@anthropic-ai/claude-code","dist-tags":{"latest":"2.1.300","stable":"2.1.280","next":"2.2.0-beta.1"},"versions":{"2.1.300":{}}}`)
 	for channel, want := range map[string]string{"latest": "2.1.300", "stable": "2.1.280"} {
 		got, err := LatestVersion(context.Background(), "@anthropic-ai/claude-code", channel)
 		if err != nil || got != want {
@@ -190,7 +193,7 @@ func TestLatestVersion_readsTheChannelTag(t *testing.T) {
 }
 
 func TestLatestVersion_failsOnAMissingTagOrABadStatus(t *testing.T) {
-	serveTags(t, 200, `{"latest":"2.1.300"}`)
+	serveTags(t, 200, `{"dist-tags":{"latest":"2.1.300"}}`)
 	if _, err := LatestVersion(context.Background(), "@anthropic-ai/claude-code", "stable"); err == nil {
 		t.Error("a missing channel tag returned no error")
 	}
@@ -245,20 +248,28 @@ import (
 	"time"
 )
 
-const fetchTimeout = 10 * time.Second
+const (
+	fetchTimeout = 10 * time.Second
+	// the package document lists every published version: Claude Code's runs to megabytes even abbreviated
+	maxDocBytes = 32 << 20
+	// npm's abbreviated package document: dist-tags and versions, without the readmes
+	abbreviatedDoc = "application/vnd.npm.install-v1+json"
+)
 
 // registryBase is a seam for tests.
 var registryBase = "https://registry.npmjs.org"
 
 var httpClient = &http.Client{Timeout: fetchTimeout}
 
-// LatestVersion is the version the package's dist-tag for channel points at.
+// LatestVersion is the version the package's dist-tag for channel points at, read from the package document
+// (`https://registry.npmjs.org/<package>`).
 func LatestVersion(ctx context.Context, pkg, channel string) (string, error) {
-	u := registryBase + "/-/package/" + url.PathEscape(pkg) + "/dist-tags"
+	u := registryBase + "/" + url.PathEscape(pkg)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("Accept", abbreviatedDoc)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("registry: %w", err)
@@ -267,11 +278,13 @@ func LatestVersion(ctx context.Context, pkg, channel string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("registry: %s for %s", resp.Status, pkg)
 	}
-	var tags map[string]string
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&tags); err != nil {
+	var doc struct {
+		DistTags map[string]string `json:"dist-tags"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDocBytes)).Decode(&doc); err != nil {
 		return "", fmt.Errorf("registry: %w", err)
 	}
-	v := tags[channel]
+	v := doc.DistTags[channel]
 	if v == "" {
 		return "", fmt.Errorf("registry: no %q tag for %s", channel, pkg)
 	}
@@ -303,14 +316,14 @@ func ClaudeChannel() string {
 
 **Step 4: Run it to see it pass**
 
-Run: `go test ./pkg/harnessupdate` → PASS. If the path assertion in `serveTags` fails because Go unescapes `%2F`,
-keep only the `EscapedPath()` comparison.
+Run: `go test ./pkg/harnessupdate` → PASS. `url.PathEscape` leaves `@` and escapes the scope's `/` as `%2F`, the
+form the registry takes for a scoped package.
 
 **Step 5: Commit**
 
 ```bash
 git add pkg/harnessupdate/registry.go pkg/harnessupdate/registry_test.go
-git commit -m "feat(harnessupdate): read a harness's latest version from npm dist-tags"
+git commit -m "feat(harnessupdate): read a harness's latest version from the npm registry"
 ```
 
 ### Task 3: The check loop, the once-per-version notice, the setting, and `latestversion` on the wire
@@ -383,8 +396,9 @@ func TestCheck_announcesANewVersionOnce(t *testing.T) {
 	if len(*got) != 1 {
 		t.Fatalf("notices = %d, want 1: %+v", len(*got), *got)
 	}
-	if (*got)[0].title != "Claude Code 2.1.300 is out" {
-		t.Errorf("title = %q", (*got)[0].title)
+	// the spec's notice: "Claude Code 2.1.300 is out · Settings → About to update"
+	if (*got)[0].title != "Claude Code 2.1.300 is out" || (*got)[0].message != "Settings → About to update" {
+		t.Errorf("notice = %+v", (*got)[0])
 	}
 	if Latest("claude") != "2.1.300" {
 		t.Errorf("Latest = %q", Latest("claude"))
@@ -507,8 +521,7 @@ func Check(ctx context.Context, notify func(title, message, level string)) {
 		latest[r.Spec.Runtime] = v
 		mu.Unlock()
 		if Newer(v, r.Version) && announced[r.Spec.Runtime] != v {
-			notify(fmt.Sprintf("%s %s is out", r.Spec.Label, v),
-				fmt.Sprintf("You have %s. Settings → About updates it.", shortVersion(r.Version)), "info")
+			notify(fmt.Sprintf("%s %s is out", r.Spec.Label, v), "Settings → About to update", "info")
 			announced[r.Spec.Runtime] = v
 			changed = true
 		}
@@ -630,6 +643,7 @@ package harnessupdate
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/harness"
@@ -669,6 +683,14 @@ func TestUpdate_failsWithTheUpdatersLastLine(t *testing.T) {
 	stubUpdate(t, "Checking for updates...\nError: EACCES permission denied\n", errors.New("exit status 1"), "2.1.292")
 	_, err := Update(context.Background(), "claude")
 	if err == nil || err.Error() != "Error: EACCES permission denied" {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestUpdate_saysItTimedOut(t *testing.T) {
+	stubUpdate(t, "", context.DeadlineExceeded, "2.1.292")
+	_, err := Update(context.Background(), "claude")
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "timed out after 5m0s") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -726,6 +748,11 @@ func Update(ctx context.Context, runtime string) (UpdateResult, error) {
 	defer cancel()
 	out, err := runUpdate(ctx, spec.Bin, spec.UpdateArgs)
 	if err != nil {
+		// a killed updater's last line is whatever it was printing, not why it stopped; exec reports the kill as
+		// "signal: killed", so the context says it was the timeout
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return UpdateResult{}, fmt.Errorf("%s update timed out after %s: %w", spec.Label, updateTimeout, context.DeadlineExceeded)
+		}
 		if line := lastLine(string(out)); line != "" {
 			return UpdateResult{}, errors.New(line)
 		}
@@ -801,10 +828,19 @@ git commit -m "feat(harnessupdate): UpdateHarnessCommand runs the harness's own 
 - Test: `frontend/app/view/agents/harnessupdatemodel.test.ts`
 - Create: `frontend/app/view/agents/harnessupdatestore.ts`
 - Modify: `frontend/app/view/agents/settingsmodel.ts` (the `about` section's rows, line ~311)
+- Test: `frontend/app/view/agents/settingsmodel.test.ts` (two tests the new About rows change, Step 6)
 - Modify: `frontend/app/view/agents/settingssurface.tsx` (`AboutSection`, line ~1256)
 - Modify: `CHANGELOG.md`
 
-This task builds a view: Task 6's `harness-update` scenario shows it.
+This task builds a view and its states. Task 6's `harness-update` scenario shows each, through the dev hooks Step 5
+adds: step 1 the Claude Code row with its version, step 2 "999.0.0 available" with Update, step 3 "Updating…", step 4
+"Updated to 999.0.0 · new sessions use it", step 5 a failed update's error with Update, step 6 "No harness installed.",
+step 7 the "Check for harness updates" toggle writing `harness:updatecheck` and restoring it.
+
+**Acceptance:** vitest passes for `harnessupdatemodel.test.ts` and `settingsmodel.test.ts`, `task check:ts` is clean,
+and a dev build has the hooks `__setHarnessLatest`, `__setHarnessUpdateRun`, `__getHarnesses` and `__setHarnesses`
+and the `data-harness-row`, `data-harness-update` and `data-harness-none` attributes, which Task 6's steps 1–7 use to
+reach every state above.
 
 **Step 1: Write the failing test**
 
@@ -950,8 +986,8 @@ Run: `npx vitest run frontend/app/view/agents/harnessupdatemodel.test.ts` → PA
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The updates started from Settings → About, by runtime (harnessupdatemodel.ts reads them), and the dev hook the
-// harness-update scenario uses to stand in a newer release.
+// The updates started from Settings → About, by runtime (harnessupdatemodel.ts reads them), and the dev hooks the
+// harness-update scenario uses to stand in a newer release, each update state, and an empty install list.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -981,15 +1017,29 @@ export async function updateHarness(runtime: string): Promise<void> {
 }
 
 if (import.meta.env.DEV) {
-    (window as any).__setHarnessLatest = (runtime: string, latest: string) =>
+    const w = window as any;
+    w.__setHarnessLatest = (runtime: string, latest: string) =>
         globalStore.set(harnessesAtom, (prev) =>
             prev.map((h) => (h.runtime === runtime ? { ...h, latestversion: latest } : h))
         );
+    // a row state without running the real updater; null clears it
+    w.__setHarnessUpdateRun = (runtime: string, run: UpdateRun | null) =>
+        globalStore.set(updateRunsAtom, (prev) => {
+            const next = { ...prev };
+            if (run == null) {
+                delete next[runtime];
+            } else {
+                next[runtime] = run;
+            }
+            return next;
+        });
+    // snapshot and restore the install list, so a scenario can show "No harness installed." and put it back
+    w.__getHarnesses = () => globalStore.get(harnessesAtom);
+    w.__setHarnesses = (list: HarnessInfo[]) => globalStore.set(harnessesAtom, list);
 }
 ```
 
-Confirm `harnessesAtom` is a writable `PrimitiveAtom` in `harnessstore.ts`; if it is read-only, export a setter from
-there instead of writing it here.
+`harnessesAtom` is a plain writable `atom<HarnessInfo[]>([])` in `harnessstore.ts` (line 27).
 
 **Step 6: The About rows**
 
@@ -1012,8 +1062,26 @@ In `settingsmodel.ts`, in the `about` section's `rows` after `about.platform`:
                 },
 ```
 
-(Match the fields the other config-backed rows in this file use; drop `scope`/`config` if the row type has no
-such fields.)
+(`terminal.copyonselect` is the model: a synced config row with a Toggle.)
+
+The two rows change two tests in `settingsmodel.test.ts`; update them, don't delete them:
+
+- "leaves read-only build info without a provenance scope" (line ~120): About now holds one setting. Keep the claim
+  for the build-info rows and pin the setting's scope:
+
+```ts
+    it("leaves read-only build info without a provenance scope", () => {
+        const about = sections().find((s) => s.id === "about")!;
+        const info = about.rows.filter((r) => r.id !== "about.updatecheck");
+        expect(info.every((r) => r.scope === undefined)).toBe(true);
+        expect(about.rows.find((r) => r.id === "about.updatecheck")!.scope).toBe("synced");
+    });
+```
+
+- "marks exactly the wconfig-backed rows as config rows" (line ~125): append `"harness:updatecheck"` after
+  `"headless:openroutermidmodel"` (About is the last section).
+
+Run: `npx vitest run frontend/app/view/agents/settingsmodel.test.ts` → PASS.
 
 In `settingssurface.tsx`, add above `AboutSection`:
 
@@ -1032,7 +1100,11 @@ function HarnessVersions() {
         return state == null ? [] : [{ h, state }];
     });
     if (rows.length === 0) {
-        return <span className="text-[12.5px] text-muted">No harness installed.</span>;
+        return (
+            <span data-harness-none className="text-[12.5px] text-muted">
+                No harness installed.
+            </span>
+        );
     }
     return (
         <div className="flex flex-col divide-y divide-border rounded border border-edge-mid bg-surface-raised">
@@ -1090,7 +1162,8 @@ with `const updateCheck = (useAtomValue(getSettingsKeyAtom("harness:updatecheck"
 
 **Step 7: Check**
 
-Run: `task check:ts` (allow ~3 minutes), `npx vitest run frontend/app/view/agents/harnessupdatemodel.test.ts`,
+Run: `task check:ts` (allow ~3 minutes),
+`npx vitest run frontend/app/view/agents/harnessupdatemodel.test.ts frontend/app/view/agents/settingsmodel.test.ts`,
 `npx eslint` and `npx prettier --check` on the files you touched. Expected: clean.
 
 **Step 8: CHANGELOG and commit**
@@ -1104,7 +1177,7 @@ Under `## Unreleased` → `### Added` (open the heading if missing):
 ```
 
 ```bash
-git add frontend/app/view/agents/harnessupdatemodel.ts frontend/app/view/agents/harnessupdatemodel.test.ts frontend/app/view/agents/harnessupdatestore.ts frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingssurface.tsx CHANGELOG.md
+git add frontend/app/view/agents/harnessupdatemodel.ts frontend/app/view/agents/harnessupdatemodel.test.ts frontend/app/view/agents/harnessupdatestore.ts frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingsmodel.test.ts frontend/app/view/agents/settingssurface.tsx CHANGELOG.md
 git commit -m "feat(settings): harness versions and one-click update in About"
 ```
 
@@ -1122,58 +1195,167 @@ Model it on `terminalTheme` (line ~4482) and the Settings navigation at line ~55
 
 ```js
 // --- Settings → About: harness versions and the Update button ------------------------------------
-// The update check reads the npm registry, which a scenario must not depend on: __setHarnessLatest (dev only,
-// harnessupdatestore.ts) stands in a newer release for claude, and the row must offer the update.
+// The update check reads the npm registry and Update runs the real updater, which a scenario must not depend on: the
+// dev hooks in harnessupdatestore.ts stand in a newer release for claude, each update state, and an empty install list.
 const harnessUpdate = {
     name: "harness-update",
+    surface: "settings",
     async arrange(h) {
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
         await h.goto("settings");
         await h.ev(`(() => { document.querySelector('[data-section="about"]')?.click(); return true; })()`);
-        await settle(400);
-        const hooked = await h.ev(`typeof window.__setHarnessLatest === "function"`);
+        // HarnessVersions loads ListHarnesses on mount (CATALOG_RPC_TIMEOUT_MS, 30 s); injecting before that load lands
+        // would be overwritten by it
+        let rowLoaded = false;
+        for (let waited = 0; waited < 35_000 && !rowLoaded; waited += 250) {
+            rowLoaded = await h.ev(`!!document.querySelector('[data-harness-row="claude"]')`);
+            if (!rowLoaded) await settle(250);
+        }
+        const hooked = await h.ev(
+            `["__setHarnessLatest", "__setHarnessUpdateRun", "__getHarnesses", "__setHarnesses"].every((k) => typeof window[k] === "function")`
+        );
         if (hooked) {
             await h.ev(`window.__setHarnessLatest("claude", "999.0.0")`);
             await settle(300);
         }
-        return { hooked };
+        return { hooked, rowLoaded };
     },
     async assert(h, ctx) {
         const steps = [];
-        const row = await h.ev(`(() => {
-            const r = document.querySelector('[data-harness-row="claude"]');
-            return r ? { text: r.textContent || "", update: !!r.querySelector('[data-harness-update="claude"]') } : null;
-        })()`);
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        // the harness's goto ran after arrange: select About again
+        await h.ev(`(() => { document.querySelector('[data-section="about"]')?.click(); return true; })()`);
+        await settle(300);
+        const readRow = () =>
+            h.ev(`(() => {
+                const r = document.querySelector('[data-harness-row="claude"]');
+                return r ? { text: r.textContent || "", update: !!r.querySelector('[data-harness-update="claude"]') } : null;
+            })()`);
+        const showRow = async (shot) => {
+            await h.ev(`document.querySelector('[data-harness-row="claude"]')?.scrollIntoView({ block: "center" })`);
+            await h.shot(shot);
+        };
+        const setRun = async (run) => {
+            await h.ev(`window.__setHarnessUpdateRun("claude", ${JSON.stringify(run)})`);
+            await settle(200);
+        };
+
+        const row = await readRow();
         steps.push({
             step: "1. About lists Claude Code with its installed version",
             ok: row != null && /\d+\.\d+\.\d+/.test(row.text),
-            detail: JSON.stringify(row),
+            detail: JSON.stringify({ rowLoaded: ctx.rowLoaded, row }),
         });
         steps.push({
             step: "2. a newer release shows as available with an Update button",
             ok: ctx.hooked === true && row != null && row.text.includes("999.0.0 available") && row.update === true,
             detail: JSON.stringify({ hooked: ctx.hooked, row }),
         });
-        await h.ev(`document.querySelector('[data-harness-row="claude"]')?.scrollIntoView({ block: "center" })`);
-        await h.shot("cdp-shots/harness-update.png");
+        await showRow("cdp-shots/harness-update.png");
+        if (!ctx.hooked) {
+            return steps;
+        }
+
+        await setRun({ status: "running" });
+        const updating = await readRow();
+        steps.push({
+            step: "3. a running update reads Updating… and offers no Update button",
+            ok: updating != null && updating.text.includes("Updating…") && updating.update === false,
+            detail: JSON.stringify(updating),
+        });
+        await showRow("cdp-shots/harness-update-updating.png");
+
+        await setRun({ status: "done", version: "999.0.0" });
+        const updated = await readRow();
+        steps.push({
+            step: "4. a finished update reads Updated to 999.0.0 · new sessions use it",
+            ok:
+                updated != null &&
+                updated.text.includes("Updated to 999.0.0 · new sessions use it") &&
+                updated.update === false,
+            detail: JSON.stringify(updated),
+        });
+        await showRow("cdp-shots/harness-update-updated.png");
+
+        await setRun({ status: "failed", error: "Error: EACCES permission denied" });
+        const failed = await readRow();
+        steps.push({
+            step: "5. a failed update shows the updater's error and offers Update again",
+            ok: failed != null && failed.text.includes("Error: EACCES permission denied") && failed.update === true,
+            detail: JSON.stringify(failed),
+        });
+        await showRow("cdp-shots/harness-update-failed.png");
+        await setRun(null);
+
+        await h.ev(`(() => {
+            window.__harnessUpdateSnapshot = window.__getHarnesses();
+            window.__setHarnesses(window.__harnessUpdateSnapshot.map((x) => ({ ...x, installed: false })));
+            return true;
+        })()`);
+        await settle(200);
+        const none = await h.ev(`(() => {
+            const text = document.querySelector("[data-harness-none]")?.textContent ?? "";
+            return { anyRow: !!document.querySelector("[data-harness-row]"), says: text.includes("No harness installed.") };
+        })()`);
+        steps.push({
+            step: "6. with nothing installed, About says No harness installed.",
+            ok: none.anyRow === false && none.says === true,
+            detail: JSON.stringify(none),
+        });
+        await h.shot("cdp-shots/harness-update-none.png");
+        await h.ev(`(() => { window.__setHarnesses(window.__harnessUpdateSnapshot); return true; })()`);
+        await settle(200);
+
+        // the toggle writes harness:updatecheck through SetConfig; read it back from the backend, then put it back
+        const toggleSel = `[role="switch"][aria-label="Check for harness updates"]`;
+        const readSetting = async () => {
+            const cfg = await h.rpc("getfullconfig", null);
+            return cfg?.settings?.["harness:updatecheck"];
+        };
+        const before = await h.ev(`document.querySelector('${toggleSel}')?.getAttribute("aria-checked") ?? null`);
+        await h.ev(`document.querySelector('${toggleSel}')?.click()`);
+        await settle(600); // wait for SetConfigCommand to persist
+        const flipped = await readSetting();
+        await h.ev(`document.querySelector('${toggleSel}')?.click()`);
+        await settle(600);
+        const restored = await readSetting();
+        steps.push({
+            step: "7. the Check for harness updates toggle writes harness:updatecheck and restores it",
+            ok:
+                (before === "true" || before === "false") &&
+                flipped === (before !== "true") &&
+                restored === (before === "true"),
+            detail: JSON.stringify({ before, flipped, restored }),
+        });
         return steps;
     },
     async teardown(h) {
+        await h.ev(`(() => {
+            window.__setHarnessUpdateRun?.("claude", null);
+            if (window.__harnessUpdateSnapshot) window.__setHarnesses(window.__harnessUpdateSnapshot);
+            delete window.__harnessUpdateSnapshot;
+            return true;
+        })()`);
         await h.goto("cockpit");
     },
 };
 ```
 
-Do **not** click Update in the scenario: it would run the real updater.
+Do **not** click Update in the scenario: it would run the real updater. Steps 3–5 set the row state through
+`__setHarnessUpdateRun` instead.
 
-If `[data-section="about"]` is not the About nav item's selector, read the Settings nav markup in
-`settingssurface.tsx` (`SectionIndex`) and use the attribute it renders. If this machine has no `claude` on PATH,
-step 1 fails by design; say so in the report rather than weakening the assertion.
+`scripts/cdp/verify.mjs` calls `h.goto(scenario.surface)` after `arrange`, so the scenario names `surface:
+"settings"` and selects About again in `assert`. The Settings nav renders `data-section="<id>"` on each section button
+(`route-picker-flat` clicks `[data-section="run"]` the same way). `arrange` waits for the `ListHarnesses` load (up to
+its 30 s `CATALOG_RPC_TIMEOUT_MS`) to render the claude row before injecting, or that load would overwrite the injected
+`latestversion`. `settle` is defined in each function, as the other scenarios do. If this machine has no `claude` on
+PATH, steps 1–5 fail by design; say so in the report rather than weakening the assertion.
 
 **Step 2: Register and run**
 
 Add `harnessUpdate,` to the exported scenario list. With the dev app running: `task verify:ui -- harness-update`.
-Expected: both steps PASS and `cdp-shots/harness-update.png` shows the Claude Code row with "999.0.0 available" and
-Update.
+Expected: steps 1–7 PASS, `cdp-shots/harness-update.png` shows the Claude Code row with "999.0.0 available" and
+Update, and `harness-update-updating.png`, `-updated.png`, `-failed.png` and `-none.png` show the other states.
 
 **Step 3: Commit**
 
