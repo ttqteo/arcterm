@@ -3,12 +3,13 @@
 
 import { cn } from "@/util/util";
 import { MemoryStick, TriangleAlert } from "lucide-react";
-import { capacityTitle } from "./workercapacity";
+import { capacityChipLabel, capacityTitle } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
-// The app bar's RAM chip: how many more workers fit, the numbers behind it in the tooltip. Nothing until there
-// is a reading. At +0 it takes the warning tone of the version-mismatch pill beside it. A drag region like the
-// bar's other non-interactive pieces (app-bar.tsx explains why each one carries its own).
+// The app bar's RAM chip: the free RAM, with how many more workers that holds in the tooltip. Nothing until
+// there is a reading. When not one more worker fits it takes the warning tone of the version-mismatch pill
+// beside it. A drag region like the bar's other non-interactive pieces (app-bar.tsx explains why each one
+// carries its own).
 export function WorkerCapacityChip() {
     const cap = useWorkerCapacity();
     if (cap == null) {
@@ -26,7 +27,8 @@ export function WorkerCapacityChip() {
                 full ? "text-warning" : "text-muted"
             )}
         >
-            <Icon size={12} aria-hidden />+{cap.moreworkers}
+            <Icon size={12} aria-hidden />
+            {capacityChipLabel(cap)}
         </span>
     );
 }

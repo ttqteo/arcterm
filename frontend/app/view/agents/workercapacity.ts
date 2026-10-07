@@ -28,6 +28,12 @@ function moreFit(n: number): string {
     return `~${n} more ${n === 1 ? "fits" : "fit"}`;
 }
 
+/** The app bar chip's text: the free RAM, which is what a glance wants. How many workers that holds is in the
+ * tooltip, and the chip's tone says when not one more fits. */
+export function capacityChipLabel(cap: WorkerCapacity): string {
+    return `${formatGB(cap.availablebytes)} free`;
+}
+
 /** The app bar chip's tooltip, one fact per line. */
 export function capacityTitle(cap: WorkerCapacity): string {
     return [

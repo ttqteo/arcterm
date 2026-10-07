@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    capacityChipLabel,
     capacityTitle,
     capacityWarnTitle,
     extraWorkers,
@@ -60,6 +61,13 @@ describe("overCapacity", () => {
     });
     it("is never over without a reading", () => {
         expect(overCapacity(null, 8)).toBe(false);
+    });
+});
+
+describe("capacityChipLabel", () => {
+    it("says the free RAM", () => {
+        expect(capacityChipLabel(cap())).toBe("1.3 GB free");
+        expect(capacityChipLabel(cap({ availablebytes: GIB, moreworkers: 0 }))).toBe("1 GB free");
     });
 });
 

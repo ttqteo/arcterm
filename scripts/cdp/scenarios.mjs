@@ -18582,6 +18582,8 @@ const CAPACITY_FULL = {
     reservebytes: 0,
     moreworkers: 0,
 };
+// the chip's text for CAPACITY_FULL: its 1 GB free
+const CAPACITY_FULL_CHIP = "1 GB free";
 const CAPACITY_MOCK_KEY = "__arcCapacityMock";
 
 // Answers getworkercapacity with `reading` from the page, through RpcApi's mock client (installAhMock's pattern),
@@ -18620,9 +18622,9 @@ const removeCapacityMock = (h) =>
         return "restored";
     })()`);
 
-// The app bar's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows its "+N"
-// with the numbers in its tooltip. The machine's real RAM decides whether that is +0, so step 4 forces +0 with
-// a mocked reading to see the warning tone.
+// The app bar's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows the free RAM
+// ("1.3 GB free") with how many workers that holds in its tooltip. The machine's real RAM decides whether one
+// more fits, so step 4 forces +0 with a mocked reading to see the warning tone.
 const workerCapacity = {
     name: "worker-capacity",
     surface: "cockpit",
@@ -18648,7 +18650,11 @@ const workerCapacity = {
             );
             if (!chip) await settle(250);
         }
-        rec("2. the app bar chip shows +N", !!chip && /^\+\d+$/.test(chip.text.trim()), chip ? chip.text : "no chip after 10s");
+        rec(
+            "2. the app bar chip shows the free RAM",
+            !!chip && /^\d+(\.\d)? GB free$/.test(chip.text.trim()),
+            chip ? chip.text : "no chip after 10s"
+        );
         rec(
             "3. its tooltip carries free RAM and the per-worker estimate",
             !!chip && chip.title.includes("free of") && chip.title.includes("per worker"),
@@ -18661,13 +18667,13 @@ const workerCapacity = {
             full = await h.ev(
                 `(() => { const c = document.querySelector("[data-worker-capacity]"); return c ? { text: c.textContent.trim(), amber: c.classList.contains("text-warning"), triangle: !!c.querySelector("svg.lucide-triangle-alert") } : null; })()`
             );
-            if (full && full.text === "+0") break;
+            if (full && full.text === CAPACITY_FULL_CHIP) break;
             await settle(250);
         }
         await h.shot("cdp-shots/worker-capacity-full.png");
         rec(
             "4. at +0 the chip turns amber with a TriangleAlert",
-            mocked === "installed" && !!full && full.text === "+0" && full.amber && full.triangle,
+            mocked === "installed" && !!full && full.text === CAPACITY_FULL_CHIP && full.amber && full.triangle,
             `mock=${mocked} ${JSON.stringify(full)}`
         );
         return steps;
@@ -18746,10 +18752,14 @@ const capacityWarn = {
         let chip = null;
         for (let waited = 0; waited <= 8000; waited += 250) {
             chip = await h.ev(`document.querySelector("[data-worker-capacity]")?.textContent.trim() ?? null`);
-            if (chip === "+0") break;
+            if (chip === CAPACITY_FULL_CHIP) break;
             await polishNap(250);
         }
-        rec("1. the mocked reading reaches the chip (+0)", ctx.mock === "installed" && chip === "+0", `mock=${ctx.mock} chip=${chip}`);
+        rec(
+            "1. the mocked reading reaches the chip (+0)",
+            ctx.mock === "installed" && chip === CAPACITY_FULL_CHIP,
+            `mock=${ctx.mock} chip=${chip}`
+        );
 
         let newRun = null;
         try {
