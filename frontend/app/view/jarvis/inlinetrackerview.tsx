@@ -23,6 +23,7 @@ import {
     Pause,
     Play,
     Plus,
+    Sparkles,
     type LucideIcon,
 } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
@@ -493,6 +494,96 @@ export function InitiativeDetail({
     );
 }
 
+// An opened idea. It has no plan, so none of the plan's parts (stages, chunk rows, pause, the activity
+// trail) apply: it offers the two ways to give it one. Plan it asks an agent for the chunks; the first chunk
+// written here makes it an initiative, and it moves over to the cards.
+export function IdeaDetail({
+    jotted,
+    edits,
+    onPlan,
+}: {
+    jotted: string; // noteStamp of the effort's creation
+    edits: TrackerEdits;
+    onPlan: () => void;
+}) {
+    const [confirming, setConfirming] = useState(false);
+    const archived = edits.effortStatus === "archived";
+    const action = (name: string, label: string, run: () => void, danger = false) => (
+        <button
+            type="button"
+            data-jarvis-idea-action={name}
+            onClick={run}
+            className={cn(SMALL_BUTTON, danger && "hover:border-error/50 hover:text-error", FOCUS)}
+        >
+            {label}
+        </button>
+    );
+    return (
+        <div data-jarvis-idea-detail="true" className="flex flex-col gap-1.5 px-2.5 pb-2.5 pt-0.5">
+            <div className="flex items-center gap-2 pl-[22px]">
+                <button
+                    type="button"
+                    data-jarvis-idea-action="plan"
+                    title="Start an agent that breaks this idea into chunks"
+                    onClick={onPlan}
+                    className={cn(
+                        "flex flex-none cursor-pointer items-center gap-1.5 rounded-[6px] border border-accent/45 bg-accentbg px-2.5 py-[3px] text-[10.5px] font-semibold text-accent-soft hover:text-accent-50",
+                        FOCUS
+                    )}
+                >
+                    <Sparkles size={11} aria-hidden />
+                    Plan it
+                </button>
+                <span className="min-w-0 truncate text-[10.5px] text-ink-mid">an agent writes the chunks</span>
+            </div>
+            <div className="pl-[15px]">
+                <AddChunkRow stage="" text="Add first chunk" onAdd={(label) => edits.onAddChunk(label, "", null)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-edge-faint pl-[22px] pt-2 text-[10.5px] tabular-nums text-ink-mid">
+                {confirming ? (
+                    <span data-jarvis-delete-confirm className="flex items-center gap-2">
+                        <span className="text-[11.5px] text-error-soft">Delete this idea?</span>
+                        <button
+                            type="button"
+                            onClick={() => setConfirming(false)}
+                            className={cn(
+                                "cursor-pointer rounded-[5px] border border-edge-mid bg-surface-raised px-2 py-0.5 text-secondary hover:text-primary",
+                                FOCUS
+                            )}
+                        >
+                            cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setConfirming(false);
+                                edits.onDelete();
+                            }}
+                            className={cn(
+                                "cursor-pointer rounded-[5px] bg-error px-[9px] py-[3px] font-bold text-background",
+                                FOCUS
+                            )}
+                        >
+                            delete
+                        </button>
+                    </span>
+                ) : (
+                    <>
+                        <span>jotted {jotted}</span>
+                        <span className="ml-auto flex items-center gap-1.5">
+                            {action("rename", "rename", () => edits.onRename(edits.title))}
+                            {archived
+                                ? action("unarchive", "unarchive", edits.onUnarchive)
+                                : action("archive", "archive", edits.onArchive, true)}
+                            {action("delete", "delete", () => setConfirming(true), true)}
+                        </span>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function StageBar({ done, total }: { done: number; total: number }) {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     return (
@@ -570,11 +661,13 @@ function AddChunkRow({
     onAdd,
     onCancel,
     initialDraft = null,
+    text = "Add chunk",
 }: {
     stage: string;
     onAdd: (label: string) => void;
     onCancel?: () => void;
     initialDraft?: string | null;
+    text?: string;
 }) {
     const [draft, setDraft] = useState<string | null>(initialDraft);
     if (draft == null) {
@@ -589,7 +682,7 @@ function AddChunkRow({
                 )}
             >
                 <Plus size={12} aria-hidden className="w-3 flex-none text-ink-mid" />
-                Add chunk
+                {text}
             </button>
         );
     }

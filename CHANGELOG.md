@@ -8,6 +8,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- Opening an idea in Jarvis no longer shows an empty initiative plan. It shows the whole title and when you jotted it,
+  with **Plan it** (an agent breaks the idea into chunks) and **Add first chunk**, which turns it into an initiative card.
+
 ## 0.15.2 — 2026-10-07
 
 ### Added

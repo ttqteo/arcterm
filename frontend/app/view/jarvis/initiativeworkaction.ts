@@ -13,7 +13,7 @@ import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "@/a
 import { composeStartupCommand, runtimeStartupCommand, type Runtime } from "@/app/view/agents/launch";
 import { naFlagsAtom } from "@/app/view/agents/naflagsstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
-import { openAgentFor, projectPathFor, workOnPrompt } from "./initiativework";
+import { openAgentFor, planIdeaPrompt, projectPathFor, workOnPrompt } from "./initiativework";
 import { openTarget } from "./openref";
 
 // the harness a Brief launch falls back to when none is preferred and the catalog has not loaded yet
@@ -26,7 +26,12 @@ export interface WorkOnTarget {
     lastnote?: EffortLastNote;
 }
 
-export async function workOnInitiative(model: AgentsViewModel, e: WorkOnTarget): Promise<void> {
+// "plan" is an idea's Plan it: the same launch, asking for chunks instead of where things stand
+export async function workOnInitiative(
+    model: AgentsViewModel,
+    e: WorkOnTarget,
+    ask: "work" | "plan" = "work"
+): Promise<void> {
     const oid = e.oref.replace(/^effort:/, "");
     const open = openAgentFor(oid, globalStore.get(model.agentsAtom));
     if (open != null) {
@@ -55,7 +60,7 @@ export async function workOnInitiative(model: AgentsViewModel, e: WorkOnTarget):
                 runtime,
                 globalStore.get(naFlagsAtom)[runtime] ?? {}
             ),
-            task: workOnPrompt(e.title, oid, e.lastnote),
+            task: ask === "plan" ? planIdeaPrompt(e.title, oid) : workOnPrompt(e.title, oid, e.lastnote),
             projectPath,
             projectName: e.project!,
             label: e.title,

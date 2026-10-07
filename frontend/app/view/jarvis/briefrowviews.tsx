@@ -371,7 +371,14 @@ export function IdeaRow({
                 <Lightbulb size={13} aria-hidden className="mt-0.5 flex-none text-muted" />
                 <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
                     {titleSlot ?? (
-                        <span title={line.title} className="line-clamp-2 text-[12.5px] leading-[17px] text-primary">
+                        // opened, the whole title: the idea's detail has nothing else to read
+                        <span
+                            title={line.title}
+                            className={cn(
+                                "text-[12.5px] leading-[17px] text-primary",
+                                expanded ? "whitespace-pre-wrap break-words" : "line-clamp-2"
+                            )}
+                        >
                             {line.title}
                         </span>
                     )}

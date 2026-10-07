@@ -144,7 +144,7 @@ import {
 import { freshKeys } from "./freshrows";
 import { type PeekFocus } from "./graphfocus";
 import { GraphPeek } from "./graphpeek";
-import { initiativeResume, type InitiativeResume } from "./initiativework";
+import { initiativeResume, noteStamp, type InitiativeResume } from "./initiativework";
 import { workOnInitiative } from "./initiativeworkaction";
 import {
     chunkRowId,
@@ -155,7 +155,7 @@ import {
     trackerRows,
     type DetailRow,
 } from "./inlinetracker";
-import { InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
+import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
 import {
     briefEffortIndexAtom,
     briefGraphRecordAtom,
@@ -1427,6 +1427,33 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         </AnimatePresence>
     );
 
+    // an opened idea: no plan to edit, only the ways to start one
+    const ideaDetailOf = (l: BriefLine): ReactNode => (
+        <AnimatePresence initial={false}>
+            {l.id === openInitiative ? (
+                <motion.div key="detail" variants={planReveal} initial="initial" animate="animate" exit="exit">
+                    {edits != null && openEffort != null ? (
+                        <IdeaDetail
+                            jotted={noteStamp(openEffort.createdts)}
+                            edits={edits}
+                            onPlan={() => {
+                                const c = cardOf(l);
+                                if (c != null) {
+                                    void workOnInitiative(model, c, "plan");
+                                }
+                            }}
+                        />
+                    ) : (
+                        <p data-jarvis-idea-detail="loading" className="px-3 pb-2.5 text-[12px] text-muted">
+                            Loading…
+                        </p>
+                    )}
+                    {mutateError != null ? <p className="px-3 pb-2 text-[11px] text-error">{mutateError}</p> : null}
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
+    );
+
     return (
         <div data-jarvis-region="brief" className="absolute inset-0 flex flex-col bg-background">
             <header className="flex h-[54px] flex-none items-center gap-2.5 border-b border-edge-faint bg-surface px-[22px]">
@@ -1843,7 +1870,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                 }}
                                                                 titleSlot={titleSlotOf(l)}
                                                             >
-                                                                {detailOf(l)}
+                                                                {ideaDetailOf(l)}
                                                             </IdeaRow>
                                                         ))}
                                                         <button

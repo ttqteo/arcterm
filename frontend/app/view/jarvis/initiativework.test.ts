@@ -5,6 +5,7 @@ import {
     initiativeResume,
     noteStamp,
     openAgentFor,
+    planIdeaPrompt,
     projectPathFor,
     resumeIsBlank,
     workOnPrompt,
@@ -23,6 +24,14 @@ describe("workOnPrompt", () => {
         const ts = new Date(2026, 8, 29, 16, 17).getTime();
         expect(workOnPrompt("X", "e1", { ts })).toBe(
             "check the initiative X (effort:e1), where are we. Pick up from the newest note (09-29 16:17)."
+        );
+    });
+});
+
+describe("planIdeaPrompt", () => {
+    it("asks for a plan of chunks on the idea, and a stop before any work", () => {
+        expect(planIdeaPrompt("Màu mờ khó đọc", "e1")).toBe(
+            "plan the idea Màu mờ khó đọc (effort:e1): break it into chunks with `wsh effort chunk add`, then stop so I can review the plan before any work starts"
         );
     });
 });

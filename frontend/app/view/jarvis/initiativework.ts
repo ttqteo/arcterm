@@ -21,6 +21,12 @@ export function workOnPrompt(title: string, effortOid: string, lastNote?: { ts: 
     return lastNote != null ? `${base}. Pick up from the newest note (${noteStamp(lastNote.ts)}).` : base;
 }
 
+// An idea has no plan to pick up from, so its agent is asked for one: chunks only, and a stop for review,
+// since a first chunk is what moves the idea to the cards.
+export function planIdeaPrompt(title: string, effortOid: string): string {
+    return `plan the idea ${title} (effort:${effortOid}): break it into chunks with \`wsh effort chunk add\`, then stop so I can review the plan before any work starts`;
+}
+
 const STATE_RANK: Record<AgentVM["state"], number> = { asking: 0, working: 1, idle: 2 };
 
 // A run's agents answer to their run, and a terminal is not an agent session: neither is "the session on
