@@ -30,7 +30,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "windows": { "nsis": { "installerIcon": "icons/icon.ico" } },
+    "windows": { "nsis": { "installerIcon": "icons/icon.ico", "installerHooks": "installer-hooks.nsh" } },
     "resources": {
       "../dist/bin/wavesrv.x64.exe": "bin/wavesrv.x64.exe",
       "../dist/bin/wsh-*-windows.x64.exe": "bin/"

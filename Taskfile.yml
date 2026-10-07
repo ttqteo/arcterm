@@ -57,6 +57,11 @@ tasks:
             - task: build:backend
             - cargo tauri build
 
+    install:
+        desc: "Install the last `task tauri:build` over the installed arcterm, with no installer pages: /P passive, /UPDATE installs over instead of uninstalling first, /R reopens arcterm. It closes the running arcterm and every agent in it."
+        platforms: [windows]
+        cmd: '"src-tauri/target/release/bundle/nsis/arcterm_{{.VERSION}}_x64-setup.exe" /P /UPDATE /R'
+
     verify:ui:
         desc: Run the CDP verification harness against the running dev app (scripts/cdp/). Pass scenario names after --, e.g. `task verify:ui -- surface-smoke`. CDP_PORT env overrides the attach port (default 9222) for a worktree dev app on another port.
         cmd: node scripts/cdp/verify.mjs {{.CLI_ARGS}}
