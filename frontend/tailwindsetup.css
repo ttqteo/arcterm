@@ -87,6 +87,11 @@
     --color-feed-glyph: #4b4b4b; /* drag handle glyph */
     --color-working: #54c79a;
 
+    /* The Jarvis pet's Vietnam colours, the flag shirt and the flag in hand (petsprite.ts): the flag's own red and
+       yellow, identity, never theme-derived */
+    --color-flag-red: #da251d;
+    --color-flag-star: #ffff00;
+
     /* Connection status icon palette (legacy block/connectionbutton; identity, never theme-derived) */
     --color-conn-1: #53b4ea;
     --color-conn-2: #aa67ff;

@@ -16,6 +16,8 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { DEFAULT_PET_OUTFIT, petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
+import { petOutfitChoiceAtom } from "@/app/view/jarvis/petstore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { Folder, Search } from "lucide-react";
@@ -128,6 +130,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [mono, setMono] = useAtom(fontMonoAtom);
     const [startup, setStartup] = useAtom(startupSurfaceAtom);
     const [rail, setRail] = useAtom(railVisibleAtom);
+    const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
 
@@ -143,6 +146,10 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             revert: () => setStartup(DEFAULT_STARTUP_SURFACE),
         },
         "general.rail": { changed: rail !== DEFAULT_RAIL_VISIBLE, revert: () => setRail(DEFAULT_RAIL_VISIBLE) },
+        "appearance.petoutfit": {
+            changed: petOutfitChoice(outfit) !== DEFAULT_PET_OUTFIT,
+            revert: () => setOutfit(DEFAULT_PET_OUTFIT),
+        },
         "newagent.remember": {
             changed: remember !== DEFAULT_REMEMBER_FLAGS,
             revert: () => setRemember(DEFAULT_REMEMBER_FLAGS),
@@ -835,7 +842,28 @@ function AppearanceSection() {
                     </SettingRow>
                 );
             })}
+
+            <PetOutfitRow />
         </div>
+    );
+}
+
+const PET_OUTFIT_OPTIONS: { id: PetOutfitChoice; label: string }[] = [
+    { id: "shirt", label: "Flag shirt" },
+    { id: "flag", label: "Holds the flag" },
+    { id: "off", label: "Off" },
+];
+
+function PetOutfitRow() {
+    const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
+    return (
+        <SettingRow id="appearance.petoutfit">
+            <Segmented<PetOutfitChoice>
+                options={PET_OUTFIT_OPTIONS}
+                value={petOutfitChoice(outfit)}
+                onChange={(id) => setOutfit(id)}
+            />
+        </SettingRow>
     );
 }
 

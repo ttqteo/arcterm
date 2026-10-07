@@ -113,6 +113,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     key: THEME_OVERRIDE_KEY,
                     scope: "local",
                 },
+                {
+                    id: "appearance.petoutfit",
+                    title: "Jarvis in Vietnam's colours",
+                    desc: "The flag shirt, or the flag in its hand. On 30/4, 1/5 and 2/9 it wears the shirt even when this is off.",
+                    key: "jarvis.pet.outfit",
+                    scope: "local",
+                },
             ],
         },
         {
