@@ -16,6 +16,7 @@ import { resolveCwd } from "./agentcwdresolve";
 import { linkedWorktree } from "./agentrailmodel";
 import { ensureSessionStart } from "./agentsessionstore";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
+import { DOCK_DEFAULT_PX } from "./terminaldock";
 
 export interface RailGitState {
     cwd: string | null;
@@ -41,13 +42,25 @@ export const railVisibleAtom = atomWithStorage("agent.rail.visible", DEFAULT_RAI
 // hidden so the focused agent's live terminal fills the surface. Session-scoped UI, not persisted.
 export const terminalFullscreenAtom = atom(false);
 
+// The plain terminal docked under the agent stack (terminaldock.ts), or null with the dock closed. Session-scoped:
+// the surface fills it when a terminal is chosen and empties it when that terminal closes.
+export const dockedTerminalAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+// The dock's height as last dragged, in px; clampDockHeight bounds it against the column when it is drawn.
+export const terminalDockHeightAtom = atomWithStorage("agent.terminalDock.height", DOCK_DEFAULT_PX, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<number>;
+
+// the docked terminal maximized over the agent stack: it takes the whole grid, the agents' panes hidden under it.
+// Session-scoped; closing the dock or emptying it turns it off.
+export const terminalDockMaxAtom = atom(false);
+
+// the height while the dock's edge is being dragged, committed to terminalDockHeightAtom on release
+export const terminalDockDragAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
+
 // whether the rail's Token usage section shows its per-class and per-model breakdown. Session-scoped, not
 // persisted; global so it holds while the surface unmounts.
 export const usageBreakdownAtom = atom(false);
-
-// whether the rail's Terminals section lists every terminal rather than the focused item's project's. Session-scoped,
-// not persisted, like usageBreakdownAtom: it is a look at the others, not a preference.
-export const railTerminalsAllAtom = atom(false);
 
 export const railStateAtom = atom<RailGitState | null>(null) as PrimitiveAtom<RailGitState | null>;
 

@@ -487,6 +487,29 @@ describe("extractBackgroundTasks", () => {
         ]);
     });
 
+    it("keeps where the output is written, from the start result or the notification", () => {
+        const start = [
+            bash("t7", { command: "task check:ts", description: "Typecheck", run_in_background: true }),
+            result(
+                "t7",
+                "Command running in background with ID: b7. Output is being written to: C:\\tmp\\tasks\\b7.output. You will be notified when it completes."
+            ),
+        ];
+        expect(extractBackgroundTasks(start)[0].outputFile).toBe("C:\\tmp\\tasks\\b7.output");
+        const quiet = [
+            bash("t8", { command: "npm test", run_in_background: true }),
+            result("t8", "", { toolUseResult: { backgroundTaskId: "b8" } }),
+            JSON.stringify({
+                type: "user",
+                message: {
+                    content:
+                        "<task-notification><tool-use-id>t8</tool-use-id><output-file>/tmp/b8.output</output-file><status>completed</status></task-notification>",
+                },
+            }),
+        ];
+        expect(extractBackgroundTasks(quiet)[0]).toMatchObject({ status: "completed", outputFile: "/tmp/b8.output" });
+    });
+
     it("a plain foreground command is not a task", () => {
         expect(extractBackgroundTasks([bash("t3", { command: "ls" }), result("t3", "a\nb")])).toEqual([]);
     });

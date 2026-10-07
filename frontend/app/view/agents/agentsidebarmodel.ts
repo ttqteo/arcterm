@@ -336,8 +336,7 @@ export function liveBranches(base: SessionActivity[] | null, roster: AgentVM[]):
 /** Pure: the Terminals section. A folder per project the plain terminals were launched in (projectOf; "ungrouped" for
  *  none, as the Active section files an agent), the projects in the roster's order, then, unless it is collapsed, the
  *  folder's terminals in that order. Filtered to a project, its terminals alone in that order, flat and unfolded, with
- *  those that name no project: as in a focused terminal's rail (railterminals.ts), a shell attributed to no project
- *  shows under every one. */
+ *  those that name no project: a shell attributed to no project shows under every one. */
 export function terminalTree(terminals: AgentVM[], filter: string, collapsed: ReadonlySet<string>): TerminalTreeRow[] {
     if (filter !== ALL_PROJECTS) {
         return terminals

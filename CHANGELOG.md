@@ -33,6 +33,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
   on, and a conversation's header buttons share one height, so the row is shorter.
 - Clicking a pinned prompt while the agent is still writing scrolls back to it and stays there, instead of being
   pulled back to the newest output on every streamed line.
+- Choosing a terminal while an agent is on screen opens it in a panel under the agent instead of in its place. Drag
+  the panel's top edge to resize it, between 120 px and 60% of the column; its maximize button (or a double-click on
+  its bar) gives it the whole area and back, and its x hides it while the shell keeps running.
+  The right panel no longer lists terminals: the sidebar's Terminals section is where you switch between them.
+- A row under Background tasks shows the command it runs, and a click opens the command's output in the panel's File
+  tab; clicking again reads it afresh while the command is still running.
 
 ### Fixed
 

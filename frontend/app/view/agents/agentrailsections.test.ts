@@ -1,10 +1,8 @@
-import { sectionExpandable, sectionOpen } from "@/app/element/railsections";
 import { describe, expect, it } from "vitest";
 import {
     bgTaskStatusLabel,
     planAgentRail,
     planRailStats,
-    planTerminalRail,
     railStatAction,
     type AgentRailInput,
     type AgentRailSectionId,
@@ -102,28 +100,6 @@ describe("railStatAction", () => {
     it("any other empty stat is inert", () => {
         expect(railStatAction({ id: "subagents", count: 0 })).toBeNull();
         expect(railStatAction({ id: "bgtasks", count: 0 })).toBeNull();
-    });
-});
-
-describe("planTerminalRail", () => {
-    const terminalsHeader = (terminals: number, terminalsOther: number) =>
-        planTerminalRail({ terminals, terminalsOther })[0].header;
-
-    it("a focused terminal's rail is the Terminals section alone", () => {
-        expect(planTerminalRail({ terminals: 2, terminalsOther: 0 })).toEqual([
-            { id: "terminals", header: { count: 2 } },
-        ]);
-    });
-    it("counts what the rail lists", () => {
-        expect(terminalsHeader(1, 4)).toEqual({ count: 1 });
-    });
-    it("with none in this project stays openable only when other projects have some to show", () => {
-        expect(terminalsHeader(0, 0)).toEqual({ count: 0 });
-        expect(sectionExpandable(terminalsHeader(0, 0))).toBe(false);
-        expect(terminalsHeader(0, 3)).toEqual({ count: 0, emptyOpenable: true });
-        expect(sectionExpandable(terminalsHeader(0, 3))).toBe(true);
-        // no defaultOpen: it opens at 0, so the toggle for the other projects' terminals is visible
-        expect(sectionOpen({}, "terminals", terminalsHeader(0, 3))).toBe(true);
     });
 });
 

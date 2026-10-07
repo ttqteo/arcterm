@@ -38,6 +38,7 @@ import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { RenameBox, startRowRename } from "./rowrename";
+import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
@@ -1255,11 +1256,13 @@ function FolderRow({
     );
 }
 
-// A plain terminal in the Terminals section: its name, filled while it is the focused one. A click focuses it the way
-// an agent's row does; its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only
-// agents are grid cells.
+// A plain terminal in the Terminals section: its name, filled while it is the focused one or the one docked under the
+// agent. A click focuses it the way an agent's row does, which with an agent on screen docks it there (terminaldock.ts);
+// its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only agents are grid cells.
 function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
-    const selected = useSelectedRowId(model) === terminal.id;
+    const selectedId = useSelectedRowId(model);
+    const docked = useAtomValue(dockedTerminalAtom) === terminal.id;
+    const selected = selectedId === terminal.id || (selectedId != null && docked);
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
     return (
         <div

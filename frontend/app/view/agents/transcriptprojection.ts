@@ -420,12 +420,15 @@ export interface BackgroundTask {
     label: string;
     command?: string;
     status: BackgroundTaskStatus;
+    outputFile?: string; // where Claude Code writes the command's output, from its start result or its notification
 }
 
 // the shell tools that take run_in_background (PowerShell is Claude Code's Windows shell tool)
 const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 
 const BG_ID_TEXT = /running in background with ID: ([A-Za-z0-9_-]+)/;
+// the start result's "Output is being written to: <path>. You will be notified…"; the path runs to the sentence's end
+const BG_OUTPUT_TEXT = /Output is being written to: (.+?)\.(?:\s|$)/;
 
 // <task-notification> status -> ours; "killed" and "stopped" are the same thing to the reader
 const NOTIFIED_STATUS: Record<string, BackgroundTaskStatus> = {
@@ -520,6 +523,10 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                         const t = startTask(block.tool_use_id)!;
                         t.taskId = taskId;
                         byTaskId.set(taskId, t);
+                        const outputFile = BG_OUTPUT_TEXT.exec(toolResultText(block.content))?.[1]?.trim();
+                        if (outputFile) {
+                            t.outputFile = outputFile;
+                        }
                     }
                 }
             }
@@ -531,6 +538,10 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                 const t = toolUseId ? tasks.get(toolUseId) : undefined;
                 if (t && status) {
                     t.status = status;
+                }
+                const outputFile = /<output-file>([^<]+)<\/output-file>/.exec(text)?.[1]?.trim();
+                if (t && outputFile) {
+                    t.outputFile = outputFile;
                 }
             }
         }

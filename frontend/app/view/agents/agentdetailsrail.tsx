@@ -33,7 +33,7 @@ import {
     type AgentRailSectionId,
     type BgTaskLabel,
 } from "./agentrailsections";
-import { railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
+import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
 import { fileLabel, panelFor, RAIL_OVERVIEW_PX } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
@@ -318,17 +318,41 @@ const BG_DOT: Record<BgTaskLabel, string> = {
     unknown: "bg-muted",
 };
 
-function BackgroundTaskRow({ task, live }: { task: BackgroundTask; live: boolean }) {
+// A background command: what it is for, the command itself under it, and its status. With an output file it opens
+// that file in the panel's File tab, as it stood when clicked; a running task's output grows, so a click reads it again.
+function BackgroundTaskRow({ task, live, onOpen }: { task: BackgroundTask; live: boolean; onOpen?: () => void }) {
     const label = bgTaskStatusLabel(task.status, live);
+    const showCommand = task.command != null && task.command !== task.label;
+    const body = (
+        <>
+            <span className={cn("mt-[5px] h-[6px] w-[6px] shrink-0 self-start rounded-full", BG_DOT[label])} />
+            <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                <span className="truncate text-[11.5px] text-secondary">{task.label}</span>
+                {showCommand ? (
+                    <span className="truncate font-mono text-[10.5px] text-muted">{task.command}</span>
+                ) : null}
+            </span>
+            <span className="self-start whitespace-nowrap text-[10.5px] text-muted">{label}</span>
+        </>
+    );
+    const cls = "flex w-full items-center gap-[10px] rounded-[8px] bg-surface-raised px-[11px] py-[8px] text-left";
+    if (onOpen == null) {
+        return (
+            <div title={task.command} data-bg-task={task.toolUseId} className={cls}>
+                {body}
+            </div>
+        );
+    }
     return (
-        <div
-            title={task.command}
-            className="flex items-center gap-[10px] rounded-[8px] bg-surface-raised px-[11px] py-[8px]"
+        <button
+            type="button"
+            data-bg-task={task.toolUseId}
+            title={`${task.command ?? task.label}\n\nOpen its output`}
+            onClick={onOpen}
+            className={cn(cls, "cursor-pointer hover:bg-surface-hover")}
         >
-            <span className={cn("h-[6px] w-[6px] shrink-0 rounded-full", BG_DOT[label])} />
-            <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">{task.label}</span>
-            <span className="whitespace-nowrap text-[10.5px] text-muted">{label}</span>
-        </div>
+            {body}
+        </button>
     );
 }
 
@@ -665,7 +689,21 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (
-                    <BackgroundTaskRow key={t.toolUseId} task={t} live={live} />
+                    <BackgroundTaskRow
+                        key={t.toolUseId}
+                        task={t}
+                        live={live}
+                        onOpen={
+                            t.outputFile != null
+                                ? () =>
+                                      openFileInPanel(model, agent.id, {
+                                          abs: t.outputFile!,
+                                          root: null,
+                                          reread: Date.now(),
+                                      })
+                                : undefined
+                        }
+                    />
                 ))}
             </div>
         ),

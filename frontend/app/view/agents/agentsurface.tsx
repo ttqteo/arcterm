@@ -3,7 +3,8 @@
 //
 // The Agent (Focus) surface: AgentTree | center [| AgentDetailsRail]. The rail is toggleable
 // (railVisibleAtom, default on, `d` key): the surface is normally 3 panes, 2 plus the 44px strip with the rail
-// closed; a focused terminal's rail is TerminalRail, the Terminals section alone.
+// closed; a plain terminal has none (the tree's Terminals section is the way to the others). A terminal chosen while
+// there is an agent does not take the centre: it docks in a third grid row under the agent (terminaldock.ts).
 // The center is the focused agent's live Claude Code terminal (CockpitFocusPane) — the real TUI,
 // not a narrated transcript; an AgentHeader bar sits above it for identity + the rail toggle. The terminal
 // stack is up to four of them in a 2x2 CSS grid (agentgrid.ts, gridstore.ts): focusIdAtom stays the single
@@ -52,12 +53,19 @@ import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./grids
 import { rosterSeededAtom } from "./liveagents";
 import { RunPane } from "./runpane";
 import { SessionPane } from "./sessionpane";
-import { terminalFullscreenAtom } from "./railstore";
+import {
+    dockedTerminalAtom,
+    terminalDockDragAtom,
+    terminalDockHeightAtom,
+    terminalDockMaxAtom,
+    terminalFullscreenAtom,
+} from "./railstore";
 import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
-import { TerminalRail } from "./terminalsrail";
+import { clampDockHeight, splitDock } from "./terminaldock";
+import { TerminalDockBar } from "./terminaldockbar";
 import { useSessionsScan } from "./usesessionsscan";
 
 export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
@@ -84,7 +92,13 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // The grid's cells are live agents with a terminal. A plain terminal is shown alone (visibleCells); a done
     // worker's transcript replaces the grid (terminalShown). Both leave the saved grid as it was.
     const eligible = useMemo(() => eligibleIds(agents), [agents]);
-    const focused = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent) : undefined;
+    const chosen = focusId != null ? (mountable.find((a) => a.id === focusId) ?? ended?.agent) : undefined;
+    // A terminal chosen while there is an agent docks under the agent that was showing instead of taking its place
+    // (terminaldock.ts); the effects below write focusIdAtom back to that agent and the dock atom to the terminal.
+    const dockedId = useAtomValue(dockedTerminalAtom);
+    const hostRef = useRef<string | null>(null);
+    const dock = splitDock({ focused: chosen, docked: dockedId, host: hostRef.current, agents, terminals });
+    const focused = dock.focused;
     const { agent, hold: holdForGrid } = resolveShownAgent({
         focused,
         agents,
@@ -107,6 +121,22 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             globalStore.set(model.focusIdAtom, agent.id);
         }
     }, [agent?.id, focusId, model]);
+
+    // the agent shown above is what the next chosen terminal docks under; the dock atom follows splitDock (a newly
+    // chosen terminal, or empty once its terminal closed)
+    useEffect(() => {
+        if (agent != null && agent.kind !== "terminal") {
+            hostRef.current = agent.id;
+        }
+    }, [agent?.id, agent?.kind]);
+    useEffect(() => {
+        if (globalStore.get(dockedTerminalAtom) !== dock.dockedId) {
+            globalStore.set(dockedTerminalAtom, dock.dockedId);
+        }
+        if (dock.dockedId == null && globalStore.get(terminalDockMaxAtom)) {
+            globalStore.set(terminalDockMaxAtom, false);
+        }
+    }, [dock.dockedId]);
 
     // The grid follows the roster and the focus (reconcileGrid): agents that left are pruned, and the focused
     // agent takes its cell or the focused cell. Memoized in render, not left to the effect, so the cells drawn below
@@ -141,6 +171,29 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const multi = cells.length > 1;
     // a visible cell with no pane (a launch with no terminal yet) leaves the grid hidden so the fallback below shows
     const gridShown = mountable.some((a) => a.blockId != null && cellOf.has(a.id));
+    // The docked terminal is a third grid row under the cells, spanning both columns, so its pane stays under the same
+    // parent as every other (no remount). Not under a terminal shown alone. Maximized (dockMax) it spans all three rows
+    // and the agents' cells hide under it; fullscreen shows the focused cell alone, so it drops the dock unless the dock
+    // is what is maximized, which then fills the whole surface.
+    const dockable = gridShown && agent?.kind !== "terminal" ? dock.docked : undefined;
+    const dockMax = useAtomValue(terminalDockMaxAtom) && dockable != null;
+    const docked = !fullscreen || dockMax ? dockable : undefined;
+    // the cells' tiled look (gaps, borders, bars) is off while the dock covers them
+    const tiled = multi && !dockMax;
+    const gridRef = useRef<HTMLDivElement>(null);
+    const [gridHeight, setGridHeight] = useState(0);
+    useEffect(() => {
+        const el = gridRef.current;
+        if (el == null) {
+            return;
+        }
+        const ro = new ResizeObserver(() => setGridHeight(el.clientHeight));
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [agent == null]);
+    const storedDockHeight = useAtomValue(terminalDockHeightAtom);
+    const dragDockHeight = useAtomValue(terminalDockDragAtom);
+    const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
 
     // a stale interior (its parent is no longer focused) closes so the terminal returns
     useEffect(() => {
@@ -220,6 +273,33 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         );
         if (term?.checkVisibility()) {
             term.focus({ preventScroll: true });
+        }
+    };
+
+    // A terminal just docked takes the keyboard, as choosing it did when it took the centre. Only on a change of
+    // terminal, so the dock reappearing after a session read or fullscreen does not pull focus from the agent.
+    const lastDocked = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (docked == null || docked.id === lastDocked.current) {
+            return;
+        }
+        lastDocked.current = docked.id;
+        focusTerminalOf(docked.id);
+    }, [docked?.id]);
+    const toggleDockMax = () => {
+        const next = !globalStore.get(terminalDockMaxAtom);
+        globalStore.set(terminalDockMaxAtom, next);
+        // the button that held focus stays, but typing belongs in the terminal it just resized
+        if (docked != null) {
+            requestAnimationFrame(() => focusTerminalOf(docked.id));
+        }
+    };
+    const closeDock = () => {
+        globalStore.set(dockedTerminalAtom, null);
+        globalStore.set(terminalDockMaxAtom, false);
+        lastDocked.current = undefined;
+        if (agent != null) {
+            focusTerminalOf(agent.id);
         }
     };
 
@@ -365,8 +445,14 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     {/* terminal stack stays mounted (hidden) while a subagent interior, a session or History is shown, so
                         returning to the parent never remounts/replays the live TUI (frame-stacking) */}
                     <div className={cn("flex min-h-0 flex-1 flex-col", stackHidden && "hidden")}>
-                        <AgentHeader model={model} agent={agent} />
-                        <DivergenceBanner decision={decision} onRejoin={rejoin} />
+                        {/* a maximized dock is the terminal's own view, its bar the only header: the agent's header
+                            would name an agent that is not on screen */}
+                        {dockMax ? null : (
+                            <>
+                                <AgentHeader model={model} agent={agent} />
+                                <DivergenceBanner decision={decision} onRejoin={rejoin} />
+                            </>
+                        )}
                         {/* The grid parent is always rendered: hidden, never unmounted, so no xterm remounts. Tracks
                             are minmax(0, 1fr) and cells min-w-0 min-h-0 so a cell can shrink below its xterm's pixel
                             width, which is what makes the terminal's ResizeObserver fire and refit. Nothing here
@@ -374,12 +460,19 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             cells: before the roster is seeded it includes saved cells with no pane yet, and it can read
                             1 or more while the grid is hidden (gridShown false). */}
                         <div
+                            ref={gridRef}
                             data-agent-grid
                             data-agent-grid-count={cells.length}
+                            data-terminal-docked={docked?.id}
+                            style={
+                                docked != null
+                                    ? { gridTemplateRows: `minmax(0, 1fr) minmax(0, 1fr) ${dockHeight}px` }
+                                    : undefined
+                            }
                             className={cn(
                                 "min-h-0 min-w-0 flex-1",
                                 gridShown ? "grid grid-cols-2 grid-rows-2" : "hidden",
-                                gridShown && multi && "gap-[6px] p-[6px]"
+                                gridShown && tiled && "gap-[6px] p-[6px]"
                             )}
                         >
                             {mountable
@@ -387,6 +480,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 .map((a) => {
                                     const slot = cellOf.get(a.id);
                                     const cell = slot?.cell;
+                                    // the docked terminal is the grid's third row (one wrapper either way, so its pane is
+                                    // never re-parented); clicking it does not select it, the agent above stays selected
+                                    const isDock = a.id === docked?.id;
                                     return (
                                         <div
                                             key={a.id}
@@ -396,19 +492,43 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                             data-agent-terminal={a.id}
                                             data-agent-cell={slot?.index}
                                             data-agent-focused={cell?.focused && multi ? "true" : undefined}
-                                            style={cell != null ? placementStyle(cell.placement) : undefined}
-                                            onMouseDownCapture={(e) => focusCell(a.id, e)}
-                                            onFocus={(e) => focusCell(a.id, e, true)}
+                                            data-terminal-dock={isDock ? "true" : undefined}
+                                            style={
+                                                isDock
+                                                    ? {
+                                                          gridRow: dockMax ? "1 / span 3" : "3 / span 1",
+                                                          gridColumn: "1 / span 2",
+                                                      }
+                                                    : cell != null
+                                                      ? placementStyle(cell.placement)
+                                                      : undefined
+                                            }
+                                            onMouseDownCapture={isDock ? undefined : (e) => focusCell(a.id, e)}
+                                            onFocus={isDock ? undefined : (e) => focusCell(a.id, e, true)}
                                             className={cn(
                                                 "relative isolate min-h-0 min-w-0",
-                                                cell != null ? "flex flex-col" : "hidden",
-                                                cell != null && multi && "overflow-hidden rounded-[8px] border",
+                                                (cell != null && !dockMax) || isDock ? "flex flex-col" : "hidden",
+                                                (cell != null || isDock) &&
+                                                    tiled &&
+                                                    "overflow-hidden rounded-[8px] border",
                                                 cell != null &&
                                                     multi &&
-                                                    (cell.focused ? "border-accent" : "border-edge-mid")
+                                                    (cell.focused ? "border-accent" : "border-edge-mid"),
+                                                isDock &&
+                                                    !dockMax &&
+                                                    (multi ? "border-edge-mid" : "border-t border-border")
                                             )}
                                         >
-                                            {cell != null && multi ? (
+                                            {isDock ? (
+                                                <TerminalDockBar
+                                                    terminal={a}
+                                                    height={dockHeight}
+                                                    available={gridHeight}
+                                                    maximized={dockMax}
+                                                    onToggleMax={toggleDockMax}
+                                                    onClose={closeDock}
+                                                />
+                                            ) : cell != null && multi ? (
                                                 <GridCellBar
                                                     agent={a}
                                                     focused={cell.focused}
@@ -443,14 +563,14 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     ) : null}
                     {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
                 </div>
-                {/* a focused terminal has no details of its own, but the rail's Terminals section is the only way to
-                    reach the next one, so it gets that section alone */}
-                {!fullscreen && centerMode === "terminal" && swapped == null ? (
-                    agent.kind === "terminal" ? (
-                        <TerminalRail model={model} agent={agent} />
-                    ) : (
-                        <AgentDetailsRail model={model} agent={agent} />
-                    )
+                {/* a plain terminal has no details of its own: no rail, the tree's Terminals section reaches the others.
+                    Nor does a maximized dock, which is a terminal on screen alone. */}
+                {!fullscreen &&
+                centerMode === "terminal" &&
+                swapped == null &&
+                agent.kind !== "terminal" &&
+                !dockMax ? (
+                    <AgentDetailsRail model={model} agent={agent} />
                 ) : null}
             </div>
         </MotionConfig>
