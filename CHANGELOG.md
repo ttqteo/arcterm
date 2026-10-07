@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   away, so you can see what the reply answers; click it to scroll back.
 - A conversation's header is one compact row: title, status and project, branch, time and tokens on one line, with
   the way back to the terminal at its start.
+- The agent pane's header is one row: the name, the harness's mark, its state, model and context, then the project,
+  which truncates first; the harness's name is in the mark's tooltip.
 
 ### Fixed
 

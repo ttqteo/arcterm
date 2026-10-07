@@ -237,64 +237,55 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         <div
             data-agent-header
             onContextMenu={onContextMenu}
-            className="flex shrink-0 items-center gap-[13px] border-b border-border bg-background px-[22px] py-[14px]"
+            className="flex shrink-0 items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
         >
             {ended ? (
-                <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: stateColor }} />
+                <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
-                <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[9px] !w-[9px]" />
+                <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[8px] !w-[8px]" />
             )}
-            <div className="min-w-0">
-                <div className="flex items-center gap-[9px]">
-                    <span className="min-w-0 truncate text-[15px] font-semibold text-foreground">
-                        {lineage?.kind === "lead" ? (
-                            <Workflow
-                                size={13}
-                                aria-hidden
-                                className="mr-[5px] inline-block align-[-1px] text-accent-soft"
-                            />
-                        ) : null}
-                        {name}
-                    </span>
+            {/* one row: the name first (it is the header's first line of text), then what it is and where it works,
+                the project and its lineage truncating first when the pane is narrow */}
+            <div className="flex min-w-0 items-baseline gap-[8px] whitespace-nowrap">
+                <span className="min-w-0 shrink truncate text-[14px] font-semibold text-foreground">
+                    {lineage?.kind === "lead" ? (
+                        <Workflow
+                            size={13}
+                            aria-hidden
+                            className="mr-[5px] inline-block align-[-1px] text-accent-soft"
+                        />
+                    ) : null}
+                    {name}
+                </span>
+                <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
+                    <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
+                </span>
+                <span
+                    className={cn(
+                        "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
+                        settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                    )}
+                    style={{ color: stateColor }}
+                >
+                    {stateText}
+                </span>
+                {agent.model ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
+                {agent.usage?.contextpct != null ? (
                     <span
+                        title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
                         className={cn(
-                            "inline-flex items-center gap-[5px] whitespace-nowrap rounded-[5px] border px-[8px] py-[2px] text-[10.5px] font-semibold",
-                            rt.text,
-                            rt.softBg,
-                            rt.line
+                            "flex-none text-[11px] font-semibold tabular-nums",
+                            CTX_TEXT[contextLevel(agent.usage.contextpct, agent.usage.contextmax)]
                         )}
                     >
-                        <RuntimeMark runtime={agent.agent} className="text-[11px] leading-none" />
-                        {rt.label}
+                        {contextTokens(agent.usage.contextpct, agent.usage.contextmax) ??
+                            `${Math.round(agent.usage.contextpct)}%`}
                     </span>
-                    <span
-                        className={cn(
-                            "rounded-[5px] border px-[7px] py-[1px] text-[10.5px] font-medium opacity-85 transition-colors duration-[140ms]",
-                            settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
-                        )}
-                        style={{ color: stateColor, borderColor: stateColor }}
-                    >
-                        {stateText}
+                ) : null}
+                <span className="min-w-0 shrink-[2] truncate text-[11px] text-muted">
+                    <span aria-hidden className="text-ink-faint">
+                        ·{" "}
                     </span>
-                    {agent.model ? (
-                        <span className="rounded-[5px] border border-edge-mid px-[7px] py-[1px] text-[10.5px] font-medium text-muted">
-                            {agent.model}
-                        </span>
-                    ) : null}
-                    {agent.usage?.contextpct != null ? (
-                        <span
-                            title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
-                            className={cn(
-                                "text-[10.5px] font-semibold tabular-nums",
-                                CTX_TEXT[contextLevel(agent.usage.contextpct, agent.usage.contextmax)]
-                            )}
-                        >
-                            {contextTokens(agent.usage.contextpct, agent.usage.contextmax) ??
-                                `${Math.round(agent.usage.contextpct)}%`}
-                        </span>
-                    ) : null}
-                </div>
-                <div className="mt-[2px] whitespace-nowrap text-[11px] font-medium text-muted">
                     {project || "—"}
                     {agent.effortId != null ? <InitiativeLink model={model} agent={agent} /> : null}
                     {lineage?.kind === "lead" ? (
@@ -320,7 +311,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             )}
                         </>
                     ) : null}
-                </div>
+                </span>
             </div>
             <div className="flex-1" />
             <div className="flex items-center gap-[7px]">
