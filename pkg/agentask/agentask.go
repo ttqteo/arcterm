@@ -43,6 +43,8 @@ type PendingAsk struct {
 	Ts int64
 	// Prose mirrors CommandAskData.Prose: delivery types text instead of picker keystrokes.
 	Prose bool
+	// Hold mirrors CommandAskData.Hold: a working status never retires it.
+	Hold bool
 	// the fields below are set only for an ask raised by a dag child.
 	Owner string
 	// Deadline is the UnixMilli past which a lead-owned ask moves to the user.

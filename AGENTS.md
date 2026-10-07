@@ -23,7 +23,7 @@ The build is orchestrated by [Task](https://taskfile.dev) (`Taskfile.yml`), a `m
 |---|---|
 | `task init` | First-time setup: `npm install` + `go mod tidy`. |
 | `task dev` (alias of `task tauri:dev`) | The main way to run. Builds the dev-host backend only (wavesrv + host wsh), syncs `pi/` artifacts and the version, then `cargo tauri dev` (Vite dev server on `:5174`, HMR). |
-| `task build:backend` | Release backend build: a stripped `wavesrv` + `wsh` for windows x64 (the only target the installer bundles) into `dist/bin/`. |
+| `task build:backend` | Release backend build into `dist/bin/`: `wavesrv` (stripped windows x64 on Windows; arm64 + amd64 on a Mac) and `wsh` for the one target the host's bundle ships — windows x64 on Windows, darwin arm64 on a Mac. |
 | `task build:backend:quickdev:windows` | Rebuilds only `wavesrv` (no wsh, no generate) — the fast loop for Go server changes. |
 | `task generate` | Regenerates TS + Go bindings from Go source. **Run after changing any wshrpc / waveobj / wconfig type.** |
 | `task check:ts` | Typecheck the frontend (see the tsc gotcha below). |
@@ -63,6 +63,11 @@ Other useful commands:
   List `Get-Process wave-tauri,wavesrv.x64 | Select Id,Path`, and stop only the PID whose path is in a
   repo checkout (`src-tauri\target`, `dist\bin`), never one under `AppData\Local\arcterm` (or
   `AppData\Local\Arc`, where installs from before the rename live).
+- **A heavy shell command can come back "Not run: …" while RAM is short.** Before every Bash command an agent
+  runs, the Claude mod and the pi tools extension ask `wsh memgate`; a build, the typecheck, a whole test suite or
+  `npm install` that would not leave 512 MB free waits on a Low RAM card for the person. A refusal is the person's
+  call: don't retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
+  `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never asks.
 - CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
 - **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
   `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold

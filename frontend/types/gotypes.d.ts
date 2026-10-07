@@ -489,6 +489,7 @@ declare global {
         questions: AgentAskQuestion[];
         wait?: boolean;
         prose?: boolean;
+        hold?: boolean;
     };
 
     // wshrpc.CommandAuthenticateRtnData

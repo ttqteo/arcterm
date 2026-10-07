@@ -7,6 +7,7 @@ import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
+import { memgateArgs, memgateLine } from "./memgate-core";
 import { idleArgs } from "./status-core";
 import { usageArgs } from "./usage-core";
 
@@ -94,6 +95,43 @@ async function refusal($: EngineInterface, command: string): Promise<string | nu
     return active ? denial(command, await $.session.cwd()) : null;
 }
 
+// a heavy command (a build, the typecheck, a whole test suite) waits for the person's say on arcterm's card
+// while RAM is short: `wsh memgate` holds it, and its hold lines show here meanwhile. null lets it run, as
+// does any failure of wsh's. spawn, not run: run gives up after ten minutes, and the card can wait longer
+async function ramHold($: EngineInterface, command: string): Promise<string | null> {
+    if (!active) {
+        return null;
+    }
+    let held: string | null = null;
+    let buffered = "";
+    try {
+        for await (const chunk of $.process.spawn({ argv: [WSH, ...memgateArgs(command)] })) {
+            if (chunk.stream !== "stdout") {
+                continue;
+            }
+            const taken = takeLines(buffered + chunk.text);
+            buffered = taken.rest;
+            for (const line of taken.lines) {
+                const read = memgateLine(line);
+                if (read && "hold" in read) {
+                    $.ui.log(`arc: ${read.hold}`);
+                } else if (read) {
+                    held = read.refusal;
+                }
+            }
+        }
+    } catch (err) {
+        $.ui.log(`arc: wsh memgate failed: ${String(err)}`, { to: "debug" });
+        return null;
+    }
+    return held;
+}
+
+// why the shell command does not run: arcterm refuses it outright, or the person held it for RAM
+async function shellRefusal($: EngineInterface, command: string): Promise<string | null> {
+    return (await refusal($, command)) ?? (await ramHold($, command));
+}
+
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
         active = Boolean((await $.env.get("WAVETERM_BLOCKID")) && (await $.env.get("WAVETERM_JWT")));
@@ -163,12 +201,12 @@ export const register: Register = (on) => {
 
     // refused in code: a prompt's rule is one the model can talk itself out of
     on("tool.call", { tool: "Bash" }, async ($, e, next) => {
-        const why = await refusal($, e.command);
+        const why = await shellRefusal($, e.command);
         return why === null ? next(e) : { deny: why };
     });
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
-        const why = await refusal($, e.command);
+        const why = await shellRefusal($, e.command);
         return why === null ? next(e) : { deny: why };
     });
 

@@ -50,6 +50,7 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 		Questions: data.Questions,
 		Ts:        ts,
 		Prose:     data.Prose,
+		Hold:      data.Hold,
 	})
 	publishAgentAsk(baseds.AgentAskData{
 		ORef:      data.ORef,
@@ -135,7 +136,9 @@ func retireAskOnResume(ev *wps.WaveEvent) {
 		return
 	}
 	pending, ok := agentask.GlobalRegistry.Get(data.ORef)
-	if !ok || data.Ts-pending.Ts <= askResumeGraceMs {
+	// a held command's card is raised from inside the tool call it holds: the agent working on in
+	// parallel has not moved past it
+	if !ok || pending.Hold || data.Ts-pending.Ts <= askResumeGraceMs {
 		return
 	}
 	claimed, ok := agentask.GlobalRegistry.Claim(data.ORef, pending.AskId)

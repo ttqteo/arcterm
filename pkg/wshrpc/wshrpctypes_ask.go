@@ -25,6 +25,9 @@ type CommandAskData struct {
 	// Prose marks a projected bare-prose question (pi prose bridge): the answer is typed
 	// into the block terminal as text (no native picker to drive with arrow keys).
 	Prose bool `json:"prose,omitempty"`
+	// Hold marks a held command's card (`wsh memgate`): it is raised from inside the tool call it holds,
+	// so the agent's working reports (a parallel call, a subagent) do not retire it.
+	Hold bool `json:"hold,omitempty"`
 }
 
 type AskRtnData struct {

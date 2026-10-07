@@ -14,6 +14,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **New run** has a shortcut, `Cmd+Shift+R` on macOS and `Ctrl+Shift+R` on Windows, and the app bar's New run and
   New agent buttons show their shortcut beside the label.
+- When RAM is short, a heavy command an agent runs (a build, the typecheck, a whole test suite, `npm install`) waits
+  on a **Low RAM** card that says how much it needs and how much is free: **Run now**, **Wait for RAM** (it starts
+  on its own once there is room) or **Don't run**.
 
 ### Changed
 
