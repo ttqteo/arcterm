@@ -58,6 +58,7 @@ import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
 import { sessionsArchiveAtom } from "./sessionsarchivestore";
+import { liveTokensAtom, useLiveTokens } from "./livetokensstore";
 import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
 import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
@@ -346,11 +347,13 @@ function ParentRow({
     model,
     agent,
     branch,
+    tokens,
     lead,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     branch?: string; // the git branch its session is on (liveBranches); absent until the scan has seen it
+    tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
 }) {
     const rt = runtimeMeta(agent.agent);
@@ -540,6 +543,14 @@ function ParentRow({
                                     ·
                                 </span>
                                 <span className="flex-none whitespace-nowrap">{agent.model}</span>
+                            </>
+                        ) : null}
+                        {tokens ? (
+                            <>
+                                <span aria-hidden className="flex-none text-ink-faint">
+                                    ·
+                                </span>
+                                <span className="flex-none whitespace-nowrap">{formatTokens(tokens)} tok</span>
                             </>
                         ) : null}
                         <span className="flex-1" />
@@ -1506,6 +1517,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // each live agent's branch, for its row's second line (as a Conversations row reads its own)
     const archive = useAtomValue(sessionsArchiveAtom);
     const branches = useMemo(() => liveBranches(archive, agents), [archive, agents]);
+    useLiveTokens(agents);
+    const tokens = useAtomValue(liveTokensAtom);
 
     useRunDigests(Object.values(lineage.runs));
 
@@ -1590,7 +1603,12 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     case "parent":
                                         key = r.agent.id;
                                         body = (
-                                            <ParentRow model={model} agent={r.agent} branch={branches.get(r.agent.id)} />
+                                            <ParentRow
+                                                model={model}
+                                                agent={r.agent}
+                                                branch={branches.get(r.agent.id)}
+                                                tokens={tokens.get(r.agent.id)}
+                                            />
                                         );
                                         break;
                                     case "lead":
@@ -1600,6 +1618,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 model={model}
                                                 agent={r.agent}
                                                 branch={branches.get(r.agent.id)}
+                                                tokens={tokens.get(r.agent.id)}
                                                 lead={{ run: r.run, open: r.open, live: r.live }}
                                             />
                                         );

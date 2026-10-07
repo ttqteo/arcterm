@@ -119,7 +119,9 @@ type claudeLine struct {
 	Cwd         string        `json:"cwd"`
 	GitBranch   string        `json:"gitBranch"`
 	Entrypoint  string        `json:"entrypoint"`
+	RequestID   string        `json:"requestId"`
 	Message     struct {
+		ID      string          `json:"id"`
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 		Usage   *struct {
@@ -145,6 +147,8 @@ func parseClaudeLines(lines []string) []claudeLine {
 	return recs
 }
 
+type claudeBilled struct{ output, tokens int }
+
 // claudeSessionFrom folds one transcript into a session. folder is the name of the store folder it lives in, the slug
 // of the directory Claude Code files it under (agentobserve.SlugifyCwd), "" when unknown.
 func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
@@ -153,6 +157,9 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 	hasTask := false
 	fallback := ""
 	aiTitle := ""
+	// Claude Code writes an assistant message once per content block, each line repeating its usage: one per message,
+	// the line with the most output (its final count), as usagestats.dedupe keeps it
+	billed := map[string]claudeBilled{}
 	for _, rec := range recs {
 		if agentobserve.IsHeadlessEntrypoint(rec.Entrypoint) {
 			return nil
@@ -178,7 +185,12 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 		}
 		if rec.Message.Usage != nil {
 			u := rec.Message.Usage
-			s.TokensTotal += u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+			n := u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+			if rec.Message.ID == "" || rec.RequestID == "" {
+				s.TokensTotal += n
+			} else if key := rec.Message.ID + ":" + rec.RequestID; u.OutputTokens >= billed[key].output {
+				billed[key] = claudeBilled{output: u.OutputTokens, tokens: n}
+			}
 		}
 		// only what a person sent titles a session: a file with none, such as the Agent tool's
 		// <parent>/subagents/agent-<id>.jsonl, has no task and is no session
@@ -213,6 +225,9 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 	// whether the file is a session at all.
 	if aiTitle != "" {
 		s.Task = trimTo(aiTitle, maxTaskLen)
+	}
+	for _, b := range billed {
+		s.TokensTotal += b.tokens
 	}
 	return s
 }

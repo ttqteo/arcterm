@@ -142,6 +142,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 fontFamily:
                     termSettings?.["term:fontfamily"] ?? connFontFamily ?? stackOf(MONO_FONTS, DEFAULT_TERM_FONT),
                 drawBoldTextInBrightColors: false,
+                // TUIs paint their own backgrounds (Claude Code's prompt row is #373737) and can land a palette
+                // grey on them at ~1.6:1; xterm lifts any cell below this ratio. 4.5 is WCAG AA, VS Code's default.
+                minimumContrastRatio: 4.5,
                 fontWeight: "normal",
                 fontWeightBold: "bold",
                 allowTransparency: true,

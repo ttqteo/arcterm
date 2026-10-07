@@ -712,3 +712,24 @@ func extractClaudeEvents(lines []string) sessionEvents {
 func scanProvider(p provider, windowDays, limit int) []SessionInfo {
 	return parseCandidates(walkCandidates(p, windowDays), limit, "")
 }
+
+// Claude Code writes an assistant message once per content block, each line repeating the message's usage (the last with
+// the final output count): the total counts the message once, as the usage readouts do (usagestats.dedupe).
+func TestClaudeSession_countsARepeatedMessageOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeJSONL(t, dir, "sess.jsonl",
+		`{"type":"user","cwd":"/home/me/web","message":{"role":"user","content":"Add a button"}}`,
+		`{"type":"assistant","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":1,"cache_read_input_tokens":100}}}`,
+		`{"type":"assistant","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100}}}`,
+		`{"type":"assistant","requestId":"req_2","message":{"id":"msg_2","model":"claude-opus-4-8","usage":{"input_tokens":20,"output_tokens":2}}}`,
+		`{"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":3}}}`,
+	)
+	got := scanProvider(claudeProvider(dir), 0, 10)
+	if len(got) != 1 {
+		t.Fatalf("want 1 session, got %d", len(got))
+	}
+	// msg_1 once at its final count (115), msg_2 (22), and the record with no id as it is (3)
+	if got[0].TokensTotal != 140 {
+		t.Errorf("tokensTotal = %d, want 140", got[0].TokensTotal)
+	}
+}
