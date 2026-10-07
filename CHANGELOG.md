@@ -46,6 +46,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   total tokens before their bar, then project · branch · model on one line, with Compact and Clear beside a
   **Breakdown** toggle, the one part that opens and closes. The spend shows once, and the context tokens drop their
   "ctx" (the tooltip names the context window).
+- A run's goal heading (the Jarvis run sheet and the Agent surface's run panel) no longer grows and shrinks on a click.
+  A goal that is cut off or runs past one paragraph gets a **Show more** link that reveals the rest below the heading,
+  at the same size; a goal that already shows in full has no toggle.
 
 ### Fixed
 

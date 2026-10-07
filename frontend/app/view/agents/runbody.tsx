@@ -32,8 +32,6 @@ import { runAtom } from "./channelsstore";
 import { ChildAskCard } from "./childaskcard";
 import { ComposerShell } from "./composer-shell";
 import { harnessesAtom } from "./harnessstore";
-import { InlineMarkdown } from "./inlinemarkdown";
-import { MarkdownMessage } from "./markdownmessage";
 import {
     AskCard,
     BlockedCard,
@@ -46,6 +44,7 @@ import {
 } from "./runcards";
 import { needsEvidenceSeal } from "./runcompletion";
 import { RunCompletion } from "./runcompletionsurface";
+import { RunGoal } from "./rungoalview";
 import { RunTimeline } from "./runtimelineview";
 import {
     cancelSurvivors,
@@ -165,7 +164,6 @@ export function RunHeader({
     hideSteer?: boolean;
 }) {
     const target = steerTarget(run, agents);
-    const [goalExpanded, setGoalExpanded] = useState(false);
     const runtimeHarnesses = useAtomValue(harnessesAtom);
     const runtimeView = runRuntimeView(run, runtimeHarnesses);
     return (
@@ -188,24 +186,14 @@ export function RunHeader({
                         </span>
                         <AmbientTags oref={`run:${run.id}`} />
                     </div>
-                    {/* the collapsed goal is a two-line heading and takes the width; expanded it becomes real
-                        prose (markdown, paragraphs) and caps at a reading measure */}
-                    <div
-                        onClick={() => setGoalExpanded((v) => !v)}
-                        title={goalExpanded ? "Collapse" : "Expand"}
-                        className="w-full cursor-pointer text-[19px] font-bold leading-tight tracking-[-0.01em] text-primary hover:opacity-90"
-                    >
-                        {goalExpanded ? (
-                            <MarkdownMessage
-                                text={run.goal}
-                                className={cn(STAGE_PROSE, "text-[15px] font-semibold leading-snug text-primary")}
-                            />
-                        ) : (
-                            <div className="line-clamp-2">
-                                <InlineMarkdown text={run.goal} />
-                            </div>
-                        )}
-                    </div>
+                    {/* the heading takes the width; the rest of the goal opens below it as prose at a reading
+                        measure */}
+                    <RunGoal
+                        goal={run.goal}
+                        className="w-full"
+                        headingClassName="text-[19px] font-bold leading-tight tracking-[-0.01em] text-primary"
+                        proseClassName={cn(STAGE_PROSE, "text-[14px] leading-[1.6] text-ink-mid")}
+                    />
                 </div>
                 <div className="flex flex-none gap-1.5">
                     {run.dagoref ? (

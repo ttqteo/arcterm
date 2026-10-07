@@ -20,12 +20,11 @@ import { runAtom } from "@/app/view/agents/channelsstore";
 import { ChildAskCard } from "@/app/view/agents/childaskcard";
 import { userOwnedAsks } from "@/app/view/agents/childaskmodel";
 import { childAsksAtom } from "@/app/view/agents/childaskstore";
-import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
-import { MarkdownMessage } from "@/app/view/agents/markdownmessage";
 import { endFinalStage, type FinalEndOutcome } from "@/app/view/agents/runactions";
 import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents/runcards";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
+import { RunGoal } from "@/app/view/agents/rungoalview";
 import { cancelSurvivors, isTerminal, leadAsker, leadWorker, liveWorkers } from "@/app/view/agents/runmodel";
 import { SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
 import { eventTitle, tsLabel } from "@/app/view/agents/runtimeline";
@@ -331,7 +330,6 @@ function Reading({
     dag: SheetDagRead | null;
     onRetry?: () => void;
 }) {
-    const [goalOpen, setGoalOpen] = useState(false);
     const index = useAtomValue(briefEffortIndexAtom);
     const revealChunk = useAtomValue(briefRevealChunkAtom);
     // what the run has spent so far, off its live workers (design L1401)
@@ -377,24 +375,12 @@ function Reading({
                     </>
                 }
             />
-            {/* collapsed, the goal is a two-line heading; expanded it becomes the prose it was written as. A div,
-                not a button: expanded markdown renders block elements a button may not contain. */}
-            <div
-                onClick={() => setGoalOpen((o) => !o)}
-                title={goalOpen ? "Collapse" : "Expand"}
-                className="mt-0.5 cursor-pointer text-[17px] font-bold leading-[1.3] tracking-[-.01em] text-primary hover:opacity-90"
-            >
-                {goalOpen ? (
-                    <MarkdownMessage
-                        text={run.goal}
-                        className={cn(STAGE_PROSE, "text-[14px] font-semibold leading-snug text-primary")}
-                    />
-                ) : (
-                    <div className="line-clamp-2">
-                        <InlineMarkdown text={run.goal} />
-                    </div>
-                )}
-            </div>
+            <RunGoal
+                goal={run.goal}
+                className="mt-0.5"
+                headingClassName="text-[17px] font-bold leading-[1.3] tracking-[-.01em] text-primary"
+                proseClassName={cn(STAGE_PROSE, "text-[13px] leading-[1.6] text-ink-mid")}
+            />
             {ref != null && effort != null ? (
                 <button
                     type="button"
