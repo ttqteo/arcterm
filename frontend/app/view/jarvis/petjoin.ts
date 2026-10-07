@@ -156,14 +156,21 @@ export function askAgent(agents: ReadonlyArray<AgentVM>, askOref: string | undef
 // would be the double-count the report-once rule exists to prevent. Suppressed when keyboard focus sits
 // inside the ask's block (cockpit) or when the Agent surface is focused on that agent's tab. Everything
 // else speaks. An oref the gate cannot match always speaks: absence of evidence is not suppression.
+// And with arcterm in front, the Needs-you toast (notifyevents.ts routeNotify) already says the question in the
+// same corner, drawn over the pet and its bubble, so the pet keeps its question mark and leaves the saying to it.
 export interface AskGateCtx {
     surface: string;
     focusTabId: string | undefined;
     askTabId: string | undefined;
     focusedBlockId: string | null;
+    // arcterm is focused and in-app toasts are on, so a toast says the question
+    toastSays: boolean;
 }
 
 export function shouldSpeakAsk(askOref: string | undefined, ctx: AskGateCtx): boolean {
+    if (ctx.toastSays) {
+        return false;
+    }
     if (askOref == null) {
         return true;
     }

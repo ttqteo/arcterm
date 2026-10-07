@@ -49,6 +49,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - On macOS the `Option` shortcuts work: `Option+Z` word wrap, `Option+T` file tree and `Option+E` editor on Code.
 - On macOS `Cmd`+click peeks a link, and holding `Cmd` underlines what can be peeked. `Ctrl`+click, the Mac's right
   click, never peeked.
+- The Jarvis pet no longer stays hidden under a **Needs you** toast: it no longer repeats the toast's question in its
+  own bubble (it keeps the `?` mark), and while it speaks it walks out from under a toast or a terminal instead of
+  standing still there.
 
 ## 0.15.4 — 2026-10-07
 

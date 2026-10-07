@@ -389,10 +389,11 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
             }
         }
         // A posture can stand for minutes, so it is not held on a terminal: hopped in place, the creature walks
-        // off the span to the nearest clear spot and holds there. A bubble or the peek holds it where it is,
-        // since both are anchored to it and are brief.
+        // off the span to the nearest clear spot and holds there. So does a bubble, which follows it there: a toast
+        // drawn over the pet hides the bubble with it, and a bubble over a terminal covers its last lines. Only the
+        // peek holds it where it is, since it is a panel you are working in.
         const spot = clearSpot(s.x, ledge, avoid);
-        if (!input.speaking && !input.peekOpen && spot !== s.x) {
+        if (!input.peekOpen && spot !== s.x) {
             s = s.name === "walk" ? { ...s, target: spot } : startWalk(s, spot, input, now);
             s = advance(s, input, now, (s) => still(s, "hold"));
             if (s.name === "walk") {

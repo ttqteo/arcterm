@@ -197,7 +197,14 @@ describe("askAgent", () => {
 });
 
 function gateCtx(over: Partial<AskGateCtx> = {}): AskGateCtx {
-    return { surface: "jarvis", focusTabId: undefined, askTabId: undefined, focusedBlockId: null, ...over };
+    return {
+        surface: "jarvis",
+        focusTabId: undefined,
+        askTabId: undefined,
+        focusedBlockId: null,
+        toastSays: false,
+        ...over,
+    };
 }
 
 describe("shouldSpeakAsk", () => {
@@ -225,6 +232,17 @@ describe("shouldSpeakAsk", () => {
 
     it("speaks when there is no oref to match against", () => {
         expect(shouldSpeakAsk(undefined, gateCtx({ focusedBlockId: "abc" }))).toBe(true);
+    });
+
+    // With arcterm in front, the Needs-you toast already says the question in the same corner, over the pet and its
+    // bubble; the pet keeps its question mark and leaves the saying to the toast (report once).
+    it("stays quiet when the in-app toast says the question", () => {
+        expect(shouldSpeakAsk("block:abc", gateCtx({ toastSays: true }))).toBe(false);
+        expect(shouldSpeakAsk(undefined, gateCtx({ toastSays: true }))).toBe(false);
+    });
+
+    it("speaks when no toast says it: arcterm in the background, or toasts turned off", () => {
+        expect(shouldSpeakAsk("block:abc", gateCtx({ toastSays: false }))).toBe(true);
     });
 });
 

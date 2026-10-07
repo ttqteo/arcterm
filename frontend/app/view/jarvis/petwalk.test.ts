@@ -299,16 +299,30 @@ describe("hold", () => {
         expect(overlaps(step.x, avoid)).toBe(false);
     });
 
-    it.each([
-        ["speaking", { speaking: true }],
-        ["the peek", { peekOpen: true }],
-    ] as [string, Partial<WalkerInput>][])("holds over a terminal in place while %s", (_label, over) => {
+    // the peek is a panel you are working in: the creature it is anchored to stays put under it
+    it("holds over a terminal in place while the peek is open", () => {
         const avoid: [number, number][] = [[380, 480]];
-        const inp = input({ posture: "review-gate", avoid, ...over });
+        const inp = input({ posture: "review-gate", avoid, peekOpen: true });
         const { step, steps } = drive(walker({ name: "rest", x: 400, due: T0 + 8_000 }), inp, T0, half, () => false);
         expect(steps.map((s) => s.state.name)).not.toContain("walk");
         expect(step.state.name).toBe("hold");
         expect(step.x).toBe(400);
+    });
+
+    // A bubble no longer pins it: a toast drawn over the pet hides the bubble with it, and a bubble over a terminal
+    // covers its last lines. It walks off with the bubble following, and speaks from the clear spot.
+    it.each([
+        ["with a posture", { posture: "review-gate" }],
+        ["with nothing else", {}],
+    ] as [string, Partial<WalkerInput>][])("walks off a covered spot while speaking, %s", (_label, over) => {
+        const avoid: [number, number][] = [[380, 480]];
+        const inp = input({ avoid, speaking: true, ...over });
+        const { step, steps } = drive(walker({ name: "rest", x: 400, due: T0 + 8_000 }), inp, T0, half, () => false);
+        expect(steps.map((s) => s.state.name)).toContain("walk");
+        expect(step.state.name).toBe("hold");
+        expect(step.pose).toBe("speak");
+        expect(step.x).toBe(clearSpot(400, LEDGE, avoid));
+        expect(overlaps(step.x, avoid)).toBe(false);
     });
 
     it("walks off a terminal it was held over once nothing holds it", () => {

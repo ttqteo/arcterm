@@ -14,6 +14,7 @@
 //                       buffer is in-memory, so a wavesrv restart replays nothing — the durable half of
 //                       Voice is the launch narrative above, which is why that one reads the DB.
 
+import { atoms, getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -118,6 +119,10 @@ export function PetSources({ model }: { model: AgentsViewModel }) {
                     focusTabId: globalStore.get(model.focusIdAtom),
                     askTabId: agent?.id,
                     focusedBlockId: focusedBlockId(),
+                    // routeNotify's own test: focused, with toasts on (the setting defaults to on)
+                    toastSays:
+                        globalStore.get(atoms.documentHasFocus) &&
+                        ((globalStore.get(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true),
                 };
                 if (!shouldSpeakAsk(data?.oref, ctx)) {
                     return;
