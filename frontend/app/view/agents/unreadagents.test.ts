@@ -72,16 +72,20 @@ describe("viewingIds", () => {
     const grid = { ids: ["a", "b"], focused: "a" };
 
     it("is the focused agent, or the whole grid when it is a cell", () => {
-        expect([...viewingIds(true, "terminal", "a", grid)].sort()).toEqual(["a", "b"]);
-        expect([...viewingIds(true, "terminal", "c", grid)]).toEqual(["c"]);
+        expect([...viewingIds(true, true, "terminal", "a", grid)].sort()).toEqual(["a", "b"]);
+        expect([...viewingIds(true, true, "terminal", "c", grid)]).toEqual(["c"]);
     });
 
     it("is nothing off the Agent surface, or with History, a session or a run over the terminal", () => {
-        expect(viewingIds(false, "terminal", "a", grid).size).toBe(0);
+        expect(viewingIds(true, false, "terminal", "a", grid).size).toBe(0);
         for (const center of ["history", "session", "run"] as const) {
-            expect(viewingIds(true, center, "a", grid).size).toBe(0);
+            expect(viewingIds(true, true, center, "a", grid).size).toBe(0);
         }
-        expect(viewingIds(true, "terminal", undefined, grid).size).toBe(0);
+        expect(viewingIds(true, true, "terminal", undefined, grid).size).toBe(0);
+    });
+
+    it("sees nothing while the window is not focused", () => {
+        expect(viewingIds(false, true, "terminal", "a", grid).size).toBe(0);
     });
 });
 

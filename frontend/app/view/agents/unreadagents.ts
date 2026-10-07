@@ -42,15 +42,17 @@ export function unreadLabel(n: number): string {
     return n > 9 ? "9+" : String(n);
 }
 
-/** Pure: the agents whose terminal is on screen. Only on the Agent surface with its terminal centre: the focused
- *  agent, and every cell of the grid when the focused agent is one of them (the grid then shows them all). */
+/** Pure: the agents whose terminal is on screen. Nothing while the window is not focused (arcterm behind another app
+ *  shows you nothing); otherwise only on the Agent surface with its terminal centre: the focused agent, and every cell
+ *  of the grid when the focused agent is one of them (the grid then shows them all). */
 export function viewingIds(
+    windowFocused: boolean,
     onAgentSurface: boolean,
     center: CenterMode,
     focusId: string | undefined,
     grid: GridState
 ): Set<string> {
-    if (!onAgentSurface || center !== "terminal" || focusId == null) {
+    if (!windowFocused || !onAgentSurface || center !== "terminal" || focusId == null) {
         return new Set();
     }
     return grid.ids.includes(focusId) ? new Set(grid.ids) : new Set([focusId]);
