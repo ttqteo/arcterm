@@ -227,6 +227,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`N` / `Shift`+`P` | Next / previous change in the open diff |
 | `Shift`+`D` | Split / unified |
 | `Shift`+`W` | Ignore whitespace |
+| `Alt`+`Z` | Toggle word wrap for the open file (shared with Code) |
 | `r` | Refresh changes and history |
 | `c` | In history: compare refs. In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |

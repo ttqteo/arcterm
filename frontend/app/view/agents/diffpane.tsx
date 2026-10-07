@@ -12,11 +12,12 @@ import { SkeletonLine } from "@/app/element/skeleton";
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { openInCode } from "@/app/view/code/codestore";
+import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { joinRepoPath, splitRepoPath } from "@/util/paths";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronUp, Code, ExternalLink, FileText, Pilcrow } from "lucide-react";
+import { ChevronDown, ChevronUp, Code, ExternalLink, FileText, Pilcrow, WrapText } from "lucide-react";
 import { motion } from "motion/react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -24,7 +25,7 @@ import { firstDifferingLine } from "./diffcontent";
 import { diffPairAtom } from "./diffcontentstore";
 import { emptyDiffState, type EmptyDiff } from "./diffempty";
 import { changePosition, clearDiffNav, diffNavPosAtom, gotoChange, setDiffNav } from "./diffnav";
-import { ignoreWsAtom, paneHeaderLayout, paneOptions, splitViewAtom } from "./diffoptions";
+import { diffWrapPathAtom, ignoreWsAtom, paneHeaderLayout, paneOptions, splitViewAtom } from "./diffoptions";
 import { activeReviewKeyAtom, reviewModeAtom } from "./linecommentstore";
 import { LineReviewTray } from "./linereviewtray";
 import { ReviewList } from "./reviewlistview";
@@ -100,12 +101,20 @@ export function DiffPane({
     const hostRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
     const reviewing = review != null && repoCwd != null && mode === "review";
+    const wrapPath = path != null && repoCwd != null && !reviewing ? joinRepoPath(repoCwd, path) : "";
+    const wrap = useWrap(wrapPath);
 
     // the tray and the send key read the comments of the repository this pane shows, in either mode
     useEffect(() => {
         globalStore.set(activeReviewKeyAtom, repoCwd ?? "");
         return () => globalStore.set(activeReviewKeyAtom, "");
     }, [repoCwd]);
+
+    // Alt+Z (bindings.ts files:wrap) toggles the file this pane shows
+    useEffect(() => {
+        globalStore.set(diffWrapPathAtom, wrapPath);
+        return () => globalStore.set(diffWrapPathAtom, "");
+    }, [wrapPath]);
 
     useEffect(() => {
         const el = hostRef.current;
@@ -119,7 +128,10 @@ export function DiffPane({
     }, []);
 
     const layout = paneHeaderLayout(width);
-    const options = useMemo(() => paneOptions(split && layout.split, ignoreWs), [split, layout.split, ignoreWs]);
+    const options = useMemo(
+        () => paneOptions(split && layout.split, ignoreWs, wrap),
+        [split, layout.split, ignoreWs, wrap]
+    );
     const empty = emptyDiffState({ path, pair, nothingToCompare });
 
     const body = () => {
@@ -291,6 +303,22 @@ export function DiffPane({
                     <Pilcrow size={13} />
                     {layout.labelled ? "Hide whitespace" : null}
                 </button>
+                {wrapPath !== "" && empty == null ? (
+                    <button
+                        data-diff-wrap
+                        onClick={() => toggleWrap(wrapPath)}
+                        title={`${wrap ? "Stop wrapping long lines" : "Wrap long lines"} (${formatChordString("Alt:z")})`}
+                        aria-label={`Wrap long lines (${formatChordString("Alt:z")})`}
+                        aria-pressed={wrap}
+                        className={cn(
+                            headerBtn,
+                            wrap ? "border-accent/30 bg-accentbg text-ink-hi" : "text-ink-mid hover:text-ink-hi"
+                        )}
+                    >
+                        <WrapText size={13} />
+                        {layout.labelled ? "Wrap" : null}
+                    </button>
+                ) : null}
                 {repoCwd && (
                     <button
                         onClick={() =>

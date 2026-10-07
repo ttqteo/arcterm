@@ -18,7 +18,7 @@ import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
 import { compareOnAtom, compareSelectionAtom, leaveCompare, swapCompareRefs } from "@/app/view/agents/comparestore";
 import { historyCollapsedAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
-import { ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
+import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
 import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
@@ -53,7 +53,7 @@ import {
     toggleDir,
 } from "@/app/view/code/codestore";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
-import { toggleCodeWrap } from "@/app/view/code/codewrap";
+import { toggleCodeWrap, toggleWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import {
@@ -1130,6 +1130,21 @@ export function buildFilesBindings(): Binding[] {
             label: "Ignore whitespace",
             when: on,
             run: () => globalStore.set(ignoreWsAtom, !globalStore.get(ignoreWsAtom)),
+        },
+        {
+            // Alt:z as on Code (code:wrap); the choice is per file and shared with Code and the File tab
+            id: "files:wrap",
+            keys: "Alt:z",
+            group: "Diff",
+            label: "Toggle word wrap",
+            when: on,
+            run: () => {
+                const abs = globalStore.get(diffWrapPathAtom);
+                if (abs === "") {
+                    return false; // Review mode or no file open — let the key pass
+                }
+                toggleWrap(abs);
+            },
         },
         {
             id: "files:swap-refs",

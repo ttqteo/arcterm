@@ -28,12 +28,17 @@ export const splitViewAtom = atom<boolean>(false);
 // was opened from. Off by default so the two agree; on is the opt-in for reading through a reformat.
 export const ignoreWsAtom = atom<boolean>(false);
 
-export function paneOptions(split: boolean, ignoreWs: boolean): MonacoTypes.editor.IDiffEditorOptions {
+// The file the pane shows, as an absolute path ("" when none), so Alt+Z can toggle its wrap from outside the pane.
+// Wrap itself is codewrap.ts's per-file choice, shared with Code and the agent panel's File tab.
+export const diffWrapPathAtom = atom<string>("");
+
+export function paneOptions(split: boolean, ignoreWs: boolean, wrap: boolean): MonacoTypes.editor.IDiffEditorOptions {
     return {
         readOnly: true,
         originalEditable: false,
         renderSideBySide: split,
         ignoreTrimWhitespace: ignoreWs,
+        wordWrap: wrap ? "on" : "off",
         hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 3, revealLineCount: 20 },
         scrollBeyondLastLine: false,
         minimap: { enabled: false },

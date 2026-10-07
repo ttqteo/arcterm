@@ -18,11 +18,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A `.tex` file opens on Code as a readable preview: its title and authors, numbered headings, and the prose with
   `\cite`/`\ref` keys and rendered math. Double-click a sentence to edit it in Source. When the paper has a built PDF
   (Doc review's build, or the one beside the main file), a **PDF** mode shows it with how old it is.
+- The Diff surface has a **Wrap** toggle (`Alt+Z`) too, shared per file with Code and the agent panel's File tab.
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
 
 ### Changed
 
+- Added and removed lines in a diff are a softer green and red; a new file no longer reads as a solid block of green.
 - Opening an idea in Jarvis no longer shows an empty initiative plan. It shows the whole title and when you jotted it,
   with **Plan it** (an agent breaks the idea into chunks) and **Add first chunk**, which turns it into an initiative card.
 - An agent notification says what it is at a glance: an amber question tile and **Needs you**, a green check and
