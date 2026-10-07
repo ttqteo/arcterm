@@ -6,15 +6,26 @@ const reloadWaveObject = vi.fn();
 
 vi.mock("@/app/store/jotaiStore", () => ({ globalStore: { get: () => true } }));
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { SetMetaCommand: (...a: any[]) => setMeta(...a) } }));
+const agyBlocks = new Set(["block:agy-1", "block:agy-2", "block:agy-3"]);
 vi.mock("@/app/store/wos", () => ({
-    getObjectValue: () => ({
-        meta: {
-            controller: "cmd",
-            cmd: "pi",
-            "agent:baseargs": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
-            "cmd:args": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
-        },
-    }),
+    getObjectValue: (oref: string) =>
+        agyBlocks.has(oref)
+            ? {
+                  meta: {
+                      controller: "cmd",
+                      cmd: "agy",
+                      "agent:baseargs": ["--continue", "--sandbox"],
+                      "cmd:args": ["--continue", "--sandbox", "-i", "task"],
+                  },
+              }
+            : {
+                  meta: {
+                      controller: "cmd",
+                      cmd: "pi",
+                      "agent:baseargs": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
+                      "cmd:args": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
+                  },
+              },
     reloadWaveObject: (...a: any[]) => reloadWaveObject(...a),
 }));
 
@@ -23,6 +34,7 @@ describe("shouldPersistResume", () => {
         expect(shouldPersistResume("claude", true)).toBe(true);
         expect(shouldPersistResume("opencode", true)).toBe(true);
         expect(shouldPersistResume("pi", true)).toBe(true);
+        expect(shouldPersistResume("agy", true)).toBe(true);
     });
 
     it("does not resume when Remember flags is off (user wants a clean slate)", () => {
@@ -70,6 +82,40 @@ describe("persistResume (pi)", () => {
     it("drops a pi session with no transcript path (no id fallback for pi)", async () => {
         const oref = "block:pi-3";
         await persistResume(oref, "pi", undefined);
+        expect(setMeta).not.toHaveBeenCalled();
+    });
+});
+
+describe("persistResume (agy)", () => {
+    // every agy transcript is named transcript_full.jsonl, so the transcript stem is no key: the status's
+    // sessionid is
+    const transcript = (id: string) =>
+        `/Users/x/.gemini/antigravity-cli/brain/${id}/.system_generated/logs/transcript_full.jsonl`;
+
+    beforeEach(() => {
+        setMeta.mockClear();
+        reloadWaveObject.mockClear();
+    });
+
+    it("bakes the status sessionid as agy's --conversation, dropping --continue and the task", async () => {
+        await persistResume("block:agy-1", "agy", transcript("c1"), "c1");
+        expect(setMeta.mock.calls[0][1]).toEqual({
+            oref: "block:agy-1",
+            meta: { "cmd:args": ["--conversation", "c1", "--sandbox"] },
+        });
+    });
+
+    it("gives two agy blocks whose transcripts both end in transcript_full.jsonl their own ids", async () => {
+        await persistResume("block:agy-2", "agy", transcript("c2"), "c2");
+        await persistResume("block:agy-3", "agy", transcript("c3"), "c3");
+        expect(setMeta.mock.calls.map((c) => (c[1] as any).meta["cmd:args"].slice(0, 2))).toEqual([
+            ["--conversation", "c2"],
+            ["--conversation", "c3"],
+        ]);
+    });
+
+    it("writes nothing for an agy status with no sessionid (the stem would be the same for every agy)", async () => {
+        await persistResume("block:agy-1", "agy", transcript("c9"), undefined);
         expect(setMeta).not.toHaveBeenCalled();
     });
 });

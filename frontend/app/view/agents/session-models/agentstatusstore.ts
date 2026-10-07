@@ -172,7 +172,7 @@ export function setupAgentStatusSubscription() {
                 const prev = globalStore.get(getAgentStatusAtom(data.oref));
                 globalStore.set(getAgentStatusAtom(data.oref), mergeAgentStatusData(prev, data));
                 // resume-on-reopen: bake this session's resume key into the block's launch command
-                void persistResume(data.oref, data.agent, data.transcriptpath);
+                void persistResume(data.oref, data.agent, data.transcriptpath, data.sessionid);
                 if (data.state === "idle") {
                     // turn ended: reset the manual subagent-expand override (disk-backed list persists)
                     globalStore.set(getSubagentExpandAtom(data.oref), undefined);

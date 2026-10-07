@@ -5,6 +5,7 @@
 // logo instead of an ambiguous colored initial (claude and codex both start with "C"). The main app has
 // no svgr, so .svg imports are URLs (Vite assets); render as <img src>. Unknown authors: undefined.
 
+import AntigravityLogo from "@/app/asset/antigravity.svg";
 import ClaudeLogo from "@/app/asset/claude-color.svg";
 import CodexLogo from "@/app/asset/codex.svg";
 import OpenCodeLogo from "@/app/asset/opencode.png";
@@ -15,6 +16,7 @@ const RUNTIME_LOGO: Record<string, string> = {
     codex: CodexLogo,
     opencode: OpenCodeLogo,
     pi: PiLogo,
+    agy: AntigravityLogo,
 };
 
 // The brand mark URL for a runtime author name (case-insensitive), or undefined for

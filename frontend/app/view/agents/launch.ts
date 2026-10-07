@@ -1,13 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-export type Runtime = "claude" | "codex" | "opencode" | "pi" | "terminal";
+export type Runtime = "claude" | "codex" | "opencode" | "pi" | "agy" | "terminal";
 
 const RUNTIME_CMD: Record<Runtime, string> = {
     claude: "claude",
     codex: "codex",
     opencode: "opencode",
     pi: "pi",
+    agy: "agy",
     terminal: "",
 };
 
@@ -47,6 +48,11 @@ export const RUNTIME_FLAGS: Record<Runtime, FlagDef[]> = {
         { id: "continue", flag: "-c", desc: "Resume the last session" },
     ],
     pi: [],
+    agy: [
+        { id: "skip-permissions", flag: "--dangerously-skip-permissions", desc: "Bypass all permission prompts" },
+        { id: "continue", flag: "--continue", desc: "Resume the last conversation" },
+        { id: "sandbox", flag: "--sandbox", desc: "Run tools in a sandbox" },
+    ],
     terminal: [],
 };
 
@@ -146,6 +152,10 @@ export function buildLaunchMeta(spec: LaunchMetaSpec): Record<string, unknown> {
     const args = [...baseArgs];
     const task = spec.task.trim();
     if (task) {
+        // agy takes its opening prompt through -i, not as a positional arg
+        if (spec.runtime === "agy") {
+            args.push("-i");
+        }
         args.push(task);
     }
     const meta: Record<string, unknown> = {
@@ -216,6 +226,25 @@ export function resumeArgsForOpencode(sessionId: string, baseArgs: string[]): st
         kept.push(a);
     }
     return ["-s", sessionId, ...kept];
+}
+
+// Recompose an agy launch as a resume: `agy --conversation <id> <baseArgs>`. agy names its own conversation, so the
+// id is the status's session id (never a transcript stem: every agy transcript is transcript_full.jsonl). A prior
+// --conversation <id>, -c or --continue is stripped so a repeated resume cannot stack directives.
+export function resumeArgsForAgy(sessionId: string, baseArgs: string[]): string[] {
+    const kept: string[] = [];
+    for (let i = 0; i < baseArgs.length; i++) {
+        const a = baseArgs[i];
+        if (a === "--conversation") {
+            i++; // also skip its id value
+            continue;
+        }
+        if (a === "-c" || a === "--continue") {
+            continue;
+        }
+        kept.push(a);
+    }
+    return ["--conversation", sessionId, ...kept];
 }
 
 // Recompose a pi launch as a resume: `pi --session <full transcript path> <baseArgs>`. Pi's resume

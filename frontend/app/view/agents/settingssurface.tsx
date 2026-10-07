@@ -91,6 +91,7 @@ const FLAG_RUNTIMES: { id: Runtime; name: string }[] = [
     { id: "codex", name: "Codex" },
     { id: "opencode", name: "OpenCode" },
     { id: "pi", name: "Pi" },
+    { id: "agy", name: "Antigravity" },
 ];
 
 const OVERRIDE_ROLES: OverrideRole[] = ["accent", "success", "warning", "error"];
