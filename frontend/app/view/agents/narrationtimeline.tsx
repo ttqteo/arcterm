@@ -8,7 +8,7 @@ import { cn } from "@/util/util";
 import { ArrowUpRight, Ban, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Layers, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { MOTION, composerReveal, shouldFadeEntry } from "@/app/element/motiontokens";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
     burstRenderMode,
     conversationText,
@@ -23,6 +23,7 @@ import {
 } from "./agentsviewmodel";
 import { MarkdownMessage } from "./markdownmessage";
 import { PathLink } from "./pathlinkcontext";
+import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
 import { highlightLine } from "./highlight";
 import { formatDuration } from "./tooldetail";
 
@@ -530,16 +531,22 @@ export function NarrationTimeline({
     entries,
     accentLatest,
     active,
+    pinBg,
     className,
 }: {
     entries: AgentEntry[];
     accentLatest?: boolean;
     active?: boolean;
+    // the scroller's background: given, your prompt pins to the top once it scrolls away (pinnedpromptbar.tsx)
+    pinBg?: string;
     className?: string;
 }) {
     const [expanded, setExpanded] = useState<Set<number>>(new Set());
     const items = useMemo(() => groupTimeline(entries), [entries]);
     const visibleItems = items.length > TIMELINE_RENDER_CAP ? items.slice(items.length - TIMELINE_RENDER_CAP) : items;
+    const rootRef = useRef<HTMLDivElement>(null);
+    const pinned = usePinnedPrompt(rootRef);
+    const prompts = visibleItems.flatMap((item) => (item.kind === "user" ? [item.text] : []));
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [
@@ -562,7 +569,8 @@ export function NarrationTimeline({
     const expand = (startIndex: number) => setExpanded((prev) => new Set(prev).add(startIndex));
 
     return (
-        <div className={cn("leading-relaxed", className)}>
+        <div ref={rootRef} className={cn("leading-relaxed", className)}>
+            {pinBg ? <PinnedPromptBar rootRef={rootRef} index={pinned} text={prompts[pinned]} bg={pinBg} /> : null}
             <AnimatePresence initial={false}>
             {visibleItems.map((item, idx) => {
                 if (item.kind === "message") {
@@ -593,6 +601,7 @@ export function NarrationTimeline({
                     return (
                         <motion.div
                             key={item.index}
+                            data-user-prompt
                             className="mt-2 flex justify-end pl-[30px]"
                             onContextMenu={copyMenu(item.text)}
                             initial={shouldFadeEntry("user") ? { opacity: 0 } : false}

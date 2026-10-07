@@ -12,8 +12,8 @@ import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, Check } from "lucide-react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
@@ -365,7 +365,32 @@ function RuntimeTile({ runtime }: { runtime: string }) {
     );
 }
 
-export function SoloDetail({ model, session }: { model: AgentsViewModel; session: LiveSession }) {
+// the header's one meta line: "arcterm · main · 16h · 19.2M tok", each value named in its tooltip; an unknown one is left out
+function MetaLine({ items }: { items: { k: string; v: string }[] }) {
+    const known = items.filter((m) => m.v !== "—");
+    return (
+        <span className="min-w-0 shrink-[2] truncate text-[11px] tabular-nums text-muted">
+            {known.map((m, i) => (
+                <Fragment key={m.k}>
+                    {i > 0 ? <span className="text-ink-faint"> · </span> : null}
+                    <span title={m.k}>{m.v}</span>
+                </Fragment>
+            ))}
+        </span>
+    );
+}
+
+// onBack: the Agent surface's session pane puts its way back to the terminal at the start of the header row
+export function SoloDetail({
+    model,
+    session,
+    onBack,
+}: {
+    model: AgentsViewModel;
+    session: LiveSession;
+    onBack?: () => void;
+}) {
+    const rt = runtimeMeta(session.runtime);
     const status: Status = session.live
         ? session.needsAttention
             ? { key: "asking", text: "asking" }
@@ -373,21 +398,33 @@ export function SoloDetail({ model, session }: { model: AgentsViewModel; session
         : { key: "done", text: "done" };
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-1 flex flex-none items-start gap-3.5 border-b border-edge-faint pb-4">
-                <RuntimeTile runtime={session.runtime} />
-                <div className="min-w-0 flex-1">
-                    <div className="mb-[7px] flex items-center gap-3">
-                        <h2 className="truncate text-[19px] font-bold tracking-[-0.01em] text-primary">
-                            {session.task || "(untitled session)"}
-                        </h2>
-                        <StatusMark status={status} />
-                    </div>
-                    <Meta items={[{ k: "project", v: session.projectname || "—" }, ...sessionMeta(session).slice(1)]} />
+            <div className="mb-1 flex flex-none items-center gap-2.5 border-b border-edge-faint pb-2.5">
+                {onBack ? (
+                    <button
+                        type="button"
+                        data-agent-session-back
+                        onClick={onBack}
+                        title="Back to terminal"
+                        aria-label="Back to terminal"
+                        className="-ml-1.5 flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <ArrowLeft size={14} aria-hidden />
+                    </button>
+                ) : null}
+                <span className={cn("flex-none text-[13px]", rt.text)} title={rt.label}>
+                    {rt.glyph}
+                </span>
+                <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
+                    <h2 className="min-w-0 truncate text-[15px] font-semibold text-primary">
+                        {session.task || "(untitled session)"}
+                    </h2>
+                    <StatusMark status={status} />
+                    <MetaLine
+                        items={[{ k: "project", v: session.projectname || "—" }, ...sessionMeta(session).slice(1)]}
+                    />
                 </div>
-                <ViewToggle model={model} className="self-center" />
-                <div className="self-center">
-                    <PrimaryButton model={model} session={session} strong />
-                </div>
+                <ViewToggle model={model} />
+                <PrimaryButton model={model} session={session} strong />
             </div>
             <SessionBody model={model} session={session} empty="" className="pb-2" />
         </div>

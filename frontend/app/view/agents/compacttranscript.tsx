@@ -11,7 +11,7 @@ import { composerReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { Check, ChevronDown, ChevronRight, Copy, FileDiff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { burstRenderMode, conversationText, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import {
     filesChangedLabel,
@@ -30,6 +30,7 @@ import {
     ToolDetailBody,
     ToolLine,
 } from "./narrationtimeline";
+import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
 
 // items kept in the DOM; an older transcript past this drops its oldest items, as the live feed does
 const RENDER_CAP = 200;
@@ -46,6 +47,7 @@ function UserMessage({ text, onContextMenu }: { text: string; onContextMenu: (e:
     return (
         <div
             data-compact-user
+            data-user-prompt
             onContextMenu={onContextMenu}
             className="mt-4 rounded-[8px] border border-edge-faint bg-surface-raised px-3 py-2"
         >
@@ -223,6 +225,9 @@ export function CompactTranscript({
     const [opened, setOpened] = useState<Set<number>>(new Set());
     const items = useMemo(() => groupCompact(entries), [entries]);
     const visible = items.length > RENDER_CAP ? items.slice(items.length - RENDER_CAP) : items;
+    const rootRef = useRef<HTMLDivElement>(null);
+    const pinned = usePinnedPrompt(rootRef);
+    const prompts = visible.flatMap((item) => (item.kind === "user" ? [item.text] : []));
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [
@@ -245,7 +250,12 @@ export function CompactTranscript({
         });
 
     return (
-        <div data-compact-transcript className={cn("mx-auto w-full max-w-[760px] pb-2 leading-relaxed", className)}>
+        <div
+            ref={rootRef}
+            data-compact-transcript
+            className={cn("mx-auto w-full max-w-[760px] pb-2 leading-relaxed", className)}
+        >
+            <PinnedPromptBar rootRef={rootRef} index={pinned} text={prompts[pinned]} bg="bg-background" />
             {visible.map((item, idx) => {
                 switch (item.kind) {
                     case "user":

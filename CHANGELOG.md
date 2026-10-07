@@ -14,6 +14,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - An Active agent's row shows its session's token total after the model, as a Conversations row does, updated each
   time a turn ends.
+- In an agent's card and a conversation's transcript, your prompt pins to the top once its turn's reply scrolls it
+  away, so you can see what the reply answers; click it to scroll back.
+- A conversation's header is one compact row: title, status and project, branch, time and tokens on one line, with
+  the way back to the terminal at its start.
 
 ### Fixed
 

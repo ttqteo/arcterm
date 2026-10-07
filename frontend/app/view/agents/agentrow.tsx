@@ -513,7 +513,7 @@ export const AgentRow = memo(function AgentRow({
                         ) : null}
                         {entries.length > 0 ? (
                             <AgentPathLinks agent={agent}>
-                                <NarrationTimeline entries={entries} accentLatest active={!idle} />
+                                <NarrationTimeline entries={entries} accentLatest active={!idle} pinBg="bg-lane" />
                             </AgentPathLinks>
                         ) : null}
                     </div>

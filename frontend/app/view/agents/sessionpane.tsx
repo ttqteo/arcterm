@@ -42,16 +42,19 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
         [archive, roster, sel]
     );
     return (
-        <div data-agent-session className="flex min-h-0 min-w-0 flex-1 flex-col px-8 py-[22px]">
-            <button
-                type="button"
-                data-agent-session-back
-                onClick={showTerminal}
-                className="mb-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                <ArrowLeft size={13} aria-hidden />
-                Back to terminal
-            </button>
+        <div data-agent-session className="flex min-h-0 min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[14px]">
+            {session == null ? (
+                // the header carries the way back once the session shows; until then (loading, missing) it stands alone
+                <button
+                    type="button"
+                    data-agent-session-back
+                    onClick={showTerminal}
+                    className="mb-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <ArrowLeft size={13} aria-hidden />
+                    Back to terminal
+                </button>
+            ) : null}
             <div className="flex min-h-0 flex-1 flex-col">
                 {archive == null ? (
                     <TranscriptSkeleton className="pt-3" />
@@ -60,7 +63,7 @@ export function SessionPane({ model }: { model: AgentsViewModel }) {
                         {loadError ? "Could not read the session archive." : "This session is not in the archive yet."}
                     </div>
                 ) : (
-                    <SoloDetail model={model} session={session} />
+                    <SoloDetail model={model} session={session} onBack={showTerminal} />
                 )}
             </div>
         </div>
