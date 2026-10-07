@@ -1,20 +1,20 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The session block that opens the Agent details rail. Closed, it is one row: the rail's status line (context and
-// spend, passed in as head) with a chevron, and Compact/Clear under it when offered. Open, it adds the session's total
-// tokens over a tokens bar, its facts (the rail passes them in as children), and a toggle for the insight, the
-// per-class split (tokens + ≈ spend) and, for a session that used more than one model, the per-model breakdown, from
-// the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, in the head; a single model's
-// name is the Model line. Class fills come from usagestats.ts's CLASS_FILL (theme tokens only). Spend is an estimate.
+// The session block that opens the Agent details rail, shown whole: the rail's status line (context and spend, passed
+// in as head), the session's total tokens before a tokens bar, its facts (the rail passes them in as children), then
+// Compact/Clear when offered (actions) with the Breakdown toggle at the right. The breakdown is the one part that folds:
+// the insight, the per-class split (tokens + ≈ spend) and, for a session that used more than one model, the per-model
+// breakdown, from the session's own transcript (transcriptusagestore/sessionusage). The spend shows once, in the head;
+// a single model's name is in the facts. Class fills come from usagestats.ts's CLASS_FILL (theme tokens only). Spend is
+// an estimate.
 
 import { StackedMeter } from "@/app/element/meter";
 import { paneReveal } from "@/app/element/motiontokens";
-import { railSectionOpenAtom, sectionOpen, toggleSection, type RailSectionHeader } from "@/app/element/railsections";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, ChevronUp, Lightbulb } from "lucide-react";
+import { ChevronDown, ChevronUp, Lightbulb } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
 import { prettyModel } from "./modellabel";
@@ -32,25 +32,21 @@ function pctStr(n: number): string {
     return +n.toFixed(1) + "%";
 }
 
-// open, the block's open state is kept with the rail's sections (railSectionOpenAtom) under this id
-const SESSION_ID = "session";
-const SESSION_HEADER: RailSectionHeader = { defaultOpen: false };
-
-// UsageHead is the session's total tokens over the tokens bar, whose legend is the breakdown
-function UsageHead({ usage }: { usage: SessionUsage }) {
+// UsageBar is the session's total tokens before the tokens bar, whose legend is the breakdown
+function UsageBar({ usage }: { usage: SessionUsage }) {
     return (
-        <>
-            <div className="mb-[6px] flex items-baseline gap-[5px]">
-                <span className="text-[12px] font-semibold tabular-nums text-primary">{fmt(usage.totalTokens)}</span>
-                <span className="text-[11px] text-muted">tokens</span>
-            </div>
+        <div title={`${fmt(usage.totalTokens)} tokens this session`} className="flex min-w-0 items-center gap-[8px]">
+            <span className="flex-none text-[11.5px] font-semibold tabular-nums text-primary">
+                {fmt(usage.totalTokens)}
+            </span>
             <StackedMeter
                 height={6}
                 radius={3}
+                className="min-w-0 flex-1"
                 segs={usage.classes.map((c) => ({ key: c.cls, value: c.tokens, fill: CLASS_FILL[c.cls] }))}
                 total={usage.totalTokens}
             />
-        </>
+        </div>
     );
 }
 
@@ -146,95 +142,58 @@ export function SessionSection({
     children,
 }: {
     head: ReactNode; // the status line: context on the left, spend on the right
-    actions?: ReactNode; // shown under the head, open or closed
+    actions?: ReactNode; // Compact/Clear, on the Breakdown toggle's row
     children: ReactNode; // the session's facts
 }) {
     const usage = useAtomValue(sessionUsageAtom);
-    const [stored, setStored] = useAtom(railSectionOpenAtom);
     const [breakdown, setBreakdown] = useAtom(usageBreakdownAtom);
-    const open = sectionOpen(stored, SESSION_ID, SESSION_HEADER);
     const loaded = usage != null && usage !== UsageUnavailable && usage.totalTokens > 0 ? usage : null;
 
     return (
-        <div data-rail-session data-open={open ? "true" : "false"} className="flex flex-col pt-[2px]">
-            <button
-                type="button"
-                aria-expanded={open}
-                aria-controls="rail-session-body"
-                title={open ? "Hide session details" : "Show session details"}
-                onClick={() => setStored(toggleSection(stored, SESSION_ID, SESSION_HEADER))}
-                className="group -mx-[6px] flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] py-[3px] text-left hover:bg-surface-hover"
-            >
-                {head}
-                <ChevronRight
-                    size={12}
-                    aria-hidden
-                    className={cn(
-                        "flex-none text-ink-faint transition-transform group-hover:text-secondary",
-                        open && "rotate-90"
-                    )}
-                />
-            </button>
-            {actions}
+        <div data-rail-session className="flex flex-col pt-[2px]">
+            <div className="flex min-w-0 items-center py-[3px]">{head}</div>
+            <div className="mt-[6px]">
+                {usage == null ? (
+                    <SkeletonLine className="h-[6px] w-full rounded-[3px]" />
+                ) : usage === UsageUnavailable ? (
+                    <div className="text-[11.5px] text-muted">Token usage unavailable.</div>
+                ) : loaded == null ? (
+                    <div className="text-[11.5px] text-muted">No token usage recorded yet.</div>
+                ) : (
+                    <UsageBar usage={loaded} />
+                )}
+            </div>
+            <div className="mt-[10px]">{children}</div>
+            {actions != null || loaded ? (
+                <div className="-ml-[6px] mt-[6px] flex items-center gap-[4px]">
+                    {actions}
+                    {loaded ? (
+                        <button
+                            type="button"
+                            onClick={() => setBreakdown((v) => !v)}
+                            aria-expanded={breakdown}
+                            aria-controls="rail-session-breakdown"
+                            className="-mr-[6px] ml-auto inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
+                        >
+                            Breakdown
+                            {breakdown ? <ChevronUp size={11} aria-hidden /> : <ChevronDown size={11} aria-hidden />}
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
             <AnimatePresence initial={false}>
-                {open ? (
+                {loaded && breakdown ? (
                     <motion.div
-                        key="session-body"
-                        id="rail-session-body"
+                        key="breakdown"
+                        id="rail-session-breakdown"
+                        data-rail-breakdown
                         variants={paneReveal}
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        className="overflow-hidden"
+                        className="overflow-hidden pb-[4px]"
                     >
-                        <div className="pb-[4px] pt-[10px]">
-                            {usage == null ? (
-                                <div>
-                                    <SkeletonLine className="h-[12px] w-[90px]" />
-                                    <SkeletonLine className="mt-[6px] h-[6px] w-full rounded-[3px]" />
-                                </div>
-                            ) : usage === UsageUnavailable ? (
-                                <div className="text-[11.5px] text-muted">Token usage unavailable.</div>
-                            ) : loaded == null ? (
-                                <div className="text-[11.5px] text-muted">No token usage recorded yet.</div>
-                            ) : (
-                                <UsageHead usage={loaded} />
-                            )}
-
-                            <div className="mt-[12px]">{children}</div>
-
-                            {loaded ? (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={() => setBreakdown((v) => !v)}
-                                        aria-expanded={breakdown}
-                                        className="-ml-[6px] mt-[8px] inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] text-[10.5px] font-semibold text-accent-soft hover:bg-surface-hover"
-                                    >
-                                        {breakdown ? "Hide breakdown" : "Show breakdown"}
-                                        {breakdown ? (
-                                            <ChevronUp size={11} aria-hidden />
-                                        ) : (
-                                            <ChevronDown size={11} aria-hidden />
-                                        )}
-                                    </button>
-                                    <AnimatePresence initial={false}>
-                                        {breakdown ? (
-                                            <motion.div
-                                                key="breakdown"
-                                                variants={paneReveal}
-                                                initial="initial"
-                                                animate="animate"
-                                                exit="exit"
-                                                className="overflow-hidden"
-                                            >
-                                                <UsageBreakdown usage={loaded} />
-                                            </motion.div>
-                                        ) : null}
-                                    </AnimatePresence>
-                                </>
-                            ) : null}
-                        </div>
+                        <UsageBreakdown usage={loaded} />
                     </motion.div>
                 ) : null}
             </AnimatePresence>
