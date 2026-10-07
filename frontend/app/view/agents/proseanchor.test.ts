@@ -411,3 +411,12 @@ describe("formatRequest with a suggestion", () => {
         );
     });
 });
+
+describe("wordDiff at the end of a paragraph", () => {
+    it("keeps the last word when text is added after it", () => {
+        expect(wordDiff("It ends here.", "It ends here. More words.")).toEqual([
+            { op: "same", text: "It ends here. " },
+            { op: "insert", text: "More words." },
+        ]);
+    });
+});

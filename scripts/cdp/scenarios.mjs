@@ -5365,6 +5365,114 @@ const codeTexPdf = {
     },
 };
 
+// --- code-side-column: the read-only second column on Code -----------------------------------
+// A temp git repo with a paper (main.tex), its built PDF (main.pdf) and a generated macros file (numbers.tex).
+// Ctrl+\ opens main.tex to the side on its PDF; the side's Preview follows typing in the main column (the draft, not
+// the disk); numbers.tex dragged from the tree onto the right half replaces it and opens on Source, its only mode;
+// × closes the column. Draft edits are discarded in teardown.
+const CODE_SIDE_NUMBERS = String.raw`% generated from numbers/ledger.yaml
+\newcommand{\NCases}{61}
+`;
+
+const codeSideColumn = {
+    name: "code-side-column",
+    surface: "code",
+    async arrange() {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-code-side-"));
+        execFileSync("git", ["init", "-q"], { cwd });
+        writeFileSync(join(cwd, "main.tex"), CODE_TEX_PAPER);
+        writeFileSync(join(cwd, "main.pdf"), codeTexPdf1("main.pdf, built beside main.tex"));
+        writeFileSync(join(cwd, "numbers.tex"), CODE_SIDE_NUMBERS);
+        return { cwd };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const wait = (expr, ms) => docReviewWait(h, expr, ms);
+        const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+        const SIDE = `document.querySelector("[data-code-side]")`;
+
+        await h.goto("code");
+        await h.rpc("eventpublish", { event: "openfile", data: { path: join(ctx.cwd, "main.tex") } });
+        await wait(`document.querySelector('[data-tex-preview]')`, 8000);
+        await h.ev(
+            `document.dispatchEvent(new KeyboardEvent('keydown', { key: String.fromCharCode(92), code: 'Backslash', ctrlKey: true, bubbles: true }))`
+        );
+        const opened = await wait(`${SIDE}?.querySelector('iframe[data-code-side-pdf]')`, 6000);
+        const pressed1 = await h.ev(`${SIDE}?.querySelector('[data-code-side-mode][aria-pressed="true"]')?.textContent ?? null`);
+        rec("1. Ctrl+\\ opens the paper to the side on its built PDF", opened && pressed1 === "PDF", `opened=${opened} mode=${pressed1}`);
+        await h.shot("cdp-shots/code-side-pdf.png");
+
+        await h.ev(`${SIDE}?.querySelector('[data-code-side-mode="preview"]')?.click()`);
+        await h.ev(`document.querySelector('[data-code-view-mode="source"]')?.click()`);
+        await wait(`document.querySelector('[data-code-editor-area] .monaco-editor textarea')`, 6000);
+        // a real click at the start of the line holding \end{document} (a scripted focus() leaves the page without
+        // keyboard focus), then type there, so the words land in the body
+        const at = await h.ev(`(() => {
+            const bs = String.fromCharCode(92);
+            const line = [...document.querySelectorAll('[data-code-editor-area] .monaco-editor .view-line')].find((l) =>
+                (l.textContent || '').startsWith(bs + 'end{document}')
+            );
+            const r = line?.getBoundingClientRect();
+            return r ? { x: Math.round(r.left + 2), y: Math.round(r.top + r.height / 2) } : null;
+        })()`);
+        if (at != null) {
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+            }
+            await nap(200);
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36 });
+            await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Home", code: "Home", windowsVirtualKeyCode: 36 });
+            await h.cdp("Input.insertText", { text: "Typed beside the side column.\n" });
+        }
+        const followed = await wait(`(${SIDE}?.querySelector('[data-tex-preview]')?.textContent ?? '').includes('Typed beside the side column')`, 5000);
+        rec("2. the side's Preview follows typing in the main column before a save", followed, `followed=${followed}`);
+        await h.shot("cdp-shots/code-side-follows.png");
+
+        const dropped = await h.ev(`(() => {
+            const row = [...document.querySelectorAll('[role=treeitem]')].find((r) => (r.textContent || '').includes('numbers.tex'));
+            const area = document.querySelector('[data-code-editor-area]');
+            if (!row || !area) return false;
+            const dt = new DataTransfer();
+            row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+            const r = area.getBoundingClientRect();
+            const x = r.left + r.width * 0.75, y = r.top + r.height / 2;
+            area.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y }));
+            area.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y }));
+            row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+            return true;
+        })()`);
+        const swapped = await wait(`${SIDE}?.getAttribute('data-code-side') === 'numbers.tex' && !!${SIDE}?.querySelector('.monaco-editor')`, 6000);
+        const side3 = await h.ev(`({ modes: ${SIDE}?.querySelectorAll('[data-code-side-mode]').length ?? -1, overlay: !!document.querySelector('[data-code-drop]') })`);
+        rec(
+            "3. numbers.tex dropped on the right half replaces the side file and opens on Source, with no Preview to offer",
+            dropped && swapped && side3.modes === 0 && !side3.overlay,
+            JSON.stringify({ dropped, swapped, side3 })
+        );
+        await h.shot("cdp-shots/code-side-dropped.png");
+
+        await h.ev(`${SIDE}?.querySelector('[data-code-side-close]')?.click()`);
+        await nap(300);
+        const closed = await h.ev(`!${SIDE}`);
+        rec("4. × closes the side column", closed, `closed=${closed}`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            await h.ev(`document.querySelector('button[aria-label="Discard unsaved edits"]:not(:disabled)')?.click()`);
+            await h.ev(`[...document.querySelectorAll('button')].find((b) => /^(Discard|OK|Yes)$/i.test((b.textContent || '').trim()))?.click()`);
+        } catch {
+            // best-effort cleanup
+        }
+        try {
+            rmSync(ctx.cwd, { recursive: true, force: true });
+        } catch {
+            // best-effort cleanup
+        }
+        await h.goto("cockpit");
+    },
+};
+
 // --- dag lifecycle: engine + graph surface ----------------------------------------------------
 // Drives the real DagSubmit/DagAction/DagMerge RPCs through an orchestrator-mode run, then opens
 // the graph surface and asserts the ReactFlow canvas renders the submitted nodes. Blast radius is
@@ -8680,7 +8788,7 @@ function docReviewRoster(runId, docPath) {
 // the lead's row in the Agent tree, found by its name leaf as agent-tree-rail does
 const docReviewTreeRow = (name) => `(() => {
     const tree = document.querySelector("[data-agent-tree]");
-    const leaf = tree && [...tree.querySelectorAll("div")].find(
+    const leaf = tree && [...tree.querySelectorAll("*")].find(
         (d) => d.textContent.trim() === ${JSON.stringify(name)} && d.children.length === 0
     );
     return leaf ? leaf.closest(".cursor-pointer") : null;
@@ -9692,6 +9800,42 @@ const docReviewMode = {
                 /^Request changes\s*1\D/.test(one6.accent ?? ""),
             JSON.stringify({ hint6, cancelled6, two6, one6 })
         );
+
+        // 6b. A suggested edit: e on a selection opens its paragraph's source in place; an addition saved with
+        // Ctrl+Enter is a card showing the inserted words, counted like a comment. Removed again, so the later
+        // steps keep their counts.
+        await drmSelect(h, later6, later6, 20);
+        await drmKey(h, "e");
+        await nap(300);
+        const box6b = await h.ev(`${DRM_PANE}.querySelector("[data-doc-review-edit-box]")?.value ?? null`);
+        await drmType(h, "[data-doc-review-edit-box]", `${box6b ?? ""} Suggested words.`);
+        await h.ev(`document.querySelector("[data-doc-review-edit-box]")?.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true })
+        )`);
+        await nap(300);
+        const card6b = await h.ev(`(() => {
+            const card = ${DRM_PANE}.querySelector("[data-doc-review-suggestion]");
+            const ins = [...(card?.querySelectorAll("span") ?? [])].find((s) => s.className.includes("bg-diff-added"));
+            return {
+                box: !!${DRM_PANE}.querySelector("[data-doc-review-edit-box]"),
+                label: (card?.innerText ?? "").includes("suggested edit"),
+                inserted: ins?.textContent?.trim() ?? null,
+            };
+        })()`);
+        const tray6b = await h.ev(DRM_TRAY);
+        await shot("06b-suggestion");
+        rec(
+            "6b. e opens the paragraph's source; Ctrl+Enter saves the edit as a suggestion card with its inserted words, and Request changes counts it",
+            box6b != null &&
+                box6b.length > 0 &&
+                !card6b.box &&
+                card6b.label &&
+                card6b.inserted === "Suggested words." &&
+                /^Request changes\s*2\D/.test(tray6b.accent ?? ""),
+            JSON.stringify({ box6b: box6b?.slice(0, 60), card6b, tray6b })
+        );
+        await h.ev(`${DRM_PANE}.querySelector('[data-doc-review-suggestion] button[aria-label^="Remove suggestion"]')?.click()`);
+        await nap(200);
 
         // 7. Narrow: a pane under 720px puts the card under its paragraph and wraps the tray
         await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
@@ -17769,6 +17913,7 @@ export const SCENARIOS = [
     codeDiff,
     codeMarkdown,
     codeTexPdf,
+    codeSideColumn,
     jarvisPet,
     briefSurface,
     briefPeek,

@@ -201,10 +201,12 @@ export function wordDiff(before: string, after: string): WordOp[] {
     const words = (text: string) => text.match(/^\s+|\S+\s*/g) ?? [];
     const a = words(before);
     const b = words(after);
+    // a word is the same with or without the space after it: the last word of a paragraph has none until text follows
+    const same = (i: number, j: number) => a[i].trimEnd() === b[j].trimEnd();
     const lcs: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
     for (let i = a.length - 1; i >= 0; i--) {
         for (let j = b.length - 1; j >= 0; j--) {
-            lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+            lcs[i][j] = same(i, j) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
         }
     }
     const out: WordOp[] = [];
@@ -219,8 +221,8 @@ export function wordDiff(before: string, after: string): WordOp[] {
     let i = 0;
     let j = 0;
     while (i < a.length || j < b.length) {
-        if (i < a.length && j < b.length && a[i] === b[j]) {
-            push("same", a[i]);
+        if (i < a.length && j < b.length && same(i, j)) {
+            push("same", b[j]);
             i++;
             j++;
         } else if (i < a.length && (j === b.length || lcs[i + 1][j] >= lcs[i][j + 1])) {
