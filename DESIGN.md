@@ -361,11 +361,12 @@ content is always fluid.
   an icon and a number each in one fixed order (Subagents, Files changed,
   Artifacts, Uploads, Servers, Background tasks), dimmed at 0, so the rail keeps one
   shape as work arrives; a count opens its section, an empty Uploads
-  attaches. The body opens on a one-line status (a context ring with its
-  percent and tokens, then the session's spend), then Needs you, the counted
-  sections that hold something, Run/Task, and Session, closed by default
-  (its header reads project · branch while closed): the tokens and spend on
-  one line over their bar, then the facts, then the breakdown toggle.
+  attaches. The body opens on the session block, closed by default to a
+  one-line status (a context ring with its percent and tokens, then the
+  session's spend, then a chevron); open, it adds the session's total tokens
+  over their bar, its facts (project, branch, model, tools) and the
+  breakdown toggle. Then Needs you, the counted sections that hold
+  something, and Run/Task.
   The footer is the session's state and cache with Resume or Stop. Each
   figure shows once.
 - **Surfaces** — absolutely stacked (`absolute inset-0`) under a

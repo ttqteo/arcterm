@@ -39,9 +39,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   **Open in Code** button.
 - arcterm reopens on the surface you left it on. Settings → Startup surface has **Last opened** as its new default,
   and a surface picked there now actually opens at launch.
-- The agent rail's **Token usage** and **Details** are one **Session** section: the tokens and spend on one line with
-  their bar, then project, branch and model, with the breakdown under them. Clicking the spend opens it on the
-  breakdown.
+- The agent rail's **Token usage** and **Details** fold into its status line at the top: click the line (context and
+  spend) to open the session's total tokens with their bar, its project, branch and model, and the breakdown. The spend
+  shows once.
 
 ### Fixed
 

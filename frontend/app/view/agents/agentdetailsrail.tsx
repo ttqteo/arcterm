@@ -51,7 +51,7 @@ import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { ServersSection } from "./railservers";
-import { loadRailForAgent, railStateAtom, railVisibleAtom, usageBreakdownAtom } from "./railstore";
+import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
 import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
@@ -89,7 +89,7 @@ const SUB_COLOR: Record<SubagentState, string> = {
 const RailFilesCap = 8; // a 296px rail can't show a large worktree; the summary line under it counts them all
 const USAGE_REFRESH_MS = 15_000;
 
-// A fact line of the Session section, under its token usage: the project, the branch and the worktree the agent
+// A fact line of the session block, under its token usage: the project, the branch and the worktree the agent
 // works in, its model, or a subagent's state.
 function DetailLine({
     label,
@@ -152,75 +152,60 @@ function ContextRing({ pct, level }: { pct: number; level: "ok" | "warn" | "hot"
     );
 }
 
-// StatusLine is the rail's first row: the context window (ring, percent and the tokens in it) on the left, the
-// session's spend on the right, opening Session on its breakdown. The context's note is its tooltip. onReset, when
-// given, offers Compact and Clear under the row: they shrink what every turn re-reads.
-function StatusLine({
-    ctx,
-    spend,
-    onReset,
-    onSpend,
-}: {
-    ctx?: { pct: number; max?: number };
-    spend?: { text: string; title: string };
-    onReset?: (cmd: string) => void;
-    onSpend: () => void;
-}) {
-    if (ctx == null && spend == null) {
-        return null;
-    }
+// StatusLine is the session block's head row: the context window (ring, percent and the tokens in it) on the left, the
+// session's spend on the right. The context's note is its tooltip, the spend's caption and total tokens its own.
+function StatusLine({ ctx, spend }: { ctx?: { pct: number; max?: number }; spend?: { text: string; title: string } }) {
     const level = ctx ? contextLevel(ctx.pct, ctx.max) : "ok";
     const tokens = ctx ? contextTokens(ctx.pct, ctx.max) : undefined;
     const note = ctx ? contextNote(ctx.pct, ctx.max) : "";
     return (
-        <div data-rail-status className="flex flex-col gap-[3px] pb-[8px] pt-[2px]">
-            <div className="flex min-w-0 items-center gap-[8px]">
-                {ctx ? (
-                    <span
-                        title={`Context window ${Math.round(ctx.pct)}%${note ? ` · ${note}` : ""}`}
-                        className="flex min-w-0 items-center gap-[7px]"
-                    >
-                        <ContextRing pct={ctx.pct} level={level} />
-                        <span className={cn("text-[12px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
-                            {Math.round(ctx.pct)}%
-                        </span>
-                        {tokens ? (
-                            <span className="truncate text-[11px] tabular-nums text-muted">· {tokens}</span>
-                        ) : null}
+        <span data-rail-status className="flex min-w-0 flex-1 items-center gap-[8px]">
+            {ctx ? (
+                <span
+                    title={`Context window ${Math.round(ctx.pct)}%${note ? ` · ${note}` : ""}`}
+                    className="flex min-w-0 items-center gap-[7px]"
+                >
+                    <ContextRing pct={ctx.pct} level={level} />
+                    <span className={cn("text-[12px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
+                        {Math.round(ctx.pct)}%
                     </span>
-                ) : null}
-                <span className="flex-1" />
-                {spend ? (
-                    <button
-                        type="button"
-                        onClick={onSpend}
-                        title={spend.title}
-                        className="-mr-[6px] flex-none cursor-pointer rounded-[6px] px-[6px] py-[2px] text-[12px] font-semibold tabular-nums text-success hover:bg-surface-hover"
-                    >
-                        {spend.text}
-                    </button>
-                ) : null}
-            </div>
-            {onReset ? (
-                <div className="flex gap-[4px] pl-[17px]">
-                    <button
-                        type="button"
-                        onClick={() => onReset("/compact\r")}
-                        title="summarize the conversation so far and keep going from the summary"
-                        className={RESET_BTN}
-                    >
-                        Compact
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onReset("/clear\r")}
-                        title="start a fresh conversation; /resume brings this one back"
-                        className={RESET_BTN}
-                    >
-                        Clear
-                    </button>
-                </div>
+                    {tokens ? (
+                        <span className="truncate text-[11px] tabular-nums text-muted">· {tokens} ctx</span>
+                    ) : null}
+                </span>
+            ) : spend == null ? (
+                <span className="text-[12px] font-medium text-muted">Session</span>
             ) : null}
+            <span className="flex-1" />
+            {spend ? (
+                <span title={spend.title} className="flex-none text-[12px] font-semibold tabular-nums text-success">
+                    {spend.text}
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
+// Compact and Clear, under the status line: they shrink what every turn re-reads
+function ResetActions({ onReset }: { onReset: (cmd: string) => void }) {
+    return (
+        <div className="mt-[3px] flex gap-[4px] pl-[17px]">
+            <button
+                type="button"
+                onClick={() => onReset("/compact\r")}
+                title="summarize the conversation so far and keep going from the summary"
+                className={RESET_BTN}
+            >
+                Compact
+            </button>
+            <button
+                type="button"
+                onClick={() => onReset("/clear\r")}
+                title="start a fresh conversation; /resume brings this one back"
+                className={RESET_BTN}
+            >
+                Clear
+            </button>
         </div>
     );
 }
@@ -544,7 +529,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         servers: "Servers",
         bgtasks: "Background tasks",
         run: role?.kind === "worker" ? "Task" : "Run",
-        session: "Session",
     };
     const ICON: Record<AgentRailSectionId, ReactNode> = {
         subagent: RAIL_ICON.subagents,
@@ -557,7 +541,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         servers: RAIL_ICON.server,
         bgtasks: RAIL_ICON.terminal,
         run: RAIL_ICON.autonomy,
-        session: RAIL_ICON.info,
     };
     // thunks: a section the plan leaves out is never built (run would touch a roleRun that may not exist)
     const CONTENT: Record<AgentRailSectionId, () => ReactNode> = {
@@ -587,15 +570,55 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             </div>
         ),
         status: () => (
-            <StatusLine
-                ctx={!sub && ctxPct != null ? { pct: ctxPct, max: usage?.contextmax } : undefined}
-                spend={spend}
-                onReset={offerReset ? drive : undefined}
-                onSpend={() => {
-                    globalStore.set(usageBreakdownAtom, true);
-                    openSection("session");
-                }}
-            />
+            <SessionSection
+                head={
+                    <StatusLine
+                        ctx={!sub && ctxPct != null ? { pct: ctxPct, max: usage?.contextmax } : undefined}
+                        spend={spend}
+                    />
+                }
+                actions={offerReset ? <ResetActions onReset={drive} /> : undefined}
+            >
+                <div className="flex flex-col gap-[6px]">
+                    {sub ? (
+                        <>
+                            <DetailLine label="Model">{subVM?.model ? prettyModel(subVM.model) : "—"}</DetailLine>
+                            <DetailLine label="State">
+                                {subVM == null ? "—" : subVM.state === "failure" ? "failed" : subVM.state}
+                            </DetailLine>
+                        </>
+                    ) : (
+                        <>
+                            <DetailLine label="Project">{project || "—"}</DetailLine>
+                            <DetailLine label="Branch" title={branch || undefined}>
+                                <span>{branch || "—"}</span>
+                            </DetailLine>
+                            {worktree ? (
+                                <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
+                                    <span>{worktree}</span>
+                                </DetailLine>
+                            ) : null}
+                            {modelLabel ? <DetailLine label="Model">{modelLabel}</DetailLine> : null}
+                        </>
+                    )}
+                    {tools.length > 0 ? (
+                        <div className="flex min-w-0 items-baseline gap-[10px]">
+                            <span className="w-[52px] shrink-0 text-[12px] text-muted">Tools</span>
+                            <div className="flex min-w-0 flex-1 flex-wrap gap-[5px]">
+                                {tools.map((t) => (
+                                    <span
+                                        key={t.verb}
+                                        className="flex items-baseline gap-[4px] rounded-sm border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-medium tabular-nums"
+                                    >
+                                        <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
+                                        <span className="text-muted">×{t.count}</span>
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            </SessionSection>
         ),
         // only the lead's rail: a worker's own question is already on screen, in its terminal's picker
         needs: () => <NeedsYouSection key={agent.id} model={model} run={roleRun!} asks={yours} />,
@@ -754,61 +777,12 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             ) : (
                 <RunSection key={agent.id} model={model} run={roleRun!} asks={asks} />
             ),
-        session: () => (
-            <SessionSection>
-                <div className="flex flex-col gap-[6px]">
-                    {sub ? (
-                        <>
-                            <DetailLine label="Model">{subVM?.model ? prettyModel(subVM.model) : "—"}</DetailLine>
-                            <DetailLine label="State">
-                                {subVM == null ? "—" : subVM.state === "failure" ? "failed" : subVM.state}
-                            </DetailLine>
-                        </>
-                    ) : (
-                        <>
-                            <DetailLine label="Project">{project || "—"}</DetailLine>
-                            <DetailLine label="Branch" title={branch || undefined}>
-                                <span>{branch || "—"}</span>
-                            </DetailLine>
-                            {worktree ? (
-                                <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
-                                    <span>{worktree}</span>
-                                </DetailLine>
-                            ) : null}
-                            {modelLabel ? <DetailLine label="Model">{modelLabel}</DetailLine> : null}
-                        </>
-                    )}
-                    {tools.length > 0 ? (
-                        <div className="flex min-w-0 items-baseline gap-[10px]">
-                            <span className="w-[52px] shrink-0 text-[12px] text-muted">Tools</span>
-                            <div className="flex min-w-0 flex-1 flex-wrap gap-[5px]">
-                                {tools.map((t) => (
-                                    <span
-                                        key={t.verb}
-                                        className="flex items-baseline gap-[4px] rounded-sm border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-medium tabular-nums"
-                                    >
-                                        <span className={t.dim ? "text-muted" : "text-secondary"}>{t.verb}</span>
-                                        <span className="text-muted">×{t.count}</span>
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    ) : null}
-                </div>
-            </SessionSection>
-        ),
     };
-    // closed, Session reads as where the agent works: its project and branch, or a subagent's model
-    const sessionSummary = sub
-        ? subVM?.model
-            ? prettyModel(subVM.model)
-            : ""
-        : [project, branch].filter(Boolean).join(" · ");
     const sections: RailSection[] = plan.map((p) => ({
         id: p.id,
         label: LABEL[p.id],
         icon: ICON[p.id],
-        header: p.id === "session" && p.header ? { ...p.header, summary: sessionSummary || undefined } : p.header,
+        header: p.header,
         content: CONTENT[p.id](),
     }));
 
