@@ -52,10 +52,13 @@ hand), disk space of other apps, and a storage chip on the app bar (the person c
 
 4. **Categories and their rules.**
    1. **Run worktrees.** The directories under `<project>/.waveterm/worktrees/` of every project in config
-      (`projects`), each matched to its run and task in the store. Cleanable when the run is done, cancelled
-      or failed **and** `git status --porcelain` in the worktree is empty; a directory no run claims counts as
-      finished. Removed with the engine's `RemoveRunWorktree`, which keeps the branch, and the task's cleanup
-      debt (`CleanupPending`, `CleanupError`) cleared. A finished worktree with uncommitted changes is left
+      (`projects`), each matched to its run and task in the store by the engine's folder names (`<runId>`,
+      `<runId>-<task>`, `-final`, `-base`, `-bisect`); any other folder is listed but never cleaned. Cleanable
+      when the run is done or cancelled (runs have no failed status; a blocked run can still be retried, so it
+      counts as not finished) **and** `git status --porcelain` in the worktree is empty; a directory no run
+      claims counts as finished. Removed by a new engine export that removes the tree and keeps its branch
+      (`RemoveRunWorktree` deletes the `wave/<runId>` branch). The engine's cleanup debt is left to the engine,
+      whose own retry clears it once the tree is gone. A finished worktree with uncommitted changes is left
       out of **Clean all** and auto-clean; its own row's button removes it after a confirm that says those
       changes are lost. A running run's worktree is never offered.
    2. **Old Claude sessions.** Transcripts `~/.claude/projects/*/*.jsonl` last modified more than N days ago,
@@ -65,7 +68,7 @@ hand), disk space of other apps, and a storage chip on the app bar (the person c
    3. **Logs, cache and trash.** Rolled logs (`waveapp.1.log`; the live `waveapp.log` stays), the trash
       (`~/.arc/trash`, removed for good at once), and the webview's cache (macOS:
       `~/Library/Caches/<identifier>/WebKit/NetworkCache` and `CacheStorage`; Windows:
-      `<data>/EBWebView/Default/Cache`, `Code Cache`, `GPUCache`). The cache is in use while the app runs, so
+      `EBWebView/Default/Cache`, `Code Cache`, `GPUCache`, in the `EBWebView` folder beside the data folder). The cache is in use while the app runs, so
       its clean only writes a marker file, `<data>/clear-webview-cache`; at the next launch the host removes
       the cache directories and the marker **before** it creates the webview. The card says "cleared when
       arcterm next opens".
