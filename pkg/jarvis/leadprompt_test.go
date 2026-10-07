@@ -11,7 +11,7 @@ import (
 )
 
 func TestAskToolByRuntime(t *testing.T) {
-	cases := map[string]string{"claude": "AskUserQuestion", "pi": "ask_user_question", "": "AskUserQuestion"}
+	cases := map[string]string{"claude": "AskUserQuestion", "pi": "ask_user_question", "agy": "ask_question", "": "AskUserQuestion"}
 	for runtime, want := range cases {
 		if got := AskTool(runtime); got != want {
 			t.Fatalf("AskTool(%q) = %q, want %q", runtime, got, want)

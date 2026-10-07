@@ -112,6 +112,35 @@ func TestAgentsRosterRows(t *testing.T) {
 	}
 }
 
+func TestAgentHarnesses(t *testing.T) {
+	for _, h := range []string{"claude", "pi", "agy"} {
+		if !agentHarnesses[h] {
+			t.Errorf("%s sessions are agents and must be messageable", h)
+		}
+	}
+	for _, h := range []string{"codex", "opencode", ""} {
+		if agentHarnesses[h] {
+			t.Errorf("%q cannot be messaged", h)
+		}
+	}
+	tf := agentFacts(agentsTabA, "antigravity", agentsBlockA, "agy", baseds.AgentState_Idle)
+	rows := buildAgentRoster(&agentRosterFacts{Tabs: []agentTabFacts{tf}})
+	if len(rows) != 1 || rows[0].Harness != "agy" {
+		t.Fatalf("an agy tab is a roster row, got %+v", rows)
+	}
+	// delivery reaches the agy block as the enveloped message every harness gets
+	sent := scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{
+		agentFacts(agentsTabA, "antigravity", agentsBlockA, "agy", baseds.AgentState_Idle),
+		agentFacts(agentsTabB, "lead", agentsBlockB, "claude", baseds.AgentState_Working),
+	}})
+	if _, err := (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabA, Text: "tabs, not spaces", FromORef: blockORef(agentsBlockB)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*sent) != 1 || (*sent)[0].blockId != agentsBlockA || !strings.Contains((*sent)[0].text, "tabs, not spaces") {
+		t.Fatalf("deliveries = %+v", *sent)
+	}
+}
+
 func TestAgentsRosterStates(t *testing.T) {
 	cases := []struct {
 		status  string

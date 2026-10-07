@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/runroute"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -384,6 +385,22 @@ func allowWorkerHarnessForTest(t *testing.T) {
 	old := validateWorkerHarness
 	validateWorkerHarness = func(string) error { return nil }
 	restoreAfterStages(t, func() { validateWorkerHarness = old })
+	// reviewers and stage sessions are checked as leads; neither claude nor pi need be installed here
+	oldLead := validateLeadHarness
+	validateLeadHarness = func(string) error { return nil }
+	restoreAfterStages(t, func() { validateLeadHarness = oldLead })
+}
+
+// capableLeadHarnessForTest checks a lead route's capability as production does and skips only the
+// install probe, which a build machine may not satisfy.
+func capableLeadHarnessForTest(t *testing.T) {
+	t.Helper()
+	old := validateLeadHarness
+	validateLeadHarness = func(runtime string) error {
+		_, err := harness.ValidateCapable(runtime, harness.OperationLead)
+		return err
+	}
+	restoreAfterStages(t, func() { validateLeadHarness = old })
 }
 
 // a worker is named after its task: its ai-title would come from its first message, which for a prompt too long for a
@@ -1835,4 +1852,43 @@ func ScheduleOnce(ctx context.Context, g *waveobj.TaskGroup) error {
 		*g = *fresh
 	}
 	return nil
+}
+
+// agy names its own conversation: the engine spawns it with no session id and stores none, and
+// NoteWorkerSession binds the one agy reports. A --session-id agy was handed would be rejected.
+func TestSpawnTaskAgy(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	ctx, g, channelID, _ := seedDispatchDag(t, "spawn-task-agy")
+	g.Tasks[0].RunSpec.Runtime = "agy"
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].RunSpec.Runtime = "agy"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var launched *jarvis.RunWorkerOptions
+	var launchedCap runroute.Capability
+	old := spawnWorker
+	spawnWorker = func(_ context.Context, cap runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
+		launched, launchedCap = &opts, cap
+		return waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String(), nil
+	}
+	restoreAfterStages(t, func() { spawnWorker = old })
+
+	if err := ScheduleOnce(ctx, g); err != nil {
+		t.Fatal(err)
+	}
+	if launched == nil || launchedCap.Runtime != "agy" {
+		t.Fatalf("want one agy worker, got %+v %+v", launched, launchedCap)
+	}
+	if launched.SessionId != "" || launched.RunId == "" || launched.TaskId != "t-0" {
+		t.Fatalf("an agy worker launches with no session id, got %+v", *launched)
+	}
+	child, err := wstore.GetRun(ctx, channelID, g.Tasks[0].RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.SessionId != "" || child.Runtime != "agy" {
+		t.Fatalf("child run = runtime %q session %q, want agy with no session", child.Runtime, child.SessionId)
+	}
 }

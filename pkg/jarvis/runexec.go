@@ -35,8 +35,8 @@ type RunWorkerSpec struct {
 
 // RunWorkerSpecFor resolves the unattended worker launch form from one validated capability. The
 // capability authority owns runtime/model compatibility and model selection; this adapter only supplies
-// each runtime's unattended base arguments. A non-empty sessionId names the worker's session: both
-// runtimes take --session-id and name the transcript by it.
+// each runtime's unattended base arguments. A non-empty sessionId names the worker's session: claude and pi
+// take --session-id and name the transcript by it; agy names its own conversation, so it never gets one.
 func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWorkerSpec, bool) {
 	if !runroute.IsValid(cap) {
 		return RunWorkerSpec{}, false
@@ -46,21 +46,37 @@ func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWor
 		return RunWorkerSpec{}, false
 	}
 	var args []string
+	// promptFlag precedes the prompt: agy opens its TUI on a prompt only through -i
+	var promptFlag []string
 	switch cap.Runtime {
 	case "claude":
 		args = []string{"--dangerously-skip-permissions"}
 	case "pi":
 		args = nil
+	case "agy":
+		args = []string{"--dangerously-skip-permissions"}
+		promptFlag = []string{"-i"}
 	default:
 		return RunWorkerSpec{}, false
 	}
 	baseArgs := append(append([]string{}, args...), cap.ModelArgs...)
-	if sessionId != "" {
+	if sessionId != "" && !h.AssignsOwnSession {
 		args = append(args, "--session-id", sessionId)
 	}
 	args = append(args, cap.ModelArgs...)
+	args = append(args, promptFlag...)
 	args = append(args, prompt)
 	return RunWorkerSpec{Bin: h.Bin, Args: args, BaseArgs: baseArgs}, true
+}
+
+// WorkerSessionId is the session id to hand a new worker of runtime: a fresh UUID for a runtime that takes
+// --session-id, "" for one that names its own session (agy), whose id the engine learns from its first
+// status report (orchestrate.NoteWorkerSession).
+func WorkerSessionId(runtime string) string {
+	if spec, ok := harness.Lookup(runtime); ok && spec.AssignsOwnSession {
+		return ""
+	}
+	return uuid.NewString()
 }
 
 // ResumeNudge is a resumed worker's first turn. It never restates the task: the session already holds it.
@@ -76,10 +92,16 @@ func ResumeWorkerArgs(runtime, sessionId string, baseArgs []string, nudge string
 		flag = "--resume"
 	case "pi":
 		flag = "--session" // resolves a session id as well as a path
+	case "agy":
+		flag = "--conversation"
 	default:
 		return nil, false
 	}
 	args := append([]string{flag, sessionId}, baseArgs...)
+	if runtime == "agy" {
+		// agy opens its TUI on a prompt only through -i
+		args = append(args, "-i")
+	}
 	return append(args, nudge), true
 }
 
@@ -132,7 +154,8 @@ var ResumeRunWorker = func(ctx context.Context, tabORef, runtime, sessionId, nud
 
 type RunWorkerOptions struct {
 	KeepOnExit bool
-	// SessionId, when set, is passed as --session-id so the worker's transcript is named by it.
+	// SessionId, when set, is passed as --session-id so the worker's transcript is named by it. It is empty
+	// for a runtime that names its own session (WorkerSessionId).
 	SessionId string
 	// Label, when set, is the tab's session:label: the name every surface shows ahead of the agent's ai-title.
 	Label string
@@ -362,7 +385,7 @@ func EnsureWorkers(ctx context.Context, run *waveobj.Run, cap runroute.Capabilit
 		}
 		// without a session id the evidence seal can only guess the transcript from the worker's cwd, where
 		// another agent's session may be newer
-		opts := RunWorkerOptions{KeepOnExit: run.Mode == RunMode_Orchestrator, SessionId: uuid.NewString(), RunId: run.ID}
+		opts := RunWorkerOptions{KeepOnExit: run.Mode == RunMode_Orchestrator, SessionId: WorkerSessionId(cap.Runtime), RunId: run.ID}
 		if run.Mode == RunMode_Orchestrator || len(workerPrompt) > maxInlinePromptBytes {
 			// named after its run: its ai-title would come from its first prompt, which on a plan run is a wake,
 			// and for a prompt too long for a command line is the pointer to the file holding it
