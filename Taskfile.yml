@@ -55,7 +55,12 @@ tasks:
             - task: tauri:sync-version
             - task: check:version
             - task: build:backend
-            - cargo tauri build
+            - cmd: cargo tauri build
+              platforms: [windows, linux]
+            # CI=true makes the bundler pass --skip-jenkins to bundle_dmg.sh, which skips the AppleScript that opens
+            # the new DMG in a Finder window to lay out its icons. The DMG keeps the app and the Applications link.
+            - cmd: CI=true cargo tauri build
+              platforms: [darwin]
 
     install:
         desc: "Install the last `task tauri:build` over the installed arcterm and reopen it. It closes the running arcterm and every agent in it."
