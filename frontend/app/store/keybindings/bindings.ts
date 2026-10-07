@@ -52,6 +52,7 @@ import {
     startRename,
     toggleDir,
 } from "@/app/view/code/codestore";
+import { toggleSide } from "@/app/view/code/codeside";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
 import { toggleCodeWrap, toggleWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
@@ -1391,6 +1392,15 @@ export function buildCodeBindings(): Binding[] {
             // live while typing in Monaco, as VS Code's Alt+Z is; code:save's comment says why editable is not gated
             when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
             run: () => (toggleCodeWrap() ? undefined : false),
+        },
+        {
+            id: "code:side",
+            // by code, not key, so the chord is the same key on every keyboard layout
+            keys: "Ctrl:c{Backslash}",
+            group: "Code",
+            label: "Open the file to the side, or close the side column",
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => (toggleSide() ? undefined : false),
         },
         {
             id: "code:save",

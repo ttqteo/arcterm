@@ -36,8 +36,8 @@ import {
 } from "lucide-react";
 import { useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CodeChangedPane } from "./codechangedpane";
+import { CodeEditorArea } from "./codeeditorarea";
 import { canBack, canForward } from "./codehistory";
-import { CodePathBar } from "./codepathbar";
 import { pickerRecents } from "./coderecents";
 import { CodeSearchPane } from "./codesearchpane";
 import { codeSearchModeAtom } from "./codesearchstore";
@@ -57,7 +57,6 @@ import {
     type CodeSidebarMode,
     type CodeSidebarPrefs,
 } from "./codesidebar";
-import { CodeStaleBar } from "./codestalebar";
 import {
     canRestoreProject,
     checkStale,
@@ -90,7 +89,6 @@ import {
     type CodeProject,
 } from "./codestore";
 import { CodeTreePane } from "./codetreepane";
-import { CodeViewer } from "./codeviewer";
 
 export function CodeSurface({ model }: { model: AgentsViewModel }) {
     const registry = useAtomValue(projectsAtom);
@@ -829,13 +827,7 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
             >
                 <span className="h-full w-px bg-edge-mid group-hover:bg-accent group-focus-visible:bg-accent" />
             </div>
-            <div className="flex min-w-0 flex-1 flex-col">
-                <CodePathBar />
-                <CodeStaleBar />
-                <div className="min-h-0 flex-1">
-                    <CodeViewer model={model} />
-                </div>
-            </div>
+            <CodeEditorArea model={model} />
         </div>
     );
 }

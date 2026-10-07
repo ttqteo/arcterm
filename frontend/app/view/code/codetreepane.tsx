@@ -19,9 +19,10 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Columns2, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { nameErrorMessage, provisionalIndex, validateName } from "./codemutate";
+import { CODE_PATH_MIME, codeTreeDragAtom, openSide } from "./codeside";
 import { statusGlyph, type CodeStatus } from "./codestatus";
 import {
     cancelEdit,
@@ -119,6 +120,14 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 }
             }}
             role="treeitem"
+            // a file drags onto the editor area: the left half opens it, the right half to the side (codeeditorarea.tsx)
+            draggable={row.kind === "file"}
+            onDragStart={(ev) => {
+                ev.dataTransfer.setData(CODE_PATH_MIME, row.path);
+                ev.dataTransfer.effectAllowed = "copy";
+                globalStore.set(codeTreeDragAtom, true);
+            }}
+            onDragEnd={() => globalStore.set(codeTreeDragAtom, false)}
             aria-selected={row.path === cursor}
             aria-expanded={row.kind === "dir" ? row.expanded : undefined}
             onClick={() => {
@@ -135,6 +144,17 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 globalStore.set(codeCursorAtom, row.path);
                 ContextMenuModel.getInstance().showContextMenu(
                     [
+                        ...(row.kind === "dir"
+                            ? []
+                            : [
+                                  {
+                                      label: "Open to the Side",
+                                      icon: <Columns2 size={13} strokeWidth={1.8} />,
+                                      accel: "Ctrl+\\",
+                                      click: () => openSide(row.path),
+                                  },
+                                  { type: "separator" as const },
+                              ]),
                         {
                             label: "New File",
                             icon: <FilePlus size={13} strokeWidth={1.8} />,

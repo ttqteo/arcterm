@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     proseKindOf,
     texAuthors,
+    texHasProse,
     texTitle,
     toProse,
     type ProseDoc,
@@ -662,6 +663,24 @@ describe("texAuthors", () => {
             texAuthors(String.raw`% \author{Nobody}
 \title{T}`)
         ).toEqual([]);
+    });
+});
+
+describe("texHasProse", () => {
+    it("is false for a file of macros alone", () => {
+        // the shape of a generated numbers.tex
+        const src = String.raw`% AUTO-GENERATED from numbers/ledger.yaml
+\newcommand{\ArtifactURL}{https://example.org/r/repro}
+\newcommand{\NboundedAna}{61}
+\newcommand{\NcmTP}{32}
+`;
+        expect(texHasProse(src)).toBe(false);
+    });
+
+    it("is true for a heading, a paragraph or a title", () => {
+        expect(texHasProse(String.raw`\section{Results}`)).toBe(true);
+        expect(texHasProse("Just a paragraph of prose.\n")).toBe(true);
+        expect(texHasProse(String.raw`\title{T}`)).toBe(true);
     });
 });
 

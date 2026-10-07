@@ -212,6 +212,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `Alt`+`Z` | Toggle word wrap for the open file, also while typing in it. Prose (`.tex`, `.bib`, `.md`, `.txt`) wraps by default; code follows `editor:wordwrap` |
+| `Ctrl`+`\` | Open the file in a read-only side column (a `.tex` file on its PDF, a document on its preview), or close the side column. Dragging a file from the tree onto the right half of the editor does the same for that file |
 | `d` | Toggle the diff against HEAD |
 | `r` | Refresh the file index |
 | `Alt`+`←` / `Alt`+`→` | Back / forward through opened files |

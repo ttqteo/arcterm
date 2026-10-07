@@ -84,20 +84,23 @@ export function defaultWrap(path: string, setting: boolean | undefined): boolean
 
 export type ViewMode = "preview" | "source" | "diff" | "pdf";
 
-export function viewModesFor(path: string, hasPdf: boolean): ViewMode[] {
+// `previewable` false: a .tex file with no title, heading or prose (a macros file, numbers.tex) has nothing for
+// Preview to draw, so it offers none and opens on Source
+export function viewModesFor(path: string, hasPdf: boolean, previewable = true): ViewMode[] {
     if (isMarkdownPath(path)) {
         return ["preview", "source", "diff"];
     }
     if (isTexPath(path)) {
-        return hasPdf ? ["preview", "source", "diff", "pdf"] : ["preview", "source", "diff"];
+        const modes: ViewMode[] = previewable ? ["preview", "source", "diff"] : ["source", "diff"];
+        return hasPdf ? [...modes, "pdf"] : modes;
     }
     return ["source", "diff"];
 }
 
 // The mode atom is one for every file, so a mode this file does not offer (PDF chosen on a .tex, then a .go opened)
 // reads as its Preview, else its Source.
-export function resolveViewMode(path: string, mode: ViewMode, hasPdf: boolean): ViewMode {
-    const modes = viewModesFor(path, hasPdf);
+export function resolveViewMode(path: string, mode: ViewMode, hasPdf: boolean, previewable = true): ViewMode {
+    const modes = viewModesFor(path, hasPdf, previewable);
     if (modes.includes(mode)) {
         return mode;
     }

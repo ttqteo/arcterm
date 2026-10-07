@@ -752,6 +752,15 @@ export function texTitle(src: string): string {
     return maskedTexTitle(maskTexComments(src));
 }
 
+// Whether a .tex file has anything for a reading view to show: a title, a heading or a paragraph. A file of macros
+// (\newcommand lines generated from data) has none, and a view of it would be blank.
+export function texHasProse(src: string): boolean {
+    if (texTitle(src) !== "") {
+        return true;
+    }
+    return texSections(src).some((s) => s.level > 0 || s.paragraphs.length > 0);
+}
+
 function texSections(src: string): ProseSection[] {
     const s = maskTexComments(src);
     const docTitle = maskedTexTitle(s);
