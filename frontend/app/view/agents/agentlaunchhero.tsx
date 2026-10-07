@@ -11,15 +11,20 @@ import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
 import { showHistory } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatTokens } from "./agentsviewmodel";
 import type { Runtime } from "./launch";
 import { loadRecentSessions, recentSessionsAtom } from "./recentsessionsstore";
+import { newAgentRamWarning } from "./workercapacity";
+import { useWorkerCapacity } from "./workercapacitystore";
 
 export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
     const sessions = useAtomValue(recentSessionsAtom);
+    // a resume launches at once, with no New agent dialog to warn in, so the hero says it up front
+    const ramWarning = newAgentRamWarning(useWorkerCapacity(), "claude");
     useEffect(() => {
         fireAndForget(loadRecentSessions);
     }, []);
@@ -74,6 +79,15 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                 >
                     Conversation History
                 </button>
+                {ramWarning ? (
+                    <div
+                        data-ram-warn
+                        className="mt-4 flex items-start gap-[6px] text-left text-[12px] leading-normal text-warning"
+                    >
+                        <TriangleAlert size={13} className="mt-[2px] shrink-0" />
+                        <span>{ramWarning}</span>
+                    </div>
+                ) : null}
 
                 {sessions != null && sessions.length > 0 ? (
                     <div className="mt-6 w-full overflow-hidden rounded-lg border border-border bg-surface text-left">

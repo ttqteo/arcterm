@@ -12,7 +12,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, Plus, SquareTerminal, X } from "lucide-react";
+import { Check, Plus, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -32,6 +32,8 @@ import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { harnessPreferenceAtom, harnessesAtom, resolveDefaultRuntime } from "./harnessstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom } from "./projectsstore";
 import { RuntimeMark } from "./runtimemark";
+import { newAgentRamWarning } from "./workercapacity";
+import { useWorkerCapacity } from "./workercapacitystore";
 
 const RUNTIMES: { id: Runtime; name: string }[] = [
     { id: "claude", name: "Claude Code" },
@@ -50,6 +52,7 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
     const remember = useAtomValue(naRememberFlagsAtom);
     const recentProjects = useAtomValue(recentProjectsAtom);
     const harnesses = useAtomValue(harnessesAtom);
+    const cap = useWorkerCapacity();
     const [runtime, setRuntime] = useState<Runtime>("claude");
     const [project, setProject] = useState<string>("");
     const [task, setTask] = useState("");
@@ -166,6 +169,7 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
         setStartup(runtimeStartupCommand(r));
         setFlagMenuOpen(false);
     };
+    const ramWarning = newAgentRamWarning(cap, runtime);
     const launch = async () => {
         // a held Enter on the focused Launch button repeats the click; one launch per open
         if (launchingRef.current) {
@@ -528,6 +532,15 @@ export function NewAgentModal({ model }: { model: AgentsViewModel }) {
                                     <span>Start with a task</span>
                                 </button>
                             )
+                        ) : null}
+                        {ramWarning ? (
+                            <div
+                                data-ram-warn
+                                className="flex items-start gap-[6px] text-[12px] leading-normal text-warning"
+                            >
+                                <TriangleAlert size={13} className="mt-[2px] shrink-0" />
+                                <span>{ramWarning}</span>
+                            </div>
                         ) : null}
                         {error ? <div className="text-[12px] text-error">{error}</div> : null}
                     </div>

@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- The New agent dialog warns when free RAM can't hold another agent, with how much is free, so you can close one
+  before the machine starts to lag. It still lets you launch. The "No terminal running" screen shows the same
+  warning, since resuming a recent session there launches at once.
 - An agent that stops on one part of a walk-through, such as "Part 1/3", shows `1/3` at the end of its row in
   place of the unread count, and keeps it until you reply, so a half-reviewed design is not forgotten.
 - **Claude Code updates.** arcterm checks for a newer Claude Code every 6 hours and Jarvis says once when one is out.

@@ -41,3 +41,13 @@ export function capacityTitle(cap: WorkerCapacity): string {
 export function capacityWarnTitle(cap: WorkerCapacity): string {
     return `${moreFit(cap.moreworkers)} in RAM (${formatGB(cap.availablebytes)} free)`;
 }
+
+/** The New agent modal's low-RAM warning: one more agent is one more worker-sized process tree, so it warns
+ * when not even one more fits. A plain terminal is light and never warns; no reading, no warning. It blocks
+ * nothing; the user decides. */
+export function newAgentRamWarning(cap: WorkerCapacity | null, runtime: string): string | null {
+    if (cap == null || runtime === "terminal" || !overCapacity(cap, 1)) {
+        return null;
+    }
+    return `Low on RAM: ${formatGB(cap.availablebytes)} free of ${formatGB(cap.totalbytes)}. Another agent (~${formatGB(cap.perworkerbytes)}) may make the machine lag; close one first if it is already slow.`;
+}

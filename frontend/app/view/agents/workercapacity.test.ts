@@ -7,6 +7,7 @@ import {
     capacityWarnTitle,
     extraWorkers,
     formatGB,
+    newAgentRamWarning,
     overCapacity,
     type WorkerCapacity,
 } from "./workercapacity";
@@ -73,5 +74,22 @@ describe("tooltips", () => {
     it("the stepper warning says how many fit", () => {
         expect(capacityWarnTitle(cap({ moreworkers: 1 }))).toBe("~1 more fits in RAM (1.3 GB free)");
         expect(capacityWarnTitle(cap({ moreworkers: 0 }))).toBe("~0 more fit in RAM (1.3 GB free)");
+    });
+});
+
+describe("newAgentRamWarning", () => {
+    it("is nothing while one more fits", () => {
+        expect(newAgentRamWarning(cap({ moreworkers: 1 }), "claude")).toBeNull();
+    });
+    it("warns with the numbers when not even one more fits", () => {
+        expect(newAgentRamWarning(cap({ moreworkers: 0 }), "pi")).toBe(
+            "Low on RAM: 1.3 GB free of 8 GB. Another agent (~1.5 GB) may make the machine lag; close one first if it is already slow."
+        );
+    });
+    it("never warns for a plain terminal", () => {
+        expect(newAgentRamWarning(cap({ moreworkers: 0 }), "terminal")).toBeNull();
+    });
+    it("never warns without a reading", () => {
+        expect(newAgentRamWarning(null, "claude")).toBeNull();
     });
 });
