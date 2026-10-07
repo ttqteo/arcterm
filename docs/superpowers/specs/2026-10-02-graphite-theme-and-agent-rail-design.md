@@ -110,7 +110,8 @@ the pet, Radar), a file tab strip, scheduled tasks, an in-app prompt box.
      `foldCollapsedProjects(rows, collapsed)` in `agenttreemodel.ts` drops a collapsed group's body rows.
    - Rows under a project are indented. A plain agent row is one line: status dot, name, then on the right
      its subagents chip, "asking"/review when it wants something, else its age. The branch line goes (the
-     rail's Details carries it). Lead rows keep their run subline.
+     rail's Details carries it). Lead rows keep their run subline. (Superseded by db9d60a1: an Active agent
+     row is now two lines, the name line over a meta line, with no leading dot column.)
    - Selected rows use `surface-selected` instead of the accent tint; an asking row loses its amber fill (the
      dot and the word carry it). Row padding tightens to `px-[10px] py-[6px]`, radius 6px.
    - The Terminals header takes the same sentence-case style.
