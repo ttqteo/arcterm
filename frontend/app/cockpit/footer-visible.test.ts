@@ -13,6 +13,7 @@ import type { Binding, KeyContext, SurfaceKey } from "@/app/store/keybindings/ty
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { attachCanvas, detachCanvas, setCanvasMode, setMarking, updateCanvas } from "@/app/view/agents/canvasstore";
 import type { OpenTarget } from "@/app/view/jarvis/address";
+import { setPlatform } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { visibleHints } from "./footer-visible";
@@ -103,7 +104,7 @@ describe("agent canvas mode chips", () => {
         setCanvasMode("a1", "canvas", 1);
         setMarking("a1", true);
         updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
-        expect(chips()).toEqual(["↑↓ move", "Ctrl:Tab cycle", "Ctrl:Enter send", "m stop marking", "c terminal", ...globals()]);
+        expect(chips()).toEqual(["↑↓ move", "Ctrl:Tab cycle", "Mod:Enter send", "m stop marking", "c terminal", ...globals()]);
     });
 
     it("History and a session offer only esc terminal and cycle: F11 and send stand down, even mid-marking", () => {
@@ -138,9 +139,13 @@ describe("peek chip", () => {
         globalStore.set(listNavAtom, null);
     });
 
-    it("shows on a list whose cursor row has a target, lit while ctrl is held", () => {
+    it("shows on a list whose cursor row has a target, lit while the peek key is held", () => {
         publish(() => ({ kind: "run", runId: "r1" }));
+        setPlatform("win32");
         expect(peekChip(jarvis)).toEqual({ glyph: "space · ctrl+click", label: "peek", ctrlLit: true });
+        // a Mac peeks on Command: its Ctrl+click is the right click
+        setPlatform("darwin");
+        expect(peekChip(jarvis)).toEqual({ glyph: "space · ⌘-click", label: "peek", ctrlLit: true });
     });
 
     it("hides when the list has nothing to peek, and in a field", () => {

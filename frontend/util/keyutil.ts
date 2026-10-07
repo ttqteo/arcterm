@@ -1,6 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { isMacOS } from "./platformutil";
 import * as util from "./util";
 
 const KeyTypeCodeRegex = /c{(.*)}/;
@@ -75,7 +76,16 @@ function parseKeyDescription(keyDescription: string): KeyPressDecl {
     let rtn = { key: "", mods: {} } as KeyPressDecl;
     let keys = keyDescription.replace(/[()]/g, "").split(":");
     for (let key of keys) {
-        if (key == "Cmd") {
+        if (key == "Mod") {
+            // the platform's primary modifier, for app shortcuts: Command on a Mac, Control elsewhere. Read from
+            // platformutil, which boot sets; this module's own PLATFORM is never set and stays darwin.
+            if (isMacOS()) {
+                rtn.mods.Meta = true;
+                rtn.mods.Cmd = true;
+            } else {
+                rtn.mods.Ctrl = true;
+            }
+        } else if (key == "Cmd") {
             if (PLATFORM == PlatformMacOS) {
                 rtn.mods.Meta = true;
             } else {
@@ -223,9 +233,19 @@ function checkKeyPressed(event: WaveKeyboardEvent, keyDescription: string): bool
         }
     }
     if (descKey != eventKey) {
-        return false;
+        return optionLetterMatches(keyPress, event);
     }
     return true;
+}
+
+// Option+letter on a Mac types a character (⌥Z is "Ω") or opens a dead key (⌥E), so the event's key never reads as
+// the letter an Alt binding names; match the physical key instead. Called once the modifiers already agree.
+function optionLetterMatches(keyPress: KeyPressDecl, event: WaveKeyboardEvent): boolean {
+    if (!isMacOS() || !event.alt || keyPress.keyType != KeyTypeKey || !/^[a-z0-9]$/i.test(keyPress.key)) {
+        return false;
+    }
+    const prefix = /[0-9]/.test(keyPress.key) ? "Digit" : "Key";
+    return event.code == prefix + keyPress.key.toUpperCase();
 }
 
 function adaptFromReactOrNativeKeyEvent(event: React.KeyboardEvent | KeyboardEvent): WaveKeyboardEvent {

@@ -221,7 +221,7 @@ export function LineReviewTray({ repoKey, model }: { repoKey: string; model: Age
                     >
                         {label}
                         {target.kind === "menu" ? <ChevronUp size={13} strokeWidth={2.2} aria-hidden /> : null}
-                        <span className={KBD}>{formatChordString("Ctrl:Enter")}</span>
+                        <span className={KBD}>{formatChordString("Mod:Enter")}</span>
                     </button>
                     <PopoverReveal
                         open={menuOpen && target.kind === "menu"}

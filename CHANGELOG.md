@@ -10,8 +10,16 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- **New run** has a shortcut, `Cmd+Shift+R` on macOS and `Ctrl+Shift+R` on Windows, and the app bar's New run and
+  New agent buttons show their shortcut beside the label.
+
 ### Changed
 
+- On macOS the app's shortcuts use `Cmd` instead of `Ctrl`: `Cmd+P` search, `Cmd+N` new agent, `Cmd+1`…`7`
+  surfaces, `Cmd+Enter` to send or approve, `Cmd+S` save, `Cmd+G` go-to from the terminal. `Ctrl+P` and `Ctrl+N`
+  now reach the shell in a terminal. `Ctrl+Tab` and the double `Ctrl+C` that closes an agent stay as they were.
 - A background task's output opens in the panel following live and wrapped, finished or not, and drops the
   **Open in Code** button.
 - arcterm reopens on the surface you left it on. Settings → Startup surface has **Last opened** as its new default,
@@ -20,6 +28,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Fixed
 
 - A newly launched agent's prompt takes your typing at once, without a click into its terminal.
+- On macOS the `Option` shortcuts work: `Option+Z` word wrap, `Option+T` file tree and `Option+E` editor on Code.
+- On macOS `Cmd`+click peeks a link, and holding `Cmd` underlines what can be peeked. `Ctrl`+click, the Mac's right
+  click, never peeked.
 
 ## 0.15.4 — 2026-10-07
 

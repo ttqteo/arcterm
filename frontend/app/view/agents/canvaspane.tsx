@@ -392,7 +392,7 @@ function MarkTray({ agent, marks }: { agent: AgentVM; marks: Mark[] }) {
                     <button
                         type="button"
                         data-canvas-send
-                        title={`Send the marks to the agent (${formatChordString("Ctrl:Enter")})`}
+                        title={`Send the marks to the agent (${formatChordString("Mod:Enter")})`}
                         disabled={noMarks || sending}
                         onClick={() => void send()}
                         className={cn(

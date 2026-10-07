@@ -1,8 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { ShortcutHint } from "@/app/element/shortcuthint";
 import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
+import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
@@ -29,6 +31,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
+    const newRunKeys = useBindingKeys("new-run");
+    const newAgentKeys = useBindingKeys("new-agent");
     return (
         <div
             data-tauri-drag-region
@@ -66,9 +70,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                         <path d="M9 9l3 3" strokeLinecap="round" />
                     </svg>
                     <span className="min-w-0 flex-1 truncate text-left text-[13px]">Search, or type a goal…</span>
-                    <span className="rounded-[5px] border border-border px-1.5 py-0.5 font-mono text-[11px]">
-                        {formatChordString("Ctrl:p")}
-                    </span>
+                    <ShortcutHint id="palette" className="border-border" />
                 </button>
             </div>
 
@@ -82,23 +84,38 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     type="button"
                     data-new-run
                     aria-haspopup="dialog"
+                    title={withChord("New run", newRunKeys)}
                     onClick={() => globalStore.set(model.newRunOpenAtom, true)}
                     className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-edge-mid bg-surface-raised px-[clamp(9px,1.3vw,12px)] py-[6px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-primary hover:border-edge-strong hover:bg-surface-hover"
                 >
                     <span className="-mt-px text-[15px] leading-none">+</span>New run
+                    <ShortcutHint id="new-run" className={clsx(HINT_FIT, "border-edge-mid text-muted")} />
                 </button>
                 <button
                     type="button"
+                    title={withChord("New agent", newAgentKeys)}
                     onClick={() => globalStore.set(model.newAgentOpenAtom, true)}
                     className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[clamp(9px,1.3vw,12px)] py-[7px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-background hover:bg-accenthover"
                 >
                     <span className="-mt-px text-[15px] leading-none">+</span>New agent
+                    <ShortcutHint
+                        id="new-agent"
+                        className={clsx(HINT_FIT, "border-background/30 text-background/75")}
+                    />
                 </button>
 
                 {mac ? null : <WindowControls />}
             </div>
         </div>
     );
+}
+
+// A button's chips go at a narrow window, where the bar has no room left for them; the title still names the chord.
+const HINT_FIT = "ml-0.5 max-[1199px]:hidden";
+
+// a title with its shortcut in trailing parentheses, which the tooltip shows apart (DESIGN.md "Tooltips")
+function withChord(label: string, keys: string | undefined): string {
+    return keys == null ? label : `${label} (${formatChordString(keys)})`;
 }
 
 function WindowControls() {

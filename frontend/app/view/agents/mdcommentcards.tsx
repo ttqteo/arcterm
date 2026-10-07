@@ -134,7 +134,7 @@ function MdCommentBox({ box, ctx }: { box: MdBox; ctx: MdDocCtx }) {
                 </button>
                 <button type="button" disabled={blank} onClick={add} className={ACCENT_BTN}>
                     Add comment
-                    <span className={KBD}>{formatChordString("Ctrl:Enter")}</span>
+                    <span className={KBD}>{formatChordString("Mod:Enter")}</span>
                 </button>
             </div>
         </div>

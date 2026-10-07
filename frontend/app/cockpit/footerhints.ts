@@ -7,23 +7,32 @@
 // show a key that wouldn't fire. footerhints.test.ts asserts every referenced id exists.
 
 import type { SurfaceKey } from "@/app/store/keybindings/types";
+import { peekClickLabel } from "./ctrlheld";
 
 export interface FooterHint {
     ids: string[]; // binding ids this chip represents (>=1); shown if any is active in ctx
-    keys?: string; // chord in binding notation ("Ctrl:p"); glyph computed at render (platform-aware)
+    keys?: string; // chord in binding notation ("Mod:p"); glyph computed at render (platform-aware)
     glyph?: string; // literal glyph for composite/non-modifier hints ("↑↓", "[ ]", "esc")
     label: string; // terse action, e.g. "move", "palette"
-    ctrlLit?: boolean; // renders lit while Ctrl is held (ctrlheld.ts): the key that turns a click into this action
+    ctrlLit?: boolean; // renders lit while the peek key is held (ctrlheld.ts): the key that turns a click into this action
 }
 
 // Appended to every surface; each filtered by its binding's live when(ctx).
 export const GLOBAL_HINTS: FooterHint[] = [
     { ids: ["go:cockpit"], glyph: "g", label: "go" }, // bare g-leader; drops in the terminal
-    { ids: ["leader:enter"], keys: "Ctrl:g", label: "go" }, // the same tree, reachable in the terminal
+    { ids: ["leader:enter"], keys: "Mod:g", label: "go" }, // the same tree, reachable in the terminal
     { ids: ["surface:back-home"], glyph: "esc", label: "home" }, // deep surfaces only (via its when)
-    { ids: ["list:peek", "cockpit:peek"], glyph: "space · ctrl+click", label: "peek", ctrlLit: true },
-    { ids: ["palette"], keys: "Ctrl:p", label: "palette" },
-    { ids: ["new-agent"], keys: "Ctrl:n", label: "new" },
+    {
+        ids: ["list:peek", "cockpit:peek"],
+        // a getter, read at render: the platform is not known at module load (keysym.ts)
+        get glyph() {
+            return `space · ${peekClickLabel()}`;
+        },
+        label: "peek",
+        ctrlLit: true,
+    },
+    { ids: ["palette"], keys: "Mod:p", label: "palette" },
+    { ids: ["new-agent"], keys: "Mod:n", label: "new" },
     { ids: ["help"], glyph: "?", label: "help" }, // Shift+?; drops in the terminal
 ];
 
@@ -45,14 +54,14 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["cycle-agent-next", "cycle-agent-prev"], keys: "Ctrl:Tab", label: "cycle" },
         { ids: ["agent:return-nav"], keys: "Shift:Escape", label: "leave" }, // editable-only via its binding
         // canvas mode hides every chip above but leave; this order serves both canvas mode and marking
-        { ids: ["agent:canvas-send"], keys: "Ctrl:Enter", label: "send" },
+        { ids: ["agent:canvas-send"], keys: "Mod:Enter", label: "send" },
         { ids: ["agent:mark-stop"], glyph: "m", label: "stop marking" },
         { ids: ["agent:canvas-close"], glyph: "c", label: "terminal" },
         { ids: ["agent:canvas-prev", "agent:canvas-next"], glyph: "[ ]", label: "board" },
         { ids: ["agent:mark-start"], glyph: "m", label: "mark" },
         // review mode: Ctrl+Enter names the tray's accent answer
-        { ids: ["agent:review-approve"], keys: "Ctrl:Enter", label: "approve" },
-        { ids: ["agent:review-request"], keys: "Ctrl:Enter", label: "request changes" },
+        { ids: ["agent:review-approve"], keys: "Mod:Enter", label: "approve" },
+        { ids: ["agent:review-request"], keys: "Mod:Enter", label: "request changes" },
         { ids: ["agent:review-comment"], glyph: "c", label: "comment" },
         { ids: ["agent:review-close"], glyph: "r", label: "terminal" },
         { ids: ["agent:review-prev", "agent:review-next"], glyph: "[ ]", label: "tab" },
@@ -60,7 +69,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     // ↑↓, ⏎ and g g left the footer for room; they still work and are in ? help.
     files: [
         // first, so a narrow footer keeps it: shown only while line comments wait to be sent
-        { ids: ["files:review-send"], keys: "Ctrl:Enter", label: "send comments" },
+        { ids: ["files:review-send"], keys: "Mod:Enter", label: "send comments" },
         { ids: ["files:filter"], glyph: "/", label: "filter" },
         { ids: ["files:toggle-graph"], keys: "Shift:g", label: "graph" },
         { ids: ["files:change-refs"], glyph: "c", label: "change refs" }, // compare-only via its binding

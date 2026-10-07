@@ -430,7 +430,7 @@ function SaveControls() {
                 <span className={cn("text-[11.5px]", dirty ? "text-accent-soft" : "text-muted")}>{status}</span>
             ) : null}
             <HeaderButton
-                label="Save (Ctrl+S)"
+                label={`Save (${formatChordString("Mod:s")})`}
                 disabled={!dirty || save.kind === "saving"}
                 onClick={() => fireAndForget(saveCurrent)}
             >
@@ -537,7 +537,7 @@ const CODE_SIDEBAR_MODES: readonly CodeSidebarMode[] = ["files", "search", "chan
 // are not known at module load (keysym.ts).
 const CODE_SIDEBAR_TABS: Record<CodeSidebarMode, { label: string; chord?: string; icon: React.ReactNode }> = {
     files: { label: "Files", chord: "Alt:t", icon: <FolderTree size={14} strokeWidth={1.8} /> },
-    search: { label: "Search", chord: "Ctrl:Shift:f", icon: <Search size={14} strokeWidth={1.8} /> },
+    search: { label: "Search", chord: "Mod:Shift:f", icon: <Search size={14} strokeWidth={1.8} /> },
     changed: { label: "Changed files", icon: <GitCompareArrows size={14} strokeWidth={1.8} /> },
 };
 

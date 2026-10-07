@@ -47,7 +47,7 @@ describe("buildLaunchItems", () => {
         items.find((i) => i.key === "launch:consult:pi")!.alt!.run();
         expect(deps.open).toHaveBeenCalledWith("fix auth", "orchestrator");
         expect(deps.consult).not.toHaveBeenCalled();
-        expect(items.find((i) => i.key === "launch:orchestrate")!.chord).toBe("Ctrl:Enter");
+        expect(items.find((i) => i.key === "launch:orchestrate")!.chord).toBe("Mod:Enter");
     });
 
     it("consults claude and pi with the trimmed goal", () => {

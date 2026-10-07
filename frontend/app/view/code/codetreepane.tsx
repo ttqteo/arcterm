@@ -150,7 +150,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                                   {
                                       label: "Open to the Side",
                                       icon: <Columns2 size={13} strokeWidth={1.8} />,
-                                      accel: "Ctrl+\\",
+                                      accel: "Mod:\\",
                                       click: () => openSide(row.path),
                                   },
                                   { type: "separator" as const },

@@ -5,6 +5,7 @@
 // for a lead (status, lanes with the lead's questions under them, activity) and Task for a worker (its lead,
 // lane, dependencies, attempt and the lead's question). A question the lead holds can be taken over.
 
+import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { paneReveal } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
@@ -115,7 +116,7 @@ export function openRunDag(model: AgentsViewModel, run: RunInfo, taskId?: string
         return;
     }
     void openOrPeek(model, { kind: "channel", channelId: run.channelId, runId: run.runId }, event).then((res) => {
-        if ("reason" in res || event?.ctrlKey) {
+        if ("reason" in res || isPeekGesture(event)) {
             return;
         }
         const dagOref = WOS.makeORef("dag", dag.oid);

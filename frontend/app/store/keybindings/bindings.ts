@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { launchPiTab } from "@/app/cockpit/cockpit-actions";
+import { peekClickLabel } from "@/app/cockpit/ctrlheld";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -184,7 +185,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
 
     const surfaceChords: Binding[] = SURFACE_ORDER.slice(0, 9).map((surface, i) => ({
         id: `surface:${surface}`,
-        keys: `Ctrl:${i + 1}`,
+        keys: `Mod:${i + 1}`,
         group: "Global",
         label: `Jump to ${surface}`,
         paletteHidden: true, // duplicates the go-target for the same surface, with a worse label
@@ -225,7 +226,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // reachable from inside a text field, and a binding that always matches is also what keeps
             // WebView2's print dialog off this key. `g p` opens it too.
             id: "palette",
-            keys: "Ctrl:p",
+            keys: "Mod:p",
             group: "Global",
             label: "Search (files on Code)",
             paletteHidden: true, // a palette row that opens the palette
@@ -238,7 +239,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // sheet can advertise the chord. Same shape as the cockpit-grid documentation bindings.
             // The matcher checks LEADER_ALIASES ahead of the singles pass, so this never wins the key.
             id: "leader:enter",
-            keys: "Ctrl:g",
+            keys: "Mod:g",
             group: "Navigation",
             label: "Go to… (works inside the agent terminal)",
             paletteHidden: true, // a palette row for a key the palette itself would swallow
@@ -262,7 +263,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         },
         {
             id: "new-agent",
-            keys: "Ctrl:n",
+            keys: "Mod:n",
             group: "Global",
             label: "New agent",
             // yields to an open modal: unguarded it stacked New Agent on top of whatever was already
@@ -271,8 +272,17 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => globalStore.set(model.newAgentOpenAtom, true),
         },
         {
+            // Not Mod+R: on Windows that is Ctrl+R, the shell's reverse search in a focused terminal.
+            id: "new-run",
+            keys: "Mod:Shift:r",
+            group: "Global",
+            label: "New run",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => globalStore.set(model.newRunOpenAtom, true),
+        },
+        {
             id: "launch:pi",
-            keys: "Ctrl:Shift:n",
+            keys: "Mod:Shift:n",
             group: "Global",
             label: "Launch Pi tab",
             run: () => void launchPiTab(model),
@@ -754,7 +764,7 @@ export function buildCockpitBindings(): Binding[] {
         doc("cockpit:column", "h", "Other column (← → / h l); on a multi-question ask, switch question"),
         doc("cockpit:answer", "1", "Select an answer option (1–9); on a task row with no question, run its action"),
         doc("cockpit:open", "Enter", "Confirm answer, else open focus; on a task row, open its worker"),
-        doc("cockpit:peek", "Space", "Peek the agent in the avatar popup (Ctrl+click a link peeks it too)"),
+        doc("cockpit:peek", "Space", `Peek the agent in the avatar popup (${peekClickLabel()} a link peeks it too)`),
         doc("cockpit:reply", "r", "Reply inline to the agent"),
         doc("cockpit:terminal", "t", "Open the agent's terminal"),
         doc("cockpit:background", "b", "Background the agent (keeps running)"),
@@ -1007,7 +1017,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         },
         {
             id: "agent:canvas-send",
-            keys: "Ctrl:Enter",
+            keys: "Mod:Enter",
             group: "Agent",
             label: "Send the marks to the agent",
             // live inside a note input on purpose: the last note is where the user finishes; it stands down in
@@ -1070,7 +1080,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         // to send, else Approve. Two bindings with exclusive when()s so the footer chip names the answer
         {
             id: "agent:review-approve",
-            keys: "Ctrl:Enter",
+            keys: "Mod:Enter",
             group: "Agent",
             label: "Approve",
             when: (ctx) => reviewSend(ctx) && !reviewCanRequest(),
@@ -1078,7 +1088,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         },
         {
             id: "agent:review-request",
-            keys: "Ctrl:Enter",
+            keys: "Mod:Enter",
             group: "Agent",
             label: "Request changes",
             when: (ctx) => reviewSend(ctx) && reviewCanRequest(),
@@ -1275,7 +1285,7 @@ export function buildFilesBindings(): Binding[] {
             // ask block and the menu of agents. A box holding text, or a button that is disabled or absent, lets the
             // key pass; in a box (editable) the box's own Ctrl+Enter adds the comment.
             id: "files:review-send",
-            keys: "Ctrl:Enter",
+            keys: "Mod:Enter",
             group: "Diff",
             label: "Send line comments",
             when: (ctx) => {
@@ -1403,7 +1413,7 @@ export function buildCodeBindings(): Binding[] {
         {
             id: "code:side",
             // by code, not key, so the chord is the same key on every keyboard layout
-            keys: "Ctrl:c{Backslash}",
+            keys: "Mod:c{Backslash}",
             group: "Code",
             label: "Open the file to the side, or close the side column",
             when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
@@ -1411,7 +1421,7 @@ export function buildCodeBindings(): Binding[] {
         },
         {
             id: "code:save",
-            keys: "Ctrl:s",
+            keys: "Mod:s",
             group: "Code",
             label: "Save the open file",
             // overwrites the file on disk with the buffer; nothing asks first
@@ -1527,7 +1537,7 @@ export function buildCodeBindings(): Binding[] {
         },
         {
             id: "code:search",
-            keys: "Ctrl:Shift:f",
+            keys: "Mod:Shift:f",
             group: "Code",
             label: "Search file contents",
             // like Ctrl+P and save's Ctrl+S, deliberately NOT gated on !editable:

@@ -19,6 +19,13 @@ describe("keysym", () => {
         expect(modSymbol("Shift")).toBe("⇧");
         expect(formatChordString("Cmd:Shift:p")).toBe("⌘⇧P");
     });
+    // Mod is the platform's primary modifier: Command on a Mac, Control elsewhere (keyutil)
+    it("Mod is ⌘ on macOS and ctrl on Windows", () => {
+        setPlatform("darwin");
+        expect(formatChordString("Mod:Shift:r")).toBe("⌘⇧R");
+        setPlatform("win32");
+        expect(formatChordString("Mod:Shift:r")).toBe("ctrl+shift+r");
+    });
     it("formats modifier chords in lower case on Windows", () => {
         setPlatform("win32");
         expect(formatChord("Ctrl:p")).toEqual(["ctrl", "p"]);

@@ -128,23 +128,23 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe(SURFACE_ORDER[SURFACE_ORDER.length - 1]);
     });
 
-    it("binds Ctrl+1..7 to SURFACE_ORDER, so Usage is Ctrl+4 and Radar is Ctrl+7", () => {
+    it("binds Mod+1..7 to SURFACE_ORDER, so Usage is Mod+4 and Radar is Mod+7", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("cockpit") } as any;
         const chords = buildGlobalBindings(model).filter(
-            (b) => /^Ctrl:\d$/.test(b.keys) && b.id.startsWith("surface:")
+            (b) => /^Mod:\d$/.test(b.keys) && b.id.startsWith("surface:")
         );
         expect(chords.map((b) => b.keys)).toEqual([
-            "Ctrl:1",
-            "Ctrl:2",
-            "Ctrl:3",
-            "Ctrl:4",
-            "Ctrl:5",
-            "Ctrl:6",
-            "Ctrl:7",
+            "Mod:1",
+            "Mod:2",
+            "Mod:3",
+            "Mod:4",
+            "Mod:5",
+            "Mod:6",
+            "Mod:7",
         ]);
-        chords.find((b) => b.keys === "Ctrl:4")!.run(ctx());
+        chords.find((b) => b.keys === "Mod:4")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("usage");
-        chords.find((b) => b.keys === "Ctrl:7")!.run(ctx());
+        chords.find((b) => b.keys === "Mod:7")!.run(ctx());
         expect(globalStore.get(model.surfaceAtom)).toBe("radar");
     });
 
@@ -586,27 +586,27 @@ describe("diff-surface line review send", () => {
 
     it("Ctrl+Enter sends with comments under the active key and no box holding text", () => {
         withReview({ comments: [comment] });
-        expect(onKey("Ctrl:Enter")).toEqual(["files:review-send"]);
+        expect(onKey("Mod:Enter")).toEqual(["files:review-send"]);
         withReview({
             comments: [comment],
             box: { file: "a.ts", side: "new", startLine: 4, endLine: 4, source: "worktree", text: "" },
         });
-        expect(onKey("Ctrl:Enter")).toEqual(["files:review-send"]);
+        expect(onKey("Mod:Enter")).toEqual(["files:review-send"]);
     });
 
     it("stands down in an editable target, with no comments, with a typed box, or under another key", () => {
         withReview({ comments: [comment] });
-        expect(onKey("Ctrl:Enter", { ...nav, editable: true })).toEqual([]);
-        expect(onKey("Ctrl:Enter", { ...nav, modalOpen: true })).toEqual([]);
+        expect(onKey("Mod:Enter", { ...nav, editable: true })).toEqual([]);
+        expect(onKey("Mod:Enter", { ...nav, modalOpen: true })).toEqual([]);
         withReview({ comments: [] });
-        expect(onKey("Ctrl:Enter")).toEqual([]);
+        expect(onKey("Mod:Enter")).toEqual([]);
         withReview({
             comments: [comment],
             box: { file: "a.ts", side: "new", startLine: 4, endLine: 4, source: "worktree", text: "half" },
         });
-        expect(onKey("Ctrl:Enter")).toEqual([]);
+        expect(onKey("Mod:Enter")).toEqual([]);
         withReview({ comments: [comment] }, "C:/other");
-        expect(onKey("Ctrl:Enter")).toEqual([]);
+        expect(onKey("Mod:Enter")).toEqual([]);
     });
 
     it("presses the tray's send button, and lets the key pass when it is missing or disabled", () => {
@@ -635,9 +635,9 @@ describe("command palette chord", () => {
         return { model, b: buildGlobalBindings(model).find((x) => x.id === "palette")! };
     };
 
-    it("is Ctrl+P with no `when`, so nothing else can claim the chord", () => {
+    it("is Mod+P with no `when`, so nothing else can claim the chord", () => {
         const { b } = build();
-        expect(b.keys).toBe("Ctrl:p");
+        expect(b.keys).toBe("Mod:p");
         // no guard at all: reachable from inside a text field, and an always-matching binding is
         // what stops WebView2's print dialog from taking the key on unhandled surfaces
         expect(b.when).toBeUndefined();
@@ -660,6 +660,23 @@ describe("command palette chord", () => {
     });
 });
 
+describe("new run chord", () => {
+    const build = () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), newRunOpenAtom: atom(false) } as any;
+        return { model, b: buildGlobalBindings(model).find((x) => x.id === "new-run")! };
+    };
+
+    // reachable from a field and the terminal, as New agent's Mod+N is; Mod+R would take Ctrl+R from the shell
+    it("is Mod+Shift+R and opens the New run window from anywhere but a modal", () => {
+        const { model, b } = build();
+        expect(b.keys).toBe("Mod:Shift:r");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+        b.run(ctx());
+        expect(globalStore.get(model.newRunOpenAtom)).toBe(true);
+    });
+});
+
 describe("code surface bindings", () => {
     const find = (id: string) => {
         const b = buildCodeBindings().find((x) => x.id === id);
@@ -678,8 +695,8 @@ describe("code surface bindings", () => {
     // Files have no chord of their own — the single global "palette" binding opens the search on its
     // Files scope here (see "command palette chord" above), so a chord here would be a second,
     // conflicting claim on the same key.
-    it("owns no Ctrl+P of its own — the global search binding covers files", () => {
-        expect(buildCodeBindings().find((b) => b.keys === "Ctrl:p")).toBeUndefined();
+    it("owns no Mod+P of its own — the global search binding covers files", () => {
+        expect(buildCodeBindings().find((b) => b.keys === "Mod:p")).toBeUndefined();
     });
 
     it("keeps bare-letter refresh out of the editor, while save survives it", () => {
@@ -753,7 +770,7 @@ describe("leader reachability and the fullscreen chord", () => {
     it("registers a documentation-only leader:enter binding on the alias chord", () => {
         const b = buildGlobalBindings(model).find((x) => x.id === "leader:enter")!;
         expect(b).toBeDefined();
-        expect(b.keys).toBe("Ctrl:g");
+        expect(b.keys).toBe("Mod:g");
         // documentation only — the matcher performs leader entry, so this must never consume the key
         expect(b.run(inTerm)).toBe(false);
     });
@@ -1050,7 +1067,7 @@ describe("agent review mode keys", () => {
         expect(onKey("[")).toEqual(["agent:review-prev"]);
         expect(onKey("]")).toEqual(["agent:review-next"]);
         expect(onKey("c")).toEqual(["agent:review-comment"]);
-        expect(onKey("Ctrl:Enter")).toEqual(["agent:review-approve"]);
+        expect(onKey("Mod:Enter")).toEqual(["agent:review-approve"]);
         for (const id of ["agent:prev", "agent:next", "agent:prev-k", "agent:next-j"]) {
             expect(active(id), id).toBe(true);
         }
@@ -1145,20 +1162,20 @@ describe("agent review mode keys", () => {
 
     it("Ctrl+Enter is Approve until there is something to send, then Request changes", () => {
         setAgentView("a1", "review", 1);
-        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+        expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-approve"]);
         expect(find("agent:review-approve").label).toBe("Approve");
 
         setGeneralNote("a1", "tighten §3");
-        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-request"]);
+        expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-request"]);
         expect(find("agent:review-request").label).toBe("Request changes");
         setGeneralNote("a1", "  ");
-        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+        expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-approve"]);
 
         const anchor = { sectionIndex: 0, sectionLabel: "§1", paragraph: 1, sentences: [0, 0] as [number, number] };
         addComment("a1", { ...anchor, id: "d", quote: "q", selectedText: "q", note: "", draft: true });
-        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+        expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-approve"]);
         addComment("a1", { ...anchor, id: "s", quote: "q", selectedText: "q", note: "say why", draft: false });
-        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-request"]);
+        expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-request"]);
     });
 
     it("Ctrl+Enter stands down in History and a session, which hide the review pane without leaving review mode", () => {
@@ -1166,15 +1183,15 @@ describe("agent review mode keys", () => {
         try {
             for (const mode of ["history", "session"] as const) {
                 globalStore.set(centerModeAtom, mode);
-                expect(onKey("Ctrl:Enter", typing)).toEqual([]);
+                expect(onKey("Mod:Enter", typing)).toEqual([]);
                 setGeneralNote("a1", "tighten §3");
-                expect(onKey("Ctrl:Enter", typing)).toEqual([]);
+                expect(onKey("Mod:Enter", typing)).toEqual([]);
                 setGeneralNote("a1", "");
             }
         } finally {
             globalStore.set(centerModeAtom, "terminal");
         }
-        expect(onKey("Ctrl:Enter", typing)).toEqual(["agent:review-approve"]);
+        expect(onKey("Mod:Enter", typing)).toEqual(["agent:review-approve"]);
     });
 });
 

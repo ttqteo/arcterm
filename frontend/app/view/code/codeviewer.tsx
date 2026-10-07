@@ -17,6 +17,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
+import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -146,7 +147,7 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             return (
                 <SurfaceEmptyState
                     title="No file open"
-                    body="Pick a file from the tree, or press Ctrl+P to search by name."
+                    body={`Pick a file from the tree, or press ${formatChordString("Mod:p")} to search by name.`}
                 />
             );
         case "loading":

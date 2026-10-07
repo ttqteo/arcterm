@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { setPlatform } from "@/util/platformutil";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LEADER_ALIASES, matchBinding } from "./matcher";
 import type { Binding, KeyContext } from "./types";
 
@@ -88,9 +89,23 @@ describe("matchBinding", () => {
 // real posture rule rather than a simplification of it.
 const leaderAware = (c: KeyContext) => (!c.editable || c.leader != null) && !c.modalOpen;
 
+// The alias chord is Mod+G: Ctrl+G on Windows (these tests), Cmd+G on a Mac.
 describe("matchBinding — leader reachable from a focused text field", () => {
-    it("LEADER_ALIASES maps Ctrl+G to the g leader", () => {
-        expect(LEADER_ALIASES["Ctrl:g"]).toBe("g");
+    beforeEach(() => setPlatform("win32"));
+    afterEach(() => setPlatform("darwin"));
+
+    it("LEADER_ALIASES maps Mod+G to the g leader", () => {
+        expect(LEADER_ALIASES["Mod:g"]).toBe("g");
+    });
+
+    it("on a Mac the alias is Cmd+G, so Ctrl+G reaches the terminal", () => {
+        setPlatform("darwin");
+        const b = bind({ id: "go-agent", keys: "g a", when: leaderAware });
+        expect(matchBinding(ev("g", { meta: true, cmd: true }), editCtx, [b])).toEqual({
+            kind: "enterLeader",
+            leader: "g",
+        });
+        expect(matchBinding(ev("g", { control: true }), editCtx, [b])).toEqual({ kind: "none" });
     });
 
     it("the alias chord enters leader mode while editable — impossible with a bare prefix", () => {
@@ -119,7 +134,7 @@ describe("matchBinding — leader reachable from a focused text field", () => {
     // one distinguishes the two orderings.
     it("a same-chord documentation binding does not swallow the alias door", () => {
         const seq = bind({ id: "go-agent", keys: "g a", when: leaderAware });
-        const doc = bind({ id: "leader:enter", keys: "Ctrl:g", when: (c) => !c.modalOpen, run: () => false });
+        const doc = bind({ id: "leader:enter", keys: "Mod:g", when: (c) => !c.modalOpen, run: () => false });
         expect(matchBinding(ev("g", { control: true }), editCtx, [doc, seq])).toEqual({
             kind: "enterLeader",
             leader: "g",

@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { setPlatform } from "@/util/platformutil";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentsViewModel } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { jumpToAgent } from "../agents/channelsprimitives";
@@ -111,7 +112,9 @@ describe("taskWorkerTarget", () => {
 describe("openTaskWorker", () => {
     const model = {} as AgentsViewModel;
     const gesture = (ctrlKey: boolean) => ({ ctrlKey, preventDefault: vi.fn(), stopPropagation: vi.fn() });
+    beforeEach(() => setPlatform("win32"));
     afterEach(() => {
+        setPlatform("darwin");
         vi.mocked(openOrPeek).mockClear();
         vi.mocked(jumpToAgent).mockClear();
     });

@@ -13,6 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatSize, readPanelFile, type PanelFile } from "@/app/view/agents/filetabload";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
+import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -249,7 +250,7 @@ export function CodeSidePane({ project, side }: { project: CodeProject; side: Co
                     type="button"
                     data-code-side-close
                     aria-label="Close the side column"
-                    title="Close the side column (Ctrl+\)"
+                    title={`Close the side column (${formatChordString("Mod:\\")})`}
                     onClick={closeSide}
                     className="flex size-6 flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-primary"
                 >

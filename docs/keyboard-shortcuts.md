@@ -4,12 +4,15 @@ The cockpit is designed to be operated entirely from the keyboard. This is the h
 of the keybinding registry (`frontend/app/store/keybindings/`) — **the registry is the source of
 truth**; when they disagree, the registry is right and this file is stale.
 
-Verified against `bindings.ts` on 2026-10-06.
+Verified against `bindings.ts` on 2026-10-07.
 
 Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`](superpowers/specs/2026-07-03-keyboard-operability-design.md).
 
 ## Concepts
 
+- **`Mod`** is `Cmd` (⌘) on macOS and `Ctrl` on Windows: the app's own chords (`Mod`+`P`, `Mod`+`N`, `Mod`+`Enter`…)
+  follow the platform. A chord written `Ctrl` is the Control key on both (`Ctrl`+`Tab`, and `Ctrl`+`C`, which
+  belongs to the terminal). On macOS an `Alt` chord is `Option`, matched by the key's position.
 - **Postures.** There is no global "mode" to track. Focus determines behavior:
   - **Navigate** — focus is on a surface region (not a text field). Single keys move a cursor and act on it.
   - **Type** — focus is in a text field, composer, or the terminal. Keys type normally. Press `Esc` to return to Navigate.
@@ -21,19 +24,22 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
   that will work in your current context.
 - **Cheat sheet.** Press `?` (while not typing) to open a searchable modal of every shortcut.
-  When you are typing (e.g. in the terminal), open it via Search (`Ctrl`+`P`) → Commands → "Keyboard shortcuts".
+  When you are typing (e.g. in the terminal), open it via Search (`Mod`+`P`) → Commands → "Keyboard shortcuts".
 
 ## Global (work anywhere, including inside the terminal)
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar |
-| `Ctrl`+`P` | Search — opens on the Files scope on Code (see below) |
-| `Ctrl`+`N` | New agent |
+| `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar |
+| `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
+| `Mod`+`N` | New agent |
+| `Mod`+`Shift`+`R` | New run |
+| `Mod`+`Shift`+`N` | Launch a Pi tab |
+| `Mod`+`G` | Open the `g` leader from inside a text field or the terminal |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |
 | `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
 
-Setup and Settings have no `Ctrl`+number slot — the positions are bound to `SURFACE_ORDER`
+Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `g` `.` and Settings with `g` `,`.
 
 ## Go-to surface — leader `g` (Navigate posture)
@@ -52,7 +58,7 @@ Setup and Settings have no `Ctrl`+number slot — the positions are bound to `SU
 | `g` `,` | Settings |
 | `g` `p` | Search |
 
-## Search (`Ctrl`+`P`)
+## Search (`Mod`+`P`)
 
 One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records, Projects, Files, Commands.
 
@@ -64,7 +70,7 @@ One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records,
 | `→` with the caret at the end of the query | Open the selected row's actions (a run, agent, session, record, initiative or project). Mid-query, `→` moves the caret |
 | `←` or `Backspace` on an empty action filter | Leave an action's input, then the action list, back to the results with the query and selection as they were |
 | `1`…`9` in Needs you | Answer the selected ask with that option, in place |
-| `Ctrl`+`Enter` | The selected row's alternate action, named in the footer. On the goal block, open an orchestrator run instead of a Quick one |
+| `Mod`+`Enter` | The selected row's alternate action, named in the footer. On the goal block, open an orchestrator run instead of a Quick one |
 | `Backspace` on an empty query | Leave a picker, then drop back to All |
 | `path:123` in Files | Open the file at that line; a bare `:123` on Code moves the open file |
 
@@ -89,7 +95,8 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 
 A peek shows a run, agent, record, initiative, radar finding or memory note in the avatar popup. It writes no
 selection on the surface underneath. `Space` on a row cursor peeks it;
-holding `Ctrl` underlines every link that can be peeked, and `Ctrl`+click on one peeks it instead of opening it.
+holding `Mod` underlines every link that can be peeked, and `Mod`+click on one peeks it instead of opening it
+(`Cmd`+click on macOS, where `Ctrl`+click is the right click).
 `Space` never peeks while focus is in a text field.
 
 | Keys | Action |
@@ -98,7 +105,7 @@ holding `Ctrl` underlines every link that can be peeked, and `Ctrl`+click on one
 | `Backspace` | Back to the avatar popup's hub |
 | `Esc` | Close the popup, or return to the hub if the item was opened from it |
 
-A link inside an item view does a full open, even with `Ctrl` held.
+A link inside an item view does a full open, even with `Mod` held.
 
 ## Per-surface actions (Navigate posture)
 
@@ -130,20 +137,20 @@ A link inside an item view does a full open, even with `Ctrl` held.
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, File) while its tab strip has focus; the agent keys stand down there |
 | `Esc` | In the panel's File tab: cancel the comment being written, else close the file |
 | `c` | In the File tab's Preview of a markdown file, comment on the selected text |
-| `Ctrl`+`Enter` | In the File tab: add the comment being written; outside a comment box, send the comments to the agent |
+| `Mod`+`Enter` | In the File tab: add the comment being written; outside a comment box, send the comments to the agent |
 
 ### Agent: Conversation History
 
 Opened with `g` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
 that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
-`Ctrl`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
+`Mod`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. `Ctrl`+`Tab` still cycles agents and brings the
 terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
 
 ### Agent: terminal grid
 
 Open a split by dragging a live agent from the tree onto a terminal (up to four cells), or by right-clicking its row and
-picking **Open in split**. From the keyboard it is in the palette: `Ctrl`+`P`, the agent, `→`, **Open in split**. A split
+picking **Open in split**. From the keyboard it is in the palette: `Mod`+`P`, the agent, `→`, **Open in split**. A split
 needs an agent with no cell yet and a grid with room; otherwise the menu item is disabled and the palette action just
 opens the agent.
 
@@ -174,7 +181,7 @@ was.
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
 | `[` / `]` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
-| `Ctrl`+`Enter` | Send the marks to the agent (from mark mode) |
+| `Mod`+`Enter` | Send the marks to the agent (from mark mode) |
 
 ### Agent: review mode
 
@@ -185,9 +192,9 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `r` | Back to the terminal |
 | `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
 | `c` | Comment on the selected text |
-| `e` | Suggest an edit: open the selected text's paragraph as source; `Ctrl`+`Enter` saves the suggestion, `Esc` cancels. The file is not changed; the agent is sent `Edit: replace "…" with "…"` |
-| `Ctrl`+`Enter` | Approve, while there is no comment and no note to send. Inside a comment being written it adds that comment instead |
-| `Ctrl`+`Enter` | Request changes, once there is a comment or a note. Inside a comment being written it adds that comment instead |
+| `e` | Suggest an edit: open the selected text's paragraph as source; `Mod`+`Enter` saves the suggestion, `Esc` cancels. The file is not changed; the agent is sent `Edit: replace "…" with "…"` |
+| `Mod`+`Enter` | Approve, while there is no comment and no note to send. Inside a comment being written it adds that comment instead |
+| `Mod`+`Enter` | Request changes, once there is a comment or a note. Inside a comment being written it adds that comment instead |
 
 ### Jarvis
 
@@ -213,11 +220,11 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `Alt`+`Z` | Toggle word wrap for the open file, also while typing in it. Prose (`.tex`, `.bib`, `.md`, `.txt`) wraps by default; code follows `editor:wordwrap` |
-| `Ctrl`+`\` | Open the file in a read-only side column (a `.tex` file on its PDF, a document on its preview), or close the side column. Dragging a file from the tree onto the right half of the editor does the same for that file |
+| `Mod`+`\` | Open the file in a read-only side column (a `.tex` file on its PDF, a document on its preview), or close the side column. Dragging a file from the tree onto the right half of the editor does the same for that file |
 | `d` | Toggle the diff against HEAD |
 | `r` | Refresh the file index |
 | `Alt`+`←` / `Alt`+`→` | Back / forward through opened files |
-| `Ctrl`+`S` | Save the open file |
+| `Mod`+`S` | Save the open file |
 
 ### Diff
 
@@ -237,7 +244,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `c` | In history: compare refs. In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
 | `Tab` | Switch compare side (in compare) |
-| `Ctrl`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
+| `Mod`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
 | `Esc` | Clear filters, else leave compare, else back to the Cockpit |
 
 ### Route DAG (the orchestrator run's graph)

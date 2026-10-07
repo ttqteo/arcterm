@@ -5,6 +5,7 @@
 // by opening one — every action here closes the overlay onto something. It layers over the thread as a
 // sibling, never wrapping it, so peeking cannot remount live worker output.
 
+import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { modalBackdrop } from "@/app/element/motiontokens";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { SubLabel } from "@/app/view/agents/sectionlabel";
@@ -142,7 +143,7 @@ export function GraphPeek({
     // a peek shows the run over the graph, so the graph stays for the user to come back to
     const openRun = (runORef: string, e: React.MouseEvent) => {
         fireAndForget(() => openOrPeekAddress(model, runORef, e));
-        if (!e.ctrlKey) {
+        if (!isPeekGesture(e)) {
             onClose();
         }
     };

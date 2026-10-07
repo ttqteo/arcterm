@@ -54,7 +54,7 @@ export interface PaletteItem {
     verb: string; // what Enter does, shown on the selected row
     echo: string; // the whole action, shown in the footer
     run: () => void;
-    alt?: { echo: string; run: () => void }; // what Ctrl+Enter does instead, shown in the footer beside echo
+    alt?: { echo: string; run: () => void }; // what Mod+Enter does instead, shown in the footer beside echo
 }
 
 // a play glyph for commands, matching their Run verb: '›' means "opens a sub-list", and ⌘ is a Mac key

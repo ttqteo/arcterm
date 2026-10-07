@@ -16,7 +16,7 @@ function hasModifier(e: WaveKeyboardEvent): boolean {
 // focus. The bare prefix cannot do this — it has to reach the agent — so the leader gets a second
 // door. Checked against this map directly, NOT against the when-filtered sequence set, which is empty
 // inside the TUI: deriving the door from that set would make it depend on what it exists to open.
-export const LEADER_ALIASES: Record<string, string> = { "Ctrl:g": "g" };
+export const LEADER_ALIASES: Record<string, string> = { "Mod:g": "g" };
 
 // Pure. No DOM, no atoms. `ctx.leader` carries the active leader prefix (or null).
 export function matchBinding(waveEvent: WaveKeyboardEvent, ctx: KeyContext, bindings: Binding[]): MatchResult {

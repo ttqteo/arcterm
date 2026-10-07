@@ -957,7 +957,7 @@ function SuggestionCard(p: {
         >
             {head}
             <div className="text-[11.5px] leading-[1.45] text-muted">
-                Edit the source on the left. The file is not changed: {formatChordString("Ctrl:Enter")} saves this as a
+                Edit the source on the left. The file is not changed: {formatChordString("Mod:Enter")} saves this as a
                 suggestion the agent applies.
             </div>
             <textarea
@@ -1258,7 +1258,7 @@ function Tray(p: {
         model.setAnswerText(agent.id, QI, formatRequest(state.comments, state.generalNote));
         model.submitAnswer(agent.id);
     };
-    const kbd = <span className={KBD}>{formatChordString("Ctrl:Enter")}</span>;
+    const kbd = <span className={KBD}>{formatChordString("Mod:Enter")}</span>;
     const buttons = (
         <div className="flex flex-none items-center gap-[10px]">
             <AnswerButtons

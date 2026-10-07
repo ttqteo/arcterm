@@ -148,7 +148,7 @@ export function MdCommentTray({
                 return { ok: false, agent: "", error: String((e as Error)?.message ?? e) };
             }
         });
-    const chord = formatChordString("Ctrl:Enter");
+    const chord = formatChordString("Mod:Enter");
 
     return (
         <div data-md-tray className={cn(TRAY, "flex-col gap-[6px] py-[10px]")}>

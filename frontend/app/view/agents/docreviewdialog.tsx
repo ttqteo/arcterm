@@ -517,7 +517,7 @@ function Footer(p: {
                         >
                             {p.copy.approve}
                             <span className="rounded-[4px] bg-background/20 px-[5px] font-mono text-[10.5px]">
-                                {formatChordString("Ctrl:Enter")}
+                                {formatChordString("Mod:Enter")}
                             </span>
                         </button>
                         <button type="button" onClick={p.onRequest} className={SECONDARY_BTN}>

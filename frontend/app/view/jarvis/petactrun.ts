@@ -7,6 +7,7 @@
 // Every failure lands on the act that caused it (design §9). Never a toast: a silently-failed button is
 // worse than no button, because it also spends the attention the panel exists to earn.
 
+import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -37,7 +38,7 @@ async function escort(
     gesture?: OpenGesture
 ): Promise<void> {
     const target = act.target;
-    if (gesture?.ctrlKey) {
+    if (isPeekGesture(gesture)) {
         await openOrPeekAddress(model, target.ref, gesture, { anchor: target.anchor });
         return;
     }
@@ -113,10 +114,10 @@ export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: Open
     }
 }
 
-// only an escort leaves the peek, and not when Ctrl turns it into a peek; the caller drops focus-return for it
-// and nothing else
-export function actNavigates(act: PetAct, gesture?: { ctrlKey: boolean }): boolean {
-    return act.verb === "open" && !gesture?.ctrlKey;
+// only an escort leaves the peek, and not when the peek key (ctrlheld.ts) turns it into a peek; the caller drops
+// focus-return for it and nothing else
+export function actNavigates(act: PetAct, gesture?: { ctrlKey: boolean; metaKey?: boolean }): boolean {
+    return act.verb === "open" && !isPeekGesture(gesture);
 }
 
 // The errand reuses the Channels surface's consult path exactly (channelactions.ts): post the question as a

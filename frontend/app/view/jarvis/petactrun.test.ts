@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { setPlatform } from "@/util/platformutil";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const openAddress = vi.fn();
 const openOrPeekAddress = vi.fn();
@@ -78,6 +79,9 @@ describe("runAct — escorts", () => {
 });
 
 describe("runAct — Ctrl+click", () => {
+    beforeEach(() => setPlatform("win32"));
+    afterEach(() => setPlatform("darwin"));
+
     it("peeks the escort's address and leaves the popup open for the item", async () => {
         globalStore.set(petPeekOpenAtom, true);
         openOrPeekAddress.mockResolvedValue({ ok: true });
@@ -98,6 +102,9 @@ describe("runAct — Ctrl+click", () => {
         const act: PetAct = { id: "x", verb: "open", label: "Open", target: { kind: "oref", ref: "run:r1" } };
         expect(actNavigates(act)).toBe(true);
         expect(actNavigates(act, { ctrlKey: true })).toBe(false);
+        setPlatform("darwin");
+        expect(actNavigates(act, { ctrlKey: true })).toBe(true);
+        expect(actNavigates(act, { ctrlKey: false, metaKey: true })).toBe(false);
     });
 });
 

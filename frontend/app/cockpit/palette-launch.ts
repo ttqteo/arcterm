@@ -17,7 +17,7 @@ export interface LaunchItem {
     verb: "Open" | "Ask";
     echo: string; // one-line echo of what firing this row does to the goal
     run: () => void;
-    alt?: { echo: string; run: () => void }; // Ctrl+Enter
+    alt?: { echo: string; run: () => void }; // Mod+Enter
     chord?: string; // the key that reaches this row from anywhere in the block
 }
 
@@ -63,7 +63,7 @@ export function buildLaunchItems(query: string, projectName: string | undefined,
             verb: "Open",
             echo: `Opens the New run window with “${goal}” as an orchestrator run${where}`,
             run: orchestrate.run,
-            chord: "Ctrl:Enter",
+            chord: "Mod:Enter",
         },
     ];
     if (!projectName) {

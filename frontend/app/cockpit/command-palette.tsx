@@ -42,6 +42,7 @@ import { newRunPrefillAtom } from "@/app/view/jarvis/newruncontrol";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
+import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import {
@@ -1182,7 +1183,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             setSel((s) => (flat.length ? (Math.min(s, flat.length - 1) - 1 + flat.length) % flat.length : 0));
         } else if (e.key === "Enter") {
             e.preventDefault();
-            if (e.ctrlKey && selected?.alt != null) {
+            // Mod+Enter (palette-launch's chord): Command on a Mac, Control elsewhere
+            if ((isMacOS() ? e.metaKey : e.ctrlKey) && selected?.alt != null) {
                 const alt = selected.alt;
                 fire({ ...selected, run: alt.run });
             } else {

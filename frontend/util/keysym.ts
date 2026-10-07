@@ -33,6 +33,7 @@ const NAMED: Record<string, string> = {
 export function modSymbol(token: string): string {
     switch (token) {
         case "Cmd":
+        case "Mod": // keyutil's primary modifier: Command on a Mac, Control elsewhere
             return isMacOS() ? "⌘" : "ctrl";
         // keyutil matches "Ctrl" against the Control key on every platform, so a Mac must not show ⌘
         case "Ctrl":

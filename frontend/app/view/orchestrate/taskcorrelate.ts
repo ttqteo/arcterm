@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { isEditableTarget } from "@/app/store/keybindings/dispatcher";
 import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "../agents/agents";
@@ -78,7 +79,7 @@ export function openTaskWorker(view: TaskWorkerView, model: AgentsViewModel, eve
     if (target == null) {
         return;
     }
-    if (target.kind === "agent" && !event?.ctrlKey) {
+    if (target.kind === "agent" && !isPeekGesture(event)) {
         jumpToAgent(model, target.tabId);
         return;
     }

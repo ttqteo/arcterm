@@ -9,6 +9,7 @@
 // that cannot open says why and leaves the user where they were — a silent no-op is the failure this module
 // exists to remove.
 
+import { isPeekGesture } from "@/app/cockpit/ctrlheld";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/global";
 import * as WOS from "@/app/store/wos";
@@ -39,7 +40,7 @@ export type ReportOpen = (result: OpenResult) => void;
 type Loaded<T = undefined> = { ok: true; facts: T; notice?: string } | OpenFailure;
 
 // the click (or key) that asked; Ctrl turns an open into a peek
-export type OpenGesture = { ctrlKey: boolean; preventDefault(): void; stopPropagation(): void };
+export type OpenGesture = { ctrlKey: boolean; metaKey?: boolean; preventDefault(): void; stopPropagation(): void };
 
 type ChannelTarget = Extract<OpenTarget, { kind: "channel" }>;
 type RecordTarget = Extract<OpenTarget, { kind: "record" }>;
@@ -176,7 +177,7 @@ export async function peekAddress(
 
 // A peek consumes its click: a link nested in a row with its own handler must not peek and then open the row.
 export function openOrPeek(model: AgentsViewModel, target: OpenTarget, event?: OpenGesture): Promise<OpenResult> {
-    if (event?.ctrlKey && isPeekable(target)) {
+    if (isPeekGesture(event) && isPeekable(target)) {
         event.preventDefault();
         event.stopPropagation();
         return peekTarget(model, target);
@@ -191,7 +192,7 @@ export function openOrPeekAddress(
     hint?: AddressHint
 ): Promise<OpenResult> {
     const parsed = parseAddress(address, hint);
-    if (event?.ctrlKey && (parsed.kind === "unsupported" || isPeekable(parsed))) {
+    if (isPeekGesture(event) && (parsed.kind === "unsupported" || isPeekable(parsed))) {
         event.preventDefault();
         event.stopPropagation();
         return peekAddress(model, address, hint);

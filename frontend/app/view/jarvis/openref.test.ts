@@ -31,6 +31,7 @@ vi.mock("@/app/store/wos", async () => {
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: unknown[]) => pushToast(...a) }));
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { setPlatform } from "@/util/platformutil";
 import { atom } from "jotai";
 import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
@@ -829,7 +830,29 @@ describe("peek", () => {
 });
 
 describe("openOrPeek", () => {
-    const gesture = (ctrlKey: boolean) => ({ ctrlKey, preventDefault: vi.fn(), stopPropagation: vi.fn() });
+    const gesture = (ctrlKey: boolean, metaKey = false) => ({
+        ctrlKey,
+        metaKey,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+    });
+    // Ctrl is the Windows peek key; a Mac's is Command (ctrlheld.ts isPeekGesture)
+    beforeEach(() => setPlatform("win32"));
+    afterEach(() => setPlatform("darwin"));
+
+    it("peeks on Command on a Mac, where Ctrl+click is the right click", async () => {
+        setPlatform("darwin");
+        const model = makeModel(["t1"]);
+        const cmd = gesture(false, true);
+        expect(await openOrPeek(model, { kind: "agent", tabId: "t1" }, cmd)).toEqual({ ok: true });
+        expect(globalStore.get(peekItemAtom)?.target).toEqual({ kind: "agent", tabId: "t1" });
+        expect(cmd.preventDefault).toHaveBeenCalled();
+
+        const ctrl = gesture(true);
+        expect(await openOrPeekAddress(model, "tab:t1", ctrl)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(ctrl.preventDefault).not.toHaveBeenCalled();
+    });
 
     it("peeks on Ctrl and consumes the click", async () => {
         const model = makeModel(["t1"]);

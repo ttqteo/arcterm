@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { atom } from "jotai";
+import { atom, useAtomValue } from "jotai";
 import { useEffect } from "react";
 import type { Binding } from "./types";
 
@@ -28,4 +28,10 @@ export function useKeybindings(bindings: Binding[]): void {
         registerBindings(bindings);
         return () => unregisterBindings(bindings);
     }, [bindings]);
+}
+
+// The keys of the registered binding with this id, or undefined while none is registered: what a control's shortcut
+// hint reads, so it can never name a key the binding no longer has.
+export function useBindingKeys(id: string): string | undefined {
+    return useAtomValue(bindingsAtom).find((b) => b.id === id)?.keys;
 }
