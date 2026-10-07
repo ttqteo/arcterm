@@ -49,6 +49,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- On macOS a click on an agent's notification opens that agent, as on Windows, instead of only bringing arcterm to the
+  front on whichever agent was showing.
 - A newly launched agent's prompt takes your typing at once, without a click into its terminal.
 - On macOS the `Option` shortcuts work: `Option+Z` word wrap, `Option+T` file tree and `Option+E` editor on Code.
 - On macOS `Cmd`+click peeks a link, and holding `Cmd` underlines what can be peeked. `Ctrl`+click, the Mac's right
