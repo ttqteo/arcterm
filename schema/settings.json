@@ -14,6 +14,18 @@
         "app:disablectrlshiftdisplay": {
           "type": "boolean"
         },
+        "notify:*": {
+          "type": "boolean"
+        },
+        "notify:os": {
+          "type": "boolean"
+        },
+        "notify:toast": {
+          "type": "boolean"
+        },
+        "notify:reply": {
+          "type": "boolean"
+        },
         "term:*": {
           "type": "boolean"
         },
