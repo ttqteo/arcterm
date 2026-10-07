@@ -677,6 +677,19 @@ declare global {
         firsterror?: string;
     };
 
+    // wshrpc.CommandDocPdfFindData
+    type CommandDocPdfFindData = {
+        path: string;
+    };
+
+    // wshrpc.CommandDocPdfFindRtnData
+    type CommandDocPdfFindRtnData = {
+        rootpath: string;
+        pdfpath?: string;
+        source?: string;
+        modtime?: number;
+    };
+
     // wshrpc.CommandDossierEdgeData
     type CommandDossierEdgeData = {
         dossierid: string;

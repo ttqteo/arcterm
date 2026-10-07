@@ -282,6 +282,12 @@ func DocCompileCommand(w *wshutil.WshRpc, data wshrpc.CommandDocCompileData, opt
 	return resp, err
 }
 
+// command "docpdffind", wshserver.DocPdfFindCommand
+func DocPdfFindCommand(w *wshutil.WshRpc, data wshrpc.CommandDocPdfFindData, opts *wshrpc.RpcOpts) (*wshrpc.CommandDocPdfFindRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandDocPdfFindRtnData](w, "docpdffind", data, opts)
+	return resp, err
+}
+
 // command "effortcreate", wshserver.EffortCreateCommand
 func EffortCreateCommand(w *wshutil.WshRpc, data wshrpc.CommandEffortCreateData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEffortCreateRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEffortCreateRtnData](w, "effortcreate", data, opts)

@@ -848,3 +848,95 @@ func TestEngineEnvTurnsMsysPathConversionBackOn(t *testing.T) {
 		t.Fatalf("engineEnv changed its input: %q", env)
 	}
 }
+
+func TestFindPdf(t *testing.T) {
+	setup := func(t *testing.T) (root string) {
+		t.Helper()
+		useFakes(t, fakes{dataDir: t.TempDir()})
+		return writeFile(t, filepath.Join(sandbox(t), "main.tex"), rootDoc)
+	}
+
+	t.Run("a Doc review build wins over the PDF beside the root", func(t *testing.T) {
+		root := setup(t)
+		compiled := writeFile(t, filepath.Join(OutDir(root), "main.pdf"), "%PDF-1.4 compiled")
+		writeFile(t, filepath.Join(filepath.Dir(root), "main.pdf"), "%PDF-1.4 sibling")
+		got, err := FindPdf(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sameFile(t, got.RootPath, root)
+		sameFile(t, got.PdfPath, compiled)
+		if got.Source != "compiled" || got.ModTime <= 0 {
+			t.Fatalf("got %+v, want source compiled with a modtime", got)
+		}
+	})
+
+	t.Run("the PDF beside the root when there is no build", func(t *testing.T) {
+		root := setup(t)
+		sibling := writeFile(t, filepath.Join(filepath.Dir(root), "main.pdf"), "%PDF-1.4 sibling")
+		got, err := FindPdf(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sameFile(t, got.PdfPath, sibling)
+		if got.Source != "sibling" {
+			t.Fatalf("source = %q, want sibling", got.Source)
+		}
+	})
+
+	t.Run("no PDF anywhere names the root and nothing else", func(t *testing.T) {
+		root := setup(t)
+		got, err := FindPdf(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sameFile(t, got.RootPath, root)
+		if got.PdfPath != "" || got.Source != "" || got.ModTime != 0 {
+			t.Fatalf("got %+v, want no PDF", got)
+		}
+	})
+
+	t.Run("a chapter finds its root's PDF", func(t *testing.T) {
+		root := setup(t)
+		sibling := writeFile(t, filepath.Join(filepath.Dir(root), "main.pdf"), "%PDF-1.4")
+		chapter := writeFile(t, filepath.Join(filepath.Dir(root), "sections", "intro.tex"), "% !TEX root = ../main.tex\nProse.\n")
+		got, err := FindPdf(chapter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sameFile(t, got.RootPath, root)
+		sameFile(t, got.PdfPath, sibling)
+	})
+
+	t.Run("a directory named like the PDF is not one", func(t *testing.T) {
+		root := setup(t)
+		if err := os.MkdirAll(filepath.Join(filepath.Dir(root), "main.pdf"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got, err := FindPdf(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.PdfPath != "" {
+			t.Fatalf("PdfPath = %q, want none", got.PdfPath)
+		}
+	})
+
+	t.Run("a file with no root has nothing to find", func(t *testing.T) {
+		useFakes(t, fakes{dataDir: t.TempDir()})
+		loose := writeFile(t, filepath.Join(sandbox(t), "notes.tex"), "Just prose.\n")
+		got, err := FindPdf(loose)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RootPath != "" || got.PdfPath != "" {
+			t.Fatalf("got %+v, want nothing", got)
+		}
+	})
+
+	t.Run("a non-.tex path is an error", func(t *testing.T) {
+		if _, err := FindPdf(filepath.Join(t.TempDir(), "main.go")); err == nil {
+			t.Fatal("want an error")
+		}
+	})
+}

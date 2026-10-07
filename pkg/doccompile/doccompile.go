@@ -248,6 +248,41 @@ func OutDir(root string) string {
 	return filepath.Join(dataDir(), "doccompile", hex.EncodeToString(sum[:])[:outDirHexLen])
 }
 
+// PdfFound is the PDF already built for a document, found without compiling.
+type PdfFound struct {
+	RootPath string // "" = no root found
+	PdfPath  string // "" = no PDF built yet
+	Source   string // "compiled" (a Doc review build in OutDir) | "sibling" (beside the root) | ""
+	ModTime  int64  // the PDF's modification time, ms since the epoch
+}
+
+// FindPdf finds the PDF for the root that path belongs to, without compiling: the Doc review's build in OutDir
+// first, since it is what arcterm last compiled, else <root>.pdf beside the root, as an editor's or the author's
+// own build leaves it. It errors only when path cannot be read as a .tex file.
+func FindPdf(path string) (*PdfFound, error) {
+	root, err := FindTexRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	found := &PdfFound{RootPath: root}
+	if root == "" {
+		return found, nil
+	}
+	name := strings.TrimSuffix(filepath.Base(root), filepath.Ext(root)) + ".pdf"
+	for _, c := range []struct{ path, source string }{
+		{filepath.Join(OutDir(root), name), "compiled"},
+		{filepath.Join(filepath.Dir(root), name), "sibling"},
+	} {
+		if fi, err := os.Stat(c.path); err == nil && fi.Mode().IsRegular() {
+			found.PdfPath = c.path
+			found.Source = c.source
+			found.ModTime = fi.ModTime().UnixMilli()
+			return found, nil
+		}
+	}
+	return found, nil
+}
+
 // Compile compiles the root that path belongs to. With no root it returns at once with RootPath "" and
 // looks for no engine, so the caller can tell "no root" from "no engine". A request that arrives while
 // the same root is compiling waits for that compile and gets its result. An error is returned only when

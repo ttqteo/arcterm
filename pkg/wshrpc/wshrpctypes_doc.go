@@ -5,9 +5,11 @@ package wshrpc
 
 import "context"
 
-// DocCommands is the document-review domain: the compile behind the doc review's PDF tab.
+// DocCommands is the document domain: the compile behind the doc review's PDF tab, and the lookup behind the Code
+// surface's PDF mode for a .tex file, which shows a PDF already built and never compiles.
 type DocCommands interface {
 	DocCompileCommand(ctx context.Context, data CommandDocCompileData) (*CommandDocCompileRtnData, error)
+	DocPdfFindCommand(ctx context.Context, data CommandDocPdfFindData) (*CommandDocPdfFindRtnData, error)
 }
 
 type CommandDocCompileData struct {
@@ -23,4 +25,15 @@ type CommandDocCompileRtnData struct {
 	Pages      int    `json:"pages"`
 	LogTail    string `json:"logtail,omitempty"`
 	FirstError string `json:"firsterror,omitempty"`
+}
+
+type CommandDocPdfFindData struct {
+	Path string `json:"path"` // absolute path of a .tex file; its root is found from it
+}
+
+type CommandDocPdfFindRtnData struct {
+	RootPath string `json:"rootpath"` // "" = no root found
+	PdfPath  string `json:"pdfpath,omitempty"`
+	Source   string `json:"source,omitempty"`  // "compiled" (a Doc review build) | "sibling" (beside the root)
+	ModTime  int64  `json:"modtime,omitempty"` // ms since the epoch
 }

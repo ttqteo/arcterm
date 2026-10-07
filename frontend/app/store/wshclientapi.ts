@@ -288,6 +288,12 @@ export class RpcApiType {
         return client.wshRpcCall("doccompile", data, opts);
     }
 
+    // command "docpdffind" [call]
+    DocPdfFindCommand(client: WshClient, data: CommandDocPdfFindData, opts?: RpcOpts): Promise<CommandDocPdfFindRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "docpdffind", data, opts);
+        return client.wshRpcCall("docpdffind", data, opts);
+    }
+
     // command "effortcreate" [call]
     EffortCreateCommand(client: WshClient, data: CommandEffortCreateData, opts?: RpcOpts): Promise<CommandEffortCreateRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "effortcreate", data, opts);

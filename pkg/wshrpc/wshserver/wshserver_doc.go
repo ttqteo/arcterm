@@ -30,3 +30,19 @@ func (ws *WshServer) DocCompileCommand(ctx context.Context, data wshrpc.CommandD
 		FirstError: res.FirstError,
 	}, nil
 }
+
+func (ws *WshServer) DocPdfFindCommand(ctx context.Context, data wshrpc.CommandDocPdfFindData) (*wshrpc.CommandDocPdfFindRtnData, error) {
+	if data.Path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+	found, err := doccompile.FindPdf(data.Path)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandDocPdfFindRtnData{
+		RootPath: found.RootPath,
+		PdfPath:  found.PdfPath,
+		Source:   found.Source,
+		ModTime:  found.ModTime,
+	}, nil
+}
