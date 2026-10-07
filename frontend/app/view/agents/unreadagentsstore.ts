@@ -12,7 +12,7 @@ import { centerModeAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentState } from "./agentsviewmodel";
 import { agentGridAtom } from "./gridstore";
-import { nextUnread, sameCounts, viewingIds } from "./unreadagents";
+import { nestedIds, nextUnread, sameCounts, viewingIds } from "./unreadagents";
 
 export const unreadAgentsAtom = atom<ReadonlyMap<string, number>>(new Map<string, number>()) as PrimitiveAtom<
     ReadonlyMap<string, number>
@@ -24,6 +24,7 @@ export function useUnreadTracking(model: AgentsViewModel): void {
     const surface = useAtomValue(model.surfaceAtom);
     const center = useAtomValue(centerModeAtom);
     const grid = useAtomValue(agentGridAtom);
+    const lineage = useAtomValue(model.lineageAtom);
     const prevStates = useRef<ReadonlyMap<string, AgentState>>(new Map());
     useEffect(() => {
         const prev = globalStore.get(unreadAgentsAtom);
@@ -31,11 +32,12 @@ export function useUnreadTracking(model: AgentsViewModel): void {
             prev,
             prevStates.current,
             agents,
-            viewingIds(surface === "agent", center, focusId, grid)
+            viewingIds(surface === "agent", center, focusId, grid),
+            nestedIds(lineage.roles)
         );
         prevStates.current = new Map(agents.map((a) => [a.id, a.state]));
         if (!sameCounts(prev, next)) {
             globalStore.set(unreadAgentsAtom, next);
         }
-    }, [agents, focusId, surface, center, grid]);
+    }, [agents, focusId, surface, center, grid, lineage]);
 }

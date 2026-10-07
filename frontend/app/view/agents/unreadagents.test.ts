@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentState } from "./agentsviewmodel";
-import { nextUnread, sameCounts, unreadLabel, viewingIds } from "./unreadagents";
+import { nestedIds, nextUnread, sameCounts, unreadLabel, viewingIds } from "./unreadagents";
 
 const states = (o: Record<string, AgentState>) => new Map(Object.entries(o));
 const roster = (o: Record<string, AgentState>) => Object.entries(o).map(([id, state]) => ({ id, state }));
@@ -28,6 +28,17 @@ describe("nextUnread", () => {
         const working = nextUnread(counts({ a: 1 }), states({ a: "idle" }), roster({ a: "working" }), noIds);
         expect(working).toEqual(counts({ a: 1 }));
         expect(nextUnread(working, states({ a: "working" }), roster({ a: "idle" }), noIds)).toEqual(counts({ a: 2 }));
+    });
+
+    it("does not count a run's workers or stage sessions, only top-level agents", () => {
+        const out = nextUnread(
+            counts({ w: 2 }),
+            states({ lead: "working", w: "working", s: "working" }),
+            roster({ lead: "idle", w: "idle", s: "idle" }),
+            noIds,
+            new Set(["w", "s"])
+        );
+        expect(out).toEqual(counts({ lead: 1 }));
     });
 
     it("does not count one that finished in view", () => {
@@ -92,5 +103,16 @@ describe("sameCounts", () => {
         expect(sameCounts(m({ a: 1 }), m({ a: 2 }))).toBe(false);
         expect(sameCounts(m({ a: 1 }), m({ a: 1, b: 1 }))).toBe(false);
         expect(sameCounts(m({ a: 1 }), m({ b: 1 }))).toBe(false);
+    });
+});
+
+describe("nestedIds", () => {
+    it("picks workers and stage sessions, not leads", () => {
+        const out = nestedIds({
+            lead: { kind: "lead", runId: "r" },
+            w: { kind: "worker", leadRunId: "r", taskId: "t-1" },
+            s: { kind: "stage", leadRunId: "r", stageRole: "review" },
+        });
+        expect(out).toEqual(new Set(["w", "s"]));
     });
 });
