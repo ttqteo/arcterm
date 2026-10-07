@@ -16,8 +16,9 @@ export interface FileRef {
     root: string | null;
     line?: number;
     reread?: number; // set on each open of a file that changes under it (a background task's output), to read it again
-    // a growing file the tab offers to follow live (the Live toggle), and whether it opens following; absent, no toggle
-    live?: "on" | "off";
+    // a background task's output: it opens following live (the Live toggle) and wrapped, with no Open in Code (a
+    // temp file, nothing to edit); absent, an ordinary file
+    live?: boolean;
     // opened from Files changed: the repository path git knows it by, and the commit that list is measured from ("" is
     // HEAD). Set, the tab offers Diff, against the same base as the list's +N -N
     diff?: { rel: string; base: string };

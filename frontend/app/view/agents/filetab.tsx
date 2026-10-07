@@ -62,14 +62,14 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     const [mdMode, setMdMode] = useAtom(railMdModeAtom);
     const [diffOn, setDiffOn] = useAtom(railDiffOnAtom);
     const drafts = useAtomValue(mdCommentAtom(agentId));
-    const [following, setFollowing] = useState(ref?.live === "on");
+    const [following, setFollowing] = useState(!!ref?.live);
     const followingRef = useRef(following);
     followingRef.current = following;
     const stampRef = useRef<string | undefined>(undefined);
     stampRef.current = state.kind === "text" ? state.stamp : undefined;
     const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
     const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
-    const wrap = useWrap(ref?.abs ?? "");
+    const wrap = useWrap(ref?.abs ?? "", !!ref?.live);
     const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
     useEffect(() => {
         if (ref == null) {
@@ -77,7 +77,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
         }
         let live = true;
         setState({ kind: "loading" });
-        setFollowing(ref.live === "on");
+        setFollowing(!!ref.live);
         stickRef.current = true;
         fireAndForget(async () => {
             const next = await readPanelFile(ref.abs);
@@ -244,11 +244,11 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
             state.kind === "missing"
                 ? { title: "This file no longer exists", body: `${dir}${name} was deleted or moved.`, close: true }
                 : state.kind === "error"
-                  ? { title: "Cannot read this file", body: state.message, close: false }
+                  ? { title: "Cannot read this file", body: state.message, close: !!ref.live }
                   : {
                         title: `${state.kind === "binary" ? "Binary file" : "Large file"}, ${formatSize(state.size)}`,
                         body: "The panel shows text files up to 2 MB.",
-                        close: false,
+                        close: !!ref.live,
                     };
         body = (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-10 text-center">
@@ -329,14 +329,14 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                         data-file-wrap
                         aria-pressed={wrap}
                         title={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
-                        onClick={() => toggleWrap(ref.abs)}
+                        onClick={() => toggleWrap(ref.abs, !!ref.live)}
                         className={cn(BTN, wrap && "border-accent/40 text-accent-soft hover:border-accent/60")}
                     >
                         <WrapText size={11} aria-hidden />
                         Wrap
                     </button>
                 ) : null}
-                {ref.live != null ? (
+                {ref.live ? (
                     <button
                         type="button"
                         data-file-live
@@ -371,10 +371,12 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                         <GitCompare size={13} aria-hidden />
                     </button>
                 ) : null}
-                <button type="button" onClick={openCode} className={BTN}>
-                    Open in Code
-                    <ArrowUpRight size={11} aria-hidden />
-                </button>
+                {ref.live ? null : (
+                    <button type="button" onClick={openCode} className={BTN}>
+                        Open in Code
+                        <ArrowUpRight size={11} aria-hidden />
+                    </button>
+                )}
             </div>
             <div className={cn("flex min-h-0 flex-1 flex-col", preview ? "bg-background" : "bg-surface-code")}>
                 {body}

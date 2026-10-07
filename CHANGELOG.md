@@ -8,6 +8,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- A background task's output opens in the panel following live and wrapped, finished or not, and drops the
+  **Open in Code** button.
+
 ## 0.15.4 — 2026-10-07
 
 ### Added

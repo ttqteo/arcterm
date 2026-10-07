@@ -739,7 +739,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                           abs: t.outputFile!,
                                           root: null,
                                           reread: Date.now(),
-                                          live: bgTaskStatusLabel(t.status, live) === "running" ? "on" : "off",
+                                          live: true,
                                       })
                                 : undefined
                         }

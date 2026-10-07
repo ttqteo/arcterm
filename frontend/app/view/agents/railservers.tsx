@@ -164,7 +164,7 @@ export function ServersSection({
 }) {
     // a server's log is its launching background task's output file, followed live (the task is running)
     const openLog = (task: BackgroundTask) =>
-        openFileInPanel(model, agentId, { abs: task.outputFile!, root: null, reread: Date.now(), live: "on" });
+        openFileInPanel(model, agentId, { abs: task.outputFile!, root: null, reread: Date.now(), live: true });
     return (
         <div data-rail-servers className="flex flex-col gap-[7px]">
             {failed ? (
