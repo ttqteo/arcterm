@@ -7,6 +7,7 @@ import {
     backToHub,
     clearLoadingPeek,
     closePeek,
+    openPetPeek,
     peekFactsAtom,
     peekItemAtom,
     reportPeekFacts,
@@ -15,7 +16,7 @@ import {
     type PeekFacts,
     type PeekItem,
 } from "./peekstore";
-import { petPeekOpenAtom } from "./petstore";
+import { petBubbleAtom, petPeekOpenAtom, petUnreadAtom } from "./petstore";
 
 const RUN: PeekItem["target"] = { kind: "run", runId: "r1" };
 const AGENT: PeekItem["target"] = { kind: "agent", tabId: "t1" };
@@ -40,6 +41,19 @@ describe("leaving an item", () => {
         closePeek();
         expect(globalStore.get(peekItemAtom)).toBeNull();
         expect(globalStore.get(petPeekOpenAtom)).toBe(false);
+    });
+});
+
+describe("opening the popup from the creature or its key", () => {
+    it("opens on the hub, and the opening is the notice: the bubble and the unread mark go", () => {
+        globalStore.set(peekItemAtom, { target: RUN, status: "ready" });
+        globalStore.set(petBubbleAtom, { id: "e1" } as never);
+        globalStore.set(petUnreadAtom, true);
+        openPetPeek();
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        expect(globalStore.get(peekItemAtom)).toBeNull();
+        expect(globalStore.get(petBubbleAtom)).toBeNull();
+        expect(globalStore.get(petUnreadAtom)).toBe(false);
     });
 });
 

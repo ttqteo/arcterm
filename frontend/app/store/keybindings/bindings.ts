@@ -68,6 +68,7 @@ import {
 } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, setActiveRunId } from "@/app/view/jarvis/jarvissubjectstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
+import { openPetPeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import type { MutableRefObject } from "react";
@@ -251,6 +252,16 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // discoverable at rest.
             when: (ctx) => ctx.editable && !ctx.modalOpen,
             run: () => false, // never consume — the matcher already handled it
+        },
+        {
+            // The creature's peek: what is waiting on you, with what settles it. Otherwise only a click or a Tab
+            // onto the sprite reaches it. Inactive while it is open, which counts as a modal (dispatcher.ts).
+            id: "go:waiting",
+            keys: "g w",
+            group: "Go to",
+            label: "What's waiting (Jarvis peek)",
+            when: navigate,
+            run: () => openPetPeek(),
         },
         {
             id: "go:palette",

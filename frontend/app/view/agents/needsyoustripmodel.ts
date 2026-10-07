@@ -52,7 +52,7 @@ function idOf(oref: string | undefined, otype: string): string {
 export function escalationAgent(
     item: AttentionItem,
     messages: ChannelMessage[] | undefined,
-    roster: AgentVM[]
+    roster: ReadonlyArray<AgentVM>
 ): AgentVM | undefined {
     if (item.kind !== "escalation" || !item.key.startsWith(ESCALATION_PREFIX)) {
         return undefined;

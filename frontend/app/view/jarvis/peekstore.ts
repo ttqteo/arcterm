@@ -8,7 +8,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { OpenTarget } from "./address";
-import { petPeekOpenAtom } from "./petstore";
+import { petBubbleAtom, petPeekOpenAtom, petUnreadAtom } from "./petstore";
 
 export type PeekTarget = Exclude<OpenTarget, { kind: "channel" } | { kind: "canvas" }>;
 
@@ -61,6 +61,15 @@ let base: PeekBase = { item: null, open: false };
 export function backToHub(): void {
     globalStore.set(peekItemAtom, null);
     globalStore.set(petPeekOpenAtom, true);
+}
+
+// The popup on its hub, from a click on the creature or its key (g w). Opening it is the notice, so the bubble and
+// the unread mark go.
+export function openPetPeek(): void {
+    globalStore.set(peekItemAtom, null);
+    globalStore.set(petPeekOpenAtom, true);
+    globalStore.set(petUnreadAtom, false);
+    globalStore.set(petBubbleAtom, null);
 }
 
 export function closePeek(): void {

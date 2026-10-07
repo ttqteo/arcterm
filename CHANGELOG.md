@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- The Jarvis pet's popup answers a worker's question in place: a one-question ask (an escalation too) shows its
+  options as buttons, and `1`…`9` sends one, the same answer as the Cockpit's answer bar.
+- `g` `w` opens the Jarvis pet's popup (what's waiting on you) from any surface; `Cmd+G` `w` (`Ctrl+G` `w` on Windows)
+  reaches it from inside the terminal.
 - **New run** has a shortcut, `Cmd+Shift+R` on macOS and `Ctrl+Shift+R` on Windows, and the app bar's New run and
   New agent buttons show their shortcut beside the label.
 - When RAM is short, a heavy command an agent runs (a build, the typecheck, a whole test suite, `npm install`) waits
@@ -20,6 +24,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The Jarvis pet falls back to the footer when you drop it, with a small bounce, instead of snapping there; and when
+  the footer under it changes height (switching to the Cockpit) it hops up or drops down to the new edge rather than
+  jumping.
 - The RAM chip in the app bar shows the free RAM (`1.3 GB free`) instead of how many more workers fit; that
   number moved to its tooltip, and the chip still turns amber with a ⚠ when not one more worker fits.
 - On macOS the app's shortcuts use `Cmd` instead of `Ctrl`: `Cmd+P` search, `Cmd+N` new agent, `Cmd+1`…`7`

@@ -5,6 +5,7 @@ import {
     enterHintLabel,
     eventPeekTarget,
     peekActForCommand,
+    peekAnswerAct,
     peekConditions,
     peekKeyCommand,
     queueRows,
@@ -321,5 +322,97 @@ describe("what the hub peeks", () => {
         const [bare] = queueRows([item({ kind: "gate", key: "gate:x", runid: "" })]);
         expect(rowPeekTarget(bare)).toBeNull();
         expect(rowPeekTarget(undefined)).toBeNull();
+    });
+});
+
+// The most common thing waiting on you is a worker's question. Its options answer it from the peek, through the
+// same send as the Cockpit's answer bar and the palette's digits, so the creature resolves it instead of
+// escorting you to a terminal to press one key.
+describe("queueRows — a question answers in place", () => {
+    const oneQ = { questions: [{ question: "Keep it?", options: [{ label: "Keep" }, { label: "Drop" }] }] };
+    const asker = (ask: unknown = oneQ) =>
+        ({ id: "tab-1", name: "juno", blockId: "b1", state: "asking", ask }) as unknown as AgentVM;
+    // what a Jarvis escalation card stores (jarviscards.ts parseCardData)
+    const escalationCard = (id: string): ChannelMessage =>
+        ({
+            id,
+            kind: "jarvis-escalation",
+            author: "jarvis",
+            text: "",
+            ts: 1,
+            data: JSON.stringify({ question: "Allow?", options: [], askORef: "block:b1", workerORef: "tab:tab-1" }),
+        }) as ChannelMessage;
+
+    it("offers each option of a one-question ask, keyed to the agent that asked", () => {
+        expect(queueRows([ASK], [asker()])[0].answers).toEqual([
+            { id: "ask:block:b1:answer:1", verb: "answer", label: "Keep", agentId: "tab-1", option: 0 },
+            { id: "ask:block:b1:answer:2", verb: "answer", label: "Drop", agentId: "tab-1", option: 1 },
+        ]);
+    });
+
+    it("names the escort Open once the options carry the answer", () => {
+        const row = queueRows([ASK], [asker()])[0];
+        expect(row.primary).toMatchObject({ verb: "open", label: "Open" });
+    });
+
+    it("answers an escalation through the agent its card names", () => {
+        const rows = queueRows([ESCALATION], [asker()], { [CH]: [escalationCard("m1")] });
+        expect(rows[0].answers.map((a) => a.label)).toEqual(["Keep", "Drop"]);
+    });
+
+    it("offers no answer for an escalation whose card is not loaded", () => {
+        expect(queueRows([ESCALATION], [asker()])[0].answers).toEqual([]);
+    });
+
+    it("offers none when one key cannot answer it: several questions, several picks, or a doc review", () => {
+        const multi = { questions: [{ question: "q", multiSelect: true, options: [{ label: "A" }] }] };
+        const two = { questions: [oneQ.questions[0], oneQ.questions[0]] };
+        const review = {
+            questions: [
+                {
+                    header: "Spec review",
+                    question: "/abs/spec.md\n- one",
+                    options: [{ label: "Approve" }, { label: "Request changes" }],
+                },
+            ],
+        };
+        for (const ask of [multi, two, review]) {
+            expect(queueRows([ASK], [asker(ask)])[0].answers).toEqual([]);
+        }
+    });
+
+    it("offers none when the agent that asked has left the roster, and keeps the verb on the escort", () => {
+        const row = queueRows([ASK], [])[0];
+        expect(row.answers).toEqual([]);
+        expect(row.primary).toMatchObject({ label: "Answer" });
+    });
+
+    it("gives every other kind no answers", () => {
+        expect(queueRows([DAG_GATE, DAG_BLOCKED], [asker()]).map((r) => r.answers)).toEqual([[], []]);
+    });
+});
+
+describe("peekAnswerAct", () => {
+    const row = queueRows(
+        [ASK],
+        [
+            {
+                id: "tab-1",
+                blockId: "b1",
+                ask: { questions: [{ question: "?", options: [{ label: "Keep" }, { label: "Drop" }] }] },
+            } as unknown as AgentVM,
+        ]
+    )[0];
+
+    it("maps a digit to the focused row's option", () => {
+        expect(peekAnswerAct(row, "1")).toMatchObject({ verb: "answer", option: 0 });
+        expect(peekAnswerAct(row, "2")).toMatchObject({ verb: "answer", option: 1 });
+    });
+
+    it("returns nothing past the last option, for other keys, or without a row", () => {
+        expect(peekAnswerAct(row, "3")).toBeNull();
+        expect(peekAnswerAct(row, "0")).toBeNull();
+        expect(peekAnswerAct(row, "a")).toBeNull();
+        expect(peekAnswerAct(undefined, "1")).toBeNull();
     });
 });

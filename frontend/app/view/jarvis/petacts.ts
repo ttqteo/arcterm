@@ -23,7 +23,9 @@ export type PetAct =
     | { id: string; verb: "ack"; label: string; channelId: string; runId: string; land?: boolean }
     | { id: string; verb: "land"; label: string; channelId: string; runId: string }
     | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
-    | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string };
+    | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string }
+    // one option of a one-question ask, sent to the agent that asked (askanswer.ts, the Cockpit's own send)
+    | { id: string; verb: "answer"; label: string; agentId: string; option: number };
 
 // An act's transient outcome, keyed by act id in petstore.ts. Transient on purpose: the row's real value
 // comes from its own poll, and letting an act's return value become the row's value would drift from the
@@ -38,8 +40,8 @@ export interface PetActState {
 // The button a click settles, the same one the Brief's queue offers (attentionact.ts), followed by the Open
 // escort for reading the run first: Approve a dag gate, Retry a failed task, Acknowledge an unverified run.
 // A held land gets Land again (a branch merged by hand lands at once) and Dismiss beside it, the way out
-// for a branch that will never land. Everything else needs a written answer, a picked option or a judgment,
-// none of which is a button, so the escort alone covers it.
+// for a branch that will never land. Everything else needs a written answer, a picked option or a judgment, so
+// the escort covers it here; a question one key can answer also gets its options in the peek (petpeekmodel.ts).
 export function actsForAttention(item: AttentionItem): PetAct[] {
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved

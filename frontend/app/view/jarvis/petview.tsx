@@ -24,11 +24,13 @@ import {
 } from "@/app/view/agents/ratelimitstore";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
-import { motion, useMotionValue, useReducedMotion } from "motion/react";
+import { animate, motion, useMotionValue, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { closePeek } from "./peekstore";
+import { flushSync } from "react-dom";
+import { closePeek, openPetPeek } from "./peekstore";
 import { PetBubble } from "./petbubble";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
+import { landing, ledgeShift, type LedgeAt } from "./petfall";
 import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner } from "./petledge";
 import { PetPeek } from "./petpeek";
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
@@ -186,11 +188,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         }
     }, [events, watermark]);
 
-    const openPeek = useCallback(() => {
-        globalStore.set(petPeekOpenAtom, true);
-        globalStore.set(petUnreadAtom, false);
-        globalStore.set(petBubbleAtom, null);
-    }, []);
+    const openPeek = useCallback(() => openPetPeek(), []);
 
     return (
         <>
@@ -268,6 +266,16 @@ function PetSprite({
     // set by a drag's start and cleared by the click that motion fires on its release, so a drag never
     // toggles the peek
     const draggedRef = useRef(false);
+    // A release falls to the ledge (petfall.ts) on dragX/dragY, still dangling: draggingNowRef stays true until it
+    // touches down, so the walker holds it until then. A new drag mid-fall stops the fall and bumps the sequence, so
+    // the stopped fall never lands.
+    const fallRef = useRef<AnimationPlaybackControls[]>([]);
+    const fallSeqRef = useRef(0);
+    // A ledge that moves under it (a surface switch changes the bar) is met on the svg's own offset, apart from the
+    // drag's transform, so the two never fight over one value.
+    const ledgeY = useMotionValue(0);
+    const ledgeAnimRef = useRef<AnimationPlaybackControls | null>(null);
+    const prevLedgeRef = useRef<LedgeAt | null>(null);
 
     // Step the walker to now against a fresh measure, draw what comes back, and schedule the next step. Safe to
     // call at any time, which is how every input change reaches the walker.
@@ -374,6 +382,38 @@ function PetSprite({
         }
     }, [x, ledgeRight, onCorner]);
 
+    // Before the paint that moves it: the svg starts where it stood on the old ledge and falls or hops to the new
+    // one. In the air (a drag, a drop's fall) there is nothing to stand on yet, so the ledge is only remembered.
+    const ledgeTop = frame?.ledge.top ?? null;
+    useLayoutEffect(() => {
+        if (ledgeTop == null) {
+            return;
+        }
+        const next = { top: ledgeTop, vh: window.innerHeight };
+        const shift = ledgeShift(prevLedgeRef.current, next);
+        prevLedgeRef.current = next;
+        if (shift === 0 || reduce || draggingNowRef.current) {
+            return;
+        }
+        ledgeAnimRef.current?.stop();
+        // a move mid-landing starts from where the last one had got to
+        const way = landing(ledgeY.get() + shift);
+        if (way == null) {
+            ledgeY.set(0);
+            return;
+        }
+        ledgeAnimRef.current = animate(ledgeY, way.y, { duration: way.duration, times: way.times, ease: way.ease });
+    }, [ledgeTop, reduce, ledgeY]);
+
+    useEffect(
+        () => () => {
+            fallSeqRef.current++;
+            fallRef.current.forEach((a) => a.stop());
+            ledgeAnimRef.current?.stop();
+        },
+        []
+    );
+
     const marks: PetMark[] = frame == null ? [] : unread ? [...frame.step.marks, "unread"] : frame.step.marks;
     const sprite = frame == null ? null : spriteFor(frame.step.pose, marks);
 
@@ -436,15 +476,42 @@ function PetSprite({
             onDragStart={() => {
                 draggedRef.current = true;
                 draggingNowRef.current = true;
+                // caught mid-fall: the pointer takes it from where it is
+                fallSeqRef.current++;
+                fallRef.current.forEach((a) => a.stop());
+                fallRef.current = [];
                 touch();
             }}
             onDragEnd={(_, info) => {
                 const l = { left: ledge.left, right: ledge.right };
-                setPetHome(homeFraction(dropAt(info.point.x, l), l));
-                draggingNowRef.current = false;
-                dragX.set(0);
-                dragY.set(0);
-                touch();
+                const dropX = dropAt(info.point.x, l);
+                const land = () => {
+                    setPetHome(homeFraction(dropX, l));
+                    draggingNowRef.current = false;
+                    // the new left edge is committed before the transform resets, so no paint between them shows
+                    // it back at the left edge it was picked up from
+                    flushSync(touch);
+                    dragX.set(0);
+                    dragY.set(0);
+                };
+                const way = reduce ? null : landing(dragY.get());
+                if (way == null) {
+                    land();
+                    return;
+                }
+                const seq = ++fallSeqRef.current;
+                fallRef.current = [
+                    // it drifts to centre on the release x while it falls, so the landing needs no sideways jump
+                    animate(dragX, dropX - step.x, { duration: way.duration * way.times[1], ease: "easeOut" }),
+                    animate(dragY, way.y, { duration: way.duration, times: way.times, ease: way.ease }),
+                ];
+                // a stopped fall may resolve too; only the fall still current lands
+                void fallRef.current[1].finished.then(() => {
+                    if (seq === fallSeqRef.current) {
+                        fallRef.current = [];
+                        land();
+                    }
+                });
             }}
             onClick={() => {
                 if (draggedRef.current) {
@@ -475,18 +542,19 @@ function PetSprite({
             // class would always have lost
             className="fixed z-[60] cursor-grab outline-none active:cursor-grabbing"
         >
-            <svg
+            <motion.svg
                 width={PET_PX}
                 height={PET_PX}
                 viewBox={`0 0 ${PET_PX} ${PET_PX}`}
                 shapeRendering="crispEdges"
                 aria-hidden="true"
+                style={{ y: ledgeY }}
                 className="block"
             >
                 {/* only the body turns to face left; marks drawn inside would read backwards */}
                 <g transform={step.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>{sprite.body.map(cellRect)}</g>
                 {sprite.overlay.map(cellRect)}
-            </svg>
+            </motion.svg>
         </motion.div>
     );
 }

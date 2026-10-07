@@ -57,6 +57,7 @@ Setup and Settings have no `Mod`+number slot — the positions are bound to `SUR
 | `g` `.` | Setup — instructions and skills |
 | `g` `,` | Settings |
 | `g` `p` | Search |
+| `g` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
 
 ## Search (`Mod`+`P`)
 
@@ -90,6 +91,19 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 | `Enter` | Open / activate the item under the cursor |
 | `Space` | Peek the item under the cursor in the avatar popup, without leaving the surface (see Peek below) |
 | `Esc` | On a deep surface (Jarvis, Radar, Files, Usage, Code), return to the Cockpit. In a composer or text field, leave Type posture first. |
+
+## The avatar popup (what's waiting)
+
+Click the creature on the footer, or press `g` `w`, to open it.
+
+| Keys | Action |
+|---|---|
+| `j` / `k` (or `↓` / `↑`) | Move between the waiting rows |
+| `Enter` | The focused row's button: approve, retry, acknowledge, land again, or open |
+| `1`…`9` | Answer the focused row's question with that option (a one-question, single-pick ask) |
+| `Space` | Peek where the focused row's Open would go |
+| `/` | Ask Jarvis (the composer at the bottom) |
+| `Esc` | Close |
 
 ## Peek (the avatar popup's item view)
 

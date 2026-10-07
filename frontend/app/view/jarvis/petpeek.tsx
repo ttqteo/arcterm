@@ -14,7 +14,7 @@ import { computeEntrances, initialEntranceState, MOTION, paneReveal, popoverReve
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import { activeChannelAtom } from "@/app/view/agents/channelsstore";
+import { activeChannelAtom, channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
 import { MarkdownMessage } from "@/app/view/agents/markdownmessage";
 import { projectListAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
@@ -59,6 +59,7 @@ import {
     enterHintLabel,
     eventPeekTarget,
     peekActForCommand,
+    peekAnswerAct,
     peekConditions,
     peekKeyCommand,
     queueRows,
@@ -249,6 +250,35 @@ function ActLinks({ model, acts, onLeave }: { model: AgentsViewModel; acts: PetA
     );
 }
 
+// A question's options, numbered by the digit that sends them from the keyboard. Once one is in flight or sent,
+// all of them lock: an ask takes one answer.
+function AnswerButtons({ model, acts }: { model: AgentsViewModel; acts: PetAct[] }) {
+    const state = useAtomValue(petActStateAtom);
+    const locked = acts.some((act) => state[act.id]?.status === "running" || state[act.id]?.status === "done");
+    return (
+        <div data-pet-answers className="mt-1.5 flex flex-wrap gap-1.5">
+            {acts.map((act, i) => (
+                <button
+                    key={act.id}
+                    type="button"
+                    data-pet-act={act.id}
+                    disabled={locked}
+                    aria-busy={state[act.id]?.status === "running" || undefined}
+                    onClick={() => fireAndForget(() => runAct(model, act))}
+                    className={cn(
+                        "flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-[6px] border border-edge-strong px-2 text-[11px] font-semibold text-secondary hover:border-edge-mid hover:bg-surface-hover",
+                        FOCUS_RING,
+                        "disabled:cursor-default disabled:border-transparent disabled:bg-surface-hover disabled:text-muted"
+                    )}
+                >
+                    <kbd className="flex-none font-mono text-[10px] text-muted">{i + 1}</kbd>
+                    <span className="truncate">{act.label}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
 function QueueRow({
     model,
     row,
@@ -262,7 +292,7 @@ function QueueRow({
     focused: boolean;
     onLeave: () => void;
 }) {
-    const acts = [row.primary, ...row.links].filter((act) => act != null);
+    const acts = [row.primary, ...row.links, ...row.answers].filter((act) => act != null);
     return (
         <div data-pet-row={row.key} className="border-b border-border last:border-b-0">
             <div
@@ -292,6 +322,7 @@ function QueueRow({
                             className="mt-[5px] text-[11.5px] leading-[1.45] text-ink-mid"
                         />
                     ) : null}
+                    {row.answers.length > 0 ? <AnswerButtons model={model} acts={row.answers} /> : null}
                     <ActOutcome acts={acts} className="mt-1.5" />
                 </div>
                 {row.primary != null ? (
@@ -515,6 +546,8 @@ export function PetPeek({
     const said = useAtomValue(petSaidAtom);
     const items = useAtomValue(attentionAtom);
     const agents = useAtomValue(model.agentsAtom);
+    // an escalation finds the agent it waits in through its card (petpeekmodel.ts)
+    const channelMessages = useAtomValue(channelMessagesAtom);
     // one channel per project in the shared list: the reply goes to a project, never a leftover channel
     const projectRows = useAtomValue(projectListAtom);
     const channels = useMemo(() => rowsWithChannel(projectRows).map((r) => r.channel), [projectRows]);
@@ -606,7 +639,7 @@ export function PetPeek({
     }, [cursor]);
 
     const conditions = peekConditions(signals);
-    const rows = queueRows(items, agents);
+    const rows = queueRows(items, agents, channelMessages);
     const updates = dedupeUpdates(said, items);
     const quiet = rows.length === 0;
     const focusedRow = rows[Math.min(cursor, Math.max(0, rows.length - 1))];
@@ -667,6 +700,14 @@ export function PetPeek({
             onItemKeyDown(event);
             return;
         }
+        // a bare digit sends the focused row's option, as on the Cockpit's answer bar
+        const bareKey = !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat;
+        const answerAct = bareKey && event.target === event.currentTarget ? peekAnswerAct(focusedRow, event.key) : null;
+        if (answerAct != null) {
+            event.preventDefault();
+            runKeyboardAct(answerAct);
+            return;
+        }
         const command = peekKeyCommand(event.key);
         if (command === "close") {
             event.preventDefault();
@@ -712,6 +753,14 @@ export function PetPeek({
                   ...(quiet ? [] : [{ keys: ["j", "k"], label: "move" }]),
                   ...(spaceTarget != null ? [{ keys: ["space"], label: "peek" }] : []),
                   ...(!quiet || latestAct != null ? [{ keys: ["↵"], label: enterHintLabel(enterAct) }] : []),
+                  ...(focusedRow != null && focusedRow.answers.length > 0
+                      ? [
+                            {
+                                keys: [focusedRow.answers.length === 1 ? "1" : `1–${focusedRow.answers.length}`],
+                                label: "answer",
+                            },
+                        ]
+                      : []),
                   { keys: ["/"], label: "ask" },
                   { keys: ["esc"], label: "close" },
               ];

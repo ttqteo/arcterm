@@ -51,6 +51,12 @@ function inlineOptions(agent: AgentVM | undefined): string[] {
     return (qs[0].options ?? []).map((o) => o.label);
 }
 
+/** The labels one key answers an ask with: one single-select question that is not a doc review. [] otherwise, and the
+ *  ask is answered in its agent. Shared with the creature's peek (petpeekmodel.ts). */
+export function inlineAnswerOptions(agent: AgentVM | undefined): string[] {
+    return agent != null && parseDocReview(agent.ask) != null ? [] : inlineOptions(agent);
+}
+
 export function needsRows(items: AttentionItem[], agents: AgentVM[]): NeedsRow[] {
     return items
         .filter((item) => item.kind !== DROPPED_KIND)
@@ -58,7 +64,7 @@ export function needsRows(items: AttentionItem[], agents: AgentVM[]): NeedsRow[]
             const agent = askAgent(item, agents);
             const review = agent != null && parseDocReview(agent.ask) != null;
             const group = review ? "reviews" : (KIND_GROUP[item.kind] ?? "blocked");
-            return { item, group, agent, review, options: review ? [] : inlineOptions(agent) };
+            return { item, group, agent, review, options: inlineAnswerOptions(agent) };
         });
 }
 

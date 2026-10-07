@@ -12,6 +12,7 @@ const consult = vi.fn();
 const ackRun = vi.fn();
 const landRun = vi.fn();
 const getAttention = vi.fn();
+const answerAgent = vi.fn();
 
 vi.mock("./openref", () => ({
     openAddress: (...a: any[]) => openAddress(...a),
@@ -24,6 +25,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         AckRunCommand: (...a: any[]) => ackRun(...a),
         LandRunCommand: (...a: any[]) => landRun(...a),
         GetAttentionCommand: (...a: any[]) => getAttention(...a),
+        AnswerAgentCommand: (...a: any[]) => answerAgent(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -250,5 +252,61 @@ describe("sendErrand", () => {
             text: "no such channel",
             status: "error",
         });
+    });
+});
+
+// A question's option answers it from the peek through the Cockpit's own send (askanswer.ts), and like every act
+// here its failure lands on the button rather than in a console.
+describe("runAct — an answer", () => {
+    const ask = {
+        askId: "a1",
+        oref: "block:b1",
+        questions: [{ question: "Keep it?", options: [{ label: "Keep" }, { label: "Drop" }] }],
+    };
+    const roster = (agents: unknown[]) => ({
+        surfaceAtom: atom("cockpit"),
+        agentsAtom: atom(agents),
+        sentIdsAtom: atom(new Set<string>()),
+    });
+    const sentIds = (m: ReturnType<typeof roster>) => globalStore.get(m.sentIdsAtom);
+    const act: PetAct = { id: "ask:block:b1:answer:2", verb: "answer", label: "Drop", agentId: "tab-1", option: 1 };
+
+    it("sends the option to the agent that asked, marks the ask sent, and leaves the peek open", async () => {
+        const m = roster([{ id: "tab-1", ask }]);
+        globalStore.set(petPeekOpenAtom, true);
+        answerAgent.mockResolvedValue(undefined);
+        getAttention.mockResolvedValue({ items: [] });
+        await runAct(m as any, act);
+        expect(answerAgent).toHaveBeenCalledWith(expect.anything(), {
+            oref: "block:b1",
+            answers: [{ selectedindexes: [1] }],
+        });
+        expect(sentIds(m).has("a1")).toBe(true);
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        expect(openAddress).not.toHaveBeenCalled();
+        expect(globalStore.get(petActStateAtom)[act.id]).toMatchObject({ status: "done" });
+    });
+
+    it("reports a failed send on the act and leaves the ask unsent, so the Cockpit can still answer it", async () => {
+        const m = roster([{ id: "tab-1", ask }]);
+        answerAgent.mockRejectedValue(new Error("agent gone"));
+        await runAct(m as any, act);
+        expect(globalStore.get(petActStateAtom)[act.id]).toEqual({ status: "error", text: "agent gone" });
+        expect(sentIds(m).has("a1")).toBe(false);
+    });
+
+    it("reports an ask that is already answered, or no longer there, without sending", async () => {
+        const sent = roster([{ id: "tab-1", ask }]);
+        globalStore.set(sent.sentIdsAtom, new Set(["a1"]));
+        for (const m of [sent, roster([])]) {
+            globalStore.set(petActStateAtom, {});
+            await runAct(m as any, act);
+            expect(globalStore.get(petActStateAtom)[act.id]).toMatchObject({ status: "error" });
+        }
+        expect(answerAgent).not.toHaveBeenCalled();
+    });
+
+    it("does not navigate, so the peek keeps focus", () => {
+        expect(actNavigates(act)).toBe(false);
     });
 });

@@ -1362,3 +1362,25 @@ describe("g s: Conversation History", () => {
         expect(globalStore.get(centerModeAtom)).toBe("history");
     });
 });
+
+describe("g w: what's waiting", () => {
+    afterEach(() => globalStore.set(petPeekOpenAtom, false));
+
+    // the creature's peek is otherwise reached only by a click or by tabbing to the sprite
+    it("opens the creature's peek from any surface, and from inside the terminal through the leader", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
+        const b = buildGlobalBindings(model).find((x) => x.id === "go:waiting")!;
+        expect(b.keys).toBe("g w");
+        expect(b.when?.(ctx("agent"))).toBe(true);
+        expect(b.when?.({ ...ctx("agent"), editable: true, leader: "g" })).toBe(true);
+        b.run(ctx("agent"));
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("stays out of the way of an open modal, the peek included", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
+        const b = buildGlobalBindings(model).find((x) => x.id === "go:waiting")!;
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+    });
+});

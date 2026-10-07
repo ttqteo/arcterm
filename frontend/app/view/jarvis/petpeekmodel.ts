@@ -5,7 +5,9 @@
 // are not already one of those rows. Pure, like petcondition.ts — petpeek.tsx is a renderer, not the thing
 // that decides.
 
+import { inlineAnswerOptions } from "@/app/cockpit/palette-needs";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { escalationAgent } from "@/app/view/agents/needsyoustripmodel";
 import { actsForAttention, type PetAct, type PetTarget } from "./petacts";
 import { conditionsFor, type PetExpression, type PetSignals } from "./petcondition";
 import { askAgent } from "./petjoin";
@@ -24,6 +26,8 @@ export interface PeekRow {
     // the acts beside the button: the escort, so settling a row in place does not cost the way to read it
     // first, and a held land's Dismiss
     links: PetAct[];
+    // a question one key answers: its options, in order, so digit n sends answers[n - 1]. [] for every other row
+    answers: PetAct[];
 }
 
 // pkg/jarvis/attention.go writes Text per kind, and only these put anything in it that the row's own verb
@@ -64,6 +68,33 @@ function answerInAgent(item: AttentionItem, agents: ReadonlyArray<AgentVM>): Pet
     };
 }
 
+// The agent a question waits in: an ask by its block, an escalation through its card in the channel's messages
+// (the Cockpit's Needs-you strip joins it the same way). A card older than the loaded messages finds nothing.
+function askingAgent(
+    item: AttentionItem,
+    agents: ReadonlyArray<AgentVM>,
+    messages: Record<string, ChannelMessage[]>
+): AgentVM | undefined {
+    if (item.kind === "ask") {
+        return askAgent(agents, item.key.slice("ask:".length));
+    }
+    return escalationAgent(item, messages[item.channelid ?? ""], agents);
+}
+
+// The same options and the same send as the Cockpit's answer bar and the palette's digits.
+function answersFor(item: AttentionItem, agent: AgentVM | undefined): PetAct[] {
+    if (agent == null) {
+        return [];
+    }
+    return inlineAnswerOptions(agent).map((label, option) => ({
+        id: `${item.key}:answer:${option + 1}`,
+        verb: "answer",
+        label,
+        agentId: agent.id,
+        option,
+    }));
+}
+
 // Radar triage is the one attention kind the creature has no business holding. It names no channel and no
 // run, so it arrives with no act behind it (petacts.actsForAttention) and renders as a project name, an age
 // and nothing to press; the avatar's own signals never counted it either (petview.usePetSignals reads
@@ -71,29 +102,32 @@ function answerInAgent(item: AttentionItem, agents: ReadonlyArray<AgentVM>): Pet
 // queue, which is the same routing splitAttention already does to keep it off Cockpit.
 const PEEK_EXCLUDED_KIND = "radar-triage";
 
-export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM> = []): PeekRow[] {
+export function queueRows(
+    items: AttentionItem[],
+    agents: ReadonlyArray<AgentVM> = [],
+    messages: Record<string, ChannelMessage[]> = {}
+): PeekRow[] {
     return (items ?? [])
         .filter((item) => item.kind !== PEEK_EXCLUDED_KIND)
         .map((item) => {
             // actsForAttention returns [] with no runid, [in-place act, escort] for a dag gate, a retryable failed
             // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise
             const [first, ...links] = actsForAttention(item);
+            const answers = answersFor(item, askingAgent(item, agents, messages));
+            // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. An
+            // in-place act keeps its own label: the item's action ("Review") names the escort, not the
+            // approve, retry, ack or land. Where the options answer, the escort is only the way to read it.
+            const escortLabel = answers.length > 0 ? "Open" : item.action;
+            const primary = first ?? answerInAgent(item, agents);
             return {
                 key: item.key,
                 kind: item.kind,
                 source: item.source,
                 detail: DETAIL_KINDS.has(item.kind) ? item.text : null,
                 waitingsince: item.waitingsince,
-                // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. An
-                // in-place act keeps its own label: the item's action ("Review") names the escort, not the
-                // approve, retry, ack or land.
-                primary:
-                    first == null
-                        ? answerInAgent(item, agents)
-                        : first.verb === "open"
-                          ? ({ ...first, label: item.action } as PetAct)
-                          : first,
+                primary: primary?.verb === "open" ? { ...primary, label: escortLabel } : primary,
                 links,
+                answers,
             };
         });
 }
@@ -129,6 +163,14 @@ export function peekKeyCommand(key: string): PeekKeyCommand | null {
         default:
             return null;
     }
+}
+
+// A bare digit answers the focused row with that option, as on the Cockpit's answer bar.
+export function peekAnswerAct(row: PeekRow | undefined, key: string): PetAct | null {
+    if (!/^[1-9]$/.test(key)) {
+        return null;
+    }
+    return row?.answers[Number(key) - 1] ?? null;
 }
 
 export function peekActForCommand(row: PeekRow | undefined, command: PeekKeyCommand): PetAct | null {

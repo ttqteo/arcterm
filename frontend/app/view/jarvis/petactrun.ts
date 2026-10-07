@@ -12,6 +12,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { agentAnswer, markAskSent } from "@/app/view/agents/askanswer";
 import { loadAttention } from "@/app/view/agents/attentionstore";
 import { landAgain } from "./landrun";
 import { openAddress, openOrPeekAddress, type OpenGesture } from "./openref";
@@ -99,7 +100,26 @@ async function land(act: Extract<PetAct, { verb: "land" }>): Promise<void> {
     }
 }
 
+// An option answers its question in place, through the Cockpit's own answer (askanswer.ts), but awaited: the
+// Cockpit fires and forgets, and here a failed send must land on the button. The ask is marked sent only once the
+// send succeeds, so a failure leaves every other answer bar free to answer it.
+async function answer(model: AgentsViewModel, act: Extract<PetAct, { verb: "answer" }>): Promise<void> {
+    const ans = agentAnswer(model, act.agentId, { 0: new Set([act.option]) }, {});
+    if (ans == null) {
+        setActState(act.id, { status: "error", text: "Already answered, or the question has changed" });
+        return;
+    }
+    await settle(act, async () => {
+        await RpcApi.AnswerAgentCommand(TabRpcClient, { oref: ans.oref, answers: ans.answers });
+        markAskSent(model, ans.askKey);
+    });
+}
+
 export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: OpenGesture): Promise<void> {
+    if (act.verb === "answer") {
+        await answer(model, act);
+        return;
+    }
     const inPlace = settleInPlace(act);
     if (inPlace != null) {
         await inPlace;
