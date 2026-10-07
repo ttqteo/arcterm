@@ -91,9 +91,12 @@ the likely cause; a separate investigation).
    engine reads a running task whose worker is gone as Stalled and launches a fresh worker
    (`engine.go`, `workerControllerGone`), possibly on the same model, and `skip` refuses a running task
    (`skippable`). `stop` joins the dag actions behind the existing dag-action RPC (`wshserver_dag.go`, next
-   to retry, skip and escalate) and `wsh jarvis dag stop`: in one step it marks a running, stalled or
-   reviewing task Cancelled and closes its worker's tab, so no tick relaunches it. Tasks that depend on it
-   wait until the person retries or skips it in the run. The row's confirm says so: *"Stop worker t-3 of
+   to retry, skip and escalate) and `wsh jarvis dag stop`: in one step it marks a running or stalled task
+   Failed with the failure kind `stopped-by-human`, detaches its run and closes its worker's tab, so no tick
+   relaunches it. Not Cancelled: one Cancelled task makes the whole dag Cancelled (`RecomputeDagStatus`).
+   A reviewing task is refused, since its worker has already finished. The lead's prompt gains a rule to
+   leave a `stopped-by-human` task alone. Tasks that depend on it wait until the person retries or skips it
+   in the run. The row's confirm says so: *"Stop worker t-3 of
    run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the
    run."* A task in any other state is refused with the engine's reason, shown in a toast.
 
