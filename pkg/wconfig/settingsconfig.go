@@ -89,6 +89,7 @@ type SettingsType struct {
 
 	HarnessPreferredRuntime string `json:"harness:preferredruntime,omitempty"`
 	HarnessPreferredModel   string `json:"harness:preferredmodel,omitempty"`
+	HarnessUpdateCheck      *bool  `json:"harness:updatecheck,omitempty"`
 }
 
 type ConfigError struct {

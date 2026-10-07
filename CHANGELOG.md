@@ -10,6 +10,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- **Claude Code updates.** arcterm checks for a newer Claude Code every 6 hours and Jarvis says once when one is out.
+  Settings → About lists each installed harness with its version, and Update installs the new one; open sessions keep
+  theirs until they restart. Turn the check off with "Check for harness updates".
+
 ### Changed
 
 - Jarvis shows each initiative as a card with a bar of its chunks and the one to do next, and lists ideas in

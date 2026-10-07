@@ -36,13 +36,18 @@ type Spec struct {
 	// SkillsRel is the home-relative path of the harness's skills directory. nil when the harness
 	// has no fixed one: pi reads an explicit list of paths from its settings instead.
 	SkillsRel []string
+	// NpmPackage is the package whose dist-tags say what the latest release is; "" when arcterm does not check it.
+	NpmPackage string
+	// UpdateArgs runs the harness's own updater (`<Bin> <UpdateArgs...>`); nil when arcterm cannot update it.
+	UpdateArgs []string
 }
 
 var specs = []Spec{
 	{Runtime: "pi", Bin: "pi", Label: "Pi", ConsultCapable: true, RunWorkerCapable: true,
 		SteeringRel: []string{".pi", "agent", "AGENTS.md"}},
 	{Runtime: "claude", Bin: "claude", Label: "Claude Code", ConsultCapable: true, RunWorkerCapable: true,
-		SteeringRel: []string{".claude", "CLAUDE.md"}, SkillsRel: []string{".claude", "skills"}},
+		SteeringRel: []string{".claude", "CLAUDE.md"}, SkillsRel: []string{".claude", "skills"},
+		NpmPackage: "@anthropic-ai/claude-code", UpdateArgs: []string{"update"}},
 	// run workers are claude and pi only (docs/deferred.md, 2026-09-14); codex and opencode still consult
 	{Runtime: "codex", Bin: "codex", Label: "Codex", ConsultCapable: true, RunWorkerCapable: false,
 		SteeringRel: []string{".codex", "AGENTS.md"}, SkillsRel: []string{".codex", "skills"}},

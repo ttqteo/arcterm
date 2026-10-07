@@ -28,6 +28,7 @@ type JarvisCommands interface {
 	GetGlobalProfileCommand(ctx context.Context) (*waveobj.JarvisProfile, error)                                                           // read the global Jarvis profile (builtins if unset)
 	SetGlobalProfileCommand(ctx context.Context, data CommandSetGlobalProfileData) error                                                   // write the global Jarvis profile to the vault's config/jarvis-profile.json
 	ListHarnessesCommand(ctx context.Context) (*CommandListHarnessesRtnData, error)                                                        // installed coding-agent harnesses (catalog); excludes API-only backends like OpenRouter
+	UpdateHarnessCommand(ctx context.Context, data CommandUpdateHarnessData) (*CommandUpdateHarnessRtnData, error)                         // runs the harness's own updater (Settings → About)
 	// RefreshRouteCatalogCommand clears the cached run-route model catalog; the next
 	// ListHarnessesCommand re-enumerates from the installed harnesses.
 	RefreshRouteCatalogCommand(ctx context.Context) error
@@ -101,6 +102,7 @@ type HarnessInfo struct {
 	Label             string                `json:"label"`
 	Installed         bool                  `json:"installed"`
 	Version           string                `json:"version,omitempty"`
+	LatestVersion     string                `json:"latestversion,omitempty"` // newest release the update check saw; "" before one, or for a harness it does not check
 	ConsultCapable    bool                  `json:"consultcapable"`
 	RunWorkerCapable  bool                  `json:"runworkercapable"`
 	RouteCapabilities []RouteCapabilityInfo `json:"routecapabilities,omitempty"`
@@ -108,6 +110,14 @@ type HarnessInfo struct {
 
 type CommandListHarnessesRtnData struct {
 	Harnesses []HarnessInfo `json:"harnesses"`
+}
+
+type CommandUpdateHarnessData struct {
+	Runtime string `json:"runtime"`
+}
+
+type CommandUpdateHarnessRtnData struct {
+	Version string `json:"version"`
 }
 
 // SpaceSummary is one focusable task (Presence C). Objective is the human label; Ticket a secondary tag.

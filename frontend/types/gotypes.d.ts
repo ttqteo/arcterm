@@ -1526,6 +1526,16 @@ declare global {
         callercwd?: string;
     };
 
+    // wshrpc.CommandUpdateHarnessData
+    type CommandUpdateHarnessData = {
+        runtime: string;
+    };
+
+    // wshrpc.CommandUpdateHarnessRtnData
+    type CommandUpdateHarnessRtnData = {
+        version: string;
+    };
+
     // wshrpc.CommandVaultGraphRtnData
     type CommandVaultGraphRtnData = {
         nodes: GraphNode[];
@@ -2057,6 +2067,7 @@ declare global {
         label: string;
         installed: boolean;
         version?: string;
+        latestversion?: string;
         consultcapable: boolean;
         runworkercapable: boolean;
         routecapabilities?: RouteCapabilityInfo[];
@@ -2661,6 +2672,7 @@ declare global {
         "debug:webglstatus"?: boolean;
         "harness:preferredruntime"?: string;
         "harness:preferredmodel"?: string;
+        "harness:updatecheck"?: boolean;
     };
 
     // wshrpc.ShippedItem

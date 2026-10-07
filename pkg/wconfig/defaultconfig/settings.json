@@ -11,5 +11,6 @@
     "term:fontsize": 14,
     "term:fontfamily": "\"JetBrains Mono\", monospace",
     "term:copyonselect": true,
-    "term:trimtrailingwhitespace": true
+    "term:trimtrailingwhitespace": true,
+    "harness:updatecheck": true
 }

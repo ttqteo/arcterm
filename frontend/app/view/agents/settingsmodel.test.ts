@@ -119,7 +119,9 @@ describe("settingsSections", () => {
 
     it("leaves read-only build info without a provenance scope", () => {
         const about = sections().find((s) => s.id === "about")!;
-        expect(about.rows.every((r) => r.scope === undefined)).toBe(true);
+        const info = about.rows.filter((r) => r.id !== "about.updatecheck");
+        expect(info.every((r) => r.scope === undefined)).toBe(true);
+        expect(about.rows.find((r) => r.id === "about.updatecheck")!.scope).toBe("synced");
     });
 
     it("marks exactly the wconfig-backed rows as config rows", () => {
@@ -136,6 +138,7 @@ describe("settingsSections", () => {
             "headless:runtime",
             "headless:openroutercheapmodel",
             "headless:openroutermidmodel",
+            "harness:updatecheck",
         ]);
     });
 

@@ -140,6 +140,9 @@
         },
         "harness:preferredmodel": {
           "type": "string"
+        },
+        "harness:updatecheck": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,

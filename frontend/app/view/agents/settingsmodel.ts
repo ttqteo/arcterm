@@ -322,6 +322,20 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     key: "dist/bin",
                 },
                 { id: "about.platform", title: "Platform", desc: "Host the shell reported at boot.", key: "runtime" },
+                {
+                    id: "about.harnesses",
+                    title: "Coding agents",
+                    desc: "Installed harnesses, their versions, and the latest release when one is newer.",
+                    key: "harness:*",
+                },
+                {
+                    id: "about.updatecheck",
+                    title: "Check for harness updates",
+                    desc: "Asks the npm registry every 6 hours and says once when a newer release is out.",
+                    key: "harness:updatecheck",
+                    scope: "synced",
+                    config: true,
+                },
             ],
         },
     ];

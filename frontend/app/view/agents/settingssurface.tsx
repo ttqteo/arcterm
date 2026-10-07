@@ -31,7 +31,9 @@ import {
 import { DEFAULT_MONO, DEFAULT_SANS, DEFAULT_TERM_FONT, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
 import { fontMonoAtom, fontSansAtom } from "./fontstore";
 import { harnessPickerItems } from "./harnesspicker";
-import { harnessPreferenceAtom, setPreferredRoute } from "./harnessstore";
+import { harnessesAtom, harnessPreferenceAtom, loadHarnesses, setPreferredRoute } from "./harnessstore";
+import { harnessRowState, rowLabel } from "./harnessupdatemodel";
+import { updateHarness, updateRunsAtom } from "./harnessupdatestore";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { ITEMS } from "./navrail";
@@ -1253,8 +1255,62 @@ function HeadlessAISection() {
 
 // App + backend version, so the pair is inspectable rather than only shouted about by the app-bar
 // pill when they disagree.
+// one row per installed harness: its version, and when a newer release is out, an Update button (harnessupdatemodel.ts)
+function HarnessVersions() {
+    const harnesses = useAtomValue(harnessesAtom);
+    const runs = useAtomValue(updateRunsAtom);
+    useEffect(() => {
+        if (harnesses.length === 0) {
+            fireAndForget(() => loadHarnesses());
+        }
+    }, []);
+    const rows = harnesses.flatMap((h) => {
+        const state = harnessRowState(h, runs[h.runtime]);
+        return state == null ? [] : [{ h, state }];
+    });
+    if (rows.length === 0) {
+        return (
+            <span data-harness-none className="text-[12.5px] text-muted">
+                No harness installed.
+            </span>
+        );
+    }
+    return (
+        <div className="flex flex-col divide-y divide-border rounded border border-edge-mid bg-surface-raised">
+            {rows.map(({ h, state }) => (
+                <div key={h.runtime} data-harness-row={h.runtime} className="flex items-center gap-3 px-3 py-[7px]">
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-primary">{h.label}</span>
+                    <span className="text-[12px] tabular-nums text-muted">{state.version}</span>
+                    {state.kind !== "current" ? (
+                        <span
+                            className={cn(
+                                "max-w-[260px] truncate text-[12px]",
+                                state.kind === "failed" ? "text-error" : "text-accent-soft"
+                            )}
+                            title={rowLabel(state)}
+                        >
+                            {rowLabel(state)}
+                        </span>
+                    ) : null}
+                    {state.kind === "available" || state.kind === "failed" ? (
+                        <button
+                            type="button"
+                            data-harness-update={h.runtime}
+                            onClick={() => fireAndForget(() => updateHarness(h.runtime))}
+                            className="flex-none cursor-pointer rounded-[6px] border border-edge-strong bg-surface px-[10px] py-[3px] text-[12px] font-semibold text-secondary hover:border-accent hover:text-accent-soft"
+                        >
+                            Update
+                        </button>
+                    ) : null}
+                </div>
+            ))}
+        </div>
+    );
+}
+
 function AboutSection() {
     const version = useAtomValue(versionInfoAtom);
+    const updateCheck = (useAtomValue(getSettingsKeyAtom("harness:updatecheck")) as boolean) ?? true;
     return (
         <div>
             <SettingRow id="about.app">
@@ -1268,6 +1324,16 @@ function AboutSection() {
             </SettingRow>
             <SettingRow id="about.platform">
                 <Value>{version.platform}</Value>
+            </SettingRow>
+            <SettingRow id="about.harnesses" stacked>
+                <HarnessVersions />
+            </SettingRow>
+            <SettingRow id="about.updatecheck">
+                <Toggle
+                    on={updateCheck}
+                    onToggle={() => writeConfig({ "harness:updatecheck": !updateCheck })}
+                    label="Check for harness updates"
+                />
             </SettingRow>
             {version.mismatch ? (
                 <Note>

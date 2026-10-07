@@ -13,6 +13,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/consult"
 	"github.com/wavetermdev/waveterm/pkg/harness"
+	"github.com/wavetermdev/waveterm/pkg/harnessupdate"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisattrib"
 	"github.com/wavetermdev/waveterm/pkg/jarvisdossier"
@@ -193,12 +194,21 @@ func (ws *WshServer) ListHarnessesCommand(ctx context.Context) (*wshrpc.CommandL
 			Label:             r.Spec.Label,
 			Installed:         r.Installed,
 			Version:           r.Version,
+			LatestVersion:     harnessupdate.Latest(r.Spec.Runtime),
 			ConsultCapable:    r.Spec.ConsultCapable,
 			RunWorkerCapable:  r.Spec.RunWorkerCapable,
 			RouteCapabilities: capabilities,
 		}
 	}
 	return &wshrpc.CommandListHarnessesRtnData{Harnesses: infos}, nil
+}
+
+func (ws *WshServer) UpdateHarnessCommand(ctx context.Context, data wshrpc.CommandUpdateHarnessData) (*wshrpc.CommandUpdateHarnessRtnData, error) {
+	res, err := harnessupdate.Update(ctx, data.Runtime)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandUpdateHarnessRtnData{Version: res.Version}, nil
 }
 
 func (ws *WshServer) ListDossiersCommand(ctx context.Context) (*wshrpc.CommandListDossiersRtnData, error) {
