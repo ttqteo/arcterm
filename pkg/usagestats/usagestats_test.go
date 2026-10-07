@@ -256,12 +256,12 @@ func TestScanRootsPrunesByModtime(t *testing.T) {
 		t.Fatal(err)
 	}
 	// window 7d (+1d margin) => stale (30d old) pruned, fresh kept
-	got := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), 7)
+	got := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
 	if len(got) != 1 || got[0].Model != "claude-haiku-4-5" {
 		t.Fatalf("want 1 haiku bucket from fresh file only, got %+v", got)
 	}
 	// windowDays 0 => no prune => both files counted (2 msgs, same model/day bucket)
-	all := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), 0)
+	all := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 0)
 	if len(all) != 1 || all[0].Msgs != 2 {
 		t.Fatalf("want 1 bucket msgs=2 with no prune, got %+v", all)
 	}
@@ -286,7 +286,7 @@ func TestScanRootsDropsTurnsBeforeWindowFromFreshTranscript(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, "s.jsonl"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := scanRoots(filepath.Join(dir, "claude"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), 7)
+	got := scanRoots(filepath.Join(dir, "claude"), filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
 	total := 0
 	for _, b := range got {
 		total += b.Input
@@ -544,7 +544,7 @@ func TestScanRootsWindowsOpencodeByMessageTimestamp(t *testing.T) {
 	if err := os.WriteFile(newMsg, msg(time.Now().UnixMilli(), 0.5, 200), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), msgRoot, filepath.Join(dir, "pi-missing"), 7)
+	got := scanRoots(filepath.Join(dir, "claude-missing"), filepath.Join(dir, "codex-missing"), msgRoot, filepath.Join(dir, "pi-missing"), filepath.Join(dir, "agy-missing"), 7)
 	if len(got) != 1 {
 		t.Fatalf("want 1 bucket (old excluded by timestamp despite fresh modtime), got %+v", got)
 	}

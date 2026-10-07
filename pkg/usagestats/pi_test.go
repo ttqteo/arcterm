@@ -316,7 +316,7 @@ func TestScanRootsIncludesPi(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(piRoot, "s.jsonl"), []byte(piFixture+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), piRoot, 0)
+	got := scanRoots(claude, filepath.Join(dir, "codex-missing"), filepath.Join(dir, "opencode-missing"), piRoot, filepath.Join(dir, "agy-missing"), 0)
 	if len(got) != 2 {
 		t.Fatalf("want 2 buckets (claude + pi), got %d: %+v", len(got), got)
 	}
