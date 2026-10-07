@@ -3,13 +3,20 @@
 //
 // File paths in terminal output as links (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md): candidates
 // from pathlinks.ts, resolved against the block's cwd, underlined only once the file is known to exist. Ctrl+click
-// (Cmd on macOS) opens one, the way a URL opens.
+// (Cmd on macOS) opens one, the way a URL opens. A path too long for its row, which xterm wraps or an agent TUI breaks
+// and indents, is joined back across the rows.
 
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
 import { fileExists } from "@/app/view/agents/pathlinkroute";
-import { findPathCandidates, resolvePath } from "@/app/view/agents/pathlinks";
+import {
+    findPathCandidates,
+    findSpanningPaths,
+    resolvePath,
+    type RowCell,
+    type TermRow,
+} from "@/app/view/agents/pathlinks";
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
-import type { IDisposable, ILink, ILinkProvider, Terminal } from "@xterm/xterm";
+import type { IBufferRange, IDisposable, ILink, ILinkProvider, Terminal } from "@xterm/xterm";
 
 export interface PathLinkHooks {
     cwd: () => string | null;
@@ -59,7 +66,51 @@ async function refsForLine(text: string, cwd: string | null) {
     return out;
 }
 
+// how many rows either side of the hovered one a path broken across rows is looked for in
+const SPAN_ROWS = 3;
+
+// the existing files named by paths that run across rows and touch row `y` (0-based), with their ranges in buffer rows
+async function spanningRefsAt(term: Terminal, y: number, cwd: string | null) {
+    const buf = term.buffer.active;
+    const from = Math.max(0, y - SPAN_ROWS);
+    const to = Math.min(buf.length - 1, y + SPAN_ROWS);
+    const rows: TermRow[] = [];
+    for (let i = from; i <= to; i++) {
+        const line = buf.getLine(i);
+        rows.push({ text: line?.translateToString(true) ?? "", wrapped: line?.isWrapped ?? false });
+    }
+    const out: { text: string; start: RowCell; end: RowCell; ref: FileRef }[] = [];
+    for (const s of findSpanningPaths(rows, term.cols)) {
+        if (s.start.row + from > y || s.end.row + from < y) {
+            continue;
+        }
+        const abs = resolvePath(cwd, s.path);
+        if (abs == null || !(await exists(abs))) {
+            continue;
+        }
+        out.push({
+            text: s.text,
+            start: { row: s.start.row + from, col: s.start.col },
+            end: { row: s.end.row + from, col: s.end.col },
+            ref: { abs, root: cwd, ...(s.line != null ? { line: s.line } : {}) },
+        });
+    }
+    return out;
+}
+
 export function makePathLinkProvider(term: Terminal, hooks: PathLinkHooks): ILinkProvider {
+    const link = (text: string, range: IBufferRange, ref: FileRef): ILink => ({
+        range,
+        text,
+        decorations: { underline: true, pointerCursor: true },
+        activate: (e) => {
+            if (isOpenGesture(e)) {
+                hooks.activate(ref);
+            }
+        },
+        hover: (e) => hooks.hover(e, ref),
+        leave: () => hooks.leave(),
+    });
     return {
         provideLinks(y, callback) {
             const text = term.buffer.active.getLine(y - 1)?.translateToString(true) ?? "";
@@ -67,20 +118,19 @@ export function makePathLinkProvider(term: Terminal, hooks: PathLinkHooks): ILin
                 callback(undefined);
                 return;
             }
-            void refsForLine(text, hooks.cwd()).then((found) => {
-                const links: ILink[] = found.map((f) => ({
-                    // xterm ranges are 1-based and inclusive
-                    range: { start: { x: f.start + 1, y }, end: { x: f.end, y } },
-                    text: f.text,
-                    decorations: { underline: true, pointerCursor: true },
-                    activate: (e) => {
-                        if (isOpenGesture(e)) {
-                            hooks.activate(f.ref);
-                        }
-                    },
-                    hover: (e) => hooks.hover(e, f.ref),
-                    leave: () => hooks.leave(),
-                }));
+            const cwd = hooks.cwd();
+            void Promise.all([refsForLine(text, cwd), spanningRefsAt(term, y - 1, cwd)]).then(([found, spanning]) => {
+                // xterm ranges are 1-based and inclusive
+                const links: ILink[] = spanning.map((s) =>
+                    link(
+                        s.text,
+                        { start: { x: s.start.col + 1, y: s.start.row + 1 }, end: { x: s.end.col, y: s.end.row + 1 } },
+                        s.ref
+                    )
+                );
+                for (const f of found) {
+                    links.push(link(f.text, { start: { x: f.start + 1, y }, end: { x: f.end, y } }, f.ref));
+                }
                 callback(links.length > 0 ? links : undefined);
             });
         },

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { findPathCandidates, inlinePathOf, resolvePath } from "./pathlinks";
+import { findPathCandidates, findSpanningPaths, inlinePathOf, resolvePath } from "./pathlinks";
 
 const paths = (line: string) => findPathCandidates(line).map((c) => [c.path, c.line, c.col]);
 
@@ -50,6 +50,42 @@ describe("findPathCandidates", () => {
     it("gives the text the link covers, with its offsets", () => {
         const [c] = findPathCandidates("at src/a.ts:3:1 here");
         expect(c).toMatchObject({ text: "src/a.ts:3:1", start: 3, end: 15 });
+    });
+});
+
+describe("findSpanningPaths", () => {
+    const row = (text: string, wrapped = false) => ({ text, wrapped });
+
+    it("joins a path an agent TUI broke at the edge and indented, as Claude Code prints a long one", () => {
+        const rows = [
+            row("  It's saved at C:\\Users\\u\\Temp\\claude\\a84f5"),
+            row("  551-9e49\\scratchpad\\report.md."),
+        ];
+        const [s, ...rest] = findSpanningPaths(rows, rows[0].text.length);
+        expect(rest).toEqual([]);
+        expect(s).toMatchObject({
+            path: "C:\\Users\\u\\Temp\\claude\\a84f5551-9e49\\scratchpad\\report.md",
+            start: { row: 0, col: 16 },
+            end: { row: 1, col: 31 },
+        });
+    });
+
+    it("joins a row xterm wrapped from its first cell", () => {
+        const rows = [row("see src/view/age"), row("nts/a.ts:12 now", true)];
+        expect(findSpanningPaths(rows, 16)).toMatchObject([
+            { path: "src/view/agents/a.ts", line: 12, start: { row: 0, col: 4 }, end: { row: 1, col: 11 } },
+        ]);
+    });
+
+    it("leaves a path that sits within one row to findPathCandidates", () => {
+        const rows = [row("edited src/a.ts and src/b.ts plus"), row("  more words here")];
+        expect(findSpanningPaths(rows, rows[0].text.length)).toEqual([]);
+    });
+
+    it("does not join a row that stops short of the edge, or one that ends on punctuation", () => {
+        expect(findSpanningPaths([row("at src/vie"), row("  w/a.ts")], 40)).toEqual([]);
+        expect(findSpanningPaths([row("ends here:"), row("src/a.ts")], 10)).toEqual([]);
+        expect(findSpanningPaths([row("one sentence,"), row("  src/x/a.ts")], 13)).toEqual([]);
     });
 });
 

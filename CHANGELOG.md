@@ -55,6 +55,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Picking an answer in Claude's own question dialog in the terminal no longer comes back to Claude as "The user
   dismissed the question."
+- A file path too long for its line in the terminal, such as a report path an agent prints, now opens with Ctrl+click
+  instead of being split in two at the line break.
 - A finished conversation's "done" mark sits level with its title in the header instead of above it.
 - A run in Jarvis no longer repeats an agent's name ("X · X") when the agent has no task of its own.
 - A question's option previews keep the agent's mockups as drawn: each line and space in a monospace box, below the

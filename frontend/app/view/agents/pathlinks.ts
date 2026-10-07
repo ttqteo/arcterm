@@ -66,6 +66,85 @@ export function findPathCandidates(line: string): PathCandidate[] {
     return out;
 }
 
+/** A terminal row's text, and whether xterm wrapped the row above into it. */
+export interface TermRow {
+    text: string;
+    wrapped: boolean;
+}
+
+/** A cell: a row's index in the rows given, and a column in it. */
+export interface RowCell {
+    row: number;
+    col: number;
+}
+
+export interface SpanningPath {
+    text: string;
+    path: string;
+    line?: number;
+    col?: number;
+    start: RowCell;
+    end: RowCell; // exclusive
+}
+
+// how short of the right edge a row may stop and still have been cut there: an agent TUI breaks its own lines a cell or
+// two inside the width
+const EDGE_SLACK = 2;
+const PATH_CHAR_RE = /[\w.@+\\/-]/;
+
+// the next row carries on the path the row above stops on: xterm wrapped it, or the row above runs to the edge on a path
+// character and the next one, past its indent, opens on one, as an agent TUI breaks a long path and indents the rest
+function continues(above: string, next: TermRow, cols: number): boolean {
+    if (next.wrapped) {
+        return true;
+    }
+    const lead = next.text.trimStart();
+    return (
+        above.length >= cols - EDGE_SLACK && PATH_CHAR_RE.test(above.at(-1) ?? "") && PATH_CHAR_RE.test(lead[0] ?? "")
+    );
+}
+
+/** Pure: the paths that run on from one row into the next, from rows that are consecutive terminal rows `cols` wide.
+ *  A path that sits within one row is findPathCandidates' to find, so it is not returned. */
+export function findSpanningPaths(rows: readonly TermRow[], cols: number): SpanningPath[] {
+    const out: SpanningPath[] = [];
+    let i = 0;
+    while (i < rows.length) {
+        let text = rows[i].text;
+        const at: RowCell[] = Array.from({ length: text.length }, (_, col) => ({ row: i, col }));
+        let j = i;
+        while (j + 1 < rows.length && continues(rows[j].text, rows[j + 1], cols)) {
+            j++;
+            const next = rows[j];
+            // a TUI's own break indents what follows; xterm's wrap carries on from the first cell
+            const indent = next.wrapped ? 0 : next.text.length - next.text.trimStart().length;
+            text += next.text.slice(indent);
+            for (let col = indent; col < next.text.length; col++) {
+                at.push({ row: j, col });
+            }
+        }
+        if (j > i) {
+            for (const c of findPathCandidates(text)) {
+                const first = at[c.start];
+                const last = at[c.end - 1];
+                if (first.row === last.row) {
+                    continue;
+                }
+                out.push({
+                    text: c.text,
+                    path: c.path,
+                    ...(c.line != null ? { line: c.line } : {}),
+                    ...(c.col != null ? { col: c.col } : {}),
+                    start: first,
+                    end: { row: last.row, col: last.col + 1 },
+                });
+            }
+        }
+        i = j + 1;
+    }
+    return out;
+}
+
 export function isAbsolutePath(p: string): boolean {
     return /^(?:[A-Za-z]:[\\/]|[\\/])/.test(p);
 }
