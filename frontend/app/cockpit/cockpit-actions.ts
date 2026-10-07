@@ -113,6 +113,10 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         globalStore.set(model.surfaceAtom, "agent");
         // a resumed session opens its new tab over the transcript it was resumed from
         showTerminal();
+        // and its terminal takes the keyboard: from the Agent surface itself nothing else moves focus there (the
+        // arrival hand-off only runs on a surface switch), and the New agent dialog's restore lands on the old
+        // cell's hidden xterm or the button that opened it
+        globalStore.set(model.typingFollowsAtom, tabId);
     }
     return tabId;
 }

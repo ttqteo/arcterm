@@ -83,7 +83,8 @@ export class AgentsViewModel implements ViewModel {
     }
     focusIdAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
     // the agent whose terminal takes the keyboard once it shows: set by a Ctrl+Tab pressed inside a terminal, which
-    // hides the old pane and would drop focus to <body>. AgentSurface hands focus over and clears it
+    // hides the old pane and would drop focus to <body>, and by a launch (launchAgent, duplicateSession), so a new
+    // agent's prompt takes typing without a click. AgentSurface hands focus over and clears it
     typingFollowsAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
     // The Diff surface's subject: which repository, and which range within it. One stored value
     // rather than three source variables and a ternary chain, so a control can actually set it. It

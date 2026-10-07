@@ -324,5 +324,7 @@ export function duplicateSession(model: AgentsViewModel, sourceTabId: string) {
         globalStore.set(model.focusIdAtom, newTabId);
         globalStore.set(model.surfaceAtom, "agent");
         showTerminal();
+        // its terminal takes the keyboard, as a launched agent's does
+        globalStore.set(model.typingFollowsAtom, newTabId);
     });
 }

@@ -325,8 +325,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         focusTerminalOf(agent.id);
     }, [agent?.id]);
 
-    // Ctrl+Tab pressed while typing in a terminal keeps typing in the agent it moved to (typingFollowsAtom): its
-    // terminal when it shows, else the wrapper, so focus never drops to <body>
+    // Ctrl+Tab pressed while typing in a terminal keeps typing in the agent it moved to, and a launch types into the
+    // agent it started (typingFollowsAtom): its terminal when it shows, else the wrapper, so focus never drops to
+    // <body>. A dialog that closes in the same commit (New agent) restores its focus in its effect cleanup, which
+    // React runs before this effect, so the hand-off lands last.
     const typingFollows = useAtomValue(model.typingFollowsAtom);
     useEffect(() => {
         if (typingFollows == null || agent?.id !== typingFollows) {

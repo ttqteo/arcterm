@@ -15,6 +15,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A background task's output opens in the panel following live and wrapped, finished or not, and drops the
   **Open in Code** button.
 
+### Fixed
+
+- A newly launched agent's prompt takes your typing at once, without a click into its terminal.
+
 ## 0.15.4 — 2026-10-07
 
 ### Added
