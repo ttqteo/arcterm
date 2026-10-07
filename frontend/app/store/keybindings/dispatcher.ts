@@ -12,6 +12,7 @@ import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import * as keyutil from "@/util/keyutil";
 import { CHORD_TIMEOUT } from "@/util/sharedconst";
+import { telexBaseKey } from "@/util/telexkey";
 import { activeLeaderAtom } from "./leaderatom";
 import { matchBinding } from "./matcher";
 import { bindingsAtom } from "./store";
@@ -146,20 +147,53 @@ export function handleWaveEvent(waveEvent: WaveKeyboardEvent): boolean {
     }
 }
 
+// Focus where a letter is a shortcut, not text: outside every field, the terminal and a region that handles its own keys.
+function shortcutFocus(): boolean {
+    const active = document.activeElement;
+    return !isEditableTarget(active) && !ownsKeys(active);
+}
+
 export function initKeybindingDispatcher(model: AgentsViewModel): () => void {
     boundModel = model;
-    const onKeyDown = (e: KeyboardEvent) => {
-        lastKeyTs = Date.now();
-        const waveEvent = keyutil.adaptFromReactOrNativeKeyEvent(e);
-        const handled = handleWaveEvent(waveEvent);
-        if (handled) {
+    // the key the last keydown carried, so a keypress knows whether that keydown already had the character
+    let lastKeydownKey = "";
+    const dispatch = (e: KeyboardEvent, waveEvent: WaveKeyboardEvent) => {
+        if (handleWaveEvent(waveEvent)) {
             e.preventDefault();
             e.stopImmediatePropagation();
         }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+        lastKeyTs = Date.now();
+        lastKeydownKey = e.key;
+        const waveEvent = keyutil.adaptFromReactOrNativeKeyEvent(e);
+        if (shortcutFocus()) {
+            // a Vietnamese input method's hook (EVKey, Unikey) sends a Backspace before each letter it rewrites; no
+            // shortcut uses Backspace out here, and passing it on would cancel a pending `g` before its next key
+            if (e.key === "Backspace") {
+                return;
+            }
+            // and the rewritten letter ("đ" for the second d) reads as the key that made it (telexkey.ts)
+            waveEvent.key = telexBaseKey(e.key) ?? waveEvent.key;
+        }
+        dispatch(e, waveEvent);
+    };
+    // A rewritten letter can reach a keydown with no character (key "Unidentified" or "Process") and arrive only as the
+    // keypress after it; read it there. A keydown that had a character already ran, or chose not to.
+    const onKeyPress = (e: KeyboardEvent) => {
+        const base = shortcutFocus() && lastKeydownKey.length !== 1 ? telexBaseKey(e.key) : null;
+        if (base == null) {
+            return;
+        }
+        const waveEvent = keyutil.adaptFromReactOrNativeKeyEvent(e);
+        waveEvent.key = base;
+        dispatch(e, waveEvent);
+    };
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keypress", onKeyPress, true);
     return () => {
         window.removeEventListener("keydown", onKeyDown, true);
+        window.removeEventListener("keypress", onKeyPress, true);
         boundModel = null;
     };
 }

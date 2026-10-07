@@ -18,7 +18,7 @@ import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
 import { compareOnAtom, compareSelectionAtom, leaveCompare, swapCompareRefs } from "@/app/view/agents/comparestore";
 import { historyCollapsedAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
-import { ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
+import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
 import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
@@ -52,8 +52,9 @@ import {
     startRename,
     toggleDir,
 } from "@/app/view/code/codestore";
+import { toggleSide } from "@/app/view/code/codeside";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
-import { toggleCodeWrap } from "@/app/view/code/codewrap";
+import { toggleCodeWrap, toggleWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import {
@@ -1132,6 +1133,21 @@ export function buildFilesBindings(): Binding[] {
             run: () => globalStore.set(ignoreWsAtom, !globalStore.get(ignoreWsAtom)),
         },
         {
+            // Alt:z as on Code (code:wrap); the choice is per file and shared with Code and the File tab
+            id: "files:wrap",
+            keys: "Alt:z",
+            group: "Diff",
+            label: "Toggle word wrap",
+            when: on,
+            run: () => {
+                const abs = globalStore.get(diffWrapPathAtom);
+                if (abs === "") {
+                    return false; // Review mode or no file open — let the key pass
+                }
+                toggleWrap(abs);
+            },
+        },
+        {
             id: "files:swap-refs",
             keys: "Shift:s",
             group: "Diff",
@@ -1376,6 +1392,15 @@ export function buildCodeBindings(): Binding[] {
             // live while typing in Monaco, as VS Code's Alt+Z is; code:save's comment says why editable is not gated
             when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
             run: () => (toggleCodeWrap() ? undefined : false),
+        },
+        {
+            id: "code:side",
+            // by code, not key, so the chord is the same key on every keyboard layout
+            keys: "Ctrl:c{Backslash}",
+            group: "Code",
+            label: "Open the file to the side, or close the side column",
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => (toggleSide() ? undefined : false),
         },
         {
             id: "code:save",

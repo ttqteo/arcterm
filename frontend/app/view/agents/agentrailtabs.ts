@@ -18,6 +18,33 @@ export interface FileRef {
     reread?: number; // set on each open of a file that changes under it (a background task's output), to read it again
     // a growing file the tab offers to follow live (the Live toggle), and whether it opens following; absent, no toggle
     live?: "on" | "off";
+    // opened from Files changed: the repository path git knows it by, and the commit that list is measured from ("" is
+    // HEAD). Set, the tab offers Diff, against the same base as the list's +N -N
+    diff?: { rel: string; base: string };
+}
+
+export type FileView = "preview" | "source" | "diff";
+
+// The views the File tab offers: a markdown file renders (Preview) or not (Source), and a file opened from Files changed
+// adds Diff. Anything else has nothing to choose between, so it gets no control.
+export function fileViews(markdown: boolean, diffable: boolean): FileView[] {
+    if (!diffable) {
+        return markdown ? ["preview", "source"] : [];
+    }
+    return markdown ? ["preview", "source", "diff"] : ["source", "diff"];
+}
+
+// diffOn is the reader's last choice between Diff and the rest; a markdown file's other two follow its own mode
+export function currentFileView(
+    markdown: boolean,
+    diffable: boolean,
+    mdMode: "preview" | "source",
+    diffOn: boolean
+): FileView {
+    if (diffable && diffOn) {
+        return "diff";
+    }
+    return markdown ? mdMode : "source";
 }
 
 export interface FileHistory {

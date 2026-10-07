@@ -13,6 +13,9 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 - **Postures.** There is no global "mode" to track. Focus determines behavior:
   - **Navigate** — focus is on a surface region (not a text field). Single keys move a cursor and act on it.
   - **Type** — focus is in a text field, composer, or the terminal. Keys type normally. Press `Esc` to return to Navigate.
+  - A Vietnamese input method left on Telex (EVKey, Unikey) does not get in Navigate's way: a letter it rewrites there
+    ("đ" for `dd`, "ư" for `w`, "á" for `a` `s`) acts as the key pressed. One that moves a tone back onto an earlier
+    vowel (free tone placement) sends more than one letter, and only the last counts.
 - **Leader (`g`, "go").** Press `g` (while not typing), then a letter, to teleport. A hint bar
   appears at the bottom of the screen showing the available next keys.
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
@@ -209,6 +212,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `Alt`+`Z` | Toggle word wrap for the open file, also while typing in it. Prose (`.tex`, `.bib`, `.md`, `.txt`) wraps by default; code follows `editor:wordwrap` |
+| `Ctrl`+`\` | Open the file in a read-only side column (a `.tex` file on its PDF, a document on its preview), or close the side column. Dragging a file from the tree onto the right half of the editor does the same for that file |
 | `d` | Toggle the diff against HEAD |
 | `r` | Refresh the file index |
 | `Alt`+`←` / `Alt`+`→` | Back / forward through opened files |
@@ -227,6 +231,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Shift`+`N` / `Shift`+`P` | Next / previous change in the open diff |
 | `Shift`+`D` | Split / unified |
 | `Shift`+`W` | Ignore whitespace |
+| `Alt`+`Z` | Toggle word wrap for the open file (shared with Code) |
 | `r` | Refresh changes and history |
 | `c` | In history: compare refs. In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |

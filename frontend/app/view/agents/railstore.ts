@@ -25,6 +25,8 @@ export interface RailGitState {
     changes: GitChanges | null;
     // the linked worktree the agent works in, as linkedWorktree names it; unset in the main checkout
     worktree?: string;
+    // the commit changes is measured from (the session start's); "" is HEAD
+    ref?: string;
 }
 
 // First persisted FE pref in frontend/app: the rail is global and on by default (localStorage key
@@ -98,7 +100,14 @@ export async function loadRailForAgent(
         }
         const changes = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
         const worktree = ch.isrepo ? linkedWorktree(cwd, wts?.worktrees ?? []) : undefined;
-        globalStore.set(railStateAtom, { cwd, branch: ch.branch, isRepo: ch.isrepo, changes, worktree });
+        globalStore.set(railStateAtom, {
+            cwd,
+            branch: ch.branch,
+            isRepo: ch.isrepo,
+            changes,
+            worktree,
+            ref: ch.ref ?? "",
+        });
     } catch {
         if (current.id === id) {
             globalStore.set(railStateAtom, { ...EMPTY, cwd });

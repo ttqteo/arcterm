@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
     clampWideWidth,
     closeFile,
+    currentFileView,
     fileLabel,
+    fileViews,
     goBack,
     goForward,
     nextTab,
@@ -95,5 +97,25 @@ describe("nextTab", () => {
         expect(nextTab([...tabs], "overview", "ArrowLeft")).toBe("file");
         expect(nextTab([...tabs], "file", "Home")).toBe("overview");
         expect(nextTab([...tabs], "overview", "End")).toBe("file");
+    });
+});
+
+describe("the File tab's views", () => {
+    it("offers Diff only for a file opened from Files changed", () => {
+        expect(fileViews(false, false)).toEqual([]);
+        expect(fileViews(true, false)).toEqual(["preview", "source"]);
+        expect(fileViews(false, true)).toEqual(["source", "diff"]);
+        expect(fileViews(true, true)).toEqual(["preview", "source", "diff"]);
+    });
+
+    it("shows the diff while it is chosen, and the file's own view otherwise", () => {
+        expect(currentFileView(false, true, "preview", true)).toBe("diff");
+        expect(currentFileView(true, true, "preview", false)).toBe("preview");
+        expect(currentFileView(false, true, "preview", false)).toBe("source");
+    });
+
+    it("never shows a diff it has no base for", () => {
+        expect(currentFileView(false, false, "preview", true)).toBe("source");
+        expect(currentFileView(true, false, "source", true)).toBe("source");
     });
 });

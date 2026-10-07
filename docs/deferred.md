@@ -7,6 +7,37 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > append-only rationale log — append the full deferral here, then mirror a one-line row there. Entries
 > marked RESOLVED/DECLINED below are kept for the reasoning, not as pending work.
 
+## (arcterm) Line comments in the Spec/Plan review dialog (deferred 2026-10-07)
+
+- **Deferred:** commenting on lines of the document in the Spec review / Plan review dialog
+  (`frontend/app/view/agents/docreviewdialog.tsx`), as the Agent panel's File tab already can on a markdown file.
+  Today the dialog renders the document read-only (`MarkdownMessage`), and the only feedback is the Request changes
+  note.
+- **Why:** low value for the cost. Plan review opens only after the plan reviewer has failed twice, and what it
+  decides is the findings on the right, not the plan's lines; the note already carries "Finding 2: …" or
+  "Task 5: …". Spec review is where it would pay (a long prose document), but nothing yet says the note falls short
+  there.
+- **Settled in brainstorming (2026-10-07), for when it is picked up:**
+  - Comments on the document pane only, not per finding. A mockup-settled spec (the canvas pane) stays as it is.
+  - Reuse `MdDoc` (`mddoc.tsx`) rather than Doc review's sentence anchors (`proseanchor.ts`): line refs suit a plan's
+    tables, code blocks and Task headings, and the lead can open `path:line` directly. Pass `agent` = the lead,
+    `fileRef = { abs: review.path, root: null }` (the plan sits in a worktree; the absolute path is the safe ref).
+  - The footer stays as it is: Accept stays primary with no confirmation, and comments go only with Request changes,
+    which reads "Request changes (N)" and can send with comments and an empty note. Accepting with comments drafted
+    drops them.
+  - The answer is one text answer (an ask answer is text or a selection, not both: `buildAskAnswers`): the note, then
+    `formatMdComments` of this file's comments. Make it a pure `requestAnswer(note, comments)` with a vitest beside it.
+  - Drafts live in `mdCommentAtom(leadId)`, shared with the File tab; either answer clears this file's comments, since
+    the next round's line numbers no longer match.
+  - `MdDoc` needs an optional `onOpenLink` so a link closes the dialog first; otherwise the file opens in the Agent
+    panel behind the modal.
+  - No keyboard conflict: the comment box stops propagation of Ctrl+Enter and Esc, so `ModalShell`'s window listener
+    never sees them (no accidental Accept, no closed dialog).
+  - CDP: extend the `doc-review` scenario: open a Plan review, comment a selection, save with Ctrl+Enter, assert the
+    dialog stays open, the card shows, and the button reads "Request changes (1)".
+- **Revive when:** Spec review notes keep pointing at specific passages ("Task X", "the paragraph about Y"), or a
+  review is long enough that a single note loses track of where each remark belongs.
+
 ## (arcterm) Editable LaTeX visual mode, Overleaf style (deferred 2026-10-07)
 
 - **Deferred:** a `.tex` mode that is rendered and editable at once, as Overleaf's Visual Editor is: `\section{…}`,

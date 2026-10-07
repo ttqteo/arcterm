@@ -12,29 +12,47 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- `wsh runs route` shows which models a new run's lead and workers will use, and saves the workers default
+  (`--global --worker-runtime claude --worker-model sonnet`) so runs started from an agent stop defaulting
+  every worker to the harness's default model.
 - LaTeX and BibTeX files are highlighted on Code and in the agent panel's File tab, and a **Wrap** toggle (`Alt+Z` on
   Code) wraps long lines; `.tex`, `.bib`, `.md` and `.txt` wrap by default. A `.pdf` now opens in a viewer instead of
   "Binary file".
 - A `.tex` file opens on Code as a readable preview: its title and authors, numbered headings, and the prose with
   `\cite`/`\ref` keys and rendered math. Double-click a sentence to edit it in Source. When the paper has a built PDF
   (Doc review's build, or the one beside the main file), a **PDF** mode shows it with how old it is.
+- Code has a read-only side column: drag a file from the tree onto the right half of the editor, choose **Open to the
+  Side**, or press `Ctrl+\` to see a file beside the one you edit — a paper's PDF or preview next to its source
+  follows your typing. A `.tex` file with nothing to preview, such as a generated macros file, opens on Source.
+- The Diff surface has a **Wrap** toggle (`Alt+Z`) too, shared per file with Code and the agent panel's File tab.
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
 - Switch the Claude account in Settings: sign in extra subscriptions once, pick one, and new agents and the plan usage
   follow it.
+- A file in the agent panel's **Files changed** opens beside the agent as a diff against where the session started,
+  with **Source** to see the whole file and a button to the Diff surface; **View diff** still opens Diff.
 
 ### Changed
 
+- Added and removed lines in a diff are a softer green and red; a new file no longer reads as a solid block of green.
 - Opening an idea in Jarvis no longer shows an empty initiative plan. It shows the whole title and when you jotted it,
   with **Plan it** (an agent breaks the idea into chunks) and **Add first chunk**, which turns it into an initiative card.
 - An agent notification says what it is at a glance: an amber question tile and **Needs you**, a green check and
   **Finished**, with the project and the agent's harness on the right, instead of tacking "finished" onto the name.
-  A toast stays while the pointer is on it, and one that needs you stays 15 seconds instead of 6.
+  A toast stays while the pointer is on it, one that needs you stays 15 seconds instead of 6, and its × closes it
+  without opening the agent. Jarvis's pet walks out from under a new toast at once instead of on its next stroll.
 
 ### Fixed
 
+- Expanding a run's records in the Jarvis sheet no longer pushes the run's buttons (Open DAG, Cancel run…) off the
+  bottom of the sheet: the records take at most half the sheet and scroll.
 - An agent that has just finished its turn no longer shows as asking for about a minute, or sends a false
   **Needs you** notification.
+- A notification toast in the corner is no longer covered by Jarvis's pet; the pet walks off the stretch below it.
+- Code no longer fails with "Could not list files: exit status 1" the first time it opens a large project;
+  a listing that really does run out of time now says so.
+- Shortcuts work with a Vietnamese input method such as EVKey or Unikey left on Telex: outside a text field or the
+  terminal, a letter it rewrites ("đ" for `dd`, "ư" for `w`, "á" for `a` `s`) acts as the key you pressed.
 
 ## 0.15.2 — 2026-10-07
 

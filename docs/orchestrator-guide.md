@@ -1039,6 +1039,7 @@ Run-level commands, from any terminal in the project:
 | `wsh runs start … --worker-runtime <rt> [--worker-model <id>]` | the workers setting is that route |
 | `wsh runs start … --reviewer-picks` | the workers setting is Reviewer picks; refused with `--worker-runtime`/`--worker-model` |
 | `wsh runs start … --reviewer-runtime <rt> [--reviewer-model <id>]` | the reviewer route; `--reviewer-model` needs `--reviewer-runtime` |
+| `wsh runs route [--global] [--worker-runtime <rt> [--worker-model <id>] \| --reviewer-picks \| --same-as-lead]` | print the lead, workers and reviewer routes a new run would use and where each comes from; with a workers flag, save that default for this project (or every project) |
 | `wsh runs show <run-id>` | status, commits, `usage`, the task digest, `outcome` with its reasons, `land`, the report; its `route` line adds `workers=…` and `reviewers=…` when the run has them |
 | `wsh runs answer <run-id> <answers-json>` | answer the run's own question (the lead's), which `runs show` prints |
 | `wsh runs land <run-id> [--force]` | retry a held land-back; `--force` lands a failed final stage (the human's call only) |

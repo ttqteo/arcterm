@@ -162,3 +162,14 @@ describe("lineAtOffset", () => {
         expect(lineAtOffset("a\nb", 99)).toBe(2);
     });
 });
+
+describe("view modes for a file with nothing to preview", () => {
+    it("drops Preview, so the file opens on Source", () => {
+        expect(viewModesFor("numbers.tex", true, false)).toEqual(["source", "diff", "pdf"]);
+        expect(resolveViewMode("numbers.tex", "preview", false, false)).toBe("source");
+    });
+
+    it("keeps Preview when there is something to read", () => {
+        expect(resolveViewMode("main.tex", "preview", false, true)).toBe("preview");
+    });
+});

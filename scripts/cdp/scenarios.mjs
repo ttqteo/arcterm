@@ -5198,8 +5198,8 @@ const codeMarkdown = {
 // A temp git repo holding a small paper (main.tex), the PDF built beside it (main.pdf) and a loose paper.pdf, opened
 // through the openfile event `wsh view` publishes. Covers the .tex Preview (title, authors, a \cite key, KaTeX math),
 // double-click to Source at the sentence's line, LaTeX highlighting, the Wrap toggle and Alt+Z, the .tex PDF mode with
-// its age line, and a .pdf opening in the viewer rather than "Binary file". The PDFs are minimal: WebView2's viewer
-// repairs their missing xref, and the steps check the frame, not the pages.
+// its age line, and a .pdf opening in the viewer rather than "Binary file". The PDFs are one page each; the steps check
+// the frame, the screenshots show the page.
 const CODE_TEX_PAPER = String.raw`\documentclass{article}
 \title{Measuring What the Model Adds}
 \author{Ada Lovelace \and Alan Turing}
@@ -5210,13 +5210,28 @@ A proof of vulnerability is an input that makes a known defect show up in a runn
 Prior systems \cite{smith2020} report a success rate $r = k / n$ over $n$ programs.
 \end{document}
 `;
-const CODE_TEX_PDF = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj
-trailer<</Root 1 0 R>>
-%%EOF
-`;
+// a one-page PDF that draws `label`, with a real xref so the viewer shows a page in the contact sheet
+function codeTexPdf1(label) {
+    const text = `BT /F1 20 Tf 30 90 Td (${label}) Tj ET`;
+    const objs = [
+        "<</Type/Catalog/Pages 2 0 R>>",
+        "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        "<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>",
+        "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+        `<</Length ${text.length}>>stream\n${text}\nendstream`,
+    ];
+    let out = "%PDF-1.4\n";
+    const offsets = objs.map((body, i) => {
+        const at = out.length;
+        out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+        return at;
+    });
+    const xref = out.length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+    out += offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+    out += `trailer\n<</Size ${objs.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`;
+    return out;
+}
 
 const codeTexPdf = {
     name: "code-tex-pdf",
@@ -5225,8 +5240,8 @@ const codeTexPdf = {
         const cwd = mkdtempSync(join(tmpdir(), "verify-code-tex-"));
         execFileSync("git", ["init", "-q"], { cwd });
         writeFileSync(join(cwd, "main.tex"), CODE_TEX_PAPER);
-        writeFileSync(join(cwd, "main.pdf"), CODE_TEX_PDF);
-        writeFileSync(join(cwd, "paper.pdf"), CODE_TEX_PDF);
+        writeFileSync(join(cwd, "main.pdf"), codeTexPdf1("main.pdf, built beside main.tex"));
+        writeFileSync(join(cwd, "paper.pdf"), codeTexPdf1("paper.pdf"));
         return { cwd };
     },
     async assert(h, ctx) {
@@ -5299,13 +5314,21 @@ const codeTexPdf = {
             `dblclick=${target} source=${sourceShown} caretLine=${caretLine}`
         );
 
-        const colours = await h.ev(`(() => {
+        // Monaco tokenizes in idle time after mount, so a line first renders in the default colour
+        const colours = await h.ev(`(async () => {
             const bs = String.fromCharCode(92);
-            const line = [...document.querySelectorAll('.monaco-editor .view-line')].find((l) =>
-                (l.textContent || '').includes(bs + 'section')
-            );
-            if (!line) return null;
-            return [...new Set([...line.querySelectorAll('span span')].map((s) => s.className))];
+            const read = () => {
+                const line = [...document.querySelectorAll('.monaco-editor .view-line')].find((l) =>
+                    (l.textContent || '').includes(bs + 'section')
+                );
+                return line ? [...new Set([...line.querySelectorAll('span span')].map((s) => s.className))] : null;
+            };
+            for (let i = 0; i < 20; i++) {
+                const c = read();
+                if (c != null && c.length >= 3) return c;
+                await new Promise((r) => setTimeout(r, 150));
+            }
+            return read();
         })()`);
         rec(
             "4. LaTeX is highlighted: the \\section line has several token colours",
@@ -14303,6 +14326,23 @@ const agentRailTabs = {
             JSON.stringify({ tabs1, w1, listed })
         );
 
+        // 1b. a changed file opens on the File tab's Diff, beside the terminal, not on the Diff surface
+        await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll('[data-rail-section="files"] button') ?? [])].find((b) => b.textContent.includes("a.txt"))?.click()`);
+        const diff1b = await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-file-diff] .monaco-diff-editor .line-insert")`, 10000);
+        const surface1b = await h.activeSurfaceLabel();
+        const views1b = await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("[data-file-view]") ?? [])].map((b) => b.dataset.fileView + (b.getAttribute("aria-pressed") === "true" ? "*" : ""))`);
+        const openDiff1b = await h.ev(`!!${RAIL_TABS_ASIDE}?.querySelector("[data-file-open-diff]")`);
+        await h.shot("cdp-shots/agent-rail-tabs-diff.png");
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-file-view="source"]')?.click()`);
+        const source1b = await polishWaitFor(h, `!${RAIL_TABS_ASIDE}?.querySelector("[data-file-diff]") && !!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 8000);
+        rec(
+            "1b. a.txt in Files changed opens the File tab on Diff (Source | Diff, Open in Diff) on the Agent surface, and Source shows the file",
+            diff1b && surface1b === "Agent" && JSON.stringify(views1b) === JSON.stringify(["source", "diff*"]) && openDiff1b && source1b,
+            JSON.stringify({ diff1b, surface1b, views1b, openDiff1b, source1b })
+        );
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Close file"]')?.click()`);
+        await railTabsNap(300);
+
         // 2. a tool row's link
         const clicked2 = await railTabsClickLink(h, `(p) => p !== "a.txt" && p.endsWith("a.txt")`);
         const editor2 = clicked2 && (await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 10000));
@@ -17505,6 +17545,26 @@ const notifyToast = {
                 toasts: await notifyToasts(h),
             });
 
+            // the toast's x closes it and opens nothing: the Cockpit stays, and a new ask brings the toast the next step clicks
+            const closed = await h.ev(`(() => {
+                const t = [...document.querySelectorAll("[data-notification-toast]")].find((t) =>
+                    t.textContent.includes(${JSON.stringify(asks)})
+                );
+                const x = t?.parentElement?.querySelector("[data-notification-close]");
+                x?.click();
+                return x != null;
+            })()`);
+            const gone = await polishWaitFor(h, `!${notifyToastWith(asks)}`, 2000);
+            const stayed = await h.activeSurfaceLabel();
+            rec("the toast's close button dismisses it without opening the agent", closed === true && gone === true && stayed === SURFACE_LABEL.cockpit, {
+                closed,
+                gone,
+                surface: stayed,
+            });
+            await publish("working");
+            await publish("asking");
+            await polishWaitFor(h, notifyToastWith(asks, "asking"), 6000);
+
             const clicked = await h.ev(`(() => {
                 const t = [...document.querySelectorAll("[data-notification-toast][data-notification-open]")]
                     .find((t) => t.textContent.includes(${JSON.stringify(asks)}));
@@ -17676,7 +17736,7 @@ const notifyToast = {
         }
         await step("end the focus emulation", () => h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false }));
         await step("dismiss the toasts left", () =>
-            h.ev(`document.querySelectorAll("[data-notification-toast]").forEach((t) => t.click())`)
+            h.ev(`document.querySelectorAll("[data-notification-close]").forEach((x) => x.click())`)
         );
         await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
         // the page holds the grid the scenario left in memory, and reads storage only on load

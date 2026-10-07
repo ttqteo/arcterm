@@ -372,6 +372,11 @@ export function registeredProjects(registry: Record<string, ProjectKeywords> | u
     return buildProjectList(registry, null).map(({ name, path }) => ({ name, path }));
 }
 
+// The RPC layer's DefaultTimeoutMs (5s) binds the SERVER-side context, and a cold first walk of a big
+// working tree outlasts it: git is killed, which Windows reports as "exit status 1". gitinfo bounds the
+// listing itself (listFilesTimeout); this ceiling sits above it so that limit is the one that decides.
+const LIST_RPC_TIMEOUT_MS = 60_000;
+
 // Any project's file list, through the same cache Code browses with: the universal search's Files scope
 // lists the active project's files off Code, and a later visit to Code then starts warm.
 export async function loadFileIndex(path: string): Promise<CodeIndex> {
@@ -379,7 +384,7 @@ export async function loadFileIndex(path: string): Promise<CodeIndex> {
     if (cached != null) {
         return cached;
     }
-    const res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd: path });
+    const res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd: path }, { timeout: LIST_RPC_TIMEOUT_MS });
     const idx: CodeIndex = {
         paths: res.files ?? [],
         ignored: res.ignored ?? [],

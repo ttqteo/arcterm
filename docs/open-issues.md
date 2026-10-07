@@ -278,6 +278,10 @@ local default. Effort realistically L counting step 1. Full reference design in 
 
 ## 4 · Held — pick up only on the named trigger
 
+(arcterm) Line comments in the Spec/Plan review dialog (deferred 2026-10-07): comment on the document's lines in
+that dialog by reusing `MdDoc`, sent with Request changes. Plan review is rare and the note covers it. Revive when
+Spec review notes keep pointing at specific passages; the settled design is in `docs/deferred.md`.
+
 (arcterm) Editable LaTeX visual mode, Overleaf style (deferred 2026-10-07): a `.tex` mode that renders and edits at
 once. Needs CodeMirror 6 beside Monaco; the read-only `.tex` Preview covers reading. Revive when hand edits of papers
 in arcterm make switching Preview ↔ Source the complaint; full rationale in `docs/deferred.md`.

@@ -33,10 +33,11 @@ export interface MonacoChrome {
 
 const SELECTION_ALPHA = 0.5;
 const LINE_HIGHLIGHT_ALPHA = 0.35;
-// the diff editor paints the whole changed line, then the changed words again on top, so the line
-// wash has to stay faint enough that the two stack without drowning the code
-const DIFF_LINE_ALPHA = 0.12;
-const DIFF_TEXT_ALPHA = 0.24;
+// the diff editor paints the whole changed line, then the changed words again on top — and a wholly added or
+// removed line gets the word colour across its full width too, so a new block is both washes stacked (~0.19 here;
+// 0.12 + 0.24 made a new file a slab of green)
+const DIFF_LINE_ALPHA = 0.06;
+const DIFF_TEXT_ALPHA = 0.14;
 
 // token family -> cockpit role. "storage"/"control" read as keyword-family declarations
 // (let/const/type), "delimiter" joins "punctuation" (braces, brackets, separators).

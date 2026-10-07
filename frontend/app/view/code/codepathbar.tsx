@@ -12,9 +12,11 @@
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, Copy, WrapText } from "lucide-react";
+import { Check, Columns2, Copy, WrapText } from "lucide-react";
 import { useState } from "react";
 import { resolveViewMode, viewModesFor } from "./codeclassify";
+import { isPreviewable } from "./codepreviewable";
+import { closeSide } from "./codeside";
 import {
     codeDraftsAtom,
     codeFileAtom,
@@ -22,12 +24,14 @@ import {
     codeTexPdfAtom,
     codeViewModeAtom,
     draftKey,
+    openPath,
     refreshTexPdf,
     texPdfFor,
 } from "./codestore";
 import { toggleWrap, useWrap } from "./codewrap";
 
-export function CodePathBar() {
+// `sideHidden`: the side column's file while the editor area is too narrow to show it; the chip opens it here instead
+export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
     const project = useAtomValue(codeProjectAtom);
     const file = useAtomValue(codeFileAtom);
     const drafts = useAtomValue(codeDraftsAtom);
@@ -54,8 +58,30 @@ export function CodePathBar() {
                     className="size-[6px] flex-none rounded-full bg-accent-soft"
                 />
             ) : null}
-            {file.kind === "text" ? <ViewModeToggle path={file.path} abs={abs} hasPdf={hasPdf} /> : null}
+            {file.kind === "text" ? (
+                <ViewModeToggle
+                    path={file.path}
+                    abs={abs}
+                    hasPdf={hasPdf}
+                    previewable={isPreviewable(file.path, drafts.get(abs)?.text ?? file.text)}
+                />
+            ) : null}
             <div className="flex-1" />
+            {sideHidden != null ? (
+                <button
+                    type="button"
+                    data-code-side-hidden={sideHidden}
+                    title="The side column needs a wider window. Click to open its file here."
+                    onClick={() => {
+                        closeSide();
+                        fireAndForget(() => openPath(sideHidden));
+                    }}
+                    className="flex min-w-0 max-w-[200px] flex-none cursor-pointer items-center gap-1 rounded-[6px] border border-border px-2 py-[3px] text-[11px] text-muted hover:text-primary"
+                >
+                    <Columns2 size={11} strokeWidth={1.8} className="flex-none" />
+                    <span className="truncate">Side: {sideHidden.split("/").pop()}</span>
+                </button>
+            ) : null}
             {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
             <button
                 type="button"
@@ -82,10 +108,11 @@ export function CodePathBar() {
 // Diff shows the file against HEAD. Preview is for documents only — there is nothing to render for a Go
 // file — while Source and Diff are offered for any text file. A .tex file with a built PDF also has PDF,
 // which looks the PDF up again when chosen so a build made since opening the file shows.
-function ViewModeToggle({ path, abs, hasPdf }: { path: string; abs: string; hasPdf: boolean }) {
+function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; previewable: boolean }) {
+    const { path, abs, hasPdf, previewable } = p;
     const [chosen, setMode] = useAtom(codeViewModeAtom);
-    const mode = resolveViewMode(path, chosen, hasPdf);
-    const modes = viewModesFor(path, hasPdf);
+    const mode = resolveViewMode(path, chosen, hasPdf, previewable);
+    const modes = viewModesFor(path, hasPdf, previewable);
     return (
         <div className="flex flex-none items-center gap-0.5 rounded-[6px] border border-border p-[2px]">
             {modes.map((m) => (

@@ -41,6 +41,10 @@ export const railMdModeAtom = atomWithStorage<"preview" | "source">("agent.rail.
     getOnInit: true,
 }) as PrimitiveAtom<"preview" | "source">;
 
+// whether a file opened from Files changed shows its Diff (the other views: railMdModeAtom). Every such open turns it
+// back on, since showing the change is why that file was clicked; session-scoped like the panels
+export const railDiffOnAtom = atom(true);
+
 // the width while the grip is dragged: committed to railWideWidthAtom on release
 export const railWideDragAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
 
@@ -62,6 +66,9 @@ export function selectRailTab(agentId: string, tab: RailTab): void {
 // shows the agent on the Agent surface with its panel open on the file
 export function openFileInPanel(model: AgentsViewModel, agentId: string, ref: FileRef): void {
     update(agentId, (p) => openFile(p, ref));
+    if (ref.diff != null) {
+        globalStore.set(railDiffOnAtom, true);
+    }
     globalStore.set(railVisibleAtom, true);
     jumpToAgent(model, agentId);
 }

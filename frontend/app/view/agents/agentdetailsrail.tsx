@@ -7,6 +7,7 @@ import { railSectionOpenAtom } from "@/app/element/railsections";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
+import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft, ArrowUpRight, ChevronLeft, FileText, LayoutList, LayoutTemplate } from "lucide-react";
@@ -446,6 +447,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         globalStore.set(model.focusIdAtom, agent.id);
         openDiff(model, agentDiffScope(agent.id, agent.name), railState?.cwd && path ? path : undefined);
     };
+    // a changed file opens on the File tab's Diff, beside the terminal; View diff is the way to the whole Diff surface
+    const openChangedFile = (path: string) => {
+        const cwd = railState?.cwd;
+        if (!cwd) {
+            openFileDiff(path);
+            return;
+        }
+        openFileInPanel(model, agent.id, {
+            abs: joinRepoPath(cwd, path),
+            root: cwd,
+            reread: Date.now(), // the agent may have changed it since it was last open
+            diff: { rel: path, base: railState?.ref ?? "" },
+        });
+    };
     const drive = (data: string) => driveAgent(agent.blockId, data);
     // a board's row opens the agent's canvas on that board alone (its own tab, not the All view)
     const openArtifact = (board: string) => {
@@ -636,7 +651,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                 path={f.path}
                                 adds={f.adds}
                                 dels={f.dels}
-                                onClick={() => openFileDiff(f.path)}
+                                onClick={() => openChangedFile(f.path)}
                             />
                         ))}
                     </div>

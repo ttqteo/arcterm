@@ -3,20 +3,31 @@
 //
 // The Agent panel's File tab: one file, read-only, at a line (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md).
 // A markdown file renders as a document that takes comments (docs/superpowers/specs/2026-10-06-md-comments-design.md);
-// Source is the Monaco view. Editing is the Code surface's job, one click away.
+// Source is the Monaco view. A file opened from Files changed also has Diff, against the base that list is measured from.
+// Editing is the Code surface's job, one click away.
 
 import { SkeletonLine } from "@/app/element/skeleton";
+import { globalStore } from "@/app/store/jotaiStore";
 import { isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowUpRight, ChevronLeft, ChevronRight, WrapText } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight, GitCompare, WrapText } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { closeRailFile, openRefInCode, railFileBack, railFileForward, railMdModeAtom } from "./agentrailstore";
-import { fileLabel, type FileHistory } from "./agentrailtabs";
+import { agentDiffScope, openDiff } from "./agentdiffnav";
+import {
+    closeRailFile,
+    openRefInCode,
+    railDiffOnAtom,
+    railFileBack,
+    railFileForward,
+    railMdModeAtom,
+} from "./agentrailstore";
+import { currentFileView, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { FileTabDiff } from "./filetabdiff";
 import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
@@ -49,6 +60,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     const ref = file.current;
     const [state, setState] = useState<PanelFile>({ kind: "loading" });
     const [mdMode, setMdMode] = useAtom(railMdModeAtom);
+    const [diffOn, setDiffOn] = useAtom(railDiffOnAtom);
     const drafts = useAtomValue(mdCommentAtom(agentId));
     const [following, setFollowing] = useState(ref?.live === "on");
     const followingRef = useRef(following);
@@ -109,9 +121,18 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
         return null;
     }
     const markdown = isMarkdownPath(ref.abs);
-    const preview = markdown && mdMode === "preview";
+    const diff = ref.diff;
+    const views = fileViews(markdown, diff != null);
+    const view = currentFileView(markdown, diff != null, mdMode, diffOn);
+    const preview = view === "preview";
+    // a file deleted since the base still has a diff: everything removed
+    const diffable = view === "diff" && (state.kind === "text" || state.kind === "missing");
     const { dir, name } = fileLabel(ref);
     const openCode = () => fireAndForget(() => openRefInCode(model, ref));
+    const openWholeDiff = (rel: string) => {
+        globalStore.set(model.focusIdAtom, agentId);
+        openDiff(model, agentDiffScope(agentId, agent.name), rel);
+    };
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
         if (e.key === "Escape") {
             e.stopPropagation();
@@ -143,6 +164,18 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                     <SkeletonLine key={i} className={cn("h-[10px]", w)} />
                 ))}
             </div>
+        );
+    } else if (diffable && diff != null && ref.root != null) {
+        body = (
+            <FileTabDiff
+                abs={ref.abs}
+                cwd={ref.root}
+                rel={diff.rel}
+                base={diff.base}
+                modified={state.kind === "text" ? state.text : ""}
+                reread={ref.reread}
+                wrap={wrap}
+            />
         );
     } else if (state.kind === "pdf") {
         body = <PdfFrame data-file-pdf={ref.abs} path={ref.abs} version={state.modtime} title={name} />;
@@ -259,22 +292,28 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                     <span className="text-ink-hi">{name}</span>
                     {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
                 </span>
-                {markdown ? (
+                {views.length > 0 ? (
                     <div
                         role="group"
                         aria-label="View"
                         className="flex flex-none items-center gap-0.5 rounded-[6px] border border-border p-[2px]"
                     >
-                        {(["preview", "source"] as const).map((m) => (
+                        {views.map((m) => (
                             <button
                                 key={m}
                                 type="button"
-                                data-md-mode={m}
-                                aria-pressed={mdMode === m}
-                                onClick={() => setMdMode(m)}
+                                data-file-view={m}
+                                data-md-mode={m === "diff" ? undefined : m}
+                                aria-pressed={view === m}
+                                onClick={() => {
+                                    setDiffOn(m === "diff");
+                                    if (m !== "diff" && markdown) {
+                                        setMdMode(m);
+                                    }
+                                }}
                                 className={cn(
                                     "cursor-pointer rounded-[4px] border-0 px-2 py-[2px] text-[11px] capitalize",
-                                    mdMode === m
+                                    view === m
                                         ? "bg-accent/10 text-accent-soft"
                                         : "bg-transparent text-muted hover:text-primary"
                                 )}
@@ -284,7 +323,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                         ))}
                     </div>
                 ) : null}
-                {state.kind === "text" && !preview ? (
+                {diffable || (state.kind === "text" && !preview) ? (
                     <button
                         type="button"
                         data-file-wrap
@@ -318,6 +357,18 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                             className={cn("h-1.5 w-1.5 rounded-full", following ? "pulse-dot bg-working" : "bg-muted")}
                         />
                         Live
+                    </button>
+                ) : null}
+                {diff != null ? (
+                    <button
+                        type="button"
+                        data-file-open-diff
+                        aria-label="Open in Diff"
+                        title="Open in Diff, with the agent's other changes"
+                        onClick={() => openWholeDiff(diff.rel)}
+                        className={ICON_BTN}
+                    >
+                        <GitCompare size={13} aria-hidden />
                     </button>
                 ) : null}
                 <button type="button" onClick={openCode} className={BTN}>

@@ -27,6 +27,7 @@ import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter } from "./codefrontmatter";
 import { resolveDocLink } from "./codelink";
+import { isPreviewable } from "./codepreviewable";
 import {
     codeDraftsAtom,
     codeFileAtom,
@@ -117,7 +118,9 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
     const shownAbs = project != null && file.kind !== "none" ? draftKey(project, file.path) : "";
     const wrap = useWrap(shownAbs);
     const texPdf = texPdfFor(useAtomValue(codeTexPdfAtom), shownAbs);
-    const mode = file.kind === "none" ? chosenMode : resolveViewMode(file.path, chosenMode, texPdf != null);
+    const previewable = file.kind === "text" ? isPreviewable(file.path, drafts.get(shownAbs)?.text ?? file.text) : true;
+    const mode =
+        file.kind === "none" ? chosenMode : resolveViewMode(file.path, chosenMode, texPdf != null, previewable);
 
     // Two paths, both needed. Monaco is keyed by file path, so opening a DIFFERENT file remounts it
     // and onMount is the only hook that runs late enough to reveal a line. Jumping to another line
