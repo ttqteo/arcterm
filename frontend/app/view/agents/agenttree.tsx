@@ -201,6 +201,17 @@ function Guides({ depth }: { depth: 1 | 2 }) {
     );
 }
 
+// A row of a run a session started, set one level in under that session's row with a guide down its leading column,
+// so the session and its run read as one group
+function UnderOrigin({ children }: { children: React.ReactNode }) {
+    return (
+        <div className="relative pl-[17px]">
+            <span className={cn("absolute inset-y-0 w-px bg-edge-strong", GUIDE_LEFT[0])} />
+            {children}
+        </div>
+    );
+}
+
 function FoldChip({
     label,
     open,
@@ -1737,7 +1748,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         animate="animate"
                                         exit="exit"
                                     >
-                                        {body}
+                                        {r.under ? <UnderOrigin>{body}</UnderOrigin> : body}
                                     </motion.div>
                                 );
                             })}

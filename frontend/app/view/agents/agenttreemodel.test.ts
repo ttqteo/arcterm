@@ -378,7 +378,7 @@ describe("buildAgentTree with run lineage", () => {
         const roster = [agent("w1", "working", ""), agent("other", "idle"), agent("origin", "idle")];
         const roles: Lineage["roles"] = { w1: { kind: "worker", leadRunId: "run-3", taskId: "t-1" } };
 
-        it("is listed just after that session, wherever order puts it", () => {
+        it("is listed just after that session, one level in, wherever order puts it", () => {
             const rows = buildAgentTree(roster, ["w1", "other", "origin"], lineage([started], roles));
             expect(shape(rows)).toEqual([
                 "group:waveterm:3:0",
@@ -387,11 +387,13 @@ describe("buildAgentTree with run lineage", () => {
                 "run:run-3:1",
                 "worker:t-1:w1",
             ]);
+            expect(rows.map((r) => r.under ?? false)).toEqual([false, false, false, true, true]);
         });
 
         it("stays where order puts it once its session is gone", () => {
             const rows = buildAgentTree(roster.slice(0, 2), ["w1", "other"], lineage([started], roles));
             expect(shape(rows)).toEqual(["group:waveterm:2:0", "run:run-3:1", "worker:t-1:w1", "parent:other"]);
+            expect(rows.some((r) => r.under)).toBe(false);
         });
     });
 
