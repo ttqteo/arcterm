@@ -668,6 +668,8 @@ function SectionBody({ id, runtime, onRuntime }: { id: string; runtime: Runtime;
             return <FontsSection />;
         case "general":
             return <GeneralSection />;
+        case "notifications":
+            return <NotificationsSection />;
         case "newagent":
             return <NewAgentSection runtime={runtime} onRuntime={onRuntime} />;
         case "run":
@@ -958,6 +960,29 @@ function TerminalSection() {
                     on={copyOnSelect}
                     onToggle={() => writeConfig({ "term:copyonselect": !copyOnSelect })}
                     label="Copy on select"
+                />
+            </SettingRow>
+        </div>
+    );
+}
+
+function NotificationsSection() {
+    const os = (useAtomValue(getSettingsKeyAtom("notify:os")) as boolean | undefined) ?? true;
+    const toast = (useAtomValue(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true;
+    const reply = (useAtomValue(getSettingsKeyAtom("notify:reply")) as boolean | undefined) ?? true;
+    return (
+        <div>
+            <SettingRow id="notifications.os">
+                <Toggle on={os} onToggle={() => writeConfig({ "notify:os": !os })} label="OS notifications" />
+            </SettingRow>
+            <SettingRow id="notifications.toast">
+                <Toggle on={toast} onToggle={() => writeConfig({ "notify:toast": !toast })} label="In-app toasts" />
+            </SettingRow>
+            <SettingRow id="notifications.reply">
+                <Toggle
+                    on={reply}
+                    onToggle={() => writeConfig({ "notify:reply": !reply })}
+                    label="When an agent finishes"
                 />
             </SettingRow>
         </div>

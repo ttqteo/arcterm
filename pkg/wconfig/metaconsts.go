@@ -10,6 +10,11 @@ const (
 	ConfigKey_AppCtrlVPaste                  = "app:ctrlvpaste"
 	ConfigKey_AppDisableCtrlShiftDisplay     = "app:disablectrlshiftdisplay"
 
+	ConfigKey_NotifyClear                    = "notify:*"
+	ConfigKey_NotifyOs                       = "notify:os"
+	ConfigKey_NotifyToast                    = "notify:toast"
+	ConfigKey_NotifyReply                    = "notify:reply"
+
 	ConfigKey_TermClear                      = "term:*"
 	ConfigKey_TermFontSize                   = "term:fontsize"
 	ConfigKey_TermFontFamily                 = "term:fontfamily"

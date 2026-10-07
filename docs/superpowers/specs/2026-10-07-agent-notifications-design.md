@@ -1,6 +1,6 @@
 # Agent notifications: OS toast when backgrounded, in-app toast when focused
 
-Status: design agreed 2026-10-07. Not built.
+Status: built 2026-10-07.
 
 ## Problem
 
@@ -65,11 +65,15 @@ Event_Notify ─────────────┘                │
 ### Pieces
 
 - **`frontend/app/view/agents/notifyevents.ts`** (pure, with a test beside it). Input: the previous and next snapshot
-  of agent states, attention ids and the agent:ask ids. Output: `NotifyEvent { kind: "request" | "reply" |
-  "attention" | "notify", target, title, body }[]`. An event fires once, on the edge: an agent entering `asking`, an
-  attention id absent from the previous snapshot, a working → idle move. The first snapshot is a baseline, an agent
-  seen for the first time is a baseline (a reload or a websocket reconnect refills the roster, which is not news), and
-  so is the first attention poll (`attentionLoadedAtom`), so opening the app does not replay old state.
+  (`snapshotOf`) of the roster's agents (state, name, task, run, the ask's first question line) and the attention items
+  whose kind needs a decision. Output: a list of `NotifyEvent` (`kind`, `target`, `title`, `body`, `loud`), whose kind
+  is `request`, `reply`, `attention`, `notify` or `summary`. An event fires on the edge: an agent entering `asking`, an attention key absent from
+  the previous snapshot, a working → idle move. The model keeps no seen set: the previous snapshot is its only memory,
+  so an attention item fires once while it stays listed, and again if it leaves the list and comes back. The first
+  snapshot is a baseline, an agent seen for the first time is a baseline (a reload or a websocket reconnect refills
+  the roster, which is not news), and so is the first attention poll (`attentionLoadedAtom`), so opening the app does
+  not replay old state. Beside it, `parseTarget` reads the OS toast's click payload (the target JSON `notify_os` was
+  given) back into a target, and anything unreadable as none.
 - **`routeNotify(event, { focused, viewing, settings })`** (pure, same file): `"os" | "toast" | "avatar" | "none"`.
 - **Coalescing** (pure, same file): events inside a 2 s window are batched; three or more become one summary ("3 agents
   waiting on you · 2 replied") whose target is the Cockpit surface. Applies to OS and in-app alike.
@@ -98,12 +102,14 @@ Event_Notify ─────────────┘                │
 - `notify:toast` — in-app toasts for requests and replies.
 - `notify:reply` — the reply event, OS and in-app, for when finished turns are too noisy.
 
-A Notifications section on the Settings surface (Cockpit group) toggles the three. No per-agent settings and no quiet
-hours; Windows Focus Assist covers that.
+A Notifications section on the Settings surface, in the Cockpit group right after General, toggles the three with the
+rows "OS notifications" (`notify:os`), "In-app toasts" (`notify:toast`) and "When an agent finishes" (`notify:reply`).
+No per-agent settings and no quiet hours; Windows Focus Assist covers that.
 
 ### Edge cases
 
-- A click on a toast whose agent has gone: `openref` reports it with its existing "not found" toast.
+- A click on a toast, in-app or OS, whose agent has gone: it opens through `openref.openTarget`, which reports it with
+  its existing "not found" toast.
 - A websocket reconnect replays nothing: agents that come back are first-seen, and an attention poll that fails
   keeps the last list.
 - The macOS Dock badge is unchanged. A Windows taskbar overlay badge stays out of scope; the open-issues row keeps
@@ -112,15 +118,29 @@ hours; Windows Focus Assist covers that.
 ## Testing
 
 - vitest: `notifyevents.test.ts` covers the edges (enter asking, waiting as asking, working → idle, run workers
-  excluded, attention seen set, baseline after reconnect), `routeNotify` (focused / backgrounded / viewing / settings
-  off, `wsh notify` focused → avatar) and coalescing. `unreadagents.test.ts` gains the unfocused case;
-  `agentsviewmodel` tests the `waiting` mapping.
-- CDP scenario `notify-toast` in `scripts/cdp/scenarios.mjs`: with a fixture roster, flip an agent not in view to
-  `asking`, assert a toast with the agent's name renders, click it, assert the Agent surface focuses that agent.
-- The OS toast cannot be seen over CDP; check it by hand on the dev app: background the window, trigger an ask, click
-  the toast, see the agent open.
+  excluded, an attention item fires once while it stays listed and again after it leaves and returns, baseline after
+  reconnect), `routeNotify` (focused / backgrounded / viewing / settings off, `wsh notify` focused → avatar),
+  coalescing and `parseTarget`. `unreadagents.test.ts` gains the unfocused case; `agentsviewmodel` tests the `waiting`
+  mapping.
+- CDP scenario `notify-toast` in `scripts/cdp/scenarios.mjs`, on a terminal tab published as a working claude agent
+  over `agent:status`, with the window's focus emulated:
+  - an out-of-view agent that starts asking raises an in-app toast with its name, and clicking the toast opens it on
+    the Agent surface;
+  - nothing is shown for the agent in view;
+  - Settings lists the Notifications section and its three rows, and switching In-app toasts off silences the toast;
+  - an agent at a permission prompt (`waiting`) reads as asking in the roster;
+  - backgrounded (focus emulation off and a `blur`), an ask goes to the OS and not to a toast: a wrapped
+    `__TAURI_INTERNALS__.invoke` records a loud `notify_os` call with the agent's name instead of reaching Rust;
+  - a turn the agent finishes while the window is in the background stays unread;
+  - an emitted `os-notify-activated` with the agent's target opens the agent, as an OS toast's click would;
+  - a click on a toast whose agent has gone says so, through `openref`'s "not found" toast.
+- The OS toast itself is not verified. `notify.rs`'s cargo tests cover only its app id choice (the bundle id, or
+  PowerShell's in a dev build), and run only in the plan's Task 7. Showing the OS toast and its click (`on_activated`:
+  show and focus the window, emit `os-notify-activated`) go unverified, since CDP cannot see an OS toast; what the
+  frontend does with the emitted event is covered by the `os-notify-activated` step above.
 
 ## Docs
 
-- `CHANGELOG.md`: one `Added` line (OS and in-app notifications) and one `Changed` (a permission prompt shows amber).
+- `CHANGELOG.md`: one `Added` line (OS and in-app notifications), one `Changed` (a permission prompt shows amber) and
+  one `Fixed` (a turn finished while arcterm is in the background stays unread).
 - `docs/open-issues.md`: narrow the "OS/dock/titlebar badge" row to the Windows taskbar badge.

@@ -1,5 +1,8 @@
 {
     "app:disablectrlshiftdisplay": false,
+    "notify:os": true,
+    "notify:toast": true,
+    "notify:reply": true,
     "editor:minimapenabled": true,
     "window:magnifiedblockopacity": 0.6,
     "window:magnifiedblocksize": 0.95,

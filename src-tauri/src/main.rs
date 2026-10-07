@@ -5,6 +5,7 @@ mod canvas;
 mod estart;
 mod init;
 mod commands;
+mod notify;
 mod paths;
 mod shellenv;
 
@@ -300,9 +301,13 @@ fn main() {
         }
     }
     let auth_key = Uuid::new_v4().to_string();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+    // macOS shows notify_os toasts through the plugin; Windows calls WinRT directly (notify.rs)
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    builder
         .manage(InitState::default())
         .manage(WavesrvChild(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
@@ -310,7 +315,8 @@ fn main() {
             init::fe_log,
             commands::set_window_init_status,
             commands::open_external,
-            canvas::capture_webview
+            canvas::capture_webview,
+            notify::notify_os
         ])
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)

@@ -2635,6 +2635,10 @@ declare global {
         "app:*"?: boolean;
         "app:ctrlvpaste"?: boolean;
         "app:disablectrlshiftdisplay"?: boolean;
+        "notify:*"?: boolean;
+        "notify:os"?: boolean;
+        "notify:toast"?: boolean;
+        "notify:reply"?: boolean;
         "term:*"?: boolean;
         "term:fontsize"?: number;
         "term:fontfamily"?: string;

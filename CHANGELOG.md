@@ -20,6 +20,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - **Claude Code updates.** arcterm checks for a newer Claude Code every 6 hours and Jarvis says once when one is out.
   Settings → About lists each installed harness with its version, and Update installs the new one; open sessions keep
   theirs until they restart. Turn the check off with "Check for harness updates".
+- Notifications when an agent needs you or finishes its turn: a system notification while arcterm is in the
+  background (click it to open the agent), a toast while it is in front. Settings → Notifications turns each off.
 
 ### Changed
 
@@ -27,6 +29,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
   line, so you can tell which conversation launched it. Runs started before this update keep their old place.
 - Unread counts (the Agent badge in the nav rail, the Dock badge on macOS, a bold row) come only from top-level
   agents: a run's workers report to their lead, so their finished turns no longer count as unread.
+- An agent waiting on a permission prompt now shows amber, like one asking a question.
 - `g` `j` now goes to Jarvis (it was `g` `c`).
 - On Windows, shortcuts are spelled out in words, `ctrl+shift+p` and `shift+g`, instead of `^⇧P` and `⇧G`; macOS
   keeps its ⌘ ⌃ ⌥ ⇧ symbols.
@@ -64,6 +67,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   dismissed the question."
 - A file path too long for its line in the terminal, such as a report path an agent prints, now opens with Ctrl+click
   instead of being split in two at the line break.
+- A turn an agent finishes while arcterm is in the background now stays unread, even when that agent is the one on
+  screen.
 - A finished conversation's "done" mark sits level with its title in the header instead of above it.
 - A run in Jarvis no longer repeats an agent's name ("X · X") when the agent has no task of its own.
 - A question's option previews keep the agent's mockups as drawn: each line and space in a monospace box, below the

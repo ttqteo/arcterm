@@ -43,6 +43,11 @@ type SettingsType struct {
 	AppCtrlVPaste              *bool `json:"app:ctrlvpaste,omitempty"`
 	AppDisableCtrlShiftDisplay bool  `json:"app:disablectrlshiftdisplay,omitempty"`
 
+	NotifyClear bool  `json:"notify:*,omitempty"`
+	NotifyOs    *bool `json:"notify:os,omitempty"`
+	NotifyToast *bool `json:"notify:toast,omitempty"`
+	NotifyReply *bool `json:"notify:reply,omitempty"`
+
 	TermClear                  bool     `json:"term:*,omitempty"`
 	TermFontSize               float64  `json:"term:fontsize,omitempty"`
 	TermFontFamily             string   `json:"term:fontfamily,omitempty"`

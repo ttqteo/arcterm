@@ -19,13 +19,11 @@ import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { sendChannelMessage } from "@/app/view/agents/channelactions";
 import { activeChannelAtom, channelsAtom, primeChannels } from "@/app/view/agents/channelsstore";
-import { openReview } from "@/app/view/agents/docreviewstore";
 import type { Runtime } from "@/app/view/agents/launch";
 import { openInFocusedPanel } from "@/app/view/agents/pathlinkroute";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectListAtom, projectsAtom, recentProjectsAtom, rowsWithChannel } from "@/app/view/agents/projectsstore";
 import { runStatusView, type RunStatusTone } from "@/app/view/agents/runmodel";
-import { openRunDag } from "@/app/view/agents/runrailsections";
 import { loadSessionsArchive, sessionsArchiveAtom } from "@/app/view/agents/sessionsarchivestore";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
 import { recentPaths } from "@/app/view/code/codehistory";
@@ -68,6 +66,7 @@ import {
     type ThingKindDef,
     type VerbRow,
 } from "./actions/types";
+import { openNeedsTarget } from "./openneeds";
 import { runPaletteAction } from "./palette-action";
 import { actionListGroups, verbGroupLabel, verbLeads } from "./palette-actionrows";
 import {
@@ -483,40 +482,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
 
     // Enter's landing for a Needs you row; an item that names nowhere keeps the palette open
     const openNeeds = (t: NeedsTarget | null) => {
-        switch (t?.kind) {
-            case "agent":
-                model.openTerminal(t.agentId);
-                break;
-            case "review":
-                // as the Agent surface's Review binding: the agent, with its review open (a Spec or Plan
-                // review's dialog, or a Doc review in the terminal's place)
-                model.openTerminal(t.agentId);
-                openReview(model, t.agentId);
-                break;
-            case "dag":
-                // openRunDag reads only the dag's oid off the run's dag
-                openRunDag(
-                    model,
-                    {
-                        runId: t.runId,
-                        channelId: t.channelId,
-                        title: "",
-                        project: "",
-                        dag: { oid: t.dagId } as TaskGroup,
-                    },
-                    t.taskId
-                );
-                break;
-            case "run":
-                fireAndForget(() => openTarget(model, { kind: "channel", channelId: t.channelId, runId: t.runId }));
-                break;
-            case "channel":
-                fireAndForget(() => openTarget(model, { kind: "channel", channelId: t.channelId }));
-                break;
-            default:
-                return;
+        if (openNeedsTarget(model, t)) {
+            close();
         }
-        close();
     };
 
     // A digit answers through the Cockpit's own send; one it cannot send opens the agent at its question

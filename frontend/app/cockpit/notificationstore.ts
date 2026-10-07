@@ -1,15 +1,16 @@
 // Minimal toast store for the cockpit's own transient feedback (a failed open, a focus warning). A
-// `wsh notify` is not a toast: the avatar is its only voice (petsources.tsx), so the two never say one
-// thing twice in the same corner.
+// `wsh notify` is not a toast while arcterm is focused: the avatar is its voice then (petsources.tsx).
+// Agent notifications (notifysync.tsx) are, and carry an `onOpen`.
 
-import { atom } from "jotai";
 import { globalStore } from "@/app/store/jotaiStore";
+import { atom } from "jotai";
 
 export interface ToastNotification {
     id: number;
     title: string;
     message: string;
     level: "info" | "warn" | "error";
+    onOpen?: () => void;
 }
 
 export const toastsAtom = atom<ToastNotification[]>([]);

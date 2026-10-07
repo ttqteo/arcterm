@@ -231,7 +231,7 @@ describe("agentVMFromInput", () => {
         });
     });
 
-    it("maps a waiting row to working, not asking (asking comes only from agent:ask via withAsk)", () => {
+    it("maps a waiting row (a permission prompt or other input request) to asking", () => {
         const input: LiveAgentInput = {
             id: "tab-2",
             name: "loom",
@@ -240,9 +240,10 @@ describe("agentVMFromInput", () => {
             ts: NOW - 240_000,
         };
         const vm = agentVMFromInput(input, NOW);
-        expect(vm.state).toBe("working");
-        expect(vm.activeMs).toBe(240_000);
-        expect(vm.blockedMs).toBeUndefined();
+        expect(vm.state).toBe("asking");
+        expect(vm.blockedMs).toBe(240_000);
+        expect(vm.activeMs).toBeUndefined();
+        expect(vm.atPrompt).toBe(true);
         expect(vm.model).toBe("opus");
     });
 
@@ -297,11 +298,12 @@ describe("agentVMFromInput", () => {
 });
 
 describe("agentVMFromInput status mapping", () => {
-    it("maps backend 'waiting' (a Notification nudge) to working, not asking", () => {
+    it("maps a waiting row (a permission prompt or other input request) to asking", () => {
         const vm = agentVMFromInput({ id: "t1", name: "a", status: "waiting", ts: 1000 }, 5000);
-        expect(vm.state).toBe("working");
-        expect(vm.activeMs).toBe(4000);
-        expect(vm.blockedMs).toBeUndefined();
+        expect(vm.state).toBe("asking");
+        expect(vm.blockedMs).toBe(4000);
+        expect(vm.activeMs).toBeUndefined();
+        expect(vm.atPrompt).toBe(true);
     });
     it("maps backend 'asking' (a pending AskUserQuestion) straight to asking, with blockedMs (not idleSince)", () => {
         const vm = agentVMFromInput({ id: "t1", name: "a", status: "asking", ts: 1000 }, 5000);
