@@ -7633,14 +7633,16 @@ async function arrangeTreeRail(h, ctx) {
         }
     })()`);
     await h.goto("agent");
-    // the lead row nests once its run loads, which is when its mark turns from a dot into the Workflow icon
+    // the lead row nests once its run loads, which is when its mark turns from a dot into the Workflow icon. A parent
+    // row's name is a span, not a div (ParentRow, agenttree.tsx), so the name leaf is found in any element; the row is
+    // the one the tree tags data-agent-row, whose first child is the name line and that line's first child the mark
     ctx.leadFocused = await h.ev(`(async () => {
         const leadRow = () => {
             const tree = document.querySelector("[data-agent-tree]");
-            const name = tree && [...tree.querySelectorAll("div")].find(
+            const name = tree && [...tree.querySelectorAll("*")].find(
                 (d) => d.textContent.trim() === ${JSON.stringify(TREE_RAIL_LEAD)} && d.children.length === 0
             );
-            return name ? name.closest(".cursor-pointer") : null;
+            return name ? name.closest("[data-agent-row]") : null;
         };
         for (let i = 0; i < 40; i++) {
             const row = leadRow();
@@ -7719,22 +7721,27 @@ const agentTreeRail = {
             JSON.stringify(glyphs)
         );
 
+        // Changed on purpose by db9d60a1 ("Active rows read like Conversations rows"): a parent row has no 14px leading
+        // column (Slot) any more, so that Active and Conversations titles share one left edge. Its mark is the 12px
+        // Workflow icon, the first child of the row's name line (agenttree.tsx, ParentRow: the row div's first child is
+        // the name line, whose first child is <Workflow size={12}>). The step used to pin the column's 14px width.
         const mark = await h.ev(`(() => {
             const tree = ${TREE};
-            const name = tree && [...tree.querySelectorAll("div")].find(
+            const name = tree && [...tree.querySelectorAll("*")].find(
                 (d) => d.textContent.trim() === ${JSON.stringify(TREE_RAIL_LEAD)} && d.children.length === 0
             );
-            const row = name && name.closest(".cursor-pointer");
-            const slot = row && row.firstElementChild;
-            const first = slot && slot.firstElementChild;
+            const row = name && name.closest("[data-agent-row]");
+            const line = row && row.firstElementChild;
+            const first = line && line.firstElementChild;
             return {
                 tag: first ? first.tagName.toLowerCase() : null,
-                slotWidth: slot ? getComputedStyle(slot).width : null,
+                workflow: !!first && first.classList.contains("lucide-workflow"),
+                markWidth: first ? Math.round(first.getBoundingClientRect().width) : null,
             };
         })()`);
         rec(
-            "3. the lead row's mark is an svg in the 14px leading column",
-            mark.tag === "svg" && mark.slotWidth === "14px",
+            "3. the lead row's mark is the 12px Workflow svg leading its name line",
+            mark.tag === "svg" && mark.workflow && mark.markWidth === 12,
             JSON.stringify(mark)
         );
 
@@ -7793,12 +7800,15 @@ const agentTreeRail = {
         })()`);
         rec("6. the rail's collapse control is an icon", collapse === true, `svg=${collapse}`);
 
-        // the rows the sweeps above only cover when they render: a nested row's guide is a 1px line in its first column
+        // the rows the sweeps above only cover when they render: a nested row's guide is a 1px line in its first
+        // column. The name leaf is found in any element: a worker's title and a subagent's type are divs (WorkerRow,
+        // ParentRow's subagent rows) but a lead's name is a span (ParentRow's name line). Its nearest .relative is
+        // the row div, which holds the run line and the task strip (RunSubline renders inside it)
         const nested = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
             const rowOf = (text) => {
-                const name = [...tree.querySelectorAll("div")].find(
+                const name = [...tree.querySelectorAll("*")].find(
                     (d) => d.textContent.trim() === text && d.children.length === 0
                 );
                 return name ? name.closest(".relative") : null;
@@ -7881,7 +7891,12 @@ const agentTreeRail = {
 
         // a project row is the Active section's folder row; a plain agent row is a top-level row: no tree guides, no
         // Workflow mark, not a nested worker, stage or fold row (pl-[28px]). Only the Active section's rows count: the
-        // Terminals and Conversations sections under it have folders and rows of their own
+        // Terminals and Conversations sections under it have folders and rows of their own.
+        // A plain agent row is two lines, not one: db9d60a1 ("Active rows read like Conversations rows") gave every
+        // non-lead parent row a name line over a meta line (its runtime glyph, branch, model and tokens), which are
+        // ParentRow's two children (agenttree.tsx); Final measured one at 50.25px. The step used to bound a row at
+        // one line (34px); it now bounds it at two (56px) and wants exactly those two children, so a third line
+        // still fails
         const tree = await h.ev(`(() => {
             const tree = ${TREE};
             if (!tree) return null;
@@ -7900,17 +7915,20 @@ const agentTreeRail = {
                 groups: groups.length,
                 folders: groups.filter((g) => g.querySelector("svg.lucide-folder-open, svg.lucide-folder")).length,
                 plain: plain.length,
+                // the name line and the meta line: ParentRow's two children
+                twoLines: plain.every((r) => r.children.length === 2),
                 tallest: Math.max(0, ...plain.map((r) => r.getBoundingClientRect().height)),
             };
         })()`);
         rec(
-            "13. the tree has no New agent of its own, every project is a folder row, and a plain agent row is one line",
+            "13. the tree has no New agent of its own, every project is a folder row, a plain agent row is two lines",
             tree != null &&
                 tree.newAgent &&
                 tree.groups >= 2 &&
                 tree.folders === tree.groups &&
                 tree.plain > 0 &&
-                tree.tallest <= 34,
+                tree.twoLines &&
+                tree.tallest <= 56,
             JSON.stringify(tree)
         );
         const fold = await h.ev(`(async () => {
