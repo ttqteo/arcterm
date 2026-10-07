@@ -6,10 +6,9 @@ import { ArrowUpRight, Check, FileText, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
 import { answerHint, nextUnansweredQuestion, type AgentAskQuestion, type AgentVM } from "./agentsviewmodel";
-import { activePreview, previewMode } from "./answerbarpreview";
+import { activePreview, previewMode, previewText } from "./answerbarpreview";
 import { DOC_REVIEW_HEADERS, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
 import { openReview } from "./docreviewstore";
-import { MarkdownMessage } from "./markdownmessage";
 
 // The answer surface tracks the agent's status, mirroring the handoff (Wave-answer.dc.html: the
 // cockpit passes accent = stateColor — asking → amber, else → periwinkle). So an asking agent's
@@ -203,7 +202,7 @@ function QuestionGroup({
         </div>
     );
     return (
-        <div className={hideQuestion ? "" : "mt-3"}>
+        <div className={cn("@container", !hideQuestion && "mt-3")}>
             {hideQuestion ? null : summary != null ? (
                 summary
             ) : (
@@ -219,13 +218,21 @@ function QuestionGroup({
                 </>
             )}
             {options.length === 0 ? null : withPreview ? (
-                <div className="mt-2.5 flex gap-3">
+                // stacked under the options in a narrow pane, beside them once the pane has room: a mockup
+                // squeezed into a side column wraps every line it draws
+                <div className="mt-2.5 flex flex-col gap-2.5 @[720px]:flex-row @[720px]:items-start">
                     <div className="min-w-0 flex-1">{optionList}</div>
-                    <div className="hidden w-[min(46%,340px)] shrink-0 rounded border border-border bg-black/20 p-3 md:block">
+                    <div className="min-w-0 rounded border border-border bg-surface-code @[720px]:w-[min(55%,460px)] @[720px]:shrink-0">
+                        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-[10.5px] text-muted">
+                            <span className="font-mono">{focusIndex + 1}</span>
+                            <span className="truncate">{cleanLabel(options[focusIndex]?.label ?? "")}</span>
+                        </div>
                         {preview ? (
-                            <MarkdownMessage text={preview} className="text-[11.5px] leading-[1.5]" />
+                            <pre className="max-h-[320px] overflow-auto px-3 py-2.5 font-mono text-[11px] leading-[1.45] whitespace-pre text-primary">
+                                {previewText(preview)}
+                            </pre>
                         ) : (
-                            <div className="text-[11px] text-muted">No preview</div>
+                            <div className="px-3 py-2.5 text-[11px] text-muted">No preview</div>
                         )}
                     </div>
                 </div>

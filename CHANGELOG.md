@@ -25,6 +25,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Fixed
 
 - A run in Jarvis no longer repeats an agent's name ("X · X") when the agent has no task of its own.
+- A question's option previews keep the agent's mockups as drawn: each line and space in a monospace box, below the
+  options in a narrow pane and beside them in a wide one, where they had wrapped into a paragraph.
 - A pasted image is listed in the right panel's Uploads as `Image #N`, the number Claude Code shows in its
   prompt, as soon as you paste it, on any surface, instead of as Pasted image until the prompt is sent.
 - A prompt sent with a pasted image shows the image, in an agent's card and in a conversation's transcript, instead

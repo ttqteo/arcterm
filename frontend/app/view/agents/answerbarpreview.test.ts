@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentAskQuestion } from "./agentsviewmodel";
-import { activePreview, previewMode } from "./answerbarpreview";
+import { activePreview, previewMode, previewText } from "./answerbarpreview";
 
 const q = (over: Partial<AgentAskQuestion> = {}): AgentAskQuestion => ({
     question: "Q?",
@@ -35,5 +35,20 @@ describe("activePreview", () => {
     });
     it("returns undefined when no option has a preview", () => {
         expect(activePreview(q({ options: [{ label: "A" }] }), 0)).toBeUndefined();
+    });
+});
+
+describe("previewText", () => {
+    it("keeps leading spaces and line breaks", () => {
+        expect(previewText("┌ list\n│  ← History\n└──")).toBe("┌ list\n│  ← History\n└──");
+    });
+    it("drops blank lines around the preview", () => {
+        expect(previewText("\n\n  a\n b\n\n")).toBe("  a\n b");
+    });
+    it("unwraps a preview that is one fenced block", () => {
+        expect(previewText("```ts\nconst a = 1;\n  b();\n```")).toBe("const a = 1;\n  b();");
+    });
+    it("leaves fences that are only part of the preview", () => {
+        expect(previewText("intro\n```\ncode\n```")).toBe("intro\n```\ncode\n```");
     });
 });

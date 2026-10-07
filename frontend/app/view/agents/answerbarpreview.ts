@@ -21,3 +21,11 @@ export function activePreview(question: AgentAskQuestion, focusIndex: number): s
     }
     return opts[focusIndex]?.preview || undefined;
 }
+
+// The preview as the panel prints it: monospace, every line and space kept, like Claude Code's own
+// preview box, which is what the author drew it for. A preview that is one fenced block loses its fences.
+export function previewText(preview: string): string {
+    const text = preview.replace(/\s+$/, "").replace(/^\s*\n/, "");
+    const fenced = /^```[^\n`]*\n([\s\S]*?)\n```$/.exec(text.trim());
+    return fenced ? fenced[1] : text;
+}
