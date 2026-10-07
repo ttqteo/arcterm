@@ -27,9 +27,10 @@ import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { ambientProviderAtom, ensureAmbient } from "@/app/view/agents/ambientstore";
 import { resolveTargetChannel } from "@/app/view/agents/channelderive";
 import { activeChannelAtom, activeChannelRunsAtom, channelsAtom, runAtom } from "@/app/view/agents/channelsstore";
-import { harnessPreferenceAtom } from "@/app/view/agents/harnessstore";
+import { harnessesAtom, harnessPreferenceAtom } from "@/app/view/agents/harnessstore";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
+import { leadRouteSeed } from "@/app/view/agents/route";
 import {
     channelOverrideAtom,
     createRun,
@@ -137,7 +138,10 @@ function ChannelLaunch({ channel }: { channel: Channel }) {
     useEffect(() => {
         loadResolvedProfile(channelId);
     }, [channelId]);
-    const profileRoute = overrides[channelId]?.route ?? pref.route ?? null;
+    const harnesses = useAtomValue(harnessesAtom);
+    const rawRoute = overrides[channelId]?.route ?? pref.route ?? null;
+    // memoized: the seed effect below keys on it, and a fallback route is a fresh object each call
+    const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
     useEffect(() => {
         if (!routeTouched && profileRoute != null) {
             globalStore.set(runRouteAtom, profileRoute);

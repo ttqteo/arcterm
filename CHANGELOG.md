@@ -42,6 +42,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The agent rail's **Token usage** and **Details** fold into its status line at the top: click the line (context and
   spend) to open the session's total tokens with their bar, its project, branch and model, and the breakdown. The spend
   shows once.
+- The lead and reviewer route pickers list only the harnesses that can lead a run (Claude and Pi). A run no longer
+  starts with a lead that cannot lead because your shared route preference names one, such as Antigravity.
 
 ### Fixed
 

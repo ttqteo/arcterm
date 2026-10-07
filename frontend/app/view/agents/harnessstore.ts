@@ -8,7 +8,9 @@ import { atom } from "jotai";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { globalStore } from "@/app/store/global";
-import { capabilityFor, normalizeRoute } from "./route";
+import { capabilityFor, leadRuntimes, normalizeRoute } from "./route";
+
+export { leadRuntimes };
 
 export interface HarnessPreferenceState {
     route: RoutePin | null;
@@ -26,6 +28,8 @@ export const emptyHarnessPreference: HarnessPreferenceState = {
 export const harnessPreferenceAtom = atom<HarnessPreferenceState>(emptyHarnessPreference);
 export const harnessesAtom = atom<HarnessInfo[]>([]);
 export const harnessesLoadingAtom = atom(false);
+// the runtimes a run lead (and its reviewers) may use; the pickers of those two roles list only these
+export const leadRuntimesAtom = atom((get) => leadRuntimes(get(harnessesAtom)));
 
 export function resolveDefaultRuntime(pref: string, harnesses: HarnessInfo[]): string {
     if (pref && harnesses.some((h) => h.runtime === pref && h.installed && h.runworkercapable)) {

@@ -4,6 +4,8 @@ import {
     buildPickerSections,
     capabilityFor,
     filterPickerSections,
+    leadRouteSeed,
+    leadRuntimes,
     modelFace,
     normalizeProfileOverrideRoute,
     normalizeRoute,
@@ -177,5 +179,60 @@ describe("picker sections", () => {
     it("modelFace names the default when a route has no model", () => {
         expect(modelFace(pin("pi"))).toBe("default");
         expect(modelFace(pin("claude", "opus"))).toBe("opus");
+    });
+});
+
+const leadHarness = (runtime: string, leadcapable: boolean, installed = true): HarnessInfo =>
+    ({ ...harness(runtime, [runtimeDefault(runtime)]), leadcapable, installed }) as HarnessInfo;
+const leadCatalog = [leadHarness("agy", false), leadHarness("claude", true), leadHarness("pi", true), leadHarness("codex", true, false)];
+
+describe("lead-capable route resolution", () => {
+    it("keeps installed lead-capable runtimes and drops agy and uninstalled ones", () => {
+        expect(leadRuntimes(leadCatalog)).toEqual(["claude", "pi"]);
+    });
+
+    it("falls back to the first allowed harness's default when settings name agy", () => {
+        const eff = resolveEffectiveRoute({ settings: pin("agy"), harnesses: leadCatalog, allow: ["claude", "pi"] });
+        expect(eff).toEqual({ pin: { runtime: "claude", model: "" }, source: "settings", capability: runtimeDefault("claude") });
+    });
+
+    it("lets a channel override of pi beat an agy setting", () => {
+        const eff = resolveEffectiveRoute({ settings: pin("agy"), channel: pin("pi"), harnesses: leadCatalog, allow: ["claude", "pi"] });
+        expect(eff).toMatchObject({ pin: pin("pi"), source: "channel" });
+    });
+
+    it("skips a disallowed tier and takes the next allowed one", () => {
+        const eff = resolveEffectiveRoute({ settings: pin("pi"), run: pin("agy"), harnesses: leadCatalog, allow: ["claude", "pi"] });
+        expect(eff).toMatchObject({ pin: pin("pi"), source: "settings" });
+    });
+
+    it("keeps today's behaviour with no allow list, or an empty one", () => {
+        expect(resolveEffectiveRoute({ settings: pin("agy"), harnesses: leadCatalog })).toMatchObject({ pin: pin("agy") });
+        expect(resolveEffectiveRoute({ settings: pin("agy"), harnesses: leadCatalog, allow: [] })).toMatchObject({ pin: pin("agy") });
+    });
+
+    it("returns null with nothing set and no allow list, and the first allowed default with one", () => {
+        expect(resolveEffectiveRoute({ settings: null, harnesses: leadCatalog, allow: ["claude"] })?.pin).toEqual({ runtime: "claude", model: "" });
+        expect(resolveEffectiveRoute({ settings: null, harnesses: leadCatalog })).toBeNull();
+    });
+});
+
+describe("lead route seed", () => {
+    it("replaces an agy preference with a lead-capable default", () => {
+        expect(leadRouteSeed(pin("agy"), leadCatalog)).toEqual({ runtime: "claude", model: "" });
+    });
+
+    it("keeps a lead-capable override, model included", () => {
+        expect(leadRouteSeed(pin("pi", "opencode/x"), leadCatalog)).toEqual(pin("pi", "opencode/x"));
+    });
+
+    it("returns a lead-capable route as the same object", () => {
+        const r = pin("pi", "opencode/x");
+        expect(leadRouteSeed(r, leadCatalog)).toBe(r);
+    });
+
+    it("passes no route through, and leaves the route alone before the catalog loads", () => {
+        expect(leadRouteSeed(null, leadCatalog)).toBeNull();
+        expect(leadRouteSeed(pin("agy"), [])).toEqual(pin("agy"));
     });
 });

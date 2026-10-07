@@ -35,13 +35,37 @@ export function capabilityFor(pin: RoutePin | null | undefined, harnesses: Harne
     return caps.find((c) => (c.model ?? "") === model) ?? caps.find((c) => (c.model ?? "") === "");
 }
 
+// The runtimes that can lead a run: installed and lead-capable (claude and pi; agy only works tasks).
+export function leadRuntimes(harnesses: HarnessInfo[]): string[] {
+    return harnesses.filter((h) => h.installed && h.leadcapable).map((h) => h.runtime);
+}
+
+// A route that seeds a lead picker from a saved preference or override. A runtime that cannot lead (an
+// Antigravity consult preference) would be refused by the server, so it becomes the first lead-capable
+// harness's default. No route stays none, and an unloaded catalog leaves the route alone. A lead-capable route
+// comes back as the very object passed in.
+export function leadRouteSeed(route: RoutePin | null, harnesses: HarnessInfo[]): RoutePin | null {
+    if (route == null) {
+        return null;
+    }
+    const allow = leadRuntimes(harnesses);
+    if (allow.length === 0 || allow.includes(route.runtime)) {
+        // the same object, not a copy: callers key an effect on it, so a fresh one per call would loop
+        return route;
+    }
+    return resolveEffectiveRoute({ settings: route, harnesses, allow })?.pin ?? route;
+}
+
 export function resolveEffectiveRoute(input: {
     settings: RoutePin | null;
     channel?: RoutePin | null;
     run?: RoutePin | null;
     task?: RoutePin | null;
     harnesses: HarnessInfo[];
+    // limits the runtimes a candidate may name; an empty or missing list limits nothing
+    allow?: readonly string[];
 }): EffectiveRoute | null {
+    const allow = input.allow != null && input.allow.length > 0 ? input.allow : null;
     const candidates: [RouteSource, RoutePin | null | undefined][] = [
         ["task", input.task],
         ["run", input.run],
@@ -53,9 +77,13 @@ export function resolveEffectiveRoute(input: {
             continue;
         }
         const pin = normalizeRoute(raw.runtime, raw.model);
-        if (pin != null) {
+        if (pin != null && (allow == null || allow.includes(pin.runtime))) {
             return { pin, source, capability: capabilityFor(pin, input.harnesses) };
         }
+    }
+    if (allow != null) {
+        const fallback: RoutePin = { runtime: allow[0], model: "" };
+        return { pin: fallback, source: "settings", capability: capabilityFor(fallback, input.harnesses) };
     }
     return null;
 }
