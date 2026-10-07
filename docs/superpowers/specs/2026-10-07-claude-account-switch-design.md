@@ -1,6 +1,6 @@
 # Claude account switch in Settings — design
 
-Status: design settled 2026-10-07. One open check (decision 7) before the plan.
+Status: design settled 2026-10-07.
 
 ## Problem
 
@@ -51,14 +51,14 @@ profiles, macOS Keychain, and remote (ssh/wsl) connections.
      `"claude"` snapshot migrates to `claude:default`). The Plan usage strip, the cockpit rail and
      `liveWindowAgents` show only the active account's agents and snapshot, so an unrestarted agent on
      the old account cannot overwrite the new one's numbers.
-   - `pkg/claudequota` asks with the active account's token (Default: the `.credentials.json` token, as
-     now), and keeps its 5-minute throttle and 429 backoff per account, so a switch asks at once
-     instead of waiting out the previous account's throttle.
-7. **Open check: does `/api/oauth/usage` accept a setup-token?** The token's scope may be inference
-   only. Check once by hand with a real token before writing the plan. If it is refused, `claudequota`
-   skips non-Default accounts. Their numbers then come only from agent reports, and between sessions
-   the strip shows the account's last snapshot with its age (the existing staleness rules already roll
-   a window past its reset).
+   - `pkg/claudequota` answers only while Default is active (decision 7); the frontend records its
+     answer as `claude:default`, never under another account.
+7. **`/api/oauth/usage` refuses a setup-token** (checked 2026-10-07 with a real token: `403`; the token's
+   scope is inference only). So `claudequota` asks only for Default, with the `.credentials.json` token,
+   and skips other accounts. Their numbers come only from agent reports: right after a switch the strip
+   shows the new account's last snapshot with its age (the existing staleness rules already roll a
+   window past its reset, so a reset window reads 0%), or nothing for an account never used, until an
+   agent on it finishes a turn.
 
 ## Settings UI
 
@@ -75,8 +75,7 @@ A "Claude account" section in `settingssurface.tsx`:
 ## Testing
 
 - Go: env apply/restore (Default restores the inherited value, including "unset"); secret naming;
-  `claudequota` token choice and per-account throttle (the `Reader` already takes injected paths and
-  clock); `agentstatus` tagging from `ARC_CLAUDE_ACCOUNT`.
+  `claudequota` returning nothing while a non-Default account is active; `agentstatus` tagging from `ARC_CLAUDE_ACCOUNT`.
 - vitest: `ratelimitstore` keying and the `"claude"` → `claude:default` migration; active-account
   filtering in `liveWindowAgents` and the strip's model; the restart dialog's pre-check rule as a pure
   function.
