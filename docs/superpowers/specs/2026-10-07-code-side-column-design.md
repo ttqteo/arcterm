@@ -43,9 +43,10 @@ dragging a file between columns, and drag from places other than the Code tree.
    mode re-runs the lookup on the same tick and reloads the frame when `modtime` changes.
 6. **Opening.**
    - **Drag from the tree.** Tree rows for files are `draggable` with the MIME `application/x-arc-code-path` (the
-     project-relative path). While such a drag is over the editor area, an overlay splits it into two halves: left
-     "Open", right "Open to the side". Folders are not draggable. `isFileDrag` (`uploadfile.ts`) ignores this MIME,
-     as it ignores the agent drag MIME.
+     project-relative path). From the row's dragstart to its dragend an overlay splits the editor area into two
+     halves, left "Open", right "Open to the side" — shown at dragstart, not on dragover, because a PDF frame under
+     the pointer swallows dragover. Folders are not draggable. The drag carries no `Files` type, so the OS-file drop
+     handling (`isFileDrag`) never sees it.
    - **Tree context menu:** "Open to the side".
    - **`Ctrl+\`** (`code:side`, live while typing, like `code:save`): with no side column, opens the main column's
      file to the side in its default mode; with one, closes it.
@@ -53,8 +54,11 @@ dragging a file between columns, and drag from places other than the Code tree.
 7. **Layout.** The editor area becomes a row: the main column (`CodePathBar`, `CodeStaleBar`, `CodeViewer`), a
    hand-rolled `col-resize` handle (the sidebar handle's pattern), and the side column (its own bar: path, mode toggle,
    "Open in main", ×). Under 900 px of editor width the side column hides and a chip in the path bar ("Side: main.pdf")
-   brings it back as an overlay-free toggle; nothing is lost.
-8. **Bindings stay on the main column.** `code:save`, `code:diff`, back/forward and `code:wrap` act on the main
+   opens its file in the main column instead; widening the window shows the column again.
+8. **A .tex file with nothing to preview opens on Source.** A generated macros file (`numbers.tex`) has no title,
+   heading or prose, so Preview would be blank: `viewModesFor`/`resolveViewMode` take a `previewable` flag
+   (`codepreviewable.ts`, from `texHasProse`), and such a file offers no Preview in either column.
+9. **Bindings stay on the main column.** `code:save`, `code:diff`, back/forward and `code:wrap` act on the main
    column as today. `code:wrap` toggles the per-path wrap, which the side column also reads, so it applies to both
    views of one file.
 
@@ -69,14 +73,15 @@ dragging a file between columns, and drag from places other than the Code tree.
 - `frontend/app/view/code/codetreepane.tsx` — draggable file rows, "Open to the side" in the context menu.
 - `frontend/app/view/code/codepathbar.tsx` — the hidden-side chip.
 - `frontend/app/view/code/codestore.ts` — `selectProject` resets `codeSideAtom`.
-- `frontend/app/view/agents/uploadfile.ts` — `isFileDrag` ignores the Code path MIME.
+- `frontend/app/view/code/codeeditorarea.tsx` (new) — the editor-area row, the resize handle, the drop overlay.
+- `frontend/app/view/code/codepreviewable.ts` (new), `frontend/app/view/agents/docprose.ts` `texHasProse`.
 - `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md` — `Ctrl+\`.
 - `CHANGELOG.md` — one `Added` line.
 
 ## Verification
 
-- vitest: `defaultSideMode`, side modes for `.tex` with and without a PDF, `.md`, `.go`, `.pdf`; ratio clamping;
-  `isFileDrag` with the Code path MIME.
+- vitest: `defaultSideMode`, side modes for `.tex` with and without a PDF, `.md`, `.go`, a macros-only `.tex`; ratio
+  clamping; `texHasProse`.
 - CDP scenario `code-side-column`: open `main.tex`, `Ctrl+\` opens the side column in PDF mode; switch the side to
   Preview and type in the main column — the side preview follows the draft; drag `paper.pdf` from the tree onto the
   right half (synthetic `DragEvent`s with a `DataTransfer`) — the side shows the PDF; ×closes it; the ratio survives a
