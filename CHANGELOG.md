@@ -38,6 +38,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - An agent that has just finished its turn no longer shows as asking for about a minute, or sends a false
   **Needs you** notification.
 - A notification toast in the corner is no longer covered by Jarvis's pet; the pet walks off the stretch below it.
+- Code no longer fails with "Could not list files: exit status 1" the first time it opens a large project;
+  a listing that really does run out of time now says so.
 
 ## 0.15.2 — 2026-10-07
 

@@ -1269,19 +1269,34 @@ type FileList struct {
 	Truncated bool     `json:"truncated"`
 }
 
+// listFilesTimeout bounds ListFiles. --others walks the whole working tree, and the first walk of a
+// big one on a cold disk cache takes well over gitTimeout (11s measured on a repo whose 0.2s warm walk
+// is routine), so a slow listing here is a cold cache, not a hung git.
+const listFilesTimeout = 45 * time.Second
+
 // ListFiles enumerates cwd for the Code surface's tree and file finder. IsRepo=false when cwd is
 // not a repository (not an error — it is an empty state); a git failure IS an error so the caller
 // can tell "nothing to browse" from "the read failed".
 func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, listFilesTimeout)
 	defer cancel()
 	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
 	if err != nil || strings.TrimSpace(inside) != "true" {
 		return &FileList{IsRepo: false}, nil
 	}
 	// -z: NUL-separated, so a path containing a space or non-ASCII byte survives unquoted.
-	out, err := run(ctx, cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+	args := []string{"ls-files", "--cached", "--others", "--exclude-standard", "-z"}
+	out, err := run(ctx, cwd, args...)
 	if err != nil {
+		// A deadline kill reaches us as the killed process's exit code — "exit status 1" on Windows,
+		// where TerminateProcess sets it — so name the timeout, and otherwise git's own stderr.
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("git ls-files did not finish in time (%v): %w", ctx.Err(), err)
+		}
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(bytes.TrimSpace(ee.Stderr)) > 0 {
+			return nil, fmt.Errorf("%w: %s", err, bytes.TrimSpace(ee.Stderr))
+		}
 		return nil, err
 	}
 	paths := splitNul(out)
