@@ -3,9 +3,18 @@
 // Asserts are RPC-based (backend state) or DOM-based (h.ev); they do not read jotai atoms (globalStore is not exposed on
 // window), with one exception: agent-history step 14 reads listNavAtom, which leaves no DOM trace, by importing the app's own
 // modules from the dev server (see ahResolveModules). steps are { step, ok, detail }.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+    copyFileSync,
+    existsSync,
+    linkSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15780,6 +15789,497 @@ const agentRailSections = {
     },
 };
 
+// The details rail's Servers section (docs/superpowers/specs/2026-10-07-rail-dev-servers-design.md), on real processes:
+//   - `node dev-server.js`, an HTTP server on a loopback port, run in the project: listed by its cwd, "already running";
+//   - node under the name claude (the name pkg/devservers' agent lookup matches) carrying the fixture agent's
+//     WAVETERM_BLOCKID, which runs `node dev-server.js --id <id>` in a directory outside the project, so being the
+//     agent's descendant is the only reason that server is listed ("this agent"). Its command line holds the command the
+//     transcript ran in the background;
+//   - a transcript whose first line gives the project as its cwd (the rail reads the agent's cwd from there) and which
+//     ran that command with run_in_background, still running, with an output file: the second row's Log button.
+// The roster is the one fixture agent. Teardown ends the processes, removes both directories and the roster, and puts the
+// rail's two keys back.
+const RAIL_SERVERS_AGENT_ID = "fx-rail-servers";
+const RAIL_SERVERS_BLOCK = "fx-blk-rail-servers";
+const RAIL_SERVERS_LOG_LINE = "rail-servers: listening on 127.0.0.1";
+// The processes end by themselves after ten minutes, so a run that dies before teardown does not leave a server
+// listening.
+// dev-server.js: a loopback HTTP server on a free port, which prints the port
+const RAIL_SERVERS_SERVER_SOURCE = `const s = require("node:http").createServer((req, res) => res.end("ok"));
+s.listen(0, "127.0.0.1", () => console.log(s.address().port));
+setTimeout(() => process.exit(0), 600000);
+`;
+// the fake agent, as a -e script: runs dev-server.js in RS_OTHER with `--id RS_ID`, and prints "<its pid> <its port>"
+const RAIL_SERVERS_AGENT_JS =
+    "const c=require('node:child_process').spawn(process.env.RS_NODE,['dev-server.js','--id',process.env.RS_ID]," +
+    "{cwd:process.env.RS_OTHER,stdio:['ignore','pipe','inherit'],windowsHide:true});" +
+    "let o='';c.stdout.on('data',(d)=>{o+=d;if(o.includes('\\n')){c.stdout.removeAllListeners('data');console.log(c.pid+' '+o.trim())}});" +
+    "setTimeout(()=>process.exit(0),600000)";
+
+// spawns exe and resolves with the child and its first line of output; rejects if it ends first or is silent for 10s
+function railServersStart(exe, args, options) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(exe, args, { stdio: ["ignore", "pipe", "inherit"], windowsHide: true, ...options });
+        let out = "";
+        let settled = false;
+        const settle = (err, line) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            if (err) {
+                child.kill();
+                reject(err);
+            } else {
+                resolve({ child, line });
+            }
+        };
+        const timer = setTimeout(() => settle(new Error(`${exe} printed nothing in 10s`)), 10_000);
+        child.once("error", (e) => settle(e));
+        child.once("exit", (code) => settle(new Error(`${exe} ended with ${code} before it printed`)));
+        child.stdout.on("data", (d) => {
+            out += d;
+            if (out.includes("\n")) {
+                child.stdout.removeAllListeners("data");
+                settle(null, out.trim());
+            }
+        });
+    });
+}
+
+function railServersAlive(pid) {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function railServersWaitDead(pid, ms) {
+    for (let waited = 0; waited < ms; waited += 100) {
+        if (!railServersAlive(pid)) return true;
+        await polishNap(100);
+    }
+    return !railServersAlive(pid);
+}
+
+// the transcript the by-agent server's row matches: the user's turn names the project; the agent ran `command` in the
+// background and its start result left it running, writing to outFile
+function railServersTranscript(cwd, command, outFile) {
+    const rec = (o) => JSON.stringify(o) + "\n";
+    return (
+        rec({ type: "user", cwd, message: { role: "user", content: "verify rail servers" } }) +
+        rec({
+            type: "assistant",
+            message: {
+                role: "assistant",
+                content: [
+                    {
+                        type: "tool_use",
+                        id: "toolu_rs_bg",
+                        name: "Bash",
+                        input: { command, description: "Start the dev server", run_in_background: true },
+                    },
+                ],
+            },
+        }) +
+        rec({
+            type: "user",
+            message: {
+                role: "user",
+                content: [
+                    {
+                        type: "tool_result",
+                        tool_use_id: "toolu_rs_bg",
+                        content: `Command running in background with ID: rsbg1. Output is being written to: ${outFile}. You will be notified when it completes.`,
+                    },
+                ],
+            },
+        })
+    );
+}
+
+// moves the real mouse onto the element `expr` finds, and with click presses it: a button that shows only on hover is
+// reached the way a user reaches it. False when there is no such element
+async function railServersMouse(h, expr, click) {
+    const at = await h.ev(`(() => {
+        const el = ${expr};
+        if (!el) return null;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    if (click) {
+        for (const type of ["mousePressed", "mouseReleased"]) {
+            await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+        }
+    }
+    return true;
+}
+
+// A process that has just ended can hold its directory for a moment on Windows, and rmSync's own maxRetries did not retry
+// there (EPERM at once), so the retry is ours
+async function railServersRemove(dir) {
+    for (let waited = 0; ; waited += 250) {
+        try {
+            rmSync(dir, { recursive: true, force: true });
+            return;
+        } catch (e) {
+            if (waited >= 10_000) throw e;
+            await polishNap(250);
+        }
+    }
+}
+
+// ends what arrange started; a process on ctx the moment it exists, so a throw part-way still reaches it. A server's cwd
+// and the agent's binary lock their directories on Windows, so this comes before the directories go
+async function railServersStop(ctx) {
+    for (const p of [ctx.agent, ctx.http]) {
+        if (p?.child && p.child.exitCode === null && p.child.signalCode === null) p.child.kill();
+    }
+    if (Number.isInteger(ctx.bg?.pid)) {
+        try {
+            process.kill(ctx.bg.pid);
+        } catch {
+            /* already gone */
+        }
+    }
+    for (const pid of [ctx.bg?.pid, ctx.agent?.pid, ctx.http?.pid]) {
+        if (Number.isInteger(pid)) await railServersWaitDead(pid, 5000);
+    }
+}
+
+async function arrangeRailServers(h, ctx) {
+    const runId = randomUUID().slice(0, 8);
+    // the background command, as a substring of the by-agent server's command line (`node dev-server.js --id <id>`)
+    ctx.command = `dev-server.js --id ${runId}`;
+    ctx.outFile = join(ctx.cwd, "bg-output.log");
+    ctx.transcript = join(ctx.cwd, "session.jsonl");
+    writeFileSync(ctx.outFile, `${RAIL_SERVERS_LOG_LINE}\n`);
+    writeFileSync(ctx.transcript, railServersTranscript(ctx.cwd, ctx.command, ctx.outFile));
+    writeFileSync(join(ctx.cwd, "dev-server.js"), RAIL_SERVERS_SERVER_SOURCE);
+
+    // listed by its cwd: a server the agent did not start
+    const http = await railServersStart(process.execPath, ["dev-server.js"], { cwd: ctx.cwd });
+    ctx.http = { child: http.child, pid: http.child.pid, port: Number(http.line) };
+    if (!Number.isInteger(ctx.http.port)) throw new Error(`the project's server printed "${http.line}", not a port`);
+
+    // listed because it descends from the fake agent: its cwd is a directory of its own. The agent is node under
+    // another name, a hard link where the volume allows (no 90 MB copy), a copy where it does not
+    ctx.other = mkdtempSync(join(tmpdir(), "verify-rail-servers-other-"));
+    writeFileSync(join(ctx.other, "dev-server.js"), RAIL_SERVERS_SERVER_SOURCE);
+    const claude = join(ctx.other, process.platform === "win32" ? "claude.exe" : "claude");
+    try {
+        linkSync(process.execPath, claude);
+    } catch {
+        copyFileSync(process.execPath, claude);
+    }
+    const agent = await railServersStart(claude, ["-e", RAIL_SERVERS_AGENT_JS], {
+        cwd: ctx.cwd,
+        env: {
+            ...process.env,
+            WAVETERM_BLOCKID: RAIL_SERVERS_BLOCK,
+            RS_NODE: process.execPath,
+            RS_OTHER: ctx.other,
+            RS_ID: runId,
+        },
+    });
+    ctx.agent = { child: agent.child, pid: agent.child.pid };
+    const [bgPid, bgPort] = agent.line.split(" ").map(Number);
+    ctx.bg = { pid: bgPid, port: bgPort };
+    if (!Number.isInteger(bgPid) || !Number.isInteger(bgPort)) {
+        throw new Error(`the fake agent printed "${agent.line}", not "<pid> <port>"`);
+    }
+
+    mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+    writeFileSync(
+        TREE_RAIL_FIXTURE,
+        JSON.stringify(
+            [
+                {
+                    id: RAIL_SERVERS_AGENT_ID,
+                    name: "rail servers agent",
+                    project: "verify-rail-servers",
+                    task: "verify the rail's servers",
+                    state: "idle",
+                    agent: "claude",
+                    model: "opus",
+                    idleSince: Date.now() - 60_000,
+                    blockId: RAIL_SERVERS_BLOCK,
+                    transcriptPath: ctx.transcript,
+                },
+            ],
+            null,
+            2
+        )
+    );
+    ctx.wroteFixture = true;
+    // the rail is persisted and the fixture roster is read once at boot, so both need a reload. The sections are cleared
+    // so Servers starts at its default open state
+    await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+    await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+    if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+    await h.goto("agent");
+    ctx.inRoster = await polishWaitFor(
+        h,
+        `!!document.querySelector('[data-agent-terminal="${RAIL_SERVERS_AGENT_ID}"]')`,
+        15000
+    );
+    if (!ctx.inRoster) return;
+    await h.rpc("uireveal", { address: `agent:${RAIL_SERVERS_AGENT_ID}` }, UI_ROUTE);
+}
+
+const railServers = {
+    name: "rail-servers",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-rail-servers-")) };
+        // a throw past this point still returns ctx, so teardown ends whatever was already started
+        try {
+            ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`);
+            ctx.prevSections = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
+            await arrangeRailServers(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        const railUp = arranged && (await polishWaitFor(h, `!!${railStat("servers")}`, 8000));
+        rec(
+            "0. the fixture agent is focused and its rail is showing",
+            railUp,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, railUp })
+        );
+        if (!railUp) return steps;
+        const http = ctx.http;
+        const bg = ctx.bg;
+        const row = (pid) => `${RAIL_ASIDE}?.querySelector('[data-dev-server="${pid}"]')`;
+        const rowFacts = (pid, port) =>
+            h.ev(`(() => {
+                const r = ${row(pid)};
+                if (!r) return null;
+                return {
+                    text: r.innerText,
+                    port: !!r.querySelector('[data-dev-server-port="${port}"]'),
+                    log: !!r.querySelector("[data-dev-server-log]"),
+                    inSection: !!r.closest('[data-rail-section="servers"]'),
+                };
+            })()`);
+
+        // 1. the first poll lands at once on mount, then every 5s while the rail shows
+        const counted = await polishWaitFor(h, `${railStat("servers")}?.dataset.count === "2"`, 12000);
+        const stripCount = await h.ev(`${railStat("servers")}?.dataset.count ?? null`);
+        rec(
+            "1. the strip's Servers counts 2: the server in the project and the one the agent started",
+            counted,
+            JSON.stringify({
+                stripCount,
+                hidden: await h.ev("document.hidden"),
+                listed: counted
+                    ? null
+                    : await h
+                          .rpc("listdevservers", { cwd: ctx.cwd, blockid: RAIL_SERVERS_BLOCK })
+                          .catch((e) => String(e?.message ?? e)),
+            })
+        );
+        if (!counted) return steps;
+
+        // the transcript tail that holds the background command loads beside the first poll
+        await polishWaitFor(h, `!!${row(bg.pid)}?.querySelector("[data-dev-server-log]")`, 12000);
+        const byCwd = await rowFacts(http.pid, http.port);
+        rec(
+            "2. the Servers section lists the project's server by its PID with its port button and `already running`, and no Log button",
+            byCwd != null &&
+                byCwd.inSection &&
+                byCwd.port &&
+                !byCwd.log &&
+                byCwd.text.includes(`PID ${http.pid}`) &&
+                byCwd.text.includes("already running"),
+            JSON.stringify(byCwd)
+        );
+        const byAgent = await rowFacts(bg.pid, bg.port);
+        rec(
+            "3. the agent's own server is the second row: its port button, `this agent`, and a Log button, which only a server the agent started with a running background command has",
+            byAgent != null &&
+                byAgent.inSection &&
+                byAgent.port &&
+                byAgent.log &&
+                byAgent.text.includes(`PID ${bg.pid}`) &&
+                byAgent.text.includes("this agent") &&
+                !byAgent.text.includes("already running"),
+            JSON.stringify(byAgent)
+        );
+        await h.shot("cdp-shots/rail-servers.png");
+
+        // 4. getApi() reads window.api on each call, so a stub there takes the click
+        const stubbed = await h.ev(`(() => {
+            const api = window.api;
+            if (typeof api?.openExternal !== "function") return false;
+            window.__rsOpenExternal = api.openExternal;
+            window.__rsOpened = [];
+            api.openExternal = (url) => { window.__rsOpened.push(url); };
+            return true;
+        })()`);
+        const clickedPort =
+            stubbed === true &&
+            (await railServersMouse(h, `${row(http.pid)}?.querySelector('[data-dev-server-port="${http.port}"]')`, true));
+        const opened = await h.ev("window.__rsOpened ?? null");
+        rec(
+            "4. a port button opens http://localhost:<port> in the browser, once",
+            clickedPort &&
+                Array.isArray(opened) &&
+                opened.length === 1 &&
+                opened[0] === `http://localhost:${http.port}`,
+            JSON.stringify({ stubbed, clickedPort, opened })
+        );
+
+        // 5. the buttons show on hover: move onto the row, then press Copy
+        await h.ev(`(() => {
+            window.__rsCopied = [];
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: async (text) => { window.__rsCopied.push(text); } },
+            });
+            return true;
+        })()`);
+        const hovered = await railServersMouse(h, row(http.pid), false);
+        await polishNap(200);
+        const clickedCopy = hovered && (await railServersMouse(h, `${row(http.pid)}?.querySelector("[data-dev-server-copy]")`, true));
+        await polishWaitFor(h, "(window.__rsCopied ?? []).length > 0", 2000);
+        const copied = await h.ev("window.__rsCopied ?? null");
+        const cmdline = await h.ev(`${row(http.pid)}?.querySelector("span[title]")?.title ?? null`);
+        rec(
+            "5. Copy writes `PID <pid>` and the command line, once",
+            clickedCopy &&
+                cmdline != null &&
+                cmdline !== "" &&
+                Array.isArray(copied) &&
+                copied.length === 1 &&
+                copied[0] === `PID ${http.pid}\n${cmdline}`,
+            JSON.stringify({ clickedCopy, copied, cmdline })
+        );
+
+        // 6. a poll that fails keeps the rows and adds the muted line; the next one that works takes it away
+        await h.ev("window.__arcDevServersFail = true");
+        const failedUp = await polishWaitFor(
+            h,
+            `(${RAIL_ASIDE}?.querySelector("[data-dev-servers-failed]")?.textContent ?? "").includes("Could not read listening ports")`,
+            8000
+        );
+        const kept = await h.ev(`${RAIL_ASIDE}?.querySelectorAll("[data-dev-server]").length ?? 0`);
+        await h.shot("cdp-shots/rail-servers-failed.png");
+        await h.ev("delete window.__arcDevServersFail");
+        const failedGone = await polishWaitFor(
+            h,
+            `!!${RAIL_ASIDE} && !${RAIL_ASIDE}.querySelector("[data-dev-servers-failed]")`,
+            8000
+        );
+        rec(
+            "6. a failed read adds `Could not read listening ports` above the rows that were listed, and the next good poll takes it away",
+            failedUp && kept === 2 && failedGone,
+            JSON.stringify({ failedUp, kept, failedGone })
+        );
+
+        // 7. the first click asks, for 3s
+        const stop = `${row(http.pid)}?.querySelector("[data-dev-server-stop]")`;
+        const firstClickAt = Date.now();
+        const askedClick = await railServersMouse(h, stop, true);
+        const asked = await polishWaitFor(h, `${stop}?.textContent.trim() === "Stop?"`, 2000);
+        const ariaLabel = await h.ev(`${stop}?.getAttribute("aria-label") ?? null`);
+        const aliveWhileAsking = railServersAlive(http.pid);
+        await h.shot("cdp-shots/rail-servers-stop-confirm.png");
+        rec(
+            "7. the first click on Stop asks `Stop?` and the server is still running",
+            askedClick && asked && ariaLabel === "Confirm stop" && aliveWhileAsking,
+            JSON.stringify({ askedClick, asked, ariaLabel, aliveWhileAsking })
+        );
+
+        // 8. the second click, while it still asks, stops it. A slow shot can let the 3s lapse; then it is asked again,
+        // which is the same click as step 7's, and the stop follows at once
+        const sinceAskedMs = Date.now() - firstClickAt;
+        const stillAsking = await h.ev(`${stop}?.textContent.trim() === "Stop?"`);
+        const reasked = stillAsking ? false : await railServersMouse(h, stop, true);
+        const stopClick = await railServersMouse(h, stop, true);
+        const ended = await railServersWaitDead(http.pid, 8000);
+        const left = await polishWaitFor(h, `!${row(http.pid)}`, 8000);
+        const downToOne = await polishWaitFor(h, `${railStat("servers")}?.dataset.count === "1"`, 8000);
+        const agentRowStays = (await h.ev(`!!${row(bg.pid)}`)) && railServersAlive(bg.pid);
+        rec(
+            "8. a second click on `Stop?` stops the server: the process ends, its row leaves, the strip counts 1, and the agent's server is left running",
+            stopClick && ended && left && downToOne && agentRowStays,
+            JSON.stringify({ sinceAskedMs, stillAsking, reasked, stopClick, ended, left, downToOne, agentRowStays })
+        );
+
+        // 9. last, because opening a file takes the rail's panel over from the Servers section
+        const logClick = await railServersMouse(h, `${row(bg.pid)}?.querySelector("[data-dev-server-log]")`, true);
+        const wantPath = JSON.stringify(ctx.outFile.split("\\").join("/").toLowerCase());
+        const fileUp = await polishWaitFor(
+            h,
+            `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantPath}`,
+            8000
+        );
+        const following = await h.ev(
+            `${RAIL_ASIDE}?.querySelector("[data-rail-file] [data-file-live]")?.getAttribute("aria-pressed") ?? null`
+        );
+        const logText = await polishWaitFor(
+            h,
+            `(${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "").includes(${JSON.stringify(RAIL_SERVERS_LOG_LINE)})`,
+            12000
+        );
+        await h.shot("cdp-shots/rail-servers-log.png");
+        rec(
+            "9. Log on the agent's server opens its background command's output file in the rail's panel, followed live, showing the file's text",
+            logClick && fileUp && following === "true" && logText,
+            JSON.stringify({ logClick, fileUp, following, logText })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // each is its own step: one failing must not skip the rest
+        const step = async (what, run) => {
+            try {
+                await run();
+            } catch (e) {
+                console.error(`rail-servers teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("end the servers and the fake agent", () => railServersStop(ctx));
+        // the clipboard stub is an own property over Navigator's getter; deleting it restores that
+        await step("remove the page stubs", () =>
+            h.ev(`(() => {
+                delete window.__arcDevServersFail;
+                if (window.__rsOpenExternal) window.api.openExternal = window.__rsOpenExternal;
+                delete window.__rsOpenExternal;
+                delete window.__rsOpened;
+                delete window.__rsCopied;
+                delete navigator.clipboard;
+                return true;
+            })()`)
+        );
+        await teardownFixtureRun(h, ctx, "rail-servers", {
+            what: "restore the rail preferences and remove the directories",
+            fn: async () => {
+                if (ctx.prevRail !== undefined) {
+                    await step("restore the rail visibility", () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)));
+                }
+                if (ctx.prevSections !== undefined) {
+                    await step("restore the rail sections", () => h.ev(restoreStorageKey(RAIL_SECTIONS_KEY, ctx.prevSections)));
+                }
+                // the fixture run's own cleanup removes ctx.cwd once, without a retry
+                for (const dir of [ctx.other, ctx.cwd]) {
+                    if (dir) await step(`remove ${dir}`, () => railServersRemove(dir));
+                }
+            },
+        });
+    },
+};
+
 // The Agent panel's tabs and file path links (docs/superpowers/specs/2026-10-06-agent-rail-tabs-design.md), run on the
 // dev app after the run lands. The pieces:
 //   - a temp repo, registered as a project so the palette can search it, where a.txt is modified;
@@ -19584,6 +20084,7 @@ export const SCENARIOS = [
     canvasSwap,
     canvasTabsScenario,
     agentRailSections,
+    railServers,
     agentGrid,
     agentUploads,
     agentRailTabs,

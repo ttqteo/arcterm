@@ -42,6 +42,7 @@ import { setAgentView } from "./agentview";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
+import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
 import { capFiles, statusColor } from "./gitstatus";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
@@ -49,6 +50,7 @@ import { prettyModel } from "./modellabel";
 import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
+import { ServersSection } from "./railservers";
 import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
 import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
@@ -412,7 +414,16 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const panel = panelFor(panels, agent.id, defaultTab);
     const wide = useWideWidth();
     const fileRef = panel.file.current;
+    const railVisible = useAtomValue(railVisibleAtom);
     const showRail = () => globalStore.set(railVisibleAtom, true);
+    // a subagent's interior and an ended session have no project of their own to read: nothing polls for them
+    const polls = sub == null && ended == null;
+    const { servers, failed: serversFailed } = useDevServers(
+        agent.id,
+        polls ? (railState?.cwd ?? null) : null,
+        polls ? agent.blockId : undefined,
+        railVisible
+    );
 
     useEffect(() => {
         fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
@@ -488,7 +499,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         files: fileCount,
         artifacts: artifacts.rows.length,
         uploads: uploads.length,
-        servers: 0, // Task 5 reads the project's listeners
+        servers: servers.length,
         bgTasks: bgTasks.length,
         hasRun: role != null && roleRun != null,
     };
@@ -704,7 +715,16 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             </div>
         ),
         uploads: () => <UploadsSection agent={agent} now={now} />,
-        servers: () => null, // Task 5 replaces this with the project's listening processes
+        servers: () => (
+            <ServersSection
+                model={model}
+                agentId={agent.id}
+                servers={servers}
+                failed={serversFailed}
+                bgTasks={bgTasks}
+                now={now}
+            />
+        ),
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (

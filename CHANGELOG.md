@@ -23,6 +23,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   worktree.
 - The run sheet's header puts the run line under the project, and the run id is a chip that copies it.
 - Submitting a plan whose parallel tasks list the same file is refused.
+- The agent rail lists the servers listening in the agent's project — port, command, who started it and for how
+  long — with open, log, copy and stop.
 
 ### Changed
 
