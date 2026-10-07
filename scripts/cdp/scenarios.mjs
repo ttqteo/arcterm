@@ -16498,6 +16498,393 @@ const capacityWarn = {
     },
 };
 
+// notify-toast: NotifySync (view/agents/notifysync.tsx) tells you when an agent needs you or finished. A plain terminal
+// tab is made an agent by publishing agent:status (as agent-uploads does), and each step publishes the next state.
+// Focused, an ask from an agent not in view is an in-app toast whose click opens the agent; an ask from the agent in view
+// is nothing; In-app toasts off silences it. Backgrounded (focus emulation off and a blur event, which is what sets
+// atoms.documentHasFocus), an ask goes to notify_os instead, and a finished turn stays unread.
+//
+// What is real: the roster, the routing, the toast stack, the Settings toggle (a real setconfig) and the click's route
+// through openref. What is not: the OS side. Tauri defines __TAURI_INTERNALS__.invoke as a non-writable property, so the
+// notify_os call is caught one layer down, at the fetch that Tauri's IPC makes to ipc.localhost/notify_os (every other
+// fetch passes through to the saved original, kept on window.__notifyOrigFetch); the call is recorded in
+// window.__notifyCalls and answered as Rust would, so no OS toast is shown. A click on an OS toast is stood in for by
+// emitting what notify.rs emits on one (os-notify-activated) through plugin:event|emit. The WinRT toast itself and its
+// on_activated click path go unverified: CDP cannot see an OS toast, and notify.rs's cargo tests cover only its app_id
+// selection.
+const NOTIFY_NAME = "verify-notify";
+const NOTIFY_GONE_ID = "verify-notify-gone";
+const NOTIFY_ACTIVATED = "os-notify-activated"; // notify.rs ACTIVATED_EVENT
+const NOTIFY_AGENT_WAIT_MS = 15000;
+// a published state reaches the roster a moment later; the next one must not land in the same snapshot, or the edge
+// between them is never seen
+const NOTIFY_SETTLE_MS = 1200;
+// past COALESCE_MS (2000 ms, notifyevents.ts), so a toast that was coming has come; inside TOAST_TTL_MS (6000 ms), so it
+// has not gone yet
+const NOTIFY_QUIET_MS = 3000;
+
+const publishNotifyStatus = (h, ctx, state) =>
+    h.rpc("eventpublish", {
+        event: "agent:status",
+        scopes: [`block:${ctx.blockId}`],
+        persist: 1,
+        data: { oref: `block:${ctx.blockId}`, state, agent: "claude", title: NOTIFY_NAME, ts: Date.now() },
+    });
+
+// a plain terminal in a tab of its own that reports as a working Claude agent; the tab id is the agent id
+async function openNotifyAgent(h, ctx) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    // tracked as soon as it exists, so a failure in the calls below still lets teardown close the tab
+    ctx.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, NOTIFY_NAME, false]);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.tabId}`]);
+    ctx.blockId = tab?.blockids?.[0];
+    if (!ctx.blockId) throw new Error("the new tab has no block");
+    await h.rpc("setmeta", { oref: `block:${ctx.blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+    await h.rpc("setmeta", { oref: `tab:${ctx.tabId}`, meta: { "session:project": NOTIFY_NAME } });
+    await publishNotifyStatus(h, ctx, "working");
+}
+
+const notifyPaneShown = (tabId) => `(() => {
+    const pane = document.querySelector('[data-agent-terminal="${tabId}"]');
+    return pane != null && !pane.classList.contains("hidden");
+})()`;
+
+// Makes the agent's pane the one shown on the Agent surface, clicking its tree row until it is (a click that lands
+// before the roster has settled is not lost). True once shown.
+async function focusNotifyAgent(h, ctx) {
+    await h.goto("agent");
+    return polishWaitFor(
+        h,
+        `(() => {
+            if (${notifyPaneShown(ctx.tabId)}) return true;
+            document.querySelector('[data-agent-row="${ctx.tabId}"]')?.click();
+            return false;
+        })()`,
+        NOTIFY_AGENT_WAIT_MS
+    );
+}
+
+const notifyToastWith = (text) =>
+    `[...document.querySelectorAll("[data-notification-toast]")].some((t) => t.textContent.includes(${JSON.stringify(text)}))`;
+const notifyToasts = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-notification-toast]")].map((t) => t.textContent.trim())`);
+// a toast lives TOAST_TTL_MS; waiting one out leaves nothing to mistake for a new one, where a click would run its open
+const notifyToastGone = (h, text) => polishWaitFor(h, `!${notifyToastWith(text)}`, 7000);
+
+// focus emulation makes document.hasFocus() true while the dev window is behind another one; the focus event is what
+// sets atoms.documentHasFocus (global-atoms.ts)
+async function notifyFocus(h) {
+    await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await h.ev('window.dispatchEvent(new Event("focus"))');
+}
+async function notifyBlur(h) {
+    await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false });
+    await h.ev('window.dispatchEvent(new Event("blur"))');
+}
+
+// catches notify_os at Tauri's IPC fetch (see the header) and answers it as a command that returned nothing
+const NOTIFY_FETCH_WRAP = `(() => {
+    if (window.__notifyOrigFetch) return "already";
+    window.__notifyCalls = [];
+    const orig = window.fetch;
+    window.__notifyOrigFetch = orig;
+    window.fetch = function (input, init) {
+        const url = typeof input === "string" ? input : String(input?.url ?? input);
+        if (url.includes("localhost/notify_os")) {
+            let args = null;
+            try {
+                args = JSON.parse(typeof init?.body === "string" ? init.body : "null");
+            } catch {
+                /* recorded as null */
+            }
+            window.__notifyCalls.push(args ?? { unparsed: String(init?.body) });
+            return Promise.resolve(
+                new Response("null", { status: 200, headers: { "Content-Type": "application/json", "Tauri-Response": "ok" } })
+            );
+        }
+        return orig.call(window, input, init);
+    };
+    return "installed";
+})()`;
+const NOTIFY_FETCH_RESTORE = `(() => {
+    if (!window.__notifyOrigFetch) return false;
+    window.fetch = window.__notifyOrigFetch;
+    delete window.__notifyOrigFetch;
+    return true;
+})()`;
+
+// what notify.rs emits when its toast is clicked: the target, as the JSON string the frontend handed notify_os
+const notifyActivate = (h, target) =>
+    h.ev(`window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+        event: ${JSON.stringify(NOTIFY_ACTIVATED)},
+        payload: ${JSON.stringify(JSON.stringify(target))},
+    }).then(() => true, (e) => String(e))`);
+
+const notifyToast = {
+    name: "notify-toast",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { prevGrid: await h.ev(`localStorage.getItem(${JSON.stringify(GRID_KEY)})`) };
+        if (existsSync(TREE_RAIL_FIXTURE)) {
+            ctx.skip =
+                "a cockpit fixture roster is active, so the agent this scenario makes never reaches the roster: run `npm run cockpit:fixtures -- --clear` and reload";
+            return ctx;
+        }
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // the scenario turns In-app toasts off and back on; it does not override a choice the user made
+            const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+            const off = ["notify:os", "notify:toast"].filter((k) => settings[k] === false);
+            if (off.length > 0) {
+                ctx.skip = `${off.join(" and ")} is off (Settings → Notifications): turn it on to run this scenario`;
+                return ctx;
+            }
+            ctx.ran = true;
+            // an empty grid, so the agent made below is shown alone, and the user's own grid is not rearranged around it
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+            );
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await openNotifyAgent(h, ctx);
+            // the roster lists it (as working) once its row shows its pane; an agent seen for the first time is a
+            // baseline (diffEvents), so this must happen before it asks
+            ctx.listed = await focusNotifyAgent(h, ctx);
+            ctx.name =
+                (await h.ev(`document.querySelector('[data-agent-row="${ctx.tabId}"] span.truncate')?.textContent?.trim() ?? ""`)) ||
+                NOTIFY_NAME;
+            await notifyFocus(h);
+            await h.goto("cockpit");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.skip) {
+            return [skipStep("notify toast", ctx.skip)];
+        }
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the agent was made and the roster lists it", ok: false, detail: ctx.arrangeError }];
+        }
+        if (ctx.listed !== true) {
+            return [
+                skipStep(
+                    "notify toast",
+                    "could not verify: the agent's pane never reached the Agent surface (does the roster list a working claude agent that has no transcript?)"
+                ),
+            ];
+        }
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const asks = `${ctx.name} needs you`;
+        const publish = async (state) => {
+            await publishNotifyStatus(h, ctx, state);
+            await polishNap(NOTIFY_SETTLE_MS);
+        };
+        const shown = () => h.ev(notifyPaneShown(ctx.tabId));
+
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // --- focused, on the Cockpit: an ask is a toast, and its click opens the agent ----------------------------
+            await notifyToastGone(h, ctx.name);
+            await publish("asking");
+            const toasted = await polishWaitFor(h, notifyToastWith(asks), 6000);
+            const clickable = await h.ev(
+                `[...document.querySelectorAll("[data-notification-toast][data-notification-open]")].some((t) => t.textContent.includes(${JSON.stringify(asks)}))`
+            );
+            await h.shot("cdp-shots/notify-toast-ask.png");
+            rec("a toast appears when an out-of-view agent starts asking", toasted === true && clickable === true, {
+                toasted,
+                clickable,
+                toasts: await notifyToasts(h),
+            });
+
+            const clicked = await h.ev(`(() => {
+                const t = [...document.querySelectorAll("[data-notification-toast][data-notification-open]")]
+                    .find((t) => t.textContent.includes(${JSON.stringify(asks)}));
+                t?.click();
+                return t != null;
+            })()`);
+            const opened = await polishWaitFor(h, notifyPaneShown(ctx.tabId), 8000);
+            const surface = await h.activeSurfaceLabel();
+            rec("clicking the toast opens the agent", clicked === true && opened === true && surface === SURFACE_LABEL.agent, {
+                clicked,
+                opened,
+                surface,
+            });
+
+            // --- the agent in view asks: nothing ---------------------------------------------------------------------
+            // the steps after this one need it focused, so a failed click above does not take them down with it
+            const inView = (await shown()) || (await focusNotifyAgent(h, ctx));
+            await notifyToastGone(h, asks);
+            await publish("working");
+            await publish("asking");
+            await polishNap(NOTIFY_QUIET_MS);
+            const quiet = !(await h.ev(notifyToastWith(asks)));
+            rec("no toast for the agent in view", inView === true && quiet, { inView, toasts: await notifyToasts(h) });
+
+            // --- Settings: the section, and In-app toasts off -----------------------------------------------------------
+            await h.goto("settings");
+            await h.ev(`document.querySelector('[data-section="notifications"]')?.click()`);
+            const titles = ["OS notifications", "In-app toasts", "When an agent finishes"];
+            const listed = await polishWaitFor(
+                h,
+                `${JSON.stringify(titles)}.every((t) => document.body.innerText.includes(t))`,
+                4000
+            );
+            await h.shot("cdp-shots/notify-toast-settings.png");
+            rec("Settings lists the Notifications section", listed === true, {
+                missing: await h.ev(`${JSON.stringify(titles)}.filter((t) => !document.body.innerText.includes(t))`),
+            });
+
+            const SWITCH = `document.querySelector('[role="switch"][aria-label="In-app toasts"]')`;
+            await h.ev(`${SWITCH}?.click()`);
+            const turnedOff = await polishWaitFor(h, `${SWITCH}?.getAttribute("aria-checked") === "false"`, 5000);
+            await notifyToastGone(h, ctx.name);
+            await publish("working");
+            await publish("asking");
+            await polishNap(NOTIFY_QUIET_MS);
+            const silenced = !(await h.ev(notifyToastWith(ctx.name)));
+            const toastsOff = await notifyToasts(h);
+            await h.ev(`${SWITCH}?.click()`);
+            const turnedOn = await polishWaitFor(h, `${SWITCH}?.getAttribute("aria-checked") === "true"`, 5000);
+            rec("In-app toasts off silences a toast", turnedOff === true && silenced && turnedOn === true, {
+                turnedOff,
+                turnedOn,
+                toasts: toastsOff,
+            });
+
+            // --- a permission prompt (waiting) reads as asking ----------------------------------------------------------
+            const waitingInView = await focusNotifyAgent(h, ctx);
+            await publish("working");
+            await publishNotifyStatus(h, ctx, "waiting");
+            const readsAsking = await polishWaitFor(
+                h,
+                `[...(document.querySelector('[data-agent-row="${ctx.tabId}"]')?.querySelectorAll("span") ?? [])]
+                    .some((s) => s.children.length === 0 && s.textContent.trim() === "asking")`,
+                6000
+            );
+            await h.shot("cdp-shots/notify-toast-waiting.png");
+            rec("a waiting agent reads as asking", waitingInView === true && readsAsking === true, {
+                inView: waitingInView,
+                row: await h.ev(`document.querySelector('[data-agent-row="${ctx.tabId}"]')?.innerText ?? null`),
+            });
+
+            // --- backgrounded: the ask goes to notify_os, not to a toast -------------------------------------------------
+            await h.goto("cockpit");
+            await notifyToastGone(h, ctx.name);
+            await publish("working");
+            const wrapped = await h.ev(NOTIFY_FETCH_WRAP);
+            await notifyBlur(h);
+            await publish("asking");
+            const toOs = await polishWaitFor(
+                h,
+                `(window.__notifyCalls ?? []).some((c) => String(c?.title ?? "").includes(${JSON.stringify(ctx.name)}) && c.loud === true)`,
+                6000
+            );
+            const noToast = !(await h.ev(notifyToastWith(asks)));
+            rec("backgrounded, an ask goes to the OS, not a toast", toOs === true && noToast, {
+                wrapped,
+                calls: await h.ev(`window.__notifyCalls ?? null`),
+                toasts: await notifyToasts(h),
+            });
+            await notifyFocus(h);
+
+            // --- an OS toast's click, as notify.rs reports it ------------------------------------------------------------
+            const emitted = await notifyActivate(h, { kind: "agent", agentId: ctx.tabId });
+            const osOpened = await polishWaitFor(h, notifyPaneShown(ctx.tabId), 8000);
+            rec("an OS toast's click opens the agent", emitted === true && osOpened === true, {
+                emitted,
+                opened: osOpened,
+                surface: await h.activeSurfaceLabel(),
+            });
+
+            // --- a turn that finishes while arcterm is behind is unread, though its terminal is on screen ----------------
+            const finishInView = (await shown()) || (await focusNotifyAgent(h, ctx));
+            await publish("working");
+            await notifyBlur(h);
+            await publishNotifyStatus(h, ctx, "idle");
+            const unread = await polishWaitFor(
+                h,
+                `document.querySelector('[data-agent-row="${ctx.tabId}"] [data-agent-unread]') != null ||
+                    document.querySelector('[data-nav-badge="agent"]') != null`,
+                5000
+            );
+            const counts = await h.ev(`({
+                row: Number(document.querySelector('[data-agent-row="${ctx.tabId}"] [data-agent-unread]')?.dataset.agentUnread ?? 0),
+                badge: document.querySelector('[data-nav-badge="agent"]')?.textContent ?? null,
+            })`);
+            rec(
+                "a turn finished in the background stays unread",
+                finishInView === true && unread === true && (counts.row >= 1 || counts.badge != null),
+                { inView: finishInView, ...counts }
+            );
+            await notifyFocus(h);
+
+            // --- a click on an agent that is gone ------------------------------------------------------------------------
+            const goneEmitted = await notifyActivate(h, { kind: "agent", agentId: NOTIFY_GONE_ID });
+            const ended = await polishWaitFor(h, notifyToastWith("That agent session has ended"), 5000);
+            rec("a click on a gone agent says so", goneEmitted === true && ended === true, {
+                emitted: goneEmitted,
+                toasts: await notifyToasts(h),
+            });
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`notify-toast teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.skip) return;
+        await step("restore fetch", () => h.ev(NOTIFY_FETCH_RESTORE));
+        // in case the In-app toasts step failed half way; arrange ran only with it on
+        if (ctx.ran) await step("turn In-app toasts back on", () => h.rpc("setconfig", { "notify:toast": true }));
+        if (ctx.tabId) {
+            await step("close the terminal tab", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false]));
+            // the surface prunes the closed agent out of the saved grid as the roster catches up; the user's grid goes back
+            // only after that has been written, or the prune would write over it
+            await step("wait for the roster to drop the closed agent", () =>
+                polishWaitFor(h, `!document.querySelector('[data-agent-terminal="${ctx.tabId}"]')`, 10000)
+            );
+            await step("wait for the surface to prune it from the saved grid", () =>
+                polishWaitFor(
+                    h,
+                    `(() => {
+                        try {
+                            const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                            return !ids.includes(${JSON.stringify(ctx.tabId)});
+                        } catch {
+                            return true;
+                        }
+                    })()`,
+                    5000
+                )
+            );
+        }
+        await step("end the focus emulation", () => h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false }));
+        await step("dismiss the toasts left", () =>
+            h.ev(`document.querySelectorAll("[data-notification-toast]").forEach((t) => t.click())`)
+        );
+        await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
+        // the page holds the grid the scenario left in memory, and reads storage only on load
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) console.error("notify-toast teardown: the page did not come back after the reload");
+        });
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -16566,4 +16953,5 @@ export const SCENARIOS = [
     mdComments,
     workerCapacity,
     capacityWarn,
+    notifyToast,
 ];
