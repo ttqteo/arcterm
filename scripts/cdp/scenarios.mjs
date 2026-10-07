@@ -16227,9 +16227,10 @@ const railServers = {
         const following = await h.ev(
             `${RAIL_ASIDE}?.querySelector("[data-rail-file] [data-file-live]")?.getAttribute("aria-pressed") ?? null`
         );
+        // Monaco draws a view line's spaces as U+00A0, so innerText holds no plain space; the page turns them back
         const logText = await polishWaitFor(
             h,
-            `(${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "").includes(${JSON.stringify(RAIL_SERVERS_LOG_LINE)})`,
+            `(${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "").replace(/\\u00a0/g, " ").includes(${JSON.stringify(RAIL_SERVERS_LOG_LINE)})`,
             12000
         );
         await h.shot("cdp-shots/rail-servers-log.png");
