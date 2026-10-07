@@ -26,7 +26,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Changed
 
 - A run a session starts with `wsh runs start` is listed under that session in the sidebar, one level in with a guide
-  line, so you can tell which conversation launched it. Runs started before this update keep their old place.
+  line, both while they run and in Conversations once they end, so you can tell which conversation launched it. Runs started before this update keep their old place.
 - Unread counts (the Agent badge in the nav rail, the Dock badge on macOS, a bold row) come only from top-level
   agents: a run's workers report to their lead, so their finished turns no longer count as unread.
 - An agent waiting on a permission prompt now shows amber, like one asking a question.

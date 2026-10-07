@@ -10,6 +10,7 @@ import {
     conversationCount,
     conversationProjects,
     conversationTree,
+    runsBesideOrigins,
     endedConversationsByProject,
     liveBranches,
     registeredConversations,
@@ -437,6 +438,32 @@ describe("activeView", () => {
     it("is empty for a project with no live agent, which still counts the others", () => {
         const tree = treeOf([agent("a"), agent("b", undefined, "loom")]);
         expect(view(tree, "nowhere")).toEqual({ rows: [], count: 0, elsewhere: { agents: 2, asking: 0 } });
+    });
+});
+
+describe("runsBesideOrigins", () => {
+    const path = (id: string) => `/home/u/.claude/projects/home-u-waveterm/${id}.jsonl`;
+    // newest first: the run, an unrelated session, then the session that started the run
+    const rows = conversationTree(
+        endedOf([
+            session("lead", { runid: "r1", role: "lead", lastactivets: NOW - MIN }),
+            session("other", { lastactivets: NOW - 2 * MIN }),
+            session("origin", { lastactivets: NOW - 3 * MIN }),
+        ]),
+        ALL_PROJECTS,
+        new Set(),
+        new Map()
+    );
+
+    it("moves a run to just after the session that started it, marked under", () => {
+        const out = runsBesideOrigins(rows, new Map([["r1", path("origin")]]));
+        expect(rowIds(out)).toEqual(["folder:waveterm", "other", "origin", "run:r1"]);
+        expect(out.find((r) => r.kind === "run")).toMatchObject({ under: true });
+    });
+
+    it("leaves a run whose session is not shown where it was", () => {
+        const out = runsBesideOrigins(rows, new Map([["r1", path("gone")]]));
+        expect(out).toEqual(rows);
     });
 });
 

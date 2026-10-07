@@ -42,6 +42,7 @@ export interface EndedRunRow {
     key: string; // runSelKey: the value sessionsSelAtom takes to open the run in History
     lastactivets: number;
     group: RunSessions;
+    under?: boolean; // listed beneath the session that started it (runsBesideOrigins)
 }
 
 // one entry of the Conversations section: an ended session on its own, or an ended run
@@ -416,6 +417,53 @@ export function conversationTree(
             out.push({ kind: "more", project, hidden: list.length - shown.length });
         }
     }
+    return out;
+}
+
+/** Pure: the shown Conversations rows with each run moved to just after the session that started it, marked `under`.
+ *  `origins` is each run's origin transcript path by run id (Run.origintranscript), read from the run's own object, so
+ *  only the runs already shown can say; a run whose session is not shown in its folder stays where it was. */
+export function runsBesideOrigins(
+    rows: ConversationTreeRow[],
+    origins: ReadonlyMap<string, string>
+): ConversationTreeRow[] {
+    const out: ConversationTreeRow[] = [];
+    let folder: ConversationTreeRow[] = [];
+    const flush = () => {
+        const byPath = new Map<string, string>();
+        for (const r of folder) {
+            if (r.kind === "session" && r.session.transcriptpath) {
+                byPath.set(normPath(r.session.transcriptpath), r.key);
+            }
+        }
+        const originOf = (r: ConversationTreeRow) => {
+            const path = r.kind === "run" ? origins.get(r.group.runId) : undefined;
+            return path ? byPath.get(normPath(path)) : undefined;
+        };
+        for (const r of folder) {
+            if (originOf(r) != null) {
+                continue;
+            }
+            out.push(r);
+            if (r.kind === "session") {
+                for (const run of folder) {
+                    if (run.kind === "run" && originOf(run) === r.key) {
+                        out.push({ ...run, under: true });
+                    }
+                }
+            }
+        }
+        folder = [];
+    };
+    for (const r of rows) {
+        if (r.kind === "folder") {
+            flush();
+            out.push(r);
+        } else {
+            folder.push(r);
+        }
+    }
+    flush();
     return out;
 }
 

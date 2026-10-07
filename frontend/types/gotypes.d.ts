@@ -2472,6 +2472,7 @@ declare global {
         verificationackts?: number;
         parentleadoref?: string;
         origintabid?: string;
+        origintranscript?: string;
         effortref?: RunEffortRef;
         dagoref?: string;
         sessionid?: string;

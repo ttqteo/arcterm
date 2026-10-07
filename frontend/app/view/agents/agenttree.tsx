@@ -49,6 +49,7 @@ import {
     endedConversationsByProject,
     liveBranches,
     registeredConversations,
+    runsBesideOrigins,
     sessionAgeLabel,
     splitActive,
     startOfDay,
@@ -1395,13 +1396,24 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     );
     // a clock that moves once a day, so the run views below do not rebuild on every tick
     const today = startOfDay(now);
-    const rows = useMemo(
+    const paged = useMemo(
         () => conversationTree(ended, filter, new Set(collapsedList), presses),
         [ended, filter, collapsedList, presses]
     );
     // each shown run's view, from its own objects (loaded on first read); an ended run's dag no longer moves
-    const shownRuns = useMemo(() => rows.filter((r): r is EndedRunRow => r.kind === "run"), [rows]);
+    const shownRuns = useMemo(() => paged.filter((r): r is EndedRunRow => r.kind === "run"), [paged]);
     const runObjs = useRunObjects(shownRuns.map((r) => r.group.runId));
+    // a run a session started sits under that session, once the run's object says which session it was
+    const rows = useMemo(() => {
+        const origins = new Map<string, string>();
+        for (const r of shownRuns) {
+            const path = runObjs[r.group.runId]?.run?.origintranscript;
+            if (path) {
+                origins.set(r.group.runId, path);
+            }
+        }
+        return origins.size > 0 ? runsBesideOrigins(paged, origins) : paged;
+    }, [paged, shownRuns, runObjs]);
     const runViews = useMemo(() => {
         const out = new Map<string, RunView>();
         for (const r of shownRuns) {
@@ -1459,18 +1471,22 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                         <ShowMoreConversations project={r.project} hidden={r.hidden} />
                                     </div>
                                 );
-                            case "run":
+                            case "run": {
+                                const row = (
+                                    <RunConversationRow
+                                        model={model}
+                                        row={r}
+                                        view={runViews.get(r.key)}
+                                        age={sessionAgeLabel(r.lastactivets, now)}
+                                        selected={mode === "run" && sel === r.key}
+                                    />
+                                );
                                 return (
                                     <div key={r.key} className={rowIndent(filtered)}>
-                                        <RunConversationRow
-                                            model={model}
-                                            row={r}
-                                            view={runViews.get(r.key)}
-                                            age={sessionAgeLabel(r.lastactivets, now)}
-                                            selected={mode === "run" && sel === r.key}
-                                        />
+                                        {r.under ? <UnderOrigin>{row}</UnderOrigin> : row}
                                     </div>
                                 );
+                            }
                             case "session":
                                 return (
                                     <div key={r.key} className={rowIndent(filtered)}>

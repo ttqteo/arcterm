@@ -262,6 +262,9 @@ type Run struct {
 	// OriginTabId is the tab of the session that started this run with `wsh runs start`, so the cockpit can
 	// list the run beside it. Empty for a run started from the cockpit, or outside a Wave tab.
 	OriginTabId string `json:"origintabid,omitempty"`
+	// OriginTranscript is that session's transcript path when the run started, so the run still lists beside
+	// the session once both have ended and the tab is gone.
+	OriginTranscript string `json:"origintranscript,omitempty"`
 	// EffortRef links a run to the effort chunk it executes (set by the composer's effort picker or
 	// `wsh effort chunk attach --run`). Advisory: the run never ticks the chunk automatically.
 	EffortRef *RunEffortRef `json:"effortref,omitempty"`

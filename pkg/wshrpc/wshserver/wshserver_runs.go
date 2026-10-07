@@ -123,6 +123,28 @@ func sealThenLand(channelId, runId string) {
 	}
 }
 
+// tabTranscriptPath is the transcript of the agent session in a tab, "" when it has none (a plain shell, or a tab
+// the hooks have not reported yet).
+func tabTranscriptPath(ctx context.Context, tabId string) string {
+	if tabId == "" {
+		return ""
+	}
+	tab, _ := wstore.DBGet[*waveobj.Tab](ctx, tabId)
+	if tab == nil {
+		return ""
+	}
+	for _, blockId := range tab.BlockIds {
+		block, _ := wstore.DBGet[*waveobj.Block](ctx, blockId)
+		if block == nil {
+			continue
+		}
+		if p := block.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, ""); p != "" {
+			return p
+		}
+	}
+	return ""
+}
+
 // sealDoneRunEvidence seals a done run's immutable evidence snapshot (a git diff + transcript reads that can
 // take many seconds) detached from any RPC budget. Self-contained and idempotent: it re-loads the run, and
 // SealEvidence refuses to seal on a git failure/timeout — leaving the run unsealed for the backfill
@@ -446,6 +468,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	}
 	run.RadarOrigin = data.RadarOrigin // nil for normal runs; set only from a Radar handoff
 	run.OriginTabId = data.OriginTabId
+	run.OriginTranscript = tabTranscriptPath(ctx, data.OriginTabId)
 	run.EffortRef = effortRef
 	if err := wstore.AppendRun(ctx, data.ChannelId, run); err != nil {
 		return nil, fmt.Errorf("appending run: %w", err)
