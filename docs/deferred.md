@@ -45,6 +45,11 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   binary and a live wavesrv fails the overwrite halfway (a double-click install over 0.15.1 broke this way and had to
   be run again). `task install` runs the last build's installer with `/P /UPDATE /R`, the local stand-in for the
   updater. An uninstaller from before 0.15.2 has no hook, so "Uninstall before installing" over one can still fail.
+- **Also deferred (2026-10-07): a double-click upgrade defaulting to "Do not uninstall".** It needs a fork of the
+  bundler's `installer.nsi` (`bundle.windows.nsis.template`; hooks are included before `$ReinstallPageCheck` and
+  `$UpdateMode` are declared, so they cannot set the default). The fork freezes at the bundler version of the
+  `cargo tauri` that made it and has to be re-copied on every tauri-cli upgrade. Both choices work since the hook, so
+  only the default would change. Revive when builds are handed to other people often enough that the default matters.
 - **Revive when** releases are published somewhere fetchable. The updater itself was not built, so there is nothing
   to recover from git.
 
