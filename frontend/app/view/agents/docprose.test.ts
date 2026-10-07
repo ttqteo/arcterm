@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { proseKindOf, texAuthors, toProse, type ProseDoc, type ProseKind, type ProseSentence } from "./docprose";
+import {
+    proseKindOf,
+    texAuthors,
+    texTitle,
+    toProse,
+    type ProseDoc,
+    type ProseKind,
+    type ProseSentence,
+} from "./docprose";
 
 const sentenceTexts = (doc: ProseDoc, section = 0, paragraph = 0) =>
     doc.sections[section].paragraphs[paragraph].sentences.map((s) => s.text);
@@ -654,5 +662,24 @@ describe("texAuthors", () => {
             texAuthors(String.raw`% \author{Nobody}
 \title{T}`)
         ).toEqual([]);
+    });
+});
+
+describe("texTitle", () => {
+    it("reads the title even when no prose comes before the first heading", () => {
+        const src = String.raw`\title{Measuring \emph{What} Adds}
+\begin{document}
+\maketitle
+\section{Introduction}
+Text.
+\end{document}`;
+        expect(texTitle(src)).toBe("Measuring What Adds");
+    });
+
+    it("is empty with no title, or only a commented-out one", () => {
+        expect(
+            texTitle(String.raw`% \title{Old}
+\section{A}`)
+        ).toBe("");
     });
 });

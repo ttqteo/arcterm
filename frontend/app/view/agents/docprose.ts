@@ -738,12 +738,23 @@ export function texAuthors(src: string): string[] {
     return names;
 }
 
-function texSections(src: string): ProseSection[] {
-    const s = maskTexComments(src);
+// the \title{…} as plain text, "" when there is none; s is the source with its comments masked
+function maskedTexTitle(s: string): string {
     const titleAt = /\\title(?![a-zA-Z])/.exec(s);
     const titleArgs = titleAt ? texArgs(s, titleAt.index + titleAt[0].length, s.length) : null;
     const titleArg = titleArgs?.braced[titleArgs.braced.length - 1];
-    const docTitle = titleArg ? texPlain(s, titleArg.a, titleArg.b) : "";
+    return titleArg ? texPlain(s, titleArg.a, titleArg.b) : "";
+}
+
+// The document's title as plain text, "" when it has none. Separate from toProse, which names its front-matter
+// section after the title only when there is prose before the first heading.
+export function texTitle(src: string): string {
+    return maskedTexTitle(maskTexComments(src));
+}
+
+function texSections(src: string): ProseSection[] {
+    const s = maskTexComments(src);
+    const docTitle = maskedTexTitle(s);
 
     const beginDoc = s.indexOf("\\begin{document}");
     const start = beginDoc < 0 ? 0 : beginDoc + "\\begin{document}".length;

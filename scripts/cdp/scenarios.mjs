@@ -5192,8 +5192,8 @@ const codeMarkdown = {
 // A temp git repo holding a small paper (main.tex), the PDF built beside it (main.pdf) and a loose paper.pdf, opened
 // through the openfile event `wsh view` publishes. Covers the .tex Preview (title, authors, a \cite key, KaTeX math),
 // double-click to Source at the sentence's line, LaTeX highlighting, the Wrap toggle and Alt+Z, the .tex PDF mode with
-// its age line, and a .pdf opening in the viewer rather than "Binary file". The PDFs are minimal: WebView2's viewer
-// repairs their missing xref, and the steps check the frame, not the pages.
+// its age line, and a .pdf opening in the viewer rather than "Binary file". The PDFs are one page each; the steps check
+// the frame, the screenshots show the page.
 const CODE_TEX_PAPER = String.raw`\documentclass{article}
 \title{Measuring What the Model Adds}
 \author{Ada Lovelace \and Alan Turing}
@@ -5204,13 +5204,28 @@ A proof of vulnerability is an input that makes a known defect show up in a runn
 Prior systems \cite{smith2020} report a success rate $r = k / n$ over $n$ programs.
 \end{document}
 `;
-const CODE_TEX_PDF = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj
-trailer<</Root 1 0 R>>
-%%EOF
-`;
+// a one-page PDF that draws `label`, with a real xref so the viewer shows a page in the contact sheet
+function codeTexPdf1(label) {
+    const text = `BT /F1 20 Tf 30 90 Td (${label}) Tj ET`;
+    const objs = [
+        "<</Type/Catalog/Pages 2 0 R>>",
+        "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        "<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>",
+        "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+        `<</Length ${text.length}>>stream\n${text}\nendstream`,
+    ];
+    let out = "%PDF-1.4\n";
+    const offsets = objs.map((body, i) => {
+        const at = out.length;
+        out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+        return at;
+    });
+    const xref = out.length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+    out += offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+    out += `trailer\n<</Size ${objs.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`;
+    return out;
+}
 
 const codeTexPdf = {
     name: "code-tex-pdf",
@@ -5219,8 +5234,8 @@ const codeTexPdf = {
         const cwd = mkdtempSync(join(tmpdir(), "verify-code-tex-"));
         execFileSync("git", ["init", "-q"], { cwd });
         writeFileSync(join(cwd, "main.tex"), CODE_TEX_PAPER);
-        writeFileSync(join(cwd, "main.pdf"), CODE_TEX_PDF);
-        writeFileSync(join(cwd, "paper.pdf"), CODE_TEX_PDF);
+        writeFileSync(join(cwd, "main.pdf"), codeTexPdf1("main.pdf, built beside main.tex"));
+        writeFileSync(join(cwd, "paper.pdf"), codeTexPdf1("paper.pdf"));
         return { cwd };
     },
     async assert(h, ctx) {
@@ -5293,13 +5308,21 @@ const codeTexPdf = {
             `dblclick=${target} source=${sourceShown} caretLine=${caretLine}`
         );
 
-        const colours = await h.ev(`(() => {
+        // Monaco tokenizes in idle time after mount, so a line first renders in the default colour
+        const colours = await h.ev(`(async () => {
             const bs = String.fromCharCode(92);
-            const line = [...document.querySelectorAll('.monaco-editor .view-line')].find((l) =>
-                (l.textContent || '').includes(bs + 'section')
-            );
-            if (!line) return null;
-            return [...new Set([...line.querySelectorAll('span span')].map((s) => s.className))];
+            const read = () => {
+                const line = [...document.querySelectorAll('.monaco-editor .view-line')].find((l) =>
+                    (l.textContent || '').includes(bs + 'section')
+                );
+                return line ? [...new Set([...line.querySelectorAll('span span')].map((s) => s.className))] : null;
+            };
+            for (let i = 0; i < 20; i++) {
+                const c = read();
+                if (c != null && c.length >= 3) return c;
+                await new Promise((r) => setTimeout(r, 150));
+            }
+            return read();
         })()`);
         rec(
             "4. LaTeX is highlighted: the \\section line has several token colours",

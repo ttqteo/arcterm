@@ -7,7 +7,7 @@
 // no diff, so the two read a paper the same way. Double-clicking a sentence opens Source at its line, which is
 // where an edit happens; an editable visual mode is deferred (docs/deferred.md, 2026-10-07).
 
-import { texAuthors, toProse, type ProseSection, type ProseSentence } from "@/app/view/agents/docprose";
+import { texAuthors, texTitle, toProse, type ProseSection, type ProseSentence } from "@/app/view/agents/docprose";
 import { ProseTokens } from "@/app/view/agents/prosetokens";
 import { cn } from "@/util/util";
 import { useMemo } from "react";
@@ -15,8 +15,6 @@ import { lineAtOffset } from "./codeclassify";
 
 // the Doc review's prose size and measure (docreviewpane.tsx PROSE), in DESIGN.md's centred reading column
 const PROSE = "text-[15px] leading-[1.75] text-secondary";
-// texSections names the text before the first heading this when the document has no \title
-const FRONT_MATTER = "Front matter";
 
 const HEADING: Record<number, string> = {
     1: "text-[18px]",
@@ -28,8 +26,7 @@ export function TexPreview(p: { text: string; onSource: (line: number) => void; 
     const { text } = p;
     const doc = useMemo(() => toProse("latex", text), [text]);
     const authors = useMemo(() => texAuthors(text), [text]);
-    const first = doc.sections[0];
-    const title = first != null && first.level === 0 && first.title !== FRONT_MATTER ? first.title : "";
+    const title = useMemo(() => texTitle(text), [text]);
     return (
         <div data-tex-preview className="h-full overflow-y-auto bg-background">
             <div className="mx-auto max-w-[760px] px-8 pb-12 pt-7">
