@@ -705,6 +705,39 @@ function texParagraphs(s: string, a: number, b: number): ProseParagraph[] {
     return out;
 }
 
+// what an \author argument carries besides the name, removed with its arguments
+const AUTHOR_EXTRAS =
+    /\\(?:thanks|affiliation|additionalaffiliation|institution|email|orcid|inst|authornote|footnote|IEEEauthorrefmark)(?![a-zA-Z])/g;
+
+// The document's authors as plain names, in order: every \author{…} (acmart takes one per person; article joins
+// them with \and), with \thanks, affiliations and e-mails dropped and only the first line of each kept, since the
+// lines after a \\ name the affiliation. Commented-out authors are ignored.
+export function texAuthors(src: string): string[] {
+    const s = maskTexComments(src);
+    const names: string[] = [];
+    const authorRe = /\\author(?![a-zA-Z])/g;
+    for (let m = authorRe.exec(s); m != null; m = authorRe.exec(s)) {
+        const arg = texArgs(s, m.index + m[0].length, s.length).braced.at(-1);
+        if (arg == null) {
+            continue;
+        }
+        let inner = s.slice(arg.a, arg.b);
+        AUTHOR_EXTRAS.lastIndex = 0;
+        for (let x = AUTHOR_EXTRAS.exec(inner); x != null; x = AUTHOR_EXTRAS.exec(inner)) {
+            const next = texArgs(inner, x.index + x[0].length, inner.length).next;
+            inner = inner.slice(0, x.index) + " ".repeat(next - x.index) + inner.slice(next);
+        }
+        for (const part of inner.split(/\\and(?![a-zA-Z])/)) {
+            const first = part.split("\\\\")[0];
+            const name = texPlain(first, 0, first.length).replace(/\s+/g, " ").trim();
+            if (name !== "") {
+                names.push(name);
+            }
+        }
+    }
+    return names;
+}
+
 function texSections(src: string): ProseSection[] {
     const s = maskTexComments(src);
     const titleAt = /\\title(?![a-zA-Z])/.exec(s);

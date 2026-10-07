@@ -11,6 +11,7 @@
 // a handoff asks for the current selection; both are served here so codestore.ts stays IO-and-atoms.
 
 import { Markdown } from "@/app/element/markdown";
+import { openLink } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
@@ -21,7 +22,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 import { useEffect } from "react";
-import { isMarkdownPath, languageForPath, resolveViewMode } from "./codeclassify";
+import { isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter } from "./codefrontmatter";
@@ -43,6 +44,7 @@ import {
 import { useWrap } from "./codewrap";
 import { FrontmatterCard } from "./frontmattercard";
 import { texPdfMeta } from "./texpdf";
+import { TexPreview } from "./texpreview";
 
 // DESIGN.md's markdown size (14px text, 12px mono). It reads at that size because .markdown-doc holds the
 // document to a centred reading column instead of letting lines run the width of a maximized pane.
@@ -214,6 +216,21 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                             {texPdfMeta(texPdf, Date.now())}
                         </div>
                     </div>
+                );
+            }
+            // a paper reads as a document too; double-clicking a sentence opens Source at its line
+            if (isTexPath(file.path) && mode === "preview") {
+                return (
+                    <TexPreview
+                        key={file.path}
+                        text={draft?.text ?? file.text}
+                        onSource={(line) => {
+                            // mode first: a pending line that lands while the preview still shows is consumed
+                            globalStore.set(codeViewModeAtom, "source");
+                            globalStore.set(codePendingLineAtom, line);
+                        }}
+                        onLink={(href) => fireAndForget(() => openLink(href))}
+                    />
                 );
             }
             // READMEs and other prose render as documents; Source (the CodeEditor below) stays one

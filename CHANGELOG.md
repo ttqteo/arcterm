@@ -15,6 +15,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - LaTeX and BibTeX files are highlighted on Code and in the agent panel's File tab, and a **Wrap** toggle (`Alt+Z` on
   Code) wraps long lines; `.tex`, `.bib`, `.md` and `.txt` wrap by default. A `.pdf` now opens in a viewer instead of
   "Binary file".
+- A `.tex` file opens on Code as a readable preview: its title and authors, numbered headings, and the prose with
+  `\cite`/`\ref` keys and rendered math. Double-click a sentence to edit it in Source. When the paper has a built PDF
+  (Doc review's build, or the one beside the main file), a **PDF** mode shows it with how old it is.
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
 

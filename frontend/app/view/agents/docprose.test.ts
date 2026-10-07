@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { proseKindOf, toProse, type ProseDoc, type ProseKind, type ProseSentence } from "./docprose";
+import { proseKindOf, texAuthors, toProse, type ProseDoc, type ProseKind, type ProseSentence } from "./docprose";
 
 const sentenceTexts = (doc: ProseDoc, section = 0, paragraph = 0) =>
     doc.sections[section].paragraphs[paragraph].sentences.map((s) => s.text);
@@ -616,5 +616,43 @@ describe("toProse: degenerate input", () => {
         );
         const tex = toProse("latex", "\\section{A}\r\nOne. Two.\r\n\r\nThree.\r\n");
         expect(tex.sections[0].paragraphs).toHaveLength(2);
+    });
+});
+
+describe("texAuthors", () => {
+    it("splits one author on and", () => {
+        expect(texAuthors(String.raw`\author{Ada Lovelace \and Alan Turing}`)).toEqual(["Ada Lovelace", "Alan Turing"]);
+    });
+
+    it("reads ACM's one author per person and drops affiliation, email and orcid", () => {
+        const src = String.raw`\documentclass[sigconf]{acmart}
+\author{Tran Tu Quang}
+\affiliation{\institution{UIT}\country{Vietnam}}
+\email{quang@example.org}
+\author{Van-Hau Pham}
+\orcid{0000-0000}
+\begin{document}
+\maketitle
+\end{document}`;
+        expect(texAuthors(src)).toEqual(["Tran Tu Quang", "Van-Hau Pham"]);
+    });
+
+    it("drops thanks and an affiliation after a line break", () => {
+        const src = String.raw`\author{Ada Lovelace\thanks{Funded by nobody.} \\ Analytical Society \and Alan Turing}`;
+        expect(texAuthors(src)).toEqual(["Ada Lovelace", "Alan Turing"]);
+    });
+
+    it("skips an optional argument and plain-texts macros", () => {
+        expect(texAuthors(String.raw`\author[1]{Trần Tú Quang \and \textbf{Emmy} Noether}`)).toEqual([
+            "Trần Tú Quang",
+            "Emmy Noether",
+        ]);
+    });
+
+    it("ignores a commented-out author and a document with none", () => {
+        expect(
+            texAuthors(String.raw`% \author{Nobody}
+\title{T}`)
+        ).toEqual([]);
     });
 });

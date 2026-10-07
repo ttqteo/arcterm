@@ -8,6 +8,8 @@
 
 import { cn } from "@/util/util";
 import katex from "katex";
+// here rather than in one view, so every view that renders math gets the styles
+import "katex/dist/katex.min.css";
 import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { ProseToken, TokenKind } from "./docprose";
 
