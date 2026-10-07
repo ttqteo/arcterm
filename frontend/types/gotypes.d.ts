@@ -131,6 +131,7 @@ declare global {
         fivehourreset?: number;
         weekpct?: number;
         weekreset?: number;
+        account?: string;
     };
 
     // wshrpc.AmbientDecision
@@ -306,6 +307,13 @@ declare global {
         ts: number;
     };
 
+    // wshrpc.ClaudeAccountData
+    type ClaudeAccountData = {
+        id: string;
+        label: string;
+        createdts: number;
+    };
+
     // wshrpc.ClaudeProjectData
     type ClaudeProjectData = {
         path: string;
@@ -467,6 +475,29 @@ declare global {
     type CommandCancelRunData = {
         channelid: string;
         runid: string;
+    };
+
+    // wshrpc.CommandClaudeAccountAddData
+    type CommandClaudeAccountAddData = {
+        label: string;
+        token: string;
+    };
+
+    // wshrpc.CommandClaudeAccountListRtnData
+    type CommandClaudeAccountListRtnData = {
+        accounts: ClaudeAccountData[];
+        active: string;
+    };
+
+    // wshrpc.CommandClaudeAccountRemoveData
+    type CommandClaudeAccountRemoveData = {
+        id: string;
+    };
+
+    // wshrpc.CommandClaudeAccountRenameData
+    type CommandClaudeAccountRenameData = {
+        id: string;
+        label: string;
     };
 
     // wshrpc.CommandConsultData
@@ -2168,6 +2199,7 @@ declare global {
         "session:project"?: string;
         "session:effort"?: string;
         "session:collapsedgroups"?: string[];
+        "session:helper"?: boolean;
         "app:loom"?: boolean;
         "agent:transcriptpath"?: string;
         count?: number;
@@ -2694,6 +2726,8 @@ declare global {
         "harness:preferredruntime"?: string;
         "harness:preferredmodel"?: string;
         "harness:updatecheck"?: boolean;
+        "claude:*"?: boolean;
+        "claude:activeaccount"?: string;
     };
 
     // wshrpc.ShippedItem

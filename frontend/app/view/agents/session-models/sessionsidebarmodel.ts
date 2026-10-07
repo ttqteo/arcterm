@@ -49,8 +49,12 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
     const activeId = ws?.activetabid;
     const labelMap = get(sessionGroupLabelAtom);
 
-    const sessions: SessionInput[] = tabIds.map((tabId) => {
+    const sessions: SessionInput[] = tabIds.flatMap((tabId) => {
         const tab = get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
+        // a helper terminal (the Claude sign-in dialog's) is not a session
+        if (tab?.meta?.["session:helper"]) {
+            return [];
+        }
         const badges = get(getTabBadgeAtom(tabId));
 
         const blocks = resolveTabBlocks(tab, (blockId) =>
@@ -87,7 +91,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
         }
 
         const meta = tab?.meta ?? {};
-        return {
+        const session: SessionInput = {
             tabId,
             name: tab?.name ?? "",
             agent: meta["session:agent"],
@@ -108,6 +112,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
             termBlockOref,
             active: tabId === activeId,
         };
+        return [session];
     });
 
     return buildSessionViewModel(sessions);
@@ -119,6 +124,9 @@ export const sessionCwdsAtom = atom<string[]>((get) => {
     const cwds: string[] = [];
     for (const tabId of tabIds) {
         const tab = get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
+        if (tab?.meta?.["session:helper"]) {
+            continue;
+        }
         const termBlock = findSessionTermBlock(
             resolveTabBlocks(tab, (blockId) => get(WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", blockId))))
         );

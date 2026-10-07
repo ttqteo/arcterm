@@ -7,7 +7,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
-import { recordRateLimit } from "../ratelimitstore";
+import { rateLimitKey, recordRateLimit } from "../ratelimitstore";
 import { persistResume } from "./agentresumestore";
 
 function invertPct(pct: number | undefined): number | undefined {
@@ -158,7 +158,7 @@ export function setupAgentStatusSubscription() {
                 const usage = normalizeAgentUsage(provider, data.usage);
                 globalStore.set(getAgentUsageAtom(data.oref), usage);
                 // persist account-level windows so the Usage donuts survive idle (no-op if none present)
-                recordRateLimit(provider, usage);
+                recordRateLimit(rateLimitKey(provider, usage.account), usage);
             }
             // a delta-only event carries an empty state; only a real state update should touch the parent atom
             if (data.state) {

@@ -153,6 +153,12 @@ describe("settingsSections", () => {
         expect(route.config).toBeUndefined();
     });
 
+    it("lists the Claude account section under Agents with no indexed rows", () => {
+        const section = sections().find((s) => s.id === "claudeaccount")!;
+        expect(section.group).toBe("Agents");
+        expect(section.rows).toEqual([]);
+    });
+
     it("puts every section in a known group", () => {
         const grouped = groupSections(sections()).flatMap((g) => g.sections);
         expect(grouped).toHaveLength(sections().length);

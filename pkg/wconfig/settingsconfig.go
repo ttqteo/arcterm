@@ -95,6 +95,9 @@ type SettingsType struct {
 	HarnessPreferredRuntime string `json:"harness:preferredruntime,omitempty"`
 	HarnessPreferredModel   string `json:"harness:preferredmodel,omitempty"`
 	HarnessUpdateCheck      *bool  `json:"harness:updatecheck,omitempty"`
+
+	ClaudeClear         bool   `json:"claude:*,omitempty"`
+	ClaudeActiveAccount string `json:"claude:activeaccount,omitempty"`
 }
 
 type ConfigError struct {

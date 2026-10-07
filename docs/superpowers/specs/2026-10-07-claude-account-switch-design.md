@@ -47,13 +47,18 @@ profiles, macOS Keychain, and remote (ssh/wsl) connections.
    ones are pre-checked; working ones are unchecked with "đang làm việc — restart sau khi xong lượt".
    Confirming restarts the checked agents with `claude --resume <session>` through the existing resume
    path, so the conversation continues on the new account. Cancel switches anyway and leaves them.
+   Asking agents are listed unchecked with "đang hỏi — restart sẽ bỏ câu hỏi" (a resume drops the pending
+   question). Not listed: background agents (no block; one stays on the old account until it ends), plain
+   terminals, agents already on the new account, and agents with no block or no transcript, which cannot
+   be resumed.
 6. **Quota is per account.**
    - `wsh agentstatus --usage` reads `ARC_CLAUDE_ACCOUNT` from its environment (inherited from the claude
      that runs the hook) and sends it as `AgentUsage.account` (new field in `pkg/baseds`; `task generate`).
    - `ratelimitstore` keys Claude snapshots `claude:<account>` (`claude:default` for Default; an existing
-     `"claude"` snapshot migrates to `claude:default`). The Plan usage strip, the cockpit rail and
-     `liveWindowAgents` show only the active account's agents and snapshot, so an unrestarted agent on
-     the old account cannot overwrite the new one's numbers.
+     `"claude"` snapshot migrates to `claude:default`). The Plan usage strip, the cockpit rail and the pet
+     show only the active account's agents and snapshot, so an unrestarted agent on the old account cannot
+     overwrite the new one's numbers. The filter is in their shared model (`planDonuts`), not in
+     `liveWindowAgents`, which the fleet brief also uses to count every live session whatever its account.
    - `pkg/claudequota` answers only while Default is active (decision 7); the frontend records its
      answer as `claude:default`, never under another account.
 7. **`/api/oauth/usage` refuses a setup-token** (checked 2026-10-07 with a real token: `403`; the token's
@@ -79,7 +84,8 @@ A "Claude account" section in `settingssurface.tsx`:
   which the session sidebar skips, and the tab is closed on every exit path: its pty output (the
   `term` block file, which holds the token) is deleted with it. arcterm never runs the OAuth flow itself: that would mean
   posing as Claude Code's client on an unpublished API.
-- "Dán token" (secondary, in the same dialog): label + token field, for a token made elsewhere.
+- "Dán token" (secondary): a disclosure in the Claude account section itself, not part of the sign-in
+  dialog, holding a label field and a token field, for a token made elsewhere.
   Saving checks the shape only (`sk-ant-oat` prefix); a bad token surfaces as a 401 on the next claude
   run.
 - Removing the active account switches to Default first.
@@ -92,7 +98,7 @@ with it and `/api/oauth/usage` answered `403`.
 - Go: env apply/restore (Default restores the inherited value, including "unset"); secret naming;
   `claudequota` returning nothing while a non-Default account is active; `agentstatus` tagging from `ARC_CLAUDE_ACCOUNT`.
 - vitest: `ratelimitstore` keying and the `"claude"` → `claude:default` migration; active-account
-  filtering in `liveWindowAgents` and the strip's model; the restart dialog's pre-check rule as a pure
+  filtering in the strip's model (`planDonuts`); the restart dialog's listing and pre-check rule as a pure
   function.
 - CDP: a `settings-claude-account` scenario that opens the section with two fixture accounts and the
   switch dialog.

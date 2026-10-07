@@ -144,6 +144,30 @@ export class RpcApiType {
         return client.wshRpcCall("canvasserve", data, opts);
     }
 
+    // command "claudeaccountadd" [call]
+    ClaudeAccountAddCommand(client: WshClient, data: CommandClaudeAccountAddData, opts?: RpcOpts): Promise<ClaudeAccountData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudeaccountadd", data, opts);
+        return client.wshRpcCall("claudeaccountadd", data, opts);
+    }
+
+    // command "claudeaccountlist" [call]
+    ClaudeAccountListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandClaudeAccountListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudeaccountlist", null, opts);
+        return client.wshRpcCall("claudeaccountlist", null, opts);
+    }
+
+    // command "claudeaccountremove" [call]
+    ClaudeAccountRemoveCommand(client: WshClient, data: CommandClaudeAccountRemoveData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudeaccountremove", data, opts);
+        return client.wshRpcCall("claudeaccountremove", data, opts);
+    }
+
+    // command "claudeaccountrename" [call]
+    ClaudeAccountRenameCommand(client: WshClient, data: CommandClaudeAccountRenameData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "claudeaccountrename", data, opts);
+        return client.wshRpcCall("claudeaccountrename", data, opts);
+    }
+
     // command "consult" [responsestream]
 	ConsultCommand(client: WshClient, data: CommandConsultData, opts?: RpcOpts): AsyncGenerator<ConsultChunk, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "consult", data, opts);

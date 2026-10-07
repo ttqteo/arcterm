@@ -226,6 +226,15 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                 },
             ],
         },
+        // The account list lives behind its own RPCs, not in settings, so the section has no rows for the
+        // index to count or search; ClaudeAccountSection renders it whole.
+        {
+            id: "claudeaccount",
+            name: "Claude account",
+            group: "Agents",
+            blurb: "Which Claude subscription new agents run on.",
+            rows: [],
+        },
         {
             id: "terminal",
             name: "Terminal",

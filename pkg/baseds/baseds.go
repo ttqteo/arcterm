@@ -50,6 +50,7 @@ type AgentUsage struct {
 	FiveHourReset *int64   `json:"fivehourreset,omitempty"` // rate_limits.five_hour.resets_at (epoch seconds)
 	WeekPct       *float64 `json:"weekpct,omitempty"`       // rate_limits.seven_day.used_percentage
 	WeekReset     *int64   `json:"weekreset,omitempty"`     // rate_limits.seven_day.resets_at (epoch seconds)
+	Account       string   `json:"account,omitempty"`       // the Claude account the reporting session runs on (ARC_CLAUDE_ACCOUNT); "" = Default
 }
 
 // AgentStatusData is the payload of Event_AgentStatus. ORef is the block (or tab)

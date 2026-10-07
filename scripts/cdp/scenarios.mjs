@@ -1598,9 +1598,10 @@ const usageCharts = {
             prevRate: await h.ev(`localStorage.getItem('wave:ratelimits')`),
         };
         const nowSec = Math.floor(Date.now() / 1000);
-        // a current Claude snapshot with FUTURE reset epochs, so the donut renders and its countdown is live
+        // a current Claude snapshot with FUTURE reset epochs, so the donut renders and its countdown is live; claude
+        // windows are kept per account, and this is the Default (/login) one's
         const rateLimits = {
-            claude: {
+            "claude:default": {
                 fivehourpct: 62,
                 fivehourreset: nowSec + 3 * 3600,
                 weekpct: 41,
@@ -1873,7 +1874,12 @@ const usageCharts = {
             ).length;
             const hasLimitText = (bar.textContent || "").includes("5h limit");
             const min = !!bar.querySelector('[aria-label="Minimize"]');
-            const max = !!bar.querySelector('[aria-label="Maximize"]');
+            // Reads "Restore" when the window opened maximized.
+            const max = bar.querySelector('[aria-label="Maximize"]')
+                ? "Maximize"
+                : bar.querySelector('[aria-label="Restore"]')
+                  ? "Restore"
+                  : null;
             const close = !!bar.querySelector('[aria-label="Close"]');
             return { found: true, usageArcs, hasLimitText, min, max, close };
         })()`);
@@ -16832,6 +16838,505 @@ const harnessUpdate = {
     },
 };
 
+// --- Settings → Claude account (docs/superpowers/specs/2026-10-07-claude-account-switch-design.md) ---------------
+// Two fixture accounts are added through the real RPC (A seeded at 97% under its own rate-limit key, B never used,
+// Default at 12%), and a fixture roster puts three claude agents on Default, so a switch to A offers all three for a
+// restart. Sign-in runs a node one-liner in place of `claude setup-token` (the dev override arc:dev:setuptoken-cmd),
+// never the real command: it would open a browser. The real usage endpoint can replace Default's seeded 12% with the
+// account's live reading (claudequota.ts records a newer one), so the Default reading accepts that reading too.
+const CA = "settings-claude-account";
+const CA_SETTING = "claude:activeaccount";
+const CA_RATE_KEY = "wave:ratelimits";
+const CA_CMD_KEY = "arc:dev:setuptoken-cmd";
+const CA_AGENTS = [
+    { id: "fx-ca-idle", name: "ca-idle-agent", state: "idle" },
+    { id: "fx-ca-working", name: "ca-working-agent", state: "working" },
+    { id: "fx-ca-asking", name: "ca-asking-agent", state: "asking" },
+];
+const CA_SECTION = `document.querySelector('[data-section="claudeaccount"]')`;
+const caRow = (id) => `document.querySelector('[data-claude-account-row="${id || "default"}"]')`;
+const CA_ROWS = `[...document.querySelectorAll("[data-claude-account-row]")].map((r) => ({
+    id: r.dataset.claudeAccountRow,
+    checked: r.getAttribute("aria-checked") === "true",
+    label: r.querySelector("[data-claude-account-rename] input")?.value ?? null,
+    text: r.textContent.replace(/\\s+/g, " ").trim(),
+}))`;
+// sets a React-controlled input the way typing does
+const caSetInput = (sel, value) => `(() => {
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return false;
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(value)});
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+})()`;
+const caEnter = (sel) => `(() => {
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return false;
+    el.focus();
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+    return true;
+})()`;
+// clicks the button whose text starts with `label` inside the element `scope` finds
+const caClickButton = (scope, label) => `(() => {
+    const root = ${scope};
+    const want = ${JSON.stringify(label)};
+    const b = root && [...root.querySelectorAll("button")].find((x) => x.textContent.trim().startsWith(want));
+    if (!b) return false;
+    b.click();
+    return true;
+})()`;
+const CA_CONFIRM = `[...document.querySelectorAll('[role="dialog"]')]
+    .find((d) => d.textContent.includes("Remove account"))`;
+const CA_RESTART = `document.querySelector("[data-claude-restart-dialog]")`;
+const CA_SIGNIN = `document.querySelector("[data-claude-signin-modal]")`;
+// the stand-in for `claude setup-token`: a token, a line that ends it, then the process stays up like the real one
+const CA_TOKEN_CMD = {
+    cmd: "node",
+    args: [
+        "-e",
+        "process.stdout.write('Your token: sk-ant-oat01-fixtureSignin0\\r\\nStore it safely\\r\\n');setTimeout(()=>{},60000)",
+    ],
+};
+const CA_IDLE_CMD = { cmd: "node", args: ["-e", "setTimeout(()=>{},60000)"] };
+const caSetCmd = (cmd) => `localStorage.setItem(${JSON.stringify(CA_CMD_KEY)}, ${JSON.stringify(JSON.stringify(cmd))})`;
+
+function caRoster(ctx) {
+    return CA_AGENTS.map((a) => ({
+        id: a.id,
+        name: a.name,
+        project: "waveterm",
+        task: "verify the claude account switch",
+        state: a.state,
+        agent: "claude",
+        model: "opus",
+        blockId: `fx-blk-${a.id}`,
+        transcriptPath: ctx.transcripts[a.id],
+        previousInfo: [{ kind: "message", text: "Working on the fixture task." }],
+        ...(a.state === "asking"
+            ? {
+                  blockedMs: 60_000,
+                  ask: {
+                      askId: `fx-ca-ask-${Date.now()}`,
+                      oref: `block:fx-blk-${a.id}`,
+                      questions: [
+                          {
+                              header: "Approach",
+                              question: "Which approach should I take?",
+                              options: [{ label: "Fast" }, { label: "Thorough" }],
+                          },
+                      ],
+                  },
+              }
+            : { activeMs: 30_000 }),
+    }));
+}
+
+async function caReload(h) {
+    try {
+        await h.ev("location.reload()");
+    } catch {
+        /* the evaluate is cut off by the navigation it just started */
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+    await h.ev(`(async () => {
+        for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+            await new Promise((r) => setTimeout(r, 500));
+        }
+    })()`);
+}
+
+// the tab ids of the workspace this window shows
+async function caTabIds(h) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    return { workspaceId: ws.workspacedata.oid, tabIds: [...(ws.workspacedata.tabids ?? [])].sort() };
+}
+
+const settingsClaudeAccount = {
+    name: CA,
+    surface: "settings",
+    async arrange(h) {
+        const ctx = {
+            prevSetting: (await h.rpc("getfullconfig", null))?.settings?.[CA_SETTING] ?? null,
+            prevRate: await h.ev(`localStorage.getItem(${JSON.stringify(CA_RATE_KEY)})`),
+            prevCmd: await h.ev(`localStorage.getItem(${JSON.stringify(CA_CMD_KEY)})`),
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            transcripts: {},
+        };
+        try {
+            // accounts already on this store are left alone, and the counts below are on top of them
+            ctx.preIds = ((await h.rpc("claudeaccountlist", null))?.accounts ?? []).map((a) => a.id);
+            await h.rpc("setconfig", { [CA_SETTING]: null });
+            const a = await h.rpc("claudeaccountadd", { label: "Fixture A", token: "sk-ant-oat01-fixtureA" });
+            const b = await h.rpc("claudeaccountadd", { label: "Fixture B", token: "sk-ant-oat01-fixtureB" });
+            ctx.idA = a.id;
+            ctx.idB = b.id;
+            const nowSec = Math.floor(Date.now() / 1000);
+            const minuteAgo = Date.now() - 60_000;
+            const snapshot = (fivehourpct, weekpct) => ({
+                fivehourpct,
+                fivehourreset: nowSec + 3 * 3600,
+                weekpct,
+                weekreset: nowSec + 5 * 24 * 3600,
+                capturedAt: minuteAgo,
+            });
+            const rate = { "claude:default": snapshot(12, 20), [`claude:${a.id}`]: snapshot(97, 64) };
+            await h.ev(`localStorage.setItem(${JSON.stringify(CA_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`);
+
+            ctx.base = mkdtempSync(join(tmpdir(), "verify-claude-account-"));
+            for (const ag of CA_AGENTS) {
+                const p = join(ctx.base, `${randomUUID()}.jsonl`);
+                writeFileSync(p, "");
+                ctx.transcripts[ag.id] = p;
+            }
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(caRoster(ctx), null, 2));
+            ctx.wroteFixture = true;
+            await caReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            return [
+                { step: "0. the fixture accounts, quota snapshots and roster", ok: false, detail: ctx.arrangeError },
+            ];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        // polls `read` until `done` holds of its result; the last result either way
+        const poll = async (read, done, ms = 8000) => {
+            let v = await read();
+            for (let waited = 0; waited < ms && !done(v); waited += 250) {
+                await settle(250);
+                v = await read();
+            }
+            return v;
+        };
+        const list = async () => {
+            const l = await h.rpc("claudeaccountlist", null);
+            return { accounts: l?.accounts ?? [], active: l?.active ?? "" };
+        };
+        const setting = async () => (await h.rpc("getfullconfig", null))?.settings?.[CA_SETTING] ?? "";
+        const rows = () => h.ev(CA_ROWS);
+        const openSection = async () => {
+            await h.goto("settings");
+            await h.ev(`(() => { ${CA_SECTION}?.click(); return true; })()`);
+            await poll(rows, (r) => r.length > 0);
+        };
+        const dismissRestart = async () => {
+            if (await h.ev(`!!${CA_RESTART}`)) {
+                await h.ev(caClickButton(CA_RESTART, "Để sau"));
+                await poll(() => h.ev(`!!${CA_RESTART}`), (v) => !v);
+            }
+        };
+        // the 5-hour tile of the Usage surface's Claude detail, then back to the section
+        const claudePlan = async () => {
+            await h.goto("usage");
+            await poll(
+                () => h.ev(`!!document.querySelector('[data-usage-harness="claude"], [data-usage-detail="claude"]')`),
+                Boolean
+            );
+            await h.ev(`document.querySelector('[data-usage-harness="claude"]')?.click()`);
+            const value = await poll(
+                () =>
+                    h.ev(`(() => {
+                        const t = document.querySelector('[data-usage-detail="claude"] [data-usage-limit="fivehour"]');
+                        return t?.children[1]?.textContent.trim() ?? null;
+                    })()`),
+                (v) => v != null && v !== "—"
+            );
+            const saved = await h.ev(`(() => {
+                try {
+                    return JSON.parse(localStorage.getItem(${JSON.stringify(CA_RATE_KEY)}) || "{}");
+                } catch {
+                    return {};
+                }
+            })()`);
+            await h.ev(`document.querySelector('[data-usage-harness="all"]')?.click()`);
+            await openSection();
+            return { value, defaultPct: saved?.["claude:default"]?.fivehourpct ?? null };
+        };
+
+        await openSection();
+
+        // --- list ---
+        const r1 = await poll(rows, (r) => r.length >= 3 && r.some((x) => x.text.includes("97%")));
+        const rowA = r1.find((x) => x.id === ctx.idA);
+        const rowB = r1.find((x) => x.id === ctx.idB);
+        rec(
+            "1. list: Default, A and B as radios, Default checked, A reads its 97%, B has not been used",
+            r1.length === 3 + ctx.preIds.length &&
+                r1.find((x) => x.id === "default")?.checked === true &&
+                r1.filter((x) => x.checked).length === 1 &&
+                rowA?.label === "Fixture A" &&
+                rowA.text.includes("97%") &&
+                rowB?.label === "Fixture B" &&
+                rowB.text.includes("chưa dùng"),
+            JSON.stringify(r1)
+        );
+        await h.shot(`cdp-shots/${CA}.png`);
+
+        // --- restart-dialog ---
+        await h.ev(`${caRow(ctx.idA)}?.click()`);
+        const setA = await poll(setting, (v) => v === ctx.idA);
+        const appliedA = await poll(list, (l) => l.active === ctx.idA);
+        const dialog = await poll(
+            () =>
+                h.ev(`(() => {
+                    const d = ${CA_RESTART};
+                    if (!d) return null;
+                    return [...d.querySelectorAll("[data-restart-row]")].map((r) => ({
+                        id: r.dataset.restartRow,
+                        name: r.textContent,
+                        checked: r.querySelector('input[type="checkbox"]')?.checked ?? null,
+                    }));
+                })()`),
+            (v) => v != null && v.length > 0
+        );
+        const byId = Object.fromEntries((dialog ?? []).map((r) => [r.id, r]));
+        rec(
+            "2. selecting A writes the setting, wavesrv applies it, and the restart dialog offers the three agents",
+            setA === ctx.idA &&
+                appliedA.active === ctx.idA &&
+                dialog?.length === 3 &&
+                CA_AGENTS.every((a) => byId[a.id]?.name.includes(a.name)),
+            JSON.stringify({ setA, active: appliedA.active, dialog })
+        );
+        rec(
+            "3. only the idle agent starts checked; working and asking carry their notes",
+            byId["fx-ca-idle"]?.checked === true &&
+                byId["fx-ca-working"]?.checked === false &&
+                byId["fx-ca-working"]?.name.includes("đang làm việc") &&
+                byId["fx-ca-asking"]?.checked === false &&
+                byId["fx-ca-asking"]?.name.includes("đang hỏi"),
+            JSON.stringify(dialog)
+        );
+        await h.shot(`cdp-shots/${CA}-restart.png`);
+        await h.ev(caClickButton(CA_RESTART, "Để sau"));
+        const gone = await poll(() => h.ev(`!!${CA_RESTART}`), (v) => !v);
+        const stillA = await setting();
+        rec(
+            "4. Để sau closes the dialog and leaves A selected",
+            gone === false && stillA === ctx.idA,
+            JSON.stringify({ dialogOpen: gone, setting: stillA })
+        );
+
+        // --- usage-follows-account (A) ---
+        const planA = await claudePlan();
+        rec(
+            "5. the Usage surface's Claude 5-hour reading follows A: 97%, not Default's 12%",
+            planA.value === "97%",
+            JSON.stringify(planA)
+        );
+
+        // --- paste-token ---
+        const before = await list();
+        const pasteOpen = await h.ev(
+            `document.querySelector("[data-claude-account-paste]")?.getAttribute("aria-expanded")`
+        );
+        if (pasteOpen !== "true") {
+            await h.ev(`document.querySelector("[data-claude-account-paste]")?.click()`);
+        }
+        await poll(() => h.ev(`!!document.querySelector("[data-claude-account-paste-token] input")`), Boolean);
+        await h.ev(caSetInput("input[data-claude-account-paste-label]", "Fixture C"));
+        await h.ev(caSetInput("[data-claude-account-paste-token] input", "sk-ant-api03-bad"));
+        await h.ev(caEnter("[data-claude-account-paste-token] input"));
+        const badError = await poll(
+            () => h.ev(`document.querySelector("[data-claude-account-error]")?.textContent ?? null`),
+            (v) => v != null
+        );
+        const afterBad = await list();
+        rec(
+            "6. a token that is not a setup-token is refused with the reason, and nothing is added",
+            badError != null && afterBad.accounts.length === before.accounts.length,
+            JSON.stringify({ badError, before: before.accounts.length, after: afterBad.accounts.length })
+        );
+        await h.ev(caSetInput("[data-claude-account-paste-token] input", "sk-ant-oat01-fixtureC"));
+        await h.ev(caEnter("[data-claude-account-paste-token] input"));
+        const r6 = await poll(rows, (r) => r.some((x) => x.label === "Fixture C"));
+        const goodError = await h.ev(`!!document.querySelector("[data-claude-account-error]")`);
+        const idC = (await list()).accounts.find((a) => a.label === "Fixture C")?.id ?? null;
+        rec(
+            "7. a setup-token adds a fourth row, Fixture C, with no error",
+            r6.length === 4 + ctx.preIds.length && idC != null && r6.some((x) => x.id === idC && x.label === "Fixture C") && !goodError,
+            JSON.stringify({ rows: r6, error: goodError })
+        );
+
+        // --- rename ---
+        const renameSel = `[data-claude-account-rename="${idC}"] input`;
+        await h.ev(caSetInput(renameSel, "Fixture C2"));
+        await h.ev(caEnter(renameSel));
+        const renamed = await poll(list, (l) => l.accounts.some((a) => a.id === idC && a.label === "Fixture C2"));
+        rec(
+            "8. renaming C inline stores the new label",
+            renamed.accounts.some((a) => a.id === idC && a.label === "Fixture C2"),
+            JSON.stringify(renamed.accounts)
+        );
+
+        // --- remove ---
+        await h.ev(`document.querySelector('[data-claude-account-remove="${idC}"]')?.click()`);
+        const confirmC = await poll(() => h.ev(`!!${CA_CONFIRM}`), Boolean);
+        await h.ev(caClickButton(CA_CONFIRM, "Remove"));
+        const r8 = await poll(rows, (r) => !r.some((x) => x.id === idC));
+        rec(
+            "9. Remove asks through a confirm dialog, and confirming removes C",
+            confirmC === true && !r8.some((x) => x.id === idC) && !(await list()).accounts.some((a) => a.id === idC),
+            JSON.stringify({ confirm: confirmC, rows: r8 })
+        );
+        await h.ev(`${caRow(ctx.idB)}?.click()`);
+        await poll(setting, (v) => v === ctx.idB);
+        await settle(400);
+        await dismissRestart();
+        await h.ev(`document.querySelector('[data-claude-account-remove="${ctx.idB}"]')?.click()`);
+        const confirmB = await poll(() => h.ev(`!!${CA_CONFIRM}`), Boolean);
+        await h.ev(caClickButton(CA_CONFIRM, "Remove"));
+        const r9 = await poll(
+            rows,
+            (r) => !r.some((x) => x.id === ctx.idB) && r.find((x) => x.id === "default")?.checked
+        );
+        const afterB = await poll(list, (l) => l.active === "");
+        const settingB = await setting();
+        rec(
+            "10. removing the active account B puts Default back, in the radios, the setting and wavesrv",
+            confirmB === true &&
+                !r9.some((x) => x.id === ctx.idB) &&
+                r9.find((x) => x.id === "default")?.checked === true &&
+                settingB === "" &&
+                afterB.active === "",
+            JSON.stringify({ rows: r9, setting: settingB, active: afterB.active })
+        );
+
+        // --- usage-follows-account (Default) ---
+        const planD = await claudePlan();
+        const livePct = planD.defaultPct != null ? `${Math.round(planD.defaultPct)}%` : null;
+        rec(
+            "11. back on Default, the Claude 5-hour reading is Default's again (12%, or a live reading replacing it)",
+            planD.value === "12%" || (planD.defaultPct !== 12 && planD.value === livePct && planD.value !== "97%"),
+            JSON.stringify(planD)
+        );
+
+        // --- signin-cancel ---
+        rmSync(TREE_RAIL_FIXTURE, { force: true });
+        ctx.wroteFixture = false;
+        await caReload(h);
+        // the Agent surface stays mounted once visited, so its tree is there to read from Settings
+        await h.goto("agent");
+        await openSection();
+        const tabs = await caTabIds(h);
+        ctx.workspaceId = tabs.workspaceId;
+        ctx.tabIds = tabs.tabIds;
+        const sameTabs = async () => JSON.stringify((await caTabIds(h)).tabIds) === JSON.stringify(ctx.tabIds);
+        const accountsBefore = (await list()).accounts.map((a) => a.id).sort();
+        await h.ev(caSetCmd(CA_IDLE_CMD));
+        await h.ev(`document.querySelector("[data-claude-account-signin]")?.click()`);
+        const term = await poll(
+            () => h.ev(`!!document.querySelector("[data-claude-signin-modal] [data-claude-signin-term] .xterm")`),
+            Boolean,
+            20000
+        );
+        const helperTabs = (await caTabIds(h)).tabIds.filter((id) => !ctx.tabIds.includes(id));
+        const tree = await h.ev(`(() => {
+            const t = document.querySelector("[data-agent-tree]");
+            return t ? { present: true, signin: t.textContent.includes("Claude sign-in") } : { present: false };
+        })()`);
+        rec(
+            "12. + Đăng nhập account opens a live terminal in a helper tab the session sidebar leaves out",
+            term === true && helperTabs.length === 1 && tree.present === true && tree.signin === false,
+            JSON.stringify({ term, helperTabs, tree })
+        );
+        await h.shot(`cdp-shots/${CA}-signin.png`);
+        await h.ev(`document.querySelector("[data-claude-signin-cancel]")?.click()`);
+        const modalGone = await poll(() => h.ev(`!!${CA_SIGNIN}`), (v) => !v);
+        const tabsBack = await poll(sameTabs, Boolean);
+        const accountsCancel = (await list()).accounts.map((a) => a.id).sort();
+        rec(
+            "13. Cancel closes the dialog and its helper tab, and adds no account",
+            modalGone === false &&
+                tabsBack === true &&
+                JSON.stringify(accountsCancel) === JSON.stringify(accountsBefore),
+            JSON.stringify({ modalOpen: modalGone, tabsBack, accountsBefore, accountsCancel })
+        );
+
+        // --- signin-token ---
+        await h.ev(caSetCmd(CA_TOKEN_CMD));
+        await h.ev(`document.querySelector("[data-claude-account-signin]")?.click()`);
+        const labelField = await poll(
+            () => h.ev(`!!document.querySelector("input[data-claude-signin-label]")`),
+            Boolean,
+            20000
+        );
+        await h.ev(caSetInput("input[data-claude-signin-label]", "Fixture S"));
+        await h.ev(caClickButton(CA_SIGNIN, "Lưu"));
+        const savedS = await poll(list, (l) => l.accounts.some((a) => a.label === "Fixture S"));
+        const rowS = await poll(rows, (r) => r.some((x) => x.label === "Fixture S"));
+        const signinGone = await poll(() => h.ev(`!!${CA_SIGNIN}`), (v) => !v);
+        const tabsAfterToken = await poll(sameTabs, Boolean);
+        rec(
+            "14. the printed token is taken, named Fixture S, listed, and its helper tab is closed",
+            labelField === true &&
+                savedS.accounts.some((a) => a.label === "Fixture S") &&
+                rowS.some((x) => x.label === "Fixture S") &&
+                signinGone === false &&
+                tabsAfterToken === true,
+            JSON.stringify({ labelField, rows: rowS, modalOpen: signinGone, tabsAfterToken })
+        );
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`${CA} teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the setting", () => h.rpc("setconfig", { [CA_SETTING]: ctx.prevSetting }));
+        await step("restore localStorage", async () => {
+            await h.ev(restoreStorageKey(CA_RATE_KEY, ctx.prevRate));
+            await h.ev(restoreStorageKey(CA_CMD_KEY, ctx.prevCmd));
+        });
+        // every account the run added, including one sign-in stored as "Account N" before it was named
+        await step("remove the fixture accounts", async () => {
+            const l = await h.rpc("claudeaccountlist", null);
+            const added = (a) => (ctx.preIds ? !ctx.preIds.includes(a.id) : a.label.startsWith("Fixture"));
+            for (const a of (l?.accounts ?? []).filter(added)) {
+                await h.rpc("claudeaccountremove", { id: a.id });
+            }
+        });
+        // a run stopped while the sign-in dialog was open leaves its helper tab behind
+        await step("close a leftover sign-in tab", async () => {
+            if (ctx.tabIds == null) return;
+            const { workspaceId, tabIds } = await caTabIds(h);
+            for (const id of tabIds.filter((id) => !ctx.tabIds.includes(id))) {
+                const tab = await waveService(h, "object", "GetObject", [`tab:${id}`]);
+                if (tab?.meta?.["session:helper"]) await waveService(h, "workspace", "CloseTab", [workspaceId, id]);
+            }
+        });
+        await step("restore the fixture roster", () =>
+            ctx.prevFixture != null
+                ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                : rmSync(TREE_RAIL_FIXTURE, { force: true })
+        );
+        if (ctx.base) await step("remove the transcripts", () => rmSync(ctx.base, { recursive: true, force: true }));
+        await step("reload", () => caReload(h));
+        await step("back to the cockpit", () => h.goto("cockpit"));
+    },
+};
+
 // notify-toast: NotifySync (view/agents/notifysync.tsx) tells you when an agent needs you or finished. A plain terminal
 // tab is made an agent by publishing agent:status (as agent-uploads does), and each step publishes the next state.
 // Focused, an ask from an agent not in view is an in-app toast whose click opens the agent; an ask from the agent in view
@@ -17252,6 +17757,7 @@ export const SCENARIOS = [
     runsLifecycle,
     terminalTheme,
     harnessUpdate,
+    settingsClaudeAccount,
     tuiLeader,
     tuiFullscreen,
     gitHistory,

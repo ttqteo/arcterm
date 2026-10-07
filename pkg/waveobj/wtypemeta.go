@@ -77,6 +77,7 @@ type MetaTSType struct {
 	SessionProject         string   `json:"session:project,omitempty"`         // tab (launch-time project name; roster group + boot label below the ai-title)
 	SessionEffort          string   `json:"session:effort,omitempty"`          // tab ("effort:<oid>": the initiative the session was launched from, or last read or wrote through `wsh effort`)
 	SessionCollapsedGroups []string `json:"session:collapsedgroups,omitempty"` // workspace
+	SessionHelper          bool     `json:"session:helper,omitempty"`          // tab (a short-lived helper terminal, e.g. the Claude sign-in dialog's; the sidebar skips it)
 
 	// for loom git client (Wave Agent Sessions fork)
 	AppLoom bool `json:"app:loom,omitempty"` // block (marks the live loom block for toggle)

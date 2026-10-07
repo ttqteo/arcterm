@@ -7,9 +7,15 @@
 // merges live-over-saved (with per-window rollover) for the surface. The claude snapshot is also fed
 // with no agent running, from the account's quota read (claudequota.ts), so it is known before one runs.
 // See docs/superpowers/specs/2026-06-26-ratelimit-donut-persistence-design.md.
+//
+// Claude windows belong to a Claude account, so claude snapshots are kept per account ("claude:<id>",
+// "claude:default" for the /login one) and readers see only the active account's, projected back to
+// "claude". Other providers keep their bare key. See 2026-10-07-claude-account-switch-design.md.
 
-import { atom, type PrimitiveAtom } from "jotai";
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
+import { atom, type PrimitiveAtom } from "jotai";
+import { liveWindowAgents, providerPlanUsage, type AgentVM } from "./agentsviewmodel";
 
 const STORAGE_KEY = "wave:ratelimits";
 const PROVIDER_RANK: Record<string, number> = { claude: 0, codex: 1 };
@@ -34,6 +40,41 @@ export interface ProviderDonuts {
     stale?: { capturedAt: number }; // present iff sourced from a saved (not-live) snapshot
 }
 
+// The saved key for a provider's windows: claude's are per account, every other provider's are not.
+export function rateLimitKey(provider: string, account?: string): string {
+    return provider === "claude" ? `claude:${account || "default"}` : provider;
+}
+
+// A snapshot saved before accounts existed is the Default account's; one already saved under
+// claude:default is newer than the switch to per-account keys, so it wins.
+export function migrateSaved(saved: Record<string, SavedSnapshot>): Record<string, SavedSnapshot> {
+    if (saved.claude == null) {
+        return saved;
+    }
+    const { claude, ...rest } = saved;
+    return rest["claude:default"] != null ? rest : { ...rest, "claude:default": claude };
+}
+
+// What readers see: the active account's claude snapshot as "claude", other accounts' dropped.
+export function projectActiveAccount(
+    saved: Record<string, SavedSnapshot>,
+    active: string
+): Record<string, SavedSnapshot> {
+    const activeKey = rateLimitKey("claude", active);
+    const out: Record<string, SavedSnapshot> = {};
+    for (const [key, snapshot] of Object.entries(saved)) {
+        if (key === activeKey) {
+            out.claude = snapshot;
+        } else if (!key.startsWith("claude:")) {
+            out[key] = snapshot;
+        }
+    }
+    return out;
+}
+
+// The Claude account wavesrv runs new sessions on; "" is Default.
+export const activeClaudeAccountAtom = atom((get) => (get(getSettingsKeyAtom("claude:activeaccount")) as string) || "");
+
 // Best-effort read; any failure (no localStorage, parse error) -> {}.
 export function readSavedRateLimits(): Record<string, SavedSnapshot> {
     try {
@@ -42,7 +83,7 @@ export function readSavedRateLimits(): Record<string, SavedSnapshot> {
             return {};
         }
         const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === "object" ? (parsed as Record<string, SavedSnapshot>) : {};
+        return parsed && typeof parsed === "object" ? migrateSaved(parsed as Record<string, SavedSnapshot>) : {};
     } catch {
         return {};
     }
@@ -53,7 +94,7 @@ export const savedRateLimitsAtom = atom<Record<string, SavedSnapshot>>(
     readSavedRateLimits()
 ) as PrimitiveAtom<Record<string, SavedSnapshot>>;
 
-// Save a snapshot for `provider` — only when the usage carries a 5h or weekly window field.
+// Save a snapshot under `provider` (a rateLimitKey) — only when the usage carries a 5h or weekly window field.
 // Window fields + capturedAt only; context/cost are per-session and deliberately dropped.
 // `capturedAt` is when the reading is as of (now, for an agent's report); a newer snapshot already
 // saved wins over an older reading.
@@ -81,14 +122,14 @@ export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt 
     }
 }
 
-const FIVE_HOUR_MS = 5 * 60 * 60 * 1000;
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+export const FIVE_HOUR_MS = 5 * 60 * 60 * 1000;
+export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Two ways a saved window stops being current, and the second is not redundant: the reset timestamp
 // catches the ordinary rollover, but it cannot catch a reset that is itself wrong. A codex snapshot
 // once carried a "five-hour" reset almost six days out, so it never rolled and spoke for the account at
 // 100% for days. A capture older than the window it describes has rolled at least once regardless.
-function windowFromSaved(
+export function windowFromSaved(
     pct: number | undefined,
     reset: number | undefined,
     capturedAt: number,
@@ -131,6 +172,20 @@ export function mergeRateLimitWindows(
             };
         })
         .sort((a, b) => (PROVIDER_RANK[a.provider] ?? 99) - (PROVIDER_RANK[b.provider] ?? 99));
+}
+
+// The plan-usage donuts for the active Claude account: claude agents on another account and other
+// accounts' snapshots are left out. Every other provider is unaffected.
+export function planDonuts(
+    agents: AgentVM[],
+    saved: Record<string, SavedSnapshot>,
+    active: string,
+    now: number
+): ProviderDonuts[] {
+    const live = liveWindowAgents(agents).filter(
+        (a) => (a.agent || "claude") !== "claude" || (a.usage?.account || "") === active
+    );
+    return mergeRateLimitWindows(providerPlanUsage(live), projectActiveAccount(saved, active), now);
 }
 
 // Pure: the single most-utilized provider by 5-hour pct across the merged donuts, or undefined if none

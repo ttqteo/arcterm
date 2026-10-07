@@ -139,6 +139,30 @@ func CanvasServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (s
 	return resp, err
 }
 
+// command "claudeaccountadd", wshserver.ClaudeAccountAddCommand
+func ClaudeAccountAddCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountAddData, opts *wshrpc.RpcOpts) (*wshrpc.ClaudeAccountData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ClaudeAccountData](w, "claudeaccountadd", data, opts)
+	return resp, err
+}
+
+// command "claudeaccountlist", wshserver.ClaudeAccountListCommand
+func ClaudeAccountListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeAccountListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeAccountListRtnData](w, "claudeaccountlist", nil, opts)
+	return resp, err
+}
+
+// command "claudeaccountremove", wshserver.ClaudeAccountRemoveCommand
+func ClaudeAccountRemoveCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountRemoveData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "claudeaccountremove", data, opts)
+	return err
+}
+
+// command "claudeaccountrename", wshserver.ClaudeAccountRenameCommand
+func ClaudeAccountRenameCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountRenameData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "claudeaccountrename", data, opts)
+	return err
+}
+
 // command "consult", wshserver.ConsultCommand
 func ConsultCommand(w *wshutil.WshRpc, data wshrpc.CommandConsultData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.ConsultChunk] {
 	return sendRpcRequestResponseStreamHelper[wshrpc.ConsultChunk](w, "consult", data, opts)
