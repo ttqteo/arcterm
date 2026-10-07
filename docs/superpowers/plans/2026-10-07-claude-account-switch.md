@@ -14,7 +14,7 @@ frontend keys Claude rate-limit snapshots per account and shows only the active 
 
 **Tech Stack:** Go (wavesrv, wsh, wshrpc), React 19 + jotai + Tailwind, vitest, CDP scenarios.
 
-**Verify:** `node scripts/verify.mjs ./pkg/claudeaccount/... ./pkg/claudequota/... ./pkg/wconfig/... ./pkg/wshrpc/... ./cmd/wsh/...`
+**Verify:** `node scripts/verify.mjs ./pkg/claudeaccount/... ./pkg/claudequota/... ./pkg/wconfig/... ./pkg/wshrpc/... ./pkg/baseds/... ./pkg/waveobj/... ./cmd/wsh/... ./cmd/server/...`
 
 **Final:** `node scripts/cdp/final-verify.mjs settings-claude-account usage-charts`
 
@@ -39,7 +39,9 @@ Commit on the current branch, no `Co-Authored-By` trailer.
 package claudeaccount
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -111,6 +113,36 @@ func TestApplyEnvSetsAndRestoresInherited(t *testing.T) {
 	}
 	if _, set := os.LookupEnv(accountVar); set {
 		t.Fatal("account var should be unset again")
+	}
+}
+
+// what wavesrv spawns (shellexec, consult, run workers) starts from os.Environ(): a child started after
+// ApplyEnv must see the account, and must not after a switch back to Default
+func TestApplyEnvReachesChildProcess(t *testing.T) {
+	if os.Getenv("CLAUDEACCOUNT_HELPER") == "1" {
+		fmt.Print(os.Getenv(accountVar))
+		os.Exit(0)
+	}
+	useTemp(t)
+	os.Unsetenv(accountVar)
+	captureInherited()
+	a, _ := Add("C", "sk-ant-oat01-ccc")
+	child := func() string {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestApplyEnvReachesChildProcess$")
+		cmd.Env = append(os.Environ(), "CLAUDEACCOUNT_HELPER=1")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	ApplyEnv(a.Id)
+	if got := child(); got != a.Id {
+		t.Fatalf("child saw %q, want %q", got, a.Id)
+	}
+	ApplyEnv("")
+	if got := child(); got != "" {
+		t.Fatalf("child saw %q after Default", got)
 	}
 }
 
@@ -372,7 +404,8 @@ git commit -m "feat(claudeaccount): keep setup-token accounts and apply the acti
 - Create: `pkg/wshrpc/wshserver/wshserver_claudeaccount.go`
 - Modify: `pkg/wshrpc/wshserver/wshserver_agents.go:195` (`GetClaudeQuotaCommand`)
 - Modify: `cmd/server/main-server.go` (`grabAndRemoveEnvVars` 170-190, `ConfigHook` 342)
-- Test: `cmd/wsh/cmd/wshcmd-agentstatus_test.go`, `pkg/wconfig` (existing machine-local test if any)
+- Create: `pkg/wshrpc/wshserver/wshserver_claudequota_test.go`
+- Test: `cmd/wsh/cmd/wshcmd-agentstatus_test.go`, `pkg/wconfig/vaultlayer_test.go:102` (`TestVaultLayerIgnoresMachineLocalKeys`)
 - Generated (via `task generate`): `metaconsts.go`, `schema/settings.json`, `gotypes.d.ts`, `wshclientapi.ts`, `wshclient.go`
 
 **Step 1: Setting key.** In `SettingsType` add, next to the other single-namespace keys:
@@ -383,7 +416,10 @@ git commit -m "feat(claudeaccount): keep setup-token accounts and apply the acti
 ```
 
 and in `machineLocalKeys`: `ConfigKey_ClaudeActiveAccount: true,` (with a comment: the token it names
-lives only in this machine's secretstore).
+lives only in this machine's secretstore). Test first: add `ConfigKey_ClaudeActiveAccount` to the key list
+in `TestVaultLayerIgnoresMachineLocalKeys` (`pkg/wconfig/vaultlayer_test.go:102`), so it asserts
+`IsMachineLocalKey("claude:activeaccount")`; after `task generate` (Step 6) it fails until the map entry
+is added, then passes: `go test ./pkg/wconfig/ -run TestVaultLayerIgnoresMachineLocalKeys`.
 
 **Step 2: Usage field.** In `baseds.AgentUsage` add
 `Account string `json:"account,omitempty"` // the Claude account the reporting session runs on (ARC_CLAUDE_ACCOUNT); "" = Default`.
@@ -449,19 +485,50 @@ Add `ClaudeAccountCommands` to the composed interface in `wshrpctypes.go`. Imple
 
 The hook runs on the initial config and on every change, before the frontend sees it.
 
-**Step 5: Quota only for Default.** In `GetClaudeQuotaCommand`, before `claudequota.Get`:
+**Step 5: Quota only for Default.** Extract the body of `GetClaudeQuotaCommand` into a pure function
+and test it before wiring:
 
 ```go
-	// a setup-token cannot read the usage endpoint (403), and the credentials file and Claude Code's
-	// cached answer belong to the /login account: say nothing rather than another account's numbers
-	if claudeaccount.Active() != "" {
-		return &wshrpc.CommandGetClaudeQuotaRtnData{}, nil
+// a setup-token cannot read the usage endpoint (403), and the credentials file and Claude Code's
+// cached answer belong to the /login account: say nothing rather than another account's numbers
+func claudeQuotaFor(ctx context.Context, active string, get func(context.Context) *claudequota.Quota) *wshrpc.CommandGetClaudeQuotaRtnData {
+	if active != "" {
+		return &wshrpc.CommandGetClaudeQuotaRtnData{}
 	}
+	q := get(ctx)
+	if q == nil {
+		return &wshrpc.CommandGetClaudeQuotaRtnData{}
+	}
+	return &wshrpc.CommandGetClaudeQuotaRtnData{ /* the existing field mapping */ }
+}
 ```
+
+`GetClaudeQuotaCommand` becomes `return claudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Get), nil`.
+`wshserver_claudequota_test.go` (write it first, run it, FAIL: undefined):
+
+```go
+func TestClaudeQuotaOnlyForDefault(t *testing.T) {
+	called := false
+	pct := 42.0
+	get := func(context.Context) *claudequota.Quota {
+		called = true
+		return &claudequota.Quota{FiveHourPct: &pct, CapturedAt: time.UnixMilli(1000)}
+	}
+	if got := claudeQuotaFor(context.Background(), "a1234abcd", get); called || got.FiveHourPct != nil {
+		t.Fatalf("non-Default account: called=%v got=%+v", called, got)
+	}
+	got := claudeQuotaFor(context.Background(), "", get)
+	if !called || got.FiveHourPct == nil || *got.FiveHourPct != 42 {
+		t.Fatalf("Default: called=%v got=%+v", called, got)
+	}
+}
+```
+
+Run `go test ./pkg/wshrpc/wshserver/ -run TestClaudeQuotaOnlyForDefault`: PASS.
 
 **Step 6: Generate and check.**
 
-Run: `task generate`, then `go build ./...`, `go test ./pkg/claudeaccount/... ./pkg/wconfig/... ./pkg/wshrpc/... ./cmd/wsh/...`
+Run: `task generate`, then `go build ./...`, `go test ./pkg/claudeaccount/... ./pkg/wconfig/... ./pkg/wshrpc/... ./pkg/baseds/... ./cmd/wsh/... ./cmd/server/...`
 Expected: build OK, tests PASS; `git status` shows the generated files updated.
 
 **Step 7: Commit**
@@ -476,7 +543,7 @@ git commit -m "feat(claudeaccount): apply the Settings account to wavesrv and ta
 **Depends on:** Task 2
 
 **Files:**
-- Modify: `frontend/app/view/agents/ratelimitstore.ts`
+- Modify: `frontend/app/view/agents/ratelimitstore.ts` (also exports `windowFromSaved`, now module-private at :91)
 - Modify: `frontend/app/view/agents/session-models/agentstatusstore.ts:155-161`
 - Modify: `frontend/app/view/agents/claudequota.ts:39`
 - Modify: `frontend/app/view/agents/usagemeters.tsx:34-37`, `usagesurface.tsx:515,535`, `frontend/app/view/jarvis/petview.tsx:70-75`
@@ -517,6 +584,7 @@ Run: `npx vitest run frontend/app/view/agents/ratelimitstore.test.ts` — Expect
 
 **Step 2: Implement** in `ratelimitstore.ts`:
 
+- `export` the existing `windowFromSaved` (Task 4's `rowQuota` reuses it) and the `FIVE_HOUR_MS` / `WEEK_MS` constants.
 - `export function rateLimitKey(provider: string, account?: string): string` — `claude` → `claude:${account || "default"}`, others unchanged.
 - `export function migrateSaved(saved)` — moves a bare `claude` key to `claude:default` unless that exists; call it inside `readSavedRateLimits()`.
 - `export function projectActiveAccount(saved, active: string)` — keeps non-claude keys, maps `claude:${active || "default"}` to `claude`, drops other `claude:*`.
@@ -557,23 +625,43 @@ git commit -m "feat(agents): Claude plan usage follows the active account"
 
 ```ts
 describe("restartCandidates", () => {
-    it("lists claude agents not on the new account; idle pre-checked, working not", () => {
+    it("lists resumable claude agents not on the new account; idle pre-checked, working and asking not", () => {
+        const base = { agent: "claude", task: "", usage: {} };
         const agents = [
-            { id: "t1", agent: "claude", state: "idle", transcriptPath: "/p/s1.jsonl", usage: {} },
-            { id: "t2", agent: "claude", state: "working", transcriptPath: "/p/s2.jsonl", usage: {} },
-            { id: "t3", agent: "claude", state: "idle", transcriptPath: "/p/s3.jsonl", usage: { account: "a1" } },
-            { id: "t4", agent: "codex", state: "idle", usage: {} },
-            { id: "t5", agent: "claude", state: "idle", usage: {} }, // no transcript: cannot resume
+            { ...base, id: "t1", name: "loom", state: "idle", blockId: "b1", transcriptPath: "/p/s1.jsonl" },
+            { ...base, id: "t2", name: "kite", state: "working", blockId: "b2", transcriptPath: "/p/s2.jsonl" },
+            { ...base, id: "t6", name: "fern", state: "asking", blockId: "b6", transcriptPath: "/p/s6.jsonl" },
+            { ...base, id: "t3", name: "on-a1", state: "idle", blockId: "b3", transcriptPath: "/p/s3.jsonl", usage: { account: "a1" } },
+            { ...base, id: "t4", name: "codex", agent: "codex", state: "idle", blockId: "b4", transcriptPath: "/p/s4.jsonl" },
+            { ...base, id: "t5", name: "no-transcript", state: "idle", blockId: "b5" },
+            { ...base, id: "t7", name: "no-block", state: "idle", transcriptPath: "/p/s7.jsonl" },
+            { ...base, id: "t8", name: "bg", kind: "background", state: "idle", blockId: "b8", transcriptPath: "/p/s8.jsonl" },
+            { ...base, id: "t9", name: "shell", kind: "terminal", state: "idle", blockId: "b9", transcriptPath: "/p/s9.jsonl" },
         ] as AgentVM[];
         expect(restartCandidates(agents, "a1")).toEqual([
-            { tabId: "t1", sessionId: "s1", checked: true, working: false },
-            { tabId: "t2", sessionId: "s2", checked: false, working: true },
+            { tabId: "t1", blockId: "b1", name: "loom", sessionId: "s1", checked: true, state: "idle" },
+            { tabId: "t2", blockId: "b2", name: "kite", sessionId: "s2", checked: false, state: "working" },
+            { tabId: "t6", blockId: "b6", name: "fern", sessionId: "s6", checked: false, state: "asking" },
         ]);
+    });
+    it("treats a missing usage.account as Default", () => {
+        const a = { id: "t1", name: "loom", task: "", agent: "claude", state: "idle", blockId: "b1", transcriptPath: "/p/s1.jsonl" } as AgentVM;
+        expect(restartCandidates([a], "")).toEqual([]);
+        expect(restartCandidates([a], "a1")).toHaveLength(1);
     });
 });
 describe("rowQuota", () => {
-    it("reads a row's snapshot, null when never used", () => {
-        expect(rowQuota({}, "a1")).toBeNull();
+    const now = 10 * 60 * 60 * 1000;
+    it("null when the account was never used", () => {
+        expect(rowQuota({}, "a1", now)).toBeNull();
+    });
+    it("reads a current snapshot", () => {
+        const saved = { "claude:a1": { capturedAt: now - 60_000, fivehourpct: 97, weekpct: 40 } };
+        expect(rowQuota(saved, "a1", now)).toEqual({ fivehourpct: 97, weekpct: 40, capturedAt: now - 60_000 });
+    });
+    it("a window past its reset reads 0", () => {
+        const saved = { "claude:default": { capturedAt: now - 60_000, fivehourpct: 97, fivehourreset: (now - 1000) / 1000, weekpct: 40 } };
+        expect(rowQuota(saved, "", now)).toEqual({ fivehourpct: 0, weekpct: 40, capturedAt: now - 60_000 });
     });
 });
 ```
@@ -581,37 +669,50 @@ describe("rowQuota", () => {
 Run: `npx vitest run frontend/app/view/agents/claudeaccount.test.ts` — Expected: FAIL.
 
 **Step 2: Implement `claudeaccount.ts`:**
-`restartCandidates(agents, newActive)` uses `sessionIdFromTranscript` from `launch.ts`; treats a
-missing `usage.account` as Default (`""`); excludes agents already on `newActive` and agents with no
-transcript. `rowQuota(saved, id)` returns `saved[rateLimitKey("claude", id)]` or null, through the same
-`windowFromSaved` rollover so a reset window reads 0%. `restartOnAccount(c)` (not unit-tested; thin
-RPC wiring): read the block (`WOS.getObjectValue`), `SetMetaCommand` `cmd:args` to
-`resumeArgsForClaude(c.sessionId, meta["agent:baseargs"] ?? [])`, `ControllerDestroyCommand`, then
-`ControllerResyncCommand({ tabid, blockid, forcerestart: true, rtopts: block.runtimeopts })` — the
-same sequence as `TermViewModel.forceRestartController` (`term-model.ts:488-503`); the respawn reads
-wavesrv's current environment, so it runs on the new account.
+- `export interface RestartCandidate { tabId: string; blockId: string; name: string; sessionId: string; checked: boolean; state: AgentState }`.
+- `restartCandidates(agents, newActive): RestartCandidate[]` keeps input order and lists an agent only
+  when `(a.agent || "claude") === "claude"`, `a.kind` is undefined or `"agent"` (background agents have
+  no block and keep the old account until they end; terminals are not agents), it has a `blockId` and a
+  session id from `sessionIdFromTranscript(a.transcriptPath)` (`launch.ts`), and `(a.usage?.account || "")`
+  differs from `newActive`. `checked` is `state === "idle"`; working and asking agents are listed unchecked.
+- `rowQuota(saved, id, now)` reads `saved[rateLimitKey("claude", id)]` and returns null when absent, else
+  `{ fivehourpct, weekpct, capturedAt }` with each pct passed through the exported `windowFromSaved`
+  (`FIVE_HOUR_MS` / `WEEK_MS`) so a rolled-over window reads 0.
+- `restartOnAccount(c: RestartCandidate)` (not unit-tested; thin RPC wiring): read the block
+  (`WOS.getObjectValue(WOS.makeORef("block", c.blockId))`), `SetMetaCommand` `cmd:args` to
+  `resumeArgsForClaude(c.sessionId, meta["agent:baseargs"] ?? [])`, `ControllerDestroyCommand(c.blockId)`, then
+  `ControllerResyncCommand({ tabid: c.tabId, blockid: c.blockId, forcerestart: true, rtopts: block.runtimeopts })` —
+  the same sequence as `TermViewModel.forceRestartController` (`term-model.ts:488-503`); the respawn reads
+  wavesrv's current environment, so it runs on the new account.
 
 **Step 3: `ClaudeAccountSection`** in `settingssurface.tsx`, copying the `HeadlessAISection` radiogroup
-markup (1177-1251) and DESIGN.md tokens (no raw colors):
+markup (1177-1251) and DESIGN.md tokens (no raw colors). The Task 6 scenario drives it through these
+attributes, so keep them exactly:
 - Loads `RpcApi.ClaudeAccountListCommand` on mount and after every add/rename/remove.
-- Radio rows: "Default (/login)" then each account (label, quota from `rowQuota` as `5h N% · tuần M%`
-  with "đo X trước", or "chưa dùng"). Selecting writes `writeConfig({ "claude:activeaccount": id })`,
-  then, if `restartCandidates(agents, id)` is non-empty, pushes the restart dialog.
-- Each account row: inline rename (`CommitText`), Remove (ConfirmModal).
-- "Dán token" disclosure: label + `SecretInput` → `ClaudeAccountAddCommand`; show the RPC error inline.
-- A placeholder button "+ Đăng nhập account" wired in Task 5.
+- Radio rows (`role="radio"`, `data-claude-account-row={id || "default"}`): "Default (/login)" then each
+  account (label, quota from `rowQuota` as `5h N% · tuần M%` with "đo X trước", or "chưa dùng"). Selecting
+  writes `writeConfig({ "claude:activeaccount": id })`, then, if `restartCandidates(agents, id)` is
+  non-empty, pushes the restart dialog.
+- Each account row: inline rename (`CommitText`, `data-claude-account-rename`), Remove
+  (`data-claude-account-remove`, through `ConfirmModal`); removing the active account leaves Default
+  selected once the list reloads.
+- "Dán token" disclosure (`data-claude-account-paste`): label + `SecretInput` → `ClaudeAccountAddCommand`;
+  the RPC error shows inline under the field (`data-claude-account-error`), the field keeps its value.
+- A placeholder button "+ Đăng nhập account" (`data-claude-account-signin`) wired in Task 5.
 
-**Step 4: Restart dialog** `claudeaccountrestart.tsx` on `ModalShell` (variant "dialog"): a checkbox
-per candidate (agent name, "đang làm việc" note for working ones), a line "Terminal đang mở vẫn dùng
-account cũ cho tới khi mở lại", buttons "Restart đã chọn" (runs `restartOnAccount` for checked ones)
-and "Để sau". Register it with the modal stack the way existing custom modals are.
+**Step 4: Restart dialog** `claudeaccountrestart.tsx` on `ModalShell` (variant "dialog",
+`data-claude-restart-dialog`): one checkbox row per candidate (`data-restart-row={tabId}`, the agent's
+`name`, and the note "đang làm việc — restart sau khi xong lượt" for working or "đang hỏi — restart sẽ bỏ
+câu hỏi" for asking), a line "Terminal đang mở vẫn dùng account cũ cho tới khi mở lại", buttons
+"Restart đã chọn" (runs `restartOnAccount` for checked ones, reporting a failed one inline and keeping the
+dialog open) and "Để sau". Register it with the modal stack the way existing custom modals are.
 
 **Step 5: Run**
 
 Run: `npx vitest run frontend/app/view/agents/` and `task check:ts`.
-Expected: PASS, exit 0. Then in the dev app (`task dev`, already running is fine — HMR): open Settings →
-Claude account, add a token with "Dán token", switch to it, confirm a new terminal shows
-`$env:ARC_CLAUDE_ACCOUNT` = the id, switch back to Default and confirm it is gone.
+Expected: PASS, exit 0. The rendered section and dialog are checked by the Task 6 scenario; that a
+switch reaches what wavesrv spawns is covered by `TestApplyEnvReachesChildProcess` (Task 1) and the
+scenario's `claudeaccountlist` active check.
 
 **Step 6: Commit**
 
@@ -630,7 +731,7 @@ git commit -m "feat(agents): choose the Claude account in Settings and resume ag
 - Modify: `frontend/app/view/agents/session-models/sessionsidebarmodel.ts:48,118` (skip tabs with `session:helper`)
 - Modify: `pkg/waveobj/wtypemeta.go` (add `SessionHelper bool `json:"session:helper,omitempty"``), then `task generate`
 
-**Step 1: Failing tests** for the scanner:
+**Step 1: Failing tests** for the scanner and the command choice:
 
 ```ts
 describe("TokenScanner", () => {
@@ -643,37 +744,62 @@ describe("TokenScanner", () => {
         expect(new TokenScanner().push("Opening browser...")).toBeNull();
     });
 });
+describe("setupTokenCommand", () => {
+    const real = { cmd: "claude", args: ["setup-token"] };
+    const fake = JSON.stringify({ cmd: "node", args: ["-e", "setTimeout(()=>{},60000)"] });
+    it("runs claude setup-token in a production build, whatever the override", () => {
+        expect(setupTokenCommand(false, fake)).toEqual(real);
+    });
+    it("takes the dev override in a dev build", () => {
+        expect(setupTokenCommand(true, fake)).toEqual({ cmd: "node", args: ["-e", "setTimeout(()=>{},60000)"] });
+    });
+    it("falls back to claude for a missing or malformed override", () => {
+        expect(setupTokenCommand(true, null)).toEqual(real);
+        expect(setupTokenCommand(true, "{nope")).toEqual(real);
+        expect(setupTokenCommand(true, JSON.stringify({ cmd: 3 }))).toEqual(real);
+    });
+});
 ```
 
 Run: `npx vitest run frontend/app/view/agents/setuptokenscan.test.ts` — Expected: FAIL.
 
-**Step 2: Implement `TokenScanner`:** keeps a rolling buffer (last 8 KB), strips ANSI escapes
-(`/\x1b\[[0-9;?]*[A-Za-z]/g`), joins a token broken by a terminal wrap (a CR/LF between two token
-characters), and matches `/sk-ant-oat01-[A-Za-z0-9_-]{8,}/`. It only reports a match once a non-token
-character follows it, so a half-printed token is never taken. Run the tests: PASS. (If the real
-`setup-token` output in Step 4 shows a different wrap shape, add it as a test case first.)
+**Step 2: Implement** in `setuptokenscan.ts`:
+- `TokenScanner` keeps a rolling buffer (last 8 KB), strips ANSI escapes (`/\x1b\[[0-9;?]*[A-Za-z]/g`),
+  joins a token broken by a terminal wrap (a CR/LF between two token characters), and matches
+  `/sk-ant-oat01-[A-Za-z0-9_-]{8,}/`. It only reports a match once a non-token character follows it, so a
+  half-printed token is never taken.
+- `setupTokenCommand(isDev: boolean, override: string | null): { cmd: string; args: string[] }` — in a dev
+  build, a JSON `{ cmd: string, args: string[] }` override replaces `claude setup-token` (so the CDP
+  scenario can drive the dialog without opening a browser); a production build always runs
+  `claude setup-token`. The modal calls it with `import.meta.env.DEV` and
+  `localStorage["arc:dev:setuptoken-cmd"]` (read inside try/catch: `null` when storage throws).
+
+Run the tests: PASS.
 
 **Step 3: The modal.** On open:
 1. `WorkspaceService.CreateTab(ws.oid, "Claude sign-in", false)`, set the tab meta
    `{ "session:helper": true }`, and set the block meta to
-   `{ view: "term", controller: "cmd", cmd: "claude", "cmd:args": ["setup-token"], "cmd:shell": false }`
+   `{ view: "term", controller: "cmd", cmd, "cmd:args": args, "cmd:shell": false }` from `setupTokenCommand`
    (do not go through `launchAgent`: that tags it as an agent).
-2. Render `CockpitFocusPane({ blockId, tabId })` in a `ModalShell` sized ~720×420.
+2. Render `CockpitFocusPane({ blockId, tabId })` in a `ModalShell` sized ~720×420
+   (`data-claude-signin-modal`; the pane sits under `data-claude-signin-term`), with Cancel
+   (`data-claude-signin-cancel`).
 3. Subscribe `getFileSubject(blockId, "term")`, decode `Data64`, feed `TokenScanner`.
 4. On a token: `ClaudeAccountAddCommand({ label: "", token })`, then switch the modal to a label field
-   prefilled with the returned label → `ClaudeAccountRenameCommand` on save.
+   (`data-claude-signin-label`) prefilled with the returned label → `ClaudeAccountRenameCommand` on save.
+   An add error shows inline in the modal.
 5. On every exit (token found, Cancel, Escape, unmount): release the file subject and close the helper
    tab (`WorkspaceService.CloseTab(ws.oid, tabId)`), which destroys the block and deletes its `term` file holding the
    token. Use `try/finally` so an RPC error cannot leave the tab behind.
+
 In `sessionsidebarmodel.ts` skip tabs whose meta has `session:helper` at both tab loops.
 
-**Step 4: Run and check by hand**
+**Step 4: Run**
 
 Run: `task generate`, `npx vitest run frontend/app/view/agents/`, `task check:ts`.
-Then in the dev app: Settings → Claude account → "+ Đăng nhập account"; the browser opens; after
-authorizing, the dialog asks for a label, the account appears in the list, and no "Claude sign-in"
-entry ever shows in the session sidebar. Cancel mid-way: no account is added and the helper tab is gone
-(`wsh` / roster shows no extra tab).
+Expected: PASS, exit 0. The modal's open, cancel and token paths are checked by the Task 6 scenario
+through the dev override. Once, with the real `claude setup-token`, check by hand that its output is
+caught; a different wrap shape becomes a `TokenScanner` test case first.
 
 **Step 5: Commit**
 
@@ -691,16 +817,43 @@ git commit -m "feat(agents): sign in a Claude account from Settings with claude 
 - Modify: `CHANGELOG.md` (Unreleased → Added)
 - Modify: `docs/agents/usage-reporting.md` (per-account windows; quota endpoint only for Default)
 
-**Step 1: Scenario `settings-claude-account`** (pattern: `harnessUpdate`, ~16652-16790):
-- arrange: save `getfullconfig().settings["claude:activeaccount"]` and `localStorage["wave:ratelimits"]`;
-  add two fixture accounts with `h.rpc("claudeaccountadd", { label: "Fixture A", token: "sk-ant-oat01-fixtureA" })`
-  (and B); seed `wave:ratelimits` with `claude:<idA>` at 97% and leave B unseeded; reload; `h.goto("settings")`;
-  click `[data-section="claudeaccount"]`.
-- assert: three `[role="radio"]` rows; Default checked; row A shows `97%`; row B shows "chưa dùng";
-  click row B → `getfullconfig().settings["claude:activeaccount"]` equals B's id. Shot
-  `cdp-shots/settings-claude-account.png`.
-- teardown: restore the setting, remove both fixture accounts (`claudeaccountremove`), restore
-  localStorage.
+**Step 1: Scenario `settings-claude-account`** (pattern: `harnessUpdate`, ~16652-16790; roster fixture
+pattern: `lrWriteRoster` writing `TREE_RAIL_FIXTURE`). Every step asserts before it shoots; account ids
+come from `h.rpc("claudeaccountlist")`.
+- arrange: save `getfullconfig().settings["claude:activeaccount"]`, `localStorage["wave:ratelimits"]` and
+  `localStorage["arc:dev:setuptoken-cmd"]`; add two fixture accounts with
+  `h.rpc("claudeaccountadd", { label: "Fixture A", token: "sk-ant-oat01-fixtureA" })` (and B); seed
+  `wave:ratelimits` with `claude:<idA>` at 97% (captured a minute ago) and leave B unseeded; write a roster
+  fixture with three claude agents on Default, each with a `blockId` and a `transcriptPath` ending
+  `<session>.jsonl`: `fx-ca-idle` (idle), `fx-ca-working` (working), `fx-ca-asking` (asking, with an ask);
+  reload; `h.goto("settings")`; click `[data-section="claudeaccount"]`.
+- step `list`: three `[data-claude-account-row]` radios; `default` checked; row A shows `97%`; row B shows
+  "chưa dùng". Shot `settings-claude-account`.
+- step `restart-dialog`: click row A → `getfullconfig().settings["claude:activeaccount"]` equals A's id and,
+  polled, `claudeaccountlist().active` equals A's id (wavesrv applied it); `[data-claude-restart-dialog]`
+  shows three `[data-restart-row]` rows naming the three agents; `fx-ca-idle`'s checkbox is checked,
+  `fx-ca-working` and `fx-ca-asking` are not and carry their "đang làm việc" / "đang hỏi" notes. Shot
+  `settings-claude-account-restart`. Click "Để sau" → the dialog is gone and the setting is still A.
+- step `paste-token`: open `[data-claude-account-paste]`, enter label "Fixture C" and `sk-ant-api03-bad`,
+  save → `[data-claude-account-error]` is visible and `claudeaccountlist()` is unchanged; replace the token
+  with `sk-ant-oat01-fixtureC`, save → a fourth row "Fixture C" appears, no error.
+- step `rename`: rename row C inline to "Fixture C2" → `claudeaccountlist()` has that label.
+- step `remove`: click row C's remove → a `ConfirmModal` appears; confirm → row C is gone. Click row B
+  (click "Để sau" if the dialog opens), remove B through the ConfirmModal → the `default` row is checked,
+  `getfullconfig().settings["claude:activeaccount"]` is empty and `claudeaccountlist().active` is "".
+- step `signin-cancel`: delete the roster fixture and reload (so the sidebar shows live tabs), back to the
+  section; record the workspace's tab ids; set `localStorage["arc:dev:setuptoken-cmd"]` to
+  `{"cmd":"node","args":["-e","setTimeout(()=>{},60000)"]}`; click `[data-claude-account-signin]` →
+  `[data-claude-signin-modal]` has a rendered terminal (an `.xterm` element under
+  `[data-claude-signin-term]`), and the session sidebar's text has no "Claude sign-in". Shot
+  `settings-claude-account-signin`. Click `[data-claude-signin-cancel]` → the modal is gone, the tab ids
+  equal the recorded ones, and `claudeaccountlist()` is unchanged.
+- step `signin-token`: set the override to a node one-liner that prints
+  `Your token: sk-ant-oat01-fixtureSignin0` and `Store it safely`, then waits; open the modal → the label
+  field `[data-claude-signin-label]` appears; save it as "Fixture S" → the row appears in the list and the
+  tab ids equal the recorded ones.
+- teardown: restore the setting and both localStorage keys, remove every account whose label starts with
+  "Fixture" (`claudeaccountremove`), and delete the roster fixture if it is still there.
 
 **Step 2: Run it** against the running dev app: `task verify:ui -- settings-claude-account usage-charts`.
 Expected: PASS for both.
