@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1104,5 +1105,164 @@ func TestConfigIsHealthy_rewritesAHookWrittenBeforeItRanInTheBackground(t *testi
 	}
 	if !configIsHealthy(mergeAgentHooks(full, testWsh), testWsh, []string{testModDir}, false) {
 		t.Fatal("a reinstall should leave the config healthy")
+	}
+}
+
+func agyTestHome(t *testing.T, withCLI bool) string {
+	t.Helper()
+	home := t.TempDir()
+	if withCLI {
+		if err := os.MkdirAll(filepath.Join(home, ".gemini", "antigravity-cli"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home
+}
+
+func agyHooksPath(home string) string {
+	return filepath.Join(home, ".gemini", "config", "hooks.json")
+}
+
+func readAgyHooks(t *testing.T, home string) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile(agyHooksPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("hooks.json is not JSON: %v\n%s", err, b)
+	}
+	return out
+}
+
+func agyWantHooks(wsh string) map[string]any {
+	flat := func(event string) []any {
+		return []any{map[string]any{"type": "command", "command": `"` + wsh + `" agy-hook ` + event, "timeout": float64(10)}}
+	}
+	group := func(event string, timeout float64) []any {
+		return []any{map[string]any{
+			"matcher": "*",
+			"hooks":   []any{map[string]any{"type": "command", "command": `"` + wsh + `" agy-hook ` + event, "timeout": timeout}},
+		}}
+	}
+	return map[string]any{
+		"PreInvocation": flat("PreInvocation"),
+		"Stop":          flat("Stop"),
+		"PostToolUse":   group("PostToolUse", 10),
+		"PreToolUse":    group("PreToolUse", 3720),
+	}
+}
+
+func TestInstallAgyHooksSkipsWithoutAgyData(t *testing.T) {
+	home := agyTestHome(t, false)
+	if err := installAgyHooks(home, "/h/.arc/bin/wsh"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini")); !os.IsNotExist(err) {
+		t.Fatalf("nothing should be created without antigravity-cli, stat err = %v", err)
+	}
+}
+
+func TestInstallAgyHooksFreshInstall(t *testing.T) {
+	home := agyTestHome(t, true)
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	got := readAgyHooks(t, home)
+	want := map[string]any{"arcterm": agyWantHooks(wsh)}
+	if !reflect.DeepEqual(got, want) {
+		gb, _ := json.MarshalIndent(got, "", "  ")
+		wb, _ := json.MarshalIndent(want, "", "  ")
+		t.Fatalf("hooks.json mismatch\n got: %s\nwant: %s", gb, wb)
+	}
+}
+
+func TestInstallAgyHooksKeepsOtherKeysAndReplacesStale(t *testing.T) {
+	home := agyTestHome(t, true)
+	if err := os.MkdirAll(filepath.Dir(agyHooksPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"claude-mem":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"mem","timeout":5}]}]},` +
+		`"arcterm":{"Stop":[{"type":"command","command":"old","timeout":1}],"SessionStart":[{"type":"command","command":"gone"}]}}`
+	if err := os.WriteFile(agyHooksPath(home), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	got := readAgyHooks(t, home)
+	var wantMem map[string]any
+	if err := json.Unmarshal([]byte(`{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"mem","timeout":5}]}]}`), &wantMem); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got["claude-mem"], wantMem) {
+		t.Fatalf("claude-mem changed: %v", got["claude-mem"])
+	}
+	if !reflect.DeepEqual(got["arcterm"], agyWantHooks(wsh)) {
+		t.Fatalf("arcterm key not replaced: %v", got["arcterm"])
+	}
+}
+
+func TestInstallAgyHooksIdempotent(t *testing.T) {
+	home := agyTestHome(t, true)
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(agyHooksPath(home), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(agyHooksPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(old) {
+		t.Fatalf("second run rewrote the file: mtime %v, want %v", fi.ModTime(), old)
+	}
+	if _, err := os.Stat(agyHooksPath(home) + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temp file left behind, stat err = %v", err)
+	}
+}
+
+func TestInstallAgyHooksRejectsNonObject(t *testing.T) {
+	for _, content := range []string{"not json", "[]", "null", `"s"`} {
+		home := agyTestHome(t, true)
+		if err := os.MkdirAll(filepath.Dir(agyHooksPath(home)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(agyHooksPath(home), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := installAgyHooks(home, "/h/.arc/bin/wsh")
+		if err == nil {
+			t.Fatalf("%q: want an error", content)
+		}
+		if !strings.Contains(err.Error(), "hooks.json") {
+			t.Fatalf("%q: error should name the file, got %v", content, err)
+		}
+		b, _ := os.ReadFile(agyHooksPath(home))
+		if string(b) != content {
+			t.Fatalf("%q: file was modified to %q", content, b)
+		}
+	}
+}
+
+func TestInstallAgyHooksQuotesWshPath(t *testing.T) {
+	for _, wsh := range []string{`/home/a b/.arc/bin/wsh`, `C:\Users\First Last\.arc\bin\wsh.exe`} {
+		home := agyTestHome(t, true)
+		if err := installAgyHooks(home, wsh); err != nil {
+			t.Fatal(err)
+		}
+		got := readAgyHooks(t, home)
+		if !reflect.DeepEqual(got["arcterm"], agyWantHooks(wsh)) {
+			t.Fatalf("%s: commands not quoted intact: %v", wsh, got["arcterm"])
+		}
 	}
 }
