@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    answerLine,
     coalesce,
     diffEvents,
     notifyEventOf,
@@ -192,16 +193,28 @@ describe("coalesce", () => {
 
 describe("osText", () => {
     const e = (over: Partial<NotifyEvent>): NotifyEvent => ({ ...ev("reply"), ...over });
-    it("leads the title with the kind, since an OS toast has no eyebrow", () => {
+    it("leads the title with the project and the kind, since an OS toast has no eyebrow", () => {
         expect(osText(e({ label: "Finished", title: "Hỗ trợ LaTeX", body: "", meta: "arcterm" }))).toEqual({
-            title: "Finished: Hỗ trợ LaTeX",
-            body: "arcterm",
+            title: "[arcterm] Finished: Hỗ trợ LaTeX",
+            body: "",
         });
     });
-    it("keeps the body before the project", () => {
-        expect(osText(e({ label: "Needs you", title: "a", body: "Pick one", meta: "arcterm" })).body).toBe(
-            "Pick one · arcterm"
-        );
+    it("keeps the body on the line below, without the project", () => {
+        expect(osText(e({ label: "Needs you", title: "a", body: "Pick one", meta: "arcterm" }))).toEqual({
+            title: "[arcterm] Needs you: a",
+            body: "Pick one",
+        });
+    });
+    it("has no brackets without a project", () => {
+        expect(osText(e({ label: "Finished", title: "a", body: "", meta: undefined })).title).toBe("Finished: a");
+    });
+    it("puts the agent's answer below in place of the body", () => {
+        expect(
+            osText(e({ label: "Finished", title: "a", body: "task a", meta: "arcterm" }), "Done: tests pass.")
+        ).toEqual({
+            title: "[arcterm] Finished: a",
+            body: "Done: tests pass.",
+        });
     });
     it("leaves a summary's title alone", () => {
         expect(osText(e({ kind: "summary", label: "Needs you", title: "2 waiting on you" })).title).toBe(
@@ -230,5 +243,29 @@ describe("toastOf", () => {
     it("marks a decision and a summary by their own icons", () => {
         expect(toastOf({ ...ev("attention"), tone: "asking" }).eyebrow?.icon).toBe("decision");
         expect(toastOf({ ...ev("summary"), tone: "done" }).eyebrow?.icon).toBe("summary");
+    });
+});
+
+describe("answerLine", () => {
+    it("is the answer's first line with text", () => {
+        expect(answerLine("\n\nShortcut done and documented.\n\n- Drop: it falls")).toBe(
+            "Shortcut done and documented."
+        );
+    });
+    it("drops markdown marks", () => {
+        expect(answerLine("## **Done:** the `g w` shortcut opens the [peek](x.md)")).toBe(
+            "Done: the g w shortcut opens the peek"
+        );
+        expect(answerLine("> - **Drop:** it falls")).toBe("Drop: it falls");
+    });
+    it("cuts a long line at a word and marks it", () => {
+        const line = answerLine("word ".repeat(60));
+        expect(line.length).toBeLessThanOrEqual(141);
+        expect(line.endsWith("…")).toBe(true);
+        expect(line).not.toMatch(/\s…$/);
+    });
+    it("is empty for an empty answer", () => {
+        expect(answerLine("")).toBe("");
+        expect(answerLine("  \n ```\n")).toBe("");
     });
 });

@@ -230,11 +230,42 @@ export function coalesce(events: NotifyEvent[]): NotifyEvent[] {
     ];
 }
 
-/** Pure: an OS toast has no eyebrow row, so the kind leads its title ("Finished: <agent>"); the body keeps the line
- *  below, with the project after it. */
-export function osText(e: NotifyEvent): { title: string; body: string } {
-    const title = e.kind === "summary" ? e.title : `${e.label}: ${e.title}`;
-    return { title, body: [e.body, e.meta].filter(Boolean).join(" · ") };
+/** Pure: an OS toast has no eyebrow row, so the project and the kind lead its title ("[arcterm] Finished: <agent>").
+ *  The line below is the agent's answer when NotifySync could read one (answerLine), else the event's body. */
+export function osText(e: NotifyEvent, answer?: string): { title: string; body: string } {
+    if (e.kind === "summary") {
+        return { title: e.title, body: [e.body, e.meta].filter(Boolean).join(" · ") };
+    }
+    const project = e.meta ? `[${e.meta}] ` : "";
+    return { title: `${project}${e.label}: ${e.title}`, body: answer || e.body };
+}
+
+const ANSWER_LINE_MAX = 140;
+
+/** Pure: the line of an agent's last answer an OS toast shows: its first line with text, markdown marks dropped, cut
+ *  at a word past ANSWER_LINE_MAX characters. */
+export function answerLine(answer: string): string {
+    for (const raw of answer.split("\n")) {
+        if (raw.trim().startsWith("```")) {
+            continue;
+        }
+        const line = raw
+            .replace(/^\s*(?:#+\s+|>\s*)*/, "")
+            .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
+            .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+            .replace(/\*\*|__|`/g, "")
+            .trim();
+        if (line === "") {
+            continue;
+        }
+        if (line.length <= ANSWER_LINE_MAX) {
+            return line;
+        }
+        const cut = line.slice(0, ANSWER_LINE_MAX);
+        const space = cut.lastIndexOf(" ");
+        return (space > 0 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "") + "…";
+    }
+    return "";
 }
 
 const TOAST_ICON: Record<NotifyEvent["kind"], ToastEyebrow["icon"]> = {

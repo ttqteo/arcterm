@@ -12,6 +12,8 @@ import { needsRows, needsTarget } from "@/app/cockpit/palette-needs";
 import { atoms, getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { fireAndForget } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
@@ -23,6 +25,7 @@ import type { AgentsViewModel } from "./agents";
 import { attentionAtom, attentionLoadedAtom } from "./attentionstore";
 import { agentGridAtom } from "./gridstore";
 import {
+    answerLine,
     coalesce,
     COALESCE_MS,
     diffEvents,
@@ -66,6 +69,23 @@ function openNotifyTarget(model: AgentsViewModel, t: NotifyTarget): void {
     }
 }
 
+// an answer read this long after it was written belongs to an earlier turn, not the one that just finished
+const ANSWER_FRESH_MS = 2 * 60_000;
+
+// the line of a finished agent's last answer its OS toast shows, "" for any other event or when it cannot be read
+// within two seconds: the toast then keeps its own body
+async function osAnswer(e: NotifyEvent): Promise<string> {
+    if (e.kind !== "reply" || e.target.kind !== "agent") {
+        return "";
+    }
+    try {
+        const read = await RpcApi.AgentsReadCommand(TabRpcClient, { tab: e.target.agentId }, { timeout: 2000 });
+        return read?.answer && Date.now() - read.answerts < ANSWER_FRESH_MS ? answerLine(read.answer) : "";
+    } catch {
+        return "";
+    }
+}
+
 export function NotifySync({ model }: { model: AgentsViewModel }): null {
     const agents = useAtomValue(model.agentsAtom);
     const attention = useAtomValue(attentionAtom);
@@ -96,7 +116,11 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
                 onOpen: e.target.kind === "none" ? undefined : () => openNotifyTarget(model, e.target),
             });
         } else if (route === "os") {
-            invoke("notify_os", { ...osText(e), target: JSON.stringify(e.target), loud: e.loud }).catch(() => {});
+            void osAnswer(e).then((answer) =>
+                invoke("notify_os", { ...osText(e, answer), target: JSON.stringify(e.target), loud: e.loud }).catch(
+                    () => {}
+                )
+            );
         }
     };
     const flush = () => {
