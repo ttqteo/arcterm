@@ -319,7 +319,7 @@ const BG_DOT: Record<BgTaskLabel, string> = {
 };
 
 // A background command: what it is for, the command itself under it, and its status. With an output file it opens
-// that file in the panel's File tab, as it stood when clicked; a running task's output grows, so a click reads it again.
+// that file in the panel's File tab with its Live toggle, following the output while the task runs.
 function BackgroundTaskRow({ task, live, onOpen }: { task: BackgroundTask; live: boolean; onOpen?: () => void }) {
     const label = bgTaskStatusLabel(task.status, live);
     const showCommand = task.command != null && task.command !== task.label;
@@ -700,6 +700,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                           abs: t.outputFile!,
                                           root: null,
                                           reread: Date.now(),
+                                          live: bgTaskStatusLabel(t.status, live) === "running" ? "on" : "off",
                                       })
                                 : undefined
                         }

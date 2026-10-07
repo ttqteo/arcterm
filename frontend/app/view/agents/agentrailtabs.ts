@@ -16,6 +16,8 @@ export interface FileRef {
     root: string | null;
     line?: number;
     reread?: number; // set on each open of a file that changes under it (a background task's output), to read it again
+    // a growing file the tab offers to follow live (the Live toggle), and whether it opens following; absent, no toggle
+    live?: "on" | "off";
 }
 
 export interface FileHistory {

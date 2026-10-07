@@ -11,7 +11,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
-import { lazy, Suspense, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { closeRailFile, openRefInCode, railFileBack, railFileForward, railMdModeAtom } from "./agentrailstore";
 import { fileLabel, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
@@ -33,6 +33,7 @@ const OPTIONS: MonacoTypes.editor.IEditorOptions = {
     renderLineHighlight: "none",
     scrollbar: { useShadows: false, verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
 };
+const LIVE_POLL_MS = 1000;
 // the line a link named: a grey fill (selection is grey, DESIGN.md) and an accent mark in the gutter
 const HIT_LINE = "bg-surface-hover";
 const HIT_MARK = "border-l-2 border-accent";
@@ -47,15 +48,24 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     const [state, setState] = useState<PanelFile>({ kind: "loading" });
     const [mdMode, setMdMode] = useAtom(railMdModeAtom);
     const drafts = useAtomValue(mdCommentAtom(agentId));
+    const [following, setFollowing] = useState(ref?.live === "on");
+    const followingRef = useRef(following);
+    followingRef.current = following;
+    const stampRef = useRef<string | undefined>(undefined);
+    stampRef.current = state.kind === "text" ? state.stamp : undefined;
+    const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
+    const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
     useEffect(() => {
         if (ref == null) {
             return;
         }
         let live = true;
         setState({ kind: "loading" });
+        setFollowing(ref.live === "on");
+        stickRef.current = true;
         fireAndForget(async () => {
             const next = await readPanelFile(ref.abs);
-            if (live) {
+            if (live && next != null) {
                 setState(next);
             }
         });
@@ -63,6 +73,34 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
             live = false;
         };
     }, [ref?.abs, ref?.reread]);
+    // Live: read the file again each second, in place, while it changes
+    useEffect(() => {
+        if (ref == null || !following) {
+            return;
+        }
+        let live = true;
+        let busy = false;
+        const timer = setInterval(() => {
+            if (busy) {
+                return;
+            }
+            busy = true;
+            fireAndForget(async () => {
+                try {
+                    const next = await readPanelFile(ref.abs, stampRef.current);
+                    if (live && next != null) {
+                        setState(next);
+                    }
+                } finally {
+                    busy = false;
+                }
+            });
+        }, LIVE_POLL_MS);
+        return () => {
+            live = false;
+            clearInterval(timer);
+        };
+    }, [ref?.abs, following]);
     if (ref == null) {
         return null;
     }
@@ -117,8 +155,29 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                     readonly
                     options={OPTIONS}
                     onMount={(editor, monacoApi) => {
+                        editorRef.current = editor;
+                        const toEnd = () => editor.revealLine(editor.getModel()?.getLineCount() ?? 1);
+                        // scrolled by the reader (not by the text growing): stuck when it ends at the bottom
+                        const scrolled = editor.onDidScrollChange((e) => {
+                            if (e.scrollTopChanged) {
+                                stickRef.current = e.scrollTop + editor.getLayoutInfo().height >= e.scrollHeight - 24;
+                            }
+                        });
+                        const grew = editor.onDidChangeModelContent(() => {
+                            if (followingRef.current && stickRef.current) {
+                                toEnd();
+                            }
+                        });
+                        const unmount = () => {
+                            scrolled.dispose();
+                            grew.dispose();
+                            editorRef.current = null;
+                        };
                         if (line == null) {
-                            return () => {};
+                            if (followingRef.current) {
+                                toEnd();
+                            }
+                            return unmount;
                         }
                         editor.revealLineInCenter(line);
                         editor.setPosition({ lineNumber: line, column: 1 });
@@ -132,7 +191,10 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                                 },
                             },
                         ]);
-                        return () => hit.clear();
+                        return () => {
+                            hit.clear();
+                            unmount();
+                        };
                     }}
                 />
             </Suspense>
@@ -214,6 +276,29 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                             </button>
                         ))}
                     </div>
+                ) : null}
+                {ref.live != null ? (
+                    <button
+                        type="button"
+                        data-file-live
+                        aria-pressed={following}
+                        title={following ? "Stop following the output" : "Follow the output as it grows"}
+                        onClick={() => {
+                            if (!following) {
+                                stickRef.current = true;
+                                const editor = editorRef.current;
+                                editor?.revealLine(editor.getModel()?.getLineCount() ?? 1);
+                            }
+                            setFollowing(!following);
+                        }}
+                        className={cn(BTN, following && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                    >
+                        <span
+                            aria-hidden
+                            className={cn("h-1.5 w-1.5 rounded-full", following ? "pulse-dot bg-working" : "bg-muted")}
+                        />
+                        Live
+                    </button>
                 ) : null}
                 <button type="button" onClick={openCode} className={BTN}>
                     Open in Code
