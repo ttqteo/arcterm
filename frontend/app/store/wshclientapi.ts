@@ -1002,6 +1002,12 @@ export class RpcApiType {
         return client.wshRpcCall("uistate", null, opts);
     }
 
+    // command "updateharness" [call]
+    UpdateHarnessCommand(client: WshClient, data: CommandUpdateHarnessData, opts?: RpcOpts): Promise<CommandUpdateHarnessRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "updateharness", data, opts);
+        return client.wshRpcCall("updateharness", data, opts);
+    }
+
     // command "updateworkspacetabids" [call]
     UpdateWorkspaceTabIdsCommand(client: WshClient, arg1: string, arg2: string[], opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "updateworkspacetabids", { args: [arg1, arg2] }, opts);

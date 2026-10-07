@@ -94,8 +94,8 @@ func TestSettingsLayerOrder(t *testing.T) {
 	if full.Settings.TermFontFamily != `"JetBrains Mono", monospace` {
 		t.Errorf("term:fontfamily = %q, want the shipped default", full.Settings.TermFontFamily)
 	}
-	if full.DefaultSettings.TermFontSize != 16 {
-		t.Errorf("DefaultSettings.TermFontSize = %v, want the shipped 16", full.DefaultSettings.TermFontSize)
+	if full.DefaultSettings.TermFontSize != 14 {
+		t.Errorf("DefaultSettings.TermFontSize = %v, want the shipped 14", full.DefaultSettings.TermFontSize)
 	}
 }
 

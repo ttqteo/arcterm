@@ -994,6 +994,12 @@ func UiStateCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.UiState, e
 	return resp, err
 }
 
+// command "updateharness", wshserver.UpdateHarnessCommand
+func UpdateHarnessCommand(w *wshutil.WshRpc, data wshrpc.CommandUpdateHarnessData, opts *wshrpc.RpcOpts) (*wshrpc.CommandUpdateHarnessRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandUpdateHarnessRtnData](w, "updateharness", data, opts)
+	return resp, err
+}
+
 // command "updateworkspacetabids", wshserver.UpdateWorkspaceTabIdsCommand
 func UpdateWorkspaceTabIdsCommand(w *wshutil.WshRpc, arg1 string, arg2 []string, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "updateworkspacetabids", wshrpc.MultiArg{Args: []any{arg1, arg2}}, opts)

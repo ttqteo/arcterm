@@ -219,7 +219,9 @@ setTimeout(() => fs.appendFileSync(${JSON.stringify(logFile)}, "end\\n"), ${hold
         expect(buildLockPath(long, "linux")).toBe(posix);
         expect(posix).toMatch(/arc-final-build-[0-9a-f]{8}\.sock$/);
         const short = join("/home/u", ".cache", "arc-final");
-        expect(buildLockPath(short, "linux")).toMatch(/^\/home\/u\/\.cache\/arc-final\/build-[0-9a-f]{8}\.sock$/);
+        const inBase = buildLockPath(short, "linux");
+        expect(dirname(inBase)).toBe(short);
+        expect(basename(inBase)).toMatch(/^build-[0-9a-f]{8}\.sock$/);
         expect(buildLockPath(long, "win32")).toMatch(/^\\\\\.\\pipe\\arc-final-build-[0-9a-f]{8}$/);
     });
 

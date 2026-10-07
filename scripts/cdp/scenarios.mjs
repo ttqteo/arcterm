@@ -16498,6 +16498,152 @@ const capacityWarn = {
     },
 };
 
+// --- Settings → About: harness versions and the Update button ------------------------------------
+// The update check reads the npm registry and Update runs the real updater, which a scenario must not depend on: the
+// dev hooks in harnessupdatestore.ts stand in a newer release for claude, each update state, and an empty install list.
+const harnessUpdate = {
+    name: "harness-update",
+    surface: "settings",
+    async arrange(h) {
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        await h.goto("settings");
+        await h.ev(`(() => { document.querySelector('[data-section="about"]')?.click(); return true; })()`);
+        // HarnessVersions loads ListHarnesses on mount (CATALOG_RPC_TIMEOUT_MS, 30 s); injecting before that load lands
+        // would be overwritten by it
+        let rowLoaded = false;
+        for (let waited = 0; waited < 35_000 && !rowLoaded; waited += 250) {
+            rowLoaded = await h.ev(`!!document.querySelector('[data-harness-row="claude"]')`);
+            if (!rowLoaded) await settle(250);
+        }
+        const hooked = await h.ev(
+            `["__setHarnessLatest", "__setHarnessUpdateRun", "__getHarnesses", "__setHarnesses"].every((k) => typeof window[k] === "function")`
+        );
+        if (hooked) {
+            await h.ev(`window.__setHarnessLatest("claude", "999.0.0")`);
+            await settle(300);
+        }
+        return { hooked, rowLoaded };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        // the harness's goto ran after arrange: select About again
+        await h.ev(`(() => { document.querySelector('[data-section="about"]')?.click(); return true; })()`);
+        await settle(300);
+        const readRow = () =>
+            h.ev(`(() => {
+                const r = document.querySelector('[data-harness-row="claude"]');
+                return r ? { text: r.textContent || "", update: !!r.querySelector('[data-harness-update="claude"]') } : null;
+            })()`);
+        const showRow = async (shot) => {
+            await h.ev(`document.querySelector('[data-harness-row="claude"]')?.scrollIntoView({ block: "center" })`);
+            await h.shot(shot);
+        };
+        const setRun = async (run) => {
+            await h.ev(`window.__setHarnessUpdateRun("claude", ${JSON.stringify(run)})`);
+            await settle(200);
+        };
+
+        const row = await readRow();
+        steps.push({
+            step: "1. About lists Claude Code with its installed version",
+            ok: row != null && /\d+\.\d+\.\d+/.test(row.text),
+            detail: JSON.stringify({ rowLoaded: ctx.rowLoaded, row }),
+        });
+        steps.push({
+            step: "2. a newer release shows as available with an Update button",
+            ok: ctx.hooked === true && row != null && row.text.includes("999.0.0 available") && row.update === true,
+            detail: JSON.stringify({ hooked: ctx.hooked, row }),
+        });
+        await showRow("cdp-shots/harness-update.png");
+        if (!ctx.hooked) {
+            return steps;
+        }
+
+        await setRun({ status: "running" });
+        const updating = await readRow();
+        steps.push({
+            step: "3. a running update reads Updating… and offers no Update button",
+            ok: updating != null && updating.text.includes("Updating…") && updating.update === false,
+            detail: JSON.stringify(updating),
+        });
+        await showRow("cdp-shots/harness-update-updating.png");
+
+        await setRun({ status: "done", version: "999.0.0" });
+        const updated = await readRow();
+        steps.push({
+            step: "4. a finished update reads Updated to 999.0.0 · new sessions use it",
+            ok:
+                updated != null &&
+                updated.text.includes("Updated to 999.0.0 · new sessions use it") &&
+                updated.update === false,
+            detail: JSON.stringify(updated),
+        });
+        await showRow("cdp-shots/harness-update-updated.png");
+
+        await setRun({ status: "failed", error: "Error: EACCES permission denied" });
+        const failed = await readRow();
+        steps.push({
+            step: "5. a failed update shows the updater's error and offers Update again",
+            ok: failed != null && failed.text.includes("Error: EACCES permission denied") && failed.update === true,
+            detail: JSON.stringify(failed),
+        });
+        await showRow("cdp-shots/harness-update-failed.png");
+        await setRun(null);
+
+        await h.ev(`(() => {
+            window.__harnessUpdateSnapshot = window.__getHarnesses();
+            window.__setHarnesses(window.__harnessUpdateSnapshot.map((x) => ({ ...x, installed: false })));
+            return true;
+        })()`);
+        await settle(200);
+        const none = await h.ev(`(() => {
+            const text = document.querySelector("[data-harness-none]")?.textContent ?? "";
+            return { anyRow: !!document.querySelector("[data-harness-row]"), says: text.includes("No harness installed.") };
+        })()`);
+        steps.push({
+            step: "6. with nothing installed, About says No harness installed.",
+            ok: none.anyRow === false && none.says === true,
+            detail: JSON.stringify(none),
+        });
+        await h.shot("cdp-shots/harness-update-none.png");
+        await h.ev(`(() => { window.__setHarnesses(window.__harnessUpdateSnapshot); return true; })()`);
+        await settle(200);
+
+        // the toggle writes harness:updatecheck through SetConfig; read it back from the backend, then put it back
+        const toggleSel = `[role="switch"][aria-label="Check for harness updates"]`;
+        const readSetting = async () => {
+            const cfg = await h.rpc("getfullconfig", null);
+            return cfg?.settings?.["harness:updatecheck"];
+        };
+        const before = await h.ev(`document.querySelector('${toggleSel}')?.getAttribute("aria-checked") ?? null`);
+        await h.ev(`document.querySelector('${toggleSel}')?.click()`);
+        await settle(600); // wait for SetConfigCommand to persist
+        const flipped = await readSetting();
+        await h.ev(`document.querySelector('${toggleSel}')?.click()`);
+        await settle(600);
+        const restored = await readSetting();
+        steps.push({
+            step: "7. the Check for harness updates toggle writes harness:updatecheck and restores it",
+            ok:
+                (before === "true" || before === "false") &&
+                flipped === (before !== "true") &&
+                restored === (before === "true"),
+            detail: JSON.stringify({ before, flipped, restored }),
+        });
+        return steps;
+    },
+    async teardown(h) {
+        await h.ev(`(() => {
+            window.__setHarnessUpdateRun?.("claude", null);
+            if (window.__harnessUpdateSnapshot) window.__setHarnesses(window.__harnessUpdateSnapshot);
+            delete window.__harnessUpdateSnapshot;
+            return true;
+        })()`);
+        await h.goto("cockpit");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -16507,6 +16653,7 @@ export const SCENARIOS = [
     briefComposerSteerOnly,
     runsLifecycle,
     terminalTheme,
+    harnessUpdate,
     tuiLeader,
     tuiFullscreen,
     gitHistory,

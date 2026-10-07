@@ -20,6 +20,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/harnessupdate"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisvolunteer"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
@@ -141,9 +142,16 @@ func retryCleanupDebtAtStartup() {
 	}
 }
 
-// publishVaultNotice raises a vault sync notice through the same event NotifyCommand publishes.
-func publishVaultNotice(title, message, level string) {
+// publishNotice raises a backend notice (vault sync, a harness update) through the same event NotifyCommand publishes.
+func publishNotice(title, message, level string) {
 	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_Notify, Data: wshrpc.NotifyCommandData{Title: title, Message: message, Level: level}})
+}
+
+// harnessUpdateCheckEnabled reads harness:updatecheck at each check, so turning it off in Settings takes effect without
+// a restart; unset is on.
+func harnessUpdateCheckEnabled() bool {
+	v := wconfig.GetWatcher().GetFullConfig().Settings.HarnessUpdateCheck
+	return v == nil || *v
 }
 
 func createMainWshClient() {
@@ -338,7 +346,8 @@ func main() {
 		return
 	}
 	// after the config watcher: each run resolves the vault path from config
-	wavevault.StartSyncLoop(context.Background(), publishVaultNotice)
+	wavevault.StartSyncLoop(context.Background(), publishNotice)
+	harnessupdate.StartLoop(context.Background(), harnessUpdateCheckEnabled, publishNotice)
 	maybeStartPprofServer()
 	go stdinReadWatch()
 	go tempAttachmentCleanupLoop()
