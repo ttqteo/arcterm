@@ -10,8 +10,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- Notifications when an agent needs you or finishes its turn: a system notification while arcterm is in the
+  background (click it to open the agent), a toast while it is in front. Settings → Notifications turns each off.
+
 ### Changed
 
+- An agent waiting on a permission prompt now shows amber, like one asking a question.
 - `g` `j` now goes to Jarvis (it was `g` `c`).
 - On Windows, shortcuts are spelled out in words, `ctrl+shift+p` and `shift+g`, instead of `^⇧P` and `⇧G`; macOS
   keeps its ⌘ ⌃ ⌥ ⇧ symbols.
@@ -45,6 +51,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A turn an agent finishes while arcterm is in the background now stays unread, even when that agent is the one on
+  screen.
 - A finished conversation's "done" mark sits level with its title in the header instead of above it.
 - A run in Jarvis no longer repeats an agent's name ("X · X") when the agent has no task of its own.
 - A question's option previews keep the agent's mockups as drawn: each line and space in a monospace box, below the
