@@ -21,6 +21,7 @@ import { FilesSurface } from "./filessurface";
 import { setupRosterSeededLatch } from "./liveagents";
 import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
 import { NavRail } from "./navrail";
+import { NotifySync } from "./notifysync";
 import { useUnreadTracking } from "./unreadagentsstore";
 import { RadarSurface } from "./radarsurface";
 import { SettingsSurface } from "./settingssurface";
@@ -148,6 +149,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             </div>
             {/* outside the surface switch: a lead's review opens over whichever surface is showing */}
             <DocReviewDialog model={model} />
+            {/* a turn can end or an ask can land while any surface shows */}
+            <NotifySync model={model} />
         </div>
     );
 }
