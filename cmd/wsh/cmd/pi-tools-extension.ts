@@ -1,11 +1,15 @@
-// pi extension: wave_* tools (pi drives arc) and the notification bridge (B3). Installed by
+// pi extension: wave_* tools (pi drives arc), the notification bridge (B3) and the RAM gate on bash. Installed by
 // `wsh install-agent-hooks` into ~/.pi/agent/extensions/waveterm-tools.ts with __WSH_PATH__
 // substituted for the absolute wsh path. Bare pi outside a Wave block is inert: the tools fail closed
 // with a clear error.
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { Type } from "typebox";
 import {
     captureTailArgs,
     dagRulesArgs,
+    memgateArgs,
+    memgateRefusal,
     notifyArgs,
     openFileArgs,
     querySessionsArgs,
@@ -115,6 +119,24 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
             }
             return { content: [{ type: "text", text: "Notification sent." }], details: {} };
         },
+    });
+
+    // --- RAM gate: a heavy bash command waits for the person's say while RAM is short ---------------
+
+    // execFile, not pi.exec: the card can hold the command for half an hour, and this has no timeout.
+    // a failed wsh lets the command run: a broken gate never blocks pi
+    const execFileAsync = promisify(execFile);
+    pi.on("tool_call", async (event: any) => {
+        if (event?.toolName !== "bash" || !process.env.WAVETERM_BLOCKID) {
+            return undefined;
+        }
+        try {
+            const { stdout } = await execFileAsync(wshPath, memgateArgs(event.input?.command ?? ""));
+            const reason = memgateRefusal(stdout);
+            return reason === null ? undefined : { block: true, reason };
+        } catch {
+            return undefined;
+        }
     });
 
     // --- B3: notification bridge (event → wsh notify) ----------------------

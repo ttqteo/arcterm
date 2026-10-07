@@ -301,6 +301,38 @@ func TestRetireAskOnResumeKeepsAsk(t *testing.T) {
 	}
 }
 
+// a held command's card (`wsh memgate`) is raised from inside the tool call it holds, so the agent's
+// working reports (a parallel tool call, a subagent) are no proof it moved on
+func TestRetireAskOnResumeKeepsAHeldCommandsAsk(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	askTs := time.Now().UnixMilli()
+	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{AskId: "ask-held", Ts: askTs, Hold: true})
+	t.Cleanup(func() { agentask.GlobalRegistry.Drop(oref) })
+
+	retireAskOnResume(statusEvent(oref, baseds.AgentState_Working, askTs+60_000))
+
+	if _, ok := agentask.GlobalRegistry.Get(oref); !ok {
+		t.Fatal("a held command's ask must stay pending while its agent works")
+	}
+}
+
+func TestAskCommandKeepsHoldOnThePendingAsk(t *testing.T) {
+	oref := waveobj.MakeORef("block", uuid.NewString()).String()
+	t.Cleanup(func() { agentask.GlobalRegistry.Drop(oref) })
+	_, err := (&WshServer{}).AskCommand(context.Background(), wshrpc.CommandAskData{
+		ORef:      oref,
+		Questions: []baseds.AgentAskQuestion{{Question: "Run it?", Options: []baseds.AgentAskOption{{Label: "Run now"}}}},
+		Hold:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, ok := agentask.GlobalRegistry.Get(oref)
+	if !ok || !pending.Hold {
+		t.Fatalf("pending ask = %#v, %v; want it marked held", pending, ok)
+	}
+}
+
 func TestRetireAskOnResumeIgnoresOtherEvents(t *testing.T) {
 	oref := waveobj.MakeORef("block", uuid.NewString()).String()
 	askTs := time.Now().UnixMilli()

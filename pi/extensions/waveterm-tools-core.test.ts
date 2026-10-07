@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
     captureTailArgs,
     dagRulesArgs,
+    memgateArgs,
+    memgateRefusal,
     notifyArgs,
     openFileArgs,
     querySessionsArgs,
@@ -51,5 +53,30 @@ describe("waveterm-tools-core", () => {
             "error",
         ]);
         expect(notifyArgs("t", { level: "info" })).toEqual(["notify", "t"]);
+    });
+});
+
+describe("memgate", () => {
+    it("passes the command as one argument after --", () => {
+        expect(memgateArgs("-n task check:ts")).toEqual(["memgate", "--", "-n task check:ts"]);
+    });
+
+    it("lets the command run on a run verdict, after hold lines", () => {
+        expect(memgateRefusal('{"hold":"Low RAM: waiting for your answer"}\n{"run":true}\n')).toBeNull();
+    });
+
+    it("blocks with the reason of a refused verdict", () => {
+        expect(memgateRefusal('{"hold":"Low RAM"}\n{"run":false,"reason":"Not run: skipped."}\n')).toBe(
+            "Not run: skipped."
+        );
+    });
+
+    it.each([
+        ["no output", ""],
+        ["an error", "Error: wsh must be run inside a Wave-managed SSH session\n"],
+        ["a refusal with no reason", '{"run":false}\n'],
+        ["only a hold", '{"hold":"Low RAM"}\n'],
+    ])("lets the command run on %s", (_name, stdout) => {
+        expect(memgateRefusal(stdout)).toBeNull();
     });
 });

@@ -63,6 +63,11 @@ Other useful commands:
   List `Get-Process wave-tauri,wavesrv.x64 | Select Id,Path`, and stop only the PID whose path is in a
   repo checkout (`src-tauri\target`, `dist\bin`), never one under `AppData\Local\arcterm` (or
   `AppData\Local\Arc`, where installs from before the rename live).
+- **A heavy shell command can come back "Not run: …" while RAM is short.** Before every Bash command an agent
+  runs, the Claude mod and the pi tools extension ask `wsh memgate`; a build, the typecheck, a whole test suite or
+  `npm install` that would not leave 512 MB free waits on a Low RAM card for the person. A refusal is the person's
+  call: don't retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
+  `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never asks.
 - CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
 - **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
   `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold

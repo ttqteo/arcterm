@@ -39,6 +39,32 @@ export function dagRulesArgs(): string[] {
     return ["jarvis", "dag", "rules"];
 }
 
+// memgateArgs asks wsh whether a bash command may run now: a heavy one (a build, the typecheck, a whole
+// test suite) waits for the person's say on arcterm's card while RAM is short. The command rides as one
+// argument after --, so one starting with a dash is never read as a flag.
+export function memgateArgs(command: string): string[] {
+    return ["memgate", "--", command];
+}
+
+// memgateRefusal reads wsh memgate's stdout (hold lines, then the verdict) as the reason the command does
+// not run, or null to run it. Anything but a well-formed refusal runs it: a broken gate never blocks pi.
+export function memgateRefusal(stdout: string): string | null {
+    let refusal: string | null = null;
+    for (const line of stdout.split("\n")) {
+        try {
+            const v = JSON.parse(line);
+            if (v?.run === true) {
+                refusal = null;
+            } else if (v?.run === false && typeof v.reason === "string" && v.reason !== "") {
+                refusal = v.reason;
+            }
+        } catch {
+            // not a json line: wsh's own error output
+        }
+    }
+    return refusal;
+}
+
 // withOrchestrationRules appends a lead's rules to a provider request as its last message (orchestrator
 // redesign §7). No rules leaves the request untouched, which is every session that is not a lead holding
 // a dag.

@@ -8,6 +8,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Added
+
+- When RAM is short, a heavy command an agent runs (a build, the typecheck, a whole test suite, `npm install`) waits
+  on a **Low RAM** card that says how much it needs and how much is free: **Run now**, **Wait for RAM** (it starts
+  on its own once there is room) or **Don't run**.
+
 ## 0.15.4 — 2026-10-07
 
 ### Added
