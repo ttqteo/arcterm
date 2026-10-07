@@ -21,7 +21,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 import { useEffect } from "react";
-import { isMarkdownPath, languageForPath } from "./codeclassify";
+import { isMarkdownPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter } from "./codefrontmatter";
@@ -31,15 +31,18 @@ import {
     codeFileAtom,
     codePendingLineAtom,
     codeProjectAtom,
+    codeTexPdfAtom,
     codeViewModeAtom,
     draftKey,
     editDraft,
     openInCode,
     refreshIndex,
     setCaretLineReader,
+    texPdfFor,
 } from "./codestore";
 import { useWrap } from "./codewrap";
 import { FrontmatterCard } from "./frontmattercard";
+import { texPdfMeta } from "./texpdf";
 
 // DESIGN.md's markdown size (14px text, 12px mono). It reads at that size because .markdown-doc holds the
 // document to a centred reading column instead of letting lines run the width of a maximized pane.
@@ -108,8 +111,11 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
     const project = useAtomValue(codeProjectAtom);
     const drafts = useAtomValue(codeDraftsAtom);
     const pendingLine = useAtomValue(codePendingLineAtom);
-    const mode = useAtomValue(codeViewModeAtom);
-    const wrap = useWrap(project != null && file.kind !== "none" ? draftKey(project, file.path) : "");
+    const chosenMode = useAtomValue(codeViewModeAtom);
+    const shownAbs = project != null && file.kind !== "none" ? draftKey(project, file.path) : "";
+    const wrap = useWrap(shownAbs);
+    const texPdf = texPdfFor(useAtomValue(codeTexPdfAtom), shownAbs);
+    const mode = file.kind === "none" ? chosenMode : resolveViewMode(file.path, chosenMode, texPdf != null);
 
     // Two paths, both needed. Monaco is keyed by file path, so opening a DIFFERENT file remounts it
     // and onMount is the only hook that runs late enough to reveal a line. Jumping to another line
@@ -119,9 +125,9 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
         if (pendingLine == null) {
             return;
         }
-        // a rendered document has no line to reveal; consume the request so a later Source toggle
-        // does not half-open the file at a stale position
-        if (file.kind === "text" && isMarkdownPath(file.path) && mode === "preview") {
+        // a rendered document or a PDF has no line to reveal; consume the request so a later Source
+        // toggle does not half-open the file at a stale position
+        if (file.kind === "text" && (mode === "preview" || mode === "pdf")) {
             globalStore.set(codePendingLineAtom, null);
             return;
         }
@@ -189,6 +195,26 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             // instance or it keeps the previous file's model URI and language
             if (mode === "diff") {
                 return <CodeDiffView key={file.path} path={file.path} text={draft?.text ?? file.text} wrap={wrap} />;
+            }
+            // the PDF last built from this .tex file's root, never compiled for the view, so its line says how old
+            if (mode === "pdf" && texPdf != null) {
+                return (
+                    <div className="flex h-full min-h-0 flex-col">
+                        <PdfFrame
+                            key={texPdf.pdfpath}
+                            data-code-tex-pdf={texPdf.pdfpath}
+                            path={texPdf.pdfpath}
+                            version={texPdf.modtime}
+                            title={texPdfMeta(texPdf, Date.now())}
+                        />
+                        <div
+                            data-code-tex-pdf-meta
+                            className="flex-none truncate border-t border-border px-3 py-1 text-[11px] text-muted"
+                        >
+                            {texPdfMeta(texPdf, Date.now())}
+                        </div>
+                    </div>
+                );
             }
             // READMEs and other prose render as documents; Source (the CodeEditor below) stays one
             // toggle away, and the draft feeds the preview so unsaved edits show what you would save

@@ -18,7 +18,7 @@ import { base64ToString, fireAndForget, stringToBase64 } from "@/util/util";
 import { atom, type Getter, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { debounce } from "throttle-debounce";
-import { classifyFile, hasNulByte, MAX_VIEW_BYTES } from "./codeclassify";
+import { classifyFile, hasNulByte, isTexPath, MAX_VIEW_BYTES, type ViewMode } from "./codeclassify";
 import {
     conflictMessage,
     conflictOf,
@@ -172,9 +172,35 @@ export const codeTreeFocusedAtom = atom<boolean>(false) as PrimitiveAtom<boolean
 // Diff shows the file against HEAD without leaving the editor. Ignored for non-markdown files,
 // which are never Preview. Reset on project switch, but not on file switch — a reader who prefers
 // source stays in source across files.
-export const codeViewModeAtom = atom<"preview" | "source" | "diff">("preview") as PrimitiveAtom<
-    "preview" | "source" | "diff"
->;
+// A .tex file reads as a document too, and has a PDF mode while a built PDF exists; a file shows the mode it
+// does not offer as its Preview, else its Source (codeclassify.ts resolveViewMode).
+export const codeViewModeAtom = atom<ViewMode>("preview") as PrimitiveAtom<ViewMode>;
+
+// The built PDF of the open .tex file's root, found without compiling (DocPdfFindCommand). Keyed by the file's
+// absolute path so a lookup that lands after another file opened is not mistaken for that file's.
+export const codeTexPdfAtom = atom<{ abs: string; found: CommandDocPdfFindRtnData | null } | null>(
+    null
+) as PrimitiveAtom<{ abs: string; found: CommandDocPdfFindRtnData | null } | null>;
+
+// the open .tex file's PDF when it has one, else null
+export function texPdfFor(state: { abs: string; found: CommandDocPdfFindRtnData | null } | null, abs: string) {
+    return state != null && state.abs === abs && state.found?.pdfpath ? state.found : null;
+}
+
+export async function refreshTexPdf(abs: string): Promise<void> {
+    let found: CommandDocPdfFindRtnData | null = null;
+    try {
+        found = await RpcApi.DocPdfFindCommand(TabRpcClient, { path: abs });
+    } catch {
+        found = null; // an unreadable file just has no PDF mode
+    }
+    const project = globalStore.get(codeProjectAtom);
+    const file = globalStore.get(codeFileAtom);
+    if (project == null || file.kind === "none" || draftKey(project, file.path) !== abs) {
+        return;
+    }
+    globalStore.set(codeTexPdfAtom, { abs, found });
+}
 
 // The left-hand side of the diff. One union rather than parallel booleans, for the same reason
 // CodeFile is one: the pane renders an exhaustive switch and cannot land in a contradictory pair.
@@ -283,6 +309,7 @@ export async function selectProject(p: CodeProject | null): Promise<void> {
     globalStore.set(codeCursorAtom, null);
     globalStore.set(codePendingLineAtom, null);
     globalStore.set(codeViewModeAtom, "preview");
+    globalStore.set(codeTexPdfAtom, null);
     globalStore.set(codeStatusAtom, null);
     globalStore.set(codeStatusErrorAtom, null);
     globalStore.set(codeHeadAtom, { kind: "idle" });
@@ -744,6 +771,10 @@ export async function openPath(rel: string, opts?: { pushHistory?: boolean; line
     globalStore.set(codeSaveAtom, { kind: "idle" });
     globalStore.set(codeStaleAtom, null);
     const abs = joinRepoPath(project.path, rel);
+    // the PDF lookup runs beside the read: it needs only the path, and the PDF mode appears when it lands
+    if (isTexPath(rel)) {
+        fireAndForget(() => refreshTexPdf(abs));
+    }
 
     // A file you have unsaved edits in is restored from its pinned base rather than re-read. Re-reading
     // would silently re-point the base at whatever is on disk NOW, which is exactly the state the

@@ -10,12 +10,21 @@
 // working controls for tidiness is churn.
 
 import { joinRepoPath } from "@/util/paths";
-import { cn } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check, Copy, WrapText } from "lucide-react";
 import { useState } from "react";
-import { isMarkdownPath } from "./codeclassify";
-import { codeDraftsAtom, codeFileAtom, codeProjectAtom, codeViewModeAtom, draftKey } from "./codestore";
+import { resolveViewMode, viewModesFor } from "./codeclassify";
+import {
+    codeDraftsAtom,
+    codeFileAtom,
+    codeProjectAtom,
+    codeTexPdfAtom,
+    codeViewModeAtom,
+    draftKey,
+    refreshTexPdf,
+    texPdfFor,
+} from "./codestore";
 import { toggleWrap, useWrap } from "./codewrap";
 
 export function CodePathBar() {
@@ -23,7 +32,9 @@ export function CodePathBar() {
     const file = useAtomValue(codeFileAtom);
     const drafts = useAtomValue(codeDraftsAtom);
     const [copied, setCopied] = useState(false);
-    const wrap = useWrap(project != null && file.kind !== "none" ? draftKey(project, file.path) : "");
+    const shownAbs = project != null && file.kind !== "none" ? draftKey(project, file.path) : "";
+    const wrap = useWrap(shownAbs);
+    const hasPdf = texPdfFor(useAtomValue(codeTexPdfAtom), shownAbs) != null;
 
     if (project == null || file.kind === "none") {
         return null;
@@ -43,7 +54,7 @@ export function CodePathBar() {
                     className="size-[6px] flex-none rounded-full bg-accent-soft"
                 />
             ) : null}
-            {file.kind === "text" ? <ViewModeToggle markdown={isMarkdownPath(file.path)} /> : null}
+            {file.kind === "text" ? <ViewModeToggle path={file.path} abs={abs} hasPdf={hasPdf} /> : null}
             <div className="flex-1" />
             {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
             <button
@@ -67,12 +78,14 @@ export function CodePathBar() {
     );
 }
 
-// Markdown files render as documents by default; Source is the escape back to the editable view and
-// Diff shows the file against HEAD. Preview is markdown-only — there is nothing to render for a Go
-// file — while Source and Diff are offered for any text file.
-function ViewModeToggle({ markdown }: { markdown: boolean }) {
-    const [mode, setMode] = useAtom(codeViewModeAtom);
-    const modes = (["preview", "source", "diff"] as const).filter((m) => markdown || m !== "preview");
+// Markdown and .tex files render as documents by default; Source is the escape back to the editable view and
+// Diff shows the file against HEAD. Preview is for documents only — there is nothing to render for a Go
+// file — while Source and Diff are offered for any text file. A .tex file with a built PDF also has PDF,
+// which looks the PDF up again when chosen so a build made since opening the file shows.
+function ViewModeToggle({ path, abs, hasPdf }: { path: string; abs: string; hasPdf: boolean }) {
+    const [chosen, setMode] = useAtom(codeViewModeAtom);
+    const mode = resolveViewMode(path, chosen, hasPdf);
+    const modes = viewModesFor(path, hasPdf);
     return (
         <div className="flex flex-none items-center gap-0.5 rounded-[6px] border border-border p-[2px]">
             {modes.map((m) => (
@@ -80,13 +93,18 @@ function ViewModeToggle({ markdown }: { markdown: boolean }) {
                     key={m}
                     type="button"
                     data-code-view-mode={m}
-                    onClick={() => setMode(m)}
+                    onClick={() => {
+                        setMode(m);
+                        if (m === "pdf") {
+                            fireAndForget(() => refreshTexPdf(abs));
+                        }
+                    }}
                     className={cn(
                         "cursor-pointer rounded-[4px] px-2 py-[2px] text-[11px] capitalize",
                         m === mode ? "bg-accent/10 text-accent-soft" : "text-muted hover:text-primary"
                     )}
                 >
-                    {m}
+                    {m === "pdf" ? "PDF" : m}
                 </button>
             ))}
         </div>
