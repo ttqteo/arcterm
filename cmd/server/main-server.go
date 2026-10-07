@@ -18,6 +18,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/authkey"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
+	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
 	"github.com/wavetermdev/waveterm/pkg/harnessupdate"
@@ -176,6 +177,8 @@ func grabAndRemoveEnvVars() error {
 	if err != nil {
 		return err
 	}
+	// before the config hook's first ApplyEnv, so Default can put back what wavesrv was started with
+	claudeaccount.CaptureInherited()
 
 	// Remove WAVETERM env vars that leak from prod => dev
 	os.Unsetenv("WAVETERM_CLIENTID")
@@ -339,7 +342,10 @@ func main() {
 	if err := jarvis.MigrateTierPins(context.Background()); err != nil {
 		log.Printf("error migrating route tier pins: %v\n", err)
 	}
-	wconfig.ConfigHook = func(fc wconfig.FullConfigType) { wshserver.SyncProjectChannels(context.Background(), fc.Projects) }
+	wconfig.ConfigHook = func(fc wconfig.FullConfigType) {
+		wshserver.SyncProjectChannels(context.Background(), fc.Projects)
+		claudeaccount.ApplyEnv(fc.Settings.ClaudeActiveAccount)
+	}
 	err = startConfigWatcher()
 	if err != nil {
 		log.Printf("error starting config watcher: %v\n", err)

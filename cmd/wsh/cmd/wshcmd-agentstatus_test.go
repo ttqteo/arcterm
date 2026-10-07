@@ -136,3 +136,16 @@ func TestBuildAgentStatusData_piPayload(t *testing.T) {
 		t.Fatalf("Usage = %#v, want nil", data.Usage)
 	}
 }
+
+// the frontend keys Claude rate-limit snapshots per account, so a usage delta names the account its
+// session runs on (wavesrv puts the active one in ARC_CLAUDE_ACCOUNT before spawning anything)
+func TestBuildUsageDeltaTagsClaudeAccount(t *testing.T) {
+	t.Setenv("ARC_CLAUDE_ACCOUNT", "a1234abcd")
+	if got := buildUsageDelta(agentStatusCmd); got.Account != "a1234abcd" {
+		t.Fatalf("usage account = %q, want a1234abcd", got.Account)
+	}
+	t.Setenv("ARC_CLAUDE_ACCOUNT", "")
+	if got := buildUsageDelta(agentStatusCmd); got.Account != "" {
+		t.Fatalf("usage account = %q, want \"\" (Default)", got.Account)
+	}
+}

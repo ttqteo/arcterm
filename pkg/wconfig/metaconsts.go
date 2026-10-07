@@ -64,5 +64,8 @@ const (
 	ConfigKey_HarnessPreferredRuntime        = "harness:preferredruntime"
 	ConfigKey_HarnessPreferredModel          = "harness:preferredmodel"
 	ConfigKey_HarnessUpdateCheck             = "harness:updatecheck"
+
+	ConfigKey_ClaudeClear                    = "claude:*"
+	ConfigKey_ClaudeActiveAccount            = "claude:activeaccount"
 )
 

@@ -36,7 +36,8 @@ async function readClaudeQuota(): Promise<void> {
         const q = await RpcApi.GetClaudeQuotaCommand(TabRpcClient);
         const usage = quotaUsage(q);
         if (usage != null) {
-            recordRateLimit("claude", usage, q.capturedat);
+            // wavesrv answers only for the Default account
+            recordRateLimit("claude:default", usage, q.capturedat);
         }
     } catch (e) {
         // the saved snapshot keeps answering; the next poll tries again

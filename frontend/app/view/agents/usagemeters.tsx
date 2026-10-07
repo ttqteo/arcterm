@@ -10,9 +10,9 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Fragment, useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
-import { liveWindowAgents, providerPlanUsage, usageLevel } from "./agentsviewmodel";
+import { usageLevel } from "./agentsviewmodel";
 import { meterTitle, providerDot, usageBarVisible, windowUsedTokens } from "./cockpitrailmodel";
-import { mergeRateLimitWindows, savedRateLimitsAtom } from "./ratelimitstore";
+import { activeClaudeAccountAtom, planDonuts, savedRateLimitsAtom } from "./ratelimitstore";
 import { loadWindowTokens, windowTokensAtom, type WindowTokens } from "./windowtokenstore";
 
 const LEVEL_BAR: Record<"ok" | "warn" | "hot", string> = { ok: "bg-accent", warn: "bg-warning", hot: "bg-error" };
@@ -27,14 +27,15 @@ const WINDOWS = [
 // Rate-limit windows are account-scoped, not per-agent: every agent's live reading collapses to one block
 // per provider (last live wins), merged over the saved snapshot so it survives idle — the aggregation the
 // Usage surface uses. Only running agents count as live (liveWindowAgents): an idle one holds the reading
-// frozen at its last turn and would pin the meter to that old value. The 1s clock rolls a window over the
-// moment it resets.
+// frozen at its last turn and would pin the meter to that old value. Claude's windows are the active Claude
+// account's only (planDonuts). The 1s clock rolls a window over the moment it resets.
 export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
+    const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const windowTokens = useAtomValue(windowTokensAtom);
     const now = useAtomValue(model.nowAtom);
-    const donuts = mergeRateLimitWindows(providerPlanUsage(liveWindowAgents(agents)), saved, now);
+    const donuts = planDonuts(agents, saved, activeAccount, now);
     const claude = donuts.find((d) => d.provider === "claude");
     useEffect(() => {
         if (claude == null) {
@@ -58,7 +59,7 @@ function UsageMeters({
     now,
     onOpen,
 }: {
-    donuts: ReturnType<typeof mergeRateLimitWindows>;
+    donuts: ReturnType<typeof planDonuts>;
     windowTokens: WindowTokens | null;
     now: number;
     onOpen: () => void;

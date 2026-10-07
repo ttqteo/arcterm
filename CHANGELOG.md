@@ -20,6 +20,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   (Doc review's build, or the one beside the main file), a **PDF** mode shows it with how old it is.
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
+- Switch the Claude account in Settings: sign in extra subscriptions once, pick one, and new agents and the plan usage
+  follow it.
 
 ### Changed
 

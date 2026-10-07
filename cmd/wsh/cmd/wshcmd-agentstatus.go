@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -153,10 +154,19 @@ func agentStatusRun(cmd *cobra.Command, args []string) (rtnErr error) {
 }
 
 func publishUsageDelta(cmd *cobra.Command, oref *waveobj.ORef) error {
+	if err := publishUsage(oref, buildUsageDelta(cmd)); err != nil {
+		return fmt.Errorf("publishing agentstatus usage event: %v", err)
+	}
+	fmt.Printf("agentstatus usage set\n")
+	return nil
+}
+
+func buildUsageDelta(cmd *cobra.Command) *baseds.AgentUsage {
 	usage := &baseds.AgentUsage{
 		ContextPct: agentUsageContext,
 		ContextMax: agentUsageContextMax,
 		CostUSD:    agentUsageCost,
+		Account:    os.Getenv("ARC_CLAUDE_ACCOUNT"),
 	}
 	// only attach the rate-limit fields when explicitly provided, so an API-key (non-Pro/Max)
 	// session that omits them reports nil ("unknown") rather than a misleading 0%
@@ -172,12 +182,7 @@ func publishUsageDelta(cmd *cobra.Command, oref *waveobj.ORef) error {
 			usage.WeekReset = &agentUsageWeekReset
 		}
 	}
-
-	if err := publishUsage(oref, usage); err != nil {
-		return fmt.Errorf("publishing agentstatus usage event: %v", err)
-	}
-	fmt.Printf("agentstatus usage set\n")
-	return nil
+	return usage
 }
 
 func publishUsage(oref *waveobj.ORef, usage *baseds.AgentUsage) error {

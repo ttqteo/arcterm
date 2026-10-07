@@ -12,6 +12,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
+	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
@@ -193,9 +194,18 @@ func (ws *WshServer) ScanClaudeProjectsCommand(ctx context.Context) (*wshrpc.Com
 }
 
 func (ws *WshServer) GetClaudeQuotaCommand(ctx context.Context) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
-	q := claudequota.Get(ctx)
+	return claudeQuotaFor(ctx, claudeaccount.Active(), claudequota.Get), nil
+}
+
+// a setup-token cannot read the usage endpoint (403), and the credentials file and Claude Code's
+// cached answer belong to the /login account: say nothing rather than another account's numbers
+func claudeQuotaFor(ctx context.Context, active string, get func(context.Context) *claudequota.Quota) *wshrpc.CommandGetClaudeQuotaRtnData {
+	if active != "" {
+		return &wshrpc.CommandGetClaudeQuotaRtnData{}
+	}
+	q := get(ctx)
 	if q == nil {
-		return &wshrpc.CommandGetClaudeQuotaRtnData{}, nil
+		return &wshrpc.CommandGetClaudeQuotaRtnData{}
 	}
 	return &wshrpc.CommandGetClaudeQuotaRtnData{
 		FiveHourPct:   q.FiveHourPct,
@@ -204,7 +214,7 @@ func (ws *WshServer) GetClaudeQuotaCommand(ctx context.Context) (*wshrpc.Command
 		WeekReset:     q.WeekReset,
 		CapturedAt:    q.CapturedAt.UnixMilli(),
 		Source:        q.Source,
-	}, nil
+	}
 }
 
 // AgentControlCommand streams what the engine sends a block's agent session for as long as the caller

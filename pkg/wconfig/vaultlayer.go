@@ -37,6 +37,8 @@ var machineLocalKeys = map[string]bool{
 	ConfigKey_TermGitBashPath:    true,
 	ConfigKey_TermLocalShellPath: true,
 	ConfigKey_TermLocalShellOpts: true,
+	// the token it names lives only in this machine's secretstore
+	ConfigKey_ClaudeActiveAccount: true,
 }
 
 func IsMachineLocalKey(key string) bool {

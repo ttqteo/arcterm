@@ -13,9 +13,13 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { liveWindowAgents, providerPlanUsage } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import { mergeRateLimitWindows, savedRateLimitsAtom, topProviderUsage } from "@/app/view/agents/ratelimitstore";
+import {
+    activeClaudeAccountAtom,
+    planDonuts,
+    savedRateLimitsAtom,
+    topProviderUsage,
+} from "@/app/view/agents/ratelimitstore";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
 import { motion, useMotionValue, useReducedMotion } from "motion/react";
@@ -68,11 +72,12 @@ function count(items: AttentionItem[], kind: string): number {
 function usePetSignals(model: AgentsViewModel): PetSignals {
     const agents = useAtomValue(model.agentsAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
+    const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const now = useAtomValue(model.nowAtom);
     const attention = useAtomValue(attentionAtom);
     const cap = useWorkerCapacity();
 
-    const donuts = mergeRateLimitWindows(providerPlanUsage(liveWindowAgents(agents)), saved, now);
+    const donuts = planDonuts(agents, saved, activeAccount, now);
     const top = topProviderUsage(donuts);
     const rateLimit =
         top != null

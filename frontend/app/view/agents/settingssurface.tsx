@@ -11,6 +11,8 @@
 import { formatBuildTime, versionInfoAtom } from "@/app/cockpit/versioninfo";
 import { MOTION } from "@/app/element/motiontokens";
 import { atoms, getSettingsKeyAtom } from "@/app/store/global";
+import { globalStore } from "@/app/store/jotaiStore";
+import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
@@ -18,8 +20,10 @@ import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { Folder, Search } from "lucide-react";
 import { motion, MotionConfig, useReducedMotion } from "motion/react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
+import { formatAgeShort } from "./agentsviewmodel";
+import { restartCandidates, rowQuota } from "./claudeaccount";
 import {
     coerceFontSize,
     coerceScrollback,
@@ -38,6 +42,7 @@ import { RUNTIME_FLAGS, type Runtime } from "./launch";
 import { DEFAULT_REMEMBER_FLAGS, naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { ITEMS } from "./navrail";
 import { DEFAULT_RAIL_VISIBLE, railVisibleAtom } from "./railstore";
+import { savedRateLimitsAtom } from "./ratelimitstore";
 import { RoutePicker } from "./routepicker";
 import {
     changedCount,
@@ -204,7 +209,7 @@ const RowCtx = createContext<RowCtxValue>({
     revert: () => {},
 });
 
-export function SettingsSurface(_props: { model: AgentsViewModel }) {
+export function SettingsSurface({ model }: { model: AgentsViewModel }) {
     const reduce = useReducedMotion();
     const [query, setQuery] = useState("");
     const [flagRuntime, setFlagRuntime] = useState<Runtime>("claude");
@@ -277,7 +282,12 @@ export function SettingsSurface(_props: { model: AgentsViewModel }) {
                                 className="min-w-0 flex-1 overflow-y-auto px-[28px] pb-12 pt-2"
                             >
                                 <RowCtx.Provider value={ctx}>
-                                    <SectionBody id={section.id} runtime={flagRuntime} onRuntime={setFlagRuntime} />
+                                    <SectionBody
+                                        id={section.id}
+                                        runtime={flagRuntime}
+                                        onRuntime={setFlagRuntime}
+                                        model={model}
+                                    />
                                 </RowCtx.Provider>
                             </motion.div>
                         </>
@@ -660,7 +670,17 @@ function SecretInput({ placeholder, onCommit }: { placeholder: string; onCommit:
     );
 }
 
-function SectionBody({ id, runtime, onRuntime }: { id: string; runtime: Runtime; onRuntime: (r: Runtime) => void }) {
+function SectionBody({
+    id,
+    runtime,
+    onRuntime,
+    model,
+}: {
+    id: string;
+    runtime: Runtime;
+    onRuntime: (r: Runtime) => void;
+    model: AgentsViewModel;
+}) {
     switch (id) {
         case "appearance":
             return <AppearanceSection />;
@@ -674,6 +694,8 @@ function SectionBody({ id, runtime, onRuntime }: { id: string; runtime: Runtime;
             return <NewAgentSection runtime={runtime} onRuntime={onRuntime} />;
         case "run":
             return <RunRouteSection />;
+        case "claudeaccount":
+            return <ClaudeAccountSection model={model} />;
         case "terminal":
             return <TerminalSection />;
         case "memory":
@@ -907,6 +929,245 @@ function RunRouteSection() {
                 />
             </SettingRow>
             {preference.error ? <Note tone="error">{preference.error}</Note> : null}
+        </div>
+    );
+}
+
+function errorText(e: unknown): string {
+    return e instanceof Error ? e.message : String(e);
+}
+
+// shell-side: the dialog embeds CockpitFocusPane, which view/agents must not import statically
+const ClaudeSigninModal = lazy(() =>
+    import("@/app/cockpit/claude-signin-modal").then((m) => ({ default: m.ClaudeSigninModal }))
+);
+
+function quotaPct(pct: number | undefined): string {
+    return pct == null ? "—" : `${Math.round(pct)}%`;
+}
+
+// The account list and the tokens live behind the claudeaccount RPCs, not in settings; only the active
+// id is a setting (claude:activeaccount). wavesrv applies that setting to its own environment before it
+// broadcasts the change, so re-listing whenever the setting moves reads back what was actually applied —
+// `active` falls back to Default when the account's token is gone, and the radios show that, not the
+// setting.
+function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
+    const setting = (useAtomValue(getSettingsKeyAtom("claude:activeaccount")) as string) ?? "";
+    const saved = useAtomValue(savedRateLimitsAtom);
+    const [list, setList] = useState<CommandClaudeAccountListRtnData | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [pasteOpen, setPasteOpen] = useState(false);
+    const [pasteLabel, setPasteLabel] = useState("");
+    const [pasteError, setPasteError] = useState<string | null>(null);
+    const [signinOpen, setSigninOpen] = useState(false);
+    // bumped when a rename is cleared to nothing: remounting the field puts the stored label back
+    const [renameReset, setRenameReset] = useState(0);
+
+    const reload = () =>
+        fireAndForget(async () => {
+            try {
+                setList(await RpcApi.ClaudeAccountListCommand(TabRpcClient));
+            } catch (e) {
+                setError(errorText(e));
+            }
+        });
+    useEffect(() => {
+        reload();
+    }, [setting]);
+
+    const active = list?.active ?? null;
+    const select = (id: string) => {
+        if (id === active) {
+            return;
+        }
+        setError(null);
+        writeConfig({ "claude:activeaccount": id });
+        setList((prev) => (prev == null ? prev : { ...prev, active: id }));
+        const candidates = restartCandidates(globalStore.get(model.agentsAtom), id);
+        if (candidates.length > 0) {
+            modalsModel.pushModal("ClaudeAccountRestartModal", { candidates, account: id });
+        }
+    };
+    const rename = (id: string, label: string) =>
+        fireAndForget(async () => {
+            setError(null);
+            try {
+                await RpcApi.ClaudeAccountRenameCommand(TabRpcClient, { id, label });
+            } catch (e) {
+                setError(errorText(e));
+            }
+            reload();
+        });
+    // the backend switches to Default first when the account is the active one
+    const remove = (a: ClaudeAccountData) =>
+        modalsModel.pushModal("ConfirmModal", {
+            title: "Remove account",
+            message: `Xoá "${a.label}" khỏi máy này? Token của nó bị xoá theo.${a.id === active ? " Agent mới sẽ chạy trên Default (/login)." : ""}`,
+            confirmLabel: "Remove",
+            destructive: true,
+            onConfirm: () =>
+                fireAndForget(async () => {
+                    setError(null);
+                    try {
+                        await RpcApi.ClaudeAccountRemoveCommand(TabRpcClient, { id: a.id });
+                    } catch (e) {
+                        setError(errorText(e));
+                    }
+                    reload();
+                }),
+        });
+    // write-only: the token never comes back. A refused one stays in the field, with the reason under it.
+    const add = async (token: string): Promise<boolean> => {
+        setPasteError(null);
+        try {
+            await RpcApi.ClaudeAccountAddCommand(TabRpcClient, { label: pasteLabel.trim(), token });
+        } catch (e) {
+            setPasteError(errorText(e));
+            return false;
+        }
+        setPasteLabel("");
+        reload();
+        return true;
+    };
+
+    const now = Date.now();
+    const rows: { id: string; account?: ClaudeAccountData }[] = [
+        { id: "" },
+        ...(list?.accounts ?? []).map((a) => ({ id: a.id, account: a })),
+    ];
+    return (
+        <div className="py-[15px]">
+            <div role="radiogroup" aria-label="claude account" className="flex flex-col gap-1.5">
+                {rows.map(({ id, account }) => {
+                    const on = id === active;
+                    const quota = rowQuota(saved, id, now);
+                    return (
+                        <div
+                            key={id || "default"}
+                            role="radio"
+                            aria-checked={on}
+                            tabIndex={0}
+                            data-claude-account-row={id || "default"}
+                            onClick={() => select(id)}
+                            onKeyDown={(e) => {
+                                if (e.target === e.currentTarget && (e.key === " " || e.key === "Enter")) {
+                                    e.preventDefault();
+                                    select(id);
+                                }
+                            }}
+                            className={cn(
+                                "flex w-full cursor-pointer items-center gap-2.5 rounded-[11px] border p-[10px] text-left transition-colors",
+                                on ? "border-accent-700 bg-surface-hover" : "border-border hover:border-edge-strong"
+                            )}
+                        >
+                            <span
+                                className={cn(
+                                    "flex h-4 w-4 flex-none items-center justify-center rounded-full border-2 transition-colors",
+                                    on ? "border-accent" : "border-edge-strong"
+                                )}
+                            >
+                                {on ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
+                            </span>
+                            {account == null ? (
+                                <span
+                                    className={cn(
+                                        "min-w-0 flex-1 truncate text-[13px] font-semibold",
+                                        on ? "text-primary" : "text-secondary"
+                                    )}
+                                >
+                                    Default (/login)
+                                </span>
+                            ) : (
+                                // the rename field and Remove sit inside the row; their clicks must not select it
+                                <span
+                                    data-claude-account-rename={id}
+                                    className="min-w-0 flex-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                >
+                                    <CommitText
+                                        key={renameReset}
+                                        value={account.label}
+                                        placeholder="Account label"
+                                        width="w-[220px]"
+                                        onCommit={(v) => (v === "" ? setRenameReset((n) => n + 1) : rename(id, v))}
+                                    />
+                                </span>
+                            )}
+                            <span className="flex-none text-[11px] tabular-nums text-muted">
+                                {quota == null
+                                    ? "chưa dùng"
+                                    : `5h ${quotaPct(quota.fivehourpct)} · tuần ${quotaPct(quota.weekpct)} · đo ${formatAgeShort(now - quota.capturedAt)} trước`}
+                            </span>
+                            {account != null ? (
+                                <button
+                                    type="button"
+                                    data-claude-account-remove={id}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        remove(account);
+                                    }}
+                                    className="flex-none cursor-pointer rounded border border-edge-mid px-2.5 py-[4px] text-[11.5px] font-semibold text-secondary transition-colors hover:border-error/50 hover:text-error"
+                                >
+                                    Remove
+                                </button>
+                            ) : null}
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="mt-3 flex items-center gap-2.5">
+                <button
+                    type="button"
+                    data-claude-account-signin
+                    onClick={() => setSigninOpen(true)}
+                    className="cursor-pointer rounded border border-edge-mid px-3 py-[6px] text-[12px] font-semibold text-secondary transition-colors hover:border-edge-strong hover:text-primary"
+                >
+                    + Đăng nhập account
+                </button>
+                <button
+                    type="button"
+                    data-claude-account-paste
+                    aria-expanded={pasteOpen}
+                    onClick={() => setPasteOpen((v) => !v)}
+                    className="cursor-pointer text-[12px] font-semibold text-muted transition-colors hover:text-primary"
+                >
+                    {pasteOpen ? "▾" : "▸"} Dán token
+                </button>
+            </div>
+            {pasteOpen ? (
+                <div className="mt-3 flex flex-col gap-2 rounded-[11px] border border-border p-3">
+                    <div className="text-[12px] leading-[1.5] text-muted">
+                        Token từ <span className="font-mono">claude setup-token</span> (bắt đầu bằng{" "}
+                        <span className="font-mono">sk-ant-oat</span>). Enter để lưu.
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                        <input
+                            type="text"
+                            data-claude-account-paste-label
+                            value={pasteLabel}
+                            placeholder="Label (mặc định Account N)"
+                            spellCheck={false}
+                            onChange={(e) => setPasteLabel(e.target.value)}
+                            className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
+                        />
+                        <span data-claude-account-paste-token>
+                            <SecretInput placeholder="sk-ant-oat01-…" onCommit={add} />
+                        </span>
+                    </div>
+                    {pasteError ? (
+                        <div data-claude-account-error className="text-[12px] text-error">
+                            {pasteError}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+            {error ? <Note tone="error">{error}</Note> : null}
+            {signinOpen ? (
+                <Suspense fallback={null}>
+                    <ClaudeSigninModal onClose={() => setSigninOpen(false)} onAdded={reload} />
+                </Suspense>
+            ) : null}
         </div>
     );
 }

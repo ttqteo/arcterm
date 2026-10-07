@@ -84,7 +84,8 @@ A "Claude account" section in `settingssurface.tsx`:
   which the session sidebar skips, and the tab is closed on every exit path: its pty output (the
   `term` block file, which holds the token) is deleted with it. arcterm never runs the OAuth flow itself: that would mean
   posing as Claude Code's client on an unpublished API.
-- "Dán token" (secondary, in the same dialog): label + token field, for a token made elsewhere.
+- "Dán token" (secondary): a disclosure in the Claude account section itself, not part of the sign-in
+  dialog, holding a label field and a token field, for a token made elsewhere.
   Saving checks the shape only (`sk-ant-oat` prefix); a bad token surfaces as a 401 on the next claude
   run.
 - Removing the active account switches to Default first.

@@ -46,6 +46,16 @@ running**, wavesrv reads them itself (`pkg/claudequota`, the `GetClaudeQuotaComm
 This reverses the 2026-06-26 specs' choice to avoid the endpoint, made by the user on 2026-10-06 so
 the windows are known before any claude runs.
 
+### Several Claude accounts
+
+Settings → Claude account picks the account new sessions run on: Default (`/login`) or one added with
+`claude setup-token` (`docs/superpowers/specs/2026-10-07-claude-account-switch-design.md`). The windows
+belong to an account, so `ratelimitstore.ts` keeps one snapshot per account (`claude:default`,
+`claude:<id>`); `wsh agentstatus` tags each report with `ARC_CLAUDE_ACCOUNT`, and every reader shows only
+the active account's windows. The no-session read above is made for Default only: the usage endpoint
+refuses a setup-token (`403`), so `GetClaudeQuotaCommand` answers nothing while another account is active,
+and that account's windows are known once one of its sessions has reported.
+
 ## Data flow
 
 ```

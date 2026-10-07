@@ -6,6 +6,7 @@
 // that nothing read — so confirm dialogs (e.g. the Agent header's Close terminal) never appeared.
 // Mounted once in CockpitBody.
 
+import { ClaudeAccountRestartModal } from "@/app/view/agents/claudeaccountrestart";
 import { NarrationFeedFixtureModal } from "@/app/view/agents/narrationfeedfixture";
 import { AgentToolDetailModal } from "@/app/view/agents/tooldetailmodal";
 import { modalsModel } from "@/app/store/modalmodel";
@@ -19,6 +20,7 @@ const REGISTRY: Record<string, ComponentType<any>> = {
     ConfirmModal,
     MessageModal,
     AgentToolDetailModal,
+    ClaudeAccountRestartModal,
     // the narration-feed CDP scenario's fixture host; import.meta.env.DEV is false in a production build
     ...(import.meta.env.DEV ? { NarrationFeedFixtureModal } : {}),
 };

@@ -24,11 +24,11 @@ import { useAtom, useAtomValue } from "jotai";
 import { MotionConfig, motion } from "motion/react";
 import { useEffect, useMemo } from "react";
 import type { AgentsViewModel } from "./agents";
-import { formatReset, liveWindowAgents, providerPlanUsage, usageLevel } from "./agentsviewmodel";
+import { formatReset, usageLevel } from "./agentsviewmodel";
 import { providerDot, providerLabel } from "./cockpitrailmodel";
 import { DailyChart } from "./dailychart";
 import { harnessesAtom } from "./harnessstore";
-import { mergeRateLimitWindows, savedRateLimitsAtom, type DonutWindow } from "./ratelimitstore";
+import { activeClaudeAccountAtom, planDonuts, savedRateLimitsAtom, type DonutWindow } from "./ratelimitstore";
 import { runtimeMeta } from "./runtimemeta";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
 import { kpiGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
@@ -513,6 +513,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const loadError = useAtomValue(usageErrorAtom);
     const usageLoaded = useAtomValue(usageLoadedAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
+    const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const now = useAtomValue(model.nowAtom);
     const [usageWindow, setUsageWindow] = useAtom(usageWindowAtom);
     const [usageMetric, setUsageMetric] = useAtom(usageMetricAtom);
@@ -532,7 +533,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     const harnesses = useAtomValue(harnessesAtom);
     const catalogOrder = useMemo(() => harnesses.map((h) => h.runtime), [harnesses]);
-    const donuts = mergeRateLimitWindows(providerPlanUsage(liveWindowAgents(agents)), saved, now);
+    const donuts = planDonuts(agents, saved, activeAccount, now);
     const groups = useMemo(
         () => buildUsageRail(allStats.availableHarnesses, allStats.daily, donuts, catalogOrder),
         [allStats.availableHarnesses, allStats.daily, donuts, catalogOrder]

@@ -155,6 +155,12 @@
         },
         "harness:updatecheck": {
           "type": "boolean"
+        },
+        "claude:*": {
+          "type": "boolean"
+        },
+        "claude:activeaccount": {
+          "type": "string"
         }
       },
       "additionalProperties": false,

@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { globalStore } from "@/app/store/jotaiStore";
 import {
     mergeRateLimitWindows,
+    migrateSaved,
+    planDonuts,
+    projectActiveAccount,
+    rateLimitKey,
     readSavedRateLimits,
     recordRateLimit,
     savedRateLimitsAtom,
@@ -9,6 +13,38 @@ import {
     type SavedSnapshot,
 } from "./ratelimitstore";
 import { liveWindowAgents, providerPlanUsage, type AgentVM } from "./agentsviewmodel";
+
+describe("per-account claude snapshots", () => {
+    it("keys claude by account", () => {
+        expect(rateLimitKey("claude", undefined)).toBe("claude:default");
+        expect(rateLimitKey("claude", "a1b2c3d4")).toBe("claude:a1b2c3d4");
+        expect(rateLimitKey("codex", "a1b2c3d4")).toBe("codex");
+    });
+    it("migrates a bare claude snapshot to claude:default", () => {
+        const s = { capturedAt: 1, fivehourpct: 10 };
+        expect(migrateSaved({ claude: s, codex: s })).toEqual({ "claude:default": s, codex: s });
+    });
+    it("keeps an existing claude:default over a bare claude snapshot", () => {
+        const old = { capturedAt: 1, fivehourpct: 10 };
+        const cur = { capturedAt: 2, fivehourpct: 20 };
+        expect(migrateSaved({ claude: old, "claude:default": cur })).toEqual({ "claude:default": cur });
+    });
+    it("shows only the active account's snapshot, as claude", () => {
+        const a = { capturedAt: 1, fivehourpct: 10 };
+        const b = { capturedAt: 2, fivehourpct: 90 };
+        const saved = { "claude:default": a, "claude:a1": b, codex: a };
+        expect(projectActiveAccount(saved, "a1")).toEqual({ claude: b, codex: a });
+        expect(projectActiveAccount(saved, "")).toEqual({ claude: a, codex: a });
+    });
+    it("planDonuts drops claude agents on another account", () => {
+        const agents = [
+            { id: "1", state: "working", agent: "claude", usage: { fivehourpct: 97, account: "" } },
+            { id: "2", state: "working", agent: "claude", usage: { fivehourpct: 5, account: "a1" } },
+        ] as AgentVM[];
+        const d = planDonuts(agents, {}, "a1", 0);
+        expect(d.find((x) => x.provider === "claude")?.fivehour.pct).toBe(5);
+    });
+});
 
 describe("topProviderUsage", () => {
     const now = 1_800_000_000_000;
@@ -169,32 +205,49 @@ describe("recordRateLimit + readSavedRateLimits round-trip", () => {
     });
 
     it("persists only window fields (+capturedAt), dropping context/cost", () => {
-        recordRateLimit("claude", { fivehourpct: 62, fivehourreset: 999, weekpct: 41, contextpct: 70, costusd: 1.2 });
+        recordRateLimit("claude:default", {
+            fivehourpct: 62,
+            fivehourreset: 999,
+            weekpct: 41,
+            contextpct: 70,
+            costusd: 1.2,
+        });
         const saved = readSavedRateLimits();
-        expect(saved.claude.fivehourpct).toBe(62);
-        expect(saved.claude.weekpct).toBe(41);
-        expect(saved.claude.capturedAt).toBeGreaterThan(0);
-        expect((saved.claude as any).contextpct).toBeUndefined();
-        expect((saved.claude as any).costusd).toBeUndefined();
+        expect(saved["claude:default"].fivehourpct).toBe(62);
+        expect(saved["claude:default"].weekpct).toBe(41);
+        expect(saved["claude:default"].capturedAt).toBeGreaterThan(0);
+        expect((saved["claude:default"] as any).contextpct).toBeUndefined();
+        expect((saved["claude:default"] as any).costusd).toBeUndefined();
     });
 
     it("is a no-op for usage without window fields", () => {
-        recordRateLimit("claude", { contextpct: 70, costusd: 1.2 });
+        recordRateLimit("claude:default", { contextpct: 70, costusd: 1.2 });
         expect(readSavedRateLimits()).toEqual({});
     });
 
     it("stamps a reading with the time it is as of, when the caller knows it", () => {
         globalStore.set(savedRateLimitsAtom, {});
-        recordRateLimit("claude", { fivehourpct: 50, weekpct: 41 }, 1_759_700_000_000);
-        expect(readSavedRateLimits().claude).toMatchObject({ fivehourpct: 50, capturedAt: 1_759_700_000_000 });
+        recordRateLimit("claude:default", { fivehourpct: 50, weekpct: 41 }, 1_759_700_000_000);
+        expect(readSavedRateLimits()["claude:default"]).toMatchObject({
+            fivehourpct: 50,
+            capturedAt: 1_759_700_000_000,
+        });
     });
 
     it("keeps a newer snapshot over an older reading", () => {
         globalStore.set(savedRateLimitsAtom, {});
-        recordRateLimit("claude", { fivehourpct: 50 }, 2000);
-        recordRateLimit("claude", { fivehourpct: 20 }, 1000);
-        expect(readSavedRateLimits().claude).toMatchObject({ fivehourpct: 50, capturedAt: 2000 });
-        expect(globalStore.get(savedRateLimitsAtom).claude.fivehourpct).toBe(50);
+        recordRateLimit("claude:default", { fivehourpct: 50 }, 2000);
+        recordRateLimit("claude:default", { fivehourpct: 20 }, 1000);
+        expect(readSavedRateLimits()["claude:default"]).toMatchObject({ fivehourpct: 50, capturedAt: 2000 });
+        expect(globalStore.get(savedRateLimitsAtom)["claude:default"].fivehourpct).toBe(50);
+    });
+
+    it("reads a bare claude snapshot back as claude:default", () => {
+        (globalThis as any).localStorage.setItem(
+            "wave:ratelimits",
+            JSON.stringify({ claude: { fivehourpct: 7, capturedAt: 5 } })
+        );
+        expect(readSavedRateLimits()).toEqual({ "claude:default": { fivehourpct: 7, capturedAt: 5 } });
     });
 
     it("corrupt localStorage reads back as empty", () => {
