@@ -11,6 +11,7 @@
 //
 // It never draws a number. The nav badge owns the count; the creature owns the kind (pet spec §3).
 
+import { toastsAtom } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { liveWindowAgents, providerPlanUsage } from "@/app/view/agents/agentsviewmodel";
@@ -317,6 +318,17 @@ function PetSprite({
             touch();
         }
     }, [touch, utterance]);
+
+    // a toast is a [data-pet-avoid] box the walker only meets on its next step, which a resting pet takes seconds
+    // later: step now, once the stack has laid out, so it walks off from under a new toast at once (and wakes for it)
+    const toastCount = useAtomValue(toastsAtom).length;
+    const toastCountRef = useRef(toastCount);
+    useEffect(() => {
+        const added = toastCount > toastCountRef.current;
+        toastCountRef.current = toastCount;
+        const raf = requestAnimationFrame(added ? touch : run);
+        return () => cancelAnimationFrame(raf);
+    }, [toastCount, run, touch]);
 
     useEffect(() => {
         window.addEventListener("resize", run);
