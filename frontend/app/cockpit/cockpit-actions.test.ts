@@ -37,6 +37,7 @@ function fakeModel() {
         pendingLaunchesAtom: atom([]),
         focusIdAtom: atom<string | undefined>(undefined),
         surfaceAtom: atom("cockpit"),
+        typingFollowsAtom: atom<string | null>(null),
     } as any;
 }
 
