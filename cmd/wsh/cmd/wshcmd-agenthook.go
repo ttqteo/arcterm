@@ -64,7 +64,10 @@ func planEmission(ev ccHookEvent) agentEmission {
 		switch ev.NotificationType {
 		case "idle_prompt":
 			return agentEmission{State: baseds.AgentState_Idle}
-		case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "":
+		// agent_needs_input is not one: Claude Code sends it when a turn ends and the session waits at its prompt (the
+		// agents-view signal), right after Stop has reported idle, so mapping it to waiting showed every finished
+		// session as asking until idle_prompt a minute later, and raised a false "Needs you"
+		case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "":
 			return agentEmission{State: baseds.AgentState_Waiting}
 		default:
 			return agentEmission{}

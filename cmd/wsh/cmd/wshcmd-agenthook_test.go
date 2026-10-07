@@ -29,7 +29,7 @@ func TestPlanEmission(t *testing.T) {
 		{"notification permission_prompt -> waiting", ccHookEvent{HookEventName: "Notification", NotificationType: "permission_prompt"}, baseds.AgentState_Waiting, false},
 		{"notification elicitation_dialog -> waiting", ccHookEvent{HookEventName: "Notification", NotificationType: "elicitation_dialog"}, baseds.AgentState_Waiting, false},
 		{"notification elicitation_url_dialog -> waiting", ccHookEvent{HookEventName: "Notification", NotificationType: "elicitation_url_dialog"}, baseds.AgentState_Waiting, false},
-		{"notification agent_needs_input -> waiting", ccHookEvent{HookEventName: "Notification", NotificationType: "agent_needs_input"}, baseds.AgentState_Waiting, false},
+		{"notification agent_needs_input -> nothing", ccHookEvent{HookEventName: "Notification", NotificationType: "agent_needs_input"}, "", false},
 		{"notification auth_success -> nothing", ccHookEvent{HookEventName: "Notification", NotificationType: "auth_success"}, "", false},
 		{"notification agent_completed -> nothing", ccHookEvent{HookEventName: "Notification", NotificationType: "agent_completed"}, "", false},
 		{"notification elicitation_complete -> nothing", ccHookEvent{HookEventName: "Notification", NotificationType: "elicitation_complete"}, "", false},
