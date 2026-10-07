@@ -23,6 +23,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - When RAM is short, a heavy command an agent runs (a build, the typecheck, a whole test suite, `npm install`) waits
   on a **Low RAM** card that says how much it needs and how much is free: **Run now**, **Wait for RAM** (it starts
   on its own once there is room) or **Don't run**.
+- The terminal shows images: Sixel and iTerm inline images (`imgcat`, `chafa`, image previews in TUIs) draw in place.
 
 ### Changed
 
@@ -56,6 +57,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   own bubble (it keeps the `?` mark), and while it speaks it walks out from under a toast or a terminal instead of
   standing still there.
 - A subagent's **Model** in the agent rail names the model it runs on again, instead of always showing `—`.
+- Most emoji in the terminal (🚀, ✅, ✨) take the two cells a TUI expects, so a line with one no longer pushes the
+  rest of it, or the cursor, a column out of place.
 
 ## 0.15.4 — 2026-10-07
 

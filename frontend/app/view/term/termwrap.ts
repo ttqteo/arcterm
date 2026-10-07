@@ -24,8 +24,10 @@ import * as services from "@/store/services";
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
 import { base64ToArray, fireAndForget } from "@/util/util";
 import { FitAddon } from "@xterm/addon-fit";
+import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import * as TermTypes from "@xterm/xterm";
@@ -150,6 +152,13 @@ export class TermWrap {
         this.terminal.loadAddon(this.searchAddon);
         this.terminal.loadAddon(this.fitAddon);
         this.terminal.loadAddon(this.serializeAddon);
+        // Unicode 11 widths, as the TUIs measuring their own layout assume: the default v6 table counts many emoji
+        // as one cell and misplaces everything after them on the line
+        this.terminal.loadAddon(new Unicode11Addon());
+        this.terminal.unicode.activeVersion = "11";
+        // Sixel and iTerm inline images (imgcat, chafa). Each terminal keeps its decoded images in its own FIFO
+        // store and the cockpit runs many terminals at once, so a quarter of the addon's 128 MB default
+        this.terminal.loadAddon(new ImageAddon({ storageLimit: 32 }));
         this.terminal.loadAddon(
             new WebLinksAddon(
                 (e, uri) => {
