@@ -7987,6 +7987,15 @@ const agentHistory = {
             await h.rpc("createproject", { name: AH_GHOST, path: ctx.ghostDir });
             ctx.ghostRegistered = true;
             await waitForProjectInConfig(h, AH_GHOST);
+            // the sidebar's Conversations lists registered projects only (registeredConversations), so the seeds'
+            // project is registered too, unless this store already has it
+            if ((await h.rpc("getfullconfig", null))?.projects?.[AH_PROJECT] == null) {
+                ctx.mainDir = join(cwd, AH_PROJECT);
+                mkdirSync(ctx.mainDir);
+                await h.rpc("createproject", { name: AH_PROJECT, path: ctx.mainDir });
+                ctx.mainRegistered = true;
+                await waitForProjectInConfig(h, AH_PROJECT);
+            }
             // the fixture roster is read once at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             ctx.modules = await ahResolveModules(h);
@@ -8409,6 +8418,16 @@ const agentHistory = {
                 const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
                 const channels = (await h.rpc("getchannels", null))?.channels ?? [];
                 for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.ghostDir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.mainRegistered) {
+            await step("delete the seeds' project", () => h.rpc("deleteproject", { name: AH_PROJECT }));
+            await step("delete the seeds' project channel", async () => {
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.mainDir))) {
                     await h.rpc("deletechannel", { channelid: c.oid });
                 }
             });

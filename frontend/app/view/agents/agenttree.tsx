@@ -47,6 +47,7 @@ import {
     conversationTree,
     endedConversationsByProject,
     liveBranches,
+    registeredConversations,
     sessionAgeLabel,
     splitActive,
     startOfDay,
@@ -1360,9 +1361,10 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const mode = useAtomValue(centerModeAtom);
     const sel = useAtomValue(model.sessionsSelAtom);
     const open = useSectionOpen("conversations");
-    // filed under the project name the Active section's folders use (agentsidebarmodel.ts)
-    const ended = useMemo(
-        () => endedConversationsByProject(archive, agents, registered),
+    // filed under the project name the Active section's folders use (agentsidebarmodel.ts); only the projects added to
+    // arcterm, the rest being Conversation History's
+    const { ended, elsewhere } = useMemo(
+        () => registeredConversations(endedConversationsByProject(archive, agents, registered), registered),
         [archive, agents, registered]
     );
     // a clock that moves once a day, so the run views below do not rebuild on every tick
@@ -1458,7 +1460,27 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                     })}
                 </div>
             )}
+            {open && archive != null && !filtered && elsewhere > 0 ? (
+                <HistoryElsewhereRow model={model} count={elsewhere} />
+            ) : null}
         </div>
+    );
+}
+
+// Under Conversations: how many conversations belong to folders never added to arcterm, which only Conversation History
+// lists. A click opens it.
+function HistoryElsewhereRow({ model, count }: { model: AgentsViewModel; count: number }) {
+    return (
+        <button
+            type="button"
+            data-agent-conversations-elsewhere
+            title="Open Conversation History"
+            onClick={() => showHistory(model)}
+            className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] tabular-nums text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
+        >
+            <span className="min-w-0 truncate">{count} in projects not added · History</span>
+            <ArrowUpRight size={11} aria-hidden className="ml-auto flex-none" />
+        </button>
     );
 }
 

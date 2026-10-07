@@ -122,10 +122,11 @@ function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; ses
             type="button"
             onClick={() => runSessionPrimary(model, session)}
             className={cn(
-                "flex-none cursor-pointer rounded-[7px] text-[12px] font-semibold",
+                // one height with the view toggle beside it, so the header row stays one tight line
+                "flex h-7 flex-none cursor-pointer items-center rounded-[7px] px-[11px] text-[12px] font-semibold",
                 strong && session.live
-                    ? "bg-accent px-[13px] py-[7px] text-background hover:opacity-90"
-                    : "border border-edge-strong bg-surface-raised px-[11px] py-[5px] text-secondary hover:border-accent hover:text-accent-soft"
+                    ? "bg-accent text-background hover:opacity-90"
+                    : "border border-edge-strong bg-surface-raised text-secondary hover:border-accent hover:text-accent-soft"
             )}
         >
             {primary === "jump" ? "Jump →" : "Resume →"}
@@ -143,7 +144,10 @@ function ViewToggle({ model, className }: { model: AgentsViewModel; className?: 
         <div
             role="group"
             aria-label="Session view"
-            className={cn("flex flex-none gap-0.5 rounded-[7px] border border-border bg-background p-0.5", className)}
+            className={cn(
+                "flex h-7 flex-none items-stretch gap-0.5 rounded-[7px] border border-border bg-background p-0.5",
+                className
+            )}
         >
             {options.map((o) => (
                 <button
@@ -152,7 +156,7 @@ function ViewToggle({ model, className }: { model: AgentsViewModel; className?: 
                     aria-pressed={view === o.key}
                     onClick={() => setView(o.key)}
                     className={cn(
-                        "cursor-pointer rounded-[5px] px-[9px] py-[3px] text-[11px] font-semibold",
+                        "flex cursor-pointer items-center rounded-[5px] px-[9px] text-[11px] font-semibold",
                         view === o.key ? "bg-accentbg text-primary" : "text-ink-mid hover:text-primary"
                     )}
                 >
@@ -398,7 +402,7 @@ export function SoloDetail({
         : { key: "done", text: "done" };
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-1 flex flex-none items-center gap-2.5 border-b border-edge-faint pb-2.5">
+            <div className="mb-1 flex flex-none items-center gap-2.5 border-b border-edge-faint pb-2">
                 {onBack ? (
                     <button
                         type="button"
@@ -414,7 +418,9 @@ export function SoloDetail({
                 <span className={cn("flex-none text-[13px]", rt.text)} title={rt.label}>
                     {rt.glyph}
                 </span>
-                <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
+                {/* centred, not baseline: StatusMark opens with an icon, whose box bottom would sit on the title's
+                    baseline and lift "✓ done" above the line */}
+                <div className="flex min-w-0 flex-1 items-center gap-2.5">
                     <h2 className="min-w-0 truncate text-[15px] font-semibold text-primary">
                         {session.task || "(untitled session)"}
                     </h2>

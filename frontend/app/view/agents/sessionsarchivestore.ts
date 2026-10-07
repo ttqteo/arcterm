@@ -80,10 +80,6 @@ export function overlayLive(base: SessionActivity[], roster: AgentVM[], _now: nu
     });
 }
 
-export function filterByProject(list: LiveSession[], project: string): LiveSession[] {
-    return project === "all" ? list : list.filter((session) => session.projectname === project);
-}
-
 export function filterByStatus(list: LiveSession[], f: SessionStatusFilter): LiveSession[] {
     if (f === "all") {
         return list;

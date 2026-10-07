@@ -20,3 +20,8 @@ export function pinnedPromptIndex(anchors: PromptAnchor[], viewTop: number): num
     }
     return at >= 0 && anchors[at].bottom <= viewTop ? at : -1;
 }
+
+// fired (bubbling) on a transcript's root as its pinned prompt starts the scroll back, so a feed that sticks to its tail
+// (sticktobottom.tsx) lets go first: a smooth scroll starts at the bottom, and a re-pin on the next streamed entry would
+// snap it back down, over and over while the agent writes
+export const PROMPT_JUMP_EVENT = "pinnedprompt:jump";
