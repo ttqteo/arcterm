@@ -66,11 +66,21 @@ A "Claude account" section in `settingssurface.tsx`:
 
 - A radio list: Default (/login) first, then each account by label. The active one is selected; picking
   another switches (decision 5's dialog).
-- Each account row: label (editable), masked token, last known 5h / week % from its snapshot, Remove.
-- "Thêm account": label + token field, with one line on how to get a token (`claude setup-token` in any
-  terminal, signed in as that account in the browser). Saving validates the shape only (non-empty,
-  `sk-ant-oat` prefix); a bad token shows up as a 401 on the next claude run.
+- Each account row: label (editable), last known 5h / week % from its snapshot with its age ("chưa dùng"
+  when there is none), Remove. The token is never shown.
+- "+ Đăng nhập account" opens a dialog with a small live terminal running `claude setup-token`. The
+  browser opens, the user signs in as the account to add and authorizes. arcterm watches the block's
+  output for `sk-ant-oat01-[A-Za-z0-9_-]+`; on a match it stores the token, closes the terminal, and asks
+  only for a label (default "Account N"). The user never copies the token. Closing the dialog first
+  kills the command and stores nothing. arcterm never runs the OAuth flow itself: that would mean
+  posing as Claude Code's client on an unpublished API.
+- "Dán token" (secondary, in the same dialog): label + token field, for a token made elsewhere.
+  Saving checks the shape only (`sk-ant-oat` prefix); a bad token surfaces as a 401 on the next claude
+  run.
 - Removing the active account switches to Default first.
+
+A token works for model calls and is refused by the usage endpoint: checked 2026-10-07, `claude -p` ran
+with it and `/api/oauth/usage` answered `403`.
 
 ## Testing
 
