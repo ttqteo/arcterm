@@ -8,7 +8,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
+## 0.15.3 — 2026-10-07
 
 ### Added
 
@@ -24,6 +24,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Code has a read-only side column: drag a file from the tree onto the right half of the editor, choose **Open to the
   Side**, or press `Ctrl+\` to see a file beside the one you edit — a paper's PDF or preview next to its source
   follows your typing. A `.tex` file with nothing to preview, such as a generated macros file, opens on Source.
+- In a Doc review you can suggest an edit: select text and press `e` (or the pencil beside a paragraph) to edit that
+  paragraph's LaTeX or Markdown source. The file is not changed; Request changes sends the agent the exact
+  `Edit: replace "…" with "…"`, shown on the card word by word.
 - The Diff surface has a **Wrap** toggle (`Alt+Z`) too, shared per file with Code and the agent panel's File tab.
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
