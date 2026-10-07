@@ -30,10 +30,13 @@ profiles, macOS Keychain, and remote (ssh/wsl) connections.
    connectors).
 2. **"Default (/login)" is always an option** and means no token: claude uses whatever `/login` stored,
    exactly as today. It is the state after upgrade.
-3. **Tokens live in `pkg/secretstore`** (`secrets.enc`), one secret per account,
-   `CLAUDE_ACCOUNT_<id>`. `settings.json` holds only the non-secret part: `claude:accounts` (id, label)
-   and `claude:activeaccount` (an id, or empty for Default). A token is write-only in the UI: pasted
-   once, then shown masked; replacing it means pasting again.
+3. **Tokens live in `pkg/secretstore`** (`secrets.enc`, DPAPI on Windows), one secret per account,
+   `CLAUDE_ACCOUNT_<id>` (ids are `a` + 8 hex, since secret names allow only `[A-Za-z0-9_]`). The account
+   list (id, label) is a local file, `<data dir>/claude-accounts.json`, behind four RPCs, not a setting:
+   `SetConfigCommand` rejects an array-of-objects value, the Settings "changed" check compares by
+   identity, and settings sync through the vault to machines that do not hold the tokens. The active
+   account is the string setting `claude:activeaccount` (empty = Default), listed in `machineLocalKeys`
+   so it never syncs. No RPC returns a token.
 4. **The token reaches claude through wavesrv's own environment.** On start and on every switch, wavesrv
    sets `CLAUDE_CODE_OAUTH_TOKEN` and `ARC_CLAUDE_ACCOUNT=<id>` in its process environment (or restores the
    values it inherited, for Default). Local shells (`pkg/shellexec`), headless `claude -p` runs
@@ -72,7 +75,9 @@ A "Claude account" section in `settingssurface.tsx`:
   browser opens, the user signs in as the account to add and authorizes. arcterm watches the block's
   output for `sk-ant-oat01-[A-Za-z0-9_-]+`; on a match it stores the token, closes the terminal, and asks
   only for a label (default "Account N"). The user never copies the token. Closing the dialog first
-  kills the command and stores nothing. arcterm never runs the OAuth flow itself: that would mean
+  kills the command and stores nothing. The terminal lives in a helper tab marked `session:helper`,
+  which the session sidebar skips, and the tab is closed on every exit path: its pty output (the
+  `term` block file, which holds the token) is deleted with it. arcterm never runs the OAuth flow itself: that would mean
   posing as Claude Code's client on an unpublished API.
 - "Dán token" (secondary, in the same dialog): label + token field, for a token made elsewhere.
   Saving checks the shape only (`sk-ant-oat` prefix); a bad token surfaces as a 401 on the next claude
