@@ -70,7 +70,7 @@
 
 **Depends on:** none
 
-**Files:**
+**Files:** `pkg/storage/storage.go`, `pkg/storage/scanner.go`, `pkg/storage/storage_test.go`
 - Create: `pkg/storage/storage.go`
 - Create: `pkg/storage/scanner.go`
 - Test: `pkg/storage/storage_test.go`
@@ -607,11 +607,10 @@ git commit -m "feat(storage): the package's types and a background scanner"
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `pkg/orchestrate/worktree.go`, `pkg/orchestrate/worktree_test.go`, `pkg/storage/worktrees.go`, `pkg/storage/worktrees_test.go`
 - Modify: `pkg/orchestrate/worktree.go` (add two exported functions after `removeWorktreeDir`)
 - Test: `pkg/orchestrate/worktree_test.go` (append)
 - Create: `pkg/storage/worktrees.go`
-- Modify: `pkg/storage/scanner.go` (`defaultProviders`)
 - Test: `pkg/storage/worktrees_test.go`
 
 **Interfaces:**
@@ -1000,15 +999,7 @@ func (w runWorktrees) clean(ctx context.Context, env *Env, ids []string, opts Cl
 }
 ```
 
-Then register it in `pkg/storage/scanner.go`:
-
-```go
-func defaultProviders() []provider {
-	return []provider{runWorktrees{}}
-}
-```
-
-(When another of Tasks 3–5 has already merged, keep the order worktrees, sessions, housekeeping, build output.)
+Task 7 registers this provider in `defaultProviders` (`pkg/storage/scanner.go`); this task leaves `scanner.go` alone, so Tasks 2–5 can run side by side.
 
 - [ ] **Step 8: Run all storage tests**
 
@@ -1018,7 +1009,7 @@ Expected: `ok`, no file listed.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add pkg/orchestrate/worktree.go pkg/orchestrate/worktree_test.go pkg/storage/worktrees.go pkg/storage/worktrees_test.go pkg/storage/scanner.go
+git add pkg/orchestrate/worktree.go pkg/orchestrate/worktree_test.go pkg/storage/worktrees.go pkg/storage/worktrees_test.go
 git commit -m "feat(storage): finished runs' worktrees, removed with their branches kept"
 ```
 
@@ -1028,9 +1019,8 @@ git commit -m "feat(storage): finished runs' worktrees, removed with their branc
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `pkg/storage/sessions.go`, `pkg/storage/sessions_test.go`
 - Create: `pkg/storage/sessions.go`
-- Modify: `pkg/storage/scanner.go` (`defaultProviders`)
 - Test: `pkg/storage/sessions_test.go`
 
 **Interfaces:**
@@ -1289,7 +1279,7 @@ func isLive(live []string, path string) bool {
 }
 ```
 
-Register it in `defaultProviders` in `pkg/storage/scanner.go`, keeping the order worktrees, sessions, housekeeping, build output with whatever has merged, e.g. `return []provider{runWorktrees{}, oldSessions{}}`, or `return []provider{oldSessions{}}` when Task 2 has not merged yet.
+Task 7 registers this provider in `defaultProviders` (`pkg/storage/scanner.go`); this task leaves `scanner.go` alone, so Tasks 2–5 can run side by side.
 
 - [ ] **Step 4: Run all storage tests**
 
@@ -1299,7 +1289,7 @@ Expected: `ok`, no file listed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pkg/storage/sessions.go pkg/storage/sessions_test.go pkg/storage/scanner.go
+git add pkg/storage/sessions.go pkg/storage/sessions_test.go
 git commit -m "feat(storage): old Claude sessions, moved to the session trash"
 ```
 
@@ -1309,9 +1299,8 @@ git commit -m "feat(storage): old Claude sessions, moved to the session trash"
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `pkg/storage/housekeeping.go`, `pkg/storage/housekeeping_test.go`
 - Create: `pkg/storage/housekeeping.go`
-- Modify: `pkg/storage/scanner.go` (`defaultProviders`)
 - Test: `pkg/storage/housekeeping_test.go`
 
 **Interfaces:**
@@ -1637,7 +1626,7 @@ func emptyDir(dir string) (int64, error) {
 }
 ```
 
-Register it in `defaultProviders` in `pkg/storage/scanner.go` in its place (worktrees, sessions, housekeeping, build output) among the providers that have merged.
+Task 7 registers this provider in `defaultProviders` (`pkg/storage/scanner.go`); this task leaves `scanner.go` alone, so Tasks 2–5 can run side by side.
 
 - [ ] **Step 4: Run all storage tests**
 
@@ -1647,7 +1636,7 @@ Expected: `ok`, no file listed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pkg/storage/housekeeping.go pkg/storage/housekeeping_test.go pkg/storage/scanner.go
+git add pkg/storage/housekeeping.go pkg/storage/housekeeping_test.go
 git commit -m "feat(storage): rolled logs, the session trash and the webview cache marker"
 ```
 
@@ -1657,9 +1646,8 @@ git commit -m "feat(storage): rolled logs, the session trash and the webview cac
 
 **Depends on:** Task 1
 
-**Files:**
+**Files:** `pkg/storage/buildoutput.go`, `pkg/storage/buildoutput_test.go`
 - Create: `pkg/storage/buildoutput.go`
-- Modify: `pkg/storage/scanner.go` (`defaultProviders`)
 - Test: `pkg/storage/buildoutput_test.go`
 
 **Interfaces:**
@@ -2000,7 +1988,7 @@ func (buildOutput) clean(ctx context.Context, env *Env, ids []string, opts Clean
 }
 ```
 
-Register it last in `defaultProviders` in `pkg/storage/scanner.go` (worktrees, sessions, housekeeping, build output) among those that have merged.
+Task 7 registers this provider in `defaultProviders` (`pkg/storage/scanner.go`); this task leaves `scanner.go` alone, so Tasks 2–5 can run side by side.
 
 - [ ] **Step 4: Run all storage tests**
 
@@ -2010,7 +1998,7 @@ Expected: `ok`, no file listed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pkg/storage/buildoutput.go pkg/storage/buildoutput_test.go pkg/storage/scanner.go
+git add pkg/storage/buildoutput.go pkg/storage/buildoutput_test.go
 git commit -m "feat(storage): the projects' build output, removed one directory at a time"
 ```
 
@@ -2020,7 +2008,7 @@ git commit -m "feat(storage): the projects' build output, removed one directory 
 
 **Depends on:** none
 
-**Files:**
+**Files:** `src-tauri/src/webcache.rs`, `src-tauri/src/paths.rs`, `src-tauri/src/main.rs`
 - Create: `src-tauri/src/webcache.rs`
 - Modify: `src-tauri/src/paths.rs` (add `app_local_data_dir_for` and its tests)
 - Modify: `src-tauri/src/main.rs` (`mod webcache;`, the call in `main()`, one log line in `setup`)
@@ -2229,8 +2217,9 @@ git commit -m "feat(tauri): clear the webview cache at launch when Storage left 
 
 **Depends on:** Task 2, Task 3, Task 4, Task 5
 
-**Files:**
+**Files:** `pkg/storage/autoclean.go`, `pkg/storage/scanner.go`, `pkg/storage/autoclean_test.go`, `pkg/wshrpc/wshrpctypes_storage.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_storage.go`, `pkg/wshrpc/wshserver/wshserver_storage_test.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wconfig/settingsconfig.go`, `pkg/wconfig/defaultconfig/settings.json`, `cmd/server/main-server.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`
 - Create: `pkg/storage/autoclean.go`, `pkg/storage/autoclean_test.go`
+- Modify: `pkg/storage/scanner.go` (`defaultProviders`: register the four providers)
 - Create: `pkg/wshrpc/wshrpctypes_storage.go`
 - Modify: `pkg/wshrpc/wshrpctypes.go` (embed `StorageCommands` in `WshRpcInterface`)
 - Create: `pkg/wshrpc/wshserver/wshserver_storage.go`, `pkg/wshrpc/wshserver/wshserver_storage_test.go`
@@ -2694,7 +2683,7 @@ Expected: exit 0 (the generated TS typechecks).
 - [ ] **Step 9: Commit**
 
 ```bash
-git add pkg/storage/autoclean.go pkg/storage/autoclean_test.go pkg/storage/scanner.go pkg/wshrpc/wshrpctypes_storage.go pkg/wshrpc/wshrpctypes.go pkg/wshrpc/wshserver/wshserver_storage.go pkg/wshrpc/wshserver/wshserver_storage_test.go pkg/wps/wpstypes.go pkg/tsgen/tsgenevent.go pkg/wconfig/settingsconfig.go pkg/wconfig/defaultconfig/settings.json pkg/wconfig/metaconsts.go cmd/server/main-server.go frontend/app/store/wshclientapi.ts frontend/types/gotypes.d.ts frontend/types/waveevent.d.ts pkg/wshrpc/wshclient/wshclient.go
+git add pkg/storage/autoclean.go pkg/storage/autoclean_test.go pkg/wshrpc/wshrpctypes_storage.go pkg/wshrpc/wshrpctypes.go pkg/wshrpc/wshserver/wshserver_storage.go pkg/wshrpc/wshserver/wshserver_storage_test.go pkg/wps/wpstypes.go pkg/tsgen/tsgenevent.go pkg/wconfig/settingsconfig.go pkg/wconfig/defaultconfig/settings.json pkg/wconfig/metaconsts.go cmd/server/main-server.go frontend/app/store/wshclientapi.ts frontend/types/gotypes.d.ts frontend/types/waveevent.d.ts pkg/wshrpc/wshclient/wshclient.go pkg/storage/scanner.go
 git commit -m "feat(storage): RPCs, the storage:scan event, the settings and the daily auto-clean"
 ```
 
@@ -2704,7 +2693,7 @@ git commit -m "feat(storage): RPCs, the storage:scan event, the settings and the
 
 **Depends on:** Task 7
 
-**Files:**
+**Files:** `frontend/app/view/agents/storagemodel.ts`, `frontend/app/view/agents/storagemodel.test.ts`
 - Create: `frontend/app/view/agents/storagemodel.ts`
 - Test: `frontend/app/view/agents/storagemodel.test.ts`
 
@@ -3097,7 +3086,7 @@ git commit -m "feat(storage): the Storage section's model"
 
 **Depends on:** Task 8
 
-**Files:**
+**Files:** `frontend/app/view/agents/storagestore.ts`, `frontend/app/view/agents/storagesection.tsx`, `frontend/app/view/agents/storagenudge.tsx`, `frontend/app/view/agents/settingsstore.ts`, `frontend/app/view/agents/settingsstore.test.ts`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/cockpitshell.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`
 - Create: `frontend/app/view/agents/storagestore.ts`
 - Create: `frontend/app/view/agents/storagesection.tsx`
 - Create: `frontend/app/view/agents/storagenudge.tsx`
