@@ -62,7 +62,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
         return () => {
             live = false;
         };
-    }, [ref?.abs]);
+    }, [ref?.abs, ref?.reread]);
     if (ref == null) {
         return null;
     }

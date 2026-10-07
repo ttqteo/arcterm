@@ -585,6 +585,11 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+	// a turn that stops on part 1/3 of something waits on a reply, and the cockpit row shows the step until it gets
+	// one. Every idle event carries it: the step is transient, so an idle_prompt without it would clear it
+	if em.State == baseds.AgentState_Idle && agentHookShadow == "" && transcriptPath != "" {
+		data.Step = readLastStep(transcriptPath)
+	}
 	_ = publishAgentStatusData(oref, data, 1)
 	if address, cwd, ok := canvasRevealFor(ev); ok {
 		// best-effort like the rest: a closed cockpit or a topic it refuses must not fail the turn

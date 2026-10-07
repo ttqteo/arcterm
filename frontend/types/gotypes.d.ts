@@ -65,6 +65,7 @@ declare global {
         sessionid?: string;
         provider?: string;
         title?: string;
+        step?: string;
         transcriptpath?: string;
         ts: number;
         usage?: AgentUsage;

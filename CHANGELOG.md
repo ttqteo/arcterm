@@ -12,12 +12,17 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- An agent that stops on one part of a walk-through, such as "Part 1/3", shows `1/3` at the end of its row in
+  place of the unread count, and keeps it until you reply, so a half-reviewed design is not forgotten.
 - **Claude Code updates.** arcterm checks for a newer Claude Code every 6 hours and Jarvis says once when one is out.
   Settings → About lists each installed harness with its version, and Update installs the new one; open sessions keep
   theirs until they restart. Turn the check off with "Check for harness updates".
 
 ### Changed
 
+- `g` `j` now goes to Jarvis (it was `g` `c`).
+- On Windows, shortcuts are spelled out in words, `ctrl+shift+p` and `shift+g`, instead of `^⇧P` and `⇧G`; macOS
+  keeps its ⌘ ⌃ ⌥ ⇧ symbols.
 - Jarvis shows each initiative as a card with a bar of its chunks and the one to do next, and lists ideas in
   their own column beside the cards; an initiative's menu is always shown, and Waiting on you is hidden while
   nothing waits.
@@ -29,9 +34,28 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the way back to the terminal at its start.
 - The agent pane's header is one row: the name, the harness's mark, its state, model and context, then the project,
   which truncates first; the harness's name is in the mark's tooltip.
+- The Agent sidebar's Conversations lists only the projects you have added to arcterm; conversations from other
+  folders stay in Conversation History, and a row under the list counts them and opens it.
+- Conversation History has no page-wide header any more: the list column heads itself with the way back, the title,
+  the live count and the status filter, beside the conversation's own header, so the transcript starts higher.
+- Conversation History always lists every project, whichever one the app bar has chosen; the project choice narrows
+  the sidebar's Conversations only.
+- Clicking a pinned prompt scrolls the transcript smoothly back to it instead of jumping, unless reduced motion is
+  on, and a conversation's header buttons share one height, so the row is shorter.
+- Clicking a pinned prompt while the agent is still writing scrolls back to it and stays there, instead of being
+  pulled back to the newest output on every streamed line.
+- Choosing a terminal while an agent is on screen opens it in a panel under the agent instead of in its place. Drag
+  the panel's top edge to resize it, between 120 px and 60% of the column; its maximize button (or a double-click on
+  its bar) gives it the whole area and back, and its x hides it while the shell keeps running.
+  The right panel no longer lists terminals: the sidebar's Terminals section is where you switch between them.
+- A row under Background tasks shows the command it runs, and a click opens the command's output in the panel's File
+  tab; clicking again reads it afresh while the command is still running.
 
 ### Fixed
 
+- Picking an answer in Claude's own question dialog in the terminal no longer comes back to Claude as "The user
+  dismissed the question."
+- A finished conversation's "done" mark sits level with its title in the header instead of above it.
 - A run in Jarvis no longer repeats an agent's name ("X · X") when the agent has no task of its own.
 - A question's option previews keep the agent's mockups as drawn: each line and space in a monospace box, below the
   options in a narrow pane and beside them in a wide one, where they had wrapped into a paragraph.

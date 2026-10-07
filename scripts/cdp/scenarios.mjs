@@ -7987,6 +7987,15 @@ const agentHistory = {
             await h.rpc("createproject", { name: AH_GHOST, path: ctx.ghostDir });
             ctx.ghostRegistered = true;
             await waitForProjectInConfig(h, AH_GHOST);
+            // the sidebar's Conversations lists registered projects only (registeredConversations), so the seeds'
+            // project is registered too, unless this store already has it
+            if ((await h.rpc("getfullconfig", null))?.projects?.[AH_PROJECT] == null) {
+                ctx.mainDir = join(cwd, AH_PROJECT);
+                mkdirSync(ctx.mainDir);
+                await h.rpc("createproject", { name: AH_PROJECT, path: ctx.mainDir });
+                ctx.mainRegistered = true;
+                await waitForProjectInConfig(h, AH_PROJECT);
+            }
             // the fixture roster is read once at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             ctx.modules = await ahResolveModules(h);
@@ -8409,6 +8418,16 @@ const agentHistory = {
                 const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
                 const channels = (await h.rpc("getchannels", null))?.channels ?? [];
                 for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.ghostDir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        if (ctx.mainRegistered) {
+            await step("delete the seeds' project", () => h.rpc("deleteproject", { name: AH_PROJECT }));
+            await step("delete the seeds' project channel", async () => {
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.mainDir))) {
                     await h.rpc("deletechannel", { channelid: c.oid });
                 }
             });
@@ -13843,31 +13862,73 @@ const agentRailSections = {
         rec("6. nothing in the open rail is under 10.5px", sweptOk(swept), JSON.stringify(swept));
 
         await h.ev(`document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.click()`);
-        const focused = await polishWaitFor(
+        const docked = await polishWaitFor(
             h,
             `(() => {
                 const t = document.querySelector('[data-agent-terminal="${termA.tabId}"]');
-                return !!t && !t.classList.contains("hidden");
+                return !!t && !t.classList.contains("hidden") && t.dataset.terminalDock === "true";
             })()`,
             4000
         );
         await polishNap(600);
         const narrowed = await h.ev(RAIL_SECTION_IDS);
-        const marks = await h.ev(`(() => ({
-            rail: document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.getAttribute("aria-current") ?? null,
-            railRole: document.querySelector('[data-rail-terminal="${termA.tabId}"]')?.getAttribute("role") ?? null,
-            tree: document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.className.includes("bg-surface-selected") ?? false,
-        }))()`);
+        const marks = await h.ev(`(() => {
+            const dock = document.querySelector('[data-agent-terminal="${termA.tabId}"]')?.getBoundingClientRect();
+            const grid = document.querySelector("[data-agent-grid]")?.getBoundingClientRect();
+            return {
+                gridDocked: document.querySelector("[data-agent-grid]")?.dataset.terminalDocked ?? null,
+                tree: document.querySelector('[data-agent-terminal-row="${termA.tabId}"]')?.className.includes("bg-surface-selected") ?? false,
+                bar: !!document.querySelector('[data-terminal-dock-bar="${termA.tabId}"]'),
+                atBottom: !!dock && !!grid && Math.abs(dock.bottom - grid.bottom) < 2,
+                share: dock && grid ? Math.round((dock.height / grid.height) * 100) : null,
+            };
+        })()`);
         rec(
-            "7. a tree Terminals row focuses that terminal, which reads as selected there, and its rail is Terminals alone with it current",
-            focused &&
-                JSON.stringify(narrowed) === JSON.stringify(["terminals"]) &&
-                marks.rail === "true" &&
-                marks.railRole === "button" &&
-                marks.tree === true,
-            JSON.stringify({ focused, narrowed, ...marks })
+            "7. a tree Terminals row docks that terminal under the agent, at the column's foot and at most 60% of it, reads as selected there, and leaves the agent's rail in place",
+            docked &&
+                !JSON.stringify(narrowed).includes('"terminals"') &&
+                marks.gridDocked === termA.tabId &&
+                marks.tree === true &&
+                marks.bar === true &&
+                marks.atBottom === true &&
+                marks.share != null &&
+                marks.share <= 61,
+            JSON.stringify({ docked, narrowed, ...marks })
         );
         await h.shot("cdp-shots/agent-rail-sections-terminal.png");
+
+        const dockFill = `(() => {
+            const dock = document.querySelector('[data-agent-terminal="${termA.tabId}"]')?.getBoundingClientRect();
+            const grid = document.querySelector("[data-agent-grid]")?.getBoundingClientRect();
+            const agentsShown = [...document.querySelectorAll("[data-agent-grid] > [data-agent-cell]")].some(
+                (c) => !c.classList.contains("hidden")
+            );
+            return {
+                max: document.querySelector('[data-terminal-dock-bar="${termA.tabId}"]')?.dataset.terminalDockMax ?? null,
+                share: dock && grid ? Math.round((dock.height / grid.height) * 100) : null,
+                agentsShown,
+                header: !!document.querySelector("[data-agent-header]"),
+            };
+        })()`;
+        await h.ev(`document.querySelector('[data-terminal-dock-bar="${termA.tabId}"] [data-terminal-dock-max-toggle]')?.click()`);
+        await polishNap(400);
+        const maxed = await h.ev(dockFill);
+        await h.shot("cdp-shots/agent-rail-sections-terminal-max.png");
+        await h.ev(`document.querySelector('[data-terminal-dock-bar="${termA.tabId}"] [data-terminal-dock-max-toggle]')?.click()`);
+        await polishNap(400);
+        const restored = await h.ev(dockFill);
+        rec(
+            "8. the panel's maximize button gives the terminal the whole area, the agent's header gone with it, and pressing it again puts the agent back",
+            maxed.max === "true" &&
+                maxed.share >= 95 &&
+                maxed.agentsShown === false &&
+                maxed.header === false &&
+                restored.header === true &&
+                restored.max == null &&
+                restored.share <= 61 &&
+                restored.agentsShown === true,
+            JSON.stringify({ maxed, restored })
+        );
         return steps;
     },
     async teardown(h, ctx) {

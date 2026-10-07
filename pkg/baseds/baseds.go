@@ -65,6 +65,7 @@ type AgentStatusData struct {
 	SessionID      string      `json:"sessionid,omitempty"`
 	Provider       string      `json:"provider,omitempty"`
 	Title          string      `json:"title,omitempty"` // agent's ai-title (task summary), used as the sidebar label
+	Step           string      `json:"step,omitempty"`  // idle: the "n/m" part its last message stopped on, e.g. "1/3"
 	TranscriptPath string      `json:"transcriptpath,omitempty"`
 	Ts             int64       `json:"ts"`
 	Usage          *AgentUsage `json:"usage,omitempty"`

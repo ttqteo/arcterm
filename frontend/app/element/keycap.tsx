@@ -5,7 +5,7 @@
 // glyphs come from the platform-aware keysym formatter. "chips" = one bordered box per key;
 // "inline" = a single terse box (for dense footers / menu shortcut columns).
 
-import { formatChord } from "@/util/keysym";
+import { formatChord, formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 
 const BOX = "rounded-[5px] border border-edge-mid px-[6px] py-0.5 font-mono text-[10.5px]";
@@ -21,7 +21,7 @@ export function KeyCap({
 }) {
     const parts = formatChord(chord);
     if (variant === "inline") {
-        return <span className={cn(BOX, "text-muted", className)}>{parts.join("")}</span>;
+        return <span className={cn(BOX, "text-muted", className)}>{formatChordString(chord)}</span>;
     }
     return (
         <span className={cn("inline-flex items-center gap-1", className)}>

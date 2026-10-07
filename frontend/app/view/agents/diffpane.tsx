@@ -13,6 +13,7 @@ import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { openInCode } from "@/app/view/code/codestore";
 import { joinRepoPath, splitRepoPath } from "@/util/paths";
+import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronUp, Code, ExternalLink, FileText, Pilcrow } from "lucide-react";
@@ -235,8 +236,8 @@ export function DiffPane({
                     <div className="flex flex-none items-center gap-[2px]">
                         <button
                             onClick={() => gotoChange("previous")}
-                            title="Previous change (⇧P)"
-                            aria-label="Previous change (⇧P)"
+                            title={`Previous change (${formatChordString("Shift:p")})`}
+                            aria-label={`Previous change (${formatChordString("Shift:p")})`}
                             className={navBtn}
                         >
                             <ChevronUp size={14} />
@@ -247,8 +248,8 @@ export function DiffPane({
                         </span>
                         <button
                             onClick={() => gotoChange("next")}
-                            title="Next change (⇧N)"
-                            aria-label="Next change (⇧N)"
+                            title={`Next change (${formatChordString("Shift:n")})`}
+                            aria-label={`Next change (${formatChordString("Shift:n")})`}
                             className={navBtn}
                         >
                             <ChevronDown size={14} />
@@ -259,7 +260,7 @@ export function DiffPane({
                 {layout.split ? (
                     <div
                         role="group"
-                        title="Unified / split (⇧D)"
+                        title={`Unified / split (${formatChordString("Shift:d")})`}
                         className="flex h-[28px] flex-none overflow-hidden rounded-[8px] border border-edge-mid"
                     >
                         {[false, true].map((v) => (
@@ -279,8 +280,8 @@ export function DiffPane({
                 ) : null}
                 <button
                     onClick={() => globalStore.set(ignoreWsAtom, !ignoreWs)}
-                    title="Hide whitespace (⇧W)"
-                    aria-label="Hide whitespace (⇧W)"
+                    title={`Hide whitespace (${formatChordString("Shift:w")})`}
+                    aria-label={`Hide whitespace (${formatChordString("Shift:w")})`}
                     aria-pressed={ignoreWs}
                     className={cn(
                         headerBtn,

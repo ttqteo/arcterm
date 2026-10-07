@@ -444,7 +444,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <button
                             type="button"
                             onClick={closeTerminal}
-                            title={`Close terminal — ends the agent (${formatChordString("Ctrl:c")} twice)`}
+                            title={
+                                agent.kind === "terminal"
+                                    ? "Close terminal — ends its shell"
+                                    : `Close agent — ends its session (${formatChordString("Ctrl:c")} twice)`
+                            }
                             className={cn(ICON_BTN, "hover:border-error hover:text-error")}
                         >
                             <X size={16} strokeWidth={1.9} />

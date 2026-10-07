@@ -4,16 +4,21 @@
 // Shared stick-to-bottom behavior for streaming NarrationTimeline feeds. Extracted from agentrow.tsx
 // so the subagent interior and runs worker cards get the same auto-follow + jump-to-latest pill.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isNearBottom } from "./agentsviewmodel";
+import { PROMPT_JUMP_EVENT } from "./pinnedprompt";
 
 // A scroll region that sticks to the tail while the user is at the bottom, releases when they scroll
 // up to read history, and re-sticks on jumpToBottom. `entries` is the dependency that triggers the
 // re-pin: pass the same array the feed renders. layout-effect (not effect) so the pin lands before
-// paint — otherwise a taller feed paints at the old scrollTop then snaps down a frame later.
+// paint — otherwise a taller feed paints at the old scrollTop then snaps down a frame later. A pinned prompt's scroll
+// back (PROMPT_JUMP_EVENT) releases it as scrolling up does.
 export function useStickToBottom(entries: unknown[]) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const stickRef = useRef(true);
+    // a pinned prompt's jump released the tail and its smooth scroll has not yet left the bottom zone, where the first
+    // frames still read as near the bottom and would re-stick
+    const leavingRef = useRef(false);
     const [atBottom, setAtBottom] = useState(true);
 
     useLayoutEffect(() => {
@@ -23,12 +28,33 @@ export function useStickToBottom(entries: unknown[]) {
         }
     }, [entries]);
 
+    // after every render, not once: a caller may mount its scroll region after its first render
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (el == null) {
+            return;
+        }
+        const release = () => {
+            stickRef.current = false;
+            leavingRef.current = true;
+            setAtBottom(false);
+        };
+        el.addEventListener(PROMPT_JUMP_EVENT, release);
+        return () => el.removeEventListener(PROMPT_JUMP_EVENT, release);
+    });
+
     const onScroll = () => {
         const el = scrollRef.current;
         if (!el) {
             return;
         }
         const near = isNearBottom(el);
+        if (leavingRef.current) {
+            if (near) {
+                return;
+            }
+            leavingRef.current = false;
+        }
         stickRef.current = near;
         setAtBottom(near);
     };
@@ -40,6 +66,7 @@ export function useStickToBottom(entries: unknown[]) {
         }
         el.scrollTop = el.scrollHeight;
         stickRef.current = true;
+        leavingRef.current = false;
         setAtBottom(true);
     };
 

@@ -39,7 +39,7 @@ Setup and Settings have no `Ctrl`+number slot — the positions are bound to `SU
 |---|---|
 | `g` `h` | Cockpit (home) |
 | `g` `a` | Agent |
-| `g` `c` | Jarvis — channels, records, recall |
+| `g` `j` | Jarvis — channels, records, recall |
 | `g` `r` | Radar |
 | `g` `s` | Conversation History (in the Agent surface) |
 | `g` `f` | Files |

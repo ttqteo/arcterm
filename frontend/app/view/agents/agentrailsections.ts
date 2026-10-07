@@ -7,7 +7,7 @@
 // in the tab strip in one fixed order (planRailStats), empty or not, so the rail keeps one shape from agent to agent;
 // the body lists only the ones with something in them. Plain terminals are not an agent's: the Agent tree lists them
 // in a section of its own.
-// Rendered by agentdetailsrail.tsx; a focused terminal's rail is planTerminalRail, rendered by terminalsrail.tsx.
+// Rendered by agentdetailsrail.tsx. A plain terminal has no rail.
 
 import type { RailSectionHeader } from "@/app/element/railsections";
 import type { BackgroundTaskStatus } from "./transcriptprojection";
@@ -36,17 +36,6 @@ export interface AgentRailSectionPlan {
 export interface AgentRailStat {
     id: AgentRailStatId;
     count: number | null; // null: not known (files loading, or not a git repo)
-}
-
-export interface TerminalRailInput {
-    terminals: number; // plain terminals the rail lists: the focused terminal's project's, or all of them on request
-    terminalsOther: number; // plain terminals of other projects, counted whether or not the list is widened
-}
-
-// Terminals goes inert at 0 like any counted section, unless other projects have terminals: its empty state then
-// offers to show them
-function terminalsHeader(terminals: number, other: number): RailSectionHeader {
-    return terminals === 0 && other > 0 ? { count: terminals, emptyOpenable: true } : { count: terminals };
 }
 
 export function planRailStats(i: AgentRailInput): AgentRailStat[] {
@@ -91,12 +80,6 @@ export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
     out.push({ id: "usage", header: { defaultOpen: false } });
     out.push({ id: "details", header: { defaultOpen: false } });
     return out;
-}
-
-// A focused terminal has no tools, files, run or usage of its own: its rail is the list that gets you to another
-// terminal, so the Terminals section is all of it
-export function planTerminalRail(i: TerminalRailInput): { id: "terminals"; header: RailSectionHeader }[] {
-    return [{ id: "terminals", header: terminalsHeader(i.terminals, i.terminalsOther) }];
 }
 
 export type BgTaskLabel = BackgroundTaskStatus | "unknown";

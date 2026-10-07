@@ -15,6 +15,7 @@ export interface FileRef {
     abs: string;
     root: string | null;
     line?: number;
+    reread?: number; // set on each open of a file that changes under it (a background task's output), to read it again
 }
 
 export interface FileHistory {

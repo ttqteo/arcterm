@@ -103,7 +103,7 @@ function focusCodeSearchInput(): void {
 const GO_TARGETS: { letter: string; surface: SurfaceKey; label: string; id?: string; history?: boolean }[] = [
     { letter: "h", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
-    { letter: "c", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
+    { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
     { letter: "r", surface: "radar", label: "Radar" },
     { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", history: true },
     { letter: "f", surface: "files", label: "Diff" },
@@ -147,14 +147,22 @@ const terminalSwapped = (model: AgentsViewModel) =>
 // while the focused agent shows either. The agent switches stay live: the tree stays on screen beside them.
 const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) => ctx.surface === "agent" && terminalSwapped(model);
 
-// Spec §5 (agent-tab-fixes): the second Ctrl+C closes the *focused* session — agent or plain
-// terminal alike (the UI labels both "terminal": "Close terminal — ends the agent"). Returns null
-// only when nothing focusable is targeted, so the press falls through to the PTY instead.
-export function closeTargetForDoubleCtrlC(agents: AgentVM[], focusId: string | undefined): AgentVM | null {
-    if (!focusId) {
+// Spec §5 (agent-tab-fixes): the second Ctrl+C closes the *focused* agent's session. The session is the one whose pane
+// the keys were typed in (paneId), which is not the selected agent when they went to the terminal docked under it
+// (terminaldock.ts); the selected agent only when the pane names none. A plain terminal is never a target: in a shell
+// Ctrl+C twice is how you stop a stubborn command, so both presses reach it (its menu and the x close it). Returns null
+// when there is no agent to close, so the press falls through to the PTY instead.
+export function closeTargetForDoubleCtrlC(
+    agents: AgentVM[],
+    focusId: string | undefined,
+    paneId?: string
+): AgentVM | null {
+    const id = paneId || focusId;
+    if (!id) {
         return null;
     }
-    return agents.find((x) => x.id === focusId) ?? null;
+    const target = agents.find((x) => x.id === id);
+    return target != null && target.kind !== "terminal" ? target : null;
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
@@ -296,7 +304,8 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // Global chord (allowed while the terminal is focused/editable), Agent surface only.
             when: (ctx) => ctx.surface === "agent",
             run: () => {
-                const inTerm = (document.activeElement as HTMLElement | null)?.closest?.(".cockpit-focus-pane") != null;
+                const active = document.activeElement as HTMLElement | null;
+                const inTerm = active?.closest?.(".cockpit-focus-pane") != null;
                 if (!inTerm) {
                     return false; // let ^C reach the shell when not in the focus pane
                 }
@@ -305,7 +314,8 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
                     lastCtrlC = null;
                     const agents = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
                     const fid = globalStore.get(model.focusIdAtom);
-                    const a = closeTargetForDoubleCtrlC(agents, fid);
+                    const paneId = active?.closest<HTMLElement>("[data-agent-terminal]")?.dataset.agentTerminal;
+                    const a = closeTargetForDoubleCtrlC(agents, fid, paneId);
                     if (a) {
                         confirmCloseSession(a, model);
                         return true;

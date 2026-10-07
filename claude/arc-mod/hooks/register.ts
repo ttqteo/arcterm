@@ -26,6 +26,9 @@ function racesCard(questions: readonly AskQuestion[]): boolean {
     return active && cardCanAsk(questions);
 }
 
+// the tool_use_ids of the calls the card is racing right now, so the PostToolUse hook below knows them
+const racing = new Set<string>();
+
 // true while the cockpit's prompt stream is held, so a second session.start (a /clear) opens no second one
 let listening = false;
 
@@ -123,6 +126,7 @@ export const register: Register = (on) => {
         }
         if (e.tool_use_id) {
             $.ui.notice(e.tool_use_id, ALSO_ON_CARD);
+            racing.add(e.tool_use_id);
         }
         // spawn, not run: run gives up after ten minutes, and a question can wait longer
         const wait = $.process.spawn({ argv: [WSH, "ask", "--wait"], input: askPayload(e.questions) });
@@ -153,6 +157,9 @@ export const register: Register = (on) => {
                 return answer;
             }
         } finally {
+            if (e.tool_use_id) {
+                racing.delete(e.tool_use_id);
+            }
             // answered or dismissed in the terminal: ending the stream kills wsh, and the server's waiter
             // cancel takes the card down. a no-op once wsh has exited
             void wait.return(undefined as never).catch(() => undefined);
@@ -170,4 +177,13 @@ export const register: Register = (on) => {
     // (`wsh ask`), which would stand over the one the call above is waiting on. answering here without
     // next(e) skips every settings PreToolUse hook beneath, so the call goes on to its dialog
     on("classic.PreToolUse", { tool: "AskUserQuestion" }, ($, e, next) => (racesCard(e.questions) ? {} : next(e)));
+
+    // an answer in claude's dialog runs the PostToolUse hooks inside the tool.call's next(e), before it
+    // resolves, and both settings hooks there cancel the card's waiter: `wsh ask --clear` directly, and
+    // agent-hook's working report through the server's retire-on-resume. the card then won the race with a
+    // cancel, and a pick in the terminal came back as "The user dismissed the question." skipping them for a
+    // raced call leaves the dialog's answer to win; tool.call's own teardown takes the card down
+    on("classic.PostToolUse", { tool_name: "AskUserQuestion" }, ($, e, next) =>
+        racing.has(e.tool_use_id) ? {} : next(e)
+    );
 };

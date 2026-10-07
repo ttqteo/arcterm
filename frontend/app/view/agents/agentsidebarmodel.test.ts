@@ -12,6 +12,7 @@ import {
     conversationTree,
     endedConversationsByProject,
     liveBranches,
+    registeredConversations,
     scanDue,
     sessionAgeLabel,
     sessionTitle,
@@ -608,6 +609,26 @@ describe("conversationCount", () => {
         expect(conversationCount(ended, "loom")).toBe(2);
         expect(conversationCount(ended, "nowhere")).toBe(0);
         expect(conversationCount(endedConversationsByProject(null, []), ALL_PROJECTS)).toBe(0);
+    });
+});
+
+describe("registeredConversations", () => {
+    it("keeps the folders of projects added to arcterm and counts the rest for History", () => {
+        const ended = endedOf([...solos(3), ...solos(2, "loom", "l"), ...solos(4, "website", "w")]);
+        const { ended: kept, elsewhere } = registeredConversations(ended, {
+            waveterm: { path: "/p" },
+            loom: { path: "/loom" },
+        });
+        expect([...kept.keys()].sort()).toEqual(["loom", "waveterm"]);
+        expect(elsewhere).toBe(4);
+        expect(conversationCount(kept, ALL_PROJECTS)).toBe(5);
+    });
+
+    it("keeps every folder while nothing is registered", () => {
+        const ended = endedOf([...solos(3), ...solos(2, "loom", "l")]);
+        const { ended: kept, elsewhere } = registeredConversations(ended, {});
+        expect(kept.size).toBe(2);
+        expect(elsewhere).toBe(0);
     });
 });
 

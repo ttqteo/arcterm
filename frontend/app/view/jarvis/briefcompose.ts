@@ -4,6 +4,8 @@
 // The words on the Brief's composer, which exists only on a session sheet with a live lead
 // (briefcomposertarget.ts). The user must never be unsure a keystroke reaches a running worker.
 
+import { formatChordString } from "@/util/keysym";
+
 export interface ComposerLabels {
     scope: string;
     hint: string;
@@ -19,6 +21,6 @@ export function resolveComposerLabels(project?: string): ComposerLabels {
         hint: "Message the lead of this session",
         action: "Send ⏎",
         // a standing rule outlives the session, so it needs a project to stand for: no project, no offer.
-        ...(p ? { alt: `⇧⏎ standing rule for ${p}` } : {}),
+        ...(p ? { alt: `${formatChordString("Shift:Enter")} standing rule for ${p}` } : {}),
     };
 }

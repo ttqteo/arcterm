@@ -204,6 +204,29 @@ export function endedConversationsByProject(
     return out;
 }
 
+/** Pure: the sidebar's share of endedConversationsByProject, the folders of projects added to arcterm (the registry's
+ *  names), and how many conversations the rest hold: those are Conversation History's alone, so a transcript from a
+ *  folder never added does not crowd the sidebar. With nothing registered there is nothing to scope to, so all stay. */
+export function registeredConversations(
+    ended: ReadonlyMap<string, ConversationEntry[]>,
+    registered: ProjectRegistry
+): { ended: Map<string, ConversationEntry[]>; elsewhere: number } {
+    const names = new Set(Object.keys(registered ?? {}));
+    if (names.size === 0) {
+        return { ended: new Map(ended), elsewhere: 0 };
+    }
+    const kept = new Map<string, ConversationEntry[]>();
+    let elsewhere = 0;
+    for (const [project, list] of ended) {
+        if (names.has(project)) {
+            kept.set(project, list);
+        } else {
+            elsewhere += list.length;
+        }
+    }
+    return { ended: kept, elsewhere };
+}
+
 export interface ActiveView {
     rows: AgentTreeRow[];
     count: number; // the agents the section holds, for its header; a collapsed folder still counts what it hides
@@ -313,8 +336,7 @@ export function liveBranches(base: SessionActivity[] | null, roster: AgentVM[]):
 /** Pure: the Terminals section. A folder per project the plain terminals were launched in (projectOf; "ungrouped" for
  *  none, as the Active section files an agent), the projects in the roster's order, then, unless it is collapsed, the
  *  folder's terminals in that order. Filtered to a project, its terminals alone in that order, flat and unfolded, with
- *  those that name no project: as in a focused terminal's rail (railterminals.ts), a shell attributed to no project
- *  shows under every one. */
+ *  those that name no project: a shell attributed to no project shows under every one. */
 export function terminalTree(terminals: AgentVM[], filter: string, collapsed: ReadonlySet<string>): TerminalTreeRow[] {
     if (filter !== ALL_PROJECTS) {
         return terminals

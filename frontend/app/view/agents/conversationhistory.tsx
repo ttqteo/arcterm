@@ -25,7 +25,6 @@ import { runDigestsAtom, useRunDigests } from "./runlineagestore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
 import {
-    filterByProject,
     filterByStatus,
     groupByRecency,
     loadSessionsArchive,
@@ -55,7 +54,7 @@ import {
     type RunView,
     type Status,
 } from "./sessionsruns";
-import { SurfaceEmptyState, SurfaceError, SurfaceHeader } from "./surfacescaffold";
+import { SurfaceEmptyState, SurfaceError } from "./surfacescaffold";
 
 const FILTERS: { key: SessionStatusFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -106,7 +105,6 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const [sel, setSel] = useAtom(model.sessionsSelAtom);
     const [member, setMember] = useAtom(model.sessionsMemberAtom);
     const [filter, setFilter] = useAtom(model.sessionsStatusFilterAtom);
-    const projectFilter = useAtomValue(model.projectFilterAtom);
     const digests = useAtomValue(runDigestsAtom);
 
     useEffect(() => {
@@ -165,10 +163,9 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
         lastactivets: s.lastactivets,
         session: s,
     }));
-    const scoped = [
-        ...runRows.filter((r) => projectFilter === "all" || r.run!.view.project === projectFilter),
-        ...soloRows.filter((r) => filterByProject([r.session!], projectFilter).length > 0),
-    ];
+    // every project, from the oldest scanned session on: the app bar's project switcher narrows the sidebar's
+    // Conversations, not History, which is where a conversation from any folder can still be found
+    const scoped = [...runRows, ...soloRows];
     const groups = groupByRecency(
         scoped.filter((r) => keepRow(r, filter)),
         now
@@ -244,54 +241,6 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     return (
         <MotionConfig reducedMotion="user">
             <div data-agent-history className="flex h-full min-h-0 flex-col bg-background">
-                <button
-                    type="button"
-                    data-agent-history-close
-                    onClick={showTerminal}
-                    className="ml-[28px] mt-3 flex w-fit flex-none cursor-pointer items-center gap-[6px] rounded-[6px] px-[6px] py-[3px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <ArrowLeft size={13} aria-hidden />
-                    Back to terminal
-                </button>
-                <SurfaceHeader
-                    title="Conversation History"
-                    badge={
-                        liveCount > 0 ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary">
-                                <span className="h-1.5 w-1.5 pulse-dot rounded-full bg-working" />
-                                {liveCount} {liveCount === 1 ? "agent" : "agents"} live
-                            </span>
-                        ) : null
-                    }
-                    actions={
-                        <div
-                            role="group"
-                            aria-label="Status filter"
-                            className="flex items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5"
-                        >
-                            {FILTERS.map((f) => (
-                                <button
-                                    key={f.key}
-                                    type="button"
-                                    aria-pressed={filter === f.key}
-                                    onClick={() => setFilter(f.key)}
-                                    className={cn(
-                                        "flex cursor-pointer items-center gap-1.5 rounded-[6px] px-[11px] py-[5px] text-[11.5px] font-semibold",
-                                        filter === f.key
-                                            ? "bg-accentbg text-primary"
-                                            : "text-ink-mid hover:text-primary"
-                                    )}
-                                >
-                                    {f.label}
-                                    {f.key === "needs" && needsCount > 0 ? (
-                                        <span className="text-[10.5px] tabular-nums text-asking">{needsCount}</span>
-                                    ) : null}
-                                </button>
-                            ))}
-                        </div>
-                    }
-                />
-
                 {loadError ? (
                     <SurfaceError
                         message="Couldn’t load sessions."
@@ -299,79 +248,133 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                     />
                 ) : null}
 
+                {/* no page-wide header: the list column heads itself (back, title, live count, status filter) and the
+                    detail column keeps its own session or run header, the two starting on one line */}
                 <div className="flex min-h-0 flex-1">
-                    <div className="flex w-[380px] flex-none flex-col gap-1.5 overflow-y-auto border-r border-edge-faint p-3 pb-10">
-                        <button
-                            type="button"
-                            onClick={() => setSel("all")}
-                            className={cn(
-                                "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-[9px] text-left",
-                                sel === "all"
-                                    ? "border-accent bg-surface-selected"
-                                    : "border-border bg-surface hover:bg-surface-hover"
-                            )}
-                        >
-                            <Activity size={14} strokeWidth={1.8} className="flex-none text-ink-mid" aria-hidden />
-                            <span className="flex-1 text-[12.5px] font-semibold text-secondary">All activity</span>
-                            <span className="text-[10.5px] tabular-nums text-muted">
-                                {totalEvents(scopedSessions)} events
-                            </span>
-                        </button>
-
-                        {base == null ? (
-                            <div className="mt-3 flex flex-col gap-[7px]">
-                                {Array.from({ length: 6 }).map((_, i) => (
-                                    <SkeletonLine key={i} className="h-[58px] rounded-[10px]" />
+                    <div className="flex w-[380px] flex-none flex-col border-r border-edge-faint">
+                        <div className="flex flex-none flex-col gap-2.5 border-b border-edge-faint px-3 pb-3 pt-[18px]">
+                            <div className="flex h-7 items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    data-agent-history-close
+                                    onClick={showTerminal}
+                                    title="Back to terminal"
+                                    aria-label="Back to terminal"
+                                    className="-ml-1 flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                >
+                                    <ArrowLeft size={14} aria-hidden />
+                                </button>
+                                <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-primary">
+                                    Conversation History
+                                </h1>
+                                {liveCount > 0 ? (
+                                    <span className="inline-flex flex-none items-center gap-1.5 rounded-full bg-pill px-[9px] py-[3px] text-[10.5px] tabular-nums text-secondary">
+                                        <span className="h-1.5 w-1.5 pulse-dot rounded-full bg-working" />
+                                        {liveCount} live
+                                    </span>
+                                ) : null}
+                            </div>
+                            <div
+                                role="group"
+                                aria-label="Status filter"
+                                className="flex gap-0.5 rounded-lg border border-border bg-surface p-0.5"
+                            >
+                                {FILTERS.map((f) => (
+                                    <button
+                                        key={f.key}
+                                        type="button"
+                                        aria-pressed={filter === f.key}
+                                        onClick={() => setFilter(f.key)}
+                                        className={cn(
+                                            "flex flex-auto cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 py-[5px] text-[11.5px] font-semibold",
+                                            filter === f.key
+                                                ? "bg-accentbg text-primary"
+                                                : "text-ink-mid hover:text-primary"
+                                        )}
+                                    >
+                                        {f.label}
+                                        {f.key === "needs" && needsCount > 0 ? (
+                                            <span className="text-[10.5px] tabular-nums text-asking">{needsCount}</span>
+                                        ) : null}
+                                    </button>
                                 ))}
                             </div>
-                        ) : groups.length === 0 ? (
-                            <div className="mt-6">
-                                <SurfaceEmptyState
-                                    title="No sessions found"
-                                    body="Sessions appear here as agents run. Start one to begin."
-                                    action={{
-                                        label: "New agent",
-                                        onClick: () => globalStore.set(model.newAgentOpenAtom, true),
-                                    }}
-                                />
-                            </div>
-                        ) : (
-                            groups.map((g) => (
-                                <div key={g.key} className="flex flex-col gap-1.5">
-                                    <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-3">
-                                        <span className={cn(REGION_LABEL, "text-muted")}>{g.label}</span>
-                                        <div className="h-px flex-1 bg-edge-faint" />
-                                        <span className="text-[10.5px] tabular-nums text-muted">{g.items.length}</span>
-                                    </div>
-                                    <AnimatePresence initial={false} mode="popLayout">
-                                        {g.items.map((r) =>
-                                            r.run ? (
-                                                <RunCard
-                                                    key={r.key}
-                                                    view={r.run.view}
-                                                    active={viewRunId === r.run.group.runId}
-                                                    member={member}
-                                                    now={now}
-                                                    onSelect={() => select(r.key)}
-                                                    onMember={(key) => selectMember(r.run!.group.runId, key)}
-                                                />
-                                            ) : (
-                                                <SoloCard
-                                                    key={r.key}
-                                                    session={r.session!}
-                                                    active={sel === r.key}
-                                                    now={now}
-                                                    onSelect={() => setSel(r.key)}
-                                                />
-                                            )
-                                        )}
-                                    </AnimatePresence>
+                        </div>
+                        <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3 pb-10">
+                            <button
+                                type="button"
+                                onClick={() => setSel("all")}
+                                className={cn(
+                                    "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-[9px] text-left",
+                                    sel === "all"
+                                        ? "border-accent bg-surface-selected"
+                                        : "border-border bg-surface hover:bg-surface-hover"
+                                )}
+                            >
+                                <Activity size={14} strokeWidth={1.8} className="flex-none text-ink-mid" aria-hidden />
+                                <span className="flex-1 text-[12.5px] font-semibold text-secondary">All activity</span>
+                                <span className="text-[10.5px] tabular-nums text-muted">
+                                    {totalEvents(scopedSessions)} events
+                                </span>
+                            </button>
+
+                            {base == null ? (
+                                <div className="mt-3 flex flex-col gap-[7px]">
+                                    {Array.from({ length: 6 }).map((_, i) => (
+                                        <SkeletonLine key={i} className="h-[58px] rounded-[10px]" />
+                                    ))}
                                 </div>
-                            ))
-                        )}
+                            ) : groups.length === 0 ? (
+                                <div className="mt-6">
+                                    <SurfaceEmptyState
+                                        title="No sessions found"
+                                        body="Sessions appear here as agents run. Start one to begin."
+                                        action={{
+                                            label: "New agent",
+                                            onClick: () => globalStore.set(model.newAgentOpenAtom, true),
+                                        }}
+                                    />
+                                </div>
+                            ) : (
+                                groups.map((g) => (
+                                    <div key={g.key} className="flex flex-col gap-1.5">
+                                        <div className="flex items-center gap-2.5 px-1 pb-0.5 pt-3">
+                                            <span className={cn(REGION_LABEL, "text-muted")}>{g.label}</span>
+                                            <div className="h-px flex-1 bg-edge-faint" />
+                                            <span className="text-[10.5px] tabular-nums text-muted">
+                                                {g.items.length}
+                                            </span>
+                                        </div>
+                                        <AnimatePresence initial={false} mode="popLayout">
+                                            {g.items.map((r) =>
+                                                r.run ? (
+                                                    <RunCard
+                                                        key={r.key}
+                                                        view={r.run.view}
+                                                        active={viewRunId === r.run.group.runId}
+                                                        member={member}
+                                                        now={now}
+                                                        onSelect={() => select(r.key)}
+                                                        onMember={(key) => selectMember(r.run!.group.runId, key)}
+                                                    />
+                                                ) : (
+                                                    <SoloCard
+                                                        key={r.key}
+                                                        session={r.session!}
+                                                        active={sel === r.key}
+                                                        now={now}
+                                                        onSelect={() => setSel(r.key)}
+                                                    />
+                                                )
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex min-w-0 flex-1 flex-col px-8 py-[22px]">
+                    <div className="flex min-w-0 flex-1 flex-col px-8 pb-[22px] pt-[18px]">
                         <AnimatePresence mode="wait" initial={false}>
                             <motion.div
                                 key={detailKind}

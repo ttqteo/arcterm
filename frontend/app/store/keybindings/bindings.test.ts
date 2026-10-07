@@ -86,8 +86,13 @@ describe("closeTargetForDoubleCtrlC", () => {
         expect(closeTargetForDoubleCtrlC(agents, "agent-tab")).toEqual(agents[0]);
     });
 
-    it("closes a focused plain terminal row", () => {
-        expect(closeTargetForDoubleCtrlC(agents, "terminal-tab")).toEqual(agents[1]);
+    it("never closes a plain terminal: both presses reach its shell", () => {
+        expect(closeTargetForDoubleCtrlC(agents, "terminal-tab")).toBeNull();
+    });
+
+    it("goes by the pane that took the keys, not the selected agent: a terminal docked under it closes nothing", () => {
+        expect(closeTargetForDoubleCtrlC(agents, "agent-tab", "terminal-tab")).toBeNull();
+        expect(closeTargetForDoubleCtrlC(agents, "terminal-tab", "agent-tab")).toEqual(agents[0]);
     });
 
     it("returns null (no close) when nothing is focused", () => {

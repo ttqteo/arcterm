@@ -4,11 +4,13 @@
 // Your prompt, pinned to the top of a transcript once it has scrolled away (pinnedprompt.ts decides which), so a long
 // turn's reply still says what it answers. A click scrolls back to the prompt. Shared by the live feed
 // (narrationtimeline.tsx) and the compact read (compacttranscript.tsx); each marks its prompts with data-user-prompt.
+// The scroll back is smooth, so the reply visibly runs back up to the prompt it answers, unless motion is reduced.
 
 import { cn } from "@/util/util";
 import { ArrowUp } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { useEffect, useState, type RefObject } from "react";
-import { pinnedPromptIndex } from "./pinnedprompt";
+import { pinnedPromptIndex, PROMPT_JUMP_EVENT } from "./pinnedprompt";
 
 const PROMPT_SELECTOR = "[data-user-prompt]";
 
@@ -75,11 +77,19 @@ export function PinnedPromptBar({
     text: string | undefined;
     bg: string;
 }) {
+    const reduce = useReducedMotion();
     if (index < 0 || text == null) {
         return null;
     }
-    const jump = () =>
-        rootRef.current?.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index]?.scrollIntoView({ block: "start" });
+    const jump = () => {
+        const root = rootRef.current;
+        const target = root?.querySelectorAll<HTMLElement>(PROMPT_SELECTOR)[index];
+        if (target == null) {
+            return;
+        }
+        root.dispatchEvent(new Event(PROMPT_JUMP_EVENT, { bubbles: true }));
+        target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    };
     return (
         <div data-pinned-prompt className="sticky top-0 z-10 h-0">
             <div className={cn("pb-1.5 pt-1", bg)}>

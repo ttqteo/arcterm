@@ -38,6 +38,7 @@ import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { RenameBox, startRowRename } from "./rowrename";
+import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
@@ -47,6 +48,7 @@ import {
     conversationTree,
     endedConversationsByProject,
     liveBranches,
+    registeredConversations,
     sessionAgeLabel,
     splitActive,
     startOfDay,
@@ -368,7 +370,10 @@ function ParentRow({
     // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
     // list shows unread messages, and the name reads bold
     const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
-    const unread = unreadCount > 0;
+    // an idle turn that stopped on part 1/3 of something waits on your reply: its step takes the count's place, and
+    // stays after you have read it, since that is when a reply gets forgotten
+    const step = agent.state === "idle" ? agent.step : undefined;
+    const unread = unreadCount > 0 || step != null;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
@@ -481,7 +486,8 @@ function ParentRow({
                         {lead ? subsChip : null}
                         <CanvasTag model={model} id={agent.id} />
                         {/* a row names its state in words only when it wants something; otherwise the dot says
-                            working or idle, and a count says how many finished turns you have not read */}
+                            working or idle, and a count says how many finished turns you have not read, or the
+                            part a turn stopped on waiting for your reply */}
                         {review ? (
                             // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
                             // focuses its agent in review mode itself, so the click must not reach the row either way
@@ -512,7 +518,15 @@ function ParentRow({
                                 <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
                                     {formatAgeShort(displayAgeMs(agent, now))}
                                 </span>
-                                {unread ? (
+                                {step ? (
+                                    <span
+                                        data-agent-step={step}
+                                        aria-label={`stopped on part ${step}, waiting on your reply`}
+                                        className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
+                                    >
+                                        {step}
+                                    </span>
+                                ) : unread ? (
                                     <span
                                         data-agent-unread={unreadCount}
                                         aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
@@ -1254,11 +1268,13 @@ function FolderRow({
     );
 }
 
-// A plain terminal in the Terminals section: its name, filled while it is the focused one. A click focuses it the way
-// an agent's row does; its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only
-// agents are grid cells.
+// A plain terminal in the Terminals section: its name, filled while it is the focused one or the one docked under the
+// agent. A click focuses it the way an agent's row does, which with an agent on screen docks it there (terminaldock.ts);
+// its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only agents are grid cells.
 function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
-    const selected = useSelectedRowId(model) === terminal.id;
+    const selectedId = useSelectedRowId(model);
+    const docked = useAtomValue(dockedTerminalAtom) === terminal.id;
+    const selected = selectedId === terminal.id || (selectedId != null && docked);
     const renaming = useAtomValue(renamingRowAtom) === terminal.id;
     return (
         <div
@@ -1360,9 +1376,10 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const mode = useAtomValue(centerModeAtom);
     const sel = useAtomValue(model.sessionsSelAtom);
     const open = useSectionOpen("conversations");
-    // filed under the project name the Active section's folders use (agentsidebarmodel.ts)
-    const ended = useMemo(
-        () => endedConversationsByProject(archive, agents, registered),
+    // filed under the project name the Active section's folders use (agentsidebarmodel.ts); only the projects added to
+    // arcterm, the rest being Conversation History's
+    const { ended, elsewhere } = useMemo(
+        () => registeredConversations(endedConversationsByProject(archive, agents, registered), registered),
         [archive, agents, registered]
     );
     // a clock that moves once a day, so the run views below do not rebuild on every tick
@@ -1458,7 +1475,27 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                     })}
                 </div>
             )}
+            {open && archive != null && !filtered && elsewhere > 0 ? (
+                <HistoryElsewhereRow model={model} count={elsewhere} />
+            ) : null}
         </div>
+    );
+}
+
+// Under Conversations: how many conversations belong to folders never added to arcterm, which only Conversation History
+// lists. A click opens it.
+function HistoryElsewhereRow({ model, count }: { model: AgentsViewModel; count: number }) {
+    return (
+        <button
+            type="button"
+            data-agent-conversations-elsewhere
+            title="Open Conversation History"
+            onClick={() => showHistory(model)}
+            className="flex w-full cursor-pointer items-center gap-[6px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] tabular-nums text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
+        >
+            <span className="min-w-0 truncate">{count} in projects not added · History</span>
+            <ArrowUpRight size={11} aria-hidden className="ml-auto flex-none" />
+        </button>
     );
 }
 

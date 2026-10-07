@@ -6,7 +6,6 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
-    filterByProject,
     filterByStatus,
     groupByRecency,
     loadSessionsArchive,
@@ -73,11 +72,6 @@ describe("session filters and selection", () => {
         1000
     );
 
-    it("filters by the session's existing project name", () => {
-        expect(filterByProject(list, "alpha").map((s) => s.id)).toEqual(["a", "c"]);
-        expect(filterByProject(list, "all")).toBe(list);
-    });
-
     it("live keeps only live sessions", () => {
         expect(filterByStatus(list, "live").map((s) => s.id)).toEqual(["c"]);
     });
@@ -91,7 +85,7 @@ describe("session filters and selection", () => {
     });
 
     it("resolves an explicit detail selection from the unfiltered set", () => {
-        const shown = filterByProject(list, "alpha");
+        const shown = filterByStatus(list, "done");
         expect(shown.map((s) => s.id)).not.toContain("b");
         expect(resolveSelectedSession(list, "claude:b")?.id).toBe("b");
         expect(resolveSelectedSession(list, "all")).toBeUndefined();

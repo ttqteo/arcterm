@@ -17,7 +17,7 @@ import { useMemo, useState } from "react";
 export const cheatsheetOpenAtom = atom(false);
 
 function keyChips(keys: string) {
-    return formatChord(keys); // "Ctrl:Shift:Tab" -> ["^","⇧","Tab"]; "g p" -> ["g","p"]
+    return formatChord(keys); // "Ctrl:Shift:Tab" -> ["ctrl","shift","tab"]; "g p" -> ["g","p"]
 }
 
 export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
