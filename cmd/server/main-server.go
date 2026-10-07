@@ -365,6 +365,7 @@ func main() {
 	agentask.AnswerHook = wshserver.RecordAskAnswered                    // one ask lifecycle row per delivered answer, whichever surface delivered it
 	blocklogger.InitBlockLogger()
 	blockcontroller.InitBlockController()
+	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one
 	jarvisvolunteer.StartLooseEndSweep(context.Background())
 	err = wcore.InitBadgeStore()
 	if err != nil {

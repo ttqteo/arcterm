@@ -54,9 +54,14 @@ resuming the worker's session.
 - **Interrupted holds until a new turn.** While a block is interrupted, an incoming `idle` (claude's
   `SessionStart(resume)`, or any harness's equivalent) is published as `interrupted`, keeping the title and model it
   carries. Only `working` (a new turn: the user, or Continue, typed `continue`) or an explicit dismiss clears it.
-- **Eager reattach.** The same boot pass calls `ResyncController` for each block that is claude, pi or opencode, has a
-  resume key in its `cmd:args` (`--resume` or `--session`), and has no `agent:runid`, one at a time about 300 ms apart.
-  The PTY starts at the block's stored term size; when its pane mounts, xterm fits and sends a resize as it does now.
+- **Eager reattach (built 2026-10-07, `pkg/blockcontroller/agentrestore.go`).** Root cause of "nothing comes back
+  after an update": an agent with no status is on no roster list, so its pane never mounts, never fits, and never
+  starts its process, which is the only thing that would report a status. A workspace had ~70 such tabs. So the boot
+  relaunches only the agents the last server was running: a hand-launched claude, pi or opencode block carries
+  `agent:live` (a per-start token) while its process runs, cleared when it exits on its own but not when a quit kills
+  it. The boot clears every mark and calls `ResyncController` for each marked block whose `cmd:args` lead with its
+  resume key, one at a time 300 ms apart. The PTY starts at the block's stored term size; when its pane mounts, xterm
+  fits and sends a resize as it does now. Tabs orphaned by earlier restarts carry no mark and are not started.
 - A block with no resume key (codex, or "Remember flags" off) is not started: a relaunch would replay its original
   task prompt. It still waits to be opened, as today.
 

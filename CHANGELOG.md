@@ -32,6 +32,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- After an update, a crash or a quit, the claude, pi and opencode agents that were running come back on their own,
+  each in its own session, instead of staying gone until reopened from history.
 - The installed app shows the Final check's screenshots.
 - Deleting a channel deletes its runs and their DAGs.
 - Orchestrator runs: a worker waiting on a question no longer stalls, a stuck engine tick is reported without stopping

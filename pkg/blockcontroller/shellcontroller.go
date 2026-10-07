@@ -456,6 +456,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 }
 
 func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellProc, rc *RunShellOpts, blockMeta waveobj.MetaMapType) error {
+	liveToken := markAgentLive(bc.BlockId, blockMeta)
 	shellInputCh := make(chan *BlockInputUnion, 32)
 	bc.ShellInputCh = shellInputCh
 
@@ -549,6 +550,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 			msg = fmt.Sprintf("%s (exit code %d)", baseMsg, exitCode)
 		}
 		bc.writeMutedMessageToTerminal("[" + msg + "]")
+		go clearAgentLive(bc.BlockId, liveToken)
 		go checkCloseOnExit(bc.BlockId, exitCode)
 		go emitAgentIdleOnExit(bc.BlockId)
 		if hook := exitHook(); hook != nil {
