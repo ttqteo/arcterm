@@ -105,6 +105,7 @@ type HarnessInfo struct {
 	LatestVersion     string                `json:"latestversion,omitempty"` // newest release the update check saw; "" before one, or for a harness it does not check
 	ConsultCapable    bool                  `json:"consultcapable"`
 	RunWorkerCapable  bool                  `json:"runworkercapable"`
+	LeadCapable       bool                  `json:"leadcapable"` // may run as a run's lead or reviewer; agy cannot
 	RouteCapabilities []RouteCapabilityInfo `json:"routecapabilities,omitempty"`
 }
 

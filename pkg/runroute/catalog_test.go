@@ -66,6 +66,49 @@ func TestParsePiTable(t *testing.T) {
 	}
 }
 
+const agyModelsFixture = "Fetching available models...\n" +
+	"gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n" +
+	"claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\n" +
+	"this line is not a model row\n"
+
+func TestEnumerateAgyModels(t *testing.T) {
+	orig := catalogCommand
+	var gotBin string
+	var gotArgs []string
+	catalogCommand = func(_ context.Context, bin string, args ...string) ([]byte, error) {
+		gotBin, gotArgs = bin, args
+		return []byte(agyModelsFixture), nil
+	}
+	defer func() { catalogCommand = orig }()
+
+	entries, err := enumerateCatalog(context.Background(), "agy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBin != "agy" || len(gotArgs) != 1 || gotArgs[0] != "models" {
+		t.Fatalf("ran %s %v", gotBin, gotArgs)
+	}
+	if len(entries) != 2 || entries[0].Runtime != "agy" || entries[0].Model != "gemini-3.8-flash-high" || entries[1].Model != "claude-sonnet-4-6" {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
+func TestEnumerateAgyDegradesOnGarbage(t *testing.T) {
+	orig := catalogCommand
+	catalogCommand = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("Fetching available models...\nnot a row\n"), nil
+	}
+	defer func() { catalogCommand = orig }()
+
+	entries, err := enumerateAgy(context.Background())
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("garbage must yield zero entries and no error: %+v, %v", entries, err)
+	}
+	if _, err := enumerateCatalog(context.Background(), "agy"); err == nil {
+		t.Fatal("empty-catalog enumerator must report the failure")
+	}
+}
+
 func TestParseOpenCodeModels(t *testing.T) {
 	orig := catalogCommand
 	catalogCommand = func(_ context.Context, _ string, _ ...string) ([]byte, error) {

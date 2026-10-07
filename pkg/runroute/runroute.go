@@ -22,6 +22,7 @@ var (
 	claudeAliasRe   = regexp.MustCompile(`^(opus|sonnet|haiku|fable|best)(\[[0-9]+m\])?$`)
 	claudeFullRe    = regexp.MustCompile(`^claude-[a-zA-Z0-9-]+$`)
 	providerModelRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+/[a-zA-Z0-9._:+-]+$`)
+	agySlugRe       = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
 )
 
 type Capability struct {
@@ -37,6 +38,7 @@ type Capability struct {
 var runtimeDefaults = []Capability{
 	{Runtime: "pi", ResolvedModel: operatorDefault},
 	{Runtime: "claude", ResolvedModel: operatorDefault},
+	{Runtime: "agy", ResolvedModel: operatorDefault},
 }
 
 func Capabilities(runtime string) []Capability {
@@ -85,6 +87,8 @@ func modelNamespaceValid(runtime, model string) bool {
 		return claudeAliasRe.MatchString(model) || claudeFullRe.MatchString(model)
 	case "pi":
 		return providerModelRe.MatchString(model)
+	case "agy":
+		return agySlugRe.MatchString(model)
 	}
 	return false
 }

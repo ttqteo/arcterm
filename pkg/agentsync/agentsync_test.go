@@ -6,6 +6,7 @@ package agentsync
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +62,35 @@ func TestProjectSteeringSkipsAbsentHarnesses(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, ".pi")); !os.IsNotExist(err) {
 		t.Fatal("a harness config root that did not exist must never be created")
+	}
+}
+
+func TestProjectSteeringReachesAgyOnlyWhenItsConfigRootExists(t *testing.T) {
+	absent := testPaths(t, "canonical rules\n", ".codex")
+	actions, err := projectSteering(absent, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range actions {
+		if a.Runtime == "agy" {
+			t.Fatalf("agy was written without ~/.gemini/config: %+v", a)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(absent.Home, ".gemini")); !os.IsNotExist(err) {
+		t.Fatal("~/.gemini must never be created")
+	}
+
+	present := testPaths(t, "canonical rules\n", ".gemini/config")
+	actions, err = projectSteering(present, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Runtime != "agy" {
+		t.Fatalf("actions = %+v, want one agy write", actions)
+	}
+	target := filepath.Join(present.Home, ".gemini", "config", "AGENTS.md")
+	if got := readFile(t, target); !strings.Contains(got, "canonical rules") {
+		t.Fatalf("agy AGENTS.md = %q", got)
 	}
 }
 

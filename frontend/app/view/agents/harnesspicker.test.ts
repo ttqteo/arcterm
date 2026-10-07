@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { harnessPickerFace, harnessPickerItems } from "./harnesspicker";
 
 const harnesses: HarnessInfo[] = [
-    { runtime: "claude", label: "Claude Code", installed: true, consultcapable: true, runworkercapable: true },
-    { runtime: "codex", label: "Codex", installed: false, consultcapable: true, runworkercapable: true },
-    { runtime: "opencode", label: "OpenCode", installed: true, consultcapable: true, runworkercapable: true },
-    { runtime: "pi", label: "Pi", installed: true, consultcapable: true, runworkercapable: true },
+    { runtime: "claude", label: "Claude Code", installed: true, consultcapable: true, runworkercapable: true, leadcapable: true },
+    { runtime: "codex", label: "Codex", installed: false, consultcapable: true, runworkercapable: true, leadcapable: false },
+    { runtime: "opencode", label: "OpenCode", installed: true, consultcapable: true, runworkercapable: true, leadcapable: false },
+    { runtime: "pi", label: "Pi", installed: true, consultcapable: true, runworkercapable: true, leadcapable: true },
 ];
 
 describe("harnessPickerItems", () => {

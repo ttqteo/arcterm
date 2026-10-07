@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Package harness is the catalog of installed coding-agent harnesses (Pi, Claude Code, Codex, OpenCode).
+// Package harness is the catalog of installed coding-agent harnesses (Pi, Claude Code, Antigravity, Codex, OpenCode).
 // It owns identity, capabilities, executable lookup, and installation probing so that
 // consult (pkg/consult) and Run workers (pkg/jarvis) share one source of truth and never silently
 // fall back to another harness. OpenRouter is an API-backed utility runtime and intentionally lives
@@ -23,6 +23,9 @@ type Operation string
 const (
 	OperationConsult   Operation = "consult"
 	OperationRunWorker Operation = "run-worker"
+	// OperationLead is a run's own runtime (lead and phases) and its reviewer: judgment roles that need
+	// wake, the handoff /compact and re-orientation after compaction.
+	OperationLead Operation = "lead"
 )
 
 type Spec struct {
@@ -31,6 +34,11 @@ type Spec struct {
 	Label            string
 	ConsultCapable   bool
 	RunWorkerCapable bool
+	// LeadCapable harnesses may run as a run's lead, its phases, task reviewers and stage sessions.
+	LeadCapable bool
+	// AssignsOwnSession harnesses name their own session and take no --session-id; arcterm learns the id
+	// from the harness's first status report.
+	AssignsOwnSession bool
 	// SteeringRel is the home-relative path of the harness's home-level steering file.
 	SteeringRel []string
 	// SkillsRel is the home-relative path of the harness's skills directory. nil when the harness
@@ -43,12 +51,17 @@ type Spec struct {
 }
 
 var specs = []Spec{
-	{Runtime: "pi", Bin: "pi", Label: "Pi", ConsultCapable: true, RunWorkerCapable: true,
+	{Runtime: "pi", Bin: "pi", Label: "Pi", ConsultCapable: true, RunWorkerCapable: true, LeadCapable: true,
 		SteeringRel: []string{".pi", "agent", "AGENTS.md"}},
-	{Runtime: "claude", Bin: "claude", Label: "Claude Code", ConsultCapable: true, RunWorkerCapable: true,
+	{Runtime: "claude", Bin: "claude", Label: "Claude Code", ConsultCapable: true, RunWorkerCapable: true, LeadCapable: true,
 		SteeringRel: []string{".claude", "CLAUDE.md"}, SkillsRel: []string{".claude", "skills"},
 		NpmPackage: "@anthropic-ai/claude-code", UpdateArgs: []string{"update"}},
-	// run workers are claude and pi only (docs/deferred.md, 2026-09-14); codex and opencode still consult
+	// agy is not on npm. It runs task workers only: a lead needs the handoff /compact and re-orientation after
+	// compaction, and agy has neither. It names its own conversation id, so its worker's session is bound late.
+	{Runtime: "agy", Bin: "agy", Label: "Antigravity", ConsultCapable: true, RunWorkerCapable: true, AssignsOwnSession: true,
+		SteeringRel: []string{".gemini", "config", "AGENTS.md"}, SkillsRel: []string{".gemini", "config", "skills"},
+		UpdateArgs: []string{"update"}},
+	// run workers are claude, pi and agy (docs/deferred.md, 2026-09-14); codex and opencode still consult
 	{Runtime: "codex", Bin: "codex", Label: "Codex", ConsultCapable: true, RunWorkerCapable: false,
 		SteeringRel: []string{".codex", "AGENTS.md"}, SkillsRel: []string{".codex", "skills"}},
 	{Runtime: "opencode", Bin: "opencode", Label: "OpenCode", ConsultCapable: true, RunWorkerCapable: false,
@@ -107,7 +120,9 @@ var versionCommand = func(ctx context.Context, bin string) ([]byte, error) {
 	return exec.CommandContext(ctx, bin, "--version").CombinedOutput()
 }
 
-func ValidateInstalled(runtime string, operation Operation) (Spec, error) {
+// ValidateCapable checks that the runtime is in the catalog and may do operation, without probing the
+// machine. ValidateInstalled adds the install check after it.
+func ValidateCapable(runtime string, operation Operation) (Spec, error) {
 	spec, ok := Lookup(runtime)
 	if !ok {
 		return Spec{}, fmt.Errorf("unknown harness %q", runtime)
@@ -117,6 +132,17 @@ func ValidateInstalled(runtime string, operation Operation) (Spec, error) {
 	}
 	if operation == OperationRunWorker && !spec.RunWorkerCapable {
 		return Spec{}, fmt.Errorf("harness %q does not support run workers", runtime)
+	}
+	if operation == OperationLead && !spec.LeadCapable {
+		return Spec{}, fmt.Errorf("harness %q cannot lead a run", runtime)
+	}
+	return spec, nil
+}
+
+func ValidateInstalled(runtime string, operation Operation) (Spec, error) {
+	spec, err := ValidateCapable(runtime, operation)
+	if err != nil {
+		return Spec{}, err
 	}
 	if _, err := lookPath(spec.Bin); err != nil {
 		return Spec{}, fmt.Errorf("harness %q is not installed", runtime)

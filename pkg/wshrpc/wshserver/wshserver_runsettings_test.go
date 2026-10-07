@@ -5,8 +5,10 @@ package wshserver
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -146,6 +148,53 @@ func TestSetRunSettingsRejectsInvalidWorkerRoute(t *testing.T) {
 	}
 	if got := mustRun(t, ctx, ch.OID, run.ID); got.WorkerRoute != nil {
 		t.Fatalf("invalid route was persisted: %+v", got.WorkerRoute)
+	}
+}
+
+// agy runs task workers only: a worker route accepts it, a reviewer route (a judgment role) refuses it, and the
+// refusal does not wait for the install check, so a stored default cannot name it either.
+func TestRunSettingsAgyRoutes(t *testing.T) {
+	old := validateHarness
+	t.Cleanup(func() { validateHarness = old })
+	validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
+		return harness.ValidateCapable(runtime, op) // installed everywhere; capability is the question
+	}
+	agy := &waveobj.RoutePin{Runtime: "agy"}
+	for _, requireInstalled := range []bool{true, false} {
+		if err := validateRoute("workerRoute", harness.OperationRunWorker, agy, requireInstalled); err != nil {
+			t.Errorf("requireInstalled=%v: agy worker route refused: %v", requireInstalled, err)
+		}
+		err := validateRoute("reviewerRoute", harness.OperationLead, agy, requireInstalled)
+		if err == nil || !strings.Contains(err.Error(), `harness "agy" cannot lead a run`) {
+			t.Errorf("requireInstalled=%v: agy reviewer route error = %v", requireInstalled, err)
+		}
+		for _, rt := range []string{"claude", "pi"} {
+			if err := validateRoute("reviewerRoute", harness.OperationLead, &waveobj.RoutePin{Runtime: rt}, requireInstalled); err != nil {
+				t.Errorf("requireInstalled=%v: %s reviewer route refused: %v", requireInstalled, rt, err)
+			}
+		}
+	}
+}
+
+func TestStoredReviewerDefaultRefusesAgy(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "profile-agy-reviewer", "/repo")
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	if err := (&WshServer{}).SetChannelProfileCommand(ctx, wshrpc.CommandSetChannelProfileData{
+		ChannelId: ch.OID, Override: &waveobj.ProfileOverride{ReviewerRoute: &waveobj.RoutePin{Runtime: "agy"}},
+	}); err == nil || !strings.Contains(err.Error(), "cannot lead a run") {
+		t.Fatalf("an agy reviewer default must be refused: %v", err)
+	}
+	if channelHasProfileMeta(t, ctx, ch.OID) {
+		t.Fatal("a rejected reviewer default must not write channel meta")
+	}
+	if err := validateGlobalEngineDefaults(waveobj.JarvisProfile{ReviewerRoute: &waveobj.RoutePin{Runtime: "agy"}}); err == nil {
+		t.Fatal("the global profile must refuse an agy reviewer too")
+	}
+	if err := validateGlobalEngineDefaults(waveobj.JarvisProfile{WorkerRoute: &waveobj.RoutePin{Runtime: "agy"}}); err != nil {
+		t.Fatalf("the global profile may name agy as the worker: %v", err)
 	}
 }
 
