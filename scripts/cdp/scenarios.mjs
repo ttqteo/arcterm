@@ -16713,8 +16713,10 @@ async function focusNotifyAgent(h, ctx) {
     );
 }
 
-const notifyToastWith = (text) =>
-    `[...document.querySelectorAll("[data-notification-toast]")].some((t) => t.textContent.includes(${JSON.stringify(text)}))`;
+// tone narrows to an agent notification of that kind (data-notification-tone: asking, done, info), so "the ask's toast"
+// is not met by the same agent's Finished toast
+const notifyToastWith = (text, tone) =>
+    `[...document.querySelectorAll("[data-notification-toast]${tone ? `[data-notification-tone=\\"${tone}\\"]` : ""}")].some((t) => t.textContent.includes(${JSON.stringify(text)}))`;
 const notifyToasts = (h) =>
     h.ev(`[...document.querySelectorAll("[data-notification-toast]")].map((t) => t.textContent.trim())`);
 // a toast lives TOAST_TTL_MS; waiting one out leaves nothing to mistake for a new one, where a click would run its open
@@ -16826,7 +16828,8 @@ const notifyToast = {
         const steps = [];
         const rec = (step, ok, detail) =>
             steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
-        const asks = `${ctx.name} needs you`;
+        // the toast's title is the agent's name; its eyebrow says Needs you
+        const asks = ctx.name;
         const publish = async (state) => {
             await publishNotifyStatus(h, ctx, state);
             await polishNap(NOTIFY_SETTLE_MS);
@@ -16838,9 +16841,9 @@ const notifyToast = {
             // --- focused, on the Cockpit: an ask is a toast, and its click opens the agent ----------------------------
             await notifyToastGone(h, ctx.name);
             await publish("asking");
-            const toasted = await polishWaitFor(h, notifyToastWith(asks), 6000);
+            const toasted = await polishWaitFor(h, notifyToastWith(asks, "asking"), 6000);
             const clickable = await h.ev(
-                `[...document.querySelectorAll("[data-notification-toast][data-notification-open]")].some((t) => t.textContent.includes(${JSON.stringify(asks)}))`
+                `[...document.querySelectorAll('[data-notification-toast][data-notification-open][data-notification-tone="asking"]')].some((t) => t.textContent.includes(${JSON.stringify(asks)}))`
             );
             await h.shot("cdp-shots/notify-toast-ask.png");
             rec("a toast appears when an out-of-view agent starts asking", toasted === true && clickable === true, {

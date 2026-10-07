@@ -5,11 +5,19 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
 
+// the row above an agent notification's title: what kind it is (a dot and a word, never color alone) and where from
+export interface ToastEyebrow {
+    label: string;
+    tone: "asking" | "done" | "info";
+    meta?: string;
+}
+
 export interface ToastNotification {
     id: number;
     title: string;
     message: string;
     level: "info" | "warn" | "error";
+    eyebrow?: ToastEyebrow;
     onOpen?: () => void;
 }
 

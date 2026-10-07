@@ -27,6 +27,7 @@ import {
     COALESCE_MS,
     diffEvents,
     notifyEventOf,
+    osText,
     parseTarget,
     routeNotify,
     snapshotOf,
@@ -92,13 +93,12 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
             pushToast({
                 title: e.title,
                 message: e.body,
-                level: e.loud ? "warn" : "info",
+                level: "info",
+                eyebrow: { label: e.label, tone: e.tone, meta: e.meta },
                 onOpen: e.target.kind === "none" ? undefined : () => openNotifyTarget(model, e.target),
             });
         } else if (route === "os") {
-            invoke("notify_os", { title: e.title, body: e.body, target: JSON.stringify(e.target), loud: e.loud }).catch(
-                () => {}
-            );
+            invoke("notify_os", { ...osText(e), target: JSON.stringify(e.target), loud: e.loud }).catch(() => {});
         }
     };
     const flush = () => {

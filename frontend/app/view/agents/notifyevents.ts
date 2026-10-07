@@ -14,11 +14,19 @@ export type NotifyTarget =
     | { kind: "cockpit" }
     | { kind: "none" };
 
+// how an event reads at a glance: amber for something blocked on you, green for a finished turn
+export type NotifyTone = "asking" | "done" | "info";
+
 export interface NotifyEvent {
     kind: "request" | "reply" | "attention" | "notify" | "summary";
     target: NotifyTarget;
+    // the kind in words ("Needs you", "Finished"), shown above the title so the title is only the agent or item
+    label: string;
+    tone: NotifyTone;
     title: string;
     body: string;
+    // where it comes from: the agent's project, or the channel
+    meta?: string;
     // a sound and a taskbar flash: something is blocked on you
     loud: boolean;
 }
@@ -27,6 +35,7 @@ interface AgentSnap {
     state: AgentState;
     name: string;
     task: string;
+    project?: string;
     runId?: string;
     question?: string;
 }
@@ -62,6 +71,7 @@ export function snapshotOf(
                     state: a.state,
                     name: a.name,
                     task: a.task,
+                    project: a.project,
                     runId: a.runId,
                     question: a.ask?.questions?.[0]?.question?.split("\n")[0],
                 },
@@ -88,16 +98,22 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
             out.push({
                 kind: "request",
                 target: { kind: "agent", agentId: id },
-                title: `${a.name} needs you`,
+                label: "Needs you",
+                tone: "asking",
+                title: a.name,
                 body: a.question ?? "Waiting for your input",
+                meta: a.project,
                 loud: true,
             });
         } else if (a.state === "idle" && before.state === "working" && a.runId == null) {
             out.push({
                 kind: "reply",
                 target: { kind: "agent", agentId: id },
-                title: `${a.name} finished`,
-                body: a.task,
+                label: "Finished",
+                tone: "done",
+                title: a.name,
+                body: a.task && a.task !== a.name ? a.task : "",
+                meta: a.project,
                 loud: false,
             });
         }
@@ -108,8 +124,11 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
                 out.push({
                     kind: "attention",
                     target: { kind: "attention", key },
-                    title: i.channelname ? `#${i.channelname}: ${i.text}` : i.text,
+                    label: "Decision",
+                    tone: "asking",
+                    title: i.text,
                     body: i.why ?? i.source,
+                    meta: i.channelname ? `#${i.channelname}` : undefined,
                     loud: true,
                 });
             }
@@ -126,6 +145,8 @@ export function notifyEventOf(data: NotifyCommandData | undefined): NotifyEvent 
     return {
         kind: "notify",
         target: { kind: "none" },
+        label: "Message",
+        tone: "info",
         title: data.title || data.message,
         body: data.title ? data.message : "",
         loud: false,
@@ -193,9 +214,18 @@ export function coalesce(events: NotifyEvent[]): NotifyEvent[] {
         {
             kind: "summary",
             target: { kind: "cockpit" },
+            label: waiting > 0 ? "Needs you" : replied > 0 ? "Finished" : "Messages",
+            tone: waiting > 0 ? "asking" : replied > 0 ? "done" : "info",
             title: parts.join(" · "),
             body: "",
             loud: events.some((e) => e.loud),
         },
     ];
+}
+
+/** Pure: an OS toast has no eyebrow row, so the kind leads its title ("Finished: <agent>"); the body keeps the line
+ *  below, with the project after it. */
+export function osText(e: NotifyEvent): { title: string; body: string } {
+    const title = e.kind === "summary" ? e.title : `${e.label}: ${e.title}`;
+    return { title, body: [e.body, e.meta].filter(Boolean).join(" · ") };
 }

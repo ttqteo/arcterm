@@ -7,6 +7,7 @@ import {
     coalesce,
     diffEvents,
     notifyEventOf,
+    osText,
     parseTarget,
     routeNotify,
     snapshotOf,
@@ -27,8 +28,14 @@ describe("diffEvents", () => {
     });
     it("emits a loud request when a known agent starts asking", () => {
         const [e] = diffEvents(snap([agent("a", "working")]), snap([agent("a", "asking")]));
-        expect(e).toMatchObject({ kind: "request", target: { kind: "agent", agentId: "a" }, loud: true });
-        expect(e.title).toBe("agent a needs you");
+        expect(e).toMatchObject({
+            kind: "request",
+            target: { kind: "agent", agentId: "a" },
+            label: "Needs you",
+            tone: "asking",
+            loud: true,
+        });
+        expect(e.title).toBe("agent a");
     });
     it("uses the ask's first question line as the body", () => {
         const asking = agent("a", "asking", {
@@ -44,9 +51,21 @@ describe("diffEvents", () => {
     });
     it("emits a quiet reply on working -> idle", () => {
         const [e] = diffEvents(snap([agent("a", "working")]), snap([agent("a", "idle")]));
-        expect(e).toMatchObject({ kind: "reply", target: { kind: "agent", agentId: "a" }, loud: false });
-        expect(e.title).toBe("agent a finished");
+        expect(e).toMatchObject({
+            kind: "reply",
+            target: { kind: "agent", agentId: "a" },
+            label: "Finished",
+            tone: "done",
+            loud: false,
+        });
+        expect(e.title).toBe("agent a");
         expect(e.body).toBe("task a");
+    });
+    it("names the agent's project, and drops a task that only repeats the name", () => {
+        const before = agent("a", "working", { task: "agent a", project: "arcterm" });
+        const [e] = diffEvents(snap([before]), snap([{ ...before, state: "idle" }]));
+        expect(e.body).toBe("");
+        expect(e.meta).toBe("arcterm");
     });
     it("emits no reply for an agent working for a run", () => {
         expect(
@@ -58,7 +77,14 @@ describe("diffEvents", () => {
         const after = snap([], [item("g1"), item("g2", "run-land-held")]);
         const evs = diffEvents(before, after);
         expect(evs).toHaveLength(1);
-        expect(evs[0]).toMatchObject({ kind: "attention", target: { kind: "attention", key: "g2" }, loud: true });
+        expect(evs[0]).toMatchObject({
+            kind: "attention",
+            target: { kind: "attention", key: "g2" },
+            label: "Decision",
+            tone: "asking",
+            title: "decide g2",
+            loud: true,
+        });
         expect(diffEvents(after, after)).toEqual([]);
     });
     it("skips asks and radar triage in attention (the roster covers asks)", () => {
@@ -109,6 +135,8 @@ const ctx = (over: Partial<RouteCtx> = {}): RouteCtx => ({
 const ev = (kind: NotifyEvent["kind"], agentId = "a"): NotifyEvent => ({
     kind,
     target: kind === "notify" ? { kind: "none" } : { kind: "agent", agentId },
+    label: kind,
+    tone: "info",
     title: "t",
     body: "",
     loud: kind === "request",
@@ -144,7 +172,13 @@ describe("coalesce", () => {
     it("folds three or more into one summary on the Cockpit", () => {
         const [s, ...rest] = coalesce([ev("request"), ev("request", "b"), ev("reply", "c"), ev("notify")]);
         expect(rest).toEqual([]);
-        expect(s).toMatchObject({ kind: "summary", target: { kind: "cockpit" }, loud: true });
+        expect(s).toMatchObject({
+            kind: "summary",
+            target: { kind: "cockpit" },
+            label: "Needs you",
+            tone: "asking",
+            loud: true,
+        });
         expect(s.title).toBe("2 waiting on you · 1 replied · 1 message");
     });
     it("is quiet when nothing in it is loud", () => {
@@ -152,5 +186,25 @@ describe("coalesce", () => {
             loud: false,
             title: "3 replied",
         });
+    });
+});
+
+describe("osText", () => {
+    const e = (over: Partial<NotifyEvent>): NotifyEvent => ({ ...ev("reply"), ...over });
+    it("leads the title with the kind, since an OS toast has no eyebrow", () => {
+        expect(osText(e({ label: "Finished", title: "Hỗ trợ LaTeX", body: "", meta: "arcterm" }))).toEqual({
+            title: "Finished: Hỗ trợ LaTeX",
+            body: "arcterm",
+        });
+    });
+    it("keeps the body before the project", () => {
+        expect(osText(e({ label: "Needs you", title: "a", body: "Pick one", meta: "arcterm" })).body).toBe(
+            "Pick one · arcterm"
+        );
+    });
+    it("leaves a summary's title alone", () => {
+        expect(osText(e({ kind: "summary", label: "Needs you", title: "2 waiting on you" })).title).toBe(
+            "2 waiting on you"
+        );
     });
 });
