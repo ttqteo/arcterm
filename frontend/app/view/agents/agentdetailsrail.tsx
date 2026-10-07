@@ -488,6 +488,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         files: fileCount,
         artifacts: artifacts.rows.length,
         uploads: uploads.length,
+        servers: 0, // Task 5 reads the project's listeners
         bgTasks: bgTasks.length,
         hasRun: role != null && roleRun != null,
     };
@@ -529,6 +530,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         files: "Files changed",
         artifacts: "Artifacts",
         uploads: "Uploads",
+        servers: "Servers",
         bgtasks: "Background tasks",
         run: role?.kind === "worker" ? "Task" : "Run",
         details: "Details",
@@ -542,6 +544,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         files: RAIL_ICON.files,
         artifacts: RAIL_ICON.artifacts,
         uploads: RAIL_ICON.attach,
+        servers: RAIL_ICON.server,
         bgtasks: RAIL_ICON.terminal,
         run: RAIL_ICON.autonomy,
         details: RAIL_ICON.info,
@@ -701,6 +704,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             </div>
         ),
         uploads: () => <UploadsSection agent={agent} now={now} />,
+        servers: () => null, // Task 5 replaces this with the project's listening processes
         bgtasks: () => (
             <div className="flex flex-col gap-[7px]">
                 {bgTasks.map((t) => (

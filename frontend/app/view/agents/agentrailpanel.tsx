@@ -14,6 +14,7 @@ import {
     LayoutList,
     LayoutTemplate,
     Paperclip,
+    Server,
     SquareTerminal,
     X,
     type LucideIcon,
@@ -116,6 +117,7 @@ const STAT_ICON: Record<AgentRailStatId, LucideIcon> = {
     files: FileDiff,
     artifacts: LayoutTemplate,
     uploads: Paperclip,
+    servers: Server,
     bgtasks: SquareTerminal,
 };
 
@@ -124,6 +126,7 @@ const STAT_LABEL: Record<AgentRailStatId, string> = {
     files: "Files changed",
     artifacts: "Artifacts",
     uploads: "Uploads",
+    servers: "Servers",
     bgtasks: "Background tasks",
 };
 

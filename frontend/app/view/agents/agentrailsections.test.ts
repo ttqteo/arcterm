@@ -15,6 +15,7 @@ const base: AgentRailInput = {
     files: 3,
     artifacts: 0,
     uploads: 0,
+    servers: 0,
     bgTasks: 1,
     hasRun: false,
 };
@@ -33,12 +34,13 @@ describe("planAgentRail", () => {
         expect(planAgentRail({ ...base, needsYou: 2 })[1].header).toBeUndefined();
     });
     it("keeps the counted sections in the strip's order", () => {
-        expect(ids({ ...base, subagents: 1, artifacts: 2, uploads: 4 })).toEqual([
+        expect(ids({ ...base, subagents: 1, artifacts: 2, uploads: 4, servers: 2 })).toEqual([
             "status",
             "subagents",
             "files",
             "artifacts",
             "uploads",
+            "servers",
             "bgtasks",
             "usage",
             "details",
@@ -73,8 +75,21 @@ describe("planRailStats", () => {
             { id: "files", count: 3 },
             { id: "artifacts", count: 0 },
             { id: "uploads", count: 0 },
+            { id: "servers", count: 0 },
             { id: "bgtasks", count: 1 },
         ]);
+    });
+    it("the strip counts Servers between Uploads and Background tasks, and the body lists it only above zero", () => {
+        expect(planRailStats(base).map((s) => s.id)).toEqual([
+            "subagents",
+            "files",
+            "artifacts",
+            "uploads",
+            "servers",
+            "bgtasks",
+        ]);
+        expect(ids({ ...base, servers: 0 })).not.toContain("servers");
+        expect(header({ ...base, servers: 3 }, "servers")).toEqual({ count: 3 });
     });
     it("a subagent interior has no strip counts: those sections are its parent's", () => {
         expect(planRailStats({ ...base, inSubagent: true })).toEqual([]);

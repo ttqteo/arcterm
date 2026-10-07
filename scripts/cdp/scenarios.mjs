@@ -7845,7 +7845,7 @@ const agentTreeRail = {
         // no Terminals: plain terminals are the Agent tree's own section
         const shape = await h.ev(railShape(RAIL));
         rec(
-            "10. the lead's strip counts Subagents, Files changed, Artifacts, Uploads, Background tasks in order; its body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
+            "10. the lead's strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; its body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
             railShapeOk(shape),
             JSON.stringify(shape)
         );
@@ -15452,7 +15452,7 @@ const canvasTabsScenario = {
 // focused terminal's own rail still lists them.
 // The Agent details rail's shape (agentrailsections.ts): the strip counts every list in one fixed order, the body lists
 // only the counted sections holding something, and Token usage then Details close it
-const RAIL_STATS_ORDER = ["subagents", "files", "artifacts", "uploads", "bgtasks"];
+const RAIL_STATS_ORDER = ["subagents", "files", "artifacts", "uploads", "servers", "bgtasks"];
 function railShape(railExpr) {
     return `(() => {
         const rail = ${railExpr};
@@ -15624,7 +15624,7 @@ const agentRailSections = {
 
         const shape = await h.ev(railShape(RAIL_ASIDE));
         rec(
-            "1. the strip counts Subagents, Files changed, Artifacts, Uploads, Background tasks in order; the body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
+            "1. the strip counts Subagents, Files changed, Artifacts, Uploads, Servers, Background tasks in order; the body lists none at 0, no Terminals or Tools, and ends on Token usage then Details",
             railShapeOk(shape),
             JSON.stringify(shape)
         );

@@ -3,17 +3,17 @@
 //
 // The Agent details rail's sections: which show, in what order, with which counts. The status line first (context
 // and spend), then attention (needs you), then the lists the agent holds (subagents, changed files, artifacts,
-// uploads, background tasks), its run, and token usage and the facts last, closed by default. Every list is counted
-// in the tab strip in one fixed order (planRailStats), empty or not, so the rail keeps one shape from agent to agent;
-// the body lists only the ones with something in them. Plain terminals are not an agent's: the Agent tree lists them
-// in a section of its own.
+// uploads, servers, background tasks), its run, and token usage and the facts last, closed by default. Every list is
+// counted in the tab strip in one fixed order (planRailStats), empty or not, so the rail keeps one shape from agent to
+// agent; the body lists only the ones with something in them. Plain terminals are not an agent's: the Agent tree lists
+// them in a section of its own.
 // Rendered by agentdetailsrail.tsx. A plain terminal has no rail.
 
 import type { RailSectionHeader } from "@/app/element/railsections";
 import type { BackgroundTaskStatus } from "./transcriptprojection";
 
 // the lists the tab strip counts, in its order
-export type AgentRailStatId = "subagents" | "files" | "artifacts" | "uploads" | "bgtasks";
+export type AgentRailStatId = "subagents" | "files" | "artifacts" | "uploads" | "servers" | "bgtasks";
 
 export type AgentRailSectionId = "subagent" | "status" | "needs" | AgentRailStatId | "run" | "usage" | "details";
 
@@ -24,6 +24,7 @@ export interface AgentRailInput {
     files: number | null; // null: not known (loading, or not a git repo)
     artifacts: number; // the agent's canvas boards
     uploads: number; // files attached to the agent (paste, drop, Attach)
+    servers: number; // listening processes in the agent's project
     bgTasks: number;
     hasRun: boolean; // the agent leads or works a run
 }
@@ -47,6 +48,7 @@ export function planRailStats(i: AgentRailInput): AgentRailStat[] {
         { id: "files", count: i.files },
         { id: "artifacts", count: i.artifacts },
         { id: "uploads", count: i.uploads },
+        { id: "servers", count: i.servers },
         { id: "bgtasks", count: i.bgTasks },
     ];
 }
