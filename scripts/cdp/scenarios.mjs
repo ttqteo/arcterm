@@ -14320,6 +14320,23 @@ const agentRailTabs = {
             JSON.stringify({ tabs1, w1, listed })
         );
 
+        // 1b. a changed file opens on the File tab's Diff, beside the terminal, not on the Diff surface
+        await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll('[data-rail-section="files"] button') ?? [])].find((b) => b.textContent.includes("a.txt"))?.click()`);
+        const diff1b = await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-file-diff] .monaco-diff-editor .line-insert")`, 10000);
+        const surface1b = await h.activeSurfaceLabel();
+        const views1b = await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("[data-file-view]") ?? [])].map((b) => b.dataset.fileView + (b.getAttribute("aria-pressed") === "true" ? "*" : ""))`);
+        const openDiff1b = await h.ev(`!!${RAIL_TABS_ASIDE}?.querySelector("[data-file-open-diff]")`);
+        await h.shot("cdp-shots/agent-rail-tabs-diff.png");
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-file-view="source"]')?.click()`);
+        const source1b = await polishWaitFor(h, `!${RAIL_TABS_ASIDE}?.querySelector("[data-file-diff]") && !!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 8000);
+        rec(
+            "1b. a.txt in Files changed opens the File tab on Diff (Source | Diff, Open in Diff) on the Agent surface, and Source shows the file",
+            diff1b && surface1b === "Agent" && JSON.stringify(views1b) === JSON.stringify(["source", "diff*"]) && openDiff1b && source1b,
+            JSON.stringify({ diff1b, surface1b, views1b, openDiff1b, source1b })
+        );
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Close file"]')?.click()`);
+        await railTabsNap(300);
+
         // 2. a tool row's link
         const clicked2 = await railTabsClickLink(h, `(p) => p !== "a.txt" && p.endsWith("a.txt")`);
         const editor2 = clicked2 && (await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 10000));

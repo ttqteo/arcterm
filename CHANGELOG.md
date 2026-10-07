@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The Diff surface has a **Wrap** toggle (`Alt+Z`) too, shared per file with Code and the agent panel's File tab.
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
+- A file in the agent panel's **Files changed** opens beside the agent as a diff against where the session started,
+  with **Source** to see the whole file and a button to the Diff surface; **View diff** still opens Diff.
 
 ### Changed
 
