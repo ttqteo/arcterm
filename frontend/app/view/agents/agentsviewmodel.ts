@@ -488,13 +488,14 @@ export interface LiveAgentInput {
 
 /** Pure: one live row -> an AgentVM. `asking` (a pending AskUserQuestion) maps straight to asking so
  *  the badge is amber even when the ask fell back to the terminal (no structured agent:ask). `waiting`
- *  (a generic Notification nudge) still folds to working. withAsk later overlays the answer UI when a
+ *  (a permission prompt or another input request; an idle prompt reports idle) maps to asking too:
+ *  either way the agent is blocked on you. withAsk later overlays the answer UI when a
  *  live agent:ask arrives; working age -> activeMs. task/ask filled later (async). */
 export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     const state: AgentState =
-        input.status === "asking"
+        input.status === "asking" || input.status === "waiting"
             ? "asking"
-            : input.status === "working" || input.status === "waiting"
+            : input.status === "working"
               ? "working"
               : "idle";
     const age = input.ts != null ? Math.max(0, now - input.ts) : undefined;
