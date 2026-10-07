@@ -9,6 +9,7 @@
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Clock, GitGraph, PanelLeftClose } from "lucide-react";
@@ -301,7 +302,7 @@ export function HistoryPane({
                 >
                     <GitGraph size={13} />
                     Graph
-                    <span className="font-mono text-[10.5px] text-muted">⇧G</span>
+                    <span className="font-mono text-[10.5px] text-muted">{formatChordString("Shift:g")}</span>
                 </button>
                 {onCollapse ? (
                     <button

@@ -58,11 +58,11 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         // first, so a narrow footer keeps it: shown only while line comments wait to be sent
         { ids: ["files:review-send"], keys: "Ctrl:Enter", label: "send comments" },
         { ids: ["files:filter"], glyph: "/", label: "filter" },
-        { ids: ["files:toggle-graph"], glyph: "⇧G", label: "graph" },
+        { ids: ["files:toggle-graph"], keys: "Shift:g", label: "graph" },
         { ids: ["files:change-refs"], glyph: "c", label: "change refs" }, // compare-only via its binding
-        { ids: ["files:swap-refs"], glyph: "⇧S", label: "swap" }, // compare-only via its binding
-        { ids: ["files:next-change", "files:prev-change"], glyph: "⇧N ⇧P", label: "next / prev change" },
-        { ids: ["files:toggle-history"], glyph: "⇧H", label: "history" },
+        { ids: ["files:swap-refs"], keys: "Shift:s", label: "swap" }, // compare-only via its binding
+        { ids: ["files:next-change", "files:prev-change"], keys: "Shift:n Shift:p", label: "next / prev change" },
+        { ids: ["files:toggle-history"], keys: "Shift:h", label: "history" },
         { ids: ["files:compare"], glyph: "c", label: "compare" }, // history-only via its binding
         { ids: ["files:refresh"], glyph: "r", label: "refresh" },
         { ids: ["files:switch-side"], glyph: "⇥", label: "side" }, // compare-only via its binding

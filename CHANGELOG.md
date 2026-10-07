@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- `g` `j` now goes to Jarvis (it was `g` `c`).
+- On Windows, shortcuts are spelled out in words, `ctrl+shift+p` and `shift+g`, instead of `^⇧P` and `⇧G`; macOS
+  keeps its ⌘ ⌃ ⌥ ⇧ symbols.
 - Jarvis shows each initiative as a card with a bar of its chunks and the one to do next, and lists ideas in
   their own column beside the cards; an initiative's menu is always shown, and Waiting on you is hidden while
   nothing waits.

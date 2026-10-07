@@ -103,7 +103,7 @@ function focusCodeSearchInput(): void {
 const GO_TARGETS: { letter: string; surface: SurfaceKey; label: string; id?: string; history?: boolean }[] = [
     { letter: "h", surface: "cockpit", label: "Cockpit (home)" },
     { letter: "a", surface: "agent", label: "Agent" },
-    { letter: "c", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
+    { letter: "j", surface: "jarvis", label: "Jarvis (projects, records, recall)" },
     { letter: "r", surface: "radar", label: "Radar" },
     { letter: "s", surface: "agent", label: "Conversation History", id: "go:history", history: true },
     { letter: "f", surface: "files", label: "Diff" },

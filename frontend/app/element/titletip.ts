@@ -11,7 +11,7 @@ export interface TipText {
     keys?: string;
 }
 
-// a chord as formatChordString draws it (^P, ⇧^O, AltT, ⏎, esc) or as titles spell it by hand (Esc,
+// a chord as formatChordString draws it (ctrl+p, ⌘⇧O, ⏎, esc) or as titles spell it by hand (Esc,
 // Ctrl+K, F2)
 const NAMED_KEY = /^(esc|escape|enter|return|tab|space|del|delete|backspace|home|end|pgup|pgdn|f\d{1,2})$/i;
 const MOD_PLUS = /^(ctrl|cmd|alt|option|shift|meta|win)\+\S+$/i;

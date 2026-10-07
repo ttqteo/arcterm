@@ -11,6 +11,7 @@ import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft, FolderOpen } from "lucide-react";
@@ -289,7 +290,7 @@ export function NewProjectModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton variant="secondary" hint="esc" onClick={close}>
                             Cancel
                         </DialogButton>
-                        <DialogButton variant="primary" hint="⌘⏎" disabled={!canCreate} onClick={() => void create()}>
+                        <DialogButton variant="primary" hint={formatChordString("Cmd:Enter")} disabled={!canCreate} onClick={() => void create()}>
                             Create project
                         </DialogButton>
                     </div>

@@ -9,6 +9,7 @@
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { ArrowLeftRight, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -137,7 +138,7 @@ export function RefPicker({
                     <ChevronDown size={12} className="flex-none text-muted" />
                 </button>
                 <span className="h-[18px] w-px flex-none bg-accent/30" />
-                <SwapButton title="Swap base and head (⇧S)" className="w-[32px] self-stretch" onClick={onSwap} />
+                <SwapButton title={`Swap base and head (${formatChordString("Shift:s")})`} className="w-[32px] self-stretch" onClick={onSwap} />
             </div>
         );
     }
