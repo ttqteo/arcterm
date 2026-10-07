@@ -204,6 +204,16 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Enter` | Submit the answer |
 | `Esc` | Leave the composer |
 
+### Code
+
+| Keys | Action |
+|---|---|
+| `Alt`+`Z` | Toggle word wrap for the open file, also while typing in it. Prose (`.tex`, `.bib`, `.md`, `.txt`) wraps by default; code follows `editor:wordwrap` |
+| `d` | Toggle the diff against HEAD |
+| `r` | Refresh the file index |
+| `Alt`+`←` / `Alt`+`→` | Back / forward through opened files |
+| `Ctrl`+`S` | Save the open file |
+
 ### Diff
 
 | Keys | Action |

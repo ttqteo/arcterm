@@ -11,6 +11,7 @@ import { base64ToString } from "@/util/util";
 export type PanelFile =
     | { kind: "loading" }
     | { kind: "text"; text: string; stamp: string } // stamp: size and modtime, what tells a re-read nothing changed
+    | { kind: "pdf"; size: number; modtime: number } // streamed into a viewer, never read here
     | { kind: "binary"; size: number }
     | { kind: "toolarge"; size: number }
     | { kind: "missing" }
@@ -29,6 +30,9 @@ export async function readPanelFile(abs: string, since?: string): Promise<PanelF
             return null;
         }
         const klass = classifyFile(size, info.mimetype ?? "");
+        if (klass === "pdf") {
+            return { kind: "pdf", size, modtime: info.modtime ?? 0 };
+        }
         if (klass !== "text") {
             return { kind: klass, size };
         }

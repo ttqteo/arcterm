@@ -69,6 +69,7 @@ export type CodeFile =
     | { kind: "none" }
     | { kind: "loading"; path: string }
     | { kind: "text"; path: string; text: string; size: number; modtime: number }
+    | { kind: "pdf"; path: string; size: number; modtime: number } // streamed into a viewer, never read here
     | { kind: "binary"; path: string; size: number }
     | { kind: "toolarge"; path: string; size: number }
     | { kind: "missing"; path: string }
@@ -772,6 +773,10 @@ export async function openPath(rel: string, opts?: { pushHistory?: boolean; line
         }
         const size = info?.size ?? 0;
         const klass = classifyFile(size, info?.mimetype ?? "");
+        if (klass === "pdf") {
+            globalStore.set(codeFileAtom, { kind: "pdf", path: rel, size, modtime: info?.modtime ?? 0 });
+            return;
+        }
         if (klass === "toolarge") {
             globalStore.set(codeFileAtom, { kind: "toolarge", path: rel, size });
             return;

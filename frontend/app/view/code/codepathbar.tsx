@@ -12,16 +12,18 @@
 import { joinRepoPath } from "@/util/paths";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, WrapText } from "lucide-react";
 import { useState } from "react";
 import { isMarkdownPath } from "./codeclassify";
 import { codeDraftsAtom, codeFileAtom, codeProjectAtom, codeViewModeAtom, draftKey } from "./codestore";
+import { toggleWrap, useWrap } from "./codewrap";
 
 export function CodePathBar() {
     const project = useAtomValue(codeProjectAtom);
     const file = useAtomValue(codeFileAtom);
     const drafts = useAtomValue(codeDraftsAtom);
     const [copied, setCopied] = useState(false);
+    const wrap = useWrap(project != null && file.kind !== "none" ? draftKey(project, file.path) : "");
 
     if (project == null || file.kind === "none") {
         return null;
@@ -43,6 +45,7 @@ export function CodePathBar() {
             ) : null}
             {file.kind === "text" ? <ViewModeToggle markdown={isMarkdownPath(file.path)} /> : null}
             <div className="flex-1" />
+            {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
             <button
                 type="button"
                 aria-label="Copy absolute path"
@@ -87,5 +90,25 @@ function ViewModeToggle({ markdown }: { markdown: boolean }) {
                 </button>
             ))}
         </div>
+    );
+}
+
+// Alt+Z does the same from anywhere on the surface, the editor included (bindings.ts code:wrap)
+function WrapToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+    return (
+        <button
+            type="button"
+            data-code-wrap
+            aria-pressed={on}
+            title={on ? "Stop wrapping long lines (Alt+Z)" : "Wrap long lines (Alt+Z)"}
+            onClick={onToggle}
+            className={cn(
+                "flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-[3px] text-[11px]",
+                on ? "border-accent/40 text-accent-soft" : "border-border text-muted hover:text-primary"
+            )}
+        >
+            <WrapText size={11} strokeWidth={1.8} />
+            <span>Wrap</span>
+        </button>
     );
 }

@@ -6,8 +6,6 @@
 // from docpdf.ts, the compile and its result from docpdfstore.ts.
 
 import { Skeleton } from "@/app/element/skeleton";
-import { getApi } from "@/app/store/global";
-import { getWebServerEndpoint } from "@/util/endpoints";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { RotateCw, TriangleAlert } from "lucide-react";
@@ -23,16 +21,11 @@ import {
     pagesLabel,
     pdfPaneState,
     ROOT_HINT,
-    urlFor,
     type PdfPaneState,
 } from "./docpdf";
 import { docPdfAtom, startDocCompile, type DocPdfState } from "./docpdfstore";
 import { setGeneralNote, type DocReviewState } from "./docreviewstore";
-
-// the iframe can't send the auth header, so the URL carries the key (decision 3)
-export function streamFileUrl(path: string, version?: number): string {
-    return urlFor(path, getWebServerEndpoint(), getApi().getAuthKey(), version);
-}
+import { PdfFrame } from "./pdfframe";
 
 const PANEL =
     "flex min-h-0 flex-1 flex-col items-center justify-center gap-[10px] overflow-y-auto bg-surface-code p-[24px] text-center";
@@ -146,11 +139,11 @@ export function PdfPanel(p: { agentId: string; agentName: string; review: DocRev
         return (
             <div data-doc-review-pdf="ok" className="flex min-h-0 flex-1 flex-col bg-surface-code">
                 {r?.pdfpath ? (
-                    <iframe
+                    <PdfFrame
                         data-doc-review-pdf-frame
+                        path={r.pdfpath}
+                        version={pdf.at}
                         title={`${baseName(r.pdfpath)}, compiled from ${baseName(r.rootpath)}`}
-                        src={streamFileUrl(r.pdfpath, pdf.at)}
-                        className="min-h-0 w-full flex-1 border-0"
                     />
                 ) : (
                     <div className={PANEL}>

@@ -15,13 +15,14 @@ import useResizeObserver from "@react-hook/resize-observer";
 import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { languageForPath } from "./codeclassify";
 import { codeHeadAtom, loadHead } from "./codestore";
 
 const MonacoDiffViewer = lazy(() => import("@/app/monaco/monaco-react").then((m) => ({ default: m.MonacoDiffViewer })));
 
 const SPLIT_MIN_PX = 900;
 
-export function CodeDiffView({ path, text }: { path: string; text: string }) {
+export function CodeDiffView({ path, text, wrap }: { path: string; text: string; wrap: boolean }) {
     const head = useAtomValue(codeHeadAtom);
     const hostRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
@@ -40,9 +41,10 @@ export function CodeDiffView({ path, text }: { path: string; text: string }) {
             fontSize: 12,
             fontFamily: "var(--font-mono)",
             minimap: { enabled: false },
+            wordWrap: wrap ? "on" : "off",
             scrollbar: { useShadows: false, verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
         }),
-        [width]
+        [width, wrap]
     );
 
     let body: React.ReactNode;
@@ -57,6 +59,7 @@ export function CodeDiffView({ path, text }: { path: string; text: string }) {
                     path={`code/${path}`}
                     original={head.kind === "absent" ? "" : head.text}
                     modified={text}
+                    language={languageForPath(path)}
                     options={options}
                 />
             </Suspense>

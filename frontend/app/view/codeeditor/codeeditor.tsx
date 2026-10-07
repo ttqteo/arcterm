@@ -37,6 +37,8 @@ interface CodeEditorProps {
     text: string;
     readonly: boolean;
     language?: string;
+    // set: overrides editor:wordwrap (the Code surface decides per file, codewrap.ts)
+    wordWrap?: boolean;
     fileName?: string;
     onChange?: (text: string) => void;
     onMount?: (monacoPtr: MonacoTypes.editor.IStandaloneCodeEditor, monaco: typeof MonacoModule) => () => void;
@@ -47,6 +49,7 @@ export function CodeEditor({
     blockId,
     text,
     language,
+    wordWrap,
     fileName,
     readonly,
     onChange,
@@ -57,7 +60,8 @@ export function CodeEditor({
     const unmountRef = useRef<() => void>(null);
     const minimapEnabled = useOverrideConfigAtom(blockId, "editor:minimapenabled") ?? false;
     const stickyScrollEnabled = useOverrideConfigAtom(blockId, "editor:stickyscrollenabled") ?? false;
-    const wordWrap = useOverrideConfigAtom(blockId, "editor:wordwrap") ?? false;
+    const settingWrap = useOverrideConfigAtom(blockId, "editor:wordwrap") ?? false;
+    const wrap = wordWrap ?? settingWrap;
     const fontSize = boundNumber(useOverrideConfigAtom(blockId, "editor:fontsize"), 6, 64);
     const uuidRef = useRef(crypto.randomUUID()).current;
     let editorPath: string;
@@ -99,11 +103,11 @@ export function CodeEditor({
         const opts = defaultEditorOptions();
         opts.minimap.enabled = minimapEnabled;
         opts.stickyScroll.enabled = stickyScrollEnabled;
-        opts.wordWrap = wordWrap ? "on" : "off";
+        opts.wordWrap = wrap ? "on" : "off";
         opts.fontSize = fontSize;
         opts.copyWithSyntaxHighlighting = false;
         return opts;
-    }, [minimapEnabled, stickyScrollEnabled, wordWrap, fontSize, readonly]);
+    }, [minimapEnabled, stickyScrollEnabled, wrap, fontSize, readonly]);
 
     return (
         <div className="flex flex-col w-full h-full items-center justify-center">

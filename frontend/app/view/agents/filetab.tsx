@@ -6,12 +6,13 @@
 // Source is the Monaco view. Editing is the Code surface's job, one click away.
 
 import { SkeletonLine } from "@/app/element/skeleton";
-import { isMarkdownPath } from "@/app/view/code/codeclassify";
+import { isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
+import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight, WrapText } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
-import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { closeRailFile, openRefInCode, railFileBack, railFileForward, railMdModeAtom } from "./agentrailstore";
 import { fileLabel, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
@@ -20,6 +21,7 @@ import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
 import { MdDoc } from "./mddoc";
+import { PdfFrame } from "./pdfframe";
 
 const MonacoCodeEditor = lazy(() => import("@/app/monaco/monaco-react").then((m) => ({ default: m.MonacoCodeEditor })));
 
@@ -55,6 +57,8 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     stampRef.current = state.kind === "text" ? state.stamp : undefined;
     const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
     const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
+    const wrap = useWrap(ref?.abs ?? "");
+    const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
     useEffect(() => {
         if (ref == null) {
             return;
@@ -140,6 +144,8 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                 ))}
             </div>
         );
+    } else if (state.kind === "pdf") {
+        body = <PdfFrame data-file-pdf={ref.abs} path={ref.abs} version={state.modtime} title={name} />;
     } else if (state.kind === "text" && preview) {
         body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} />;
     } else if (state.kind === "text") {
@@ -152,8 +158,9 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                     // Monaco still picks the language
                     path={`file/${ref.abs}`}
                     text={state.text}
+                    language={languageForPath(ref.abs)}
                     readonly
-                    options={OPTIONS}
+                    options={options}
                     onMount={(editor, monacoApi) => {
                         editorRef.current = editor;
                         const toEnd = () => editor.revealLine(editor.getModel()?.getLineCount() ?? 1);
@@ -276,6 +283,19 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                             </button>
                         ))}
                     </div>
+                ) : null}
+                {state.kind === "text" && !preview ? (
+                    <button
+                        type="button"
+                        data-file-wrap
+                        aria-pressed={wrap}
+                        title={wrap ? "Stop wrapping long lines" : "Wrap long lines"}
+                        onClick={() => toggleWrap(ref.abs)}
+                        className={cn(BTN, wrap && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                    >
+                        <WrapText size={11} aria-hidden />
+                        Wrap
+                    </button>
                 ) : null}
                 {ref.live != null ? (
                     <button

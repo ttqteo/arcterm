@@ -53,6 +53,7 @@ import {
     toggleDir,
 } from "@/app/view/code/codestore";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
+import { toggleCodeWrap } from "@/app/view/code/codewrap";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import {
@@ -1366,6 +1367,15 @@ export function buildCodeBindings(): Binding[] {
                 const mode = globalStore.get(codeViewModeAtom);
                 globalStore.set(codeViewModeAtom, mode === "diff" ? "source" : "diff");
             },
+        },
+        {
+            id: "code:wrap",
+            keys: "Alt:z",
+            group: "Code",
+            label: "Toggle word wrap",
+            // live while typing in Monaco, as VS Code's Alt+Z is; code:save's comment says why editable is not gated
+            when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
+            run: () => (toggleCodeWrap() ? undefined : false),
         },
         {
             id: "code:save",

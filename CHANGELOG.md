@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- LaTeX and BibTeX files are highlighted on Code and in the agent panel's File tab, and a **Wrap** toggle (`Alt+Z` on
+  Code) wraps long lines; `.tex`, `.bib`, `.md` and `.txt` wrap by default. A `.pdf` now opens in a viewer instead of
+  "Binary file".
 - A background task's output in the agent panel has a **Live** toggle: while the task runs the output follows along as
   it grows, staying at the end unless you scroll up.
 

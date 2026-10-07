@@ -13,6 +13,7 @@
 import { Markdown } from "@/app/element/markdown";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
 import { joinRepoPath } from "@/util/paths";
@@ -20,7 +21,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 import { useEffect } from "react";
-import { isMarkdownPath } from "./codeclassify";
+import { isMarkdownPath, languageForPath } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter } from "./codefrontmatter";
@@ -37,6 +38,7 @@ import {
     refreshIndex,
     setCaretLineReader,
 } from "./codestore";
+import { useWrap } from "./codewrap";
 import { FrontmatterCard } from "./frontmattercard";
 
 // DESIGN.md's markdown size (14px text, 12px mono). It reads at that size because .markdown-doc holds the
@@ -107,6 +109,7 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
     const drafts = useAtomValue(codeDraftsAtom);
     const pendingLine = useAtomValue(codePendingLineAtom);
     const mode = useAtomValue(codeViewModeAtom);
+    const wrap = useWrap(project != null && file.kind !== "none" ? draftKey(project, file.path) : "");
 
     // Two paths, both needed. Monaco is keyed by file path, so opening a DIFFERENT file remounts it
     // and onMount is the only hook that runs late enough to reveal a line. Jumping to another line
@@ -147,6 +150,18 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             );
         case "binary":
             return <SurfaceEmptyState title="Binary file" body={`${file.path} — ${sizeLabel(file.size)}`} />;
+        case "pdf":
+            return (
+                <div className="flex h-full min-h-0 flex-col">
+                    <PdfFrame
+                        key={file.path}
+                        data-code-pdf={file.path}
+                        path={project != null ? joinRepoPath(project.path, file.path) : file.path}
+                        version={file.modtime}
+                        title={file.path}
+                    />
+                </div>
+            );
         case "toolarge":
             return (
                 <SurfaceEmptyState
@@ -173,7 +188,7 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             // keyed by path: MonacoDiffViewer creates its models once, so a new file needs a new
             // instance or it keeps the previous file's model URI and language
             if (mode === "diff") {
-                return <CodeDiffView key={file.path} path={file.path} text={draft?.text ?? file.text} />;
+                return <CodeDiffView key={file.path} path={file.path} text={draft?.text ?? file.text} wrap={wrap} />;
             }
             // READMEs and other prose render as documents; Source (the CodeEditor below) stays one
             // toggle away, and the draft feeds the preview so unsaved edits show what you would save
@@ -220,6 +235,8 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                     blockId={model.blockId}
                     text={draft?.text ?? file.text}
                     fileName={abs}
+                    language={languageForPath(file.path)}
+                    wordWrap={wrap}
                     readonly={false}
                     keepModel
                     onChange={editDraft}
