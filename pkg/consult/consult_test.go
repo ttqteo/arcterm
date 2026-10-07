@@ -20,6 +20,7 @@ func TestSpecFor_knownRuntimes(t *testing.T) {
 		"claude":   {"claude", "-p"},
 		"codex":    {"codex", "exec"},
 		"opencode": {"opencode", "run"},
+		"agy":      {"agy", "-p"},
 	}
 	for rt, want := range cases {
 		spec, ok := SpecFor(rt)
@@ -29,6 +30,11 @@ func TestSpecFor_knownRuntimes(t *testing.T) {
 		if spec.Bin != want.bin || len(spec.BaseArgs) == 0 || spec.BaseArgs[0] != want.arg0 {
 			t.Errorf("%s: got bin=%q args=%v", rt, spec.Bin, spec.BaseArgs)
 		}
+	}
+	// agy takes the prompt as the value of -p and answers on plain stdout: no pty, no stdin, no parser.
+	agy, _ := SpecFor("agy")
+	if agy.UsePty || agy.PromptViaStdin || agy.ParseLine != nil || !slices.Equal(agy.BaseArgs, []string{"-p"}) {
+		t.Errorf("agy: got %+v", agy)
 	}
 	// openrouter is an API runtime — no Bin, but ApiBackend must be set
 	spec, ok := SpecFor("openrouter")
@@ -43,6 +49,9 @@ func TestSpecFor_knownRuntimes(t *testing.T) {
 func TestSpecFor_unsupported(t *testing.T) {
 	if _, ok := SpecFor("terminal"); ok {
 		t.Error("terminal should be unsupported")
+	}
+	if _, ok := SpecFor("antigravity"); ok {
+		t.Error("the old antigravity id has no alias")
 	}
 	if _, ok := SpecFor("gemini"); ok {
 		t.Error("gemini should be unsupported in v1")
