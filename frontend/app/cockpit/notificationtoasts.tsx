@@ -3,7 +3,15 @@
 import { RuntimeMark } from "@/app/view/agents/runtimemark";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Bell, CircleCheck, GitPullRequestArrow, Layers, MessageCircleQuestion, type LucideIcon } from "lucide-react";
+import {
+    Bell,
+    CircleCheck,
+    GitPullRequestArrow,
+    Layers,
+    MessageCircleQuestion,
+    X,
+    type LucideIcon,
+} from "lucide-react";
 import {
     dismissToast,
     holdToast,
@@ -66,38 +74,53 @@ export function NotificationToasts(): React.JSX.Element {
         // passing under it, and data-pet-avoid sends the pet off the stretch of ledge beneath the stack
         <div data-pet-avoid className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2">
             {toasts.map((t) => (
-                <button
+                <div
                     key={t.id}
-                    type="button"
-                    data-notification-toast
-                    data-notification-open={t.onOpen ? "" : undefined}
-                    data-notification-tone={t.eyebrow?.tone}
                     // reading a toast keeps it: the clock stops while the pointer is on it
                     onPointerEnter={() => holdToast(t.id)}
                     onPointerLeave={() => releaseToast(t.id)}
-                    onClick={() => {
-                        t.onOpen?.();
-                        dismissToast(t.id);
-                    }}
                     className={cn(
-                        "pointer-events-auto rounded-lg border bg-surface p-3 text-left text-primary shadow-lg",
+                        "pointer-events-auto flex rounded-lg border bg-surface text-primary shadow-lg",
                         t.level === "error"
                             ? "border-error/40"
                             : t.level === "warn" || t.eyebrow?.tone === "asking"
                               ? "border-warning/40"
                               : "border-border",
-                        t.onOpen && "cursor-pointer hover:border-accent-700"
+                        t.onOpen && "hover:border-accent-700"
                     )}
                 >
-                    {t.eyebrow ? (
-                        <AgentToastBody t={t} eyebrow={t.eyebrow} />
-                    ) : (
-                        <>
-                            <div className="text-sm font-medium">{t.title}</div>
-                            {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
-                        </>
-                    )}
-                </button>
+                    <button
+                        type="button"
+                        data-notification-toast
+                        data-notification-open={t.onOpen ? "" : undefined}
+                        data-notification-tone={t.eyebrow?.tone}
+                        onClick={() => {
+                            t.onOpen?.();
+                            dismissToast(t.id);
+                        }}
+                        className={cn("min-w-0 flex-1 py-3 pl-3 text-left", t.onOpen && "cursor-pointer")}
+                    >
+                        {t.eyebrow ? (
+                            <AgentToastBody t={t} eyebrow={t.eyebrow} />
+                        ) : (
+                            <>
+                                <div className="text-sm font-medium">{t.title}</div>
+                                {t.message ? <div className="text-xs text-secondary">{t.message}</div> : null}
+                            </>
+                        )}
+                    </button>
+                    {/* a sibling, not inside the body: closing must not open what the toast is about */}
+                    <button
+                        type="button"
+                        data-notification-close
+                        aria-label="Dismiss notification"
+                        title="Dismiss"
+                        onClick={() => dismissToast(t.id)}
+                        className="m-1.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center self-start rounded text-muted hover:bg-surface-hover hover:text-primary"
+                    >
+                        <X size={14} strokeWidth={1.8} aria-hidden />
+                    </button>
+                </div>
             ))}
         </div>
     );

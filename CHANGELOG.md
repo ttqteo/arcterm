@@ -37,7 +37,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   with **Plan it** (an agent breaks the idea into chunks) and **Add first chunk**, which turns it into an initiative card.
 - An agent notification says what it is at a glance: an amber question tile and **Needs you**, a green check and
   **Finished**, with the project and the agent's harness on the right, instead of tacking "finished" onto the name.
-  A toast stays while the pointer is on it, and one that needs you stays 15 seconds instead of 6.
+  A toast stays while the pointer is on it, one that needs you stays 15 seconds instead of 6, and its × closes it
+  without opening the agent.
 
 ### Fixed
 

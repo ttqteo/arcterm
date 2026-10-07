@@ -17040,6 +17040,26 @@ const notifyToast = {
                 toasts: await notifyToasts(h),
             });
 
+            // the toast's x closes it and opens nothing: the Cockpit stays, and a new ask brings the toast the next step clicks
+            const closed = await h.ev(`(() => {
+                const t = [...document.querySelectorAll("[data-notification-toast]")].find((t) =>
+                    t.textContent.includes(${JSON.stringify(asks)})
+                );
+                const x = t?.parentElement?.querySelector("[data-notification-close]");
+                x?.click();
+                return x != null;
+            })()`);
+            const gone = await polishWaitFor(h, `!${notifyToastWith(asks)}`, 2000);
+            const stayed = await h.activeSurfaceLabel();
+            rec("the toast's close button dismisses it without opening the agent", closed === true && gone === true && stayed === SURFACE_LABEL.cockpit, {
+                closed,
+                gone,
+                surface: stayed,
+            });
+            await publish("working");
+            await publish("asking");
+            await polishWaitFor(h, notifyToastWith(asks, "asking"), 6000);
+
             const clicked = await h.ev(`(() => {
                 const t = [...document.querySelectorAll("[data-notification-toast][data-notification-open]")]
                     .find((t) => t.textContent.includes(${JSON.stringify(asks)}));
@@ -17211,7 +17231,7 @@ const notifyToast = {
         }
         await step("end the focus emulation", () => h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false }));
         await step("dismiss the toasts left", () =>
-            h.ev(`document.querySelectorAll("[data-notification-toast]").forEach((t) => t.click())`)
+            h.ev(`document.querySelectorAll("[data-notification-close]").forEach((x) => x.click())`)
         );
         await step("restore the saved grid", () => h.ev(restoreStorageKey(GRID_KEY, ctx.prevGrid)));
         // the page holds the grid the scenario left in memory, and reads storage only on load
