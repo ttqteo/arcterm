@@ -871,6 +871,23 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: agentNav,
             run: () => step(1),
         },
+        // the tree lists agents top to bottom, so up and down move through it; left and right are the older keys
+        {
+            id: "agent:prev-up",
+            keys: "ArrowUp",
+            group: "Agent",
+            label: "Previous agent",
+            when: agentNav,
+            run: () => step(-1),
+        },
+        {
+            id: "agent:next-down",
+            keys: "ArrowDown",
+            group: "Agent",
+            label: "Next agent",
+            when: agentNav,
+            run: () => step(1),
+        },
         { id: "agent:prev-k", keys: "k", group: "Agent", label: "Previous agent", when: agentNav, run: () => step(-1) },
         { id: "agent:next-j", keys: "j", group: "Agent", label: "Next agent", when: agentNav, run: () => step(1) },
         {

@@ -325,6 +325,19 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         focusTerminalOf(agent.id);
     }, [agent?.id]);
 
+    // Ctrl+Tab pressed while typing in a terminal keeps typing in the agent it moved to (typingFollowsAtom): its
+    // terminal when it shows, else the wrapper, so focus never drops to <body>
+    const typingFollows = useAtomValue(model.typingFollowsAtom);
+    useEffect(() => {
+        if (typingFollows == null || agent?.id !== typingFollows) {
+            return;
+        }
+        globalStore.set(model.typingFollowsAtom, null);
+        const wrap = wrapRef.current;
+        const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
+        (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
+    }, [typingFollows, agent?.id]);
+
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
     // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the review when it
     // shows, else the live terminal, or the wrapper when none is showing (canvas, subagent interior, no terminal).

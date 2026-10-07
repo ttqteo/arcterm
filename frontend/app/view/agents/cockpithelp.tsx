@@ -5,6 +5,7 @@
 // now the shared cheat sheet (Shift+?), which documents the cockpit triage keys via buildCockpitBindings.
 // The `?` chip here opens that cheat sheet too.
 
+import { VersionTag } from "@/app/cockpit/versiontag";
 import { formatChordString } from "@/util/keysym";
 
 // One consolidated hints bar for the cockpit surface. The triage keys are cockpit-local (handled by
@@ -52,6 +53,7 @@ export function HintsBar({ onOpenHelp }: { onOpenHelp: () => void }) {
             >
                 ?
             </button>
+            <VersionTag />
         </div>
     );
 }

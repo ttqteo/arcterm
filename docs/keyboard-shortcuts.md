@@ -118,7 +118,7 @@ A link inside an item view does a full open, even with `Ctrl` held.
 
 | Keys | Action |
 |---|---|
-| `j` / `k` (or `→` / `←`) | Next / previous agent |
+| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent |
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
@@ -153,9 +153,9 @@ cells keeps changing which of them show.
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal, and typing follows to the new cell when more than one cell is showing |
+| `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
 | `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above |
-| `j` / `k` (or `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
+| `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
 Canvas mode, a review, the subagent view, Conversation History, an ended session's or a done worker's transcript, and a

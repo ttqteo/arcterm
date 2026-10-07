@@ -22,6 +22,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   theirs until they restart. Turn the check off with "Check for harness updates".
 - Notifications when an agent needs you or finishes its turn: a system notification while arcterm is in the
   background (click it to open the agent), a toast while it is in front. Settings → Notifications turns each off.
+- The keyboard hints bar shows the running arcterm version at its right end; hover it for the backend version and
+  build time.
 
 ### Changed
 
@@ -81,6 +83,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   two or three times too high; it now matches the Usage numbers.
 - Terminal text a TUI draws on its own background, such as your past prompts in Claude Code, is lifted to
   a readable contrast instead of grey on grey.
+- `Ctrl`+`Tab` pressed while typing in an agent's terminal keeps you typing in the next agent's terminal, instead of
+  dropping the keyboard until you click it.
+- `↑` / `↓` move between agents on the Agent surface, as the hints bar always said; `←` / `→` and `j` / `k` still work.
 
 ## 0.15.1 — 2026-10-07
 

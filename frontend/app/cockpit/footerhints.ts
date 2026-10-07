@@ -31,7 +31,11 @@ export const GLOBAL_HINTS: FooterHint[] = [
 // GLOBAL_HINTS only.
 export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
     agent: [
-        { ids: ["agent:prev-k", "agent:next-j", "agent:prev", "agent:next"], glyph: "↑↓", label: "move" },
+        {
+            ids: ["agent:prev-up", "agent:next-down", "agent:prev-k", "agent:next-j", "agent:prev", "agent:next"],
+            glyph: "↑↓",
+            label: "move",
+        },
         { ids: ["agent:toggle-rail"], glyph: "d", label: "rail" },
         { ids: ["agent:fullscreen"], glyph: "f", label: "full" },
         { ids: ["agent:fullscreen-chord"], keys: "F11", label: "full" }, // reachable in the terminal

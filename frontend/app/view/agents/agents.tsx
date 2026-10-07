@@ -81,6 +81,9 @@ export class AgentsViewModel implements ViewModel {
         return sentAskIdsAtom;
     }
     focusIdAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
+    // the agent whose terminal takes the keyboard once it shows: set by a Ctrl+Tab pressed inside a terminal, which
+    // hides the old pane and would drop focus to <body>. AgentSurface hands focus over and clears it
+    typingFollowsAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
     // The Diff surface's subject: which repository, and which range within it. One stored value
     // rather than three source variables and a ternary chain, so a control can actually set it. It
     // lives in its own module (the git stores read and write it and must not import this view model);
@@ -166,6 +169,9 @@ export class AgentsViewModel implements ViewModel {
         }
         const next = cycleId(ids, globalStore.get(this.focusIdAtom), 1);
         if (next != null) {
+            if (document.activeElement?.closest("[data-agent-terminal]") != null) {
+                globalStore.set(this.typingFollowsAtom, next);
+            }
             globalStore.set(this.focusIdAtom, next);
             showTerminal();
         }

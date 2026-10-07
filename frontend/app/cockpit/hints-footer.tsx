@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { ctrlHeldAtom } from "./ctrlheld";
 import { visibleHints } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS } from "./footerhints";
+import { VersionTag } from "./versiontag";
 
 function FooterBar({ children, dim }: { children?: React.ReactNode; dim?: boolean }) {
     return (
@@ -30,6 +31,7 @@ function FooterBar({ children, dim }: { children?: React.ReactNode; dim?: boolea
             )}
         >
             {children}
+            <VersionTag />
         </div>
     );
 }
@@ -80,7 +82,7 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
         return (
             <FooterBar>
                 <span className="shrink-0 font-mono text-[11px] text-accent-soft">{leader} →</span>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                     {items.map((it) => (
                         <Chip key={it.next} glyph={it.next} label={it.label} />
                     ))}
@@ -101,7 +103,7 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
     const chips = visibleHints(ctx, bindings, SURFACE_HINTS[surface] ?? [], GLOBAL_HINTS);
     return (
         <FooterBar dim={ctx.editable}>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                 {chips.map((c) => (
                     <Chip
                         key={(c.glyph ?? c.keys) + c.label}
