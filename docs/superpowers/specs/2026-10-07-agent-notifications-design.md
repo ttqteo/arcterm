@@ -67,8 +67,9 @@ Event_Notify ─────────────┘                │
 - **`frontend/app/view/agents/notifyevents.ts`** (pure, with a test beside it). Input: the previous and next snapshot
   of agent states, attention ids and the agent:ask ids. Output: `NotifyEvent { kind: "request" | "reply" |
   "attention" | "notify", target, title, body }[]`. An event fires once, on the edge: an agent entering `asking`, an
-  attention id not seen before (the seen set drops ids that leave the list), a working → idle move. The first snapshot
-  after boot or a websocket reconnect is a baseline and emits nothing, so opening the app does not replay old state.
+  attention id absent from the previous snapshot, a working → idle move. The first snapshot is a baseline, an agent
+  seen for the first time is a baseline (a reload or a websocket reconnect refills the roster, which is not news), and
+  so is the first attention poll (`attentionLoadedAtom`), so opening the app does not replay old state.
 - **`routeNotify(event, { focused, viewing, settings })`** (pure, same file): `"os" | "toast" | "avatar" | "none"`.
 - **Coalescing** (pure, same file): events inside a 2 s window are batched; three or more become one summary ("3 agents
   waiting on you · 2 replied") whose target is the Cockpit surface. Applies to OS and in-app alike.
@@ -97,12 +98,14 @@ Event_Notify ─────────────┘                │
 - `notify:toast` — in-app toasts for requests and replies.
 - `notify:reply` — the reply event, OS and in-app, for when finished turns are too noisy.
 
-No per-agent settings and no quiet hours; Windows Focus Assist covers that.
+A Notifications section on the Settings surface (Cockpit group) toggles the three. No per-agent settings and no quiet
+hours; Windows Focus Assist covers that.
 
 ### Edge cases
 
 - A click on a toast whose agent has gone: `openref` reports it with its existing "not found" toast.
-- A websocket reconnect takes a fresh baseline; what happened while disconnected is not replayed.
+- A websocket reconnect replays nothing: agents that come back are first-seen, and an attention poll that fails
+  keeps the last list.
 - The macOS Dock badge is unchanged. A Windows taskbar overlay badge stays out of scope; the open-issues row keeps
   the badge half.
 
