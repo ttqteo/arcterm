@@ -39,9 +39,13 @@ const (
 	leadLaunchFailedNote = "lead could not be started"
 )
 
-// HandoffCompact is typed into a lead once its plan is handed over (spec §7): the compaction lands at the
-// natural boundary instead of mid-wake, and keeps what the spec does not already hold.
-const HandoffCompact = "/compact Keep: what the human said that the spec does not record, and the reason behind each decision. Drop: code you read, drafts, tool output."
+// handoffInstructions is what a lead's compaction keeps once its plan is handed over (spec §7): what the
+// spec does not already hold.
+const handoffInstructions = "Keep: what the human said that the spec does not record, and the reason behind each decision. Drop: code you read, drafts, tool output."
+
+// HandoffCompact is the handoff as typed into a lead: the compaction lands at the natural boundary
+// instead of mid-wake. A session with a stream is asked to compact instead (streamMsg).
+const HandoffCompact = "/compact " + handoffInstructions
 
 type leadState struct {
 	BlockId string
@@ -58,8 +62,11 @@ type leadState struct {
 // tests can script the lead without a live block.
 var leadStateFn = readLeadState
 
-// sendWakeFn types a wake into the lead's block; text "" presses Enter alone. A var for tests.
-var sendWakeFn = typeWake
+// sendWakeFn hands a wake to the lead's block; text "" presses Enter alone. A var for tests.
+var sendWakeFn = sendWake
+
+// typeWakeFn types into the lead's terminal whether or not its mod holds a stream. A var for tests.
+var typeWakeFn = typeWake
 
 var wakeNow = func() int64 { return time.Now().UnixMilli() }
 
@@ -96,7 +103,9 @@ type runWake struct {
 	blockId string
 	tabId   string
 	// sentAt is the UnixMilli of the unconfirmed wake, 0 when none is outstanding.
-	sentAt  int64
+	sentAt int64
+	// sent is the unconfirmed wake's text, kept for its retry.
+	sent    string
 	retried bool
 	dead    bool
 	told    map[string]bool
@@ -233,7 +242,10 @@ func NoteLeadStatus(ctx context.Context, ev *wps.WaveEvent) {
 			continue
 		}
 		if data.State == baseds.AgentState_Working {
-			rw.sentAt, rw.retried, rw.dead = 0, false, false
+			if rw.dead {
+				wakes.reviveLocked(ctx, runId, rw)
+			}
+			rw.sentAt, rw.retried = 0, false
 			continue
 		}
 		if atPrompt(data.State) {
@@ -257,13 +269,29 @@ func tickWakes(ctx context.Context) {
 			continue
 		}
 		if rw.retried {
+			if rw.sent == HandoffCompact {
+				// the compaction is housekeeping: a lead that never ran it still takes its wakes
+				log.Printf("wake: run %s's lead never ran its handoff compaction; dropped", runId)
+				rw.sentAt, rw.retried = 0, false
+				wakes.flushLocked(ctx, runId, rw)
+				continue
+			}
 			wakes.leadDiedLocked(ctx, runId, rw, wakeUnconfirmedNote)
 			continue
 		}
-		// the text is already in the lead's input, so only Enter is repeated.
 		rw.retried, rw.sentAt = true, now
-		sendWakeFn(rw.blockId, "")
+		typeWakeFn(rw.blockId, retryText(rw.blockId, rw.sent))
 	}
+}
+
+// retryText is what an unconfirmed wake's retry types. Typed text is still in the lead's input, so only
+// Enter is repeated. A wake the lead's mod was handed left nothing there and may never have run, so it is
+// typed whole: a wake read twice beats one never read.
+func retryText(blockId, sent string) string {
+	if agentctl.Has(blockId) {
+		return sent
+	}
+	return ""
 }
 
 // atPrompt reports a lead that can take typed input. A Claude lead left at its prompt reports waiting
@@ -319,7 +347,7 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 		// alone and first: a wake joined to it would be summarized away before the lead read it, so held
 		// lines wait for the idle report that ends the compaction
 		sendWakeFn(st.BlockId, HandoffCompact)
-		rw.handoff, rw.sentAt, rw.retried = false, wakeNow(), false
+		rw.handoff, rw.sentAt, rw.sent, rw.retried = false, wakeNow(), HandoffCompact, false
 		appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWoken, nil, map[string]any{"text": HandoffCompact})
 		return
 	}
@@ -329,11 +357,33 @@ func (w *waker) flushLocked(ctx context.Context, runId string, rw *runWake) {
 	}
 	text := composeWake(rw.lines, questions, rw.caveats, rw.quiet)
 	sendWakeFn(st.BlockId, text)
-	rw.lines, rw.quiet, rw.caveats, rw.sentAt, rw.retried = nil, nil, nil, wakeNow(), false
+	rw.lines, rw.quiet, rw.caveats, rw.sentAt, rw.sent, rw.retried = nil, nil, nil, wakeNow(), text, false
 	for _, p := range asks {
 		rw.told[askTold(p)] = true
 	}
 	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadWoken, nil, map[string]any{"text": text})
+}
+
+// reviveLocked takes back a lead given up on: what it missed is its next wake, and the row tells the
+// cockpit it is no longer down. Questions already moved to the human stay with the human.
+func (w *waker) reviveLocked(ctx context.Context, runId string, rw *runWake) {
+	rw.lines = append(rw.missed, rw.lines...)
+	rw.missed, rw.sentAt, rw.retried, rw.dead = nil, 0, false, false
+	appendRunEvent(ctx, rw.channelId, runId, waveobj.RunEventKindLeadRevived, nil, map[string]any{})
+}
+
+// reviveLive takes back runId's lead if it was given up on, wakes it with what it missed, and reports
+// whether it did.
+func (w *waker) reviveLive(ctx context.Context, channelId, runId string) bool {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	rw := w.runLocked(channelId, runId)
+	if !rw.dead {
+		return false
+	}
+	w.reviveLocked(ctx, runId, rw)
+	w.flushLocked(ctx, runId, rw)
+	return true
 }
 
 // launchLocked starts the first lead of a run submitted with no lead, with the pending events as its first
@@ -403,8 +453,9 @@ func startLead(ctx context.Context, channelId, runId, wake string) error {
 
 // RelaunchLead brings back a lead that died after its plan was submitted. The replacement is told the
 // dag is mid-flight and given what the dead lead missed, not the run's first prompt: a lead that thinks it
-// is starting over re-dispatches work. A run whose lead process still runs is refused. A failed spawn
-// leaves the lead marked dead, so its judgment keeps going to the human.
+// is starting over re-dispatches work. A lead whose process still runs is not replaced: one given up on
+// is taken back and woken with what it missed, and any other is refused. A failed spawn leaves the lead
+// marked dead, so its judgment keeps going to the human.
 func RelaunchLead(ctx context.Context, channelId, runId string) error {
 	run, err := wstore.GetRun(ctx, channelId, runId)
 	if err != nil {
@@ -414,6 +465,9 @@ func RelaunchLead(ctx context.Context, channelId, runId string) error {
 		return fmt.Errorf("run %s has no running plan to hand to a lead", runId)
 	}
 	if leadStateFn(ctx, channelId, runId).Alive {
+		if wakes.reviveLive(ctx, channelId, runId) {
+			return nil
+		}
 		return fmt.Errorf("run %s's lead is still running", runId)
 	}
 	missed, err := wakes.beginRelaunch(channelId, runId)
@@ -451,6 +505,14 @@ func (w *waker) endRelaunch(ctx context.Context, channelId, runId, wake string, 
 	}
 	rw.dead, rw.missed, rw.sentAt, rw.retried, rw.launchedAt = false, nil, 0, false, wakeNow()
 	appendRunEvent(ctx, channelId, runId, waveobj.RunEventKindLeadLaunched, nil, map[string]any{"text": wake})
+}
+
+// leadRestarted gives a lead the engine just restarted a wake-confirm timeout to come up, as a launched one
+// gets: the restart returns before the process runs.
+func (w *waker) leadRestarted(channelId, runId string) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.runLocked(channelId, runId).launchedAt = wakeNow()
 }
 
 func replacementLeadWake(missed []string) string {
@@ -581,11 +643,11 @@ func readLeadState(ctx context.Context, channelId, runId string) leadState {
 // latestAgentState is the newest state reported for the lead. Hooks report on the block, but a reporter
 // may use the tab, so both scopes are read and the later report wins.
 func latestAgentState(blockId, tabId string) string {
-	return latestAgentStatus(blockId, tabId).State
+	return LatestAgentStatus(blockId, tabId).State
 }
 
-// latestAgentStatus is the newest status reported for a block or its tab, zero when there is none.
-func latestAgentStatus(blockId, tabId string) baseds.AgentStatusData {
+// LatestAgentStatus is the newest status reported for a block or its tab, zero when there is none.
+func LatestAgentStatus(blockId, tabId string) baseds.AgentStatusData {
 	var best baseds.AgentStatusData
 	scopes := []string{waveobj.MakeORef(waveobj.OType_Block, blockId).String(), waveobj.MakeORef(waveobj.OType_Tab, tabId).String()}
 	for _, scope := range scopes {
@@ -603,14 +665,25 @@ func latestAgentStatus(blockId, tabId string) baseds.AgentStatusData {
 	return best
 }
 
-// typeWake pastes the wake and then presses Enter. Bracketed paste keeps a multi-line wake one message
-// instead of relying on how each harness's editor treats a typed newline; the pause mirrors agentask's
-// keystroke pacing, since one combined write races the editor. It runs async so the waker lock is
-// never held across the pause. A session whose mod holds a control stream is not typed into at all.
-func typeWake(blockId, text string) {
+// SendToSession delivers text to an agent session the way a wake is: over its mod's stream when it holds
+// one, typed and submitted otherwise.
+func SendToSession(blockId, text string) {
+	sendWakeFn(blockId, text)
+}
+
+// sendWake delivers a wake: a session whose mod holds a control stream is not typed into at all.
+func sendWake(blockId, text string) {
 	if overStream(blockId, text, latestAgentState(blockId, "")) {
 		return
 	}
+	typeWake(blockId, text)
+}
+
+// typeWake pastes the wake and then presses Enter. Bracketed paste keeps a multi-line wake one message
+// instead of relying on how each harness's editor treats a typed newline; the pause mirrors agentask's
+// keystroke pacing, since one combined write races the editor. It runs async so the waker lock is
+// never held across the pause.
+func typeWake(blockId, text string) {
 	go func() {
 		if text != "" {
 			if err := sendBlockInput(blockId, "\x1b[200~"+text+"\x1b[201~"); err != nil {
@@ -625,10 +698,10 @@ func typeWake(blockId, text string) {
 	}()
 }
 
-// overStream hands text to a session whose mod runs it as a prompt of its own, leaving the composer and
-// whatever the human is typing in it alone, and reports whether nothing is left to type. Only a session
-// at its prompt takes it: the mod's prompt waits for a running turn to end, where typed text reaches the
-// turn itself, which is what a tell to a busy worker is for.
+// overStream hands text to a session whose mod takes it itself, leaving the composer and whatever the
+// human is typing in it alone, and reports whether nothing is left to type. A session at its prompt runs
+// it as a prompt of its own. One at work has it joined to the running turn, which is what a tell to a
+// busy worker is for; a mod older than MidTurn runs it as a prompt once that turn ends.
 func overStream(blockId, text, state string) bool {
 	if !agentctl.Has(blockId) {
 		return false
@@ -637,7 +710,19 @@ func overStream(blockId, text, state string) bool {
 		// the retry's Enter alone: a prompt sent over the stream left nothing in the composer to submit
 		return true
 	}
-	return atPrompt(state) && agentctl.Send(blockId, text)
+	msg := streamMsg(text)
+	msg.MidTurn = !atPrompt(state)
+	return agentctl.Send(blockId, msg)
+}
+
+// streamMsg is text as a session's mod is asked for it: the handoff is a compaction of the session's own,
+// which echoes no command into its transcript, and anything else a prompt. The handoff keeps its typed
+// text too: the mods are installed per machine, and one older than this message reads only that.
+func streamMsg(text string) agentctl.Msg {
+	if text == HandoffCompact {
+		return agentctl.Msg{Text: text, Compact: handoffInstructions}
+	}
+	return agentctl.Msg{Text: text}
 }
 
 func sendBlockInput(blockId, s string) error {

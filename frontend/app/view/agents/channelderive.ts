@@ -1,13 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure derivations for the Channels surface, such as whether a channel currently has a dispatched worker
-// waiting on you (drives the rail's attention dot).
+// Pure derivations for the Channels surface: the rail's filter and partition, project-path matching, and
+// the composer's @mentions.
 
-import type { AgentVM } from "./agentsviewmodel";
 import { parseMentions, type RosterEntry } from "./channelmessages";
-import { pendingAsks } from "./jarviscards";
-import { buildFleetSnapshot } from "./jarvisderive";
 
 // Case-insensitive substring filter over channel names for the rail search box. A blank query returns
 // the list unchanged.
@@ -59,16 +56,6 @@ export function partitionChannels(channels: Channel[]): ChannelPartition {
         }
     }
     return { active, archived };
-}
-
-// A channel is "waiting on you" when any worker it dispatched (or steered) is asking AND Jarvis has not
-// already auto-answered that ask. Shares pendingAsks with the fleet panel so the rail dot and the
-// "NEEDS YOU" count never disagree.
-export function channelHasAsk(channel: Channel, agents: AgentVM[]): boolean {
-    if (!agents.some((a) => a.state === "asking")) {
-        return false;
-    }
-    return pendingAsks(buildFleetSnapshot(channel, agents), channel.messages ?? []).length > 0;
 }
 
 // --- composer @mentions ------------------------------------------------------

@@ -15,7 +15,7 @@ import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowUpRight, Check, FileText, SquareDashed, X, type LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { openTarget } from "../jarvis/openref";
 import { ICON_BTN } from "./agentheader";
 import type { AgentsViewModel } from "./agents";
@@ -24,6 +24,18 @@ import { cleanLabel } from "./answerbar";
 import { parseCanvasPath } from "./canvasmodel";
 import { canvasOwner } from "./canvasstore";
 import { docReviewAtom, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
+import {
+    addNote,
+    composeAnswer,
+    docNotesAtom,
+    notesCopy,
+    removeNote,
+    setNoteText,
+    type DocNote,
+    type DocNotesState,
+    type DocReviewSent,
+} from "./docreviewnotes";
+import { NoteField, NotesSection, readSelection, useDocHighlights, type PendingPassage } from "./docreviewnotesview";
 import { MarkdownMessage } from "./markdownmessage";
 import { useFileText } from "./usefiletext";
 
@@ -62,6 +74,24 @@ const SECONDARY_BTN =
 
 const closeDialog = () => globalStore.set(docReviewAtom, null);
 
+const NO_NOTES: DocNote[] = [];
+
+function patchNotes(askId: string, patch: Partial<DocNotesState>) {
+    const all = globalStore.get(docNotesAtom);
+    globalStore.set(docNotesAtom, { ...all, [askId]: { notes: NO_NOTES, ...all[askId], ...patch } });
+}
+
+// what the document pane needs to quote passages; the canvas pane has nothing to quote
+interface Quoting {
+    notes: DocNote[];
+    pending: PendingPassage | null;
+    draft: string;
+    onSelect: (p: PendingPassage) => void;
+    onDraft: (v: string) => void;
+    onAdd: () => void;
+    onCancel: () => void;
+}
+
 // Lands on the agent that already shows the canvas. When none does, the lead's terminal attaches it first, as
 // the lead's own `wsh ui reveal` would, so the open has an agent to land on.
 async function openCanvasBoard(model: AgentsViewModel, lead: AgentVM, path: string): Promise<void> {
@@ -90,8 +120,14 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
     const parsed = parseDocReview(agent?.ask);
     const review = isDialogReview(parsed) ? parsed : null;
     const askId = agent?.ask?.askId;
+    const notesEntry = useAtomValue(docNotesAtom)[askId ?? ""];
+    const notes = notesEntry?.notes ?? NO_NOTES;
     const [requesting, setRequesting] = useState(false);
     const [note, setNote] = useState("");
+    const [pending, setPending] = useState<PendingPassage | null>(null);
+    const [draft, setDraft] = useState("");
+    const [openId, setOpenId] = useState<string | null>(null);
+    const [collapsed, setCollapsed] = useState(false);
 
     // the ask was answered or cleared (or the agent is gone, or it is a Doc review): nothing left for the dialog
     useEffect(() => {
@@ -100,36 +136,101 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
         }
     }, [id, review == null]);
 
+    const dropPending = () => {
+        setPending(null);
+        setDraft("");
+    };
+
     useEffect(() => {
         setRequesting(false);
         setNote("");
+        dropPending();
+        setOpenId(null);
+        setCollapsed(false);
     }, [askId]);
 
     const sent = agent != null && sentIds.has(askSentKey(agent) ?? "");
+    const approveLabel = cleanLabel(
+        agent?.ask?.questions?.[QI]?.options?.[review?.approveIndex ?? -1]?.label ??
+            (review ? COPY[review.kind].approve : "")
+    );
+    const copy = notesCopy({
+        count: notes.length,
+        approveLabel,
+        placeholder: review ? COPY[review.kind].placeholder : "",
+    });
+
+    // the passage still in the note field joins the notes, so adding it and sending both keep its draft
+    const takePending = (): DocNote[] => {
+        if (pending == null || askId == null) {
+            return notes;
+        }
+        const next = addNote(notes, { ...pending, note: draft });
+        patchNotes(askId, { notes: next });
+        dropPending();
+        return next;
+    };
+    const submit = (agentId: string, kind: DocReviewSent) => {
+        model.submitAnswer(agentId);
+        if (askId != null && globalStore.get(model.sentIdsAtom).has(askId)) {
+            patchNotes(askId, { sent: kind });
+        }
+        setRequesting(false);
+    };
     const approve = () => {
         if (!agent || !review || sent || review.approveIndex < 0) {
             return;
         }
-        if (!selections[agent.id]?.[QI]?.has(review.approveIndex)) {
+        const all = takePending();
+        if (all.length > 0) {
+            model.setAnswerText(
+                agent.id,
+                QI,
+                composeAnswer({ kind: "approve", approveLabel, message: "", notes: all })
+            );
+        } else if (!selections[agent.id]?.[QI]?.has(review.approveIndex)) {
             model.toggleAnswer(agent.id, QI, review.approveIndex);
         }
-        model.submitAnswer(agent.id);
+        submit(agent.id, "approve");
     };
     const sendNote = () => {
-        if (!agent || sent || !note.trim()) {
+        if (!agent || sent) {
             return;
         }
-        model.setAnswerText(agent.id, QI, note.trim());
-        model.submitAnswer(agent.id);
-        setRequesting(false);
+        const text = composeAnswer({ kind: "request", approveLabel, message: note, notes: takePending() });
+        if (!text) {
+            return;
+        }
+        model.setAnswerText(agent.id, QI, text);
+        submit(agent.id, "request");
     };
 
     let sentLabel = "";
     if (sent && agent && review) {
         const text = (texts[agent.id]?.[QI] ?? "").trim();
         const oi = [...(selections[agent.id]?.[QI] ?? [])][0];
-        sentLabel = text ? REQUEST_SENT : cleanLabel(agent.ask?.questions?.[QI]?.options?.[oi]?.label ?? "");
+        if (notes.length > 0 && notesEntry?.sent != null) {
+            sentLabel = notesEntry.sent === "approve" ? copy.sentApprove : copy.sentRequest;
+        } else {
+            sentLabel = text ? REQUEST_SENT : cleanLabel(agent.ask?.questions?.[QI]?.options?.[oi]?.label ?? "");
+        }
     }
+
+    const quoting: Quoting = {
+        notes,
+        pending: sent ? null : pending,
+        draft,
+        onSelect: (p) => {
+            if (sent || askId == null) {
+                return;
+            }
+            setPending(p);
+            setDraft("");
+        },
+        onDraft: setDraft,
+        onAdd: takePending,
+        onCancel: dropPending,
+    };
 
     return (
         <ModalShell
@@ -138,7 +239,7 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
             onSubmit={requesting ? sendNote : approve}
             variant="dialog"
             align="center"
-            className="flex h-[min(780px,calc(100vh-5rem))] w-[min(1160px,calc(100vw-5rem))] flex-col"
+            className="flex h-[min(870px,calc(100vh-5rem))] w-[min(1240px,calc(100vw-5rem))] flex-col"
         >
             {agent && review ? (
                 <>
@@ -155,20 +256,36 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
                         ) : (
                             <DocumentPane
                                 path={review.path}
+                                quoting={quoting}
                                 onOpen={() => {
                                     closeDialog();
                                     fireAndForget(() => openFileInCode(model, review.path));
                                 }}
                             />
                         )}
-                        <AskPane review={review} />
+                        <AskPane review={review}>
+                            {review.doc === "canvas" || askId == null ? null : (
+                                <NotesSection
+                                    notes={notes}
+                                    openId={openId}
+                                    collapsed={collapsed}
+                                    locked={sent}
+                                    onCollapse={setCollapsed}
+                                    onOpen={setOpenId}
+                                    onText={(noteId, v) => patchNotes(askId, { notes: setNoteText(notes, noteId, v) })}
+                                    onRemove={(noteId) => {
+                                        patchNotes(askId, { notes: removeNote(notes, noteId) });
+                                        // ids are reused, so a later note must not inherit the open row
+                                        setOpenId((open) => (open === noteId ? null : open));
+                                    }}
+                                />
+                            )}
+                        </AskPane>
                     </div>
                     <Footer
                         review={review}
-                        approveLabel={cleanLabel(
-                            agent.ask?.questions?.[QI]?.options?.[review.approveIndex]?.label ??
-                                COPY[review.kind].approve
-                        )}
+                        copy={copy}
+                        canSend={note.trim() !== "" || notes.length > 0}
                         sentLabel={sent ? sentLabel || "Answered" : null}
                         requesting={requesting}
                         note={note}
@@ -255,13 +372,26 @@ function CanvasPane({ path, onOpen }: { path: string; onOpen: () => void }) {
     );
 }
 
-function DocumentPane({ path, onOpen }: { path: string; onOpen: () => void }) {
+function DocumentPane({ path, quoting, onOpen }: { path: string; quoting: Quoting; onOpen: () => void }) {
     const [load] = useFileText(path);
     const { file } = splitPath(path);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const docRef = useRef<HTMLDivElement>(null);
+    useDocHighlights(docRef, quoting.notes, quoting.pending, load.text);
+    const onMouseUp = () => {
+        const passage = readSelection(docRef.current);
+        if (passage) {
+            quoting.onSelect(passage);
+        }
+    };
     return (
         <div className="flex min-w-0 flex-1 flex-col border-r border-edge-mid">
             <FileCard path={path} icon={FileText} action="Open in Code" onOpen={onOpen} />
-            <div className="sc min-h-0 flex-1 overflow-y-auto px-7 pb-7 pt-[18px]">
+            <div
+                ref={scrollRef}
+                onMouseUp={onMouseUp}
+                className="sc relative min-h-0 flex-1 overflow-y-auto px-7 pb-7 pt-[18px]"
+            >
                 {load.status === "loading" ? (
                     <div aria-hidden="true" className="flex flex-col gap-2.5 pt-1">
                         {["w-[45%]", "w-[85%]", "w-[75%]", "w-[60%]", "w-[80%]"].map((w, i) => (
@@ -274,17 +404,33 @@ function DocumentPane({ path, onOpen }: { path: string; onOpen: () => void }) {
                         <span className="break-all text-[11px] text-muted">{path}</span>
                     </div>
                 ) : (
-                    <MarkdownMessage text={load.text} className="text-[14px] leading-[1.65] text-secondary" />
+                    <>
+                        <div ref={docRef} data-doc-review-doc>
+                            <MarkdownMessage text={load.text} className="text-[14px] leading-[1.65] text-secondary" />
+                        </div>
+                        {quoting.pending ? (
+                            <NoteField
+                                scrollRef={scrollRef}
+                                docRef={docRef}
+                                pending={quoting.pending}
+                                draft={quoting.draft}
+                                onDraft={quoting.onDraft}
+                                onAdd={quoting.onAdd}
+                                onCancel={quoting.onCancel}
+                            />
+                        ) : null}
+                    </>
                 )}
             </div>
         </div>
     );
 }
 
-function AskPane({ review }: { review: DialogReview }) {
+// children is the notes section, pinned under the decisions, which keep their own scroll
+function AskPane({ review, children }: { review: DialogReview; children?: ReactNode }) {
     const numbered = review.kind === "spec";
     return (
-        <div className="flex w-[380px] flex-none flex-col bg-surface-raised">
+        <div className="flex w-[460px] flex-none flex-col bg-surface-raised">
             <div className="sc flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-5 pb-5 pt-4">
                 <div className="text-[10.5px] font-bold uppercase tabular-nums tracking-[0.1em] text-muted">
                     {COPY[review.kind].list} · {review.items.length}
@@ -306,13 +452,15 @@ function AskPane({ review }: { review: DialogReview }) {
                     ))}
                 </ol>
             </div>
+            {children}
         </div>
     );
 }
 
 function Footer(p: {
     review: DialogReview;
-    approveLabel: string;
+    copy: ReturnType<typeof notesCopy>;
+    canSend: boolean;
     sentLabel: string | null;
     requesting: boolean;
     note: string;
@@ -336,7 +484,7 @@ function Footer(p: {
             {p.requesting ? (
                 <div className="flex flex-col gap-1.5">
                     <label htmlFor="doc-review-note" className="text-[12px] font-semibold text-secondary">
-                        What should change?
+                        {p.copy.noteLabel}
                     </label>
                     <textarea
                         id="doc-review-note"
@@ -344,7 +492,7 @@ function Footer(p: {
                         autoFocus
                         value={p.note}
                         onChange={(e) => p.onNote(e.target.value)}
-                        placeholder={COPY[p.review.kind].placeholder}
+                        placeholder={p.copy.notePlaceholder}
                         className="w-full resize-none rounded-[7px] border border-accent bg-background px-2.5 py-2 text-[13px] leading-[1.5] text-primary outline-none placeholder:text-muted"
                     />
                 </div>
@@ -352,8 +500,8 @@ function Footer(p: {
             <div className="flex items-center gap-2">
                 {p.requesting ? (
                     <>
-                        <button type="button" onClick={p.onSend} disabled={!p.note.trim()} className={PRIMARY_BTN}>
-                            Send to the lead
+                        <button type="button" onClick={p.onSend} disabled={!p.canSend} className={PRIMARY_BTN}>
+                            {p.copy.send}
                         </button>
                         <button type="button" onClick={p.onCancel} className={SECONDARY_BTN}>
                             Cancel
@@ -367,13 +515,13 @@ function Footer(p: {
                             disabled={p.review.approveIndex < 0}
                             className={PRIMARY_BTN}
                         >
-                            {p.approveLabel}
+                            {p.copy.approve}
                             <span className="rounded-[4px] bg-background/20 px-[5px] font-mono text-[10.5px]">
                                 {formatChordString("Ctrl:Enter")}
                             </span>
                         </button>
                         <button type="button" onClick={p.onRequest} className={SECONDARY_BTN}>
-                            Request changes
+                            {p.copy.request}
                         </button>
                     </>
                 )}

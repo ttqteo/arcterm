@@ -7,7 +7,7 @@
 // labelled commit groups coloured by side. No graph gutter — compare has no lane geometry to draw, so
 // rows are flush-padded instead of indented.
 
-import { SkeletonLine } from "@/app/element/skeleton";
+import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { cn } from "@/util/util";
 import { PanelLeftClose } from "lucide-react";
 import { SubLabel } from "./sectionlabel";
@@ -27,15 +27,15 @@ const PAD = 14;
 
 function CompareSkeleton() {
     return (
-        <div className="px-[14px]">
-            {Array.from({ length: 8 }).map((_, i) => (
+        <SkeletonRows className="h-full px-[14px]">
+            {(i) => (
                 <div key={i} className="flex h-[32px] items-center gap-[9px]">
                     <SkeletonLine className="h-[7px] w-[7px] rounded-full" />
                     <SkeletonLine className="h-[8px] w-[46px]" />
                     <SkeletonLine className="h-[8px] w-[150px]" />
                 </div>
-            ))}
-        </div>
+            )}
+        </SkeletonRows>
     );
 }
 

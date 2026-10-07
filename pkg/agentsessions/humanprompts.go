@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 	"github.com/wavetermdev/waveterm/pkg/pisession"
 )
 
@@ -50,7 +51,8 @@ func sentByPerson(isSidechain bool, origin *claudeOrigin) bool {
 // HumanPrompts returns the prompts submitted to a claude or pi session, oldest first, the one it was launched
 // with included. Claude also writes a user record for tool output and for its own notices (a skill body, a
 // slash command, command output, a background task finishing, an interruption, the compaction summary); none
-// of those is a prompt. Other runtimes, and a file that cannot be read, have none.
+// of those is a prompt. Neither is another agent's message (wsh agents send), which is typed into the session
+// like one. Other runtimes, and a file that cannot be read, have none.
 func HumanPrompts(path, runtime string) []HumanPrompt {
 	switch runtime {
 	case "claude":
@@ -99,10 +101,15 @@ func claudeTypedText(rec claudePromptLine) string {
 	if !sentByPerson(rec.IsSidechain, origin) {
 		return ""
 	}
-	if text := claudePromptText(raw); !isClaudeNotice(text) {
-		return pastedContentRe.ReplaceAllString(text, "$1")
+	text := claudePromptText(raw)
+	if isClaudeNotice(text) {
+		return ""
 	}
-	return ""
+	// an agent's message is checked once unwrapped: a long one is recorded inside the pasted_content tag
+	if text = pastedContentRe.ReplaceAllString(text, "$1"); agentmsg.IsAgentMessage(text) {
+		return ""
+	}
+	return text
 }
 
 // pastedContentRe is the tag claude code wraps a long typed or pasted message in before recording it. The text
@@ -151,7 +158,7 @@ func piHumanPrompts(file *pisession.File) []HumanPrompt {
 	}
 	var out []HumanPrompt
 	for _, e := range branch {
-		if text := piUserText(e.Message); text != "" {
+		if text := piUserText(e.Message); text != "" && !agentmsg.IsAgentMessage(text) {
 			out = append(out, HumanPrompt{Ts: parseTs(e.Timestamp), Text: text})
 		}
 	}

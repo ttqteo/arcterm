@@ -56,6 +56,27 @@ func SetValidateWorkerHarnessForTest(fn func(string) error) func() {
 	return func() { validateWorkerHarness = old }
 }
 
+// startWorker launches a spawned worker's process once its run is recorded. Read at call time, like
+// spawnWorker.
+var startWorker = func(ctx context.Context, workerORef string) error {
+	return jarvis.StartRunWorker(ctx, workerORef)
+}
+
+// abandonUnstartedWorker cancels the run recorded for a worker whose process would not start and disarms
+// its tab, so nothing reads the run as working.
+func abandonUnstartedWorker(ctx context.Context, channelId, runID, workerORef string) {
+	if err := wstore.UpdateRun(ctx, channelId, runID, func(r *waveobj.Run) error {
+		*r = jarvis.CancelRun(*r)
+		return nil
+	}); err != nil {
+		log.Printf("cancelling run %s of unstarted worker %s: %v", runID, workerORef, err)
+	}
+	if err := stopSpawnedWorker(ctx, workerORef); err != nil {
+		log.Printf("stopping unstarted worker %s: %v", workerORef, err)
+	}
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
+}
+
 var appendChildRun = wstore.AppendRun
 var stopSpawnedWorker = jarvis.StopRunWorker
 var stampSpawnedWorker = wstore.StampWorkerOwner
@@ -66,6 +87,25 @@ const scheduleCleanupTimeout = 10 * time.Second
 // sequence, each bounded by jarvis.RunWorkerSpawnTimeout, so the bound is that worst case with room to
 // spare — it exists to stop a wedged tick living forever, not to pace a healthy one.
 const scheduleTickTimeout = 10 * time.Minute
+
+// spawnBudget hands each step of a tick its own jarvis.RunWorkerSpawnTimeout. One deadline for the whole tick
+// is spent by the first slow dispatch (a large checkout, a long Setup), and every task after it fails on arrival.
+type spawnBudget struct {
+	parent  context.Context
+	cancels []context.CancelFunc
+}
+
+func (b *spawnBudget) next() context.Context {
+	ctx, cancel := context.WithTimeout(b.parent, jarvis.RunWorkerSpawnTimeout)
+	b.cancels = append(b.cancels, cancel)
+	return ctx
+}
+
+func (b *spawnBudget) release() {
+	for _, cancel := range b.cancels {
+		cancel()
+	}
+}
 
 type spawnedWorkerInfo struct {
 	childRun  waveobj.Run
@@ -157,27 +197,76 @@ func cleanupScheduleFailure(ctx, workerCtx context.Context, g *waveobj.TaskGroup
 // clears the transient hang, and a task that stalls again waits for a human.
 const MaxAutoStallRetries = 1
 
-// autoRetryStalled returns a freshly stalled task to pending when the run has no live lead to judge it,
-// stopping its child first. A run with a live lead is left alone: the lead is woken and decides. The
-// dag-wide failure streak is untouched (RetryTask). Reports whether it retried; a failure to stop the
-// child leaves the task stalled for a human.
-func autoRetryStalled(ctx context.Context, g *waveobj.TaskGroup, taskID string) bool {
-	task := taskByID(g, taskID)
-	if task == nil || task.StallRetries >= MaxAutoStallRetries {
+// stalledTask is a task a tick found freshly stalled with nobody to judge it, for autoRetryStalled once the tick
+// has released the dag lock. hung is the wake its lead gets if the retry cannot be made.
+type stalledTask struct {
+	taskID, runID, hung string
+}
+
+// autoRetriable reports a stalled task the engine retries itself: the run has no live lead to judge it, and the
+// engine has not retried it already. A run with a live lead is left alone: the lead is woken and decides.
+func autoRetriable(ctx context.Context, g *waveobj.TaskGroup, task *waveobj.TaskNode) bool {
+	return task.StallRetries < MaxAutoStallRetries && !leadStateFn(ctx, g.ChannelId, g.RunID).Alive
+}
+
+// autoRetryStalled returns a stalled task to pending, stopping its child first. The caller must not hold the dag
+// lock: the child is stopped outside it, as in applyAction. The dag-wide failure streak is untouched (RetryTask).
+// Reports whether it retried; a failure to stop the child leaves the task stalled for a human.
+func autoRetryStalled(ctx context.Context, dagID string, s stalledTask) bool {
+	taskActions.Lock(dagID)
+	defer taskActions.Unlock(dagID)
+	var g *waveobj.TaskGroup
+	// stalled reloads the dag and finds the task as the tick left it; nil when something else has moved it since
+	stalled := func() (*waveobj.TaskNode, error) {
+		var err error
+		if g, err = wstore.GetDag(ctx, dagID); err != nil {
+			return nil, fmt.Errorf("loading dag: %w", err)
+		}
+		if task := taskByID(g, s.taskID); task != nil && task.State == TaskState_Stalled && task.RunID == s.runID {
+			return task, nil
+		}
+		return nil, nil
+	}
+	var run *waveobj.Run
+	moved := false
+	err := withDagMutation(dagID, func() error {
+		task, err := stalled()
+		if err != nil || task == nil {
+			moved = task == nil
+			return err
+		}
+		run, err = cancelTaskRun(ctx, g, task)
+		return err
+	})
+	if err == nil && run != nil {
+		err = stopRunWorkers(ctx, run)
+	}
+	if err == nil && !moved {
+		err = withDagMutation(dagID, func() error {
+			task, err := stalled()
+			if err != nil || task == nil {
+				moved = task == nil
+				return err
+			}
+			if err := RetryTask(g, s.taskID); err != nil {
+				return err
+			}
+			task.StallRetries++
+			return persistDag(ctx, g)
+		})
+	}
+	if err != nil {
+		log.Printf("schedule dag %s task %s: auto-retry of stalled task: %v", dagID, s.taskID, err)
+		if g != nil && s.hung != "" {
+			PostWake(ctx, g.ChannelId, g.RunID, s.hung)
+		}
 		return false
 	}
-	if leadStateFn(ctx, g.ChannelId, g.RunID).Alive {
+	if moved {
 		return false
 	}
-	if err := cancelAndStopTaskRun(ctx, g, taskID); err != nil {
-		log.Printf("schedule dag %s task %s: auto-retry of stalled task: %v", g.OID, taskID, err)
-		return false
-	}
-	if err := RetryTask(g, taskID); err != nil {
-		log.Printf("schedule dag %s task %s: auto-retry of stalled task: %v", g.OID, taskID, err)
-		return false
-	}
-	task.StallRetries++
+	publishDagEvent(DagEventTaskRetried, g, s.taskID)
+	appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskRetried, nil, map[string]any{"taskid": s.taskID, "kind": TaskState_Stalled, "auto": true})
 	return true
 }
 
@@ -187,19 +276,37 @@ func autoRetryStalled(ctx context.Context, g *waveobj.TaskGroup, taskID string) 
 // event, and the raw error in the server log. RecomputeDagStatus already blocks the DAG on any failed
 // task, so the streak counter is deliberately untouched — this is a dispatch fault, not a run of bad
 // worker outcomes.
+// A transient kind (retryDecision) goes back to pending instead, up to its bound, and the next tick dispatches it
+// again: EnsureRunWorktree rebuilds whatever tree the failed attempt left, as it does for a hand retry.
 func failDispatch(ctx context.Context, g *waveobj.TaskGroup, taskID, kind string, cause error, afterCommit *[]func()) {
 	idx := taskIdx(g, taskID)
 	if idx < 0 {
 		return
 	}
-	g.Tasks[idx].State = TaskState_Failed
-	g.Tasks[idx].LastFailureKind = kind
-	g.Tasks[idx].Attempts++
-	log.Printf("schedule dag %s task %s: %s: %v", g.OID, taskID, kind, cause)
+	task := &g.Tasks[idx]
+	if task.LastFailureKind != kind {
+		task.Attempts = 0
+	}
+	task.LastFailureKind = kind
+	retry := retryDecision(kind, task.Attempts)
+	task.Attempts++
+	log.Printf("schedule dag %s task %s: %s (attempt %d, retry %t): %v", g.OID, taskID, kind, task.Attempts, retry, cause)
 	detail := failureDetail(cause)
-	attempts := g.Tasks[idx].Attempts
+	attempts := task.Attempts
+	// the append waits for the whole batch's commit, and the tasks after this one take seconds each
+	failedAt := time.Now().UnixMilli()
+	if retry && RetryTask(g, taskID) == nil {
+		*afterCommit = append(*afterCommit, func() {
+			publishDagEvent(DagEventTaskRetried, g, taskID)
+			appendRunEventAt(ctx, failedAt, g.ChannelId, g.RunID, waveobj.RunEventKindTaskRetried, nil, map[string]any{
+				"taskid": taskID, "kind": kind, "attempt": attempts, "auto": true, "detail": detail,
+			})
+		})
+		return
+	}
+	task.State = TaskState_Failed
 	*afterCommit = append(*afterCommit, func() {
-		appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskFailed, nil, map[string]any{
+		appendRunEventAt(ctx, failedAt, g.ChannelId, g.RunID, waveobj.RunEventKindTaskFailed, nil, map[string]any{
 			"taskid": taskID, "lastfailurekind": kind, "attempts": attempts, "detail": detail,
 		})
 		PostWake(ctx, g.ChannelId, g.RunID, taskFailedWake(taskID, kind))
@@ -228,12 +335,36 @@ func Schedule(ctx context.Context, dagID string) error {
 	if g, err := wstore.GetDag(ctx, dagID); err == nil && g.Status != DagStatus_Cancelled {
 		retryCleanupDebt(ctx, g)
 	}
-	return withDagMutation(dagID, func() error {
-		return scheduleLocked(ctx, dagID)
-	})
+	return runTick(ctx, dagID)
 }
 
-func scheduleLocked(ctx context.Context, dagID string) error {
+// runTick runs one scheduling pass under the dag lock, then retries the tasks it found stalled with nobody to judge
+// them, outside the lock, and runs again to dispatch them. Each task is retried at most MaxAutoStallRetries times,
+// which is what ends the loop.
+func runTick(ctx context.Context, dagID string) error {
+	for {
+		var stalled []stalledTask
+		if err := withDagMutation(dagID, func() error { return scheduleLocked(ctx, dagID, &stalled) }); err != nil {
+			return err
+		}
+		retried := false
+		for _, s := range stalled {
+			retried = autoRetryStalled(ctx, dagID, s) || retried
+		}
+		if !retried {
+			return nil
+		}
+	}
+}
+
+// scheduleLocked is one scheduling pass; the caller holds the dag lock. The tasks whose stall the engine retries
+// itself are left stalled and appended to stalled: stopping a worker is not done under the lock.
+func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) error {
+	// an action is working on a task outside the dag lock (taskActions), and ticks when it is done
+	if !taskActions.TryLock(dagID) {
+		return nil
+	}
+	defer taskActions.Unlock(dagID)
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
 		return fmt.Errorf("loading dag: %w", err)
@@ -242,9 +373,9 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 		return nil
 	}
 	var afterCommit []func()
-	spawnCtx := context.WithoutCancel(ctx)
-	spawnCtx, cancel := context.WithTimeout(spawnCtx, jarvis.RunWorkerSpawnTimeout)
-	defer cancel()
+	budget := spawnBudget{parent: context.WithoutCancel(ctx)}
+	defer budget.release()
+	spawnCtx := budget.next()
 	owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
 	if err != nil {
 		return fmt.Errorf("loading owning run: %w", err)
@@ -272,9 +403,10 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 		if t.RunID == "" {
 			continue
 		}
-		// a reboot leaves the child run running and its transcript frozen, with nothing to relaunch the worker:
-		// waiting out StallThreshold only delays the retry
-		if t.State == TaskState_Running && workerControllerGone(ctx, runs[t.RunID]) {
+		// a reboot leaves the child run running and its transcript frozen, with nothing to relaunch the worker,
+		// and so does an exit the hook lost: waiting out StallThreshold only delays the retry. The run is
+		// re-read because a worker that just completed is gone too
+		if t.State == TaskState_Running && workerControllerGone(ctx, runs[t.RunID]) && childStillOpen(ctx, g.ChannelId, t.RunID) {
 			t.State = TaskState_Stalled
 		}
 		verdict := cpuNone
@@ -332,6 +464,11 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 				})
 			}
 		}
+		// a worker waiting on an ask is quiet by design and is the question queue's: the wait counts toward no
+		// stall clock below, or a run with no lead retries a worker that was only waiting for its answer
+		if t.State == TaskState_Running && workerAsking(ctx, runs[t.RunID]) {
+			t.AskTs = now
+		}
 		// no readable activity source: the spawn-time seed would age into a stall on its own and hand
 		// the lead a retry that kills a working child. Report freshness unknown (zero) instead — a
 		// missed stall only costs a timeout. It skips the first-token deadline too: an unreadable child
@@ -351,8 +488,9 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 		// because a turn can end on a background test run.
 		// silence is the transcript's and the CPU's together: a busy sample restarts it as a write would. Only a
 		// fresh idle sample, or none at all, lets a quiet task stall; a skipped or first reading defers a tick
-		quiet := t.LastActivity > 0 && now-max(t.LastActivity, t.BusyTs) > StallThreshold.Milliseconds()
-		if t.State == TaskState_Running && (quiet || turnEndedPast(ctx, runs[t.RunID], now)) &&
+		quiet := t.LastActivity > 0 && now-max(t.LastActivity, t.BusyTs, t.AskTs) > StallThreshold.Milliseconds()
+		turnEnded := now-t.AskTs > TurnEndedGrace.Milliseconds() && turnEndedPast(ctx, runs[t.RunID], now)
+		if t.State == TaskState_Running && (quiet || turnEnded) &&
 			(verdict == cpuIdle || verdict == cpuNone) {
 			t.State = TaskState_Stalled
 		}
@@ -361,7 +499,7 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 		// catches one that hangs, which leaves no signal anywhere else. A runtime the deadline is off for still
 		// stalls when its worker's process never started.
 		if spawned := spawnTs(runs[t.RunID]); t.State == TaskState_Running && t.LastActivity == 0 && spawned > 0 &&
-			now-spawned > FirstTokenDeadline.Milliseconds() &&
+			now-max(spawned, t.AskTs) > FirstTokenDeadline.Milliseconds() &&
 			(firstTokenArmed(runs[t.RunID]) || workerStuckStarting(ctx, runs[t.RunID])) {
 			t.State = TaskState_Stalled
 		}
@@ -383,7 +521,7 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 			// a worker goes straight to done only when it reported no commit to review (DeriveTaskStates)
 			unreviewed := ""
 			if taskActive(prevStates[t.ID]) {
-				unreviewed = noCommitLine(taskID, runs[t.RunID])
+				unreviewed = noCommitLine(taskID, runs[t.RunID], len(unfinishedDescendants(g, taskID)) == 0)
 			}
 			afterCommit = append(afterCommit, func() {
 				publishDagEvent(DagEventChildDone, g, taskID)
@@ -403,16 +541,14 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 			hung := hungWake(ctx, taskID, runs[t.RunID], now-since)
 			// a worker that ended its turn may have finished (its complete lost to an EC-TIME): a retry would throw
 			// its work away, so the lead judges it
-			retried := workerTurnEndedAt(ctx, runs[t.RunID]) == 0 && autoRetryStalled(ctx, g, taskID)
+			retry := workerTurnEndedAt(ctx, runs[t.RunID]) == 0 && autoRetriable(ctx, g, t)
+			if retry {
+				*stalled = append(*stalled, stalledTask{taskID: taskID, runID: t.RunID, hung: hung})
+			}
 			afterCommit = append(afterCommit, func() {
 				publishDagEvent(DagEventTaskStalled, g, taskID)
 				appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskStalled, nil, map[string]any{"taskid": taskID})
-				if retried {
-					publishDagEvent(DagEventTaskRetried, g, taskID)
-					appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindTaskRetried, nil, map[string]any{"taskid": taskID, "kind": TaskState_Stalled, "auto": true})
-					return
-				}
-				if hung != "" {
+				if !retry && hung != "" {
 					PostWake(ctx, g.ChannelId, g.RunID, hung)
 				}
 			})
@@ -471,6 +607,7 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 		// dispatch timing: worktree creation and the spawn call are in-process and separately
 		// fixable (a warm tree vs. a warm worker), so they are measured separately rather than
 		// folded into the child's wall clock where neither can be told apart.
+		spawnCtx = budget.next()
 		cwd := owner.ProjectPath
 		taskBase := spawnBase
 		var branch string
@@ -500,6 +637,8 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 					failDispatch(ctx, g, taskID, FailureKindSetup, serr, &afterCommit)
 					continue
 				}
+				// Setup ran on its own SetupTimeout, and its wall clock is not the spawn's to pay
+				spawnCtx = budget.next()
 			}
 			cwd = wt
 			taskBase = attemptBase(spawnCtx, g, taskID, wt, head)
@@ -559,6 +698,14 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 		if err := stampSpawnedWorker(spawnCtx, oref, runORef, channelORef); err != nil {
 			log.Printf("schedule dag %s task %s: stamp worker %s: %v", g.OID, taskID, oref, err)
 		}
+		// last: the exit hook finds this worker's run through the row and the stamp above, and waits on the
+		// dag lock this tick holds
+		if err := startWorker(spawnCtx, oref); err != nil {
+			abandonUnstartedWorker(spawnCtx, g.ChannelId, childRun.ID, oref)
+			spawned = spawned[:len(spawned)-1]
+			failDispatch(ctx, g, taskID, FailureKindSpawn, err, &afterCommit)
+			continue
+		}
 		// now, not at tick end: the app already shows the tab, and until its run arrives the tab sits outside
 		// the run's tree for as long as the rest of the batch takes to spawn. The tab's stamped task id nests it
 		// before the dag commit names the run.
@@ -574,6 +721,7 @@ func scheduleLocked(ctx context.Context, dagID string) error {
 			appendRunEventAt(ctx, spawnedAt, g.ChannelId, g.RunID, waveobj.RunEventKindTaskSpawned, nil, map[string]any{"taskid": spawnedTaskID, "worktreems": worktreeMs, "setupms": setupMs, "spawnms": spawnMs})
 		})
 	}
+	spawnCtx = budget.next()
 	RecomputeDagStatus(g)
 	// every task landed: the final stage judges the merged result before the dag is done
 	advanceFinal(ctx, spawnCtx, g, owner, now, &afterCommit)
@@ -711,6 +859,10 @@ func workerContract(g *waveobj.TaskGroup, task *waveobj.TaskNode, runtime, tree 
 	if g.Verify != "" {
 		// the brief wins over a plan whose task steps name whole-package runs (run 6c7652be spent most worker time on them)
 		fmt.Fprintf(&b, " Don't run the plan's full Verify (`%s`), a whole package or the full suite, even when your task says to: the engine runs Verify after your task merges and again on the merged result. Run the tests your task names alone (for Go, `-run '<names>'`).", g.Verify)
+	}
+	if g.FinalCmd != "" {
+		// first-round workers wrote scenarios they never ran, so Final was their first run (5 of 13 runs failed it, 2026-10-07 review)
+		fmt.Fprintf(&b, " The plan's Final command (`%s`) checks the running app, and the engine runs it only after every task has merged: when your task adds or changes a scenario it runs, or the view or interaction one of its steps checks, run that one scenario yourself (the Final command narrowed to it) and get its steps passing before you complete.", g.FinalCmd)
 	}
 	b.WriteString(" To reproduce a flake, run the one failing test alone (for Go, `-run '^TestX$' -count=N`), never `-count=N` on a whole package.")
 	b.WriteString(" Don't pipe a test into `tail`, `head` or `grep`: a pipe exits with its last command's status, so a failing test reads as passing. If you must pipe, run `set -o pipefail` first.")

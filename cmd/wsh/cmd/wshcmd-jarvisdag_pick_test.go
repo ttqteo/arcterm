@@ -60,16 +60,18 @@ func TestDagPlanReviewDataCarriesPicks(t *testing.T) {
 	}
 }
 
-func TestDagPlanReviewPickGoesWithPassOnly(t *testing.T) {
+func TestDagPlanReviewPickGoesWithAVerdictOnly(t *testing.T) {
 	cmd := newDagEscalateTestCmd(t, map[string]string{"channel": "ch", "runid": "run"})
 	cmd.Flags().StringArray("pick", nil, "")
 	if err := cmd.Flags().Set("pick", "t-1=lead: x"); err != nil {
 		t.Fatal(err)
 	}
-	for _, verb := range []string{"fail", "accept"} {
-		if _, err := dagPlanReviewData(cmd, []string{verb, "text"}); err == nil {
-			t.Errorf("planreview %s must refuse --pick", verb)
-		}
+	if _, err := dagPlanReviewData(cmd, []string{"accept", "text"}); err == nil {
+		t.Error("planreview accept must refuse --pick")
+	}
+	got, err := dagPlanReviewData(cmd, []string{"fail", "text"})
+	if err != nil || len(got.Picks) != 1 {
+		t.Errorf("planreview fail carries its picks, got %+v, %v", got.Picks, err)
 	}
 }
 

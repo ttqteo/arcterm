@@ -17,6 +17,10 @@ import (
 
 const verifyCmd = "task test"
 
+// stillOpen is a task a test leaves unfinished. The last merge of a dag leaves its Verify to the final stage, so
+// a test of a merge's own Verify needs a task still to land.
+var stillOpen = waveobj.TaskNode{ID: "t-9", Label: "still open"}
+
 // awaitVerify returns a func that blocks until one more Verify run has recorded its result and ticked
 // its dag.
 func awaitVerify(t *testing.T) func() {
@@ -305,7 +309,7 @@ func TestVerifyStartedTsIsStamped(t *testing.T) {
 
 func TestVerifyTimeoutIsAFailure(t *testing.T) {
 	lead := newFakeLead(t)
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, landedSha)
@@ -354,7 +358,7 @@ func assertDetailKeepsCause(t *testing.T, lead *fakeLead, kind string) {
 
 func TestVerifyFailedEventKeepsTheCause(t *testing.T) {
 	lead := newFakeLead(t)
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, landedSha)
@@ -372,7 +376,7 @@ func TestVerifyFailedEventKeepsTheCause(t *testing.T) {
 }
 
 func TestNextMergeWaitsForRunningVerify(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	merges := stubMerge(t, landedSha)
@@ -403,7 +407,7 @@ func TestNextMergeWaitsForRunningVerify(t *testing.T) {
 }
 
 func TestVerifyDoesNotHoldTheDagLock(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, landedSha)
@@ -471,7 +475,7 @@ func TestMergeWithoutVerifyLineIsDone(t *testing.T) {
 }
 
 func TestCancelStopsARunningVerify(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, landedSha)
@@ -494,7 +498,7 @@ func TestCancelStopsARunningVerify(t *testing.T) {
 }
 
 func TestManualMergeRefusesWhileVerifyRuns(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, landedSha)
@@ -600,6 +604,7 @@ func TestVerifyPassClosesEveryTaskInALane(t *testing.T) {
 	f := newMergeFixture(t, []waveobj.TaskNode{
 		{ID: "t-0", Label: "first"},
 		{ID: "t-1", Label: "second", Deps: []string{"t-0"}},
+		stillOpen,
 	})
 	f.setPlanCommands(t, verifyCmd, "")
 	effort := f.effortFor(t, "head chunk", "tip chunk")

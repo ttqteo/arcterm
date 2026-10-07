@@ -489,58 +489,6 @@ func TestGetChangesSubdir(t *testing.T) {
 	}
 }
 
-// changePathFor returns the path GetChanges reports for the entry ending in `suffix` — the exact
-// string the frontend round-trips back into RevertFile. The fixtures have no renames, so
-// every entry carries the 2-char status + space prefix.
-func changePathFor(t *testing.T, statusZ, suffix string) string {
-	t.Helper()
-	for _, e := range strings.Split(statusZ, "\x00") {
-		if len(e) < 3 {
-			continue
-		}
-		if p := e[3:]; strings.HasSuffix(p, suffix) {
-			return p
-		}
-	}
-	t.Fatalf("no change entry ending in %q: %q", suffix, statusZ)
-	return ""
-}
-
-func TestRevertFileSubdir(t *testing.T) {
-	root := subdirRepoWithChange(t)
-	cwd := filepath.Join(root, "services", "foo")
-	ch, err := GetChanges(context.Background(), cwd, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := RevertFile(context.Background(), cwd, changePathFor(t, ch.StatusZ, "app.js"), " M"); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := os.ReadFile(filepath.Join(cwd, "app.js"))
-	if string(got) != "one\ntwo\n" {
-		t.Fatalf("subdir revert did not restore: %q", got)
-	}
-}
-
-// End-to-end guard for the --relative diff header: the revert patch is reconstructed from that
-// header, so a subdir agent's `git -C cwd apply --reverse` only resolves if the header is
-// cwd-relative (a/app.js, not a/services/foo/app.js).
-func TestRevertHunkSubdir(t *testing.T) {
-	root := subdirRepoWithChange(t)
-	cwd := filepath.Join(root, "services", "foo")
-	patch, err := run(context.Background(), cwd, "diff", "HEAD", "--", "app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := RevertHunk(context.Background(), cwd, "app.js", patch); err != nil {
-		t.Fatalf("subdir hunk revert failed to apply: %v", err)
-	}
-	got, _ := os.ReadFile(filepath.Join(cwd, "app.js"))
-	if string(got) != "one\ntwo\n" {
-		t.Fatalf("subdir hunk revert did not restore: %q", got)
-	}
-}
-
 func TestWorktreePath(t *testing.T) {
 	got := WorktreePath("/home/u/code/payments-api", "feat/new-agent")
 	want := filepath.ToSlash(filepath.Join("/home/u/code", "payments-api-worktrees", "feat-new-agent"))
@@ -822,80 +770,6 @@ func commitAll(t *testing.T, dir string) {
 	}
 	if _, err := run(ctx, dir, "commit", "-m", "base"); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestRevertFileModified(t *testing.T) {
-	dir := initRepo(t)
-	writeFile(t, dir, "a.txt", "one\ntwo\nthree\n")
-	commitAll(t, dir)
-	writeFile(t, dir, "a.txt", "one\nCHANGED\nthree\n")
-	if err := RevertFile(context.Background(), dir, "a.txt", " M"); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := os.ReadFile(filepath.Join(dir, "a.txt"))
-	if string(got) != "one\ntwo\nthree\n" {
-		t.Fatalf("not restored: %q", got)
-	}
-}
-
-func TestRevertFileUntracked(t *testing.T) {
-	dir := initRepo(t)
-	writeFile(t, dir, "a.txt", "base\n")
-	commitAll(t, dir)
-	writeFile(t, dir, "new.txt", "brand new\n")
-	if err := RevertFile(context.Background(), dir, "new.txt", "??"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "new.txt")); !os.IsNotExist(err) {
-		t.Fatalf("untracked file not removed")
-	}
-}
-
-func TestRevertHunkPartial(t *testing.T) {
-	dir := initRepo(t)
-	base := "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\n"
-	writeFile(t, dir, "a.txt", base)
-	commitAll(t, dir)
-	// two edits far enough apart (default 3-line context doesn't merge) -> two separate hunks
-	writeFile(t, dir, "a.txt", "l1\nX2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nX19\nl20\n")
-	full, err := run(context.Background(), dir, "diff", "HEAD", "--", "a.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// craft a patch containing ONLY the first hunk: header lines + first @@ block
-	lines := strings.SplitAfter(full, "\n")
-	var header, hunk1 strings.Builder
-	seenHunk := 0
-	for _, ln := range lines {
-		if strings.HasPrefix(ln, "@@") {
-			seenHunk++
-		}
-		if seenHunk == 0 {
-			header.WriteString(ln)
-		} else if seenHunk == 1 {
-			hunk1.WriteString(ln)
-		}
-	}
-	patch := header.String() + hunk1.String()
-	if err := RevertHunk(context.Background(), dir, "a.txt", patch); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := os.ReadFile(filepath.Join(dir, "a.txt"))
-	// first hunk reverted (X2 -> l2), second still dirty (X19 stays)
-	if string(got) != "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nX19\nl20\n" {
-		t.Fatalf("partial revert wrong: %q", got)
-	}
-}
-
-func TestRevertHunkStaleFails(t *testing.T) {
-	dir := initRepo(t)
-	writeFile(t, dir, "a.txt", "one\ntwo\n")
-	commitAll(t, dir)
-	// a patch that does not match the current tree should error, not silently no-op
-	bad := "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,1 @@\n-nonexistent\n+whatever\n"
-	if err := RevertHunk(context.Background(), dir, "a.txt", bad); err == nil {
-		t.Fatal("expected stale patch to fail")
 	}
 }
 

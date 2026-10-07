@@ -29,6 +29,11 @@ describe("relaunchLeadAction", () => {
         expect(relaunchLeadAction(failed, [failed, launched], false)).toBeNull();
     });
 
+    it("withdraws the action once the lead is taking wakes again", () => {
+        const revived = ev("lead-revived", 20);
+        expect(relaunchLeadAction(failed, [failed, revived], false)).toBeNull();
+    });
+
     it("keeps the action when the lead was started before the failure", () => {
         const launched = ev("lead-launched", 5);
         expect(relaunchLeadAction(failed, [launched, failed], false)).toEqual({ disabled: false });

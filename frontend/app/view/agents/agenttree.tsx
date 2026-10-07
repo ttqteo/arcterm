@@ -1596,7 +1596,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const idsKey = rowIds.join(",");
     useLayoutEffect(() => {
         entranceRef.current = computeEntrances(entranceRef.current, "agents", rowIds).state;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [idsKey]);
 
     return (

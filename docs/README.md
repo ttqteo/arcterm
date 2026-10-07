@@ -8,7 +8,7 @@ lists what each version changed for the user.
 
 | File | Role |
 | --- | --- |
-| `open-issues.md` | **The single "what's left" list** — active workstreams, actionable smalls, blocked/held/declined items. Start here. |
+| `open-issues.md` | **The single "what's left" list** — actionable, blocked, held and declined items. Start here. |
 | `deferred.md` | Append-only log of intentionally-deferred work and why. Append at the top, then mirror a one-line row into `open-issues.md`. |
 | `orchestrator-guide.md` | How to use the orchestrator: Quick, goal-led and plan-file runs, answering a lead, steering, landing, and the rough edges. |
 | `orchestrator-redesign-flaws.md` | Living flaws tracker for the orchestrator engine; resolved rows kept as one-line summaries. |

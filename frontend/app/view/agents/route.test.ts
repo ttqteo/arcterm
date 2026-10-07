@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    allowPickerSections,
     buildPickerSections,
     capabilityFor,
     filterPickerSections,
@@ -132,6 +133,14 @@ describe("picker sections", () => {
 
     it("omits runtimes with no model capabilities at all", () => {
         expect(buildPickerSections([harness("pi", [runtimeDefault("pi")])])).toEqual([]);
+    });
+
+    it("keeps only the allowed runtimes, and leaves an unfiltered picker unchanged", () => {
+        const sections = buildPickerSections([...flatHarnesses, harness("codex", [cap("codex", "gpt-5")])]);
+        expect(sections.map((s) => s.runtime)).toEqual(["pi", "claude", "codex"]);
+        expect(allowPickerSections(sections, ["claude", "pi"]).map((s) => s.runtime)).toEqual(["pi", "claude"]);
+        expect(allowPickerSections(sections)).toBe(sections);
+        expect(allowPickerSections(sections, [])).toEqual([]);
     });
 
     it("filters by model and provider, case-insensitive", () => {

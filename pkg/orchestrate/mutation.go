@@ -77,38 +77,157 @@ func childRunIDs(g *waveobj.TaskGroup) []string {
 	return out
 }
 
+// taskActions serializes the actions on one dag's tasks and holds its ticks off while an action works outside
+// the dag lock. Such an action has cancelled a worker's run and not yet recorded why: a tick in that gap would
+// derive the task cancelled, or dispatch into the lane being rewound. Taken before the dag lock, never under it;
+// a tick, which runs under the dag lock, only tries it.
+var taskActions = keyedmutex.New()
+
 func ApplyAction(ctx context.Context, dagID, taskID, action string, target waveobj.RoutePin) error {
-	err := withDagMutation(dagID, func() error {
-		return applyActionLocked(ctx, dagID, taskID, action, target)
-	})
-	if err != nil {
+	if err := applyAction(ctx, dagID, taskID, action, target); err != nil {
 		return err
 	}
+	// after the action let go of the dag's ticks: this one covers every tick it turned away
 	return Schedule(ctx, dagID)
 }
 
-func cancelAndStopTaskRun(ctx context.Context, g *waveobj.TaskGroup, taskID string) error {
+func applyAction(ctx context.Context, dagID, taskID, action string, target waveobj.RoutePin) error {
+	taskActions.Lock(dagID)
+	defer taskActions.Unlock(dagID)
+	var prep *taskPrep
+	if err := withDagMutation(dagID, func() error {
+		var err error
+		prep, err = prepareActionLocked(ctx, dagID, taskID, action, target)
+		return err
+	}); err != nil {
+		return err
+	}
+	if prep != nil {
+		// the worker's run is cancelled by now, so the action finishes whether or not its caller still waits
+		ctx = context.WithoutCancel(ctx)
+		if err := prep.run(ctx); err != nil {
+			return err
+		}
+	}
+	return withDagMutation(dagID, func() error {
+		if err := prep.checkUnmoved(ctx, dagID, taskID); err != nil {
+			return err
+		}
+		return applyActionLocked(ctx, dagID, taskID, action, target)
+	})
+}
+
+// taskPrep is the slow half of a skip, retry or escalate: stopping the task's worker and rewinding its lane. It is
+// decided under the dag lock and run outside it, because each stopped worker exits into HandleChildOutcome, which
+// takes that lock, and removing a lane's tree takes tens of seconds.
+type taskPrep struct {
+	// the task as the locked half found it; the action is not recorded on a task that moved since
+	state, runID string
+	// the task's cancelled worker run, nil when it has none to stop
+	stop *waveobj.Run
+	// takes the task's commits off its lane, after the stop so the worker cannot commit behind it
+	rewind func(context.Context) error
+}
+
+func (p *taskPrep) run(ctx context.Context) error {
+	if p.stop != nil {
+		if err := stopRunWorkers(ctx, p.stop); err != nil {
+			return fmt.Errorf("stopping old run %s: %w", p.stop.ID, err)
+		}
+	}
+	if p.rewind != nil {
+		return p.rewind(ctx)
+	}
+	return nil
+}
+
+// checkUnmoved refuses to record an action on a task that changed while its worker was stopped. A cancelled dag is
+// left for applyActionLocked to name. The caller holds the dag lock.
+func (p *taskPrep) checkUnmoved(ctx context.Context, dagID, taskID string) error {
+	if p == nil {
+		return nil
+	}
+	g, err := wstore.GetDag(ctx, dagID)
+	if err != nil {
+		return fmt.Errorf("loading dag: %w", err)
+	}
+	if task := taskByID(g, taskID); g.Status != DagStatus_Cancelled && (task == nil || task.State != p.state || task.RunID != p.runID) {
+		return fmt.Errorf("task %q changed while its worker was being stopped; try again", taskID)
+	}
+	return nil
+}
+
+// prepareActionLocked validates a skip, retry or escalate, cancels the run of the worker it will stop and returns
+// the work left to do outside the lock. Nil for an action that stops and rewinds nothing; applyActionLocked
+// rejects what this leaves unjudged.
+func prepareActionLocked(ctx context.Context, dagID, taskID, action string, target waveobj.RoutePin) (*taskPrep, error) {
+	if action != "skip" && action != "retry" && action != "escalate" {
+		return nil, nil
+	}
+	g, err := wstore.GetDag(ctx, dagID)
+	if err != nil {
+		return nil, fmt.Errorf("loading dag: %w", err)
+	}
+	if g.Status == DagStatus_Cancelled {
+		return nil, fmt.Errorf("dag %s is cancelled", dagID)
+	}
 	task := taskByID(g, taskID)
 	if task == nil {
-		return fmt.Errorf("no task %q", taskID)
+		return nil, fmt.Errorf("no task %q", taskID)
 	}
+	prep := &taskPrep{state: task.State, runID: task.RunID}
+	switch action {
+	case "skip":
+		if !skippable(task.State) {
+			return nil, fmt.Errorf("task %q cannot be skipped from state %q", taskID, task.State)
+		}
+		// a failed review's worker already finished: cancelling its run would rewrite a done run. Its rejected
+		// commit is still on the lane branch, which lands by squashing, so the branch goes back to before the task.
+		if task.State == TaskState_ReviewFailed {
+			prep.rewind = func(ctx context.Context) error { return dropRejectedCommit(ctx, g, task) }
+			return prep, nil
+		}
+		prep.rewind = func(ctx context.Context) error { return dropSkippedAttempt(ctx, g, taskID) }
+	case "retry":
+		// a reviewing task is refused, and a failed review's worker already finished
+		if reviewState(task.State) {
+			return nil, nil
+		}
+	case "escalate":
+		owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
+		if err != nil {
+			return nil, fmt.Errorf("loading owner run: %w", err)
+		}
+		if _, err := escalationTarget(task, owner, g, target); err != nil {
+			return nil, err
+		}
+		if task.State == TaskState_ReviewFailed {
+			return nil, nil
+		}
+	}
+	if prep.stop, err = cancelTaskRun(ctx, g, task); err != nil {
+		return nil, err
+	}
+	return prep, nil
+}
+
+// cancelTaskRun cancels the run of a task's worker and returns it for the caller to stop outside the dag lock; nil
+// for a task with no run. The cancelled run is how the worker's exit knows the stop was asked for.
+func cancelTaskRun(ctx context.Context, g *waveobj.TaskGroup, task *waveobj.TaskNode) (*waveobj.Run, error) {
 	if task.RunID == "" {
-		return nil
+		return nil, nil
 	}
 	if err := wstore.UpdateRun(ctx, g.ChannelId, task.RunID, func(r *waveobj.Run) error {
 		*r = jarvis.CancelRun(*r)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("cancelling old run %s: %w", task.RunID, err)
+		return nil, fmt.Errorf("cancelling old run %s: %w", task.RunID, err)
 	}
 	run, err := wstore.GetRun(ctx, g.ChannelId, task.RunID)
 	if err != nil {
-		return fmt.Errorf("loading old run %s after cancellation: %w", task.RunID, err)
+		return nil, fmt.Errorf("loading old run %s after cancellation: %w", task.RunID, err)
 	}
-	if err := stopRunWorkers(ctx, run); err != nil {
-		return fmt.Errorf("stopping old run %s: %w", task.RunID, err)
-	}
-	return nil
+	return run, nil
 }
 
 func escalationTarget(task *waveobj.TaskNode, owner *waveobj.Run, group *waveobj.TaskGroup, target waveobj.RoutePin) (waveobj.RoutePin, error) {
@@ -147,6 +266,8 @@ func applyEscalation(task *waveobj.TaskNode, target waveobj.RoutePin) {
 	task.RunID = ""
 }
 
+// applyActionLocked records an action on the dag. For a skip, retry or escalate the caller has run the action's
+// taskPrep: nothing here stops a worker or touches a tree.
 func applyActionLocked(ctx context.Context, dagID, taskID, action string, target waveobj.RoutePin) error {
 	g, err := wstore.GetDag(ctx, dagID)
 	if err != nil {
@@ -181,28 +302,6 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 		}
 		g = g2
 	case "skip":
-		task := taskByID(g, taskID)
-		if task == nil {
-			return fmt.Errorf("no task %q", taskID)
-		}
-		if task.State != TaskState_Failed && task.State != TaskState_Stalled && task.State != TaskState_Ready && task.State != TaskState_ReviewFailed {
-			return fmt.Errorf("task %q cannot be skipped from state %q", taskID, task.State)
-		}
-		// a failed review's worker already finished: cancelling its run would rewrite a done run. Its rejected
-		// commit is still on the lane branch, which lands by squashing, so the branch goes back to before the task.
-		if task.State == TaskState_ReviewFailed {
-			if err := dropRejectedCommit(ctx, g, task); err != nil {
-				return err
-			}
-		} else {
-			if err := cancelAndStopTaskRun(ctx, g, taskID); err != nil {
-				return err
-			}
-			// after the stop, so the worker cannot commit behind the rewind
-			if err := dropSkippedAttempt(ctx, g, taskID); err != nil {
-				return err
-			}
-		}
 		if err := SkipTask(g, taskID); err != nil {
 			return err
 		}
@@ -214,8 +313,6 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 		if reviewFailed(g, taskID) {
 			// the rounds start over from the findings; the worker's run already finished
 			taskByID(g, taskID).ReviewRound = 0
-		} else if err := cancelAndStopTaskRun(ctx, g, taskID); err != nil {
-			return err
 		}
 		if err := RetryTask(g, taskID); err != nil {
 			return err
@@ -235,8 +332,6 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 		}
 		if task.State == TaskState_ReviewFailed {
 			task.ReviewRound = 0
-		} else if err := cancelAndStopTaskRun(ctx, g, taskID); err != nil {
-			return err
 		}
 		applyEscalation(task, target)
 		RecomputeDagStatus(g)

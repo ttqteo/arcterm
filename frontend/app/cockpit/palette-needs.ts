@@ -17,7 +17,6 @@ const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "blocked"];
 const KIND_GROUP: Record<string, NeedsGroup> = {
     ask: "asks",
     escalation: "asks",
-    gate: "reviews",
     "dag-gate": "reviews",
 };
 

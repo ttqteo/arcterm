@@ -6,6 +6,7 @@ package wstore
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -36,8 +37,8 @@ func TestChannelRowSchemaExists(t *testing.T) {
 }
 
 // Run and ChannelMessage must be registered WaveObj types whose table names resolve and whose JSON
-// round-trips through the waveobj machinery (this is what Task 3's dual-write and Task 4's backfill rely
-// on). getOTypeGen/waveObjTableName are the same helpers DBInsert/DBGetAllObjsByType use.
+// round-trips through the waveobj machinery (what the row writes and the contract pass rely on).
+// getOTypeGen/waveObjTableName are the same helpers DBInsert/DBGetAllObjsByType use.
 func TestRunAndChannelMessageRegistered(t *testing.T) {
 	if got := getOTypeGen[*waveobj.Run](); got != waveobj.OType_Run {
 		t.Fatalf("Run otype = %q, want %q", got, waveobj.OType_Run)
@@ -74,8 +75,8 @@ func TestRunAndChannelMessageRegistered(t *testing.T) {
 }
 
 // PostChannelMessage must write the message into db_channelmessage (with oid = message id, channeloid =
-// channel oid) IN ADDITION to appending it to the channel blob. The row carries no waveobj:update yet.
-func TestPostChannelMessageDualWrites(t *testing.T) {
+// channel oid).
+func TestPostChannelMessageWritesRow(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "dual-msg", "/p")
 	if err != nil {
@@ -94,17 +95,10 @@ func TestPostChannelMessageDualWrites(t *testing.T) {
 	if gotChannelOID != ch.OID {
 		t.Fatalf("row channeloid = %q, want %q", gotChannelOID, ch.OID)
 	}
-	back, err := DBMustGet[*waveobj.Channel](ctx, ch.OID)
-	if err != nil {
-		t.Fatalf("read channel: %v", err)
-	}
-	if len(back.Messages) != 1 || back.Messages[0].ID != msg.ID {
-		t.Fatalf("blob missing the message: %+v", back.Messages)
-	}
 }
 
-// AppendRun + UpdateRun must keep the db_run row in sync with the embedded run.
-func TestAppendAndUpdateRunDualWrite(t *testing.T) {
+// AppendRun + UpdateRun must write the db_run row.
+func TestAppendAndUpdateRunWriteRow(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "dual-run", "/p")
 	if err != nil {
@@ -134,7 +128,7 @@ func TestAppendAndUpdateRunDualWrite(t *testing.T) {
 	}
 }
 
-// StampWorkerOwner records the owning run/channel oref on a worker tab's meta so the Phase-2 lookup is a
+// StampWorkerOwner records the owning run/channel oref on a worker tab's meta so the owner lookup is a
 // direct field read. Seed a tab, stamp it, read the meta back.
 func TestStampWorkerOwner(t *testing.T) {
 	ctx := context.Background()
@@ -162,54 +156,7 @@ func TestStampWorkerOwner(t *testing.T) {
 	}
 }
 
-// backfillChannelRowsOnce must unpack the messages/runs embedded in existing channel blobs into their
-// rows, stamping oid/channeloid, and be safe to run twice (idempotent). The channel is seeded with a
-// DIRECT DBInsert (no dual-write) to simulate legacy pre-Phase-1 data: blob populated, no rows.
-func TestBackfillChannelRowsOnce(t *testing.T) {
-	ctx := context.Background()
-	legacy := &waveobj.Channel{
-		OID:       "legacy-ch",
-		Name:      "legacy",
-		CreatedTs: 1,
-		Meta:      waveobj.MetaMapType{},
-		Messages: []waveobj.ChannelMessage{
-			{ID: "m1", Kind: "human", Text: "hi", Ts: 10},
-			{ID: "m2", Kind: "agent", Text: "yo", Ts: 20},
-		},
-		Runs: []waveobj.Run{
-			{ID: "r1", Goal: "g1", Status: "done", CreatedTs: 5},
-		},
-	}
-	if err := DBInsert(ctx, legacy); err != nil {
-		t.Fatalf("seed legacy channel: %v", err)
-	}
-
-	if err := backfillChannelRowsOnce(ctx); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	assertRowCount := func(table string, want int) {
-		got, err := WithReadTxRtn(ctx, func(tx *TxWrap) (int, error) {
-			return tx.GetInt("SELECT count(*) FROM "+table+" WHERE json_extract(data, '$.channeloid') = ?", "legacy-ch"), nil
-		})
-		if err != nil {
-			t.Fatalf("count %s: %v", table, err)
-		}
-		if got != want {
-			t.Fatalf("%s row count = %d, want %d", table, got, want)
-		}
-	}
-	assertRowCount("db_channelmessage", 2)
-	assertRowCount("db_run", 1)
-
-	// Idempotent: a second pass adds nothing.
-	if err := backfillChannelRowsOnce(ctx); err != nil {
-		t.Fatalf("second backfill: %v", err)
-	}
-	assertRowCount("db_channelmessage", 2)
-	assertRowCount("db_run", 1)
-}
-
-// GetChannelRuns returns exactly the db_run rows for a channel, in createdts order, independent of the blob.
+// GetChannelRuns returns exactly the db_run rows for a channel, in createdts order.
 func TestGetChannelRuns(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "runs-query", "/p")
@@ -239,6 +186,121 @@ func TestGetChannelRuns(t *testing.T) {
 	}
 	if runs[0].ChannelOID != ch.OID {
 		t.Fatalf("channeloid = %q, want %q", runs[0].ChannelOID, ch.OID)
+	}
+}
+
+// A caller holding a channel's runs gets back every id, and only the rows it does not hold as they are now.
+func TestGetChannelRunChanges(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "run-changes", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	for i, id := range []string{"chg-a", "chg-b", "chg-c"} {
+		if err := AppendRun(ctx, ch.OID, waveobj.Run{ID: id, Goal: id, Status: "planning", CreatedTs: int64(10 * (i + 1))}); err != nil {
+			t.Fatalf("append %s: %v", id, err)
+		}
+	}
+	other, _ := CreateChannel(ctx, "run-changes-other", "/p")
+	if err := AppendRun(ctx, other.OID, waveobj.Run{ID: "chg-x", Goal: "x", Status: "planning", CreatedTs: 5}); err != nil {
+		t.Fatalf("append chg-x: %v", err)
+	}
+	runIDs := func(runs []*waveobj.Run) []string {
+		out := []string{}
+		for _, r := range runs {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+
+	// a caller holding nothing gets every row, in createdts order
+	ids, runs, err := GetChannelRunChanges(ctx, ch.OID, nil)
+	if err != nil {
+		t.Fatalf("GetChannelRunChanges: %v", err)
+	}
+	slices.Sort(ids)
+	if !slices.Equal(ids, []string{"chg-a", "chg-b", "chg-c"}) || !slices.Equal(runIDs(runs), []string{"chg-a", "chg-b", "chg-c"}) {
+		t.Fatalf("first read: ids=%v runs=%v", ids, runIDs(runs))
+	}
+	known := map[string]int{}
+	for _, r := range runs {
+		known[r.ID] = r.Version
+	}
+
+	// a caller holding every row at its version gets the ids and no row
+	ids, runs, err = GetChannelRunChanges(ctx, ch.OID, known)
+	if err != nil || len(ids) != 3 || len(runs) != 0 {
+		t.Fatalf("nothing changed: ids=%v runs=%v err=%v", ids, runIDs(runs), err)
+	}
+
+	// one run updated and one appended: exactly those two rows come back, the updated one as it is now
+	if err := UpdateRun(ctx, ch.OID, "chg-b", func(r *waveobj.Run) error { r.Status = "done"; return nil }); err != nil {
+		t.Fatalf("update chg-b: %v", err)
+	}
+	if err := AppendRun(ctx, ch.OID, waveobj.Run{ID: "chg-d", Goal: "d", Status: "planning", CreatedTs: 40}); err != nil {
+		t.Fatalf("append chg-d: %v", err)
+	}
+	ids, runs, err = GetChannelRunChanges(ctx, ch.OID, known)
+	if err != nil {
+		t.Fatalf("GetChannelRunChanges: %v", err)
+	}
+	if len(ids) != 4 || !slices.Equal(runIDs(runs), []string{"chg-b", "chg-d"}) {
+		t.Fatalf("after changes: ids=%v runs=%v", ids, runIDs(runs))
+	}
+	if runs[0].Status != "done" || runs[0].Version == known["chg-b"] {
+		t.Fatalf("chg-b came back stale: status=%q version=%d (held %d)", runs[0].Status, runs[0].Version, known["chg-b"])
+	}
+
+	// a run the caller holds that another channel owns is not this channel's to return
+	ids, runs, err = GetChannelRunChanges(ctx, other.OID, map[string]int{"chg-a": 99})
+	if err != nil || !slices.Equal(ids, []string{"chg-x"}) || !slices.Equal(runIDs(runs), []string{"chg-x"}) {
+		t.Fatalf("other channel: ids=%v runs=%v err=%v", ids, runIDs(runs), err)
+	}
+}
+
+// The Shared readers hand back the object they already hold while a row's version is unchanged, and a
+// fresh decode once it moves: the first is what makes a poll cheap, the second what keeps it correct.
+func TestSharedReadersDecodeOnlyChangedRows(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "shared-reads", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	for _, r := range []waveobj.Run{{ID: "shr-late", CreatedTs: 20}, {ID: "shr-early", CreatedTs: 10}} {
+		r.Status = "planning"
+		if err := AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatalf("append %s: %v", r.ID, err)
+		}
+	}
+	first, err := GetChannelRunsShared(ctx, ch.OID)
+	if err != nil || len(first) != 2 || first[0].ID != "shr-early" || first[1].ID != "shr-late" {
+		t.Fatalf("first read: %+v err=%v", first, err)
+	}
+	again, _ := GetChannelRunsShared(ctx, ch.OID)
+	if again[0] != first[0] || again[1] != first[1] {
+		t.Fatalf("unchanged rows were decoded again")
+	}
+
+	if err := UpdateRun(ctx, ch.OID, "shr-late", func(r *waveobj.Run) error { r.Status = "done"; return nil }); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	after, err := GetChannelRunsShared(ctx, ch.OID)
+	if err != nil || len(after) != 2 {
+		t.Fatalf("after update: %+v err=%v", after, err)
+	}
+	if after[0] != first[0] {
+		t.Fatalf("the untouched run was decoded again")
+	}
+	if after[1] == first[1] || after[1].Status != "done" || first[1].Status != "planning" {
+		t.Fatalf("the updated run came back stale: %q (held copy now %q)", after[1].Status, first[1].Status)
+	}
+
+	chans, err := GetChannelsShared(ctx)
+	if err != nil || !slices.ContainsFunc(chans, func(c *waveobj.Channel) bool { return c.OID == ch.OID }) {
+		t.Fatalf("GetChannelsShared missed the channel: err=%v", err)
+	}
+	if _, err := GetDagShared(ctx, "shr-no-such-dag"); err != ErrNotFound {
+		t.Fatalf("missing dag: want ErrNotFound, got %v", err)
 	}
 }
 
@@ -272,6 +334,103 @@ func TestGetChannelMessages(t *testing.T) {
 	}
 }
 
+func TestGetChannelMessagesOrdersTiedTsByInsert(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "msgs-tied", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	const tiedTs = 50
+	for _, text := range []string{"a", "b", "c", "d"} {
+		if _, err := PostChannelMessage(ctx, ch.OID, NewChannelMessage("human", "you", text, "", tiedTs)); err != nil {
+			t.Fatalf("post %s: %v", text, err)
+		}
+	}
+	texts := func(msgs []*waveobj.ChannelMessage) []string {
+		var rtn []string
+		for _, m := range msgs {
+			rtn = append(rtn, m.Text)
+		}
+		return rtn
+	}
+	all, err := GetChannelMessages(ctx, ch.OID, 0, 0)
+	if err != nil || !slices.Equal(texts(all), []string{"a", "b", "c", "d"}) {
+		t.Fatalf("tied messages out of insert order: %v err=%v", texts(all), err)
+	}
+	// a window cut inside the tie keeps the newest inserts
+	newest, err := GetChannelMessages(ctx, ch.OID, 0, 2)
+	if err != nil || !slices.Equal(texts(newest), []string{"c", "d"}) {
+		t.Fatalf("tied window wrong: %v err=%v", texts(newest), err)
+	}
+}
+
+func TestGetMessagesByRef(t *testing.T) {
+	ctx := context.Background()
+	first, err := CreateChannel(ctx, "byref-a", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	second, err := CreateChannel(ctx, "byref-b", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	ref := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	other := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	// posted newest first, and across two channels, so the order can only come from ts
+	for _, m := range []struct {
+		channel, kind, ref string
+		ts                 int64
+	}{
+		{second.OID, "outcome", ref, 30},
+		{first.OID, "dispatch", ref, 10},
+		{first.OID, "dispatch", other, 20},
+		{first.OID, "human", "", 25},
+	} {
+		if _, err := PostChannelMessage(ctx, m.channel, NewChannelMessage(m.kind, "claude", "t", m.ref, m.ts)); err != nil {
+			t.Fatalf("post: %v", err)
+		}
+	}
+	got, err := GetMessagesByRef(ctx, ref)
+	if err != nil {
+		t.Fatalf("GetMessagesByRef: %v", err)
+	}
+	if len(got) != 2 || got[0].Ts != 10 || got[0].ChannelOID != first.OID || got[1].Ts != 30 || got[1].ChannelOID != second.OID {
+		t.Fatalf("want the ref's two messages oldest first, got %+v", got)
+	}
+	if none, err := GetMessagesByRef(ctx, ""); err != nil || len(none) != 0 {
+		t.Fatalf("an empty ref must match nothing, got %+v err=%v", none, err)
+	}
+}
+
+func TestGetRunCandidatesByWorker(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "run-by-worker", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	worker := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	owner := waveobj.Run{ID: uuid.NewString(), Goal: "g", CreatedTs: 2,
+		Phases: []waveobj.RunPhase{{Kind: "execute", WorkerOrefs: []string{worker}}}}
+	// a candidate only: it quotes the oref in its goal, which the caller has to rule out
+	quoting := waveobj.Run{ID: uuid.NewString(), Goal: "look at " + worker, CreatedTs: 1}
+	unrelated := waveobj.Run{ID: uuid.NewString(), Goal: "g", CreatedTs: 3}
+	for _, r := range []waveobj.Run{owner, quoting, unrelated} {
+		if err := AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+	got, err := GetRunCandidatesByWorker(ctx, worker)
+	if err != nil {
+		t.Fatalf("GetRunCandidatesByWorker: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != quoting.ID || got[1].ID != owner.ID {
+		t.Fatalf("want the quoting run then the owner, oldest first, got %+v", got)
+	}
+	if none, err := GetRunCandidatesByWorker(ctx, ""); err != nil || len(none) != 0 {
+		t.Fatalf("an empty oref must match nothing, got %+v err=%v", none, err)
+	}
+}
+
 func TestGetRunReadsRow(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "getrun-row", "/p")
@@ -285,8 +444,7 @@ func TestGetRunReadsRow(t *testing.T) {
 	if err != nil || got == nil || got.ID != "r-1" || got.ChannelOID != ch.OID {
 		t.Fatalf("GetRun row read wrong: %+v err=%v", got, err)
 	}
-	// Lock row-sourcing: a run present ONLY as a db_run row (never appended to the channel blob) must be
-	// found. The old blob scan could not see it; the row read must. This is the discriminating assertion.
+	// a run inserted straight into db_run, with no AppendRun, is found: the row is all a run is
 	if err := DBInsert(ctx, &waveobj.Run{OID: "r-rowonly", ID: "r-rowonly", ChannelOID: ch.OID, Goal: "g", Status: "planning", CreatedTs: 2}); err != nil {
 		t.Fatalf("seed row-only run: %v", err)
 	}
@@ -373,30 +531,6 @@ func TestDispatchMessageStampsWorkerChannel(t *testing.T) {
 	}
 }
 
-func TestBackfillConciergeOwners(t *testing.T) {
-	ctx := context.Background()
-	workerTabOID := uuid.NewString()
-	if err := DBInsert(ctx, &waveobj.Tab{OID: workerTabOID, Name: "w", Meta: waveobj.MetaMapType{}}); err != nil {
-		t.Fatalf("seed worker tab: %v", err)
-	}
-	workerTabORef := waveobj.MakeORef(waveobj.OType_Tab, workerTabOID).String()
-	legacy := &waveobj.Channel{OID: uuid.NewString(), Name: "legacy-concierge", CreatedTs: 1, Meta: waveobj.MetaMapType{},
-		Messages: []waveobj.ChannelMessage{{ID: "d1", Kind: "dispatch", RefORef: workerTabORef, Text: "go", Ts: 10}}}
-	if err := DBInsert(ctx, legacy); err != nil {
-		t.Fatalf("seed legacy channel: %v", err)
-	}
-	if err := backfillConciergeOwnersOnce(ctx); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	_, chORef, err := GetWorkerOwner(ctx, workerTabORef)
-	if err != nil || chORef != waveobj.MakeORef(waveobj.OType_Channel, legacy.OID).String() {
-		t.Fatalf("concierge backfill did not stamp: %q err=%v", chORef, err)
-	}
-	if err := backfillConciergeOwnersOnce(ctx); err != nil { // idempotent
-		t.Fatalf("second backfill: %v", err)
-	}
-}
-
 func TestGetChannelProjectPaths(t *testing.T) {
 	ctx := context.Background()
 	a, _ := CreateChannel(ctx, "pa", "/proj/a")
@@ -407,5 +541,55 @@ func TestGetChannelProjectPaths(t *testing.T) {
 	}
 	if m[a.OID] != "/proj/a" || m[b.OID] != "/proj/b" {
 		t.Fatalf("wrong map: %+v", m)
+	}
+}
+
+// Deleting a channel takes its runs, their events and dags, and its messages, and leaves another channel's alone.
+func TestDeleteChannelDeletesItsRows(t *testing.T) {
+	ctx := context.Background()
+	seed := func(name string) (string, string, string) {
+		ch, err := CreateChannel(ctx, name, t.TempDir())
+		if err != nil {
+			t.Fatalf("create channel: %v", err)
+		}
+		runId := uuid.NewString()
+		if err := AppendRun(ctx, ch.OID, waveobj.Run{ID: runId, Goal: "g", Status: "planning", CreatedTs: 1}); err != nil {
+			t.Fatalf("append run: %v", err)
+		}
+		if _, err := AppendRunEvent(ctx, ch.OID, runId, "phase-started", nil, map[string]any{}); err != nil {
+			t.Fatalf("append run event: %v", err)
+		}
+		if _, err := PostChannelMessage(ctx, ch.OID, NewChannelMessage("say", "user", "hi", "", 1)); err != nil {
+			t.Fatalf("post message: %v", err)
+		}
+		dagId := uuid.NewString()
+		if err := AppendDag(ctx, &waveobj.TaskGroup{OID: dagId, ID: dagId, RunID: runId, ChannelId: ch.OID}); err != nil {
+			t.Fatalf("append dag: %v", err)
+		}
+		return ch.OID, runId, dagId
+	}
+	counts := func(channelId, runId string) [3]int {
+		runs, _ := GetChannelRuns(ctx, channelId)
+		msgs, _ := GetChannelMessages(ctx, channelId, 0, 0)
+		events, _ := QueryRunEvents(ctx, channelId, runId, 0)
+		return [3]int{len(runs), len(msgs), len(events)}
+	}
+	gone, goneRun, goneDag := seed("delete-me")
+	kept, keptRun, keptDag := seed("keep-me")
+
+	if err := DeleteChannel(ctx, gone); err != nil {
+		t.Fatalf("DeleteChannel: %v", err)
+	}
+	if got := counts(gone, goneRun); got != [3]int{} {
+		t.Errorf("deleted channel still has runs/messages/events = %v", got)
+	}
+	if got := counts(kept, keptRun); got != [3]int{1, 1, 1} {
+		t.Errorf("other channel's runs/messages/events = %v, want 1 each", got)
+	}
+	if _, err := GetDag(ctx, goneDag); err == nil {
+		t.Errorf("deleted channel still has its dag")
+	}
+	if _, err := GetDag(ctx, keptDag); err != nil {
+		t.Errorf("other channel's dag: %v", err)
 	}
 }

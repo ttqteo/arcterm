@@ -12,6 +12,7 @@
 import type { PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { detailOf } from "@/app/view/agents/runtimeline";
 
 // The launch narrative. The id has to be stable across relaunches or the creature re-says "where we were"
 // on every start; keying it to the run plus the narrative's own timestamp makes it stable until a NEW
@@ -91,6 +92,23 @@ export function eventFromNotify(
         text: title,
         detail: d.message?.trim() || undefined,
         level: d.level === "error" || d.level === "warn" ? d.level : "info",
+    };
+}
+
+// A run's branch merged back into its base. The run rides as the source, so the update peeks it from whatever
+// surface the user is on. Keyed by run: a run lands once, so a re-delivered event cannot speak twice.
+export function eventFromRunLanded(d: RunEventData | null | undefined): PetEvent | null {
+    if (d?.event?.kind !== "landed" || !d.runid) {
+        return null;
+    }
+    const title = detailOf<{ title?: string }>(d.event)?.title?.trim() ?? "";
+    return {
+        id: `landed:${d.runid}`,
+        at: d.event.ts > 0 ? d.event.ts : Date.now(),
+        kind: "notify",
+        level: "info",
+        text: `${title || "A run"} landed`,
+        sources: [{ ref: `run:${d.runid}`, title: title || "the run", sourceType: "run" }],
     };
 }
 

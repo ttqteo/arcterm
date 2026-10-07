@@ -10,7 +10,10 @@ import {
     flagRowId,
     groupSections,
     OPENROUTER_SECRET_NAME,
+    RADAR_AUDIT_RUNTIMES,
+    radarAuditRoute,
     resolveSelection,
+    rowKeys,
     rowMatches,
     settingsSections,
     vaultStatusLine,
@@ -126,7 +129,7 @@ describe("settingsSections", () => {
 
     it("marks exactly the wconfig-backed rows as config rows", () => {
         const rows = sections().flatMap((s) => s.rows);
-        const config = rows.filter((r) => r.config).map((r) => r.key);
+        const config = rows.filter((r) => r.config).flatMap(rowKeys);
         expect(config).toEqual([
             "term:fontfamily",
             "notify:os",
@@ -140,11 +143,58 @@ describe("settingsSections", () => {
             "memory:vaultpath",
             "headless:runtime",
             "headless:openroutercheapmodel",
-            "headless:openroutermidmodel",
+            "radar:auditruntime",
+            "radar:auditmodel",
             "harness:updatecheck",
         ]);
     });
 
+    it("lists the Radar audit route in Headless AI, and no mid model", () => {
+        const headless = sections().find((s) => s.id === "headless")!;
+        expect(headless.rows.map((r) => r.id)).toEqual([
+            "headless.runtime",
+            "headless.apikey",
+            "headless.cheap",
+            "headless.radaraudit",
+        ]);
+        expect(headless.rows.find((r) => r.id === "headless.radaraudit")!.title).toBe("Radar audit");
+        const prose = [headless.blurb, ...headless.rows.flatMap((r) => [r.title, r.desc])].join(" ").toLowerCase();
+        for (const gone of ["mid model", "gatekeeper", "decompose"]) {
+            expect(prose).not.toContain(gone);
+        }
+    });
+
+    it("finds the Radar audit row by either of its keys", () => {
+        expect(filterSections(sections(), "radar:auditmodel")[0].rows.map((r) => r.id)).toEqual([
+            "headless.radaraudit",
+        ]);
+    });
+});
+
+describe("radarAuditRoute", () => {
+    it("shows claude on sonnet when both keys are unset", () => {
+        expect(radarAuditRoute("", "")).toEqual({ runtime: "claude", model: "sonnet" });
+        expect(radarAuditRoute("claude", "")).toEqual({ runtime: "claude", model: "sonnet" });
+    });
+
+    it("leaves pi on its own default when no model is set", () => {
+        expect(radarAuditRoute("pi", "")).toEqual({ runtime: "pi" });
+    });
+
+    it("shows the configured route", () => {
+        expect(radarAuditRoute("pi", "opencode/deepseek-v4-pro")).toEqual({
+            runtime: "pi",
+            model: "opencode/deepseek-v4-pro",
+        });
+        expect(radarAuditRoute("", "opus")).toEqual({ runtime: "claude", model: "opus" });
+    });
+
+    it("offers only runtimes that have tools", () => {
+        expect(RADAR_AUDIT_RUNTIMES).toEqual(["claude", "pi"]);
+    });
+});
+
+describe("settingsSections run route and groups", () => {
     it("leaves the backend-authoritative run route off the config path", () => {
         const route = sections()
             .find((s) => s.id === "run")!

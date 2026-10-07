@@ -11,7 +11,7 @@ import (
 )
 
 // GitCommands is the repo-first read domain: commit history and ref comparison. The older
-// GitChangesCommand / GitRevertCommand live in ProjectCommands and stay there.
+// GitChangesCommand lives in ProjectCommands and stays there.
 type GitCommands interface {
 	GitHistoryCommand(ctx context.Context, data CommandGitHistoryData) (*CommandGitHistoryRtnData, error)
 	GitDivergenceCommand(ctx context.Context, data CommandGitDivergenceData) (*CommandGitDivergenceRtnData, error)

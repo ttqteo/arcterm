@@ -43,6 +43,24 @@ func AgentControlCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentControlData,
 	return sendRpcRequestResponseStreamHelper[wshrpc.AgentControlMsg](w, "agentcontrol", data, opts)
 }
 
+// command "agentslist", wshserver.AgentsListCommand
+func AgentsListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentsListRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentsListRtnData](w, "agentslist", nil, opts)
+	return resp, err
+}
+
+// command "agentsread", wshserver.AgentsReadCommand
+func AgentsReadCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsReadData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentsReadRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentsReadRtnData](w, "agentsread", data, opts)
+	return resp, err
+}
+
+// command "agentssend", wshserver.AgentsSendCommand
+func AgentsSendCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSendData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentsSendRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentsSendRtnData](w, "agentssend", data, opts)
+	return resp, err
+}
+
 // command "agentsyncadopt", wshserver.AgentSyncAdoptCommand
 func AgentSyncAdoptCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncAdoptData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncAdoptRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncAdoptRtnData](w, "agentsyncadopt", data, opts)
@@ -456,6 +474,12 @@ func GetChannelMessagesCommand(w *wshutil.WshRpc, data wshrpc.CommandGetChannelM
 	return resp, err
 }
 
+// command "getchannelrunchanges", wshserver.GetChannelRunChangesCommand
+func GetChannelRunChangesCommand(w *wshutil.WshRpc, data wshrpc.CommandGetChannelRunChangesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetChannelRunChangesRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetChannelRunChangesRtnData](w, "getchannelrunchanges", data, opts)
+	return resp, err
+}
+
 // command "getchannelruns", wshserver.GetChannelRunsCommand
 func GetChannelRunsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetChannelRunsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetChannelRunsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetChannelRunsRtnData](w, "getchannelruns", data, opts)
@@ -640,12 +664,6 @@ func GitListIgnoredDirCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListIgnor
 func GitListWorktreesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListWorktreesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitListWorktreesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitListWorktreesRtnData](w, "gitlistworktrees", data, opts)
 	return resp, err
-}
-
-// command "gitrevert", wshserver.GitRevertCommand
-func GitRevertCommand(w *wshutil.WshRpc, data wshrpc.CommandGitRevertData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "gitrevert", data, opts)
-	return err
 }
 
 // command "gitreviewpatch", wshserver.GitReviewPatchCommand

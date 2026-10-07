@@ -7,7 +7,7 @@
 // duplicated — the row is identical in the mockup for both, so one renderer is one source of truth
 // for status colour, path truncation and the selected tint.
 
-import { SkeletonLine } from "@/app/element/skeleton";
+import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -21,14 +21,14 @@ const ROW_PAD_PX = 8;
 
 function FileListSkeleton() {
     return (
-        <div className="space-y-[7px] px-[8px] py-[6px]">
-            {Array.from({ length: 5 }).map((_, i) => (
+        <SkeletonRows className="h-full space-y-[7px] px-[8px] py-[6px]">
+            {(i) => (
                 <div key={i} className="flex items-center gap-[8px] px-[8px] py-[5px]">
                     <SkeletonLine className="h-[12px] flex-1" />
                     <SkeletonLine className="h-[10px] w-[22px]" />
                 </div>
-            ))}
-        </div>
+            )}
+        </SkeletonRows>
     );
 }
 

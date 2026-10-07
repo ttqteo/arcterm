@@ -8,8 +8,11 @@
 package usagestats
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -304,18 +307,40 @@ func bucket(records []Record) []Bucket {
 	return out
 }
 
-func readLines(path string) []string {
-	data, err := os.ReadFile(path)
+// maxLineBytes bounds one transcript line. A tool result can run to many megabytes; the scanner's
+// buffer only grows to the longest line it meets.
+const maxLineBytes = 1 << 30
+
+// usageMarker is what a Claude line must contain to carry token usage.
+var usageMarker = []byte(`"usage"`)
+
+// scanLines returns the non-blank lines of path that keep accepts (nil keeps all). It streams: a scan
+// reads transcripts in parallel, and holding each one whole made that burst, not the live heap, the
+// size wavesrv stayed at.
+func scanLines(path string, keep func(line []byte) bool) []string {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(nil, maxLineBytes)
 	var lines []string
-	for _, ln := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(ln) != "" {
-			lines = append(lines, ln)
+	for scanner.Scan() {
+		ln := scanner.Bytes()
+		if len(bytes.TrimSpace(ln)) == 0 || (keep != nil && !keep(ln)) {
+			continue
 		}
+		lines = append(lines, string(ln))
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("usagestats: reading %s stopped early: %v", path, err)
 	}
 	return lines
+}
+
+func readLines(path string) []string {
+	return scanLines(path, nil)
 }
 
 // filterUsageLines returns the subset of lines that could carry Claude token usage — only assistant
@@ -328,16 +353,17 @@ func readLines(path string) []string {
 func filterUsageLines(lines []string) []string {
 	var out []string
 	for _, ln := range lines {
-		if strings.Contains(ln, `"usage"`) {
+		if strings.Contains(ln, string(usageMarker)) {
 			out = append(out, ln)
 		}
 	}
 	return out
 }
 
-// readClaudeLines reads a Claude transcript, keeping only usage-bearing lines (see filterUsageLines).
+// readClaudeLines reads a Claude transcript, keeping only usage-bearing lines (see filterUsageLines)
+// as they stream past, so the rest of the file is never held.
 func readClaudeLines(path string) []string {
-	return filterUsageLines(readLines(path))
+	return scanLines(path, func(line []byte) bool { return bytes.Contains(line, usageMarker) })
 }
 
 // inWindow reports whether the file at path was modified at/after cutoff. A zero cutoff
@@ -433,8 +459,9 @@ func walkOpencodeFiles(root string, cutoff time.Time) []scanFile {
 	return files
 }
 
-// parseFiles reads + parses each transcript concurrently, bounded to NumCPU workers, and returns
-// the concatenated (un-deduped) records. The all-time corpus is GBs across thousands of files, and
+// parseFiles reads + parses each transcript concurrently (through parseCache, so an unchanged file
+// is not read again), bounded to NumCPU workers, and returns the concatenated records, each file's
+// cut to its scanFile cutoff and not deduped across files. The all-time corpus is GBs across thousands of files, and
 // a single-threaded json.Unmarshal per line dominated load time; fanning the per-file parse across
 // cores is the bulk of the speedup. Result order is unspecified — callers dedupe + bucket, both
 // order-independent. Codex files are read whole (the model lives on a turn_context line, so they
@@ -455,37 +482,80 @@ func parseFiles(files []scanFile) []Record {
 		go func(i int, f scanFile) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			switch f.kind {
-			case scanCodex:
-				results[i] = extractCodex(readLines(f.path))
-			case scanOpencode:
-				data, err := os.ReadFile(f.path)
-				if err != nil {
-					return
-				}
-				rec, ok := extractOpencode(data)
-				if !ok {
-					return
-				}
-				if f.cutoff.IsZero() || !rec.TS.Before(f.cutoff) {
-					results[i] = []Record{rec}
-				}
-			case scanPi:
-				file, err := pisession.Read(f.path)
-				if err != nil {
-					return
-				}
-				results[i] = extractPi(file, f.cutoff)
-			default:
-				results[i] = extractClaude(readClaudeLines(f.path))
-			}
+			results[i] = cachedFileRecords(f)
 		}(i, f)
 	}
 	wg.Wait()
 	var records []Record
-	for _, r := range results {
-		records = append(records, r...)
+	for i, recs := range results {
+		cutoff := files[i].cutoff
+		for _, r := range recs {
+			if cutoff.IsZero() || !r.TS.Before(cutoff) {
+				records = append(records, r)
+			}
+		}
 	}
+	return records
+}
+
+// parseFile reads one transcript into its records, whatever their age: the window is applied by the
+// caller, so one parse serves every window. Records are deduped within the file, which a later
+// corpus-wide dedupe leaves unchanged (it keeps the largest output per ID either way) and which
+// keeps the streaming snapshots out of the cache.
+func parseFile(f scanFile) []Record {
+	switch f.kind {
+	case scanCodex:
+		return extractCodex(readLines(f.path))
+	case scanOpencode:
+		data, err := os.ReadFile(f.path)
+		if err != nil {
+			return nil
+		}
+		rec, ok := extractOpencode(data)
+		if !ok {
+			return nil
+		}
+		return []Record{rec}
+	case scanPi:
+		file, err := pisession.Read(f.path)
+		if err != nil {
+			return nil
+		}
+		return extractPi(file, time.Time{})
+	default:
+		return dedupe(extractClaude(readClaudeLines(f.path)))
+	}
+}
+
+// fileParse is one file's parsed records and the modtime and size they were read at.
+type fileParse struct {
+	mod     time.Time
+	size    int64
+	records []Record
+}
+
+// parseCache holds each scanned file's records by path. Reading and parsing the transcripts is nearly
+// all of a scan and most of them are finished sessions that never change, so a repeat scan re-reads
+// only the files written since the last one.
+// ponytail: unbounded, an all-time scan keeps every record of the corpus until wavesrv exits; evict
+// entries no recent scan read if its memory matters.
+var parseCache sync.Map
+
+// cachedFileRecords returns f's records, parsing the file only when its modtime or size differs from
+// the cached parse. The returned slice is shared with the cache and must not be modified.
+func cachedFileRecords(f scanFile) []Record {
+	info, err := os.Stat(f.path)
+	if err != nil {
+		parseCache.Delete(f.path)
+		return nil
+	}
+	if v, ok := parseCache.Load(f.path); ok {
+		if c := v.(fileParse); c.size == info.Size() && c.mod.Equal(info.ModTime()) {
+			return c.records
+		}
+	}
+	records := parseFile(f)
+	parseCache.Store(f.path, fileParse{mod: info.ModTime(), size: info.Size(), records: records})
 	return records
 }
 

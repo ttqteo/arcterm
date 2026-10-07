@@ -41,3 +41,19 @@ func TestRetryDecision(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryDecisionRetriesOnlyTransientDispatchFailures(t *testing.T) {
+	for _, kind := range []string{FailureKindWorktree, FailureKindSpawn} {
+		if !retryDecision(kind, MaxAutoDispatchRetries-1) {
+			t.Fatalf("%s must retry until its bound", kind)
+		}
+		if retryDecision(kind, MaxAutoDispatchRetries) {
+			t.Fatalf("%s must fail once its retries are spent", kind)
+		}
+	}
+	for _, kind := range []string{FailureKindRoute, FailureKindHarness, FailureKindSetup, FailureKindWorkerExit, FailureKindUnrecorded} {
+		if retryDecision(kind, 0) {
+			t.Fatalf("%s is not transient and must fail on its first failure", kind)
+		}
+	}
+}

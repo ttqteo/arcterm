@@ -1,5 +1,7 @@
 # Design — Radar multi-mode (correctness + security + tech-debt)
 
+> Superseded by `2026-10-06-radar-fix-sibling-audit-design.md`: the per-mode lenses described here are retired.
+
 **One line:** Generalize Repo Radar from a single correctness lens into three evidence-grounded lenses over one shared doctrine, surfaced in one unified scan.
 
 **Status:** Design approved in conversation 2026-07-21 (brainstorming). Implementation not started. Hands off to writing-plans.

@@ -6,12 +6,14 @@ package jarvis
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
@@ -145,7 +147,7 @@ func TestOnWorkerExitReportsALeadExitBeforeTheTranscriptParses(t *testing.T) {
 	old := RunWorkerExitHook
 	t.Cleanup(func() { RunWorkerExitHook = old })
 	var got []string
-	RunWorkerExitHook = func(_ context.Context, worker string) error {
+	RunWorkerExitHook = func(_ context.Context, worker string, _ WorkerExit) error {
 		got = append(got, worker)
 		return nil
 	}
@@ -188,11 +190,11 @@ func seedDispatchedWorker(t *testing.T) (string, string) {
 
 func channelHasOutcome(t *testing.T, channelOID string) bool {
 	t.Helper()
-	ch, err := wstore.DBMustGet[*waveobj.Channel](context.Background(), channelOID)
+	msgs, err := wstore.GetChannelMessages(context.Background(), channelOID, 0, 0)
 	if err != nil {
-		t.Fatalf("load channel: %v", err)
+		t.Fatalf("load messages: %v", err)
 	}
-	for _, m := range ch.Messages {
+	for _, m := range msgs {
 		if m.Kind == "outcome" {
 			return true
 		}
@@ -226,7 +228,7 @@ func reapOnExit(t *testing.T, tabOID string) {
 	t.Helper()
 	oldHook := RunWorkerExitHook
 	t.Cleanup(func() { RunWorkerExitHook = oldHook })
-	RunWorkerExitHook = func(context.Context, string) error {
+	RunWorkerExitHook = func(context.Context, string, WorkerExit) error {
 		return wstore.DBDelete(context.Background(), waveobj.OType_Tab, tabOID)
 	}
 }
@@ -264,6 +266,8 @@ func TestAReapedEngineWorkersExitPostsNothingAndLogsNothing(t *testing.T) {
 	defer log.SetOutput(oldOut)
 
 	OnWorkerExit(blockOID, 0)
+	// the reap's DBDelete logs from a goroutine of its own: stop capturing before reading the buffer
+	log.SetOutput(oldOut)
 
 	if channelHasOutcome(t, ch.OID) {
 		t.Fatal("an engine worker never gets a channel outcome")
@@ -286,5 +290,69 @@ func TestADispatchedWorkersOutcomeSurvivesTheReap(t *testing.T) {
 
 	if !channelHasOutcome(t, channelOID) {
 		t.Fatal("the outcome was not posted to the dispatching channel")
+	}
+}
+
+func TestOutputTailKeepsTheLastPlainLines(t *testing.T) {
+	raw := "\x1b[31merror: unknown option '--session-id'\x1b[0m\r\n\r\n  try --help  \r\n[command exited (exit code 1)]\r\n"
+	want := "error: unknown option '--session-id'\ntry --help\n[command exited (exit code 1)]"
+	if got := outputTail(raw); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+
+	var long strings.Builder
+	for i := 0; i < workerOutputMaxLines+5; i++ {
+		fmt.Fprintf(&long, "line %d\n", i)
+	}
+	lines := strings.Split(outputTail(long.String()), "\n")
+	if len(lines) != workerOutputMaxLines || lines[len(lines)-1] != fmt.Sprintf("line %d", workerOutputMaxLines+4) {
+		t.Fatalf("want the last %d lines, got %d ending %q", workerOutputMaxLines, len(lines), lines[len(lines)-1])
+	}
+
+	if got := outputTail(strings.Repeat("é", workerOutputMaxBytes)); len(got) > workerOutputMaxBytes || !utf8.ValidString(got) {
+		t.Fatalf("a long line is cut to %d valid bytes, got %d", workerOutputMaxBytes, len(got))
+	}
+}
+
+// an agent worker's tab closes itself two seconds after a failing exit and takes its terminal with it, so the
+// exit hook is handed what the worker printed. Run d8fe96ab's t-2 exited 1 a second after its spawn and left
+// no account of why.
+func TestOnWorkerExitHandsAFailingWorkersOutputToTheRun(t *testing.T) {
+	ctx := context.Background()
+	seed := func() (string, string) {
+		tabOID, blockOID := uuid.NewString(), uuid.NewString()
+		tabORef := waveobj.MakeORef(waveobj.OType_Tab, tabOID).String()
+		if err := wstore.DBInsert(ctx, &waveobj.Tab{OID: tabOID, BlockIds: []string{blockOID}, Meta: waveobj.MetaMapType{"session:agent": "claude"}}); err != nil {
+			t.Fatalf("seed tab: %v", err)
+		}
+		if err := wstore.DBInsert(ctx, &waveobj.Block{OID: blockOID, ParentORef: tabORef, Meta: waveobj.MetaMapType{}}); err != nil {
+			t.Fatalf("seed block: %v", err)
+		}
+		return tabORef, blockOID
+	}
+	oldHook, oldRead, oldChild := RunWorkerExitHook, readWorkerTerminal, ChildOutcomeHook
+	t.Cleanup(func() { RunWorkerExitHook, readWorkerTerminal, ChildOutcomeHook = oldHook, oldRead, oldChild })
+	ChildOutcomeHook = nil
+	reads := 0
+	readWorkerTerminal = func(context.Context, string) ([]byte, error) {
+		reads++
+		return []byte("Error: session id already in use\r\n"), nil
+	}
+	got := map[string]WorkerExit{}
+	RunWorkerExitHook = func(_ context.Context, worker string, exit WorkerExit) error {
+		got[worker] = exit
+		return nil
+	}
+
+	failed, failedBlock := seed()
+	OnWorkerExit(failedBlock, 1)
+	if want := (WorkerExit{ExitCode: 1, Output: "Error: session id already in use"}); got[failed] != want {
+		t.Fatalf("a failing exit: got %+v, want %+v", got[failed], want)
+	}
+
+	clean, cleanBlock := seed()
+	OnWorkerExit(cleanBlock, 0)
+	if exit, heard := got[clean]; !heard || exit != (WorkerExit{}) || reads != 1 {
+		t.Fatalf("a clean exit reads no terminal: got %+v heard=%v reads=%d", exit, heard, reads)
 	}
 }

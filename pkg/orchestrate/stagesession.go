@@ -71,6 +71,10 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	if err := stampSpawnedWorker(spawnCtx, oref, runORef, channelORef); err != nil {
 		log.Printf("dag %s: stamp %s %s: %v", g.OID, s.Role, oref, err)
 	}
+	if err := startWorker(spawnCtx, oref); err != nil {
+		abandonUnstartedWorker(spawnCtx, g.ChannelId, runID, oref)
+		return "", err
+	}
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, g.ChannelId))
 	appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindStageSessionStarted, nil, map[string]any{"role": s.Role, "runid": runID})

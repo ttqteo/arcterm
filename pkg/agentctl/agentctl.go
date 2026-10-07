@@ -10,15 +10,24 @@ import "sync"
 // queueSize bounds what a stream holds unread; Send refuses past it, and the caller types instead.
 const queueSize = 16
 
+// Msg is one thing for a session to do: run Text as a prompt, or compact with Compact as the instructions,
+// which wins when both are set. MidTurn asks for Text to join the turn the session is running, as typed
+// text would, instead of waiting for it to end.
+type Msg struct {
+	Text    string
+	Compact string
+	MidTurn bool
+}
+
 var (
 	lock    sync.Mutex
-	streams = make(map[string]chan string)
+	streams = make(map[string]chan Msg)
 )
 
 // Register opens blockId's stream and returns it with its close. A second stream for the block replaces
 // the first: a mod reload starts its new stream while the old process is still going away.
-func Register(blockId string) (<-chan string, func()) {
-	ch := make(chan string, queueSize)
+func Register(blockId string) (<-chan Msg, func()) {
+	ch := make(chan Msg, queueSize)
 	lock.Lock()
 	streams[blockId] = ch
 	lock.Unlock()
@@ -38,8 +47,8 @@ func Has(blockId string) bool {
 	return streams[blockId] != nil
 }
 
-// Send hands text to blockId's session and reports whether its stream took it.
-func Send(blockId, text string) bool {
+// Send hands msg to blockId's session and reports whether its stream took it.
+func Send(blockId string, msg Msg) bool {
 	lock.Lock()
 	defer lock.Unlock()
 	ch := streams[blockId]
@@ -47,7 +56,7 @@ func Send(blockId, text string) bool {
 		return false
 	}
 	select {
-	case ch <- text:
+	case ch <- msg:
 		return true
 	default:
 		return false

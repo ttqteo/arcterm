@@ -53,7 +53,6 @@ export function PlanPreview({ path, onEditorReady }: { path: string; onEditorRea
                 await save();
             }
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editing, draft, load.text]);
 
     const large = load.status === "ok" && load.lines > PLAN_PREVIEW_COLLAPSE_LINES;

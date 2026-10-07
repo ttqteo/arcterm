@@ -82,6 +82,24 @@ describe("loadUsage", () => {
         expect(globalStore.get(usageBucketsAtom)).toBe(afterNew); // ignored — the newer window's object stands
     });
 
+    it("shows the skeleton only while a different window loads, not on a reload of the held one", async () => {
+        getStats.mockResolvedValue(response);
+        await loadUsage(7);
+        let release!: (v: any) => void;
+        getStats.mockImplementationOnce(() => new Promise((r) => (release = r)));
+        const reload = loadUsage(7); // surface reopened: same window, scan in flight
+        expect(globalStore.get(usageLoadedAtom)).toBe(true);
+        release(response);
+        await reload;
+
+        getStats.mockImplementationOnce(() => new Promise((r) => (release = r)));
+        const switched = loadUsage(0);
+        expect(globalStore.get(usageLoadedAtom)).toBe(false);
+        release(response);
+        await switched;
+        expect(globalStore.get(usageLoadedAtom)).toBe(true);
+    });
+
     it("falls through to the mocked RPC when the dev fixture is malformed or absent", async () => {
         getStats.mockResolvedValue(response);
         await loadUsage(7);

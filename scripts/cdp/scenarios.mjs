@@ -23,6 +23,11 @@ const skipStep = (step, detail) => ({ step, skip: true, detail });
 // teardown (deleteblock -> ShellProc.Close kills claude in ~1s), and the channel is deleted at the end.
 const workerOf = (phase) => phase && phase.workerorefs && phase.workerorefs[0];
 
+// a channel's runs are their own rows: the getchannels reply is channel metadata, with no run list
+async function channelRuns(h, channelId) {
+    return (await h.rpc("getchannelruns", { channelid: channelId }))?.runs ?? [];
+}
+
 const runsLifecycle = {
     name: "runs-lifecycle",
     surface: "jarvis",
@@ -41,11 +46,7 @@ const runsLifecycle = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
-        const getRun = async (runId) => {
-            const res = await h.rpc("getchannels", null);
-            const cc = (res.channels || []).find((x) => x.oid === ctx.channelId) || {};
-            return (cc.runs || []).find((x) => x.id === runId);
-        };
+        const getRun = async (runId) => (await channelRuns(h, ctx.channelId)).find((x) => x.id === runId);
         const track = (oref) => {
             if (oref) ctx.workers.push(oref);
         };
@@ -136,10 +137,10 @@ const runsLifecycle = {
         }
         await settle(1200);
         const sheet = await h.ev(`(() => {
-            const showing = [...document.querySelectorAll('span')]
-                .map((x) => (x.textContent || '').trim())
-                // the sheet header's run line: "<mode> run <id4>", plus " · <how it ended>" once it has ended
-                .find((t) => /^[a-z]+ run [0-9a-f]{4}( · .+)?$/.test(t));
+            // the sheet header's copyable run id carries the whole id
+            const showing = document
+                .querySelector('[data-jarvis-brief-sheet] > header [data-run-id]')
+                ?.getAttribute('data-run-id');
             return {
                 settings: document.querySelector('[data-jarvis-brief-sheet-face="settings"]') != null,
                 showing: showing || null,
@@ -149,8 +150,7 @@ const runsLifecycle = {
             "4. the gate's queue row opens the sheet on THAT run",
             gateOpened === true &&
                 sheet.settings === true &&
-                sheet.showing != null &&
-                sheet.showing.endsWith(runId.slice(0, 4)),
+                sheet.showing === runId,
             JSON.stringify({ gateOpened, ...sheet })
         );
         await h.shot("cdp-shots/runs-gate-sheet.png");
@@ -632,7 +632,7 @@ const briefSurface = {
                 // the effort title is joined on the frontend from the efforts already on the surface,
                 // so a raw oid here would mean the join silently failed
                 (ctx.first ?? "").includes("Scenario gate clearance \u00b7 Phase 3") &&
-                /2 of 4 done/.test(ctx.first ?? ""),
+                /2 of 4 tasks done/.test(ctx.first ?? ""),
             detail: JSON.stringify(ctx),
         });
         await h.shot("cdp-shots/brief-queue-context.png");
@@ -822,6 +822,19 @@ const briefPeek = {
                 `(() => { const b = document.querySelector('[data-jarvis-peek-run]'); return b ? b.dataset.jarvisPeekRun : null; })()`
             );
         }
+        // 2b passes on the band's label alone. The count beside it is the rollup itself: the arranged record has one
+        // attributed run, so a rollup that finds the run's owning channel reads "1 channel" and one that does not
+        // reads "0 channels".
+        const fleetLine = await h.ev(`(() => {
+            const text = (document.querySelector('[data-jarvis-brief-band="peek"]')?.innerText || "").replace(/\\s+/g, " ");
+            return (text.match(/\\d+ working · \\d+ channels?/) || [null])[0];
+        })()`);
+        steps.push({
+            step: "2c. the fleet line counts the channel that owns the record's run",
+            ok: runRowId != null && typeof fleetLine === "string" && /· 1 channel$/.test(fleetLine),
+            detail: JSON.stringify({ fleetLine, runRowId }),
+        });
+
         if (runRowId == null) {
             steps.push({
                 step: "3. the peek's attributed run opens the run's sheet",
@@ -1159,49 +1172,80 @@ const PEEK_ITEMS_EFFORT = "Peek item views initiative";
 const PEEK_ITEMS_RISK = "Peek fixture: the retry loop swallows a cancelled context";
 const PEEK_ITEMS_FINDING = "f-peek-items";
 
-function peekItemsReport(oid, cwd, now) {
-    const signal = (id, path, summary) => ({
-        id,
+const RADAR_FIXTURE_COMMIT = "c0ffee5a".padEnd(40, "0");
+const RADAR_FIXTURE_SUBJECT = "fix(orchestrate): the dispatch loop stops when its context is cancelled";
+const RADAR_FIXTURE_ROOT_CAUSE =
+    "A loop that sleeps between attempts checked its context only before the sleep, so a cancel during the backoff was not seen until the cap.";
+
+// A report as the fix-commit audit writes it: one audited commit, and one finding with its sites in one file.
+// finding is { id, risk, file, lines }.
+function radarFixtureReport(oid, projectname, projectpath, now, finding) {
+    const signal = {
+        id: "s-fixture-fix",
         collector: "git",
-        sourceref: `commit:${id}`,
+        sourceref: RADAR_FIXTURE_COMMIT,
         observedts: now - 3_600_000,
-        paths: [path],
-        summary,
-        contenthash: id,
-    });
-    const signals = [
-        signal("s-peek-1", "pkg/orchestrate/retry.go", "retry loop re-enters after ctx.Done() fires"),
-        signal("s-peek-2", "pkg/orchestrate/retry_test.go", "no test cancels mid-backoff"),
-    ];
+        summary: RADAR_FIXTURE_SUBJECT,
+        contenthash: "s-fixture-fix",
+    };
     return {
         otype: "radarreport",
         oid,
         version: 1,
-        projectname: "peek-fixture",
-        projectpath: cwd,
+        projectname,
+        projectpath,
         status: "completed",
         startedts: now - 120_000,
+        clusterstartedts: now - 110_000,
         completedts: now - 60_000,
-        signals,
+        signals: [signal],
+        audits: [
+            {
+                commit: RADAR_FIXTURE_COMMIT,
+                subject: RADAR_FIXTURE_SUBJECT,
+                committs: signal.observedts,
+                files: [finding.file],
+                status: "ok",
+                rootcause: RADAR_FIXTURE_ROOT_CAUSE,
+                hitcount: finding.lines.length,
+                keptcount: finding.lines.length,
+            },
+        ],
         findings: [
             {
-                id: PEEK_ITEMS_FINDING,
-                fingerprint: "peek-items-fp",
+                id: finding.id,
+                fingerprint: `RAD-${finding.id}`,
                 group: "new",
-                mode: "correctness",
-                riskkind: "error-handling",
-                subsystem: "orchestrate",
-                risk: PEEK_ITEMS_RISK,
-                why: "A cancelled run keeps retrying until the backoff cap, so its worker outlives the cancel.",
+                riskkind: "sibling-bug",
+                subsystem: finding.file.slice(0, finding.file.lastIndexOf("/")),
+                risk: finding.risk,
                 severity: "high",
-                strength: "strong",
-                signalids: signals.map((s) => s.id),
-                files: signals.map((s) => s.paths[0]),
-                mission: "Check whether the retry loop honours a cancelled context.",
+                signalids: [signal.id],
+                files: [finding.file],
+                mission: "Check whether the loop honours a cancelled context.",
+                sourcecommit: RADAR_FIXTURE_COMMIT,
+                sourcesubject: RADAR_FIXTURE_SUBJECT,
+                rootcause: RADAR_FIXTURE_ROOT_CAUSE,
+                sites: finding.lines.map((line) => ({
+                    line,
+                    trigger: `A cancel while the loop at line ${line} is in its backoff.`,
+                    actual: "The loop keeps retrying until the backoff cap.",
+                    expected: "The loop returns as soon as the context is done.",
+                    whynotcovered: "The fix added the check to the dispatch loop only.",
+                })),
             },
         ],
         meta: {},
     };
+}
+
+function peekItemsReport(oid, cwd, now) {
+    return radarFixtureReport(oid, "peek-fixture", cwd, now, {
+        id: PEEK_ITEMS_FINDING,
+        risk: PEEK_ITEMS_RISK,
+        file: "pkg/orchestrate/retry.go",
+        lines: [41, 67],
+    });
 }
 
 async function peekItemsDb(h) {
@@ -1215,18 +1259,23 @@ async function peekItemsDb(h) {
     return db;
 }
 
-async function seedPeekItemsRadar(h, ctx) {
+// writes the report build(oid) returns straight into the dev store, and returns its oid
+async function seedRadarReport(h, build) {
     const oid = randomUUID();
     const db = await peekItemsDb(h);
     try {
         db.prepare("INSERT INTO db_radarreport (oid, version, data) VALUES (?, 1, ?)").run(
             oid,
-            JSON.stringify(peekItemsReport(oid, ctx.cwd, Date.now()))
+            JSON.stringify(build(oid))
         );
     } finally {
         db.close();
     }
-    ctx.radarReportId = oid;
+    return oid;
+}
+
+async function seedPeekItemsRadar(h, ctx) {
+    ctx.radarReportId = await seedRadarReport(h, (oid) => peekItemsReport(oid, ctx.cwd, Date.now()));
 }
 
 async function dropPeekItemsRadar(h, oid) {
@@ -1378,7 +1427,11 @@ const peekItemViews = {
             `radarreport:${ctx.radarReportId}`,
             { sourceType: "radar", anchor: PEEK_ITEMS_FINDING },
             "radar",
-            `text.includes(${JSON.stringify(PEEK_ITEMS_RISK)})`,
+            // a site row is its file:line and nothing else
+            `text.includes(${JSON.stringify(PEEK_ITEMS_RISK)}) &&
+                [...body.querySelectorAll('[data-peek-radar-sites] div')].filter(
+                    (d) => d.children.length === 0 && /:\\d+$/.test((d.textContent || '').trim())
+                ).length === 2`,
             "cdp-shots/peek-item-radar.png"
         );
         rec("4. a radar finding peeks as its item view", radar.ready === true, JSON.stringify(radar));
@@ -1965,62 +2018,85 @@ const usageCharts = {
 };
 
 // --- the review-gate blind spot ----------------------------------------------------------------
-// The whole defect in three steps: park a run at its review gate in one channel, make a DIFFERENT channel
+// The whole defect in three steps: hold a run's DAG at a gate in one channel, make a DIFFERENT channel
 // the active subject, then walk away to Usage and read the Jarvis nav badge. Before the attention list
-// moved server-side this read zero — the badge counted only live `asking` workers, and a gated run has
-// none (its phase completed and it is waiting on a human), while the frontend's cross-channel list came
-// from a channel snapshot refetched only on create/delete/rename/archive.
+// moved server-side this read zero — the badge counted only live `asking` workers, and a gate has none
+// (its task finished and it is waiting on a human), while the frontend's cross-channel list came from a
+// channel snapshot refetched only on create/delete/rename/archive.
 //
-// It parks the run by completing two phases over the real RPC rather than driving an agent to a gate,
-// which would take up to two minutes. `wsh jarvis hold` is the other route but needs the phase running AND
-// gated (jarvis/run.go HoldPhase) — in a pipeline the gate is phase 1, so it needs phase 0 completed
-// first either way, for the same two spawned workers. Both are killed in teardown, as runs-lifecycle does.
+// The gate is seeded, not reached: a deferred orchestrator run (no lead) is given a two-task plan whose
+// first task is gated, and once that task's worker has dispatched the stored DAG is written to
+// awaiting-review with the task done and unreleased. The seeded task carries no child run id, so no later
+// tick can re-derive its state from the worker, and a DAG parked with no task in flight is one the
+// watchdog does not tick. A blocked DAG was the other choice; its failed task keeps a child run a tick
+// can read. Teardown cancels the run and deletes the worker's block.
 //
 // The poll wait is a 500ms loop rather than a flat 10s sleep so the step is not flaky at the interval
 // boundary, and so a stalled poller fails HERE — distinguishable from the badge assertion failing, which
 // means detection broke. The two halves of this change fail differently and must stay tellable apart.
+const ATTN_GATE_TASK = "t-1";
+const ATTN_TASKS = [
+    { id: ATTN_GATE_TASK, label: "gated noop", description: "do nothing, stop immediately", deps: [], gate: true, state: "" },
+    { id: "t-2", label: "noop 2", description: "do nothing, stop immediately", deps: [ATTN_GATE_TASK], gate: false, state: "" },
+];
+const ATTN_DAG_STATUS = "awaiting-review";
+const ATTN_KIND = "dag-gate";
+// long enough for a tick that read the dag before the seed to have written it back
+const ATTN_TICK_SETTLE_MS = 2000;
+
+const attnParkAtGate = (dag) => ({
+    ...dag,
+    status: ATTN_DAG_STATUS,
+    tasks: (dag.tasks ?? []).map((t) =>
+        t.id === ATTN_GATE_TASK ? { ...t, state: "done", runid: "", released: false } : t
+    ),
+});
+const attnGateFingerprint = (dag) =>
+    JSON.stringify([dag?.status, (dag?.tasks ?? []).map((t) => [t.id, t.state, t.runid ?? "", t.released === true])]);
+
 const attentionCrossChannel = {
     name: "attention-cross-channel",
     surface: "usage",
     async arrange(h) {
-        const cwd = mkdtempSync(join(tmpdir(), "verify-attn-"));
-        const wslist = await h.rpc("workspacelist", null);
-        const workspaceId = wslist[0].workspacedata.oid;
-        const probe = await h.rpc("createchannel", { name: "attn-probe", projectpath: cwd });
-        const other = await h.rpc("createchannel", { name: "attn-other", projectpath: cwd });
-        return { cwd, workspaceId, probeId: probe.oid, otherId: other.oid, workers: [] };
+        const ctx = await arrangeSheetDagRun(h, "attn-probe", ATTN_TASKS);
+        if (ctx.arrangeError != null) return ctx;
+        try {
+            // its own path: a second channel at the probe's path is the probe channel itself
+            ctx.otherCwd = mkdtempSync(join(tmpdir(), "attn-other-"));
+            const other = await h.rpc("createchannel", { name: "attn-other", projectpath: ctx.otherCwd });
+            ctx.otherId = other.oid;
+            // the dispatching tick holds the dag for as long as the spawn takes and would land over a seed made under it
+            await waitForDispatch(h, ctx, ATTN_GATE_TASK);
+            if (!ctx.dispatched) throw new Error(`${ATTN_GATE_TASK} did not dispatch in ${ctx.dispatchMs}ms`);
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            if (!ctx.dagId) throw new Error("the run has no dag");
+            await seedDag(h, ctx, attnParkAtGate, attnGateFingerprint);
+            // a tick the worker's first events started can outlast the seed's own read-back, so it is seeded again
+            await new Promise((r) => setTimeout(r, ATTN_TICK_SETTLE_MS));
+            await seedDag(h, ctx, attnParkAtGate, attnGateFingerprint);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
-        const track = (oref) => {
-            if (oref) ctx.workers.push(oref);
-        };
-        const getRun = async (runId) => {
-            const res = await h.rpc("getchannels", null);
-            const cc = (res.channels || []).find((x) => x.oid === ctx.probeId) || {};
-            return (cc.runs || []).find((x) => x.id === runId);
-        };
 
-        // 1. park a run at its review gate in the probe channel
-        const created = await h.rpc("createrun", {
-            channelid: ctx.probeId,
-            workspaceid: ctx.workspaceId,
-            goal: "spawn-test, only: do nothing, make no file changes, stop immediately",
-            runtime: "claude",
-        });
-        const runId = created.run.id;
-        track(workerOf(created.run.phases[0]));
-        await h.rpc("advancerun", { channelid: ctx.probeId, runid: runId, phaseidx: 0, action: "complete" });
-        const mid = await getRun(runId);
-        track(workerOf(mid.phases[1]));
-        await h.rpc("advancerun", { channelid: ctx.probeId, runid: runId, phaseidx: 1, action: "complete" });
-        const gated = await getRun(runId);
+        // 1. the probe channel's run holds a dag at its gate, read back from the store
+        const parkedStep = "1. the probe channel's run holds a DAG parked at its gate";
+        if (ctx.arrangeError != null) {
+            rec(parkedStep, false, ctx.arrangeError);
+            return steps;
+        }
+        const runId = ctx.runId;
+        const group = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: runId })).group;
+        const gate = group?.tasks?.find((t) => t.id === ATTN_GATE_TASK);
         rec(
-            "1. the probe channel's run is parked at its review gate",
-            gated.status === "awaiting-review" && gated.phases[2].state === "pending",
-            JSON.stringify({ status: gated.status, states: gated.phases.map((p) => p.state) })
+            parkedStep,
+            group?.status === ATTN_DAG_STATUS && gate?.gate === true && gate?.state === "done" && gate?.released !== true,
+            JSON.stringify({ status: group?.status, tasks: group?.tasks?.map((t) => [t.id, t.state, t.runid ?? ""]) })
         );
 
         // 2. the server reports it as a gate item — the backend half, asserted before any DOM reading so a
@@ -2029,27 +2105,23 @@ const attentionCrossChannel = {
         const item = (attention.items || []).find((x) => x.runid === runId);
         rec(
             "2. GetAttention reports the gate with its channel and wait time",
-            item != null && item.kind === "gate" && item.channelid === ctx.probeId && item.waitingsince > 0,
+            item != null && item.kind === ATTN_KIND && item.channelid === ctx.channelId && item.waitingsince > 0,
             JSON.stringify(item ?? { items: (attention.items || []).length })
         );
 
-        // 3. make a DIFFERENT channel the active subject, so the gate is in a non-active channel.
-        // channelsAtom is a load-once snapshot, so channels created over RPC need a reload to appear in the
-        // Subjects column at all (same pattern as jarvis-drawer / jarvis-fleet) — which is itself the
-        // staleness that made this defect possible. Selecting by the row's visible name, stripping the
-        // subject-kind glyph, is jarvis-drawer's proven selector.
+        // 3. a DIFFERENT channel is the active one, so the gate is in a non-active channel. Nothing in the
+        // Brief selects a channel by hand: a load with no active channel takes the newest (loadChannels), and
+        // attn-other was created after the probe.
         await h.ev("location.reload()");
         await settle(2500);
         await h.goto("jarvis");
         await settle(600);
-        const selectedOther = await h.ev(`(() => {
-            const b = [...document.querySelectorAll('button')]
-                .find((x) => (x.textContent || '').trim().replace(/^[#▤~]/, '').startsWith('attn-other'));
-            if (!b) return false;
-            b.click();
-            return true;
-        })()`);
-        rec("3. a different channel is the active subject", selectedOther === true, `clicked=${selectedOther}`);
+        const newest = ((await h.rpc("getchannels", null))?.channels ?? [])[0]?.oid;
+        rec(
+            "3. a different channel is the active one",
+            newest === ctx.otherId && ctx.otherId !== ctx.channelId,
+            JSON.stringify({ newest, other: ctx.otherId, probe: ctx.channelId })
+        );
 
         // 4. leave for a surface nowhere near Jarvis, then wait for one poll tick
         await h.goto("usage");
@@ -2085,27 +2157,140 @@ const attentionCrossChannel = {
         return steps;
     },
     async teardown(h, ctx) {
-        for (const oref of ctx.workers) {
+        // before the fixture run's teardown, which reloads onto the roster this channel must be gone from
+        if (ctx.otherId) {
             try {
-                const tab = await h.rpc("gettab", oref.slice(4));
-                const bid = tab && tab.blockids && tab.blockids[0];
-                if (bid) await h.rpc("deleteblock", { blockid: bid });
-            } catch {
-                // best-effort cleanup
+                await h.rpc("deletechannel", { channelid: ctx.otherId });
+            } catch (e) {
+                console.error(`attention-cross-channel teardown: delete attn-other failed: ${e?.message ?? e}`);
             }
         }
-        for (const id of [ctx.probeId, ctx.otherId]) {
+        if (ctx.otherCwd) rmSync(ctx.otherCwd, { recursive: true, force: true });
+        await teardownFixtureRun(h, ctx, "attention-cross-channel");
+    },
+};
+
+// The Cockpit's "need you" count leaves out an ask Jarvis already answered, and the answer card can sit in any
+// channel: the count reads every channel's messages (channelMessagesAtom), not the active channel's. A fixture
+// roster holds the one asking agent; the card is posted into the older of two channels, the one a load never
+// selects.
+const NEEDS_YOU_AGENT_ID = "fx-needs-you";
+const NEEDS_YOU_ASK_ID = "fx-needs-you-ask";
+
+const cockpitNeedsYouCrossChannel = {
+    name: "cockpit-needs-you-cross-channel",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { channelIds: [], cwds: [] };
+        try {
+            for (const name of ["needs-you-answered", "needs-you-newest"]) {
+                const cwd = mkdtempSync(join(tmpdir(), `${name}-`));
+                ctx.cwds.push(cwd);
+                ctx.channelIds.push((await h.rpc("createchannel", { name, projectpath: cwd })).oid);
+            }
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: NEEDS_YOU_AGENT_ID,
+                            name: "needs-you worker",
+                            project: "waveterm",
+                            task: "wait on an answer",
+                            state: "asking",
+                            agent: "claude",
+                            model: "opus",
+                            blockedMs: 60_000,
+                            blockId: "fx-blk-needs-you",
+                            ask: {
+                                askId: NEEDS_YOU_ASK_ID,
+                                oref: "block:fx-blk-needs-you",
+                                questions: [
+                                    { header: "Port", question: "Which port?", options: [{ label: "9222" }, { label: "9223" }] },
+                                ],
+                            },
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const openStep = "1. the Cockpit counts the fixture's asking agent as needing you";
+        if (ctx.arrangeError != null) {
+            rec(openStep, false, ctx.arrangeError);
+            return steps;
+        }
+        // the header's count, read off the words beside it; null while the header is not there
+        const needYou = () =>
+            h.ev(`(() => {
+                const s = [...document.querySelectorAll('span')].find((x) => /^\\s*\\d+\\s*need you\\s*$/.test(x.textContent || ''));
+                return s ? Number(s.textContent.match(/\\d+/)[0]) : null;
+            })()`);
+        const reloadToCockpit = async () => {
+            await h.ev("location.reload()");
+            await settle(2500);
+            await h.goto("cockpit");
+            await settle(800);
+        };
+
+        await reloadToCockpit();
+        const before = await needYou();
+        rec(openStep, before === 1, `need you=${JSON.stringify(before)}`);
+
+        // 2. the answer card goes into the older channel; the newest is the one a load would select
+        const [answeredIn, newest] = ctx.channelIds;
+        const listed = ((await h.rpc("getchannels", null))?.channels ?? []).sort((a, b) => b.createdts - a.createdts);
+        const posted = await h.rpc("postchannelmessage", {
+            channelid: answeredIn,
+            kind: "jarvis-answered",
+            author: "jarvis",
+            text: 'Answered → "9222"',
+            // the fields a card must carry to be read as one (parseCardData)
+            data: JSON.stringify({
+                askId: NEEDS_YOU_ASK_ID,
+                askORef: "block:fx-blk-needs-you",
+                question: "Which port?",
+                options: [{ label: "9222" }, { label: "9223" }],
+                choice: 0,
+            }),
+        });
+        rec(
+            "2. Jarvis's answer card is stored in a channel that is not the newest",
+            posted?.kind === "jarvis-answered" && listed[0]?.oid === newest && answeredIn !== newest,
+            JSON.stringify({ posted: posted?.oid, answeredIn, newest: listed[0]?.oid })
+        );
+
+        // 3. the agent is still asking, and the count drops: the card was read from a channel nothing selected
+        await reloadToCockpit();
+        const after = await needYou();
+        rec("3. the answered ask no longer counts as needing you", after === 0, `need you=${JSON.stringify(after)}`);
+        await h.shot("cdp-shots/cockpit-needs-you-cross-channel.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
+        for (const id of ctx.channelIds) {
             try {
                 await h.rpc("deletechannel", { channelid: id });
-            } catch {
-                // best-effort cleanup
+            } catch (e) {
+                console.error(`cockpit-needs-you-cross-channel teardown: delete ${id} failed: ${e?.message ?? e}`);
             }
         }
-        try {
-            rmSync(ctx.cwd, { recursive: true, force: true });
-        } catch {
-            // best-effort cleanup
-        }
+        for (const cwd of ctx.cwds) rmSync(cwd, { recursive: true, force: true });
+        // onto the live roster again, and settled: the next scenario's first act is a nav click
+        await h.ev("location.reload()");
+        await h.ev("new Promise((r) => setTimeout(r, 2500))");
     },
 };
 
@@ -3640,7 +3825,7 @@ const jarvisPeek = {
             const panel = document.querySelector('[data-pet-peek]');
             if (typeof store?.setAttention !== 'function' || !panel) return false;
             store.setAttention([
-                { key: 'gate:cdp-1', kind: 'gate', source: 'first gate', text: 'Approve before Jarvis proceeds.', action: 'Review', waitingsince: Date.now() - 120000, channelid: '', runid: 'cdp-1', phaseidx: 0 },
+                { key: 'dag-gate:cdp-1', kind: 'dag-gate', source: 'first gate', text: 'Approve the gate before the DAG proceeds.', action: 'Review', waitingsince: Date.now() - 120000, channelid: '', runid: 'cdp-1', phaseidx: 0 },
                 { key: 'ask:cdp-2', kind: 'ask', source: 'second ask', text: 'Waiting on your reply', action: 'Answer', waitingsince: Date.now() - 60000, channelid: '', runid: 'cdp-2', phaseidx: 0 },
             ]);
             return true;
@@ -3668,7 +3853,7 @@ const jarvisPeek = {
                 busyArranged === true &&
                 busyBefore?.shape === "busy" &&
                 busyBefore?.width > 300 &&
-                busyBefore?.cursor === "gate:cdp-1" &&
+                busyBefore?.cursor === "dag-gate:cdp-1" &&
                 busyBefore?.focused === true &&
                 movedCursor === "ask:cdp-2" &&
                 composerFocused === true,
@@ -5490,16 +5675,8 @@ const dagLifecycle = {
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        const getRun = async (runId) => {
-            const res = await h.rpc("getchannels", null);
-            const cc = (res.channels || []).find((x) => x.oid === ctx.channelId) || {};
-            return (cc.runs || []).find((x) => x.id === runId);
-        };
-        const getChannelRunCount = async () => {
-            const res = await h.rpc("getchannels", null);
-            const channel = (res.channels || []).find((x) => x.oid === ctx.channelId) || {};
-            return (channel.runs || []).length;
-        };
+        const getRun = async (runId) => (await channelRuns(h, ctx.channelId)).find((x) => x.id === runId);
+        const getChannelRunCount = async () => (await channelRuns(h, ctx.channelId)).length;
 
         const clickRetry = (findJs, tries = 8) =>
             h.ev(`(async () => {
@@ -5780,9 +5957,7 @@ const dagLifecycle = {
 
         // one DAG cancellation command owns the parent, children, and worker shutdown.
         await h.rpc("dagaction", { channelid: ctx.channelId, runid: runId, taskid: "", action: "cancel" });
-        const channelsAfterCancel = await h.rpc("getchannels", null);
-        const cancelledChannel = (channelsAfterCancel.channels || []).find((x) => x.oid === ctx.channelId) || {};
-        const cancelledRuns = cancelledChannel.runs || [];
+        const cancelledRuns = await channelRuns(h, ctx.channelId);
         const cancelledOwner = cancelledRuns.find((run) => run.id === runId);
         const cancelledChildren = cancelledRuns.filter((run) => run.dagoref === g.id && run.id !== runId);
         const cancelledDag = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: runId })).group;
@@ -6888,7 +7063,7 @@ const jarvisMotion = {
             // latest update alone. Cleared in teardown.
             if (typeof mod.setAttention !== "function") return "petstore setAttention hook not exposed";
             mod.setAttention([
-                { key: "gate:cdp-motion", kind: "gate", source: "CDP motion gate", text: "Approve before Jarvis proceeds.", action: "Review", waitingsince: Date.now() - 120000, channelid: "", runid: "cdp-motion", phaseidx: 0 },
+                { key: "dag-gate:cdp-motion", kind: "dag-gate", source: "CDP motion gate", text: "Approve the gate before the DAG proceeds.", action: "Review", waitingsince: Date.now() - 120000, channelid: "", runid: "cdp-motion", phaseidx: 0 },
             ]);
             return true;
         })()`);
@@ -7266,131 +7441,6 @@ const uiApi = {
     },
 };
 
-// --- project divergence -------------------------------------------------------------------------
-// The scenario needs two registered projects to have anything to diverge BETWEEN, so they register
-// their own temp pair rather than depending on whatever is in the dev registry, and remove them in
-// teardown. Every DOM query below is scoped to a data-* hook: a document-wide `button` query picks
-// the app bar's global search button, not the row under test.
-const mkFocusProject = (tag) => {
-    const dir = mkdtempSync(join(tmpdir(), `verify-focus-${tag}-`));
-    execFileSync("git", ["init", "-q"], { cwd: dir });
-    writeFileSync(join(dir, "README.md"), `# ${tag}\n`);
-    execFileSync("git", ["add", "."], { cwd: dir });
-    execFileSync("git", ["-c", "user.email=v@v", "-c", "user.name=v", "commit", "-qm", "seed"], { cwd: dir });
-    return dir;
-};
-
-const napFocus = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// variant="bar" is the app-bar trigger; the cockpit header renders a SECOND switcher over the same
-// atom, so the variant has to be named or the wrong popover opens.
-const setBarProject = async (h, name) => {
-    const opened = await h.ev(`(() => {
-        const t = document.querySelector('[data-project-switcher="bar"]');
-        if (!t) return false;
-        t.click();
-        return true;
-    })()`);
-    if (opened !== true) return false;
-    await napFocus(200);
-    return h.ev(`(() => {
-        const row = document.querySelector('[data-project-option=${JSON.stringify(name)}]');
-        if (!row) return false;
-        row.click();
-        return true;
-    })()`);
-};
-
-const codeProjectName = (h) =>
-    h.ev(
-        `(() => { try { return JSON.parse(localStorage.getItem('code.project.last'))?.name ?? null; } catch (e) { return null; } })()`
-    );
-
-const focusDivergenceRejoin = {
-    name: "focus-divergence-rejoin",
-    surface: "code",
-    async arrange(h) {
-        const dirA = mkFocusProject("da");
-        const dirB = mkFocusProject("db");
-        const stamp = Date.now() % 100000;
-        const names = { a: `verify-div-a-${stamp}`, b: `verify-div-b-${stamp}` };
-        await h.rpc("createproject", { name: names.a, path: dirA });
-        await h.rpc("createproject", { name: names.b, path: dirB });
-        const prevCode = await h.ev("localStorage.getItem('code.project.last')");
-        return { dirs: [dirA, dirB], names, prevCode };
-    },
-    async assert(h, ctx) {
-        const steps = [];
-        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-
-        await h.goto("cockpit");
-        await napFocus(400);
-        const setA = await setBarProject(h, ctx.names.a);
-        await napFocus(400);
-        rec("1. app bar set to project A", setA === true, `A=${ctx.names.a}`);
-
-        await h.goto("code");
-        await napFocus(1000);
-        const openedPicker = await h.ev(`(() => {
-            const chip = document.querySelector('[data-code-project-picker]');
-            if (!chip) return false;
-            chip.click();
-            return true;
-        })()`);
-        await napFocus(300);
-        const pickedB = await h.ev(`(() => {
-            const row = document.querySelector('[data-code-picker-row=${JSON.stringify(ctx.names.b)}]');
-            if (!row) return false;
-            row.click();
-            return true;
-        })()`);
-        await napFocus(1400);
-        rec("2. Code pointed at project B by hand", openedPicker === true && pickedB === true, `B=${ctx.names.b}`);
-
-        const banner = await h.ev(`(() => {
-            const el = document.querySelector('[data-divergence-banner]');
-            return el ? el.textContent.trim() : null;
-        })()`);
-        rec(
-            "3. the divergence banner names both sides",
-            banner != null && banner.includes(ctx.names.a) && banner.includes(ctx.names.b),
-            `banner=${banner}`
-        );
-
-        const rejoined = await h.ev(`(() => {
-            const b = document.querySelector('[data-divergence-rejoin]');
-            if (!b) return false;
-            b.click();
-            return true;
-        })()`);
-        await napFocus(1600);
-        const after = await codeProjectName(h);
-        const gone = await h.ev(`document.querySelector('[data-divergence-banner]') == null`);
-        rec(
-            "4. Show the project returns Code to A and the banner goes silent",
-            rejoined === true && after === ctx.names.a && gone === true,
-            `after=${after} bannerGone=${gone}`
-        );
-        return steps;
-    },
-    async teardown(h, ctx) {
-        await h.goto("cockpit");
-        await napFocus(300);
-        await setBarProject(h, "all");
-        await h.ev("localStorage.removeItem('code.project.last')");
-        if (ctx?.prevCode != null) {
-            await h.ev(`localStorage.setItem('code.project.last', ${JSON.stringify(ctx.prevCode)})`);
-        }
-        for (const n of [ctx?.names?.a, ctx?.names?.b]) {
-            if (n) await h.rpc("deleteproject", { name: n });
-        }
-        for (const d of ctx?.dirs ?? []) {
-            rmSync(d, { recursive: true, force: true });
-        }
-        await h.goto("cockpit");
-    },
-};
-
 // The Agent tree and the details rail on the brief type scale (docs/superpowers/specs/2026-09-29-agent-tree-rail-
 // polish-design.md): lucide marks instead of text glyphs, and nothing smaller than 10.5px. The roster is a dev
 // fixture; the lead's run is a real orchestrator run held by deferstart, so the tree nests the fixture lead under it
@@ -7498,9 +7548,7 @@ async function waitForDispatch(h, ctx, taskId) {
 
 // best-effort, so one failed step does not strand the rest
 async function deleteChannelWorkerBlocks(h, channelId) {
-    const res = await h.rpc("getchannels", null);
-    const cc = (res.channels || []).find((x) => x.oid === channelId) || {};
-    for (const run of cc.runs || []) {
+    for (const run of await channelRuns(h, channelId)) {
         for (const phase of run.phases || []) {
             for (const oref of phase.workerorefs || []) {
                 try {
@@ -8744,7 +8792,7 @@ const DOC_REVIEW_TAG_TITLE = "Open the spec review";
 const DOC_REVIEW_CHIP = "Spec review";
 const DOC_REVIEW_PANEL = `document.querySelector("[data-doc-review]")?.closest('[role="dialog"]')`;
 
-function docReviewRoster(runId, docPath) {
+function docReviewRoster(runId, docPath, decisions = DOC_REVIEW_DECISIONS) {
     return [
         {
             id: DOC_REVIEW_WORKER_ID,
@@ -8776,7 +8824,7 @@ function docReviewRoster(runId, docPath) {
                 questions: [
                     {
                         header: DOC_REVIEW_CHIP,
-                        question: [docPath, ...DOC_REVIEW_DECISIONS.map((d) => `- ${d}`)].join("\n"),
+                        question: [docPath, ...decisions.map((d) => `- ${d}`)].join("\n"),
                         options: [{ label: "Approve" }, { label: "Request changes" }],
                     },
                 ],
@@ -8965,6 +9013,601 @@ const docReview = {
     },
     async teardown(h, ctx) {
         await teardownFixtureRun(h, ctx, "doc-review");
+    },
+};
+
+// Quoting passages of the reviewed document (docs/superpowers/plans/2026-10-05-highlight-to-quote.md): a selection
+// in the document opens a note field, notes collect in the rail and travel with either answer. Same roster as
+// doc-review, on the mockup's document and decisions. Selections, typing and keys are made in the page, since CDP
+// input does not reliably reach the WebView. Nothing is delivered: the fixture ask has no live block, so a send
+// shows the cockpit's own sent lock.
+const DOC_NOTES_HEADING = "Highlight-to-quote in the review dialog";
+const DOC_NOTES_FIELD = "A note field opens under the selection";
+const DOC_NOTES_STAYS = "The passage stays highlighted in the document until its note is removed.";
+const DOC_NOTES_REWORD = "A note can be reworded on the right afterwards.";
+const DOC_NOTES_ORDER = "in document order";
+const DOC_NOTES_CUT = "A long passage is cut to its first and last lines.";
+const DOC_NOTES_KEYBOARD = "Selecting with the keyboard";
+const DOC_NOTES_LAST = "The last round ends when every note is applied.";
+// enough one-line paragraphs after the mockup's text that the document pane scrolls
+const DOC_NOTES_FILLER_ROUNDS = 16;
+const DOC_NOTES_SPEC = [
+    `# ${DOC_NOTES_HEADING}`,
+    "## Goal",
+    "Request changes is free text that points at nothing, so a change request has to describe the passage it means. Selecting a passage in the document and writing a note on it lets the answer carry the passage with it.",
+    "## Gesture",
+    `Select text in the document. ${DOC_NOTES_FIELD}: Enter adds the passage and what you wrote to your notes on the right, under the decisions, Esc drops it. ${DOC_NOTES_STAYS} ${DOC_NOTES_REWORD}`,
+    "## Delivery",
+    `Request changes sends each note as the quoted passage followed by what you wrote, ${DOC_NOTES_ORDER}, through the ask's own answer path. Approve sends them too, after the approval. ${DOC_NOTES_CUT} The whole answer is one message to the lead.`,
+    "## Out of scope",
+    `The Code surface's markdown preview and the run report. Quoting from the decisions list on the right. ${DOC_NOTES_KEYBOARD}: the passage is picked with the mouse, then everything after is keys.`,
+    "## Review rounds",
+    ...Array.from(
+        { length: DOC_NOTES_FILLER_ROUNDS },
+        (_, i) => `Round ${i + 1}: the lead applies the quoted notes and asks for the review again.`
+    ),
+    DOC_NOTES_LAST,
+].join("\n\n");
+const DOC_NOTES_DECISIONS = [
+    "Quoting is built on the dialog's own light renderer; the shared Code-preview renderer is left alone.",
+    "Highlights are painted over the rendered text, not wrapped into it, so the markdown output is untouched.",
+    "Notes are kept per ask, survive hiding the dialog, and are cleared once the ask is answered.",
+    "Approve carries any notes with it, and its button shows how many. Nothing you wrote is dropped.",
+];
+const DOC_NOTES_DECISIONS_CROWDED = [
+    ...DOC_NOTES_DECISIONS,
+    "A selection that crosses a code block or a table quotes its text only.",
+    "Notes are sent in document order, not the order they were written.",
+    "The same gesture works in the plan review; its findings are not quotable.",
+    "A passage quoted twice makes two notes.",
+    "Selecting inside the decisions list does nothing.",
+];
+const DOC_NOTES_STAYS_NOTE = "Keep it highlighted after sending too, until the lead picks it up.";
+const DOC_NOTES_CUT_NOTE = "Don't cut it. Send the whole passage.";
+const DOC_NOTES_REWORD_NOTE = "Clicking a note should scroll the document to its passage.";
+const DOC_NOTES_REWORD_EDIT = "Scroll the document to the passage when its note is clicked.";
+// the Crowded board's notes, in document order
+const DOC_NOTES_CROWDED = [
+    [DOC_NOTES_FIELD, "Open it above when the selection is near the bottom."],
+    [DOC_NOTES_STAYS, DOC_NOTES_STAYS_NOTE],
+    [DOC_NOTES_REWORD, DOC_NOTES_REWORD_NOTE],
+    [DOC_NOTES_ORDER, "Yes. Not the order I wrote them in."],
+    [DOC_NOTES_CUT, DOC_NOTES_CUT_NOTE],
+    [DOC_NOTES_KEYBOARD, ""],
+];
+// the order they are written in
+const DOC_NOTES_WRITTEN = [4, 1, 5, 0, 3, 2];
+const DOC_NOTES_LIST_CAP = 300;
+const DOC_NOTES_PANEL_WIDTH = 1240;
+const DOC_NOTES_RAIL_WIDTH = 460;
+const DOC_NOTES_EMPTY = "No note yet";
+
+// page-side helpers, prefixed to every evaluated body. Every query is under the dialog panel.
+const DOC_NOTES_LIB = `
+    const panel = () => ${DOC_REVIEW_PANEL};
+    const docRoot = () => panel()?.querySelector("[data-doc-review-doc]");
+    const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+    const ranges = (name) => CSS.highlights.get(name)?.size ?? 0;
+    const box = (r) => ({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+    const ownText = (el) =>
+        [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join("").trim();
+    const textNode = (root, passage) => {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const at = n.nodeValue.indexOf(passage);
+            if (at >= 0) return { node: n, at };
+        }
+        return null;
+    };
+    const rangeOf = (passage) => {
+        const hit = docRoot() && textNode(docRoot(), passage);
+        if (!hit) return null;
+        const range = document.createRange();
+        range.setStart(hit.node, hit.at);
+        range.setEnd(hit.node, hit.at + passage.length);
+        return range;
+    };
+    const selectRange = (range) => {
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        docRoot().dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    };
+    const select = (passage) => {
+        const range = rangeOf(passage);
+        if (!range) return null;
+        selectRange(range);
+        return box(range.getBoundingClientRect());
+    };
+    const type = (input, value) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const key = (el, k, mods) =>
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: k, bubbles: true, cancelable: true, ...mods }));
+    const fieldInput = () => panel()?.querySelector("[data-doc-note-field] input");
+    const rowOf = (passage) =>
+        [...panel().querySelectorAll("[data-doc-note-row]")].find((r) => r.textContent.includes(passage));
+    const button = (label) => [...panel().querySelectorAll("button")].find((b) => ownText(b) === label);
+    const addNote = async (passage, note) => {
+        select(passage);
+        await settle();
+        const input = fieldInput();
+        if (!input) return false;
+        if (note) {
+            type(input, note);
+            await settle();
+        }
+        key(input, "Enter");
+        await settle();
+        return true;
+    };
+    const state = () => {
+        const p = panel();
+        if (!p) return { open: false };
+        const notes = p.querySelector("[data-doc-notes]");
+        const toggle = notes?.querySelector("[data-doc-notes-toggle]");
+        const list = toggle?.nextElementSibling;
+        const field = p.querySelector("[data-doc-note-field]");
+        const decisions = p.querySelector("ol")?.parentElement;
+        return {
+            open: true,
+            panel: box(p.getBoundingClientRect()),
+            panelWidth: p.offsetWidth,
+            railWidth: decisions?.parentElement.offsetWidth ?? null,
+            heading: p.querySelector("[data-doc-review-doc] h1")?.textContent.trim() ?? null,
+            items: p.querySelectorAll("ol > li").length,
+            decisions: decisions ? { client: decisions.clientHeight, scroll: decisions.scrollHeight } : null,
+            header: toggle?.querySelector("span")?.textContent.trim() ?? null,
+            expanded: toggle?.getAttribute("aria-expanded") ?? null,
+            list: list ? { client: list.clientHeight, scroll: list.scrollHeight } : null,
+            rows: [...(notes?.querySelectorAll("[data-doc-note-row]") ?? [])].map((row) => {
+                const edit = row.querySelector('button[aria-label="Edit this note"]');
+                const input = row.querySelector("input");
+                return {
+                    open: row.getAttribute("data-open") === "true",
+                    passage: (edit ?? row.firstElementChild)?.firstElementChild?.textContent ?? null,
+                    note: input ? input.value : (edit?.children[1]?.textContent ?? null),
+                    input: !!input,
+                    locked: edit?.disabled ?? false,
+                    remove: !!row.querySelector('button[aria-label="Remove this note"]'),
+                };
+            }),
+            field: field ? box(field.getBoundingClientRect()) : null,
+            fieldFocused: !!field && document.activeElement === field.querySelector("input"),
+            quoted: ranges("doc-review-quoted"),
+            pending: ranges("doc-review-pending"),
+            buttons: [...p.querySelectorAll("button")].map(ownText).filter(Boolean),
+            sent: [...p.querySelectorAll("span")].find((s) => s.textContent.startsWith("Sent: "))?.textContent ?? null,
+        };
+    };
+`;
+
+// runs a body in the page (it may await, and set out), lets React settle, and resolves to the dialog's state
+const docNotesAct = (h, body = "") =>
+    h.ev(`(async () => {
+        ${DOC_NOTES_LIB}
+        let out = null;
+        ${body}
+        await settle();
+        return { ...state(), out };
+    })()`);
+
+const docNotesJson = (v) => JSON.stringify(v);
+
+// what a step's detail keeps of the dialog's state
+const docNotesBrief = (s, out) =>
+    JSON.stringify({
+        open: s.open,
+        header: s.header,
+        rows: (s.rows ?? []).map((r) => [r.passage, r.note, r.open ? "open" : r.locked ? "locked" : "compact"]),
+        field: s.field != null,
+        quoted: s.quoted,
+        pending: s.pending,
+        buttons: s.buttons,
+        sent: s.sent,
+        ...out,
+    });
+
+// the fixture roster is read once at boot
+async function docNotesReload(h, ctx, decisions) {
+    writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(docReviewRoster(ctx.runId, ctx.specPath, decisions), null, 2));
+    await h.ev("location.reload()");
+    await h.ev(`(async () => {
+        for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+            await new Promise((r) => setTimeout(r, 500));
+        }
+    })()`);
+    await h.goto("cockpit");
+    return docReviewWait(
+        h,
+        `document.querySelector('[data-cockpit-surface] [data-agent-id="${DOC_REVIEW_WORKER_ID}"]')`,
+        15000
+    );
+}
+
+const docNotesTag = `${docReviewTreeRow(DOC_REVIEW_LEAD)}?.querySelector('button[title="${DOC_REVIEW_TAG_TITLE}"]')`;
+
+// through the lead's tree tag, and resolved once the document is rendered and the panel has stopped scaling
+async function docNotesOpenByTag(h) {
+    const tagged = await docReviewWait(h, docNotesTag);
+    await h.ev(`${docNotesTag}?.click()`);
+    const open = await docReviewWait(h, DOC_REVIEW_PANEL);
+    const rendered = await docReviewWait(h, `${DOC_REVIEW_PANEL}?.querySelector("[data-doc-review-doc] h1")`);
+    await h.ev(`new Promise((r) => setTimeout(r, 500))`);
+    return tagged && open && rendered;
+}
+
+// from the Cockpit: the worker's card leads to the Agent surface without spending the lead's auto-open
+async function docNotesOpen(h) {
+    await h.ev(`document.querySelector(
+        '[data-cockpit-surface] [data-agent-id="${DOC_REVIEW_WORKER_ID}"] button[title="Open terminal (T)"]'
+    )?.click()`);
+    return docNotesOpenByTag(h);
+}
+
+const docReviewNotes = {
+    name: "doc-review-notes",
+    surface: "cockpit",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-doc-review-notes-"));
+        const ctx = { cwd };
+        try {
+            await arrangeFixtureRun(h, ctx, "doc-review-notes", DOC_REVIEW_LEAD);
+            ctx.specPath = join(cwd, "2026-10-05-highlight-to-quote-design.md");
+            writeFileSync(ctx.specPath, `${DOC_NOTES_SPEC}\n`);
+            // the panel and rail widths asserted below need the room, and verify.mjs restores its own pin after
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            ctx.rosterLoaded = await docNotesReload(h, ctx, DOC_NOTES_DECISIONS);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const has = (s, label) => (s.buttons ?? []).includes(label);
+        const passages = (s) => (s.rows ?? []).map((r) => r.passage);
+        if (ctx.arrangeError != null || !ctx.rosterLoaded) {
+            return [{ step: "0. the fixture roster loaded", ok: false, detail: ctx.arrangeError ?? "no worker card" }];
+        }
+
+        const opened1 = await docNotesOpen(h);
+        const s1 = await docNotesAct(h);
+        rec(
+            "1. the dialog is open on the fixture spec: 4 decisions, no notes, Approve and Request changes, 1240 wide with a 460 rail",
+            opened1 &&
+                s1.heading === DOC_NOTES_HEADING &&
+                s1.items === DOC_NOTES_DECISIONS.length &&
+                s1.header == null &&
+                s1.rows.length === 0 &&
+                has(s1, "Approve") &&
+                has(s1, "Request changes") &&
+                s1.panelWidth === DOC_NOTES_PANEL_WIDTH &&
+                s1.railWidth === DOC_NOTES_RAIL_WIDTH,
+            docNotesBrief(s1, {
+                opened: opened1,
+                heading: s1.heading,
+                items: s1.items,
+                panelWidth: s1.panelWidth,
+                railWidth: s1.railWidth,
+            })
+        );
+
+        const s2 = await docNotesAct(h, `out = select(${docNotesJson(DOC_NOTES_STAYS)});`);
+        rec(
+            "2. selecting a passage opens the note field under it, focused, and tints the passage",
+            s2.out != null && s2.field != null && s2.field.top >= s2.out.bottom && s2.fieldFocused && s2.pending === 1,
+            docNotesBrief(s2, { selection: s2.out, fieldRect: s2.field, focused: s2.fieldFocused })
+        );
+
+        const s3 = await docNotesAct(
+            h,
+            `type(fieldInput(), ${docNotesJson(DOC_NOTES_STAYS_NOTE)});
+            await settle();
+            key(fieldInput(), "Enter");`
+        );
+        rec(
+            "3. a note and Enter: the field closes, the rail lists the note, the passage stays painted, the footer counts it, nothing is sent",
+            s3.open &&
+                s3.field == null &&
+                s3.header === "Your notes · 1" &&
+                s3.rows.length === 1 &&
+                s3.rows[0].passage === DOC_NOTES_STAYS &&
+                s3.rows[0].note === DOC_NOTES_STAYS_NOTE &&
+                s3.quoted === 1 &&
+                s3.pending === 0 &&
+                has(s3, "Approve with 1 note") &&
+                has(s3, "Request changes · 1 note") &&
+                s3.sent == null,
+            docNotesBrief(s3)
+        );
+        const draft3 = await docNotesAct(
+            h,
+            `select(${docNotesJson(DOC_NOTES_CUT)});
+            await settle();
+            type(fieldInput(), ${docNotesJson(DOC_NOTES_CUT_NOTE)});`
+        );
+        await h.shot("cdp-shots/doc-review-notes-main.png");
+        rec(
+            "3b. the Main board: one kept note, and the field open with a draft under a second, tinted passage",
+            draft3.field != null && draft3.pending === 1 && draft3.quoted === 1 && draft3.rows.length === 1,
+            docNotesBrief(draft3)
+        );
+
+        const s4 = await docNotesAct(h, `key(fieldInput(), "Escape");`);
+        rec(
+            "4. Escape in the field drops it and leaves the note and the dialog",
+            s4.open && s4.field == null && s4.rows.length === 1 && s4.pending === 0,
+            docNotesBrief(s4)
+        );
+
+        const s5 = await docNotesAct(
+            h,
+            `const from = textNode(docRoot(), ${docNotesJson(DOC_NOTES_REWORD)});
+            const to = textNode(panel().querySelector("ol"), ${docNotesJson(DOC_NOTES_DECISIONS[0])});
+            const range = document.createRange();
+            range.setStart(from.node, from.at);
+            range.setEnd(to.node, to.at + 7);
+            selectRange(range);
+            out = { selected: getSelection().toString().length, endsInDoc: docRoot().contains(range.endContainer) };`
+        );
+        await h.ev("getSelection().removeAllRanges()");
+        rec(
+            "5. a selection that starts in the document and ends in the decisions opens nothing",
+            s5.out.selected > 0 && !s5.out.endsInDoc && s5.field == null && s5.pending === 0,
+            docNotesBrief(s5, s5.out)
+        );
+
+        const s6 = await docNotesAct(
+            h,
+            `const scroller = docRoot().parentElement;
+            const pane = scroller.getBoundingClientRect();
+            scroller.scrollTop += rangeOf(${docNotesJson(DOC_NOTES_LAST)}).getBoundingClientRect().bottom - pane.bottom;
+            await settle();
+            out = {
+                scrolls: scroller.scrollHeight > scroller.clientHeight,
+                scrollTop: scroller.scrollTop,
+                paneBottom: pane.bottom,
+                selection: select(${docNotesJson(DOC_NOTES_LAST)}),
+            };`
+        );
+        await h.shot("cdp-shots/doc-review-notes-flip.png");
+        const inside6 =
+            s6.field != null &&
+            s6.field.top >= s6.panel.top &&
+            s6.field.bottom <= s6.panel.bottom &&
+            s6.field.left >= s6.panel.left &&
+            s6.field.right <= s6.panel.right;
+        rec(
+            "6. with no room below, the field opens above a selection at the pane's bottom edge, inside the dialog",
+            s6.out.scrolls && s6.out.scrollTop > 0 && s6.field != null && s6.field.bottom <= s6.out.selection.top && inside6,
+            docNotesBrief(s6, { ...s6.out, fieldRect: s6.field, panelRect: s6.panel })
+        );
+        const dropped6 = await docNotesAct(h, `key(fieldInput(), "Escape"); docRoot().parentElement.scrollTop = 0;`);
+
+        await docReviewEscape(h);
+        const gone7 = await docReviewWait(h, `!${DOC_REVIEW_PANEL}`, 3000);
+        const reopened7 = await docNotesOpenByTag(h);
+        const s7 = await docNotesAct(h);
+        rec(
+            "7. Escape hides the dialog; reopened, the note is still listed and its passage painted again",
+            dropped6.field == null &&
+                gone7 &&
+                reopened7 &&
+                s7.rows.length === 1 &&
+                s7.rows[0].passage === DOC_NOTES_STAYS &&
+                s7.rows[0].note === DOC_NOTES_STAYS_NOTE &&
+                s7.quoted === 1,
+            docNotesBrief(s7, { gone: gone7, reopened: reopened7 })
+        );
+
+        const request8 = await docNotesAct(h, `button("Request changes · 1 note")?.click();`);
+        const s8 = await docNotesAct(
+            h,
+            `const send = button("Send 1 note to the lead");
+            out = { textarea: panel().querySelector("#doc-review-note")?.value ?? null, enabled: !!send && !send.disabled };
+            send?.click();`
+        );
+        await h.shot("cdp-shots/doc-review-notes-request-sent.png");
+        const locked8 = await docNotesAct(
+            h,
+            `const row = rowOf(${docNotesJson(DOC_NOTES_STAYS)});
+            row?.querySelector('button[aria-label="Edit this note"]')?.click();
+            row?.querySelector('button[aria-label="Remove this note"]')?.click();
+            await settle();
+            select(${docNotesJson(DOC_NOTES_CUT)});`
+        );
+        await h.ev("getSelection().removeAllRanges()");
+        rec(
+            "8. Request changes with the textarea empty sends the one note: the sent line counts it, the row locks, a selection opens nothing",
+            has(request8, "Send 1 note to the lead") &&
+                s8.out.textarea === "" &&
+                s8.out.enabled &&
+                s8.sent === "Sent: Request changes, with 1 note" &&
+                locked8.sent === s8.sent &&
+                locked8.rows.length === 1 &&
+                locked8.rows[0].locked &&
+                !locked8.rows[0].remove &&
+                !locked8.rows[0].open &&
+                locked8.field == null &&
+                locked8.pending === 0,
+            docNotesBrief(locked8, s8.out)
+        );
+
+        // a new askId, so the sent lock is gone; the reload empties the notes too
+        const loaded9 = await docNotesReload(h, ctx, DOC_NOTES_DECISIONS_CROWDED);
+        const opened9 = loaded9 && (await docNotesOpen(h));
+        const fresh9 = await docNotesAct(h);
+        const written9 = DOC_NOTES_WRITTEN.map((i) => DOC_NOTES_CROWDED[i]);
+        const s9 = await docNotesAct(
+            h,
+            `out = { added: [] };
+            for (const [passage, note] of ${docNotesJson(written9)}) out.added.push(await addNote(passage, note));
+            rowOf(${docNotesJson(DOC_NOTES_REWORD)})?.querySelector('button[aria-label="Edit this note"]')?.click();`
+        );
+        await h.shot("cdp-shots/doc-review-notes-crowded.png");
+        const open9 = s9.rows.filter((r) => r.open);
+        rec(
+            "9. the Crowded board: six notes in document order, one empty, one open, the list capped at 300 and the decisions scrolling above it",
+            opened9 &&
+                fresh9.items === DOC_NOTES_DECISIONS_CROWDED.length &&
+                fresh9.rows.length === 0 &&
+                s9.out.added.every(Boolean) &&
+                docNotesJson(passages(s9)) === docNotesJson(DOC_NOTES_CROWDED.map(([passage]) => passage)) &&
+                s9.rows.at(-1).note === DOC_NOTES_EMPTY &&
+                open9.length === 1 &&
+                open9[0].passage === DOC_NOTES_REWORD &&
+                open9[0].input &&
+                open9[0].note === DOC_NOTES_REWORD_NOTE &&
+                s9.rows.filter((r) => r.input).length === 1 &&
+                s9.list.client <= DOC_NOTES_LIST_CAP &&
+                s9.list.scroll > s9.list.client &&
+                s9.decisions.scroll > s9.decisions.client &&
+                s9.quoted === DOC_NOTES_CROWDED.length &&
+                has(s9, "Approve with 6 notes") &&
+                has(s9, "Request changes · 6 notes"),
+            docNotesBrief(s9, {
+                opened: opened9,
+                items: fresh9.items,
+                startedWith: fresh9.rows.length,
+                list: s9.list,
+                decisions: s9.decisions,
+            })
+        );
+
+        const openInput = `panel().querySelector('[data-doc-note-row][data-open="true"] input')`;
+        const s10 = await docNotesAct(
+            h,
+            `type(${openInput}, ${docNotesJson(DOC_NOTES_REWORD_EDIT)});
+            await settle();
+            key(${openInput}, "Enter");`
+        );
+        const esc10 = await docNotesAct(
+            h,
+            `rowOf(${docNotesJson(DOC_NOTES_REWORD)})?.querySelector('button[aria-label="Edit this note"]')?.click();
+            await settle();
+            out = { reopened: !!${openInput} };
+            key(${openInput}, "Escape");`
+        );
+        const reworded = (s) => s.rows.find((r) => r.passage === DOC_NOTES_REWORD)?.note;
+        rec(
+            "10. in the open row, Enter keeps the new note and closes the row, Escape closes it; neither sends nor hides the dialog",
+            s10.open &&
+                !s10.rows.some((r) => r.open) &&
+                reworded(s10) === DOC_NOTES_REWORD_EDIT &&
+                s10.sent == null &&
+                esc10.out.reopened &&
+                esc10.open &&
+                !esc10.rows.some((r) => r.open) &&
+                reworded(esc10) === DOC_NOTES_REWORD_EDIT &&
+                esc10.sent == null,
+            docNotesBrief(esc10, { afterEnter: s10.rows.map((r) => r.open), reopened: esc10.out.reopened })
+        );
+
+        const toggle = `panel().querySelector("[data-doc-notes-toggle]").click();`;
+        const collapsed11 = await docNotesAct(h, toggle);
+        const expanded11 = await docNotesAct(h, toggle);
+        const remove = `panel().querySelector('[data-doc-note-row] button[aria-label="Remove this note"]')`;
+        const five11 = await docNotesAct(h, `${remove}.click();`);
+        const none11 = await docNotesAct(h, `for (let i = 0; i < 10 && ${remove}; i++) { ${remove}.click(); await settle(); }`);
+        const kept = [DOC_NOTES_CROWDED[4], DOC_NOTES_CROWDED[1]];
+        const two11 = await docNotesAct(h, `for (const [passage, note] of ${docNotesJson(kept)}) await addNote(passage, note);`);
+        rec(
+            "11. the header collapses and expands the list; removing a note drops its row and its highlight, removing all drops the section",
+            collapsed11.expanded === "false" &&
+                collapsed11.rows.length === 0 &&
+                collapsed11.header === "Your notes · 6" &&
+                expanded11.expanded === "true" &&
+                expanded11.rows.length === 6 &&
+                five11.rows.length === 5 &&
+                five11.quoted === 5 &&
+                has(five11, "Approve with 5 notes") &&
+                none11.header == null &&
+                none11.rows.length === 0 &&
+                none11.quoted === 0 &&
+                has(none11, "Approve") &&
+                has(none11, "Request changes") &&
+                docNotesJson(passages(two11)) === docNotesJson([DOC_NOTES_STAYS, DOC_NOTES_CUT]),
+            docNotesBrief(two11, {
+                collapsed: [collapsed11.expanded, collapsed11.rows.length],
+                expanded: [expanded11.expanded, expanded11.rows.length],
+                afterOne: [five11.rows.length, five11.quoted, five11.buttons],
+                afterAll: [none11.header, none11.quoted, none11.buttons],
+            })
+        );
+
+        const s12 = await docNotesAct(
+            h,
+            `button("Request changes · 2 notes")?.click();
+            await settle();
+            const area = panel().querySelector("#doc-review-note");
+            const send = button("Send 2 notes to the lead");
+            out = {
+                label: panel().querySelector('label[for="doc-review-note"]')?.textContent ?? null,
+                placeholder: area?.placeholder ?? null,
+                value: area?.value ?? null,
+                enabled: !!send && !send.disabled,
+            };`
+        );
+        await h.shot("cdp-shots/doc-review-notes-request.png");
+        const cancel12 = await docNotesAct(h, `button("Cancel")?.click();`);
+        rec(
+            "12. Request changes with notes: the textarea is optional and Send 2 notes is enabled while it is empty; Cancel returns",
+            s12.out.label === "Anything beyond your 2 notes?" &&
+                s12.out.placeholder === "Optional" &&
+                s12.out.value === "" &&
+                s12.out.enabled &&
+                has(cancel12, "Approve with 2 notes") &&
+                has(cancel12, "Request changes · 2 notes") &&
+                cancel12.sent == null,
+            docNotesBrief(cancel12, s12.out)
+        );
+
+        // ctrl+enter while the field holds a draft: the draft joins the notes, then the answer leaves
+        const s13 = await docNotesAct(
+            h,
+            `select(${docNotesJson(DOC_NOTES_ORDER)});
+            await settle();
+            type(fieldInput(), ${docNotesJson(DOC_NOTES_CROWDED[3][1])});
+            await settle();
+            out = { focusInField: document.activeElement === fieldInput() };
+            key(document.activeElement || document.body, "Enter", { ctrlKey: true });`
+        );
+        await h.shot("cdp-shots/doc-review-notes-sent.png");
+        const locked13 = await docNotesAct(
+            h,
+            `for (const row of panel().querySelectorAll("[data-doc-note-row]")) {
+                row.querySelector('button[aria-label="Edit this note"]')?.click();
+                row.querySelector('button[aria-label="Remove this note"]')?.click();
+            }
+            await settle();
+            select(${docNotesJson(DOC_NOTES_REWORD)});`
+        );
+        await h.ev("getSelection().removeAllRanges()");
+        const order13 = docNotesJson([DOC_NOTES_STAYS, DOC_NOTES_ORDER, DOC_NOTES_CUT]);
+        rec(
+            "13. Ctrl+Enter with a draft in the field adds it and approves: the sent line counts 3 notes, the rows lock, a selection opens nothing",
+            s13.out.focusInField &&
+                s13.sent === "Sent: Approve, with 3 notes" &&
+                s13.field == null &&
+                docNotesJson(passages(s13)) === order13 &&
+                s13.rows[1].note === DOC_NOTES_CROWDED[3][1] &&
+                locked13.sent === s13.sent &&
+                docNotesJson(passages(locked13)) === order13 &&
+                locked13.rows.every((r) => r.locked && !r.remove && !r.open) &&
+                locked13.field == null &&
+                locked13.pending === 0,
+            docNotesBrief(locked13, s13.out)
+        );
+
+        await docReviewEscape(h);
+        await docReviewWait(h, `!${DOC_REVIEW_PANEL}`, 3000);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "doc-review-notes");
     },
 };
 
@@ -11682,6 +12325,307 @@ const runTimingScenario = {
     },
 };
 
+// --- record-band-detach-restore: correcting a run's record from the run sheet, and undoing it ----------
+// The band's EdgeControls on a run with one attributed record: Not this record moves the edge to the Detached
+// group, Restore brings it back. The edge is accepted in the arrange, so it is confirmed and the detach asks
+// first. The ambient re-read behind every band update is slow (it sweeps every record), so each wait polls for
+// 25s, under the 30s cap on one evaluate.
+const RECORD_BAND_GOAL = "verify record-band: an attributed run, do nothing";
+// the record CreateRun captures for that goal, as BRIEF_PEEK_RECORD
+const RECORD_BAND_RECORD = "verify-record-band-an-attributed-run-do-nothing";
+const RECORD_BAND = `document.querySelector("[data-jarvis-record-band]")`;
+const RECORD_BAND_POLLS = 100;
+const RECORD_BAND_LIB = `
+    const bandButton = (label) =>
+        [...(${RECORD_BAND}?.querySelectorAll("button") ?? [])].find((b) => (b.textContent || "").trim() === label);
+    const bandText = () => (${RECORD_BAND}?.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 300);
+    const until = async (fn) => {
+        for (let i = 0; i < ${RECORD_BAND_POLLS} && !fn(); i++) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        return !!fn();
+    };
+`;
+
+const recordBandDetachRestore = {
+    name: "record-band-detach-restore",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-record-band-")) };
+        try {
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-record-band", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: RECORD_BAND_GOAL,
+                runtime: "claude",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.runORef = `run:${ctx.runId}`;
+            // a later run finds the record already there and its capture fails, so attach explicitly
+            await h.rpc("acceptdossieredge", { dossierid: RECORD_BAND_RECORD, runoref: ctx.runORef });
+            // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
+            await h.ev("location.reload()");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+            await h.goto("jarvis");
+            ctx.opened = await h.ev(`(async () => {
+                for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+                    await new Promise((r) => setTimeout(r, 250));
+                }
+                if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+                return window.__openAddress(${JSON.stringify(ctx.runORef)});
+            })()`);
+            ctx.bandShown = await h.ev(`(async () => {
+                ${RECORD_BAND_LIB}
+                return until(() => ${RECORD_BAND}?.querySelector("[data-jarvis-band-toggle]"));
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const detachedIds = async () =>
+            ((await h.rpc("listdetachededges", { runoref: ctx.runORef }))?.edges ?? []).map((e) => e.dossierid);
+        rec(
+            "0. the run's sheet opened with its record on the band",
+            ctx.arrangeError == null && ctx.opened?.ok === true && ctx.bandShown === true,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, opened: ctx.opened, band: ctx.bandShown })
+        );
+
+        const expanded = await h.ev(`(async () => {
+            ${RECORD_BAND_LIB}
+            const toggle = ${RECORD_BAND}?.querySelector("[data-jarvis-band-toggle]");
+            if (toggle && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+            const ok = await until(() => bandButton("Not this record"));
+            return { ok, restore: !!bandButton("Restore"), text: bandText() };
+        })()`);
+        rec(
+            "1. expanding the band shows the edge with Not this record and no Restore",
+            expanded.ok === true && expanded.restore === false,
+            JSON.stringify(expanded)
+        );
+
+        const detached = await h.ev(`(async () => {
+            ${RECORD_BAND_LIB}
+            bandButton("Not this record")?.click();
+            // a confirmed edge asks first; the dialog is outside the band, and its button's text ends in a key hint
+            const dialogButton = () =>
+                [...document.querySelectorAll("button")].find(
+                    (b) => (b.textContent || "").trim().startsWith("Detach") && !${RECORD_BAND}?.contains(b)
+                );
+            for (let i = 0; i < 12 && !dialogButton(); i++) {
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            const confirm = dialogButton();
+            confirm?.click();
+            const ok = await until(() => bandButton("Restore") && !bandButton("Not this record"));
+            return { ok, asked: !!confirm, detachedRow: bandText().includes("Detached"), text: bandText() };
+        })()`);
+        const afterDetach = await detachedIds();
+        await h.shot("cdp-shots/record-band-detached.png");
+        rec(
+            "2. Not this record moves the edge to a Detached row that offers Restore",
+            detached.ok === true && detached.detachedRow === true && afterDetach.includes(RECORD_BAND_RECORD),
+            JSON.stringify({ ...detached, stored: afterDetach })
+        );
+
+        const restored = await h.ev(`(async () => {
+            ${RECORD_BAND_LIB}
+            const restore = bandButton("Restore");
+            restore?.click();
+            const ok = !!restore && (await until(() => bandButton("Not this record") && !bandButton("Restore")));
+            return { ok, clicked: !!restore, detachedRow: bandText().includes("Detached"), text: bandText() };
+        })()`);
+        const afterRestore = await detachedIds();
+        await h.shot("cdp-shots/record-band-restored.png");
+        rec(
+            "3. Restore puts the edge back and empties the Detached group",
+            restored.ok === true && restored.detachedRow === false && !afterRestore.includes(RECORD_BAND_RECORD),
+            JSON.stringify({ ...restored, stored: afterRestore })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // detached, so the record keeps one run ref across runs rather than growing one per run
+        await teardownFixtureRun(h, ctx, "record-band-detach-restore", {
+            what: "detach the run from the record",
+            fn: () => (ctx.runORef ? h.rpc("detachdossieredge", { dossierid: RECORD_BAND_RECORD, runoref: ctx.runORef }) : null),
+        });
+    },
+};
+
+// --- agent-rail-file-link: a file clicked in the agent rail is the file the Diff surface opens on ----------
+// Issue 8 (2026-08-03): the rail's file link switched to the Diff surface and landed on the scope's first changed
+// file. A fixture agent whose transcript names a temp repo with three modified files; the third is clicked, so
+// landing on the first reads as the defect. The link is claimed once: a later visit keeps the row picked there.
+const RAIL_LINK_AGENT = "rail-link agent";
+const RAIL_LINK_FILES = ["alpha.txt", "bravo.txt", "charlie.txt"];
+const RAIL_LINK_RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
+const RAIL_LINK_LIB = `
+    const railFile = (name) =>
+        [...(${RAIL_LINK_RAIL}?.querySelectorAll("button") ?? [])].find((b) => (b.textContent || "").includes(name));
+    const diffRow = (name) => document.querySelector('[data-changed-file-row="' + name + '"]');
+    const selectedRows = () =>
+        [...document.querySelectorAll("[data-changed-file-row]")]
+            .filter((r) => r.classList.contains("bg-surface-selected"))
+            .map((r) => r.getAttribute("data-changed-file-row"));
+    const until = async (fn) => {
+        for (let i = 0; i < 80 && !fn(); i++) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        return !!fn();
+    };
+`;
+
+function writeRailLinkRepo(cwd) {
+    const git = (...args) =>
+        execFileSync("git", ["-C", cwd, "-c", "user.name=verify", "-c", "user.email=verify@example.invalid", "-c", "core.autocrlf=false", ...args]);
+    git("init", "-q");
+    for (const f of RAIL_LINK_FILES) writeFileSync(join(cwd, f), `${f} one\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", "base");
+    for (const f of RAIL_LINK_FILES) writeFileSync(join(cwd, f), `${f} one\n${f} two\n`);
+    // outside the repo's file list: the transcript only names the working directory
+    const transcript = join(cwd, ".git", "rail-link.jsonl");
+    writeFileSync(
+        transcript,
+        JSON.stringify({ type: "user", cwd, message: { role: "user", content: "verify the rail file link" } }) + "\n"
+    );
+    return transcript;
+}
+
+const agentRailFileLink = {
+    name: "agent-rail-file-link",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-rail-link-"));
+        const ctx = { cwd, prevRail: await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`) };
+        try {
+            const transcriptPath = writeRailLinkRepo(cwd);
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: "fx-rail-link",
+                            name: RAIL_LINK_AGENT,
+                            project: "verify-rail-link",
+                            task: "verify the rail file link",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            blockId: "fx-blk-rail-link",
+                            transcriptPath,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the rail is off by default and persisted, and the fixture roster is read once at boot
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+            await h.ev("location.reload()");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+            await h.goto("agent");
+            ctx.railFiles = await h.ev(`(async () => {
+                ${RAIL_LINK_LIB}
+                const row = () => {
+                    const tree = document.querySelector("[data-agent-tree]");
+                    const name = tree && [...tree.querySelectorAll("div")].find(
+                        (d) => d.textContent.trim() === ${JSON.stringify(RAIL_LINK_AGENT)} && d.children.length === 0
+                    );
+                    return name ? name.closest(".cursor-pointer") : null;
+                };
+                if (!(await until(row))) return { ok: false, why: "no agent row in the tree" };
+                row().click();
+                const names = ${JSON.stringify(RAIL_LINK_FILES)};
+                const ok = await until(() => names.every((n) => railFile(n)));
+                return { ok, why: (${RAIL_LINK_RAIL}?.innerText || "").replace(/\\s+/g, " ").trim().slice(-300) };
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const [first, , third] = RAIL_LINK_FILES;
+        rec(
+            "0. the focused agent's rail lists its three modified files",
+            ctx.arrangeError == null && ctx.railFiles?.ok === true,
+            ctx.arrangeError ?? JSON.stringify(ctx.railFiles)
+        );
+        await h.shot("cdp-shots/agent-rail-file-link-rail.png");
+
+        const landed = await h.ev(`(async () => {
+            ${RAIL_LINK_LIB}
+            const link = railFile(${JSON.stringify(third)});
+            link?.click();
+            const ok = !!link && (await until(() => selectedRows().length > 0));
+            // the surface settles on the first file before a late claim could move it, so read after a beat
+            await new Promise((r) => setTimeout(r, 1500));
+            return { ok, clicked: !!link, selected: selectedRows(), rows: document.querySelectorAll("[data-changed-file-row]").length };
+        })()`);
+        await h.shot("cdp-shots/agent-rail-file-link-diff.png");
+        rec(
+            "1. clicking the third file opens the Diff surface on that file, not the first",
+            landed.ok === true && landed.rows === RAIL_LINK_FILES.length && landed.selected.join() === third,
+            JSON.stringify(landed)
+        );
+
+        await h.ev(`(async () => {
+            ${RAIL_LINK_LIB}
+            diffRow(${JSON.stringify(first)})?.click();
+            await until(() => selectedRows().join() === ${JSON.stringify(first)});
+        })()`);
+        await h.goto("agent");
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        await h.goto("files");
+        const kept = await h.ev(`(async () => {
+            ${RAIL_LINK_LIB}
+            await until(() => selectedRows().length > 0);
+            await new Promise((r) => setTimeout(r, 1500));
+            return { selected: selectedRows() };
+        })()`);
+        rec(
+            "2. the link is claimed once: coming back keeps the row picked on the surface",
+            kept.selected.join() === first,
+            JSON.stringify(kept)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "agent-rail-file-link", {
+            what: "restore the rail's visibility",
+            fn: () =>
+                h.ev(
+                    ctx.prevRail == null
+                        ? `localStorage.removeItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`
+                        : `localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, ${JSON.stringify(ctx.prevRail)})`
+                ),
+        });
+    },
+};
+
 // --- dag-observability: what the run sheet and the DAG modal claim about a live DAG ------------------
 // The orchestrator observability checks (spec 10.3, once scripts/cdp/orchestrator-observability-e2e.mjs) on
 // today's surfaces: a run reads on the Jarvis run sheet, and the DAG opens from its dock. The chained plan
@@ -12066,24 +13010,34 @@ function finalShotsStages(out) {
 const finalFingerprint = (final, past) =>
     JSON.stringify([final?.state, final?.round, final?.shots?.length ?? 0, (past ?? []).map((p) => p.shots?.length ?? 0)]);
 
-async function seedFinalShots(h, ctx, { final, pastfinals }) {
+// Puts the stored dag into a state the engine has not reached: change maps the dag as read to the dag to
+// write, and print reduces a dag to what the seed must hold.
+async function seedDag(h, ctx, change, print) {
     const oref = `dag:${ctx.dagId}`;
-    const want = finalFingerprint(final, pastfinals);
+    let want = null;
     let stored = null;
     // the watchdog ticks a running dag, and a tick that read the dag before this write lands over it
-    for (let i = 0; i < 3 && finalFingerprint(stored?.final, stored?.pastfinals) !== want; i++) {
-        const dag = await waveService(h, "object", "GetObject", [oref]);
-        const next = { ...dag, otype: "dag", finalcmd: FINAL_SHOTS_CMD, final, pastfinals };
+    for (let i = 0; i < 3 && (stored == null || print(stored) !== want); i++) {
+        const next = { ...change(await waveService(h, "object", "GetObject", [oref])), otype: "dag" };
+        want = print(next);
         await waveService(h, "object", "UpdateObject", [next, false], FINAL_SHOTS_UICTX);
         stored = await waveService(h, "object", "GetObject", [oref]);
     }
-    if (finalFingerprint(stored?.final, stored?.pastfinals) !== want) {
-        throw new Error(`the dag did not keep its seed: want ${want}, stored ${finalFingerprint(stored?.final, stored?.pastfinals)}`);
+    if (print(stored) !== want) {
+        throw new Error(`the dag did not keep its seed: want ${want}, stored ${print(stored)}`);
     }
     // UpdateObject publishes nothing; a meta write sends the whole stored dag to the page
     ctx.seeds = (ctx.seeds ?? 0) + 1;
     await h.rpc("setmeta", { oref, meta: { [FINAL_SHOTS_SEED_KEY]: ctx.seeds } });
 }
+
+const seedFinalShots = (h, ctx, { final, pastfinals }) =>
+    seedDag(
+        h,
+        ctx,
+        (dag) => ({ ...dag, finalcmd: FINAL_SHOTS_CMD, final, pastfinals }),
+        (dag) => finalFingerprint(dag?.final, dag?.pastfinals)
+    );
 
 const FS_ROW = `document.querySelector("[data-run-sheet] [data-run-sheet-final-shots]")`;
 const FS_DOCK = `document.querySelector("[data-run-sheet] [data-run-sheet-final-shots-dock]")`;
@@ -12133,7 +13087,14 @@ const FS_READ = `(() => {
               }))
             : [],
         caption: link ? flat(link.parentElement) : null,
-        dock: dock ? { text: flat(dock), disabled: dock.disabled, accent: dock.classList.contains("border-accent") } : null,
+        dock: dock
+            ? {
+                  text: flat(dock),
+                  disabled: dock.disabled,
+                  accent: dock.classList.contains("border-accent"),
+                  focused: document.activeElement === dock,
+              }
+            : null,
         viewer,
     };
 })()`;
@@ -12165,6 +13126,8 @@ const finalShotsClick = (h, expr) =>
     h.ev(`(() => {
         const el = ${expr};
         if (!el) return false;
+        // a real click focuses its button, and the viewer hands focus back to whatever held it
+        el.focus();
         el.click();
         return true;
     })()`);
@@ -12349,7 +13312,11 @@ const finalShotsScenario = {
         s = await finalShotsUntil(h, (x) => x.row?.text.includes("passed · 5 scenarios") === true);
         rec(
             "8a. passed: passed · 5 scenarios, 16 shots, a plain dock",
-            s?.row?.text.endsWith("16 shots") && s.dock?.text === "Screenshots · 16" && !s.dock.accent && !s.dock.disabled,
+            s?.row?.text.includes("passed · 5 scenarios") &&
+                s.row.text.endsWith("16 shots") &&
+                s.dock?.text === "Screenshots · 16" &&
+                !s.dock.accent &&
+                !s.dock.disabled,
             JSON.stringify({ row: s?.row, dock: s?.dock })
         );
         await h.shot("cdp-shots/final-shots-8a-passed.png");
@@ -12371,7 +13338,8 @@ const finalShotsScenario = {
         v = s?.viewer;
         rec(
             "8c. a plain PNG listing: passed · 3 screenshots, hollow-dot entries in the viewer, no Steps button",
-            plainRow.row?.text.includes("3 shots") &&
+            plainRow.row?.text.includes("passed · 3 screenshots") &&
+                plainRow.row.text.includes("3 shots") &&
                 plainRow.dock?.text === "Screenshots · 3" &&
                 v != null &&
                 JSON.stringify(v.tabs.map((t) => t.text)) === JSON.stringify(FINAL_SHOTS_PLAIN.map((n) => `${n}.png`)) &&
@@ -12390,8 +13358,8 @@ const finalShotsScenario = {
         await polishNap(600);
         s = await h.ev(FS_READ);
         rec(
-            "9. Esc closes the viewer and leaves the run sheet open",
-            s?.viewer == null && s.sheet === true && s.dock != null,
+            "9. Esc closes the viewer, leaves the run sheet open and hands focus back to the dock button",
+            s?.viewer == null && s.sheet === true && s.dock?.focused === true,
             JSON.stringify({ viewer: s?.viewer != null, sheet: s?.sheet, dock: s?.dock })
         );
         await h.shot("cdp-shots/final-shots-9-closed.png");
@@ -12874,8 +13842,7 @@ async function pickWorkers(h, testId) {
 }
 
 async function channelRunCount(h, channelId) {
-    const res = await h.rpc("getchannels", null);
-    return ((res.channels || []).find((c) => c.oid === channelId)?.runs || []).length;
+    return (await channelRuns(h, channelId)).length;
 }
 
 const newRunWindow = {
@@ -13548,6 +14515,542 @@ const radarStartInvestigation = {
     // the draft and the channel's composing flag outlive the sheet by design; a reload drops both
     async teardown(h) {
         await polishReload(h);
+    },
+};
+
+// --- radar-report, radar-scan-states: the sibling-audit surface (.superpowers/design/radar-sibling-audit) ----
+// Every board is drawn from the dev fixtures of radardevmock.ts through window.__setRadarScenario, which only
+// replaces the report the surface reads. What a fixture cannot show is a disposition, since the RPC refuses a
+// report the store does not hold: Intentional, Reopen finding and the site link run on a report seeded into
+// the dev store for this checkout, so the link has a real file to open.
+// the surface has no hook of its own; its body does, once the load phase is ready
+const RADAR_ROOT = `document.querySelector('[data-radar-view]')?.parentElement`;
+const RADAR_SCOPE_KEY = "radar.scope.project";
+const RADAR_SEED_FINDING = "f-radar-report";
+const RADAR_SEED_FILE = "pkg/reporadar/scan.go";
+const RADAR_SEED_LINE = 122;
+const RADAR_DISMISS_REASONS = ["False positive", "Low priority", "Resolved elsewhere", "Intentional"];
+const RADAR_DISMISS_FOOTNOTE =
+    "Closes this finding. Its fix commit is audited once, so it stays closed until you reopen it from Dismissed.";
+const RADAR_REMOVED_TEXT = [
+    "collectors",
+    "Suppress pattern",
+    "Suppressed",
+    "Recurring",
+    "No longer detected",
+    "Evidence",
+    "Affected files",
+    "Suggested investigation",
+];
+const RADAR_PARTIAL_FAILED = ["7927fb68", "9caee0d3"];
+const RADAR_AUDIT_ERROR = "Timed out after 10 minutes.";
+
+const radarOpen = async (h) => {
+    await h.goto("radar");
+    return polishWaitFor(h, `typeof window.__setRadarScenario === 'function'`, 8000);
+};
+
+// draws a fixture and waits for the body it should land on
+async function radarMock(h, name, view) {
+    await h.ev(
+        `window.__setRadarScenario(${JSON.stringify(name)}, ${JSON.stringify({ projectPath: process.cwd() })})`
+    );
+    const shown = await polishWaitFor(h, `!!document.querySelector('[data-radar-view="${view}"]')`, 8000);
+    // the body cross-fades between the report, a panel and the skeleton
+    await polishNap(600);
+    return shown;
+}
+
+const radarFacts = (h) =>
+    h.ev(`(() => {
+        const root = ${RADAR_ROOT};
+        if (!root) return null;
+        const text = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+        const all = (sel, from) => [...from.querySelectorAll(sel)];
+        const body = root.querySelector('[data-radar-view]');
+        const strip = root.querySelector('[data-radar-health-strip]');
+        const retry = root.querySelector('[data-radar-retry-audits]');
+        const toggle = root.querySelector('[data-radar-audits-toggle]');
+        return {
+            view: body.getAttribute('data-radar-view'),
+            title: text(body.querySelector('h2')),
+            bodyText: text(body),
+            rootText: text(root),
+            buttons: all('button', body).map(text),
+            auditList: !!body.querySelector('[data-radar-audit-list]'),
+            audits: all('[data-radar-audit-row]', body).map((r) => ({
+                sha: r.getAttribute('data-radar-audit-row'),
+                state: r.getAttribute('data-audit-state'),
+                text: text(r),
+            })),
+            strip: strip ? text(strip) : null,
+            retry: retry ? !retry.disabled : null,
+            toggle: toggle ? text(toggle) : null,
+            project: root.querySelector('button[aria-label^="Scanned project:"]')?.getAttribute('aria-label') ?? null,
+            rescan: !!root.querySelector('[data-radar-rescan]'),
+            findingRows: all('[data-radar-finding-row]', root).length,
+            groups: Object.fromEntries(
+                all('[data-radar-group]', root).map((g) => [
+                    g.getAttribute('data-radar-group'),
+                    all('[data-radar-finding-row]', g).map((r) => ({
+                        id: r.getAttribute('data-radar-finding-row'),
+                        text: text(r),
+                        isNew: !!r.querySelector('[data-radar-new]'),
+                        current: r.getAttribute('aria-current') === 'true',
+                    })),
+                ])
+            ),
+        };
+    })()`);
+
+const radarDetail = (h) =>
+    h.ev(`(() => {
+        const d = ${RADAR_ROOT}?.querySelector('[data-radar-finding-detail]');
+        if (!d) return null;
+        const text = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+        return {
+            id: d.getAttribute('data-radar-finding-detail'),
+            siteLink: text(d.querySelector('[data-radar-site-link]')),
+            cards: [...d.querySelectorAll('[data-radar-site-card]')].map(text),
+            headings: [...d.querySelectorAll('h3')].map(text),
+            sourceFix: text(d.querySelector('[data-radar-source-fix]')),
+            text: text(d),
+        };
+    })()`);
+
+const radarClick = (h, selector) =>
+    h.ev(`(() => {
+        const el = ${RADAR_ROOT}?.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        el.click();
+        return true;
+    })()`);
+
+// the detail's buttons carry no hook: the one whose whole text is the label
+const radarDetailButton = (h, label) =>
+    h.ev(`(() => {
+        const b = [...(${RADAR_ROOT}?.querySelectorAll('[data-radar-finding-detail] button') ?? [])]
+            .find((x) => (x.textContent || '').trim() === ${JSON.stringify(label)});
+        if (!b) return false;
+        b.click();
+        return true;
+    })()`);
+
+const radarHas = (selector) => `!!${RADAR_ROOT}?.querySelector(${JSON.stringify(selector)})`;
+const radarStates = (facts) => facts?.audits.map((a) => a.state) ?? [];
+const fixSha = (rowText) => /fix ([0-9a-f]{8})/.exec(rowText ?? "")?.[1] ?? null;
+const hasAll = (text, words) => words.every((w) => (text ?? "").includes(w));
+
+async function radarOpenDismissMenu(h) {
+    const clicked = await radarDetailButton(h, "Dismiss");
+    const open = clicked && (await polishWaitFor(h, radarHas("[data-radar-dismiss-menu]"), 3000));
+    // the popover's reveal finishes before a shot or a click on a reason
+    await polishNap(300);
+    return open;
+}
+
+const radarReport = {
+    name: "radar-report",
+    surface: "radar",
+    async arrange(h) {
+        const ctx = { cwd: process.cwd() };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // landing on the seeded report persists its project as Radar's scope
+            ctx.priorScope = await h.ev(`localStorage.getItem(${JSON.stringify(RADAR_SCOPE_KEY)})`);
+            ctx.reportId = await seedRadarReport(h, (oid) =>
+                radarFixtureReport(oid, "radar-report-fixture", ctx.cwd, Date.now(), {
+                    id: RADAR_SEED_FINDING,
+                    risk: "Radar fixture: the scan loop outlives a cancelled context",
+                    file: RADAR_SEED_FILE,
+                    lines: [RADAR_SEED_LINE, 140],
+                })
+            );
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const hook = await radarOpen(h);
+
+        {
+            const shown = await radarMock(h, "results", "report");
+            const f = await radarFacts(h);
+            const open = f?.groups.open ?? [];
+            const dismissed = f?.groups.dismissed ?? [];
+            const sited = open.find((r) => /\.\w+:\d+/.test(r.text) && fixSha(r.text) != null);
+            await h.shot("cdp-shots/radar-report.png");
+            rec(
+                "1. a report lists Open and Dismissed with site, title, severity and source fix",
+                hook &&
+                    shown &&
+                    sited != null &&
+                    open.some((r) => r.isNew) &&
+                    dismissed.length === 2 &&
+                    f.project === "Scanned project: waveterm" &&
+                    f.rescan,
+                JSON.stringify({
+                    hook,
+                    view: f?.view ?? null,
+                    open: open.length,
+                    newChips: open.filter((r) => r.isNew).length,
+                    dismissed: dismissed.length,
+                    row: sited?.text ?? null,
+                    project: f?.project ?? null,
+                    rescan: f?.rescan ?? null,
+                })
+            );
+
+            const d = await radarDetail(h);
+            const row = [...open, ...dismissed].find((r) => r.id === d?.id);
+            const sha = fixSha(row?.text);
+            rec(
+                "2. the detail shows the site link, site cards, root cause and source fix",
+                d != null &&
+                    /:\d+$/.test(d.siteLink) &&
+                    d.cards.length > 0 &&
+                    d.cards.every((c) => hasAll(c, ["Actual", "Expected", "Fix gap"])) &&
+                    d.headings.includes("Root cause") &&
+                    sha != null &&
+                    d.sourceFix.includes(sha),
+                JSON.stringify({
+                    finding: d?.id ?? null,
+                    siteLink: d?.siteLink ?? null,
+                    cards: d?.cards.length ?? 0,
+                    headings: d?.headings ?? null,
+                    rowSha: sha,
+                    sourceFix: d?.sourceFix.slice(0, 120) ?? null,
+                })
+            );
+        }
+
+        {
+            const clicked = await radarClick(h, "[data-radar-audits-toggle]");
+            const opened = clicked && (await polishWaitFor(h, radarHas("[data-radar-audits-popover]"), 3000));
+            await polishNap(300);
+            const rows = await h.ev(
+                `[...(${RADAR_ROOT}?.querySelectorAll('[data-radar-audits-popover] [data-radar-audit-row]') ?? [])]
+                    .map((r) => r.getAttribute('data-audit-state'))`
+            );
+            await h.shot("cdp-shots/radar-audits.png");
+            await radarClick(h, "[data-radar-audits-toggle]");
+            const closed = await polishWaitFor(h, `!(${radarHas("[data-radar-audits-popover]")})`, 3000);
+            rec(
+                "3. the header's audit summary opens the audited-commit list",
+                opened && rows.length === 8 && rows.filter((s) => s === "hits").length === 2 && closed,
+                JSON.stringify({ clicked, opened, rows, closed })
+            );
+        }
+
+        {
+            const opened = await radarOpenDismissMenu(h);
+            const menu = await h.ev(`(() => {
+                const m = ${RADAR_ROOT}?.querySelector('[data-radar-dismiss-menu]');
+                if (!m) return null;
+                return {
+                    reasons: [...m.querySelectorAll('[data-radar-dismiss-reason]')]
+                        .map((b) => b.getAttribute('data-radar-dismiss-reason')),
+                    text: (m.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+                };
+            })()`);
+            await h.shot("cdp-shots/radar-dismiss.png");
+            await radarDetailButton(h, "Dismiss");
+            const closed = await polishWaitFor(h, `!(${radarHas("[data-radar-dismiss-menu]")})`, 3000);
+            rec(
+                "4. the Dismiss menu offers four reasons and the reworded footnote",
+                opened &&
+                    JSON.stringify(menu?.reasons) === JSON.stringify(RADAR_DISMISS_REASONS) &&
+                    menu.text.includes(RADAR_DISMISS_FOOTNOTE) &&
+                    closed,
+                JSON.stringify({ opened, reasons: menu?.reasons ?? null, text: menu?.text ?? null, closed })
+            );
+        }
+
+        {
+            const shown = await radarMock(h, "partial", "report");
+            const f = await radarFacts(h);
+            await h.shot("cdp-shots/radar-partial.png");
+            // the fixture's oid is not in the store, so the RPC is refused and no audit starts
+            const dispatched = await h.ev(`(() => {
+                const b = ${RADAR_ROOT}?.querySelector('[data-radar-retry-audits]');
+                if (!b) return false;
+                let fired = false;
+                b.addEventListener('click', () => { fired = true; }, { once: true });
+                b.click();
+                return fired;
+            })()`);
+            await polishNap(1500);
+            const after = await radarFacts(h);
+            rec(
+                "5. a partial scan names the failed commits and offers Retry failed audits",
+                shown &&
+                    hasAll(f?.strip, RADAR_PARTIAL_FAILED) &&
+                    f.retry === true &&
+                    (f.toggle ?? "").endsWith("2 failed") &&
+                    dispatched &&
+                    after?.view === "report" &&
+                    hasAll(after.strip, RADAR_PARTIAL_FAILED),
+                JSON.stringify({
+                    strip: f?.strip ?? null,
+                    retryEnabled: f?.retry ?? null,
+                    summary: f?.toggle ?? null,
+                    dispatched,
+                    after: { view: after?.view ?? null, strip: after?.strip ?? null },
+                })
+            );
+        }
+
+        const detail = `[data-radar-finding-detail="${RADAR_SEED_FINDING}"][data-radar-report="${ctx.reportId}"]`;
+        const seededRow = (group) =>
+            radarHas(`[data-radar-group="${group}"] [data-radar-finding-row="${RADAR_SEED_FINDING}"]`);
+        {
+            await h.ev(`window.__setRadarScenario('live')`);
+            // __openAddress exists only once the Brief has mounted
+            await h.goto("jarvis");
+            const opener = await polishWaitFor(h, `typeof window.__openAddress === 'function'`, 5000);
+            const opened =
+                ctx.arrangeError == null && opener
+                    ? await h.ev(
+                          `window.__openAddress(${JSON.stringify(`radarreport:${ctx.reportId}`)}, ${JSON.stringify({ sourceType: "radar", anchor: RADAR_SEED_FINDING })})`
+                      )
+                    : null;
+            const landed = opened?.ok === true && (await polishWaitFor(h, radarHas(detail), 8000));
+            const menu = landed && (await radarOpenDismissMenu(h));
+            const picked = menu && (await radarClick(h, '[data-radar-dismiss-reason="Intentional"]'));
+            const dismissed = picked && (await polishWaitFor(h, seededRow("dismissed"), 8000));
+            const label = (await radarDetail(h))?.text.includes("Dismissed: intentional") ?? false;
+            const reopened = dismissed && (await radarDetailButton(h, "Reopen finding"));
+            const backOpen = reopened && (await polishWaitFor(h, seededRow("open"), 8000));
+            const newChip = await h.ev(
+                radarHas(`[data-radar-finding-row="${RADAR_SEED_FINDING}"] [data-radar-new]`)
+            );
+            rec(
+                "6. Intentional closes a finding into Dismissed, and Reopen finding returns it",
+                dismissed === true && label && backOpen === true && newChip === false,
+                JSON.stringify({
+                    arrangeError: ctx.arrangeError ?? null,
+                    opener,
+                    opened,
+                    landed,
+                    menu,
+                    picked,
+                    dismissed,
+                    label,
+                    reopened,
+                    backOpen,
+                    newChip,
+                })
+            );
+        }
+
+        {
+            const clicked = await radarClick(h, `${detail} [data-radar-site-link]`);
+            const openFile = `(document.querySelector('[data-code-path]')?.getAttribute('data-code-path') ?? '').replace(/\\\\/g, '/')`;
+            const opened =
+                clicked && (await polishWaitFor(h, `${openFile}.endsWith(${JSON.stringify(RADAR_SEED_FILE)})`, 10000));
+            const surface = await h.activeSurfaceLabel();
+            // the viewer scrolls to the line once the text lands
+            await polishNap(800);
+            await h.shot("cdp-shots/radar-site-in-code.png");
+            rec(
+                "7. the site link opens Code at the line",
+                opened === true && surface === SURFACE_LABEL.code,
+                JSON.stringify({ clicked, surface, file: await h.ev(openFile), line: RADAR_SEED_LINE })
+            );
+        }
+
+        {
+            await radarOpen(h);
+            const shown = await radarMock(h, "results", "report");
+            const read = () =>
+                h.ev(`(() => {
+                    const root = ${RADAR_ROOT};
+                    if (!root) return null;
+                    return {
+                        text: (root.textContent ?? '').toLowerCase(),
+                        lens: !!root.querySelector('[aria-label="Lens"]'),
+                        evidenceTitles: [...root.querySelectorAll('[title]')]
+                            .map((el) => el.getAttribute('title'))
+                            .filter((t) => / evidence$/i.test(t)),
+                    };
+                })()`);
+            // an open finding's detail, then the one closed as Intentional, which used to read Suppressed
+            const views = [await read()];
+            const suppressed = await radarClick(h, '[data-radar-group="dismissed"] [data-radar-finding-row]:last-child');
+            await polishNap(300);
+            views.push(await read());
+            const found = RADAR_REMOVED_TEXT.filter((t) => views.some((v) => v?.text.includes(t.toLowerCase())));
+            const lens = views.some((v) => v?.lens);
+            const evidenceTitles = views.flatMap((v) => v?.evidenceTitles ?? []);
+            rec(
+                "8. nothing the Removed board marks is on the surface",
+                shown &&
+                    suppressed &&
+                    views.every((v) => v != null) &&
+                    found.length === 0 &&
+                    !lens &&
+                    evidenceTitles.length === 0,
+                JSON.stringify({ shown, suppressed, found, lens, evidenceTitles })
+            );
+        }
+
+        {
+            const shown = await radarMock(h, "carried", "report");
+            const f = await radarFacts(h);
+            rec(
+                "9. carried findings with nothing new to audit",
+                shown && f.rootText.includes("no new fix commits") && f.toggle == null && f.strip == null,
+                JSON.stringify({
+                    view: f?.view ?? null,
+                    metaLine: f?.rootText.includes("no new fix commits") ?? null,
+                    toggle: f?.toggle ?? null,
+                    strip: f?.strip ?? null,
+                    findings: f?.findingRows ?? null,
+                })
+            );
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            await h.ev(`window.__setRadarScenario?.('live')`);
+            if ("priorScope" in ctx) {
+                await h.ev(
+                    ctx.priorScope == null
+                        ? `localStorage.removeItem(${JSON.stringify(RADAR_SCOPE_KEY)})`
+                        : `localStorage.setItem(${JSON.stringify(RADAR_SCOPE_KEY)}, ${JSON.stringify(ctx.priorScope)})`
+                );
+            }
+        } finally {
+            try {
+                if (ctx.reportId) await dropPeekItemsRadar(h, ctx.reportId);
+            } finally {
+                await polishReload(h);
+            }
+        }
+    },
+};
+
+const radarScanStates = {
+    name: "radar-scan-states",
+    surface: "radar",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const hook = await radarOpen(h);
+        // draws the fixture, reads the surface and takes the step's shot
+        const draw = async (name, view, shot) => {
+            const shown = await radarMock(h, name, view);
+            const f = await radarFacts(h);
+            await h.shot(`cdp-shots/${shot}.png`);
+            return { shown: hook && shown && f != null, f };
+        };
+        const states = (f) => JSON.stringify(radarStates(f));
+
+        {
+            const { shown, f } = await draw("scanning", "scanning", "radar-scanning");
+            const seen = radarStates(f);
+            rec(
+                "1. a scan in progress lists each commit as audited, auditing or queued, with hits",
+                shown &&
+                    seen.length === 8 &&
+                    ["queued", "running", "hits"].every((s) => seen.includes(s)) &&
+                    hasAll(f.bodyText, ["3 of 8 audited", "2 hits"]) &&
+                    f.buttons.includes("Cancel scan"),
+                JSON.stringify({ hook, view: f?.view ?? null, states: seen, buttons: f?.buttons ?? null })
+            );
+        }
+        {
+            const { shown, f } = await draw("selecting", "scanning", "radar-selecting");
+            rec(
+                "2. selecting commits shows the scan panel with no rows",
+                shown && f.audits.length === 0 && f.bodyText.includes("selecting fix commits"),
+                `rows=${f?.audits.length ?? null} text="${f?.bodyText.slice(0, 200) ?? ""}"`
+            );
+        }
+        {
+            const { shown, f } = await draw("clean", "audits", "radar-clean");
+            rec(
+                "3. a clean scan says no sibling bugs and lists the audited commits",
+                shown &&
+                    f.title === "No sibling bugs in 5 fix commits" &&
+                    f.audits.length === 5 &&
+                    f.audits.every((a) => a.state === "clean") &&
+                    f.strip == null &&
+                    f.project === "Scanned project: waveterm" &&
+                    f.rescan,
+                `title="${f?.title ?? ""}" states=${states(f)} strip=${f?.strip ?? null} project="${f?.project ?? ""}" rescan=${f?.rescan ?? null}`
+            );
+        }
+        {
+            const { shown, f } = await draw("failed", "audits", "radar-failed");
+            rec(
+                "4. a fully failed scan shows the strip and each commit's error",
+                shown &&
+                    f.strip != null &&
+                    f.retry === true &&
+                    f.audits.length > 0 &&
+                    f.audits.every((a) => a.state === "failed" && a.text.includes(RADAR_AUDIT_ERROR)),
+                `strip="${f?.strip ?? ""}" retryEnabled=${f?.retry ?? null} states=${states(f)} row="${f?.audits[0]?.text ?? ""}"`
+            );
+        }
+        {
+            const { shown, f } = await draw("no-commits", "audits", "radar-no-commits");
+            rec(
+                "5. no new fix commits",
+                shown && f.title === "No new fix commits to audit" && !f.auditList,
+                `title="${f?.title ?? ""}" auditList=${f?.auditList ?? null}`
+            );
+        }
+        {
+            const { shown, f } = await draw("fatal", "fatal", "radar-fatal");
+            rec(
+                "6. a fatal failure shows the error",
+                shown && f.bodyText.includes("not a readable git repository") && f.buttons.includes("Scan again"),
+                `title="${f?.title ?? ""}" text="${f?.bodyText.slice(0, 200) ?? ""}" buttons=${JSON.stringify(f?.buttons ?? null)}`
+            );
+        }
+        {
+            const { shown, f } = await draw("cancelled", "cancelled", "radar-cancelled");
+            rec("7. a cancelled scan", shown, `view=${f?.view ?? null} title="${f?.title ?? ""}"`);
+        }
+        {
+            const { shown, f } = await draw("old-format", "old-format", "radar-old-format");
+            rec(
+                "8. an old-format report asks for a re-scan",
+                shown &&
+                    f.title === "This report was written by an older Radar" &&
+                    f.buttons.includes("Re-scan") &&
+                    f.findingRows === 0,
+                `title="${f?.title ?? ""}" buttons=${JSON.stringify(f?.buttons ?? null)} findingRows=${f?.findingRows ?? null}`
+            );
+        }
+        {
+            const { shown, f } = await draw("never-scanned", "never-scanned", "radar-never-scanned");
+            rec(
+                "9. a project never scanned",
+                shown &&
+                    f.title.endsWith("hasn't been scanned") &&
+                    f.buttons.includes("Scan repository") &&
+                    !/collector/i.test(f.bodyText),
+                `title="${f?.title ?? ""}" buttons=${JSON.stringify(f?.buttons ?? null)} text="${f?.bodyText.slice(0, 240) ?? ""}"`
+            );
+        }
+        return steps;
+    },
+    // the fixtures live in module state; a reload drops whatever one left drawn
+    async teardown(h) {
+        try {
+            await h.ev(`window.__setRadarScenario?.('live')`);
+        } finally {
+            await polishReload(h);
+        }
     },
 };
 
@@ -17891,6 +19394,124 @@ const notifyToast = {
     },
 };
 
+// --- settings-radar-audit: the Radar audit route row in Settings > Headless AI ------------------------
+// The row's picker offers claude and pi only (an audit session needs tools) and writes radar:auditruntime
+// and radar:auditmodel. The picker panel is portalled to the body, so its options are scoped to the panel
+// and everything else to the section pane.
+const RADAR_AUDIT_KEYS = ["radar:auditruntime", "radar:auditmodel"];
+const RADAR_AUDIT_PANE = `document.querySelector('[data-settings-section="headless"]')`;
+const RADAR_AUDIT_ROW = `${RADAR_AUDIT_PANE}?.querySelector('[data-setting-row="headless.radaraudit"]')`;
+const RADAR_AUDIT_TRIGGER = `${RADAR_AUDIT_ROW}?.querySelector('[data-testid="route-picker"]')`;
+const RADAR_AUDIT_PANEL = `document.querySelector('[aria-label="Available routes"]')`;
+// a cold app is still enumerating the installed CLIs' models when the picker opens, so the panel has no chip
+// or row until ListHarnessesCommand answers; twice its client timeout (CATALOG_RPC_TIMEOUT_MS, harnessstore.ts)
+const RADAR_AUDIT_CATALOG_WAIT_MS = 60_000;
+const RADAR_AUDIT_CATALOG_UP = `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-harness-"], [data-testid^="route-option-"]') != null`;
+const radarAuditFace = (h) => h.ev(`(${RADAR_AUDIT_TRIGGER}?.textContent || "").trim()`);
+
+const settingsRadarAudit = {
+    name: "settings-radar-audit",
+    surface: "settings",
+    async arrange(h) {
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const prev = Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, settings[k] ?? null]));
+        await h.rpc("setconfig", Object.fromEntries(RADAR_AUDIT_KEYS.map((k) => [k, null])));
+        return { prev };
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        await h.ev(`document.querySelector('[data-section="headless"]')?.click()`);
+        const paneUp = await polishWaitFor(h, `${RADAR_AUDIT_PANE} != null`, 5000);
+        rec("1. Settings opens on the Headless AI section", paneUp, `pane=${paneUp}`);
+
+        await polishWaitFor(h, `(${RADAR_AUDIT_TRIGGER}?.textContent || "").includes("sonnet")`, 5000);
+        const title = await h.ev(`(${RADAR_AUDIT_ROW}?.textContent || "").includes("Radar audit")`);
+        const unsetFace = await radarAuditFace(h);
+        rec(
+            "2. the Radar audit row shows claude on sonnet when both keys are unset",
+            title === true && /claude/i.test(unsetFace) && unsetFace.includes("sonnet"),
+            `row=${title} face="${unsetFace}"`
+        );
+        await h.ev(`${RADAR_AUDIT_ROW}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-radar-audit-closed.png");
+
+        await h.ev(`${RADAR_AUDIT_TRIGGER}?.click()`);
+        const catalogStart = Date.now();
+        const catalogUp = await polishWaitFor(h, RADAR_AUDIT_CATALOG_UP, RADAR_AUDIT_CATALOG_WAIT_MS);
+        const catalogMs = Date.now() - catalogStart;
+        // "Loading models…" or "No run routes available.": tells a catalog that never answered from a slow one
+        const emptyText = catalogUp
+            ? ""
+            : await h.ev(`(${RADAR_AUDIT_PANEL}?.querySelector('[data-testid="route-picker-scroll"]')?.textContent || "").trim()`);
+        // the harness chips name every runtime the picker offers; the rows only the scoped one
+        const offered = await h.ev(`(() => {
+            const panel = ${RADAR_AUDIT_PANEL};
+            if (!panel) return null;
+            return [...panel.querySelectorAll('[data-testid^="route-harness-"]')]
+                .map((c) => c.getAttribute("data-testid").slice("route-harness-".length))
+                .filter((r) => r !== "all")
+                .sort();
+        })()`);
+        rec(
+            "3. the picker offers claude and pi and no other runtime",
+            JSON.stringify(offered) === JSON.stringify(["claude", "pi"]),
+            catalogUp
+                ? `offered=${JSON.stringify(offered)} catalog=${catalogMs}ms`
+                : `offered=${JSON.stringify(offered)} no routes after ${catalogMs}ms, panel reads "${emptyText}"`
+        );
+        await h.shot("cdp-shots/settings-radar-audit-open.png");
+
+        await h.ev(`${RADAR_AUDIT_PANEL}?.querySelector('[data-testid="route-harness-pi"]')?.click()`);
+        await polishWaitFor(h, `${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-option-pi-"]') != null`, 3000);
+        const picked = await h.ev(`(() => {
+            const row = ${RADAR_AUDIT_PANEL}?.querySelector('[data-testid^="route-option-pi-"]');
+            if (!row) return null;
+            row.click();
+            return row.getAttribute("data-testid").slice("route-option-pi-".length);
+        })()`);
+        let stored = {};
+        for (let waited = 0; waited < 5000 && stored["radar:auditruntime"] !== "pi"; waited += 250) {
+            await polishNap(250);
+            stored = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        }
+        await polishWaitFor(h, `(${RADAR_AUDIT_TRIGGER}?.textContent || "").includes(${JSON.stringify(picked ?? "\u0000")})`, 5000);
+        const piFace = await radarAuditFace(h);
+        rec(
+            "4. picking a pi route stores radar:auditruntime as pi and the row shows it",
+            picked != null &&
+                stored["radar:auditruntime"] === "pi" &&
+                stored["radar:auditmodel"] === picked &&
+                /^pi\b/i.test(piFace) &&
+                piFace.includes(picked),
+            `picked=${picked} runtime=${stored["radar:auditruntime"]} model=${stored["radar:auditmodel"]} face="${piFace}"`
+        );
+
+        const mid = await h.ev(`(() => {
+            const pane = ${RADAR_AUDIT_PANE};
+            if (!pane) return null;
+            return {
+                row: pane.querySelector('[data-setting-row="headless.mid"]') != null,
+                text: /mid model/i.test(pane.textContent || ""),
+                rows: [...pane.querySelectorAll("[data-setting-row]")].map((r) => r.getAttribute("data-setting-row")),
+            };
+        })()`);
+        rec(
+            "5. the section has no Mid model row",
+            mid != null && mid.row === false && mid.text === false && mid.rows.includes("headless.cheap"),
+            JSON.stringify(mid)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.rpc("setconfig", ctx.prev);
+        await h.goto("cockpit");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -17924,22 +19545,26 @@ export const SCENARIOS = [
     jarvisVolunteer,
     usageCharts,
     attentionCrossChannel,
+    cockpitNeedsYouCrossChannel,
     harnessPicker,
     dagLifecycle,
     routePickerFlat,
+    settingsRadarAudit,
     jarvisMotion,
     // before brief-inline-tracker, which leaves a briefing fixture on over the seeded data
     briefDesignParity,
     briefInlineTracker,
     resourceLinking,
     radarStartInvestigation,
+    radarReport,
+    radarScanStates,
     uiApi,
-    focusDivergenceRejoin,
     narrationFeed,
     agentTreeRail,
     agentTreeQuickReturn,
     agentHistory,
     docReview,
+    docReviewNotes,
     docReviewCanvas,
     docReviewMode,
     lineReview,
@@ -17947,6 +19572,8 @@ export const SCENARIOS = [
     runSheetPolish,
     runTimingScenario,
     dagObservability,
+    recordBandDetachRestore,
+    agentRailFileLink,
     finalShotsScenario,
     briefInitiativesPolish,
     briefPeeksPolish,

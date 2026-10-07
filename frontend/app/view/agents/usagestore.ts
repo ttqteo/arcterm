@@ -48,9 +48,17 @@ function devUsageBuckets(): UsageBucket[] | undefined {
 // land after the switch and clobber the new window's data). Now a switch always issues a fresh request
 // and any older, still-in-flight response is ignored on resolve.
 let loadSeq = 0;
+// the window the held buckets were requested for; undefined until the first load
+let heldWindowDays: number | undefined;
 
 export async function loadUsage(windowDays = DEFAULT_WINDOW_DAYS): Promise<void> {
     const seq = ++loadSeq;
+    // the skeleton shows only while a different window loads. Reopening the surface, like the 60s
+    // refresh, keeps the buckets it already holds on screen and replaces them when the scan returns.
+    if (windowDays !== heldWindowDays) {
+        heldWindowDays = windowDays;
+        globalStore.set(usageLoadedAtom, false);
+    }
     try {
         const fixture = devUsageBuckets();
         const buckets = fixture ?? (await RpcApi.GetUsageStatsCommand(TabRpcClient, { windowdays: windowDays })).buckets ?? [];

@@ -53,7 +53,8 @@ func attemptBase(ctx context.Context, g *waveobj.TaskGroup, taskID, wt, head str
 // .waveterm/recovery/<owner>-<task>-skipped.patch first. The tree is removed, never reset or cleaned: its
 // node_modules, src-tauri/target and dist/bin can be junctions into the main checkout, which a reset or clean follows.
 // removeWorktreeDir unlinks those first, and the branch moves from the project checkout. The lane's next dispatch
-// checks the tree out again, and runs Setup in it.
+// checks the tree out again, and runs Setup in it. The caller must not hold the dag lock: dumping and removing the
+// tree take tens of seconds on Windows.
 func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string) error {
 	base, err := taskStartBase(ctx, g, taskID)
 	if err != nil || base == "" {
@@ -75,11 +76,14 @@ func dropSkippedAttempt(ctx context.Context, g *waveobj.TaskGroup, taskID string
 	if !isAncestor(ctx, project, base, head) {
 		return fmt.Errorf("%s no longer holds %s, where task %s started: not moving it back", branch, base, taskID)
 	}
+	wt := worktreeDir(project, key)
+	// the caller holds no dag lock, so a cancel or a merge's cleanup can be removing this tree
+	treeRemovals.Lock(wt)
+	defer treeRemovals.Unlock(wt)
 	patchName := TaskWorktreeKey(g.RunID, taskID) + "-skipped"
 	if err := dumpRecoveryPatch(ctx, project, key, base, patchName); err != nil {
 		return fmt.Errorf("saving task %s's work before dropping it from %s: %w", taskID, branch, err)
 	}
-	wt := worktreeDir(project, key)
 	if _, err := os.Stat(wt); err == nil {
 		if err := removeWorktreeDir(ctx, project, wt); err != nil {
 			return fmt.Errorf("dropping task %s's work from %s: %w", taskID, branch, err)

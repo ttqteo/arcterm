@@ -399,6 +399,14 @@ svg [aria-label="tip"] g path {
     initial-value: 0%;
 }
 
+/* Passages quoted in the review dialog (docreviewnotesview.tsx): painted, so the markdown is never rewrapped. */
+::highlight(doc-review-quoted) {
+    background-color: var(--color-accentbg);
+}
+::highlight(doc-review-pending) {
+    background-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
+}
+
 /* Agents-view narration markdown (see markdownmessage.tsx). Neutral overlays, not palette hex. */
 .agent-md p {
     margin: 0 0 0.4em;

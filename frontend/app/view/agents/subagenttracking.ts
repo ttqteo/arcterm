@@ -30,7 +30,6 @@ export function useSubagentTracking(agents: Trackable[]): void {
             }
         }
         trackedRef.current = now;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [idsKey]);
     useEffect(() => {
         for (const a of agents) {
@@ -38,6 +37,5 @@ export function useSubagentTracking(agents: Trackable[]): void {
                 scheduleSubagents(a.id, a.transcriptPath);
             }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lastActivity]);
 }

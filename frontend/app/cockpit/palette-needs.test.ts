@@ -18,14 +18,14 @@ describe("palette-needs", () => {
     });
 
     it("never resolves a non-ask item, even one whose key names a block", () => {
-        expect(askAgent(item("gate", "ask:block:b1"), [agent({})])).toBeUndefined();
+        expect(askAgent(item("dag-gate", "ask:block:b1"), [agent({})])).toBeUndefined();
     });
 
     it("groups by kind and drops radar triage", () => {
         const g = needsGroups(
             needsRows(
                 [
-                    item("gate"),
+                    item("dag-gate"),
                     item("ask", "ask:block:b1"),
                     item("dag-blocked"),
                     item("radar-triage"),
@@ -48,7 +48,7 @@ describe("palette-needs", () => {
 
     it("keeps server order within a group and drops empty groups", () => {
         const g = needsGroups(
-            needsRows([item("dag-blocked", "a"), item("gate", "g"), item("run-unverified", "b")], [])
+            needsRows([item("dag-blocked", "a"), item("dag-gate", "g"), item("run-unverified", "b")], [])
         );
         expect(g.map((x) => [x.group, x.rows.map((r) => r.item.key)])).toEqual([
             ["reviews", ["g"]],
@@ -89,7 +89,7 @@ describe("palette-needs", () => {
     });
 
     describe("needsTarget", () => {
-        const at = (over: Partial<AttentionItem>) => ({ ...item("gate"), ...over }) as AttentionItem;
+        const at = (over: Partial<AttentionItem>) => ({ ...item("run-land-held"), ...over }) as AttentionItem;
         const target = (it: AttentionItem, agents: AgentVM[] = []) => needsTarget(needsRows([it], agents)[0]);
 
         it("opens a resolved ask's agent, and a doc review as a review", () => {
@@ -111,7 +111,7 @@ describe("palette-needs", () => {
             expect(target(blocked)).toEqual({ kind: "dag", channelId: "c1", runId: "r1", dagId: "g2" });
         });
 
-        it("opens a gate on its run, and falls back to the channel, then to nothing", () => {
+        it("opens a held land on its run, and falls back to the channel, then to nothing", () => {
             expect(target(at({ channelid: "c1", runid: "r1" }))).toEqual({ kind: "run", channelId: "c1", runId: "r1" });
             expect(target(at({ channelid: "c1" }))).toEqual({ kind: "channel", channelId: "c1" });
             expect(target(at({}))).toBeNull();

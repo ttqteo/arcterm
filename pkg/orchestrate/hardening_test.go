@@ -67,6 +67,7 @@ func TestScheduleRecordsSpawnFailureReason(t *testing.T) {
 	allowWorkerHarnessForTest(t)
 	ctx, g, channelID, runID := seedDispatchDag(t, "dispatch-spawn")
 	stubSpawnWorker(t, "", errors.New("no worker slot available"))
+	spendDispatchRetries(t, ctx, g.OID)
 
 	if err := ScheduleOnce(ctx, g); err != nil {
 		t.Fatal(err)
@@ -75,8 +76,8 @@ func TestScheduleRecordsSpawnFailureReason(t *testing.T) {
 	if got.Tasks[0].State != TaskState_Failed || got.Tasks[0].LastFailureKind != FailureKindSpawn {
 		t.Fatalf("spawn failure task = %+v", got.Tasks[0])
 	}
-	if got.Tasks[0].Attempts != 1 {
-		t.Fatalf("spawn failure attempts = %d, want 1", got.Tasks[0].Attempts)
+	if want := MaxAutoDispatchRetries + 1; got.Tasks[0].Attempts != want {
+		t.Fatalf("spawn failure attempts = %d, want %d", got.Tasks[0].Attempts, want)
 	}
 	detail := eventDetail(t, lifecycleEvents(t, channelID, runID), waveobj.RunEventKindTaskFailed)
 	if detail == nil {

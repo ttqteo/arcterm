@@ -171,23 +171,24 @@ func seedSilentChild(t *testing.T, name string) (context.Context, *waveobj.TaskG
 	return ctx, g
 }
 
-// A stalled task is the lead's judgment unless its worker is waiting on an answer, which belongs to the
-// question queue. A worker whose process is gone while its task still runs was missed by the exit path, so
-// the lead hears of it.
+// A stalled task is the lead's judgment. A worker waiting on an answer belongs to the question queue and
+// does not stall at all. A worker whose process is gone while its task still runs was missed by the exit
+// path, so the lead hears of it.
 func TestStalledTaskWakesLeadUnlessWorkerIsAsking(t *testing.T) {
 	const workerBlock = "3c9d2e1f-8a7b-4c6d-9e5f-0a1b2c3d4e5f"
 	cases := []struct {
-		name   string
-		alive  bool
-		asking bool
-		status string
-		want   []string
+		name      string
+		alive     bool
+		asking    bool
+		status    string
+		wantState string
+		want      []string
 	}{
-		{"hung-alive", true, false, blockcontroller.Status_Running, []string{"wake: task t-0 hung: silent 6m, process alive, no ask pending. wsh jarvis dag status"}},
-		{"hung-asking", true, true, blockcontroller.Status_Running, nil},
-		{"hung-exited", false, false, blockcontroller.Status_Done, []string{"wake: task t-0's worker exited without reporting complete. wsh jarvis dag status"}},
+		{"hung-alive", true, false, blockcontroller.Status_Running, TaskState_Stalled, []string{"wake: task t-0 hung: silent 6m, process alive, no ask pending. wsh jarvis dag status"}},
+		{"hung-asking", true, true, blockcontroller.Status_Running, TaskState_Running, nil},
+		{"hung-exited", false, false, blockcontroller.Status_Done, TaskState_Stalled, []string{"wake: task t-0's worker exited without reporting complete. wsh jarvis dag status"}},
 		// no process ever means no exit hook either, so the lead is the only one who will hear of it
-		{"never-started", false, false, blockcontroller.Status_Init, []string{"wake: task t-0 never started: no worker process 6m after spawn. wsh jarvis dag retry t-0"}},
+		{"never-started", false, false, blockcontroller.Status_Init, TaskState_Stalled, []string{"wake: task t-0 never started: no worker process 6m after spawn. wsh jarvis dag retry t-0"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -206,8 +207,8 @@ func TestStalledTaskWakesLeadUnlessWorkerIsAsking(t *testing.T) {
 			if err := ScheduleOnce(ctx, g); err != nil {
 				t.Fatal(err)
 			}
-			if g.Tasks[0].State != TaskState_Stalled {
-				t.Fatalf("a pi child silent past the first-token deadline stalls, got %s", g.Tasks[0].State)
+			if g.Tasks[0].State != tc.wantState {
+				t.Fatalf("a pi child silent past the first-token deadline: want %s, got %s", tc.wantState, g.Tasks[0].State)
 			}
 			if !reflect.DeepEqual(f.sends, tc.want) {
 				t.Fatalf("want wakes %q, got %q", tc.want, f.sends)
@@ -427,7 +428,7 @@ func TestIdleHarnessCPUTrickleIsNotWork(t *testing.T) {
 func TestLatestAgentStatusIgnoresAnEmptyScope(t *testing.T) {
 	const otherBlock = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
 	wps.Broker.Publish(blockcontroller.AgentStatusEvent(otherBlock, baseds.AgentState_Idle, "claude", time.Now().UnixMilli()))
-	if st := latestAgentStatus("9f8e7d6c-5b4a-4938-8271-605f4e3d2c1b", ""); st.State != "" {
+	if st := LatestAgentStatus("9f8e7d6c-5b4a-4938-8271-605f4e3d2c1b", ""); st.State != "" {
 		t.Fatalf("a block with no status of its own read %q from another block", st.State)
 	}
 }
@@ -469,5 +470,55 @@ func TestTurnEndedOnABackgroundTestIsNotStalled(t *testing.T) {
 	tick(t, ctx, g)
 	if task := tick(t, ctx, g); task.State != TaskState_Running || len(f.sends) != 0 {
 		t.Fatalf("a busy process tree keeps the task running, got %s and wakes %q", task.State, f.sends)
+	}
+}
+
+func askOnWorkerBlock(t *testing.T) string {
+	t.Helper()
+	oref := waveobj.MakeORef(waveobj.OType_Block, "worker-block").String()
+	agentask.GlobalRegistry.Set(oref, agentask.PendingAsk{AskId: "a1", BlockId: "worker-block"})
+	return oref
+}
+
+// RAD-dd31849e: a worker blocked on an ask is quiet by design. With no lead alive a stall is retried, which
+// killed a worker that was only waiting for its answer.
+func TestWorkerWaitingOnAnAskIsNotStalled(t *testing.T) {
+	ctx, g, f := seedChildWrittenAt(t, "quiet-asking", time.Now().Add(-StallThreshold-time.Minute))
+	f.state.Alive = false
+	noCPUThrottle(t)
+	stubChildCPU(t, func(int) (int64, bool) { return 0, false })
+	oref := askOnWorkerBlock(t)
+	run := mustLoadDag(t, ctx, g.OID).Tasks[0].RunID
+
+	before := time.Now().UnixMilli()
+	task := tick(t, ctx, g)
+	if task.State != TaskState_Running || task.RunID != run || task.StallRetries != 0 {
+		t.Fatalf("a worker waiting on an ask keeps its task running, got state=%s run=%q stallretries=%d", task.State, task.RunID, task.StallRetries)
+	}
+	if task.AskTs < before {
+		t.Fatalf("a tick that finds a pending ask restarts the silence clock, got ts %d (before %d)", task.AskTs, before)
+	}
+	// the wait does not count: an answered worker gets a whole threshold from then on
+	agentask.GlobalRegistry.Drop(oref)
+	if task := tick(t, ctx, g); task.State != TaskState_Running || task.RunID != run {
+		t.Fatalf("a worker just answered is not stalled, got state=%s run=%q", task.State, task.RunID)
+	}
+}
+
+// a prose question ends the worker's turn, so it sits idle at its prompt past TurnEndedGrace until it is answered
+func TestWorkerThatEndedItsTurnOnAQuestionIsNotStalled(t *testing.T) {
+	ctx, g, f := seedChildWrittenAt(t, "turn-ended-asking", time.Now().Add(-4*time.Minute))
+	noCPUThrottle(t)
+	stubTurnEnded(t, time.Now().Add(-4*time.Minute).UnixMilli())
+	stubChildCPU(t, func(int) (int64, bool) { return 5_000, true })
+	oref := askOnWorkerBlock(t)
+
+	tick(t, ctx, g)
+	if task := tick(t, ctx, g); task.State != TaskState_Running || len(f.sends) != 0 {
+		t.Fatalf("a worker idle on its own question is left alone, got %s and wakes %q", task.State, f.sends)
+	}
+	agentask.GlobalRegistry.Drop(oref)
+	if task := tick(t, ctx, g); task.State != TaskState_Running || len(f.sends) != 0 {
+		t.Fatalf("the grace restarts once the question is gone, got %s and wakes %q", task.State, f.sends)
 	}
 }

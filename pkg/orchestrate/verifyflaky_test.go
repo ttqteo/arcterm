@@ -48,7 +48,7 @@ func TestAMergeVerifysFlakyTestsReachTheUnverifiedItemsAndTheLead(t *testing.T) 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			lead := newFakeLead(t)
-			f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+			f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 			f.setPlanCommands(t, verifyCmd, "")
 			f.finish(t, "t-0")
 			stubMerge(t, landedSha)
@@ -61,6 +61,11 @@ func TestAMergeVerifysFlakyTestsReachTheUnverifiedItemsAndTheLead(t *testing.T) 
 				t.Fatal(err)
 			}
 			await()
+			// the last merge runs no Verify of its own, and the final stage follows it
+			f.finish(t, stillOpen.ID)
+			if err := Schedule(f.ctx, f.dagID); err != nil {
+				t.Fatal(err)
+			}
 			finalDone()
 
 			g := f.dag(t)

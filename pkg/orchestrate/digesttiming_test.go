@@ -182,6 +182,19 @@ func TestDigestTimingVerifyPending(t *testing.T) {
 	}
 }
 
+func TestDigestTimingLastMergeLeavesVerifyToTheFinalStage(t *testing.T) {
+	g := digestGroup(t, true, twoTasks())
+	g.Verify = "go test ./..."
+	setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-1": TaskState_Done})
+	retained := append(mergedTwoTips()[:7],
+		retainedEvent(waveobj.RunEventKindTaskVerifyPassed, "t-0", 4150),
+		timingEvent(waveobj.RunEventKindTaskMerged, 4300, map[string]any{"taskid": "t-1", "verify": mergeVerifyFinal}))
+	tm := timingOf(t, g, timingOwner(jarvis.RunStatus_Executing, 0), retained)
+	if m := timingActivity(tm, TimingMerge); m == nil || *m != (wshrpc.DagTimingActivity{Key: TimingMerge, StartTs: 4000, EndTs: 4300}) {
+		t.Fatalf("a merge that left its Verify to the final stage closes at task-merged, got %+v", m)
+	}
+}
+
 func TestDigestTimingNoVerifyLine(t *testing.T) {
 	g := digestGroup(t, true, twoTasks())
 	setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-1": TaskState_Done})

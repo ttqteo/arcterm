@@ -2,19 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { peekEvidence, peekInvestigation, radarPeekFacts } from "./peekradarmodel";
-
-function signal(id: string, observedts: number, extra: Partial<RadarSignal> = {}): RadarSignal {
-    return {
-        id,
-        collector: "git",
-        sourceref: `commit:${id}`,
-        observedts,
-        summary: `s ${id}`,
-        contenthash: id,
-        ...extra,
-    };
-}
+import { peekInvestigation, peekSites, radarPeekFacts } from "./peekradarmodel";
 
 function finding(id: string, extra: Partial<RadarFinding> = {}): RadarFinding {
     return {
@@ -26,7 +14,6 @@ function finding(id: string, extra: Partial<RadarFinding> = {}): RadarFinding {
         risk: "risk",
         why: "why",
         severity: "high",
-        strength: "strong",
         signalids: [],
         files: [],
         mission: "",
@@ -34,8 +21,8 @@ function finding(id: string, extra: Partial<RadarFinding> = {}): RadarFinding {
     };
 }
 
-function report(findings: RadarFinding[], signals: RadarSignal[] = []): RadarReport {
-    return { oid: "rr-1", findings, signals } as unknown as RadarReport;
+function report(findings: RadarFinding[]): RadarReport {
+    return { oid: "rr-1", findings } as unknown as RadarReport;
 }
 
 describe("radarPeekFacts", () => {
@@ -48,7 +35,7 @@ describe("radarPeekFacts", () => {
         expect(radarPeekFacts(report([finding("f-2")]), "f-1")).toEqual({ gone: true });
     });
 
-    it("is present, with nothing to focus, when the finding is in its report", () => {
+    it("is present when the finding is in its report", () => {
         expect(radarPeekFacts(report([finding("f-1")]), "f-1")).toEqual({ gone: false });
     });
 
@@ -57,28 +44,32 @@ describe("radarPeekFacts", () => {
     });
 });
 
-describe("peekEvidence", () => {
-    it("lists the finding's signals oldest first, each with where it points", () => {
-        const f = finding("f-1", { signalids: ["b", "a", "missing", "c"] });
-        const r = report(
-            [f],
-            [
-                signal("a", 300, { paths: ["pkg/x.go"] }),
-                signal("b", 100, { paths: ["frontend/y.ts", "frontend/z.ts", "frontend/w.ts"] }),
-                signal("c", 200),
-                signal("unreferenced", 50, { paths: ["nope.go"] }),
-            ]
-        );
-        expect(peekEvidence(f, r)).toEqual([
-            { id: "b", place: "frontend/y.ts +2", summary: "s b" },
-            { id: "c", place: "commit:c", summary: "s c" },
-            { id: "a", place: "pkg/x.go", summary: "s a" },
+describe("peekSites", () => {
+    const site = (line: number, trigger: string): RadarSite => ({
+        line,
+        trigger,
+        actual: "",
+        expected: "",
+        whynotcovered: "",
+    });
+
+    it("gives one file:line row per site with its trigger", () => {
+        const f = finding("f-1", { files: ["pkg/x.go"], sites: [site(10, "a"), site(42, "b")] });
+        expect(peekSites(f)).toEqual([
+            { key: "0:10", place: "pkg/x.go:10", trigger: "a" },
+            { key: "1:42", place: "pkg/x.go:42", trigger: "b" },
         ]);
     });
 
-    it("is empty for a finding with no linked signals", () => {
-        const f = finding("f-1");
-        expect(peekEvidence(f, report([f], [signal("a", 1)]))).toEqual([]);
+    it("keeps keys unique for two sites on the same line", () => {
+        const f = finding("f-1", { files: ["pkg/x.go"], sites: [site(7, "a"), site(7, "b")] });
+        const keys = peekSites(f).map((r) => r.key);
+        expect(new Set(keys).size).toBe(2);
+    });
+
+    it("is empty with no sites or no file", () => {
+        expect(peekSites(finding("f-1", { files: ["pkg/x.go"] }))).toEqual([]);
+        expect(peekSites(finding("f-1", { sites: [site(1, "a")] }))).toEqual([]);
     });
 });
 

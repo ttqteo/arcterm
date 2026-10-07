@@ -10,7 +10,7 @@ import { REGION_LABEL } from "../briefstyle";
 import { openTarget } from "../openref";
 import { kindNoun } from "../peekitemmodel";
 import { reportPeekFacts, type PeekTarget } from "../peekstore";
-import { peekEvidence, peekInvestigation, radarPeekFacts } from "./peekradarmodel";
+import { peekInvestigation, peekSites, radarPeekFacts } from "./peekradarmodel";
 
 const LABEL = cn(REGION_LABEL, "text-muted");
 
@@ -33,16 +33,8 @@ function Header({ title, severity }: { title: string; severity?: string }) {
     );
 }
 
-function FindingBody({
-    model,
-    report,
-    finding,
-}: {
-    model: AgentsViewModel;
-    report: RadarReport;
-    finding: RadarFinding;
-}) {
-    const evidence = peekEvidence(finding, report);
+function FindingBody({ model, finding }: { model: AgentsViewModel; finding: RadarFinding }) {
+    const sites = peekSites(finding);
     const inv = peekInvestigation(finding);
     // depth 1: a link inside a peek opens in full, never peeks again
     const openRun = (runId: string) => fireAndForget(() => openTarget(model, { kind: "run", runId }));
@@ -50,32 +42,35 @@ function FindingBody({
         <>
             <Header title={finding.risk} severity={finding.severity} />
             <div className="flex flex-col gap-3.5 px-3.5 py-3">
-                <div className="flex flex-col gap-1">
-                    <span className={LABEL}>Risk</span>
-                    <p className="text-[13px] leading-[1.6] text-secondary">{finding.risk}</p>
-                </div>
-                <div className="flex flex-col gap-1">
-                    <span className={LABEL}>Why</span>
-                    <p className="text-[13px] leading-[1.6] text-muted-foreground">{finding.why}</p>
-                </div>
-                <div className="flex flex-col overflow-hidden rounded-[9px] border border-border bg-background">
-                    <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
-                        <span className={cn(REGION_LABEL, "text-ink-mid")}>Evidence</span>
-                        <span className="h-px flex-1 bg-border" />
-                        <span className="flex-none text-[10.5px] tabular-nums text-muted">
-                            {evidence.length} {evidence.length === 1 ? "place" : "places"}
-                        </span>
+                {finding.rootcause ? (
+                    <div className="flex flex-col gap-1">
+                        <span className={LABEL}>Root cause</span>
+                        <p className="text-[13px] leading-[1.6] text-secondary">{finding.rootcause}</p>
                     </div>
-                    {evidence.map((row) => (
-                        <div
-                            key={row.id}
-                            title={row.summary}
-                            className="truncate px-3 py-[7px] text-[11.5px] text-secondary"
-                        >
-                            {row.place}
+                ) : null}
+                {sites.length > 0 ? (
+                    <div
+                        data-peek-radar-sites
+                        className="flex flex-col overflow-hidden rounded-[9px] border border-border bg-background"
+                    >
+                        <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
+                            <span className={cn(REGION_LABEL, "text-ink-mid")}>Sibling sites</span>
+                            <span className="h-px flex-1 bg-border" />
+                            <span className="flex-none text-[10.5px] tabular-nums text-muted">
+                                {sites.length} {sites.length === 1 ? "site" : "sites"}
+                            </span>
                         </div>
-                    ))}
-                </div>
+                        {sites.map((row) => (
+                            <div
+                                key={row.key}
+                                title={row.trigger}
+                                className="truncate px-3 py-[7px] text-[11.5px] text-secondary"
+                            >
+                                {row.place}
+                            </div>
+                        ))}
+                    </div>
+                ) : null}
                 {inv ? (
                     <div className="flex items-center gap-2.5 rounded-[9px] border border-edge-mid px-3 py-2.5">
                         <span className={LABEL}>Investigation</span>
@@ -136,9 +131,5 @@ export function PeekRadarBody({ model, target }: { model: AgentsViewModel; targe
         return null;
     }
     const finding = findingId != null ? report.findings?.find((f) => f.id === findingId) : undefined;
-    return finding != null ? (
-        <FindingBody model={model} report={report} finding={finding} />
-    ) : (
-        <ReportBody report={report} />
-    );
+    return finding != null ? <FindingBody model={model} finding={finding} /> : <ReportBody report={report} />;
 }

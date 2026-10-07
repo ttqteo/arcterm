@@ -17,15 +17,13 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-func gatedRun(id, goal string, doneTs int64) *waveobj.Run {
+// heldRun is a run that waits on the human by its own row alone: its branch was not merged back.
+func heldRun(id, goal string, completedTs int64) *waveobj.Run {
 	return &waveobj.Run{
-		ID:     id,
-		Goal:   goal,
-		Status: "awaiting-review",
-		Phases: []waveobj.RunPhase{
-			{Kind: "plan", State: "done", Gate: true, DoneTs: doneTs},
-			{Kind: "execute", State: "pending"},
-		},
+		ID:          id,
+		Goal:        goal,
+		CompletedTs: completedTs,
+		Land:        &waveobj.RunLand{State: "held", Reason: "dirty"},
 	}
 }
 
@@ -38,23 +36,23 @@ func escalationMsgFor(id, askORef, askId, workerORef, question string, ts int64)
 	return &waveobj.ChannelMessage{ID: id, Kind: "jarvis-escalation", Ts: ts, Data: string(data)}
 }
 
-func TestBuildAttentionFindsAGateInANonActiveChannel(t *testing.T) {
+func TestBuildAttentionFindsAHeldLandInANonActiveChannel(t *testing.T) {
 	in := AttentionInput{Channels: []AttentionChannel{
-		{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{gatedRun("r1", "refactor auth", 500)}},
+		{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{heldRun("r1", "refactor auth", 500)}},
 	}}
 	items := BuildAttention(in)
 	if len(items) != 1 {
 		t.Fatalf("want 1 item, got %d: %+v", len(items), items)
 	}
 	got := items[0]
-	if got.Kind != AttentionGate || got.RunId != "r1" || got.ChannelId != "c1" ||
+	if got.Kind != AttentionRunLandHeld || got.RunId != "r1" || got.ChannelId != "c1" ||
 		got.ChannelName != "alpha" || got.Source != "refactor auth" ||
 		got.Action != "Review" || got.WaitingSince != 500 {
-		t.Fatalf("wrong gate item: %+v", got)
+		t.Fatalf("wrong held-land item: %+v", got)
 	}
 }
 
-func TestBuildAttentionIgnoresARunThatIsNotAtAGate(t *testing.T) {
+func TestBuildAttentionIgnoresARunWithNothingWaiting(t *testing.T) {
 	run := &waveobj.Run{ID: "r1", Goal: "g", Status: "executing",
 		Phases: []waveobj.RunPhase{{State: "running"}}}
 	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{{OID: "c1", Runs: []*waveobj.Run{run}}}})
@@ -156,8 +154,8 @@ func TestBuildAttentionYieldsAStandaloneAskWithNoChannel(t *testing.T) {
 func TestBuildAttentionOrdersByKindThenOldestFirst(t *testing.T) {
 	in := AttentionInput{
 		Channels: []AttentionChannel{{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{
-			gatedRun("newer", "b", 800),
-			gatedRun("older", "a", 100),
+			heldRun("newer", "b", 800),
+			heldRun("older", "a", 100),
 		}}},
 		PendingAsks: map[string]agentask.PendingAsk{"block:z": {AskId: "9", Ts: 50}},
 		AskWorker:   map[string]string{"block:z": "solo"},
@@ -166,7 +164,7 @@ func TestBuildAttentionOrdersByKindThenOldestFirst(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("want 3, got %+v", items)
 	}
-	// gates before asks even though the ask is the oldest thing here
+	// held lands before asks even though the ask is the oldest thing here
 	if items[0].RunId != "older" || items[1].RunId != "newer" || items[2].Kind != AttentionAsk {
 		t.Fatalf("wrong order: %+v", items)
 	}
@@ -184,122 +182,6 @@ func TestBuildAttentionResolvesAnAskToItsOwningRun(t *testing.T) {
 	})
 	if len(items) != 1 || items[0].RunId != "r1" {
 		t.Fatalf("ask should carry its owning run: %+v", items)
-	}
-}
-
-// The frontend must be able to resolve a gate without re-deriving which phase it is: reviewGateIdx encodes
-// a precedence rule, and a second implementation in TypeScript is how the two drift. The gate sits at index
-// 1 here on purpose — index 0 would pass against a hardcoded zero.
-func TestBuildAttentionCarriesTheGatePhaseIndex(t *testing.T) {
-	run := &waveobj.Run{
-		ID:     "r1",
-		Goal:   "refactor the parser",
-		Status: "awaiting-review",
-		Phases: []waveobj.RunPhase{
-			{Kind: "scope", State: "done", DoneTs: 400},
-			{Kind: "plan", State: "done", Gate: true, DoneTs: 1000},
-			{Kind: "execute", State: "pending"},
-		},
-	}
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{
-		{OID: "c1", Name: "wave", Runs: []*waveobj.Run{run}},
-	}})
-	if len(items) != 1 {
-		t.Fatalf("expected one gate item, got %d: %+v", len(items), items)
-	}
-	if items[0].PhaseIdx != 1 {
-		t.Errorf("PhaseIdx = %d, want 1 (the gate phase reviewGateIdx found)", items[0].PhaseIdx)
-	}
-}
-
-// The three fields F8 added to a queue row: the initiative it belongs to, one derived sentence of
-// context, and the concrete artifacts the decision accepts. All three are composed from facts the
-// server already holds — a row that summarised itself with a language model would be an unverifiable
-// claim on the one surface whose promise is that every number is derived.
-
-func TestGateItemCarriesItsInitiativeAndWhatStaysStopped(t *testing.T) {
-	run := gatedRun("r1", "refactor auth", 500)
-	run.EffortRef = &waveobj.RunEffortRef{EffortOID: "e-7", ChunkLabel: "rebase and squash"}
-	run.Phases[0].Artifacts = []string{"docs/plans/auth.md", "  ", "pkg/auth/plan.go"}
-
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{
-		{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{run}},
-	}})
-	if len(items) != 1 {
-		t.Fatalf("want 1 item, got %+v", items)
-	}
-	got := items[0]
-	if got.EffortOID != "e-7" || got.ChunkLabel != "rebase and squash" {
-		t.Fatalf("want the run's effort attribution, got %q/%q", got.EffortOID, got.ChunkLabel)
-	}
-	want := "The plan phase finished — 1 of 2 done. The execute phase starts only when you approve."
-	if got.Why != want {
-		t.Fatalf("why-line:\n got %q\nwant %q", got.Why, want)
-	}
-	// the blank artifact is dropped: a numbered citation chip with nothing in it names nothing
-	if len(got.Cites) != 2 || got.Cites[0] != "docs/plans/auth.md" || got.Cites[1] != "pkg/auth/plan.go" {
-		t.Fatalf("wrong cites: %+v", got.Cites)
-	}
-}
-
-func TestGateItemLeavesAttributionEmptyWhenTheRunHasNoInitiative(t *testing.T) {
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{
-		{OID: "c1", Runs: []*waveobj.Run{gatedRun("r1", "g", 1)}},
-	}})
-	if items[0].EffortOID != "" || items[0].ChunkLabel != "" {
-		t.Fatalf("an unattributed run must name no initiative: %+v", items[0])
-	}
-	if len(items[0].Cites) != 0 {
-		t.Fatalf("a phase that recorded nothing cites nothing: %+v", items[0].Cites)
-	}
-}
-
-func TestGateWhySaysTheRunSealsWhenNothingFollowsTheGate(t *testing.T) {
-	run := &waveobj.Run{ID: "r1", Status: "awaiting-review", Phases: []waveobj.RunPhase{
-		{Kind: "execute", State: "done", Gate: true, DoneTs: 5},
-	}}
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{{OID: "c1", Runs: []*waveobj.Run{run}}}})
-	want := "The execute phase finished — 1 of 1 done. The run seals only when you approve."
-	if items[0].Why != want {
-		t.Fatalf("why-line:\n got %q\nwant %q", items[0].Why, want)
-	}
-}
-
-func TestGateWhyNamesAHeldLeadRatherThanAFinishedPhase(t *testing.T) {
-	run := &waveobj.Run{ID: "r1", Status: "awaiting-review", Phases: []waveobj.RunPhase{
-		{Kind: "orchestrate", State: "running", Held: true},
-		{Kind: "execute", State: "pending"},
-	}}
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{{OID: "c1", Runs: []*waveobj.Run{run}}}})
-	want := "The lead paused itself in the orchestrate phase — 0 of 2 done. It resumes only when you approve."
-	if items[0].Why != want {
-		t.Fatalf("why-line:\n got %q\nwant %q", items[0].Why, want)
-	}
-}
-
-// a custom phase's kind says nothing, so the skill is what names it
-func TestGateWhyNamesACustomPhaseByItsSkill(t *testing.T) {
-	run := &waveobj.Run{ID: "r1", Status: "awaiting-review", Phases: []waveobj.RunPhase{
-		{Kind: "custom", Skill: "superpowers:writing-plans", State: "done", Gate: true, DoneTs: 5},
-		{Kind: "custom", State: "pending"},
-	}}
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{{OID: "c1", Runs: []*waveobj.Run{run}}}})
-	want := "The superpowers:writing-plans phase finished — 1 of 2 done. The custom phase starts only when you approve."
-	if items[0].Why != want {
-		t.Fatalf("why-line:\n got %q\nwant %q", items[0].Why, want)
-	}
-}
-
-func TestGateCitesAreCappedAndTheRemainderIsCounted(t *testing.T) {
-	run := gatedRun("r1", "g", 1)
-	run.Phases[0].Artifacts = []string{"a", "b", "c", "d", "e", "f"}
-	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{{OID: "c1", Runs: []*waveobj.Run{run}}}})
-	cites := items[0].Cites
-	if len(cites) != attentionCiteMax+1 || cites[attentionCiteMax] != "+2 more" {
-		t.Fatalf("want 4 artifacts plus a counted remainder, got %+v", cites)
-	}
-	if cites[0] != "a" || cites[3] != "d" {
-		t.Fatalf("the cap must keep the first artifacts in order: %+v", cites)
 	}
 }
 
@@ -602,6 +484,7 @@ func TestHeldLandSaysWhy(t *testing.T) {
 	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{
 		finishedRun("r1", nil, &waveobj.RunLand{State: "held", Reason: "the checkout is on x, not main"}),
 		finishedRun("r2", nil, &waveobj.RunLand{State: "pending"}),
+		finishedRun("r3", nil, &waveobj.RunLand{State: "held", Reason: "the merge conflicts with main", Dismissed: true}),
 	}}}})
 	got := itemsOfKind(items, AttentionRunLandHeld)
 	if len(got) != 1 || got[0].RunId != "r1" || got[0].Key != "run-land-held:r1" {
@@ -631,15 +514,14 @@ func TestGoalHeadline(t *testing.T) {
 func TestBuildAttentionShortensEveryGoalSource(t *testing.T) {
 	goal := "Fix the attention row " + strings.Repeat("and more words ", 20) + "\n(1) a long second line"
 	want := goalHeadline(goal)
-	gate := gatedRun("r1", goal, 500)
 	held := &waveobj.Run{ID: "r2", Goal: goal, Land: &waveobj.RunLand{State: "held", Reason: "dirty"}}
 	unverified := &waveobj.Run{ID: "r3", Goal: goal, Status: RunStatus_Done,
 		Evidence: &waveobj.RunEvidence{Verification: &waveobj.RunVerification{State: "unverified", Reasons: []string{"no check"}}}}
 	items := BuildAttention(AttentionInput{Channels: []AttentionChannel{
-		{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{gate, held, unverified}},
+		{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{held, unverified}},
 	}})
-	if len(items) != 3 {
-		t.Fatalf("want 3 items, got %+v", items)
+	if len(items) != 2 {
+		t.Fatalf("want 2 items, got %+v", items)
 	}
 	for _, it := range items {
 		if it.Source != want {

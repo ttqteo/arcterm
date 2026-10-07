@@ -8,6 +8,35 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Added
+
+- Radar audits recent fix commits for the same bug elsewhere in the code: each finding names its root cause, the
+  sibling sites and the fix it came from, and Settings picks the model the audit runs on. It replaces the old lens scan.
+- Agents can message each other: `wsh agents list`, `wsh agents send` (which can wait for the answer) and
+  `wsh agents read`.
+- Jarvis's pet announces a landed run on every surface, and a held land's row in its popup has **Dismiss** beside
+  **Land again**.
+- A message sent to a busy Claude agent joins the turn it is running instead of being typed into its prompt.
+- A Claude agent in arcterm is refused commands that kill arcterm by image name, or push or move branches in a run's
+  worktree.
+- The run sheet's header puts the run line under the project, and the run id is a chip that copies it.
+- Submitting a plan whose parallel tasks list the same file is refused.
+
+### Changed
+
+- Claude tool calls no longer wait on arcterm's status reports.
+- Usage, attention and channel views load faster on long histories.
+- An orchestrator run's last merge leaves its Verify to the final stage.
+
+### Fixed
+
+- The installed app shows the Final check's screenshots.
+- Deleting a channel deletes its runs and their DAGs.
+- Orchestrator runs: a worker waiting on a question no longer stalls, a stuck engine tick is reported without stopping
+  the other runs, a transient dispatch failure is retried, and a run's lead resumes after a restart.
+
 ## 0.15.3 — 2026-10-07
 
 ### Added

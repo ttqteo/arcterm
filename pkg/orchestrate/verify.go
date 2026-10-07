@@ -32,6 +32,10 @@ type landing struct {
 	dagID  string
 	taskID string
 	cancel context.CancelFunc // set once Verify starts
+	// set with cancel, for the watchdog's report of a Verify that never records a result
+	channelID, runID string
+	since            time.Time
+	reported         bool
 }
 
 // landings serializes merges and their Verify runs per project checkout: a merge landing mid-Verify would
@@ -73,6 +77,21 @@ func stopDagVerify(dagID string) {
 			l.cancel()
 		}
 	}
+}
+
+// overdueVerifies claims the report of every Verify that has held its project past verifyOverdue: each is
+// returned once.
+func overdueVerifies() []landing {
+	landings.Lock()
+	defer landings.Unlock()
+	var out []landing
+	for _, l := range landings.byProject {
+		if l.cancel != nil && !l.reported && time.Since(l.since) > verifyOverdue {
+			l.reported = true
+			out = append(out, *l)
+		}
+	}
+	return out
 }
 
 // verifyFinished is called once a Verify run has recorded its result and ticked its dag. A var so tests
@@ -386,7 +405,7 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 func startVerify(channelID, dagID, runID, projectPath, command string, l *landing) {
 	ctx, cancel := context.WithCancel(context.Background())
 	landings.Lock()
-	l.cancel = cancel
+	l.cancel, l.channelID, l.runID, l.since = cancel, channelID, runID, time.Now()
 	landings.Unlock()
 	goStage("verify "+dagID, func() {
 		bg := context.Background()

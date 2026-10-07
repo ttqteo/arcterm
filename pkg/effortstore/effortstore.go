@@ -71,10 +71,16 @@ func vaultRoot() string {
 	return memroots.VaultRoot()
 }
 
+// BareOID strips the oref prefix from an effort id. Ids arrive in the oref form too, since that is what
+// `wsh effort list` prints, but they are stored and compared bare.
+func BareOID(oid string) string {
+	return strings.TrimPrefix(oid, waveobj.OType_Effort+":")
+}
+
 // effortPath rejects an oid that would name a file outside efforts/ (oids arrive over RPC). It takes the
-// oref form too, since that is what `wsh effort list` prints.
+// oref form too.
 func effortPath(root, oid string) (string, error) {
-	oid = strings.TrimPrefix(oid, waveobj.OType_Effort+":")
+	oid = BareOID(oid)
 	if oid == "" || oid == "." || oid == ".." || strings.ContainsAny(oid, `/\:`) {
 		return "", fmt.Errorf("invalid effort oid %q", oid)
 	}

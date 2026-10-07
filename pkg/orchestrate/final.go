@@ -331,6 +331,9 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		for _, test := range flaky {
 			res.unverified = append(res.unverified, flakyItem(test, finalVerifyWhere))
 		}
+		if err := WithDagMutation(dagID, func() error { return landDeferredVerifyLocked(ctx, dagID) }); err != nil {
+			log.Printf("dag %s: closing the chunks of the merges this Verify stood for: %v", dagID, err)
+		}
 	}
 	if g.FinalCmd == "" {
 		return res
@@ -356,6 +359,44 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		res.detail = fmt.Sprintf("Final `%s` failed (exit %d):\n%s", g.FinalCmd, exit, tail)
 	}
 	return res
+}
+
+// landDeferredVerifyLocked closes the chunks of every merge that ran no Verify of its own (VerifyDeferred), now
+// that the final stage's Verify passed on their tree. A stage that fails leaves them marked, so the Verify of
+// its fix round closes them. The caller holds the dag mutation lock.
+func landDeferredVerifyLocked(ctx context.Context, dagID string) error {
+	g, err := wstore.GetDag(ctx, dagID)
+	if err != nil {
+		return err
+	}
+	if g.Status == DagStatus_Cancelled {
+		return nil
+	}
+	var tips []string
+	for i := range g.Tasks {
+		if g.Tasks[i].VerifyDeferred {
+			tips = append(tips, g.Tasks[i].ID)
+		}
+	}
+	if len(tips) == 0 {
+		return nil
+	}
+	for _, id := range tips {
+		closeLandedChunks(ctx, g, id)
+	}
+	if err := wstore.UpdateDag(ctx, dagID, func(cur *waveobj.TaskGroup) error {
+		for _, id := range tips {
+			if t := taskByID(cur, id); t != nil {
+				t.VerifyDeferred = false
+			}
+		}
+		cur.UpdatedTs = time.Now().UnixMilli()
+		return nil
+	}); err != nil {
+		return err
+	}
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, dagID))
+	return nil
 }
 
 // commandReason is a plan command's exit code or timeout, or the error that kept it from running.

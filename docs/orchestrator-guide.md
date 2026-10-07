@@ -211,7 +211,12 @@ on you** on the Brief instead of scrolling past in a terminal. The Jarvis nav ic
 ([The plan review](#the-plan-review)), open as one dialog over whatever surface you are on: the document
 rendered on the left, the decisions (or findings) it asks you to accept on the right, and **Approve** (the
 plan's is **Accept all and proceed**, `Ctrl Enter`) or **Request changes** at the bottom. Request changes
-takes a note and sends it to the lead as your answer. Everywhere else the ask shows as a one-line summary with
+takes a note and sends it to the lead as your answer. Select text in the document to quote it: a note field
+opens under the selection (`Enter` adds, `Esc` drops), the passage stays highlighted, and the notes collect
+under the decisions, where a click reopens one and **✕** removes it. Both buttons then carry them (**Approve
+with N notes**, **Request changes · N notes**, whose message becomes optional), and the lead gets one answer:
+your message or the approve label, then each passage on a `> ` line with its note under it, in document order.
+Once sent, the notes lock. Everywhere else the ask shows as a one-line summary with
 a **Review** button: the Cockpit lead card, the Brief's card, the run sheet. On the Agent surface the lead's
 tree row carries a `review` tag, the lead's header an amber `Spec review` / `Plan review` chip, and `r` opens
 it on the focused lead. It opens by itself only once per ask, when you focus the lead itself on the Agent
@@ -315,7 +320,9 @@ that every task must edit is what sets a plan's width, so keep that edit out of 
   that lists the paths the batch changed, one per line: a Verify that reads it should test only what those paths
   can break.
   The final stage runs Verify once more with `ARC_VERIFY_CHANGED` unset, on the merged result, where it runs
-  everything. Both are optional, both run in a POSIX shell (Git Bash on Windows).
+  everything. The last merge of a plan skips its own Verify for that one
+  ([The last merge](#the-last-merge-skips-its-verify)). Both are optional, both run in a POSIX shell (Git Bash on
+  Windows).
   **Flaky tests.** Every Verify, at a merge and in the final stage, runs with `ARC_VERIFY_FLAKY` naming an empty
   file. A Verify that reruns a failing test and sees it pass exits 0 and appends that test's name to the file,
   one per line. The Verify still passes, but each name becomes an unverified reason of the run
@@ -344,6 +351,13 @@ that every task must edit is what sets a plan's width, so keep that edit out of 
   none. Anywhere else it is task text. One per task; an empty value, a space or a backtick is refused. It counts
   only on a run whose workers setting is Reviewer picks ([Routes](#4-routes)), but submit checks it on every run:
   a model this machine cannot run fails the submit, naming the task.
+- ``**Files:** `pkg/a.go`, `pkg/b.go` `` lists every repo-relative path the task creates, edits or deletes,
+  generated files included: each in backticks, separated by commas, files only (no directories or globs). It
+  goes in the same head block, a second Files line continues the list, and the line stays in the task text the
+  worker reads. Submit refuses a plan in which two tasks list the same path and neither depends on the other,
+  directly or through other tasks; the error names both tasks and the path. Paths compare exactly after slash
+  normalisation. A task without the line takes no part in the check, so a plan with no Files lines is accepted
+  as before and the plan reviewer is the only check of its file overlaps.
 - There is no task cap.
 - **Every worker gets the plan's header.** Its prompt is the engine's worker contract, then the prose above
   Task 1, then its own task's section (`taskPrompt`, `engine.go`). This used to be the task alone: the backlog
@@ -373,6 +387,25 @@ lead's fix and `dag merge <task> --continue` judges them together. A single lane
 is a batch after a fix commit, since a prefix without the fix would blame that lane again: the oldest lane
 takes the failure. A bisect that cannot run (the tree or its Setup fails) blames the oldest lane not yet known
 good, so it never lands a lane no Verify passed.
+
+#### The last merge skips its Verify
+
+When a merge leaves nothing to run, review or merge, the final stage starts next and runs the whole Verify on
+that same tree, so the merge runs none of its own. The task goes straight to done, and its **Task merged** row
+reads "Verify left to the final stage" (`"verify": "final"` on the `task-merged` event); there is no **Verify
+started** or **Verify passed** row for it. A failure then shows as a failed final stage ("Verify … failed on the
+merged result"), which blocks the run and wakes the lead for a fix round as any final Verify failure does. It is
+not bisected and names no lane, because the final stage never does. A stage that ends before its Verify ran (it
+could not make its tree, Check failed, or you ended it) leaves that merge with no Verify at all: the stage's own
+failure or unverified reason says so, and the merge's chunks stay open until a later round's Verify passes.
+
+Every other merge verifies as before:
+
+- any task is still pending, running, in review, at a gate or waiting to merge;
+- the merge is one of a batch of two or more, even the plan's last batch, so a failure can still be bisected to
+  its lane;
+- the plan has no Verify line, so the final stage has none to run;
+- the merge is a fix round's: every fix-round merge runs its Verify, the last one too.
 
 ### Start it
 
@@ -473,14 +506,18 @@ wsh jarvis dag planreview pass "<summary>" --pick "t-2=sonnet: copies the existi
 ```
 
 The shape is `t-N=<sonnet|lead>: <reason>`. `wsh` refuses anything else before sending it (`Task 2=sonnet`,
-`t-2 sonnet`, a missing reason), and `--pick` goes with `pass` only. The server refuses the pass, naming the task,
+`t-2 sonnet`, a missing reason). The server refuses the pass, naming the task,
 for a missing pick, a pick for a task with a Model line, an unknown or repeated task, an empty reason, a reason of
 more than one line or over 200 characters, and a `sonnet` pick when the claude harness cannot run a worker here
 (it says to pick `lead`). The reviewer then resends. A run not on Reviewer picks refuses any pick.
 
-The picks are applied in the same write that passes the review, so no worker starts without its pick. `sonnet` puts
-the task on Claude Code · `sonnet`; `lead` leaves it on the lead's route. Tasks the review did not pick for (a plan
-accepted after a failed review, a fix round's tasks) run on the lead's route unless they have a Model line.
+A fail carries picks the same way, and may leave tasks out; those stay on the lead's route. The picks are applied
+to the held tasks at once, so the banner shows them while the review is failed. A resubmit replaces the tasks and
+drops them, and `planreview accept` dispatches on them. `accept` itself takes no `--pick`.
+
+The picks are applied in the same write that records the verdict, so no worker starts without its pick. `sonnet` puts
+the task on Claude Code · `sonnet`; `lead` leaves it on the lead's route. Tasks the review did not pick for (a task a
+failed review left out, a fix round's tasks) run on the lead's route unless they have a Model line.
 
 **Where picks show.** The run's timeline lists them under the **Plan reviewed** row, one `t-N · <model> · <reason>`
 line each. A task card whose model differs from the run's workers model carries a tag, `<model> · plan`,
@@ -678,6 +715,12 @@ first; you see it when it is forwarded or the lead is dead. Retry and escalate s
 replace, so before you retry a stalled task, check its lane worktree under `.waveterm/worktrees/` for recent
 writes: a worker that is still writing files is alive, and the stall signal is wrong.
 
+A task whose dispatch fails before a worker exists, because its worktree could not be made (`worktree-failed`)
+or its worker tab could not be opened or started (`spawn-failed`), is dispatched again by the engine on its next
+tick, up to three times in a row. Each one is a **Task retried** row and wakes nobody; the retry rebuilds
+whatever tree the failed attempt left. Only when those are spent does the task fail and the lead wake. A route
+that does not resolve, a missing harness and a failed Setup are not retried: the task fails at once.
+
 To move a task to another model, use **escalate…** in the DAG's detail panel under the graph (it opens a
 route picker, then **Re-queue on model**). Escalation is one hop per task.
 
@@ -708,6 +751,14 @@ its terminal says the worker stopped. The blocked card offers:
 - **Cancel run** ends the run.
 
 A run after `dag submit` is the engine's: its watchdog picks the dag up again at boot.
+
+### The engine is stuck
+
+A scheduler tick that has not finished in 12 minutes, or a merge-point Verify that has held the project checkout
+for 30, is in a wait the engine cannot end. The timeline gains an **Engine stuck** row, the lead is woken to put
+it to you, and the server log (`waveapp.log`) gets a dump of every goroutine, taken at the report. The other
+runs keep being ticked. Nothing in the run advances until Arc is restarted; after a restart the dag resumes from
+where it was, as above. The row is reported once per stuck tick or Verify.
 
 ---
 
@@ -749,6 +800,8 @@ Final line, and alongside Check and Verify when it has none:
    unless Check already failed on the base at submit: then the stage goes on and reports it as unverified.
 2. **Verify**, the plan's Verify line with `ARC_VERIFY_CHANGED` unset, on the merged result (20-minute limit). A
    non-zero exit fails the stage. Each test it reports flaky in `ARC_VERIFY_FLAKY` becomes an unverified reason.
+   It is also the only Verify of the plan's last merge ([The last merge](#the-last-merge-skips-its-verify)),
+   whose chunks close when it passes.
 3. **Final**, the plan's `**Final:**` command, in a POSIX shell with `ARC_FINAL_OUT` set to a fresh directory
    for its screenshots and reports (`<data dir>/final-shots/<dag>/<round>`, outside every tree). Exit 0 passes.
    Exit 3 means it could not verify, and its last output line becomes an unverified reason. Any other exit, or
@@ -902,10 +955,13 @@ arrives then holds the land.
 A held land raises a **land held** item under Waiting on you: "The run's branch was not merged back: <reason>".
 Clear the reason, then press **Land again**: on that row in Jarvis's popup and in the Brief's Waiting list, and in the
 run sheet's footer, which also prints the reason. It is the same retry as `wsh runs land <run-id>`, which prints where
-the land stands; a land still held keeps the row and names the new reason.
+the land stands; a land still held keeps the row and names the new reason. **Dismiss** on the popup's row drops the
+item for a branch that will never land: the branch stays, and a later retry that holds raises it again.
 `wsh runs land <run-id> --force` lands a run whose final stage failed; it is your call only. When the last final
-round fails, the lead's question to you and its report say that completing will not merge the branch, and name this
-command.
+round fails, the lead asks you what to do with the land, with at least **Land anyway** and **Keep the land held**.
+On **Land anyway** it completes with `wsh jarvis complete --force-land`, and the land that follows skips the
+failed-final hold; every other hold still applies. Otherwise it completes as usual and the land holds until you run
+the command above.
 
 A done run whose outcome is unverified, or whose land carries a note, raises an **unverified** item ("Finished,
 but N things were not verified.") naming each reason. It holds nothing, since the run is done. It stays until you
@@ -943,7 +999,7 @@ Done doesn't mean finished. The work after the last merge splits four ways:
 | Work | Whose job | On the backlog run |
 |---|---|---|
 | The run's report | **The lead's.** Its rules (`OrchestrationRules`, `leadprompt.go`) have it fix and commit what the landed tasks left behind in docs (a code defect found then is an open issue, not a wrap-up commit), write the report to a file, and add each open issue as a pending chunk on the initiative (creating one if the run has none). Then it completes on its own with `wsh jarvis complete --report <file>`, without asking whether to. It asks you first only when a decision is needed: a failed verification, a deviation that needs your call, or a proposed fix round. An unverified outcome never blocks completion. | Not written. The rules then said "write the report …, then `wsh jarvis complete`". The lead ran `complete` first, and the engine closed its tab before it could recover. The sandbox lead did the same. |
-| Closing the initiative's tracker chunks | **The engine's.** A task names its chunks with `**Chunk:**` lines after its Depends line, and the engine marks each done with the landed commit once the task's merge passes Verify. | The plan gave it to workers through a header line they never saw. The tracker read 3/16 with all 13 tasks landed. |
+| Closing the initiative's tracker chunks | **The engine's.** A task names its chunks with `**Chunk:**` lines after its Depends line, and the engine marks each done with the landed commit once the task's merge passes Verify (for the last merge, once the final stage's Verify passes). | The plan gave it to workers through a header line they never saw. The tracker read 3/16 with all 13 tasks landed. |
 | Merging the branch back | **The engine's** on a branch-landed run ([Landing back](#landing-back)); **yours** on a checkout-landed one, or when a land is held. | The run landed on the project checkout's branch, and merging it was left to the human. |
 | Checking what the final stage could not, committing anything | **Yours.** The unverified item names what nothing checked. | Four fixes still need a live check once the branch is on `main` and running in the dev app. |
 
@@ -1021,7 +1077,7 @@ Inside a lead's or worker's terminal, the run is inferred. Elsewhere pass `--cha
 | `dag sendback <task> ["<guidance>"]` | one more round for a review-failed task, with your guidance beside the findings |
 | `dag approve <task>` | overrule a failed review; the task lands as it is |
 | `dag review <pass\|fail> "<note>" [--downstream "<note>"] [--for <task ids>] [--unverified "<what, why>"]` | a reviewer's verdict; ends the reviewer's session |
-| `dag planreview <pass\|fail> "<text>" [--pick "t-N=<sonnet\|lead>: <reason>" ...]` | the plan reviewer's verdict; ends its session. On a Reviewer picks run a pass carries one `--pick` per task without a Model line ([Model picks](#model-picks)) |
+| `dag planreview <pass\|fail> "<text>" [--pick "t-N=<sonnet\|lead>: <reason>" ...]` | the plan reviewer's verdict; ends its session. On a Reviewer picks run a pass carries one `--pick` per task without a Model line, and a fail the ones it can judge ([Model picks](#model-picks)) |
 | `dag planreview accept "<the human's reason>"` | as the lead, proceed past a failed plan review on the human's word |
 | `dag final pass "<summary>" [--unverified "<what, why>"]` / `dag final fail "<defects>"` | the final verifier's verdict; ends its session |
 | `dag retry <task>` / `dag skip <task>` | retry or skip a failed or stalled task |

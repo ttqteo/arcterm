@@ -38,6 +38,7 @@ export const ATTENTION_KINDS = new Set<string>([
     "task-cleanup-failed",
     "task-forwarded",
     "lead-wake-failed",
+    "engine-stuck",
     "lead-exited",
     "interrupted",
     "merge-held",

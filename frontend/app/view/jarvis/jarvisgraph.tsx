@@ -220,7 +220,6 @@ export function JarvisGraph() {
             state: e.state,
         }));
         return { nodes, links, rank: degreeRank(nodes) };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sig]);
     const dataRef = useRef(data);
     dataRef.current = data;

@@ -167,7 +167,7 @@ func TestBuildQuickPrompt(t *testing.T) {
 	for _, want := range []string{
 		"add a spinner",
 		"be tidy",
-		"wsh jarvis complete",
+		"wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>",
 		"If this turns out to be more than one change or needs a design decision, stop and ask with AskUserQuestion instead of pushing on.",
 	} {
 		if !strings.Contains(p, want) {

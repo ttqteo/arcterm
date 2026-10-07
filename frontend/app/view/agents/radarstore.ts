@@ -7,7 +7,7 @@ import * as WOS from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { DEFAULT_OPEN_GROUPS, type LensKey, type RadarGroup } from "./radarmodel";
+import { DEFAULT_OPEN_LIST_GROUPS, type RadarListGroup } from "./radarmodel";
 
 export interface RadarScope {
     name: string;
@@ -86,28 +86,37 @@ export const currentReportIdAtom = atom<string | undefined>(undefined) as Primit
 // unmounting on nav-rail switch — mirrors Sessions/Files (see docs cockpit coherence audit).
 export const radarSelectedIdAtom = atom<string | undefined>(undefined) as PrimitiveAtom<string | undefined>;
 
-// The picked lens and the open finding groups: atoms for the same reason as the selection. The pick is
-// what the user chose, not what shows; resolveLens falls back to All when the picked lens is gone.
-export const radarLensPickAtom = atom<LensKey>("all") as PrimitiveAtom<LensKey>;
-export const radarOpenGroupsAtom = atom<Set<RadarGroup>>(new Set(DEFAULT_OPEN_GROUPS)) as PrimitiveAtom<
-    Set<RadarGroup>
+// The open list groups: an atom for the same reason as the selection.
+export const radarOpenListGroupsAtom = atom<Set<RadarListGroup>>(new Set(DEFAULT_OPEN_LIST_GROUPS)) as PrimitiveAtom<
+    Set<RadarListGroup>
 >;
 
-// DEV-ONLY: when set, fully replaces the live current report (see radardevmock.ts). null in prod.
-export const radarDevMockAtom = atom<RadarReport | null>(null) as PrimitiveAtom<RadarReport | null>;
+// DEV-ONLY: when set, fully replaces the live current report (see radardevmock.ts); "none" forces "no
+// report" on a project that has one. null in prod.
+export const radarDevMockAtom = atom<RadarReport | "none" | null>(null) as PrimitiveAtom<RadarReport | "none" | null>;
 
 // Current report: the dev-mock override if present, else the WOS-pinned live report (so an in-flight
-// scan streams status/phase/coverage updates without polling).
+// scan streams status/phase/audit updates without polling).
 export const currentReportAtom: Atom<RadarReport | null> = atom((get) => {
     const mock = get(radarDevMockAtom);
     if (mock) {
-        return mock;
+        return mock === "none" ? null : mock;
     }
     const id = get(currentReportIdAtom);
     if (!id) {
         return null;
     }
     return get(WOS.getWaveObjectAtom<RadarReport>(WOS.makeORef("radarreport", id))) ?? null;
+});
+
+// The id of the report currentReportAtom shows. The load phase reads this rather than currentReportIdAtom,
+// so a forced "no report" is not read as a report that is still loading.
+export const shownReportIdAtom: Atom<string | undefined> = atom((get) => {
+    const mock = get(radarDevMockAtom);
+    if (mock) {
+        return mock === "none" ? undefined : mock.oid;
+    }
+    return get(currentReportIdAtom);
 });
 
 // In-flight report loads, by path. A repeat for the same path is dropped; a load for another path is not,
@@ -199,11 +208,12 @@ export async function cancelScan(reportId: string): Promise<void> {
     await RpcApi.CancelRadarScanCommand(TabRpcClient, { reportid: reportId });
 }
 
-export async function retryClustering(reportId: string): Promise<void> {
+// the RPC keeps its old name: it re-audits the report's failed commits
+export async function retryFailedAudits(reportId: string): Promise<void> {
     await RpcApi.RetryRadarClusteringCommand(TabRpcClient, { reportid: reportId });
 }
 
-// setDisposition applies dismiss/suppress/reopen/unsuppress; the report update round-trips via WOS.
+// setDisposition applies dismiss/suppress/reopen; the report update round-trips via WOS.
 export async function setDisposition(
     reportId: string,
     findingId: string,

@@ -70,6 +70,8 @@ export function RecordBand({
     const [attaching, setAttaching] = useState(false);
     const detachedByKey = useAtomValue(detachedEdgesAtom);
     const detached = runORef != null ? (detachedByKey[runORef] ?? []) : [];
+    // a run whose only record was detached has no band to expand, and Restore must still be reachable
+    const showEdges = (expandable && open) || (band.case === "none" && detached.length > 0);
     useEffect(() => {
         if (runORef != null) {
             loadDetachedEdges(runORef);
@@ -159,7 +161,10 @@ export function RecordBand({
         // capped at half the sheet: expanded, the panel (420px) plus a row per edge stood taller than the
         // sheet, and the run beneath it — whose dock is flex-none — was pushed out of the sheet's clip. The
         // cap makes the band's two disclosures shrink and scroll instead; the row above them never does.
-        <div className="flex max-h-[50%] min-h-0 flex-none flex-col border-b border-border bg-surface">
+        <div
+            data-jarvis-record-band
+            className="flex max-h-[50%] min-h-0 flex-none flex-col border-b border-border bg-surface"
+        >
             {expandable ? (
                 // data-jarvis-band-toggle: the `e` key presses this button rather than re-deriving whether the
                 // band can open — the button exists only when it can (buildJarvisBindings).
@@ -206,7 +211,7 @@ export function RecordBand({
                 {/* one row per edge — expanding must never produce a tab strip. The open-the-record button
                     and the correction controls are siblings, never nested: a control inside a control is the
                     keyboard defect JC19 was filed to fix. */}
-                {expandable && open ? (
+                {showEdges ? (
                     <motion.div
                         key="edges"
                         variants={composerReveal}
@@ -261,7 +266,7 @@ export function RecordBand({
                                         />
                                     </div>
                                 ))}
-                                {runORef != null && !attaching ? (
+                                {expandable && runORef != null && !attaching ? (
                                     <button
                                         type="button"
                                         onClick={() => setAttaching(true)}
@@ -270,7 +275,7 @@ export function RecordBand({
                                         + Attach another record
                                     </button>
                                 ) : null}
-                                {runORef != null && attaching ? (
+                                {expandable && runORef != null && attaching ? (
                                     <RecordPicker
                                         onPick={(dossierId) => {
                                             acceptEdge(dossierId, runORef);

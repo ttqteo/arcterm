@@ -105,6 +105,30 @@ func TestResolveClaudeTrustKeysWorktreeByMainRepo(t *testing.T) {
 	}
 }
 
+func TestMainCheckout(t *testing.T) {
+	repo := newTrustRepo(t)
+	wt := newTrustWorktree(t, repo, "run-1")
+	// a worktree outside the main checkout, where a channel-path prefix cannot place it
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	trustGit(t, repo, "worktree", "add", "-b", "wave/outside", outside)
+	sub := filepath.Join(outside, "pkg")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{repo, wt, outside, sub} {
+		if got := MainCheckout(dir); normalizeClaudePath(got) != normalizeClaudePath(repo) {
+			t.Errorf("MainCheckout(%q) = %q, want %q", dir, got, repo)
+		}
+	}
+	loose := t.TempDir()
+	if got := MainCheckout(loose); got != loose {
+		t.Errorf("outside a repository: MainCheckout(%q) = %q", loose, got)
+	}
+	if got := MainCheckout(""); got != "" {
+		t.Errorf("MainCheckout of no directory = %q", got)
+	}
+}
+
 func TestResolveClaudeTrustKeysRepoAndSubdirByRepoRoot(t *testing.T) {
 	repo := newTrustRepo(t)
 	sub := filepath.Join(repo, "pkg", "deep")

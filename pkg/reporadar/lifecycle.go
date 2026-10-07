@@ -11,31 +11,29 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-// reconcile classifies the current scan's validated findings against the baseline findings (the previous
-// successful report's, or on a retry the report's own) and carries user state forward:
-//   - fingerprint absent in baseline      -> New
+// reconcile classifies the findings a scan detected against the baseline (the previous successful
+// report's) and carries user state forward. A commit is audited once, so detected holds this scan's
+// fresh findings plus the baseline findings that still pass the gate against the current tree.
+//   - fingerprint absent in baseline         -> New
 //   - baseline open (new/recurring/nolonger) -> Recurring
-//   - baseline Suppressed                 -> stays Suppressed (same kind+subsystem => same fp)
-//   - baseline Dismissed, newer evidence  -> Recurring (reopened); else stays Dismissed
+//   - baseline Dismissed or Suppressed       -> keeps its state; a commit's time never changes, so
+//     there is no newer evidence to reopen it
 //
 // Baseline findings the scan did not detect:
-//   - their lens failed to cluster        -> carried unchanged; the scan says nothing about them
-//   - Dismissed/Suppressed                -> carried; a user decision outlives detection
-//   - open                                -> carried open until NoLongerAfterMisses consecutive misses
-//   - already No longer detected          -> dropped
+//   - Dismissed/Suppressed       -> carried; a user decision outlives detection
+//   - open                       -> carried open until NoLongerAfterMisses consecutive misses
+//   - already No longer detected -> dropped
 //
-// "No longer detected" never means fixed — it means the supporting evidence disappeared.
-// evidenceTs maps a finding's fingerprint to the newest supporting event's ObservedTs (see
-// evidenceTimestamps); it gates dismissal reopen.
-func reconcile(current, baseline []waveobj.RadarFinding, evidenceTs map[string]int64, failedModes map[string]bool) []waveobj.RadarFinding {
+// "No longer detected" never means fixed: it means the file or line is gone.
+func reconcile(detected, baseline []waveobj.RadarFinding) []waveobj.RadarFinding {
 	baseByFP := map[string]waveobj.RadarFinding{}
 	for _, f := range baseline {
 		baseByFP[f.Fingerprint] = f
 	}
-	currentFPs := map[string]bool{}
+	detectedFPs := map[string]bool{}
 	var out []waveobj.RadarFinding
-	for _, f := range current {
-		currentFPs[f.Fingerprint] = true
+	for _, f := range detected {
+		detectedFPs[f.Fingerprint] = true
 		f.MissCount = 0
 		p, existed := baseByFP[f.Fingerprint]
 		if !existed {
@@ -45,27 +43,16 @@ func reconcile(current, baseline []waveobj.RadarFinding, evidenceTs map[string]i
 		}
 		f.Investigation = p.Investigation // carry the loop's outcome forward, like Disposition (independent of it)
 		switch p.Group {
-		case GroupSuppressed:
-			f.Group = GroupSuppressed
+		case GroupSuppressed, GroupDismissed:
+			f.Group = p.Group
 			f.Disposition = p.Disposition
-		case GroupDismissed:
-			if p.Disposition != nil && evidenceTs[f.Fingerprint] > p.Disposition.Ts {
-				f.Group = GroupRecurring // newer canonical evidence reopens it
-			} else {
-				f.Group = GroupDismissed
-				f.Disposition = p.Disposition
-			}
 		default: // new/recurring/nolonger were open
 			f.Group = GroupRecurring
 		}
 		out = append(out, f)
 	}
 	for _, p := range baseline {
-		if currentFPs[p.Fingerprint] {
-			continue
-		}
-		if failedModes[modeOf(p)] {
-			out = append(out, p)
+		if detectedFPs[p.Fingerprint] {
 			continue
 		}
 		switch p.Group {
@@ -84,43 +71,9 @@ func reconcile(current, baseline []waveobj.RadarFinding, evidenceTs map[string]i
 	return out
 }
 
-// modeOf reads a finding's mode; reports written before modes existed carry none and were correctness.
-func modeOf(f waveobj.RadarFinding) string {
-	if f.Mode == "" {
-		return ModeCorrectness
-	}
-	return f.Mode
-}
-
-// isStandingFact reports whether a collector describes the tree as it is rather than something that
-// happened. Such signals carry the scan window as their observed time, so letting them count as evidence
-// time would reopen every dismissal once the rolling window slid past it.
-func isStandingFact(collector string) bool {
-	switch collector {
-	case CollectorStructure, CollectorConfig, CollectorDependency:
-		return true
-	}
-	return false
-}
-
-// evidenceTimestamps maps each finding's fingerprint to its newest supporting event signal's ObservedTs.
-func evidenceTimestamps(findings []waveobj.RadarFinding, byID map[string]waveobj.RadarSignal) map[string]int64 {
-	out := map[string]int64{}
-	for _, f := range findings {
-		var max int64
-		for _, id := range f.SignalIDs {
-			if s, ok := byID[id]; ok && !isStandingFact(s.Collector) && s.ObservedTs > max {
-				max = s.ObservedTs
-			}
-		}
-		out[f.Fingerprint] = max
-	}
-	return out
-}
-
 // referencedSignals returns the signals the findings cite, drawn from the pools in order. Carried
-// findings cite signals from earlier reports, so the current candidate pool alone would leave them
-// with no evidence to show.
+// findings cite signals from earlier reports, so this scan's commits alone would leave them with no
+// evidence to show.
 func referencedSignals(findings []waveobj.RadarFinding, pools ...[]waveobj.RadarSignal) []waveobj.RadarSignal {
 	refIDs := map[string]bool{}
 	for _, f := range findings {
@@ -142,9 +95,8 @@ func referencedSignals(findings []waveobj.RadarFinding, pools ...[]waveobj.Radar
 
 // assignFindingIDs stamps report-unique, deterministic ids onto the final finding set. A finding id is a
 // within-report handle the frontend keys selection and disposition on; it is NOT the cross-scan identity
-// (that is the fingerprint). Per-lens numbering can't be unique — correctness/security/debt each number
-// f1.. independently and then merge, and reconcile carries findings forward from the prior report with
-// their old ids — so the whole reconciled set is renumbered here, once.
+// (that is the fingerprint). Reconcile carries findings forward from the prior report with their old
+// ids, so the whole set is renumbered here, once.
 func assignFindingIDs(findings []waveobj.RadarFinding) []waveobj.RadarFinding {
 	for i := range findings {
 		findings[i].ID = fmt.Sprintf("f%d", i+1)
@@ -155,8 +107,8 @@ func assignFindingIDs(findings []waveobj.RadarFinding) []waveobj.RadarFinding {
 // SetDisposition atomically applies a disposition to one finding in a report:
 //   dismiss     -> group=dismissed, records reason/note/ts
 //   suppress    -> group=suppressed, records reason/note/ts
-//   reopen      -> clears a dismissal, group=new
-//   unsuppress  -> clears a suppression, group=new
+//   reopen      -> clears a dismissal, group=recurring
+//   unsuppress  -> clears a suppression, group=recurring
 func SetDisposition(ctx context.Context, reportId, findingId, action, reason, note string) error {
 	return wstore.UpdateRadarReport(ctx, reportId, func(r *waveobj.RadarReport) {
 		for i := range r.Findings {
@@ -171,7 +123,7 @@ func SetDisposition(ctx context.Context, reportId, findingId, action, reason, no
 				r.Findings[i].Group = GroupSuppressed
 				r.Findings[i].Disposition = &waveobj.RadarDisposition{Action: "suppress", Reason: reason, Note: note, Ts: nowMilli()}
 			case "reopen", "unsuppress":
-				r.Findings[i].Group = GroupNew
+				r.Findings[i].Group = GroupRecurring
 				r.Findings[i].Disposition = nil
 			}
 			return

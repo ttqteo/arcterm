@@ -9,6 +9,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
+	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -30,13 +31,18 @@ func TestGetChannelRunsAndMessagesCommands(t *testing.T) {
 	if err != nil || len(runsRtn.Runs) != 1 || runsRtn.Runs[0].ID != "r1" {
 		t.Fatalf("GetChannelRuns wrong: %+v err=%v", runsRtn, err)
 	}
+	held := map[string]int{"r1": runsRtn.Runs[0].Version}
+	chgRtn, err := ws.GetChannelRunChangesCommand(ctx, wshrpc.CommandGetChannelRunChangesData{ChannelId: ch.OID, Known: held})
+	if err != nil || len(chgRtn.RunIds) != 1 || chgRtn.RunIds[0] != "r1" || len(chgRtn.Runs) != 0 {
+		t.Fatalf("GetChannelRunChanges with the run held wrong: %+v err=%v", chgRtn, err)
+	}
 	msgRtn, err := ws.GetChannelMessagesCommand(ctx, wshrpc.CommandGetChannelMessagesData{ChannelId: ch.OID})
 	if err != nil || len(msgRtn.Messages) != 1 || msgRtn.Messages[0].Text != "hi" {
 		t.Fatalf("GetChannelMessages wrong: %+v err=%v", msgRtn, err)
 	}
 }
 
-func TestGetAttentionCommandSeesAGateInAnyChannel(t *testing.T) {
+func TestGetAttentionCommandSeesAHeldLandInAnyChannel(t *testing.T) {
 	ctx := context.Background()
 	ws := &WshServer{}
 	ch, err := wstore.CreateChannel(ctx, "attn", "/p")
@@ -44,11 +50,8 @@ func TestGetAttentionCommandSeesAGateInAnyChannel(t *testing.T) {
 		t.Fatalf("create channel: %v", err)
 	}
 	run := waveobj.Run{
-		ID: "r-gate", Goal: "refactor auth", Status: "awaiting-review", CreatedTs: 1,
-		Phases: []waveobj.RunPhase{
-			{Kind: "plan", State: "done", Gate: true, DoneTs: 700},
-			{Kind: "execute", State: "pending"},
-		},
+		ID: "r-held", Goal: "refactor auth", Status: "done", CreatedTs: 1, CompletedTs: 700,
+		Land: &waveobj.RunLand{State: "held", Reason: "dirty"},
 	}
 	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
 		t.Fatalf("append run: %v", err)
@@ -60,15 +63,15 @@ func TestGetAttentionCommandSeesAGateInAnyChannel(t *testing.T) {
 	}
 	var found *wshrpc.AttentionItem
 	for i := range rtn.Items {
-		if rtn.Items[i].RunId == "r-gate" {
+		if rtn.Items[i].RunId == "r-held" && rtn.Items[i].Kind == "run-land-held" {
 			found = &rtn.Items[i]
 		}
 	}
 	if found == nil {
-		t.Fatalf("gate not reported: %+v", rtn.Items)
+		t.Fatalf("held land not reported: %+v", rtn.Items)
 	}
-	if found.Kind != "gate" || found.ChannelId != ch.OID || found.WaitingSince != 700 {
-		t.Fatalf("wrong gate item: %+v", *found)
+	if found.ChannelId != ch.OID || found.WaitingSince != 700 {
+		t.Fatalf("wrong held-land item: %+v", *found)
 	}
 }
 
@@ -152,5 +155,45 @@ func TestSyncProjectChannelsGivesEachRegisteredProjectOneChannel(t *testing.T) {
 	created, err := wstore.ChannelAtPath(ctx, "/sync/never-ran")
 	if err != nil || created == nil || created.Name != "never-ran" {
 		t.Fatalf("never-ran's channel = %v (err %v), want one named after the project", created, err)
+	}
+}
+
+// A run's update can follow the delete of its channel: there is no row left to send, and no panic.
+func TestSendWaveObjUpdateForADeletedRowDoesNothing(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "deleted-before-update", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	if err := wstore.DeleteChannel(ctx, ch.OID); err != nil {
+		t.Fatalf("DeleteChannel: %v", err)
+	}
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, ch.OID))
+}
+
+func TestPostChannelMessageCommandStoresItsData(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	ch, err := wstore.CreateChannel(ctx, "post-data", "")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	const card = `{"askId":"ask-1"}`
+	if _, err := ws.PostChannelMessageCommand(ctx, wshrpc.CommandPostChannelMessageData{
+		ChannelId: ch.OID, Kind: "jarvis-answered", Author: "jarvis", Text: "Answered", Data: card,
+	}); err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	msgs, err := wstore.GetChannelMessages(ctx, ch.OID, 0, 0)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].Data != card {
+		t.Fatalf("data not stored as given: %+v", msgs)
+	}
+	if _, err := ws.PostChannelMessageCommand(ctx, wshrpc.CommandPostChannelMessageData{
+		ChannelId: ch.OID, Kind: "jarvis-answered", Author: "jarvis", Text: "Answered", Data: "{not json",
+	}); err == nil {
+		t.Fatal("data that is not JSON must be refused")
 	}
 }

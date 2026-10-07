@@ -93,9 +93,6 @@
         "headless:openroutercheapmodel": {
           "type": "string"
         },
-        "headless:openroutermidmodel": {
-          "type": "string"
-        },
         "jarvis:vaultpath": {
           "type": "string"
         },
@@ -160,6 +157,12 @@
           "type": "boolean"
         },
         "claude:activeaccount": {
+          "type": "string"
+        },
+        "radar:auditruntime": {
+          "type": "string"
+        },
+        "radar:auditmodel": {
           "type": "string"
         }
       },

@@ -341,3 +341,58 @@ func TestParsePlanFinalAfterTheFirstTaskIsTaskText(t *testing.T) {
 		t.Fatalf("task text lost the line, got %q", p.Tasks[0].Description)
 	}
 }
+
+func TestParsePlanFilesOverlap(t *testing.T) {
+	accepted := []struct{ name, src string }{
+		{"no Files lines", "### Task 1: a\n### Task 2: b\n**Depends on:** none\n"},
+		{"only one task lists the file", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** none\nedits pkg/a.go\n"},
+		{"direct Depends", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1\n**Files:** `pkg/a.go`\n"},
+		{"implicit Depends on the previous task", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Files:** `pkg/a.go`\n"},
+		{"transitive Depends", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1\n**Files:** `pkg/b.go`\n### Task 3: c\n**Depends on:** Task 2\n**Files:** `pkg/a.go`, `pkg/c.go`\n"},
+		{"different files side by side", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** none\n**Files:** `pkg/b.go`\n"},
+	}
+	for _, c := range accepted {
+		t.Run(c.name, func(t *testing.T) {
+			mustParsePlan(t, c.src)
+		})
+	}
+	refused := []struct {
+		name, src string
+		errParts  []string
+	}{
+		{"unordered tasks", "### Task 1: one\n**Files:** `pkg/a.go`\n### Task 2: two\n**Depends on:** none\n**Files:** `pkg/b.go`, `pkg/a.go`\n",
+			[]string{"1 (one)", "2 (two)", "pkg/a.go", "Depends on"}},
+		{"siblings of one parent", "### Task 1: one\n### Task 2: two\n**Depends on:** Task 1\n**Files:** `x.ts`\n### Task 3: three\n**Depends on:** Task 1\n**Files:** `x.ts`\n",
+			[]string{"2 (two)", "3 (three)", "x.ts"}},
+		{"slashes and dot segments are normalised", "### Task 1: one\n**Files:** `pkg\\a.go`\n### Task 2: two\n**Depends on:** none\n**Files:** `./pkg//a.go`\n",
+			[]string{"pkg/a.go"}},
+		{"a second Files line continues the list", "### Task 1: one\n**Files:** `pkg/a.go`\n### Task 2: two\n**Depends on:** none\n**Files:** `pkg/b.go`\n**Files:** `pkg/a.go`\n",
+			[]string{"pkg/a.go"}},
+		{"paths without backticks", "### Task 1: one\n**Files:** pkg/a.go, pkg/b.go\n", []string{"task 1", "backticks"}},
+		{"an empty Files line", "### Task 1: one\n**Files:**\n", []string{"task 1", "backticks"}},
+		{"an absolute path", "### Task 1: one\n**Files:** `/abs/a.go`\n", []string{"relative to the repo root"}},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ParsePlan(c.src)
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			for _, part := range c.errParts {
+				if !strings.Contains(err.Error(), part) {
+					t.Fatalf("error %q should name %q", err, part)
+				}
+			}
+		})
+	}
+}
+
+func TestParsePlanFilesLineStaysInTheTaskText(t *testing.T) {
+	p := mustParsePlan(t, "**Effort:** effort:abc\n\n### Task 1: a\n**Depends on:** none\n**Files:** `pkg/a.go`\n**Chunk:** #1 x\ndo a\n")
+	if want := "**Files:** `pkg/a.go`\ndo a"; p.Tasks[0].Description != want {
+		t.Fatalf("got description %q, want %q", p.Tasks[0].Description, want)
+	}
+	if !reflect.DeepEqual(p.Tasks[0].Chunks, []string{"#1 x"}) {
+		t.Fatalf("a Chunk line after the Files line is still read, got %v", p.Tasks[0].Chunks)
+	}
+}

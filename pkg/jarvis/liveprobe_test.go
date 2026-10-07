@@ -77,7 +77,7 @@ const (
 type probeCase struct {
 	channelName    string
 	question       baseds.AgentAskQuestion
-	timeline       []waveobj.ChannelMessage
+	timeline       []*waveobj.ChannelMessage
 	recordedChoice *int
 	recordedReason string
 }
@@ -292,7 +292,7 @@ func channelName(db *sql.DB, oid string) string {
 
 // loadTimeline rebuilds what recentTimeline would have seen: the maxTimeline messages immediately
 // preceding the decision, oldest first.
-func loadTimeline(db *sql.DB, channelOID string, before int64) []waveobj.ChannelMessage {
+func loadTimeline(db *sql.DB, channelOID string, before int64) []*waveobj.ChannelMessage {
 	rows, err := db.Query(`select data from db_channelmessage
 		where json_extract(data,'$.channeloid') = ? and json_extract(data,'$.ts') < ?
 		order by json_extract(data,'$.ts') desc limit ?`, channelOID, before, maxTimeline)
@@ -300,7 +300,7 @@ func loadTimeline(db *sql.DB, channelOID string, before int64) []waveobj.Channel
 		return nil
 	}
 	defer rows.Close()
-	var msgs []waveobj.ChannelMessage
+	var msgs []*waveobj.ChannelMessage
 	for rows.Next() {
 		var raw []byte
 		if rows.Scan(&raw) != nil {
@@ -308,7 +308,7 @@ func loadTimeline(db *sql.DB, channelOID string, before int64) []waveobj.Channel
 		}
 		var m waveobj.ChannelMessage
 		if json.Unmarshal(raw, &m) == nil {
-			msgs = append(msgs, m)
+			msgs = append(msgs, &m)
 		}
 	}
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
@@ -317,15 +317,11 @@ func loadTimeline(db *sql.DB, channelOID string, before int64) []waveobj.Channel
 	return msgs
 }
 
-func (c probeCase) channel() *waveobj.Channel {
-	return &waveobj.Channel{Name: c.channelName, Messages: c.timeline}
-}
-
 // ---- leg A: the configured cheap tier (today's gatekeeper) ----
 
 func runBaselineLeg(spec consult.RuntimeSpec, c probeCase) legResult {
 	questions := []baseds.AgentAskQuestion{c.question}
-	prompt := BuildClassifyPrompt(questions, "", c.channel(), nil)
+	prompt := BuildClassifyPrompt(questions, "", &waveobj.Channel{Name: c.channelName}, c.timeline, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), classifyTimeout)
 	defer cancel()
 	start := time.Now()

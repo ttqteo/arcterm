@@ -49,6 +49,8 @@ const RUN_GROUP_KINDS = new Set([
     "lead-woken",
     "lead-launched",
     "lead-wake-failed",
+    "lead-revived",
+    "engine-stuck",
     "lead-exited",
     "worker-exited",
     "interrupted",
@@ -134,6 +136,8 @@ const KIND_TITLE: Record<string, string> = {
     "lead-woken": "Lead woken",
     "lead-launched": "Lead started",
     "lead-wake-failed": "Lead wake failed",
+    "lead-revived": "Lead taking wakes again",
+    "engine-stuck": "Engine stuck",
     "lead-exited": "Lead exited",
     "worker-exited": "Worker exited",
     interrupted: "Interrupted by restart",
@@ -153,6 +157,7 @@ const KIND_TITLE: Record<string, string> = {
     "task-amended": "Lead amended a task",
     "task-lead-told": "Lead told a worker",
     "land-held": "Land held",
+    landed: "Run landed",
     "stage-session-started": "Judging session started",
     "plan-reviewed": "Plan reviewed",
 };
@@ -194,6 +199,7 @@ const KIND_TONE: Record<string, string> = {
     "task-merge-failed": "text-warning",
     "task-cleanup-failed": "text-warning",
     "lead-wake-failed": "text-warning",
+    "engine-stuck": "text-warning",
     "lead-exited": "text-warning",
     "worker-exited": "text-warning",
     interrupted: "text-warning",
@@ -214,9 +220,11 @@ const KIND_TONE: Record<string, string> = {
     "task-cleanup-pending": "text-muted",
     "lead-woken": "text-muted",
     "lead-launched": "text-muted",
+    "lead-revived": "text-muted",
     "task-told": "text-muted",
     "task-verify-started": "text-muted",
     "land-held": "text-warning",
+    landed: "text-success",
     "stage-session-started": "text-muted",
     "plan-reviewed": "text-muted",
 };
@@ -293,7 +301,7 @@ export function detailOf<T>(event: RunEvent): T | undefined {
 
 export type PlanReviewPick = { taskid: string; model: string; reason: string };
 
-// planReviewPicks reads the model picks a passed plan review applied, as its timeline row lists them; a malformed
+// planReviewPicks reads the model picks a plan review's verdict applied, as its timeline row lists them; a malformed
 // entry is dropped rather than shown half-read.
 export function planReviewPicks(detail: unknown): PlanReviewPick[] {
     const d = detailOf<{ picks?: unknown }>({ detail } as RunEvent);

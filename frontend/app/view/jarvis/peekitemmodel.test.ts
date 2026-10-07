@@ -2,26 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { goneLine, itemButtons, itemHints, itemKeyCommand, openLabel } from "./peekitemmodel";
-import type { PeekFacts } from "./peekstore";
+import { goneLine, itemHints, itemKeyCommand, openButton, openLabel } from "./peekitemmodel";
 
-describe("itemButtons", () => {
-    it("disables Open while the body has not reported (loading)", () => {
-        expect(itemButtons("run", null)).toEqual({ open: "disabled" });
+describe("openButton", () => {
+    it("is disabled while the body has not reported (loading)", () => {
+        expect(openButton("run", null)).toBe("disabled");
     });
 
-    it("disables Open when the target is gone", () => {
-        expect(itemButtons("run", { gone: true })).toEqual({ open: "disabled" });
-        expect(itemButtons("agent", { gone: true })).toEqual({ open: "disabled" });
+    it("is disabled when the target is gone", () => {
+        expect(openButton("run", { gone: true })).toBe("disabled");
     });
 
-    it("enables Open for a present target", () => {
-        expect(itemButtons("effort", { gone: false })).toEqual({ open: "enabled" });
+    it("is enabled for a present target", () => {
+        expect(openButton("run", { gone: false })).toBe("enabled");
     });
 
-    it("gives a note no Open, whatever its body reported", () => {
+    it("is absent for a note, whatever its body reported", () => {
         for (const facts of [null, { gone: false }, { gone: true }]) {
-            expect(itemButtons("note", facts)).toEqual({ open: "absent" });
+            expect(openButton("note", facts)).toBe("absent");
         }
     });
 });
@@ -41,16 +39,15 @@ describe("openLabel", () => {
 });
 
 describe("itemHints", () => {
-    const labels = (facts: PeekFacts | null) => itemHints("run", facts).map((h) => `${h.keys.join("")} ${h.label}`);
+    const labels = (kind: Parameters<typeof itemHints>[0]) =>
+        itemHints(kind).map((h) => `${h.keys.join("")} ${h.label}`);
 
     it("offers open, back and close", () => {
-        expect(labels({ gone: false })).toEqual(["↵ open run", "⌫ back", "esc close"]);
-        expect(labels(null)).toEqual(["↵ open run", "⌫ back", "esc close"]);
+        expect(labels("run")).toEqual(["↵ open run", "⌫ back", "esc close"]);
     });
 
     it("offers a note only back and close", () => {
-        const hints = itemHints("note", { gone: false }).map((h) => `${h.keys.join("")} ${h.label}`);
-        expect(hints).toEqual(["⌫ back", "esc close"]);
+        expect(labels("note")).toEqual(["⌫ back", "esc close"]);
     });
 });
 

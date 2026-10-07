@@ -77,8 +77,8 @@ func TestBuildPrompt_capsMessageCount(t *testing.T) {
 	}
 	hist = append(hist, waveobj.ChannelMessage{Author: "you", Text: "NEWEST"})
 	got := BuildPrompt(hist, "q", "")
-	// only the last maxContextMessages are kept; with 51 total, the count of OLDLINE is bounded
-	if strings.Count(got, "OLDLINE") > maxContextMessages {
+	// only the last MaxContextMessages are kept; with 51 total, the count of OLDLINE is bounded
+	if strings.Count(got, "OLDLINE") > MaxContextMessages {
 		t.Errorf("kept too many history lines: %d", strings.Count(got, "OLDLINE"))
 	}
 	if !strings.Contains(got, "NEWEST") {
@@ -327,13 +327,12 @@ func TestSpecForTier_openrouterSetsModel(t *testing.T) {
 	if spec.ApiBackend == nil {
 		t.Fatal("openrouter spec must have an ApiBackend")
 	}
-	mid, _ := SpecForTier("openrouter", TierMid)
-	if mid.Model == "" {
-		t.Fatal("mid tier must set a model")
-	}
-	cap, _ := SpecForTier("openrouter", TierCapable)
-	if cap.Model != mid.Model {
-		t.Fatalf("capable must match mid tier for openrouter: %q vs %q", cap.Model, mid.Model)
+	// openrouter has one configured model: the mid and capable tiers resolve to it too
+	for _, tier := range []Tier{TierCheap, TierMid, TierCapable} {
+		got, ok := SpecForTier("openrouter", tier)
+		if !ok || got.Model != OpenrouterCheapModel() {
+			t.Errorf("%s tier model = %q (ok=%v), want the cheap model %q", tier, got.Model, ok, OpenrouterCheapModel())
+		}
 	}
 }
 

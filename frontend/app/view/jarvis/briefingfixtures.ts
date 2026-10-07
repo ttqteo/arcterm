@@ -191,19 +191,20 @@ const loaded = (state: WorkState): BriefingLoadState => ({
 // emit would verify a row the app cannot actually produce.
 const attentionItems: AttentionItem[] = [
     {
-        kind: "gate",
-        key: "gate:r-briefing-1",
+        kind: "dag-gate",
+        key: "dag-gate:g-briefing-1:t-2",
+        taskid: "t-2",
         channelid: "ch-briefing",
         channelname: "waveterm",
         runid: "r-briefing-1",
         source: "the ask bridge",
-        text: "Approve before Jarvis proceeds.",
+        text: "Approve the encoder before the DAG proceeds.",
         action: "Review",
         phaseidx: 1,
         waitingsince: NOW - DAY,
         effortoid: "scenario-gate",
         chunklabel: "Phase 3",
-        why: "The plan phase finished — 2 of 4 done. The execute phase starts only when you approve.",
+        why: "2 of 4 tasks done. Everything downstream stays queued until this one is released.",
         cites: ["docs/superpowers/plans/ask-bridge.md", "pkg/agentask/encode.go"],
     },
     {

@@ -157,6 +157,8 @@ func takeLeadTold(t *waveobj.TaskNode, text string) bool {
 // beside the reviewer's findings; ReviewRound is kept, so a further fail comes straight back to the lead. Any
 // other task takes the old plan-gate sendback, which has no guidance.
 func SendBack(ctx context.Context, dagID, taskID, guidance string) error {
+	// behind an action still working on the task: a skip resetting its lane must not find it sent back
+	taskActions.Lock(dagID)
 	err := withDagMutation(dagID, func() error {
 		g, err := wstore.GetDag(ctx, dagID)
 		if err != nil {
@@ -172,6 +174,7 @@ func SendBack(ctx context.Context, dagID, taskID, guidance string) error {
 		RecomputeDagStatus(g)
 		return persistDag(ctx, g)
 	})
+	taskActions.Unlock(dagID)
 	if err != nil {
 		return err
 	}
@@ -179,7 +182,8 @@ func SendBack(ctx context.Context, dagID, taskID, guidance string) error {
 }
 
 // dropRejectedCommit moves a review-failed task's lane back to where the task's first reviewed attempt started.
-// Nothing later in the lane can have built on it: the task never counted as done.
+// Nothing later in the lane can have built on it: the task never counted as done. The reset is work on a tree, so
+// the caller must not hold the dag lock.
 func dropRejectedCommit(ctx context.Context, g *waveobj.TaskGroup, task *waveobj.TaskNode) error {
 	if task.ReviewBase == "" || task.RunID == "" {
 		return nil

@@ -1077,3 +1077,44 @@ func TestAFailedFinalStageWaitsOnTheLeadsFixRound(t *testing.T) {
 		t.Fatalf("the digest carries the final stage whole, got %+v", d.Final)
 	}
 }
+
+func TestHealthFollowsAFinishedRunPastItsParkedDag(t *testing.T) {
+	failedFinal := func() *waveobj.TaskGroup {
+		g := digestGroup(t, false, plainTasks())
+		g.Final = &waveobj.FinalStage{State: FinalState_Failed, Round: 1}
+		setTaskStates(g, map[string]string{"t-0": TaskState_Done, "t-1": TaskState_Done, "t-2": TaskState_Done})
+		return g
+	}
+	openGate := func() *waveobj.TaskGroup {
+		tasks := plainTasks()
+		tasks[0].Gate = true
+		g := digestGroup(t, false, tasks)
+		setTaskStates(g, map[string]string{"t-0": TaskState_Done})
+		return g
+	}
+	cleanupDebt := failedFinal()
+	cleanupDebt.Tasks[0].CleanupError = "worktree locked"
+	cases := []struct {
+		name      string
+		g         *waveobj.TaskGroup
+		dagStatus string
+		runStatus string
+		want      string
+	}{
+		{"failed final, run executing", failedFinal(), DagStatus_Blocked, "executing", "needs-you"},
+		{"failed final, run done", failedFinal(), DagStatus_Blocked, "done", "done"},
+		{"failed final, run cancelled", failedFinal(), DagStatus_Blocked, "cancelled", "cancelled"},
+		{"open gate, run done", openGate(), DagStatus_AwaitingReview, "done", "done"},
+		{"cleanup debt, run done", cleanupDebt, DagStatus_Blocked, "done", "needs-you"},
+	}
+	for _, c := range cases {
+		if c.g.Status != c.dagStatus {
+			t.Fatalf("%s: dag status = %q, want %q", c.name, c.g.Status, c.dagStatus)
+		}
+		sn := digestSnapshot(c.g, nil, nil, nil, digestNow)
+		sn.Owner = &waveobj.Run{ID: "run-1", Status: c.runStatus}
+		if got := BuildDigest(sn).Health; got != c.want {
+			t.Errorf("%s: health = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

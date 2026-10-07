@@ -229,6 +229,19 @@ func TestWorkerContractNamesCheckAndLeavesVerifyToTheEngine(t *testing.T) {
 	}
 }
 
+// Final is the first run of a scenario unless the worker that wrote it runs it, and a failure there costs a fix round.
+func TestWorkerContractHasTheWorkerRunItsOwnFinalScenario(t *testing.T) {
+	want := "run that one scenario yourself (the Final command narrowed to it) and get its steps passing before you complete"
+	g := &waveobj.TaskGroup{FinalCmd: "node scripts/cdp/final-verify.mjs surface-smoke"}
+	c := workerContract(g, &waveobj.TaskNode{ID: "t-3"}, "claude", "")
+	if !strings.Contains(c, want) || !strings.Contains(c, "(`node scripts/cdp/final-verify.mjs surface-smoke`)") {
+		t.Fatalf("contract with a Final command missing %q:\n%s", want, c)
+	}
+	if c := workerContract(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-3"}, "claude", ""); strings.Contains(c, "Final command") {
+		t.Fatalf("no Final set, so no Final sentence: %q", c)
+	}
+}
+
 func TestWorkerContractWithCheckButNoVerify(t *testing.T) {
 	g := &waveobj.TaskGroup{Check: "go vet ./..."}
 	c := workerContract(g, &waveobj.TaskNode{ID: "t-3"}, "claude", "")
@@ -460,6 +473,51 @@ func TestScheduleOncePublishesEachChildRunBeforeTheNextSpawn(t *testing.T) {
 	}
 	if !firstPublished {
 		t.Fatal("the first child run was not published before the second task spawned")
+	}
+}
+
+// a tick dispatches its tasks in sequence, and a slow one (a large checkout, a long Setup) must not spend the
+// budget of the ones after it: run f15cd1a3 lost five tasks to "context deadline exceeded" that way
+func TestScheduleOnceGivesEachDispatchItsOwnSpawnBudget(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "engine-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := jarvis.NewRun("owner goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewTaskGroup(owner.ID, ch.OID, "g", 2, false, []waveobj.TaskNode{{ID: "t-0", Label: "a"}, {ID: "t-1", Label: "b"}}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wstore.AppendDag(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	const slowDispatch = 200 * time.Millisecond
+	var budgets []time.Duration
+	old := spawnWorker
+	spawnWorker = func(ctx context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Errorf("task %s spawned with no deadline", opts.TaskId)
+		}
+		budgets = append(budgets, time.Until(deadline))
+		time.Sleep(slowDispatch)
+		return "tab:worker-" + opts.TaskId, nil
+	}
+	restoreAfterStages(t, func() { spawnWorker = old })
+
+	if err := ScheduleOnce(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	if len(budgets) != 2 {
+		t.Fatalf("want both tasks spawned in one tick, got %d", len(budgets))
+	}
+	if budgets[1] <= jarvis.RunWorkerSpawnTimeout-slowDispatch/2 {
+		t.Fatalf("the second dispatch inherited the first one's spent budget: %v left of %v", budgets[1], jarvis.RunWorkerSpawnTimeout)
 	}
 }
 
@@ -1377,6 +1435,95 @@ func TestScheduleRecordsASpawnEvenWhenTheCallerGaveUp(t *testing.T) {
 	}
 }
 
+// spendDispatchRetries leaves a dag's first task with its automatic dispatch retries used up, so its next spawn
+// failure is terminal.
+func spendDispatchRetries(t *testing.T, ctx context.Context, dagID string) {
+	t.Helper()
+	if err := wstore.UpdateDag(ctx, dagID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].Attempts, cur.Tasks[0].LastFailureKind = MaxAutoDispatchRetries, FailureKindSpawn
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stubFlakySpawn fails the first failures spawns and returns how many were asked for.
+func stubFlakySpawn(t *testing.T, failures int) *int {
+	t.Helper()
+	calls := 0
+	old := spawnWorker
+	spawnWorker = func(context.Context, runroute.Capability, string, string, string, string, jarvis.RunWorkerOptions) (string, error) {
+		calls++
+		if calls <= failures {
+			return "", errors.New("creating worker tab: workspace ws-1 not found: context deadline exceeded")
+		}
+		return "tab:worker", nil
+	}
+	restoreAfterStages(t, func() { spawnWorker = old })
+	return &calls
+}
+
+// runs 810fbc02, d86eec09 and f15cd1a3: a spawn that missed its deadline failed the task, and the lead retried it by
+// hand up to 29 minutes later
+func TestDispatchFailureIsRetriedOnTheNextTick(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	f := newFakeLead(t)
+	timedEventsReachTheFakeLead(t)
+	ctx, g, _, _ := seedDispatchDag(t, "dispatch-retry-once")
+	calls := stubFlakySpawn(t, 1)
+
+	if err := ScheduleOnce(ctx, g); err != nil {
+		t.Fatal(err)
+	}
+	if task := g.Tasks[0]; task.State != TaskState_Pending || task.RunID != "" || task.Attempts != 1 {
+		t.Fatalf("a failed dispatch waits for the next tick, got state=%s run=%q attempts=%d", task.State, task.RunID, task.Attempts)
+	}
+	if err := ScheduleOnce(ctx, g); err != nil {
+		t.Fatal(err)
+	}
+	if task := g.Tasks[0]; task.State != TaskState_Running || task.RunID == "" || *calls != 2 {
+		t.Fatalf("the second dispatch runs the task, got state=%s run=%q spawns=%d", task.State, task.RunID, *calls)
+	}
+	if len(f.sends) != 0 || f.countKind(waveobj.RunEventKindTaskFailed) != 0 {
+		t.Fatalf("a dispatch the engine retried neither fails the task nor wakes the lead, sends=%q rows=%+v", f.sends, f.rows)
+	}
+	var retried map[string]any
+	for _, r := range f.rows {
+		if r["eventkind"] == waveobj.RunEventKindTaskRetried {
+			retried = r
+		}
+	}
+	if f.countKind(waveobj.RunEventKindTaskRetried) != 1 || retried["auto"] != true || retried["kind"] != FailureKindSpawn || retried["attempt"] != 1 {
+		t.Fatalf("want one automatic spawn-failed retry, got %+v", f.rows)
+	}
+}
+
+func TestDispatchThatKeepsFailingFailsAfterItsRetries(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	f := newFakeLead(t)
+	timedEventsReachTheFakeLead(t)
+	ctx, g, _, _ := seedDispatchDag(t, "dispatch-retry-spent")
+	const never = 1 << 30
+	calls := stubFlakySpawn(t, never)
+
+	// one tick past the terminal failure: a failed task is not dispatched again
+	for range MaxAutoDispatchRetries + 2 {
+		if err := ScheduleOnce(ctx, g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if task := g.Tasks[0]; task.State != TaskState_Failed || task.LastFailureKind != FailureKindSpawn || *calls != MaxAutoDispatchRetries+1 {
+		t.Fatalf("want failed (spawn-failed) after %d dispatches, got state=%s kind=%s spawns=%d", MaxAutoDispatchRetries+1, task.State, task.LastFailureKind, *calls)
+	}
+	if n := f.countKind(waveobj.RunEventKindTaskRetried); n != MaxAutoDispatchRetries {
+		t.Fatalf("want %d task-retried events, got %d", MaxAutoDispatchRetries, n)
+	}
+	want := "wake: task t-0 failed (spawn-failed), retry spent. wsh jarvis dag status"
+	if len(f.sends) != 1 || f.sends[0] != want || f.countKind(waveobj.RunEventKindTaskFailed) != 1 {
+		t.Fatalf("want one failure and one wake %q, got sends=%q rows=%+v", want, f.sends, f.rows)
+	}
+}
+
 // stalledNoLead is seedSilentChild with the run's lead process gone, so its task stalls on the next tick
 // with nobody to judge it.
 func stalledNoLead(t *testing.T, name string, alive bool) (*fakeLead, context.Context, *waveobj.TaskGroup, string) {
@@ -1435,14 +1582,18 @@ func TestStalledDeadWorkerAutoRetriesDespiteItsExitIdle(t *testing.T) {
 }
 
 func TestAutoRetryStalledReturnsTheTaskToPending(t *testing.T) {
-	_, ctx, g, _ := stalledNoLead(t, "auto-retry-pending", false)
-	g = mustLoadDag(t, ctx, g.OID)
-	g.Tasks[0].State = TaskState_Stalled
+	_, ctx, g, runID := stalledNoLead(t, "auto-retry-pending", false)
+	if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+		cur.Tasks[0].State = TaskState_Stalled
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 
-	if !autoRetryStalled(ctx, g, "t-0") {
+	if !autoRetryStalled(ctx, g.OID, stalledTask{taskID: "t-0", runID: runID}) {
 		t.Fatal("a stalled task with no live lead is retried")
 	}
-	if got := g.Tasks[0]; got.State != TaskState_Pending || got.RunID != "" || got.StallRetries != 1 {
+	if got := mustLoadDag(t, ctx, g.OID).Tasks[0]; got.State != TaskState_Pending || got.RunID != "" || got.StallRetries != 1 {
 		t.Fatalf("want pending with no run and one stall retry, got %+v", got)
 	}
 }

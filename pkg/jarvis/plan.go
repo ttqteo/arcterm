@@ -5,6 +5,7 @@ package jarvis
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -21,7 +22,7 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"ARC_VERIFY_CHANGED naming a file that lists the paths the merge changed, one per line: a Verify that reads it " +
 	"should test only what those paths can break, so the merge queue waits on those tests, not the whole suite. The " +
 	"final stage runs Verify once more with ARC_VERIFY_CHANGED unset, on the merged result, where it should run " +
-	"everything. Both times ARC_VERIFY_FLAKY names an empty file: a Verify that reruns a failing test and sees it pass " +
+	"everything; the last merge of the plan, alone in its batch, skips its own Verify for that one. Both times ARC_VERIFY_FLAKY names an empty file: a Verify that reruns a failing test and sees it pass " +
 	"should exit 0 and append that test's name to the file, one per line, and the run then lists each as a flaky test " +
 	"among what it could not verify instead of reading as a clean pass. " +
 	"Check is a fast whole-project static check (for example typecheck plus go vet) that each worker runs " +
@@ -49,11 +50,17 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"A Chunk line anywhere else is task text, and a plan with a Chunk line but no Effort line is refused. " +
 	"A task may also carry one **Model:** <model id> line in that same place (not in backticks): the model its worker runs on, " +
 	"used when the run's workers setting is Reviewer picks and ignored otherwise. " +
+	"A task should also carry a **Files:** line in that same place: every repo-relative path the task creates, edits or deletes, " +
+	"generated files included, each in backticks and separated by commas (files, not directories or globs; a second Files line " +
+	"continues the list). Submit refuses a plan in which two tasks that can run at the same time list the same path. A task " +
+	"without the line takes no part in that check, so list every task's files. " +
 	"Number tasks 1, 2, 3... in order under `##` or `###` headings. A Depends on line must be the first line under its heading: " +
 	"leave it out to run after the previous task, write `none` for no dependencies, or list earlier tasks (`Task 1, Task 3`).\n" +
 	"The engine runs tasks at the same time whenever nothing makes them wait, so the Depends on lines are what set a plan's width. " +
 	"Split the work by what can proceed independently, and make a task wait only when it truly builds on another's output — a plan " +
-	"with no Depends on lines is one serial chain and gets none of that.\n\n" +
+	"with no Depends on lines is one serial chain and gets none of that. A file has one owner among the tasks that can run at " +
+	"the same time: when two tasks edit the same file, generated files included, give it to one of them or put a Depends on " +
+	"line between them, since two workers' edits to one file collide at merge. The Files lines are how submit checks this.\n\n" +
 	"# <plan title>\n\n" +
 	"**Effort:** effort:<oid>\n" +
 	"**Spec:** `<path to the spec>`\n" +
@@ -66,11 +73,14 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"**Depends on:** none\n" +
 	"**Model:** <model-id>\n" +
 	"**Chunk:** <exact chunk label>\n" +
+	"**Files:** `<path>`, `<another path>`\n" +
 	"<what to do, and the tests that prove it>\n\n" +
 	"### Task 2: <title>\n" +
-	"<no Depends line: runs after Task 1>\n\n" +
+	"**Files:** `<path>`\n" +
+	"<no Depends line: runs after Task 1, so it may list a path Task 1 lists>\n\n" +
 	"### Task 3: <title>\n" +
 	"**Depends on:** Task 1\n" +
+	"**Files:** `<a path Task 2 does not list>`\n" +
 	"<runs beside Task 2>\n"
 
 // Plan is a parsed implementation plan: its tasks as DAG nodes ("t-N"), plus the plan-level commands.
@@ -108,6 +118,8 @@ var (
 	planDependsRe     = regexp.MustCompile(`^\*\*Depends on:\*\*\s*(.*?)\s*$`)
 	planChunkRe       = regexp.MustCompile(`^\*\*Chunk:\*\*\s*(.*?)\s*$`)
 	planModelRe       = regexp.MustCompile(`^\*\*Model:\*\*\s*(.*?)\s*$`)
+	planFilesRe       = regexp.MustCompile(`^\*\*Files:\*\*\s*(.*?)\s*$`)
+	planFileListRe    = regexp.MustCompile("^`[^`]+`(\\s*,\\s*`[^`]+`)*$")
 	planTaskRefRe     = regexp.MustCompile(`^Task (\d+)$`)
 )
 
@@ -131,6 +143,8 @@ func ParsePlan(src string) (Plan, error) {
 	var p Plan
 	var body []string
 	var preamble []string
+	// files is each task's **Files:** paths by task index; it lives only for the overlap check below
+	files := map[int][]string{}
 	fence := ""
 	inTaskHead, dependsAllowed := false, false
 	flush := func() {
@@ -221,6 +235,17 @@ func ParsePlan(src string) (Plan, error) {
 				task.RunSpec.Model, task.ModelSource, dependsAllowed = m[1], waveobj.TaskModelSource_Plan, false
 				continue
 			}
+			if m := planFilesRe.FindStringSubmatch(line); m != nil {
+				paths, err := parsePlanFiles(m[1], len(p.Tasks))
+				if err != nil {
+					return Plan{}, err
+				}
+				i := len(p.Tasks) - 1
+				files[i], dependsAllowed = append(files[i], paths...), false
+				// stays in the task text too: the worker and its reviewer read which files the task owns
+				body = append(body, line)
+				continue
+			}
 			inTaskHead = false
 		}
 		body = append(body, line)
@@ -236,8 +261,59 @@ func ParsePlan(src string) (Plan, error) {
 			}
 		}
 	}
+	if err := checkPlanFileOwners(p.Tasks, files); err != nil {
+		return Plan{}, err
+	}
 	p.Preamble = strings.Join(trimBlankLines(preamble), "\n")
 	return p, nil
+}
+
+// parsePlanFiles reads a **Files:** value: backticked repo-relative paths separated by commas, each
+// returned slash-normalised so two spellings of one path compare equal.
+func parsePlanFiles(value string, n int) ([]string, error) {
+	if !planFileListRe.MatchString(value) {
+		return nil, fmt.Errorf("task %d: **Files:** must list paths in backticks separated by commas, like \"`pkg/a.go`, `pkg/b.go`\", got %q", n, value)
+	}
+	var paths []string
+	for _, m := range planSpecQuotedRe.FindAllStringSubmatch(value, -1) {
+		clean := path.Clean(strings.ReplaceAll(strings.TrimSpace(m[1]), `\`, "/"))
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") || strings.Contains(clean, ":") {
+			return nil, fmt.Errorf("task %d: **Files:** path %q must be relative to the repo root", n, m[1])
+		}
+		paths = append(paths, clean)
+	}
+	return paths, nil
+}
+
+// checkPlanFileOwners refuses two tasks that list the same path when neither waits on the other, directly
+// or through other tasks: the engine runs them at the same time and their edits collide at merge. files
+// is each task's listed paths by task index; a task absent from it is not checked.
+func checkPlanFileOwners(tasks []waveobj.TaskNode, files map[int][]string) error {
+	index := make(map[string]int, len(tasks))
+	// a task depends only on earlier tasks, so each one's ancestors are complete before a later task reads them
+	ancestors := make([]map[int]bool, len(tasks))
+	owners := map[string][]int{}
+	for i, t := range tasks {
+		index[t.ID] = i
+		ancestors[i] = map[int]bool{}
+		for _, dep := range t.Deps {
+			d := index[dep]
+			ancestors[i][d] = true
+			for a := range ancestors[d] {
+				ancestors[i][a] = true
+			}
+		}
+		for _, f := range files[i] {
+			for _, o := range owners[f] {
+				if o != i && !ancestors[i][o] {
+					return fmt.Errorf("tasks %d (%s) and %d (%s) can run at the same time and both list %s in **Files:**; give the file to one task, or add a **Depends on:** line so one waits for the other",
+						o+1, tasks[o].Label, i+1, t.Label, f)
+				}
+			}
+			owners[f] = append(owners[f], i)
+		}
+	}
+	return nil
 }
 
 // trimBlankLines drops leading and trailing blank lines, keeping any blank-line run in the middle.

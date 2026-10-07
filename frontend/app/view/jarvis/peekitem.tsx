@@ -10,7 +10,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { ChevronLeft, X } from "lucide-react";
 import { openTarget } from "./openref";
 import { PEEK_BODIES } from "./peek/peekregistry";
-import { goneLine, itemButtons, kindNoun, openLabel, type ItemKeyCommand } from "./peekitemmodel";
+import { goneLine, kindNoun, openButton, openLabel, type ItemKeyCommand } from "./peekitemmodel";
 import { closePeek, peekTargetKey, type PeekFacts, type PeekItem } from "./peekstore";
 
 const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -27,7 +27,6 @@ export function runItemCommand(
     command: ItemKeyCommand,
     chrome: ItemChrome
 ): boolean {
-    const buttons = itemButtons(item.target.kind, facts);
     switch (command) {
         case "close":
             chrome.close();
@@ -36,7 +35,7 @@ export function runItemCommand(
             chrome.back();
             return true;
         case "open":
-            if (buttons.open !== "enabled") {
+            if (openButton(item.target.kind, facts) !== "enabled") {
                 return false;
             }
             chrome.leave();
@@ -80,7 +79,7 @@ export function PeekItemView({
     onCommand: (command: ItemKeyCommand) => void;
 }) {
     const kind = item.target.kind;
-    const buttons = itemButtons(kind, facts);
+    const open = openButton(kind, facts);
     const Body = PEEK_BODIES[kind];
     return (
         <>
@@ -127,23 +126,21 @@ export function PeekItemView({
                 )}
             </div>
 
-            {buttons.open !== "absent" ? (
+            {open !== "absent" ? (
                 <div className="flex flex-none items-center gap-2 border-t border-border px-3.5 py-2.5">
-                    {
-                        <button
-                            type="button"
-                            data-pet-peek-open
-                            disabled={buttons.open === "disabled"}
-                            onClick={() => onCommand("open")}
-                            className={cn(
-                                "rounded-[7px] bg-accent px-[13px] py-[7px] text-[12px] font-semibold text-background hover:bg-accenthover",
-                                "disabled:cursor-default disabled:opacity-35 disabled:hover:bg-accent",
-                                FOCUS_RING
-                            )}
-                        >
-                            {openLabel(kind)}
-                        </button>
-                    }
+                    <button
+                        type="button"
+                        data-pet-peek-open
+                        disabled={open === "disabled"}
+                        onClick={() => onCommand("open")}
+                        className={cn(
+                            "rounded-[7px] bg-accent px-[13px] py-[7px] text-[12px] font-semibold text-background hover:bg-accenthover",
+                            "disabled:cursor-default disabled:opacity-35 disabled:hover:bg-accent",
+                            FOCUS_RING
+                        )}
+                    >
+                        {openLabel(kind)}
+                    </button>
                 </div>
             ) : null}
         </>

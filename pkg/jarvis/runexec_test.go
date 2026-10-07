@@ -476,3 +476,34 @@ func TestSpawnRunWorkerPassesALongPromptAsAFile(t *testing.T) {
 		t.Fatalf("prompt file holds %d bytes (err %v), want the whole prompt", len(data), err)
 	}
 }
+
+// a worker that dies at launch is failed through its run row and the owner stamp on its tab, which the caller
+// writes after the spawn: the spawn must start nothing, or that exit beats them and fails nothing
+func TestSpawnRunWorkerStartsNothingUntilStartRunWorker(t *testing.T) {
+	stubWorkerSpawn(t)
+	var started []string
+	startWorkerController = func(_ context.Context, tabID, _ string) error {
+		started = append(started, tabID)
+		return nil
+	}
+	oref, err := SpawnRunWorker(context.Background(), piCap(t), "ws-1", "proj", "", "do it", RunWorkerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(started) != 0 {
+		t.Fatalf("the spawn must not start the worker, started %v", started)
+	}
+	if err := StartRunWorker(context.Background(), oref); err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.TrimPrefix(oref, "tab:"); len(started) != 1 || started[0] != want {
+		t.Fatalf("want the worker in tab %s started once, got %v", want, started)
+	}
+}
+
+func TestStartRunWorkerRefusesATabThatIsGone(t *testing.T) {
+	stubWorkerSpawn(t)
+	if err := StartRunWorker(context.Background(), "tab:"+uuid.NewString()); err == nil {
+		t.Fatal("a worker whose tab is gone cannot be started")
+	}
+}

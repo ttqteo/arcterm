@@ -63,13 +63,13 @@ func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWor
 	return RunWorkerSpec{Bin: h.Bin, Args: args, BaseArgs: baseArgs}, true
 }
 
-// resumeNudge is a resumed worker's first turn. It never restates the task: the session already holds it.
-const resumeNudge = "The app restarted or your process stopped mid-task. Check the working tree and your last steps, then continue the task."
+// ResumeNudge is a resumed worker's first turn. It never restates the task: the session already holds it.
+const ResumeNudge = "The app restarted or your process stopped mid-task. Check the working tree and your last steps, then continue the task."
 
 // ResumeWorkerArgs is the command line that reopens a run worker's session, launched with --session-id
-// sessionId, and nudges it on: the runtime's resume flag, the worker's launch flags, then the prompt. An empty
-// runtime is a legacy run, which is claude.
-func ResumeWorkerArgs(runtime, sessionId string, baseArgs []string) ([]string, bool) {
+// sessionId, and nudges it on: the runtime's resume flag, the worker's launch flags, then nudge as the prompt.
+// An empty runtime is a legacy run, which is claude.
+func ResumeWorkerArgs(runtime, sessionId string, baseArgs []string, nudge string) ([]string, bool) {
 	var flag string
 	switch runtime {
 	case "", "claude":
@@ -80,12 +80,12 @@ func ResumeWorkerArgs(runtime, sessionId string, baseArgs []string) ([]string, b
 		return nil, false
 	}
 	args := append([]string{flag, sessionId}, baseArgs...)
-	return append(args, resumeNudge), true
+	return append(args, nudge), true
 }
 
 // ResumeRunWorker restarts the worker in tabORef in its own session, in the same tab so the human keeps its
-// scrollback. A var so tests can stub the restart.
-var ResumeRunWorker = func(ctx context.Context, tabORef, runtime, sessionId string) error {
+// scrollback, with nudge as its first turn. A var so tests can stub the restart.
+var ResumeRunWorker = func(ctx context.Context, tabORef, runtime, sessionId, nudge string) error {
 	oref, err := waveobj.ParseORef(tabORef)
 	if err != nil || oref.OType != waveobj.OType_Tab {
 		return fmt.Errorf("bad worker oref %q", tabORef)
@@ -105,26 +105,30 @@ var ResumeRunWorker = func(ctx context.Context, tabORef, runtime, sessionId stri
 	if !block.Meta.HasKey("agent:baseargs") {
 		return fmt.Errorf("the worker was launched before resume support")
 	}
-	args, ok := ResumeWorkerArgs(runtime, sessionId, block.Meta.GetStringList("agent:baseargs"))
+	args, ok := ResumeWorkerArgs(runtime, sessionId, block.Meta.GetStringList("agent:baseargs"), nudge)
 	if !ok {
 		return fmt.Errorf("runtime %q cannot resume a session", runtime)
 	}
 	return configureAndStartWorker(ctx, oref.OID, blockId, waveobj.MetaMapType{waveobj.MetaKey_CmdArgs: args})
 }
 
-// SpawnRunWorker creates a background tab running the runtime's unattended worker form in cwd and
-// returns its tab oref ("tab:<id>"). Mirrors the frontend launchAgent path, but the permission-skip
-// flag is mandatory here (opt-in in the launcher): a run worker is headless with no human attached, so
-// without it the agent blocks forever on per-tool prompts — alive but never running, never firing the
-// hooks that report agent:status (the "worker never starts" symptom). The flag stops there, so claude's
-// separate first-run folder-trust prompt is handled by ensureClaudeDirTrusted (see claudetrust.go).
-// Configure the new tab's default block as a cmd worker, tag the tab for the roster, and force-start
-// the controller (controllers otherwise start lazily on a frontend terminal resync — force=true
-// launches it headlessly). It broadcasts its tab's workspace update itself when the caller's ctx isn't
-// already collecting updates (the engine's dispatch collects none); a caller that does collect — like
-// spawnRunWorkersWithPrompt — flushes them itself, on its own schedule.
+// SpawnRunWorker creates a background tab set up to run the runtime's unattended worker form in cwd and
+// returns its tab oref ("tab:<id>"). It starts nothing: the caller records the worker (its run row, the
+// owner stamp on the tab) and then calls StartRunWorker. The exit hook finds a worker's run through those
+// records, so a worker started before them that dies at launch fails nothing (run d8fe96ab's t-2 exited a
+// second after its spawn and its task read running for 15 minutes).
 //
-// It is a var so tests can stub the process-spawning boundary without a live tab/PTY.
+// Mirrors the frontend launchAgent path, but the permission-skip flag is mandatory here (opt-in in the
+// launcher): a run worker is headless with no human attached, so without it the agent blocks forever on
+// per-tool prompts — alive but never running, never firing the hooks that report agent:status (the
+// "worker never starts" symptom). The flag stops there, so claude's separate first-run folder-trust
+// prompt is handled by ensureClaudeDirTrusted (see claudetrust.go).
+// Configure the new tab's default block as a cmd worker and tag the tab for the roster. It broadcasts
+// its tab's workspace update itself when the caller's ctx isn't already collecting updates (the engine's
+// dispatch collects none); a caller that does collect — like spawnRunWorkersWithPrompt — flushes them
+// itself, on its own schedule.
+//
+// It is a var so tests can stub the tab-creating boundary without a live tab.
 
 type RunWorkerOptions struct {
 	KeepOnExit bool
@@ -282,15 +286,37 @@ var SpawnRunWorker = func(ctx context.Context, cap runroute.Capability, workspac
 	if _, err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Tab, tabId), tabMeta, false); err != nil {
 		return "", fmt.Errorf("setting worker tab meta: %w", err)
 	}
-	if err := configureAndStartWorker(ctx, tabId, blockId, blockMeta); err != nil {
-		return "", err
+	if err := persistWorkerBlockMeta(ctx, blockId, blockMeta); err != nil {
+		return "", fmt.Errorf("setting worker block meta: %w", err)
+	}
+	return waveobj.MakeORef(waveobj.OType_Tab, tabId).String(), nil
+}
+
+// StartRunWorker launches the process of a worker SpawnRunWorker set up, force-starting its controller
+// (controllers otherwise start lazily on a frontend terminal resync — force=true launches it headlessly).
+// A var so tests can stub the process-spawning boundary without a live tab/PTY.
+var StartRunWorker = func(ctx context.Context, tabORef string) error {
+	oref, err := waveobj.ParseORef(tabORef)
+	if err != nil || oref.OType != waveobj.OType_Tab {
+		return fmt.Errorf("bad worker oref %q", tabORef)
+	}
+	tab, err := wstore.DBMustGet[*waveobj.Tab](ctx, oref.OID)
+	if err != nil {
+		return fmt.Errorf("loading worker tab: %w", err)
+	}
+	if len(tab.BlockIds) == 0 {
+		return fmt.Errorf("worker tab %s has no block", oref.OID)
+	}
+	blockId := tab.BlockIds[0]
+	if err := startWorkerController(ctx, oref.OID, blockId); err != nil {
+		return fmt.Errorf("starting worker controller: %w", err)
 	}
 	// Make the worker visible in the roster immediately. The roster keys off agent:status, which
 	// otherwise arrives only from the external reporter hook — unreliable for a headless worker (the
 	// hook may be owned by a coexisting install and route to the wrong wavesrv). A real hook event
 	// later refines this (detail/model, idle-on-stop).
-	wps.Broker.Publish(initialWorkerStatusEvent(blockId, cap.Runtime, time.Now().UnixMilli()))
-	return waveobj.MakeORef(waveobj.OType_Tab, tabId).String(), nil
+	wps.Broker.Publish(initialWorkerStatusEvent(blockId, tab.Meta.GetString("session:agent", ""), time.Now().UnixMilli()))
+	return nil
 }
 
 // initialWorkerStatusEvent is the retained agent:status the backend emits at spawn so a run worker
@@ -317,9 +343,10 @@ type SpawnedWorker struct {
 }
 
 // EnsureWorkers spawns a worker for each running phase that has none yet, returning the phase
-// index -> worker it created. It does not mutate/persist the run; the caller attaches the orefs and
-// records the session id. The runtime comes from the persisted run; an empty runtime (legacy Run) resolves
-// to Claude, the historical worker implementation. On a spawn error it returns what it has so far plus the
+// index -> worker it created. It does not mutate/persist the run or start a process; the caller attaches
+// the orefs, records the session id, and then starts each worker (StartRunWorker). The runtime comes from
+// the persisted run; an empty runtime (legacy Run) resolves to Claude, the historical worker
+// implementation. On a spawn error it returns what it has so far plus the
 // error (the caller still persists partial work). A non-empty prompt replaces the phase's own: a lead
 // started after its plan was submitted works from the orchestration rules, not the goal-run launch prompt.
 func EnsureWorkers(ctx context.Context, run *waveobj.Run, cap runroute.Capability, projectName, prompt string) (map[int]SpawnedWorker, error) {

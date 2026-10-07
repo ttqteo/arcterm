@@ -45,6 +45,20 @@ func TestEngineLaunchPromptCarriesTheGoalRunProtocol(t *testing.T) {
 	}
 }
 
+// the review dialog sends an approval with quoted notes as text, which a lead not told otherwise reads as a
+// change request and never proceeds.
+func TestLeadPromptApprovalWithNotes(t *testing.T) {
+	const applied = "its `> ` quoted notes are applied before proceeding; any other text is a change request."
+	launch := BuildOrchestratePrompt("ship auth", nil, "claude")
+	if want := "an answer that starts with `Approve` is an approval, and " + applied; !strings.Contains(launch, want) {
+		t.Fatalf("launch prompt's Spec review missing %q:\n%s", want, launch)
+	}
+	rules := OrchestrationRules("r1", "", "")
+	if want := "an answer that starts with `Accept all and proceed` is an approval, and " + applied; !strings.Contains(rules, want) {
+		t.Fatalf("rules' Plan review missing %q:\n%s", want, rules)
+	}
+}
+
 // the old engine prompt's planning protocol goes with it: JSON submit, pi-tasks, triage, the task cap
 // and the human's width all belong to a lead that planned the dag itself, which a plan file replaces.
 func TestEngineLaunchPromptDropsTheOldPlanningProtocol(t *testing.T) {
@@ -141,6 +155,9 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 		// the land runs after complete; run dc7d6de0's lead completed a failed final and never said it would hold
 		"a failed final stage holds the land: completing does not merge the branch",
 		"`wsh runs land <run> --force`",
+		// run 94a265f6's lead could only offer two ways to complete, and the human had to come back to land it
+		"the question is what to do with the land",
+		"`wsh jarvis complete --report <file> --force-land`, only on that answer",
 	} {
 		if !strings.Contains(strings.ToLower(r), strings.ToLower(want)) {
 			t.Fatalf("rules missing %q:\n%s", want, r)

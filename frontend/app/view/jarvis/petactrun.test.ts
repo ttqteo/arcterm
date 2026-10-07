@@ -9,8 +9,8 @@ const openOrPeekAddress = vi.fn();
 const postMessage = vi.fn();
 const consult = vi.fn();
 const ackRun = vi.fn();
-const getAttention = vi.fn();
 const landRun = vi.fn();
+const getAttention = vi.fn();
 
 vi.mock("./openref", () => ({
     openAddress: (...a: any[]) => openAddress(...a),
@@ -21,8 +21,8 @@ vi.mock("@/app/store/wshclientapi", () => ({
         PostChannelMessageCommand: (...a: any[]) => postMessage(...a),
         ConsultCommand: (...a: any[]) => consult(...a),
         AckRunCommand: (...a: any[]) => ackRun(...a),
-        GetAttentionCommand: (...a: any[]) => getAttention(...a),
         LandRunCommand: (...a: any[]) => landRun(...a),
+        GetAttentionCommand: (...a: any[]) => getAttention(...a),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -138,7 +138,8 @@ describe("runAct — ack", () => {
     });
 });
 
-describe("runAct — land", () => {
+describe("runAct — a held land", () => {
+    const row = { key: "run-land-held:r1" } as AttentionItem;
     const act: PetAct = {
         id: "run-land-held:r1:land",
         verb: "land",
@@ -146,12 +147,13 @@ describe("runAct — land", () => {
         channelId: "ch1",
         runId: "r1",
     };
+    const dismiss: PetAct = { id: "run-land-held:r1:dismiss", verb: "ack", label: "Dismiss", land: true, channelId: "ch1", runId: "r1" }; // prettier-ignore
 
     afterEach(() => globalStore.set(attentionAtom, []));
 
     it("lands the run with the land's own budget, drops its row, and leaves the peek open", async () => {
         globalStore.set(petPeekOpenAtom, true);
-        globalStore.set(attentionAtom, [{ key: "run-land-held:r1" } as AttentionItem]);
+        globalStore.set(attentionAtom, [row]);
         landRun.mockResolvedValue({ state: "landed", commit: "af6760b07d6b" });
         getAttention.mockResolvedValue({ items: [] });
         await runAct(model, act);
@@ -184,6 +186,15 @@ describe("runAct — land", () => {
             status: "error",
             text: "run r1 is running; only a done run lands",
         });
+    });
+
+    it("dismisses the held land, not the run's unverified outcome", async () => {
+        globalStore.set(attentionAtom, [row]);
+        ackRun.mockResolvedValue(undefined);
+        getAttention.mockResolvedValue({ items: [] });
+        await runAct(model, dismiss);
+        expect(ackRun).toHaveBeenLastCalledWith(expect.anything(), { channelid: "ch1", runid: "r1", land: true });
+        expect(globalStore.get(attentionAtom)).toEqual([]);
     });
 });
 

@@ -1,5 +1,7 @@
 # Design — Repo Radar
 
+> Superseded by `2026-10-06-radar-fix-sibling-audit-design.md`: the collectors and the clustering call described here are retired.
+
 **One line:** Manually scan one registered repository for evidence-backed correctness-risk hypotheses, then explicitly turn a finding into a normal Arc Run draft.
 
 **Status:** Design approved in conversation; revised 2026-07-10 after spec review (deterministic-boundary fingerprint; consult-reuse, Runs-collector, and Channels-handoff corrections). Implementation not started.

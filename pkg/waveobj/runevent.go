@@ -43,7 +43,10 @@ const (
 	//   task-merge-*                  merge lifecycle at persisted content-integration boundaries.
 	//                                 -blocked is a conflict, which is the human's; -failed is git
 	//                                 refusing the squash outright, which is retried a bounded number
-	//                                 of times and then blocks rather than looping unseen
+	//                                 of times and then blocks rather than looping unseen. task-merged
+	//                                 carries "verify": "final" when the merge ran no Verify of its own
+	//                                 because the final stage's Verify judges the same tree (the last
+	//                                 merge of a plan with a Verify line)
 	//   task-cleanup-*                durable worktree cleanup at persisted transition boundaries
 	RunEventKindTaskDone             = "task-done"
 	RunEventKindTaskFailed           = "task-failed"
@@ -64,8 +67,11 @@ const (
 	// the question queue and the lead wake (orchestrator redesign §5, §6):
 	//   task-forwarded    a task's open judgment handed to the human, with why ("taskid", "askid", "note")
 	//   lead-woken        a wake typed into the lead's terminal ("text")
-	//   lead-launched     a plan-input run's first lead started, with the wake that needed it ("text")
+	//   lead-launched     a lead started with this first message ("text"): a plan-input run's first lead, a
+	//                     replacement for a dead one, or one resumed at boot after the app stopped under it
 	//   lead-wake-failed  the lead cannot take wakes; its judgment goes to the human ("reason", "lines")
+	//   lead-revived      a lead given up on is taking wakes again: it went back to work, or the human had
+	//                     it retried while its process still ran
 	//   lead-exited       the lead exited before submitting a plan, which fails the run ("reason")
 	//   worker-exited     a quick/pipeline run's only worker exited without completing its phase ("reason")
 	//   interrupted       at boot, a non-dag run's running phase was failed because the app stopped under its
@@ -75,10 +81,20 @@ const (
 	RunEventKindLeadWoken      = "lead-woken"
 	RunEventKindLeadLaunched   = "lead-launched"
 	RunEventKindLeadWakeFailed = "lead-wake-failed"
+	RunEventKindLeadRevived    = "lead-revived"
 	RunEventKindLeadExited     = "lead-exited"
 	RunEventKindWorkerExited   = "worker-exited"
 	RunEventKindInterrupted    = "interrupted"
 	RunEventKindWorkerResumed  = "worker-resumed"
+
+	// worker-output: a run's worker exited non-zero while the run was still open; recorded on that worker's
+	// own run, because its tab and terminal are deleted with the exit ("exitcode", "output", "worker")
+	RunEventKindWorkerOutput = "worker-output"
+
+	// engine-stuck: a scheduler tick or a merge-point Verify outlived the bound nothing legitimate reaches
+	// ("reason", and "taskid" for a Verify). The engine cannot end the wait itself; the lead is woken to put it
+	// to the human, and the server log holds a goroutine dump taken at the report.
+	RunEventKindEngineStuck = "engine-stuck"
 
 	// task-told: a message the human typed into a dag child's own terminal ("taskid", "text"), recorded on the
 	// owning run so the lead reads it in its status. It wakes nobody.
@@ -109,6 +125,10 @@ const (
 	// records one, so a retry that is held again shows its new reason.
 	RunEventKindLandHeld = "land-held"
 
+	// landed: a finished run's branch was merged back into its base ("commit", "title": the merge's subject).
+	// Recorded once, since a landed run is never landed again.
+	RunEventKindLanded = "landed"
+
 	// the review loop and the lead's steering (spec 2026-09-23-orchestrator-review-and-lead-link):
 	//   task-review-started  a reviewer was spawned for a finished task ("taskid", "runid")
 	//   task-review-passed   "taskid", "note", "downstream"
@@ -135,7 +155,8 @@ const (
 //   child events:     "childrunid" string, "goal" string, "summary" string
 //   evidence-sealed:  "files" int, "addtotal" int, "deltotal" int
 //   task/dag events:  "taskid" string, "failures" int
-//   task-retried:     "taskid" string, "kind" string, "attempt" int
+//   task-retried:     "taskid" string, "kind" string, "attempt" int; "auto" bool when the engine retried it
+//                     unasked, with "detail" string (the cause) for a dispatch failure
 //   task-merge-failed: "taskid" string, "error" string (the git refusal), "attempt" int, "blocked" bool
 //   task-spawned:     "taskid" string, "worktreems" int64, "setupms" int64, "spawnms" int64
 //   task-first-activity: "taskid" string, "sincespawnms" int64

@@ -42,7 +42,7 @@ const MaxPlanReviewRounds = 2
 // proceedPastPlanReview is what the lead does when the human says to go on after the last round. Every task waits
 // while the review holds, so an amend made before accept reaches them all; after it, accept may already have
 // spawned the task (run 6c7652be).
-const proceedPastPlanReview = "as one ask with the header `Plan review`, the plan's absolute path as the question's first line, one line saying what you propose, then one `- ` line per finding you would accept, and the options `Accept all and proceed` and `Request changes`; if they say to proceed, carry each finding you accept into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"` first, then run `wsh jarvis dag planreview accept \"<the human's reason>\"`"
+const proceedPastPlanReview = "as one ask with the header `Plan review`, the plan's absolute path as the question's first line, one line saying what you propose, then one `- ` line per finding you would accept, and the options `Accept all and proceed` and `Request changes`; the human can quote passages of the plan with a note on each, so an answer that starts with `Accept all and proceed` is an approval, and its `> ` quoted notes are applied before proceeding, while any other text is a change request; if they say to proceed, carry each finding you accept into the pending tasks it affects with `wsh jarvis dag amend <task> \"<note>\"` first, then run `wsh jarvis dag planreview accept \"<the human's reason>\"`"
 
 // NewPlanReview is the review a plan-file submit starts with.
 func NewPlanReview() *waveobj.PlanReviewStage {
@@ -96,7 +96,7 @@ func planReviewPrompt(g *waveobj.TaskGroup, tree string) string {
 	fmt.Fprintf(&b, "the plan at %s, and the files they name.\n", DocPath(g, tree, g.PlanPath))
 	b.WriteString("Check that:\n")
 	b.WriteString("- every requirement in the spec has a task;\n")
-	b.WriteString("- no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time;\n")
+	b.WriteString("- no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;\n")
 	b.WriteString("- types, functions and flags have the same names in every task that mentions them;\n")
 	b.WriteString("- each task states its acceptance criteria and names the tests that prove them;\n")
 	b.WriteString("- the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;\n")
@@ -110,16 +110,17 @@ func planReviewPrompt(g *waveobj.TaskGroup, tree string) string {
 	pickFor := pickableTasks(g)
 	pickArgs := ""
 	if len(pickFor) > 0 {
-		b.WriteString("On a pass, also pick the model for each task the plan gives no Model line:\n")
+		b.WriteString("Whatever your verdict, also pick the model for each task the plan gives no Model line:\n")
 		for _, t := range pickFor {
 			fmt.Fprintf(&b, "- %s: %s\n", t.ID, flatLine(t.Label))
 			pickArgs += fmt.Sprintf(" --pick \"%s=<sonnet|lead>: <one-line reason>\"", t.ID)
 		}
 		b.WriteString("Pick `sonnet` only for a mechanical, tightly specified task (a copy of an existing pattern, a field threaded through, prose against written code); pick `lead` for anything with a design choice. Give one line on why.\n")
+		b.WriteString("A pass needs a pick for every listed task. A fail takes the ones you can judge: they hold if the human proceeds on the plan as it stands.\n")
 	}
 	b.WriteString("Finish with exactly one command, which ends your session:\n")
 	fmt.Fprintf(&b, "- `wsh jarvis dag planreview pass \"<summary>\"%s`;\n", pickArgs)
-	b.WriteString("- `wsh jarvis dag planreview fail \"<findings: each problem, where it is, and the fix>\"`.\n")
+	fmt.Fprintf(&b, "- `wsh jarvis dag planreview fail \"<findings: each problem, where it is, and the fix>\"%s`.\n", pickArgs)
 	fmt.Fprintf(&b, "Keep the text within %d characters; a longer one is refused.", MaxReviewNoteLen)
 	return b.String()
 }
@@ -139,12 +140,12 @@ func pickableTasks(g *waveobj.TaskGroup) []*waveobj.TaskNode {
 	return out
 }
 
-// validatePicks refuses a pass's picks that do not give exactly one sound pick per pickable task, naming the task
-// and the problem so the reviewer can resend.
-func validatePicks(g *waveobj.TaskGroup, picks []wshrpc.DagModelPick) error {
+// validatePicks refuses picks that are not sound, naming the task and the problem so the reviewer can resend. A
+// pass needs exactly one per pickable task (complete); a fail may leave tasks out, and those stay on the lead.
+func validatePicks(g *waveobj.TaskGroup, picks []wshrpc.DagModelPick, complete bool) error {
 	if !g.ReviewerPicks {
 		if len(picks) > 0 {
-			return fmt.Errorf("run %s is not on Reviewer picks; send the pass without --pick", g.RunID)
+			return fmt.Errorf("run %s is not on Reviewer picks; send the verdict without --pick", g.RunID)
 		}
 		return nil
 	}
@@ -187,7 +188,7 @@ func validatePicks(g *waveobj.TaskGroup, picks []wshrpc.DagModelPick) error {
 	}
 	var missing []string
 	for _, id := range ids {
-		if !seen[id] {
+		if complete && !seen[id] {
 			missing = append(missing, id)
 		}
 	}
@@ -215,7 +216,9 @@ func applyPicks(g *waveobj.TaskGroup, picks []wshrpc.DagModelPick) []wshrpc.DagM
 // RecordPlanReviewVerdict applies the plan reviewer's verdict. A pass lets dispatch start; a fail goes to the
 // lead with the findings whole, since it has to revise the plan from them. It does not schedule: the caller
 // does, off the reviewer's RPC. On a Reviewer picks run a pass carries a model pick per task without a Model
-// line, applied in the same write that passes the review, so no worker starts without its pick.
+// line, applied in the same write that passes the review, so no worker starts without its pick. A fail's picks
+// are applied too: every task waits while the review holds, a resubmit replaces the tasks and so drops them, and
+// an accept dispatches on them instead of putting every worker on the lead's model.
 func RecordPlanReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict, text string, picks []wshrpc.DagModelPick) error {
 	text = strings.TrimSpace(text)
 	switch {
@@ -223,8 +226,6 @@ func RecordPlanReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict,
 		return fmt.Errorf("verdict must be %s or %s, got %q", ReviewVerdict_Pass, ReviewVerdict_Fail, verdict)
 	case text == "":
 		return fmt.Errorf("a %s verdict needs its text: the summary for a pass, the findings for a fail", verdict)
-	case verdict == ReviewVerdict_Fail && len(picks) > 0:
-		return fmt.Errorf("--pick goes with a pass only; send the fail without it")
 	}
 	// refused rather than clipped: the lead revises the plan from these findings
 	if count := utf8.RuneCountInString(text); count > MaxReviewNoteLen {
@@ -234,19 +235,18 @@ func RecordPlanReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict,
 		if pr.State != PlanReviewState_Reviewing || pr.RunID != reviewerRunID {
 			return fmt.Errorf("run %s is not reviewing this dag's plan", reviewerRunID)
 		}
-		if verdict == ReviewVerdict_Pass {
-			if err := validatePicks(g, picks); err != nil {
-				return err
-			}
+		if err := validatePicks(g, picks, verdict == ReviewVerdict_Pass); err != nil {
+			return err
 		}
 		pr.Findings = text
 		round, last := pr.Round, pr.Round >= MaxPlanReviewRounds
+		detail := map[string]any{"round": round, "findings": text}
+		if len(picks) > 0 {
+			detail["picks"] = applyPicks(g, picks)
+		}
 		if verdict == ReviewVerdict_Pass {
 			pr.State = PlanReviewState_Passed
-			detail := map[string]any{"state": PlanReviewState_Passed, "round": round, "findings": text}
-			if len(picks) > 0 {
-				detail["picks"] = applyPicks(g, picks)
-			}
+			detail["state"] = PlanReviewState_Passed
 			*afterCommit = append(*afterCommit, func() {
 				appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, detail)
 				PostQuiet(ctx, g.ChannelId, g.RunID, "plan review passed; workers are starting: "+flatLine(text))
@@ -254,8 +254,9 @@ func RecordPlanReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict,
 			return nil
 		}
 		pr.State = PlanReviewState_Failed
+		detail["state"] = PlanReviewState_Failed
 		*afterCommit = append(*afterCommit, func() {
-			appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, map[string]any{"state": PlanReviewState_Failed, "round": round, "findings": text})
+			appendRunEvent(ctx, g.ChannelId, g.RunID, waveobj.RunEventKindPlanReviewed, nil, detail)
 			PostWake(ctx, g.ChannelId, g.RunID, planReviewFailedWake(round, text, last))
 		})
 		return nil

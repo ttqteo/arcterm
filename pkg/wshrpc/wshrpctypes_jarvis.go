@@ -12,7 +12,7 @@ import (
 type JarvisCommands interface {
 	ConsultCommand(ctx context.Context, data CommandConsultData) chan RespOrErrorUnion[ConsultChunk]                                       // one-shot headless CLI consult; streams reply chunks, posts a consult-reply on completion
 	ListDossiersCommand(ctx context.Context) (*CommandListDossiersRtnData, error)                                                          // list focusable task dossiers (active|paused), newest-updated first
-	ResolveFocusScopeCommand(ctx context.Context, data CommandResolveFocusScopeData) (*SpaceScope, error)                                  // resolve a focus target's scope bundle (runs -> channels + worker tabs)
+	ResolveFocusScopeCommand(ctx context.Context, data CommandResolveFocusScopeData) (*SpaceScope, error)                                  // resolve a record's scope bundle (runs -> channels + worker tabs)
 	VaultGraphCommand(ctx context.Context) (*CommandVaultGraphRtnData, error)                                                              // whole-vault wikilink graph (U3 base canvas): all vault nodes + resolved [[links]], no runs/attribution
 	ReadVaultNoteCommand(ctx context.Context, data CommandReadVaultNoteData) (*CommandReadVaultNoteRtnData, error)                         // read one vault note's title and body for the avatar popup's note peek; errors on an unknown id
 	ResolveDossierEdgesCommand(ctx context.Context, data CommandResolveDossierEdgesData) (*CommandResolveDossierEdgesRtnData, error)       // a dossier's attributed run nodes + typed attribution edges (U3 focus bloom)
@@ -133,8 +133,7 @@ type CommandListDossiersRtnData struct {
 	Spaces []SpaceSummary `json:"spaces"`
 }
 
-// CommandResolveFocusScopeData names what the cockpit is focused on. Kind is task | agent | run;
-// all three resolve to the same SpaceScope bundle, which is what every surface filter consumes.
+// CommandResolveFocusScopeData names the record whose scope bundle to resolve. Kind is always task.
 type CommandResolveFocusScopeData struct {
 	Kind string `json:"kind"`
 	Id   string `json:"id"`

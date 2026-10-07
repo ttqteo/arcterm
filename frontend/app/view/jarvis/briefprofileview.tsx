@@ -609,7 +609,7 @@ export function BriefProfileModal({
                         </p>
                     ) : null}
                     {!ready && error == null ? (
-                        <div className="h-24 animate-pulse rounded-[8px] bg-surface motion-reduce:animate-none" />
+                        <div className="h-24 animate-pulse rounded-[8px] bg-edge-strong motion-reduce:animate-none" />
                     ) : null}
                     {isGlobal && globalDraft != null ? (
                         <>

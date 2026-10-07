@@ -16,7 +16,6 @@ import { useDidBecomeTrue } from "@/app/element/motionhooks";
 import { cardVariants } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { SkeletonLine } from "@/app/element/skeleton";
-import { globalStore } from "@/app/store/jotaiStore";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
@@ -522,10 +521,6 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     useEffect(() => {
         const days = usageWindow === "7d" ? 7 : 0;
-        // reset loaded so the skeleton shows while the newly-selected window loads (esp. the heavy
-        // all-time scan), instead of leaving the previous window's stats on screen until it resolves.
-        // The 60s refresh below does NOT reset — it silently refreshes in place.
-        globalStore.set(usageLoadedAtom, false);
         void loadUsage(days);
         const refresh = setInterval(() => void loadUsage(days), 60_000);
         return () => clearInterval(refresh);

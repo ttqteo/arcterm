@@ -792,8 +792,8 @@ func dagPlanReviewData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActi
 		return wshrpc.CommandDagActionData{}, fmt.Errorf("planreview takes pass, fail or accept, got %q", verb)
 	}
 	rawPicks, _ := cmd.Flags().GetStringArray("pick")
-	if len(rawPicks) > 0 && verb != "pass" {
-		return wshrpc.CommandDagActionData{}, fmt.Errorf("--pick goes with pass only")
+	if len(rawPicks) > 0 && verb == "accept" {
+		return wshrpc.CommandDagActionData{}, fmt.Errorf("--pick goes with the reviewer's pass or fail, not accept")
 	}
 	var picks []wshrpc.DagModelPick
 	for _, raw := range rawPicks {
@@ -1118,7 +1118,7 @@ func init() {
 	dagReviewCmd.Flags().String("downstream", "", "with pass: what a later task must know that the worker's report omits or gets wrong (a renamed API, a plan assumption that turned out wrong); the engine hands it to the tasks that depend on this one")
 	dagReviewCmd.Flags().StringSlice("for", nil, "with pass: more tasks to reach (t-3,t-5); alone, it forwards the worker's report section for later tasks. The engine adds it to a task not started and types it to a running one")
 	dagReviewCmd.Flags().String("unverified", "", "with pass: a check the task asked for (a test, a screenshot, a live run) that was not done, and why; the lead reads it whole")
-	dagPlanReviewCmd.Flags().StringArray("pick", nil, "with pass, on a Reviewer picks run: one per task without a Model line, as \"t-N=<sonnet|lead>: <one-line reason>\"")
+	dagPlanReviewCmd.Flags().StringArray("pick", nil, "with pass or fail, on a Reviewer picks run: one per task without a Model line (a fail may leave tasks out), as \"t-N=<sonnet|lead>: <one-line reason>\"")
 	dagFinalCmd.Flags().String("unverified", "", "with pass: what you could not verify on the merged result, and why; the lead and the human read it whole")
 	dagMergeCmd.Flags().Bool("continue", false, "finish a resolved squash merge, or re-run a failed Verify after committing the fix")
 	dagRulesCmd.Flags().BoolVar(&dagRulesInject, "inject", false, "emit the rules as a Claude Code SessionStart hook's added context")

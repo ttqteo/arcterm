@@ -301,6 +301,26 @@ func conflictAwaitingContinue(g *waveobj.TaskGroup, except string) string {
 	return ""
 }
 
+// mergeVerifyFinal is a task-merged row's "verify" when the final stage's Verify stands for the merge's own.
+const mergeVerifyFinal = "final"
+
+// finalVerifyStandsIn reports whether the merge that just landed needs no Verify of its own: nothing is left
+// to run, review or merge, so the final stage starts next and runs the whole Verify on this same tree. A fix
+// round's merges always verify: its stage already failed once, and a scoped failure names the lane.
+func finalVerifyStandsIn(g *waveobj.TaskGroup) bool {
+	if g.Verify == "" || g.Final != nil {
+		return false
+	}
+	for i := range g.Tasks {
+		t := &g.Tasks[i]
+		landed := t.State == TaskState_Done && (t.Merged || !g.MergeRequired) && (!t.Gate || t.Released)
+		if !landed && t.State != TaskState_Skipped {
+			return false
+		}
+	}
+	return true
+}
+
 // FinishMergedTask stamps a landed merge and returns the plan's Verify command when the task now waits on it.
 // The caller holds the dag mutation lock, and removes the tree after releasing it.
 func FinishMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID, sha string) (string, error) {
@@ -311,9 +331,15 @@ func FinishMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID,
 	if err != nil {
 		return "", err
 	}
-	appendRunEvent(ctx, channelID, g.RunID, waveobj.RunEventKindTaskMerged, nil, map[string]any{"taskid": taskID, "commit": sha})
+	merged := map[string]any{"taskid": taskID, "commit": sha}
+	verify := g.Verify
+	if task := taskByID(g, taskID); task != nil && task.VerifyDeferred {
+		merged["verify"] = mergeVerifyFinal
+		verify = ""
+	}
+	appendRunEvent(ctx, channelID, g.RunID, waveobj.RunEventKindTaskMerged, nil, merged)
 	appendRunEvent(ctx, channelID, g.RunID, waveobj.RunEventKindTaskCleanupPending, nil, map[string]any{"taskid": taskID})
-	return g.Verify, nil
+	return verify, nil
 }
 
 func persistMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID, sha string) error {
@@ -345,7 +371,8 @@ func persistMergedTask(ctx context.Context, channelID, dagID, childRunID, taskID
 			task.MergeFailures, task.MergeError = 0, ""
 			// written here, not derived: a continued conflict leaves blocked-merge, which nothing re-derives
 			task.State = TaskState_Done
-			if cur.Verify != "" {
+			task.VerifyDeferred = finalVerifyStandsIn(cur)
+			if cur.Verify != "" && !task.VerifyDeferred {
 				task.State = TaskState_Verifying
 				task.VerifyStartedTs = time.Now().UnixMilli()
 			}

@@ -132,6 +132,15 @@ export function scopePickerSections(sections: PickerSection[], runtime: string |
     return scoped.length > 0 ? scoped : sections;
 }
 
+// A picker limited to some runtimes (the Radar audit needs one with tools). No allowlist leaves the
+// sections as they are.
+export function allowPickerSections(sections: PickerSection[], runtimes?: readonly string[]): PickerSection[] {
+    if (runtimes == null) {
+        return sections;
+    }
+    return sections.filter((s) => runtimes.includes(s.runtime));
+}
+
 // displayed id on the picker face / graph route line
 export function modelFace(pin: RoutePin): string {
     return pin.model || "default";

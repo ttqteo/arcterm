@@ -8,7 +8,7 @@
 // shipped 1000x700 leaves enough room for unified and not for split.
 
 import { MOTION } from "@/app/element/motiontokens";
-import { SkeletonLine } from "@/app/element/skeleton";
+import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { openInCode } from "@/app/view/code/codestore";
@@ -52,14 +52,14 @@ function EmptyState({ empty }: { empty: EmptyDiff }) {
 
 function PaneSkeleton() {
     return (
-        <div className="flex-1 overflow-hidden px-[20px] py-[14px]">
-            {Array.from({ length: 12 }).map((_, i) => (
+        <SkeletonRows className="min-h-0 flex-1 px-[20px] py-[14px]">
+            {(i) => (
                 <div key={i} className="mb-[10px] flex gap-[10px]">
                     <SkeletonLine className="h-[12px] w-[30px]" />
                     <SkeletonLine className="h-[12px] w-[72%]" />
                 </div>
-            ))}
-        </div>
+            )}
+        </SkeletonRows>
     );
 }
 

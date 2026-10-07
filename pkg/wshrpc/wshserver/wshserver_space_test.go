@@ -76,66 +76,13 @@ func TestListDossiersFiltersStatusAndSorts(t *testing.T) {
 	}
 }
 
-func runWithWorkers(oid string, channelOID string, tabs ...string) *waveobj.Run {
-	orefs := make([]string, 0, len(tabs))
-	for _, t := range tabs {
-		orefs = append(orefs, "tab:"+t)
-	}
-	return &waveobj.Run{
-		OID:        oid,
-		ChannelOID: channelOID,
-		Phases:     []waveobj.RunPhase{{Kind: "execute", State: "done", WorkerOrefs: orefs}},
-	}
-}
-
-func TestFocusScopeForAgentBundlesItsRunsAndChannels(t *testing.T) {
-	runs := []*waveobj.Run{
-		runWithWorkers("r1", "c1", "t1", "t2"),
-		runWithWorkers("r2", "c2", "t9"),
-	}
-	got := focusScopeForAgent("t1", runs)
-	if len(got.TabIds) != 1 || got.TabIds[0] != "t1" {
-		t.Fatalf("tabids = %v, want [t1]", got.TabIds)
-	}
-	if len(got.RunORefs) != 1 || got.RunORefs[0] != "run:r1" {
-		t.Fatalf("runorefs = %v, want [run:r1]", got.RunORefs)
-	}
-	if len(got.ChannelOids) != 1 || got.ChannelOids[0] != "c1" {
-		t.Fatalf("channeloids = %v, want [c1]", got.ChannelOids)
-	}
-}
-
-// A standalone agent no run owns is a legitimate focus. An empty bundle would hide it from every
-// filter surface, which reads as the focus being broken rather than the agent being unattached.
-func TestFocusScopeForAgentKeepsTheTabWhenNoRunOwnsIt(t *testing.T) {
-	got := focusScopeForAgent("t7", []*waveobj.Run{runWithWorkers("r1", "c1", "t1")})
-	if len(got.TabIds) != 1 || got.TabIds[0] != "t7" {
-		t.Fatalf("tabids = %v, want [t7]", got.TabIds)
-	}
-	if len(got.RunORefs) != 0 {
-		t.Fatalf("runorefs = %v, want empty", got.RunORefs)
-	}
-}
-
-func TestFocusScopeForRunBundlesItsChannelAndWorkers(t *testing.T) {
-	runs := []*waveobj.Run{runWithWorkers("r1", "c1", "t1", "t2"), runWithWorkers("r2", "c2", "t3")}
-	got := focusScopeForRun("r1", runs)
-	if len(got.RunORefs) != 1 || got.RunORefs[0] != "run:r1" {
-		t.Fatalf("runorefs = %v, want [run:r1]", got.RunORefs)
-	}
-	if len(got.ChannelOids) != 1 || got.ChannelOids[0] != "c1" {
-		t.Fatalf("channeloids = %v, want [c1]", got.ChannelOids)
-	}
-	if len(got.TabIds) != 2 || got.TabIds[0] != "t1" || got.TabIds[1] != "t2" {
-		t.Fatalf("tabids = %v, want [t1 t2]", got.TabIds)
-	}
-}
-
 // A worker oref that is not a tab: address must not be trimmed into a spurious match.
-func TestFocusScopeForAgentIgnoresNonTabWorkerOrefs(t *testing.T) {
-	run := &waveobj.Run{OID: "r1", Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"t1", "block:t1"}}}}
-	got := focusScopeForAgent("t1", []*waveobj.Run{run})
-	if len(got.RunORefs) != 0 {
-		t.Fatalf("runorefs = %v, want empty", got.RunORefs)
+func TestRunHasWorkerTabIgnoresNonTabWorkerOrefs(t *testing.T) {
+	run := &waveobj.Run{OID: "r1", Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"t1", "block:t1", "tab:t2"}}}}
+	if runHasWorkerTab(run, "t1") {
+		t.Fatalf("t1 matched a non-tab worker oref")
+	}
+	if !runHasWorkerTab(run, "t2") {
+		t.Fatalf("t2 is a tab worker and did not match")
 	}
 }

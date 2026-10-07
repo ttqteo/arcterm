@@ -7,10 +7,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -31,18 +35,72 @@ func notifyChildOutcome(ctx context.Context, workerORef string, data OutcomeData
 	}
 }
 
+// WorkerExit is how an agent worker's process ended: its exit code and, for a failing one, the end of what
+// it printed.
+type WorkerExit struct {
+	ExitCode int
+	Output   string
+}
+
 // RunWorkerExitHook, when set (by pkg/orchestrate at init), hears every agent worker tab exit before its
 // transcript is read: a worker that exits without completing its phase must fail the run whether or not its
 // transcript parses, and a Claude session may not have written one yet.
-var RunWorkerExitHook func(context.Context, string) error
+var RunWorkerExitHook func(context.Context, string, WorkerExit) error
 
-func notifyRunWorkerExit(ctx context.Context, workerORef string) {
+func notifyRunWorkerExit(ctx context.Context, workerORef string, exit WorkerExit) {
 	if RunWorkerExitHook == nil {
 		return
 	}
-	if err := RunWorkerExitHook(ctx, workerORef); err != nil {
+	if err := RunWorkerExitHook(ctx, workerORef, exit); err != nil {
 		log.Printf("jarvis run worker exit for %s: %v", workerORef, err)
 	}
+}
+
+// what a failed worker's exit keeps of its terminal: enough for a launcher's error, not a session's scrollback
+const (
+	workerOutputReadBytes = 8 * 1024
+	workerOutputMaxLines  = 20
+	workerOutputMaxBytes  = 2000
+)
+
+// readWorkerTerminal reads the end of a block's terminal file. A var so tests need no filestore.
+var readWorkerTerminal = func(ctx context.Context, blockId string) ([]byte, error) {
+	file, err := filestore.WFS.Stat(ctx, blockId, wavebase.BlockFile_Term)
+	if err != nil {
+		return nil, err
+	}
+	_, data, err := filestore.WFS.ReadAt(ctx, blockId, wavebase.BlockFile_Term, max(0, file.Size-workerOutputReadBytes), workerOutputReadBytes)
+	return data, err
+}
+
+// workerOutputTail is the last lines a worker printed, as plain text. An agent worker's tab closes itself two
+// seconds after its process exits and its terminal goes with it, so a worker that died at launch left no
+// account of why (run d8fe96ab's t-2); the exit is the only moment the terminal can still be read.
+func workerOutputTail(ctx context.Context, blockId string) string {
+	raw, err := readWorkerTerminal(ctx, blockId)
+	if err != nil {
+		log.Printf("jarvis onexit: reading the terminal of block %s: %v", blockId, err)
+		return ""
+	}
+	return outputTail(string(raw))
+}
+
+func outputTail(raw string) string {
+	var lines []string
+	for _, line := range strings.FieldsFunc(utilfn.StripANSI(raw), func(r rune) bool { return r == '\n' || r == '\r' }) {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) > workerOutputMaxLines {
+		lines = lines[len(lines)-workerOutputMaxLines:]
+	}
+	out := strings.Join(lines, "\n")
+	if len(out) > workerOutputMaxBytes {
+		out = out[len(out)-workerOutputMaxBytes:]
+	}
+	// a byte cut, here or at the start of the read, can split a rune
+	return strings.ToValidUTF8(out, "")
 }
 
 // OnWorkerExit posts a channel "outcome" message when a dispatched agent worker's process exits: it
@@ -76,7 +134,11 @@ func OnWorkerExit(blockId string, exitCode int) {
 		return // not an agent session
 	}
 	workerORef := waveobj.MakeORef(waveobj.OType_Tab, tabId).String()
-	notifyRunWorkerExit(ctx, workerORef)
+	exit := WorkerExit{ExitCode: exitCode}
+	if exitCode != 0 {
+		exit.Output = workerOutputTail(ctx, blockId)
+	}
+	notifyRunWorkerExit(ctx, workerORef, exit)
 
 	tpath := blockData.Meta.GetString(waveobj.MetaKey_AgentTranscriptPath, "")
 	if !reportableExit(tpath, exitCode) {

@@ -39,7 +39,7 @@ func aQuestion() baseds.AgentAskQuestion {
 
 func TestBuildClassifyPrompt_Contents(t *testing.T) {
 	c := &waveobj.Channel{Name: "payments-api"}
-	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, nil)
+	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, nil, nil)
 	for _, want := range []string{"Which migration?", "0", "Use existing", "1", "Create new", "harden webhooks", "JSON"} {
 		if !contains(p, want) {
 			t.Fatalf("prompt missing %q\n---\n%s", want, p)
@@ -49,7 +49,7 @@ func TestBuildClassifyPrompt_Contents(t *testing.T) {
 
 func TestBuildClassifyPrompt_IncludesPrinciples(t *testing.T) {
 	c := &waveobj.Channel{Name: "payments-api"}
-	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, waveobj.PrincipleList{{ID: "clean", Text: "prefer the clean fix"}})
+	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, nil, waveobj.PrincipleList{{ID: "clean", Text: "prefer the clean fix"}})
 	if !contains(p, "prefer the clean fix") {
 		t.Fatalf("prompt missing principles\n---\n%s", p)
 	}
@@ -65,7 +65,7 @@ func TestBuildClassifyPromptRendersEffectivePrinciplesOnly(t *testing.T) {
 			Additions:    waveobj.PrincipleList{{ID: "project", Text: "Preserve compatibility."}},
 		},
 	)
-	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, resolved)
+	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, nil, resolved)
 	if contains(p, "Prefer simple.") || contains(p, "Measure first.") {
 		t.Fatalf("prompt contains superseded principles\n---\n%s", p)
 	}
@@ -76,7 +76,7 @@ func TestBuildClassifyPromptRendersEffectivePrinciplesOnly(t *testing.T) {
 
 func TestBuildClassifyPrompt_OmitsEmptyPrinciples(t *testing.T) {
 	c := &waveobj.Channel{Name: "payments-api"}
-	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, nil)
+	p := BuildClassifyPrompt([]baseds.AgentAskQuestion{aQuestion()}, "harden webhooks", c, nil, nil)
 	if contains(p, "principles") {
 		t.Fatalf("empty principles should add no principles text\n---\n%s", p)
 	}
@@ -90,7 +90,7 @@ func TestBuildClassifyPrompt_RendersEveryQuestionAndMode(t *testing.T) {
 		aQuestion(),
 		{Question: "Which checks?", MultiSelect: true, Options: []baseds.AgentAskOption{{Label: "lint"}, {Label: "vet"}}},
 	}
-	p := BuildClassifyPrompt(questions, "harden webhooks", c, nil)
+	p := BuildClassifyPrompt(questions, "harden webhooks", c, nil, nil)
 	for _, want := range []string{
 		"Question 1 (pick exactly one): Which migration?", "  0: Use existing", "  1: Create new",
 		"Question 2 (pick one or more): Which checks?", "  0: lint", "  1: vet",
@@ -167,11 +167,10 @@ func indexOf(s, sub string) int {
 
 func TestRecentTimeline_TruncatesLongLines(t *testing.T) {
 	long := strings.Repeat("x", 5000)
-	ch := &waveobj.Channel{Messages: []waveobj.ChannelMessage{
+	out := recentTimeline([]*waveobj.ChannelMessage{
 		{Author: "worker", Text: long},
 		{Author: "human", Text: "short"},
-	}}
-	out := recentTimeline(ch)
+	})
 	if !strings.Contains(out, "short") {
 		t.Fatalf("short message dropped: %q", out)
 	}
@@ -187,8 +186,7 @@ func TestRecentTimeline_TruncatesLongLines(t *testing.T) {
 
 func TestRecentTimeline_MultibyteTruncation(t *testing.T) {
 	long := strings.Repeat("é", maxTimelineLine+50)
-	ch := &waveobj.Channel{Messages: []waveobj.ChannelMessage{{Author: "w", Text: long}}}
-	out := recentTimeline(ch)
+	out := recentTimeline([]*waveobj.ChannelMessage{{Author: "w", Text: long}})
 	if got := len([]rune(out)); got != 4+maxTimelineLine { // author + ": " + capped + ellipsis
 		t.Fatalf("multibyte line not capped: %d runes", got)
 	}

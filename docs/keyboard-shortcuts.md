@@ -88,7 +88,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 ## Peek (the avatar popup's item view)
 
 A peek shows a run, agent, record, initiative, radar finding or memory note in the avatar popup. It writes no
-selection on the surface underneath and never changes the cockpit focus. `Space` on a row cursor peeks it;
+selection on the surface underneath. `Space` on a row cursor peeks it;
 holding `Ctrl` underlines every link that can be peeked, and `Ctrl`+click on one peeks it instead of opening it.
 `Space` never peeks while focus is in a text field.
 

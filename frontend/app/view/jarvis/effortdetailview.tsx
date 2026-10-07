@@ -458,7 +458,7 @@ export function EffortDetailView({ model }: { model: AgentsViewModel }) {
                         {["title", "facts", "notes"].map((k) => (
                             <div
                                 key={k}
-                                className="h-10 animate-pulse rounded-[10px] bg-surface motion-reduce:animate-none"
+                                className="h-10 animate-pulse rounded-[10px] bg-edge-strong motion-reduce:animate-none"
                             />
                         ))}
                     </div>

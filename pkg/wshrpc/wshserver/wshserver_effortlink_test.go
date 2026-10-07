@@ -130,3 +130,20 @@ func TestEffortRunWorkerIsNotLinked(t *testing.T) {
 		t.Fatalf("session:effort = %q, want unset on a run worker", got)
 	}
 }
+
+// the id in the form `wsh effort list` prints must not be prefixed a second time
+func TestEffortNoteWithAnORefIDLinksItsSession(t *testing.T) {
+	ws := &WshServer{}
+	oid := newLinkEffort(t, ws, "oref note link")
+	tabID, src := sessionTerminal(t)
+	_, err := ws.EffortMutateCommand(context.Background(), wshrpc.CommandEffortMutateData{
+		EffortOID: "effort:" + oid, SourceBlock: src,
+		Ops: []wshrpc.EffortOp{{Op: "appendNote", Chunk: "C0", Note: "where we are"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tabEffort(t, tabID); got != "effort:"+oid {
+		t.Fatalf("session:effort = %q, want effort:%s", got, oid)
+	}
+}

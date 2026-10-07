@@ -453,7 +453,7 @@ func TestWorkerWithoutACommitTellsTheLeadQuietly(t *testing.T) {
 func TestNoCommitLineCarriesTheSectionsNotTheClippedSummary(t *testing.T) {
 	long := strings.Repeat("x", handoffMaxSummaryLen+100)
 	run := &waveobj.Run{Evidence: &waveobj.RunEvidence{Summary: structuredReport("Nothing to do.", "None", long, "None", "None")}}
-	got := noCommitLine("t-0", run)
+	got := noCommitLine("t-0", run, true)
 	if want := "t-0 Not verified: " + long; !strings.Contains(got, want) {
 		t.Fatalf("want the whole section, got %q", got)
 	}
@@ -854,11 +854,24 @@ func TestReviewForAloneForwardsForLaterTasksToANonDescendant(t *testing.T) {
 }
 
 const forLaterNoneRefusal = "the worker's For later tasks is None; give --downstream with what they must know"
+const forLaterUnstructuredRefusal = "the worker's report is unstructured, so it has no For later tasks to forward; give --downstream with what they must know"
+
+// a no-commit worker's For later tasks is read at dispatch by a task after it; with none left it is the lead's
+func TestNoCommitLineHandsForLaterToTheLeadOnlyWithNoTaskAfterIt(t *testing.T) {
+	run := &waveobj.Run{Evidence: &waveobj.RunEvidence{Summary: structuredReport("Nothing to do.", "None", "None", "fmtDate lives in util/date.go", "None")}}
+	want := "t-0 finished without reporting a commit: t-0 For later tasks: fmtDate lives in util/date.go"
+	if got := noCommitLine("t-0", run, true); got != want {
+		t.Fatalf("want %q, got %q", want, got)
+	}
+	if got := noCommitLine("t-0", run, false); strings.Contains(got, "For later tasks") {
+		t.Fatalf("a later task reads the section at dispatch, got %q", got)
+	}
+}
 
 func TestReviewForAloneIsRefusedWithNothingToForward(t *testing.T) {
-	for _, c := range []struct{ name, report string }{
-		{"a None section", structuredReport("Added fmtDate.", "None", "None", "None", "None")},
-		{"a legacy report", "Added fmtDate; util/date.go has it."},
+	for _, c := range []struct{ name, report, want string }{
+		{"a None section", structuredReport("Added fmtDate.", "None", "None", "None", "None"), forLaterNoneRefusal},
+		{"a legacy report", "Added fmtDate; util/date.go has it.", forLaterUnstructuredRefusal},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ctx, dag, worker := seedReviewDag(t)
@@ -869,8 +882,8 @@ func TestReviewForAloneIsRefusedWithNothingToForward(t *testing.T) {
 			schedule(t, ctx, dag.OID)
 			reviewer := firstTask(t, ctx, dag.OID).ReviewRunID
 			err := RecordReviewVerdict(ctx, dag.OID, reviewer, ReviewVerdict_Pass, "adds fmtDate", "", "", []string{"t-1"})
-			if err == nil || err.Error() != forLaterNoneRefusal {
-				t.Fatalf("want %q, got %v", forLaterNoneRefusal, err)
+			if err == nil || err.Error() != c.want {
+				t.Fatalf("want %q, got %v", c.want, err)
 			}
 			if err := RecordReviewVerdict(ctx, dag.OID, reviewer, ReviewVerdict_Pass, "adds fmtDate", "fmtDate lives in util/date.go", "", []string{"t-1"}); err != nil {
 				t.Fatalf("--for with a note stands, got %v", err)

@@ -106,7 +106,7 @@ func TestBisectFindsTheMiddleLaneAndLandsTheOneBefore(t *testing.T) {
 
 func TestABatchOfOneFailsWithoutBisecting(t *testing.T) {
 	lead := newFakeLead(t)
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "a"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "a"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.land(t)
 	f.finish(t, "t-0")

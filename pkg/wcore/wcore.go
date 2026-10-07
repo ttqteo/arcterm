@@ -111,6 +111,10 @@ func SendWaveObjUpdate(oref waveobj.ORef) {
 		log.Printf("error getting object for update event: %v", err)
 		return
 	}
+	// a row deleted since the caller's write has no update to send
+	if waveObj == nil {
+		return
+	}
 	wps.Broker.Publish(wps.WaveEvent{
 		Event:  wps.Event_WaveObjUpdate,
 		Scopes: []string{oref.String()},

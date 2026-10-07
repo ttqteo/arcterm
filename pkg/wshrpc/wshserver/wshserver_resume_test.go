@@ -45,7 +45,7 @@ func stubResumeRunWorker(t *testing.T, err error) *[]resumeCall {
 	old := jarvis.ResumeRunWorker
 	t.Cleanup(func() { jarvis.ResumeRunWorker = old })
 	var calls []resumeCall
-	jarvis.ResumeRunWorker = func(_ context.Context, worker, runtime, sessionId string) error {
+	jarvis.ResumeRunWorker = func(_ context.Context, worker, runtime, sessionId, _ string) error {
 		calls = append(calls, resumeCall{worker, runtime, sessionId})
 		return err
 	}
@@ -97,7 +97,7 @@ func TestResumeReopensThePhaseBeforeTheWorkerStarts(t *testing.T) {
 	old := jarvis.ResumeRunWorker
 	t.Cleanup(func() { jarvis.ResumeRunWorker = old })
 	var stateAtStart string
-	jarvis.ResumeRunWorker = func(ctx context.Context, _, _, _ string) error {
+	jarvis.ResumeRunWorker = func(ctx context.Context, _, _, _, _ string) error {
 		cur, err := wstore.GetRun(ctx, channelId, run.ID)
 		if err != nil {
 			return err

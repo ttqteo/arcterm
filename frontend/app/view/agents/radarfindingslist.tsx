@@ -9,41 +9,18 @@ import { useAtom } from "jotai";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo } from "react";
-import { ambientRefForFinding } from "./ambient";
-import { AmbientTags } from "./ambientviews";
 import {
-    findingMode,
-    GROUP_ORDER,
-    groupFindings,
-    groupMeta,
+    findingSite,
+    groupForList,
     investigationView,
-    isMutedGroup,
-    missedLatestScan,
-    MODE_META,
-    strengthPips,
-    subsystemLabel,
-    type RadarGroup,
+    isNewFinding,
+    LIST_GROUP_ORDER,
+    listGroupMeta,
+    shortSha,
+    type RadarListGroup,
 } from "./radarmodel";
-import { radarOpenGroupsAtom } from "./radarstore";
-import { INVESTIGATION_TEXT, modeBadge, severityPill, TONE_DOT, TONE_TEXT } from "./radarstyles";
-
-export function StrengthPips({ strength, tall }: { strength: string; tall?: boolean }) {
-    const filled = strengthPips(strength);
-    return (
-        <span title={`${strength} evidence`} className="flex flex-none gap-0.5">
-            {[0, 1, 2].map((i) => (
-                <span
-                    key={i}
-                    className={cn(
-                        "w-[3px] rounded-[1px]",
-                        tall ? "h-[11px]" : "h-2.5",
-                        i < filled ? "bg-accent-soft" : "bg-edge-strong"
-                    )}
-                />
-            ))}
-        </span>
-    );
-}
+import { radarOpenListGroupsAtom } from "./radarstore";
+import { INVESTIGATION_TEXT, LIST_TONE_DOT, LIST_TONE_TEXT, severityPill } from "./radarstyles";
 
 function Kbd({ children }: { children: React.ReactNode }) {
     return (
@@ -68,18 +45,20 @@ export function RadarFindingsList({
     onActivate?: () => void; // list-nav Enter: the selected finding's primary action
     activateLabel?: string;
 }) {
-    const grouped = useMemo(() => groupFindings(findings), [findings]);
-    const [open, setOpen] = useAtom(radarOpenGroupsAtom);
-    const toggle = (g: RadarGroup) =>
+    const grouped = useMemo(() => groupForList(findings), [findings]);
+    const [open, setOpen] = useAtom(radarOpenListGroupsAtom);
+    const toggle = (g: RadarListGroup) =>
         setOpen((prev) => {
             const next = new Set(prev);
-            next.has(g) ? next.delete(g) : next.add(g);
+            if (!next.delete(g)) {
+                next.add(g);
+            }
             return next;
         });
     // publish only the *rendered* order (open groups) for global j/k list-nav, so the cursor never lands
     // on a row hidden inside a collapsed group. cursor==selection. (listnav.ts)
     const navIds = useMemo(
-        () => GROUP_ORDER.filter((g) => open.has(g)).flatMap((g) => grouped[g].map((f) => f.id)),
+        () => LIST_GROUP_ORDER.filter((g) => open.has(g)).flatMap((g) => grouped[g].map((f) => f.id)),
         [grouped, open]
     );
     const listNav = useMemo<ListNavController>(
@@ -94,21 +73,19 @@ export function RadarFindingsList({
         [navIds, selectedId, onSelect, onActivate, reportId]
     );
     useSurfaceListNav(listNav);
-    // a lens tag only tells rows apart when the list mixes lenses
-    const mixedModes = new Set(findings.map(findingMode)).size > 1;
 
     return (
         <div className="flex w-[384px] flex-none flex-col border-r border-edge-faint">
             <div className="min-h-0 flex-1 overflow-y-auto pb-2.5 pt-1">
-                {GROUP_ORDER.map((g) => {
+                {LIST_GROUP_ORDER.map((g) => {
                     const items = grouped[g];
                     if (items.length === 0) {
                         return null;
                     }
-                    const meta = groupMeta(g);
+                    const meta = listGroupMeta(g, items);
                     const isOpen = open.has(g);
                     return (
-                        <div key={g} className="flex flex-col">
+                        <div key={g} data-radar-group={g} className="flex flex-col">
                             <button
                                 type="button"
                                 aria-expanded={isOpen}
@@ -120,8 +97,8 @@ export function RadarFindingsList({
                                 ) : (
                                     <ChevronRight className="h-3 w-3 text-muted" />
                                 )}
-                                <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[meta.tone])} />
-                                <span className={cn(REGION_LABEL, TONE_TEXT[meta.tone])}>{meta.label}</span>
+                                <span className={cn("h-1.5 w-1.5 rounded-full", LIST_TONE_DOT[meta.tone])} />
+                                <span className={cn(REGION_LABEL, LIST_TONE_TEXT[meta.tone])}>{meta.label}</span>
                                 <span className="text-[10.5px] tabular-nums text-muted">{items.length}</span>
                                 <span className="flex-1" />
                                 <span className="text-[11px] text-muted">{meta.hint}</span>
@@ -141,7 +118,7 @@ export function RadarFindingsList({
                                                 key={f.id}
                                                 finding={f}
                                                 active={selectedId === f.id}
-                                                showMode={mixedModes && findingMode(f) !== "correctness"}
+                                                dimmed={g === "dismissed"}
                                                 onSelect={onSelect}
                                             />
                                         ))}
@@ -174,27 +151,37 @@ export function RadarFindingsList({
 function FindingRow({
     finding: f,
     active,
-    showMode,
+    dimmed,
     onSelect,
 }: {
     finding: RadarFinding;
     active: boolean;
-    showMode: boolean;
+    dimmed: boolean;
     onSelect: (id: string) => void;
 }) {
     const iv = investigationView(f);
-    const mode = findingMode(f);
+    const site = findingSite(f);
     return (
         <button
             type="button"
+            data-radar-finding-row={f.id}
             aria-current={active}
             onClick={() => onSelect(f.id)}
             className={cn(
                 "flex flex-col gap-[7px] rounded-lg px-2.5 pb-2.5 pt-[9px] text-left transition-colors duration-150",
                 active ? "bg-surface-selected ring-1 ring-inset ring-accent/45" : "hover:bg-surface-hover",
-                isMutedGroup(f.group) && !active && "opacity-[0.62]"
+                dimmed && !active && "opacity-[0.62]"
             )}
         >
+            {site ? (
+                <span className="flex min-w-0 items-baseline text-[11.5px]">
+                    <span className="min-w-0 truncate text-muted">{site.dir}</span>
+                    <span className="flex-none text-ink-hi">
+                        {site.file}:{site.line}
+                    </span>
+                    {site.more > 0 ? <span className="ml-2 flex-none text-ink-mid">+{site.more} site</span> : null}
+                </span>
+            ) : null}
             <span
                 className={cn(
                     "line-clamp-2 text-[13px] font-medium leading-[1.42] text-pretty",
@@ -212,29 +199,22 @@ function FindingRow({
                 >
                     {f.severity}
                 </span>
-                {showMode ? (
-                    <span
-                        className={cn(
-                            "flex-none rounded border px-[5px] text-[10.5px] font-bold uppercase tracking-[0.06em]",
-                            modeBadge(mode)
-                        )}
-                    >
-                        {MODE_META[mode].short}
-                    </span>
-                ) : null}
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
-                    {subsystemLabel(f.subsystem)}
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
+                    fix {shortSha(f.sourcecommit)}
                 </span>
-                <AmbientTags {...ambientRefForFinding(f)} />
-                {missedLatestScan(f) ? (
-                    <span className="flex-none text-[11px] text-muted">not detected this scan</span>
-                ) : null}
                 {iv ? (
                     <span className={cn("flex-none text-[11px] font-semibold", INVESTIGATION_TEXT[iv.tone])}>
                         {iv.rowLabel}
                     </span>
                 ) : null}
-                <StrengthPips strength={f.strength} />
+                {isNewFinding(f) ? (
+                    <span
+                        data-radar-new
+                        className="flex-none rounded bg-accent/10 px-1.5 py-px text-[10.5px] font-semibold text-accent-soft"
+                    >
+                        new
+                    </span>
+                ) : null}
             </span>
         </button>
     );

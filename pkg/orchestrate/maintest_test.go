@@ -35,8 +35,13 @@ func TestMain(m *testing.M) {
 	}
 	// fixtures store worker tabs no controller runs; only the tests that script a dead one should see it stall
 	workerControllerGone = func(context.Context, *waveobj.Run) bool { return false }
+	// fixtures spawn workers through a stub that makes no tab, so there is nothing to start
+	startWorker = func(context.Context, string) error { return nil }
 	// a landed dag's verifier would need a workspace to spawn in; only the verifier's own tests start one
 	startVerifier = skipVerifier
+	// a fixture's worker has no transcript, and the lookup then globs every dir under the root: against the
+	// real ~/.claude/projects that was 1.4M file checks a run, all logged as test inputs for go to re-check
+	sessionsRootFor = func(string) string { return filepath.Join(dir, "sessions") }
 	defer effortstore.UseRootForTest(filepath.Join(dir, "vault"))()
 	code := m.Run()
 	os.RemoveAll(dir)

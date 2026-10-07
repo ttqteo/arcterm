@@ -85,7 +85,7 @@ the base commit, digest `health: "healthy"`, nothing advancing.
 | F11 | `MaxTasks = 8` has no path for a larger plan           | 13-task plan; `wsh jarvis dag import-tasks` → `Error: no more than 8 tasks are allowed` (`pkg/orchestrate/dag.go:137`) after the lead had already spent ~10 min producing 13 pi-tasks records. `MaxTasks` (`dag.go:39`) is referenced from that one call site and asserted by no test | plan rejected *after* the planning cost; only workaround is lossy compression | ✅ Closed 2026-09-16 (`1e4bb179`) |
 | F12 | One run holds exactly one DAG, stated nowhere           | `wstore.CreateDagForRun` (`pkg/wstore/wstore_dag.go:88`) returns the *existing* dag whenever `run.DagORef != ""`; `DagSubmitCommand` fails a differing proposal with `dag conflict: run %s already linked to a different dag` (`wshserver_dag.go:91`). The lead's own recommended escalation answer — "two DAG phases, import 9–13 after the first integrates" — would have hard-failed at the second import, stranding tasks 9–13. Nothing in the prompt, CLI help, or error text says so | lead confidently recommends a dead-end shape; a human taking it discovers it eight tasks later | ✅ Resolved 2026-09-04 |
 | F13 | No first-token deadline: a dead lead looks like a thinking one | First launch pinned `openai-codex/gpt-5.3-codex-spark`; lead died on its first API call (`the 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account`) with a 4-line transcript, while the run read `executing / orchestrate:running`. Liveness is transcript-mtime only (`pkg/orchestrate/liveness.go:25`, `StallThreshold` 15 min), so dying *before* writing is indistinguishable from thinking | 15 min to notice a launch that failed in seconds | ✅ Resolved 2026-09-04 |
-| F14 | Route picker offers routes the account cannot run       | `openai-codex/gpt-5.3-codex-spark` listed, selectable, rejected by the provider; the `pi` **tier** routes resolve to a bare `deepseek-v4-pro`, which pi rejects as "ambiguous across providers". `ListHarnessesCommand` reports capability, not entitlement | the picker's first option is a guaranteed dead run | open |
+| F14 | Route picker offers routes the account cannot run       | `openai-codex/gpt-5.3-codex-spark` listed, selectable, rejected by the provider; the `pi` **tier** routes resolve to a bare `deepseek-v4-pro`, which pi rejects as "ambiguous across providers". `ListHarnessesCommand` reports capability, not entitlement | the picker's first option is a guaranteed dead run | held 2026-10-06 |
 | F15 | `import-tasks` hardcodes `parallelism: 2`               | `cmd/wsh/cmd/wshcmd-jarvisdag.go:82` sends `Parallelism: 2` with no flag; `DagSubmitCommand` accepts up to `MaxParallelism = 8` (`dag.go:40`). This DAG had 4 independent backend tasks (t-1..t-4) draining two at a time — digest `next.kind = parallelism-wait` while t-1/t-4 were ready | ~2× wall clock on wide DAGs; only the CLI path pins it | ✅ Resolved 2026-09-04 |
 | F16 | Merge gate has no liveness and no age                   | 4 done / 4 worktrees on `wave/e4a54512-…-t-1..t-4`; digest `health: "healthy"`, 0 stalled, 0 attention, `next.kind = merge-ready`, `actions: ["resolve-merge"]`. `StallThreshold` covers only *running* children, so nothing ages the gate. Confirmed still parked at review time: project worktree still at `fcfca8da`, four child branches unmerged | a lead that died or drifted strands finished work indefinitely while health reads clean | ✅ Resolved 2026-09-04 |
 | F17 | `runtime` silently selects between two different orchestrators | `BuildOrchestratePrompt` (`pkg/jarvis/run.go:353`) forks: `pi` → create pi-tasks + `dag import-tasks`, engine schedules (the only path producing a `TaskGroup`); `claude`/`codex` → "execute it adaptively by dispatching your own subagents" — no TaskGroup, no managed worktrees, `pkg/orchestrate` never runs. Nothing in the composer says which one a route buys | same UI, two execution models; every DAG affordance silently absent on one of them | ✅ Closed 2026-09-16 (`1e4bb179`, `e9e480b3`) |
@@ -115,7 +115,8 @@ cleanup debt is already real, not just a risk at the merge gate.
 
 > **F11–F17 are mirrored into `docs/open-issues.md` §2 as of 2026-09-04**, re-verified against the
 > code. They had lived only here since Capture 2, which is why the consolidated backlog read as
-> though orchestration were closed. File new rows in both places.
+> though orchestration were closed. File new rows in both places. (2026-10-05: the closed rows were
+> pruned from `docs/open-issues.md`; F14 moved to its Held section 2026-10-06.)
 
 ### Resolution — 2026-09-04
 
@@ -167,6 +168,12 @@ Still open, and why:
   ambiguous overnight), which also means a hardcoded provider prefix would be exactly as fragile.
   The durable fix is catalog-backed resolution at spawn, where ctx is available. F13 lowers the
   severity either way: a dead route now fails in seconds with the provider's own message.
+  **Held 2026-10-06.** The catalog fix is moot: bare pi ids became unrepresentable (`0ff0eb0f`) and
+  tiers were deleted (`e9e480b3`), so the picker lists only provider-qualified ids from the harness's
+  own catalog. What is left is one row that catalog cannot see: `pi --list-models` still lists
+  `openai-codex/gpt-5.3-codex-spark` (1 of 519 rows) and the provider still rejects it (probed with
+  `pi -p`). A spawn-time catalog check would pass it; only a denylist learned from spawn failures
+  would catch it, which one row does not justify.
 
 None of the four is verified against a live DAG run; all are unit-tested only.
 

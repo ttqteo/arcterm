@@ -638,7 +638,6 @@ export function RunBody({
     const railKey = railIds.join(",");
     useLayoutEffect(() => {
         entranceRef.current = computeEntrances(entranceRef.current, run.id, railIds).state;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [run.id, railKey]);
 
     // live workers of the running phases — the set we open transcript streams for so the rail narrates

@@ -146,6 +146,11 @@ func spawnReviewer(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, t *waveo
 	if err := stampSpawnedWorker(spawnCtx, oref, runORef, channelORef); err != nil {
 		log.Printf("dag %s task %s: stamp reviewer %s: %v", g.OID, t.ID, oref, err)
 	}
+	if err := startWorker(spawnCtx, oref); err != nil {
+		abandonUnstartedWorker(spawnCtx, g.ChannelId, runID, oref)
+		spendReviewRespawn(ctx, g, t, "reviewer could not start: "+err.Error(), afterCommit)
+		return
+	}
 	t.ReviewRunID, t.ReviewSpawnedTs = runID, now
 	taskID := t.ID
 	*afterCommit = append(*afterCommit, func() {
@@ -486,8 +491,13 @@ func RecordReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict, not
 			if err != nil {
 				return fmt.Errorf("loading the worker's run %s: %w", t.RunID, err)
 			}
-			if rep, _ := workerReportOf(worker); rep.ForLater == "" {
-				return fmt.Errorf("the worker's %s is None; give --downstream with what they must know", sectionHeading(jarvis.ReportKeyForLater))
+			heading := sectionHeading(jarvis.ReportKeyForLater)
+			rep, unstructured := workerReportOf(worker)
+			if unstructured != "" {
+				return fmt.Errorf("the worker's report is unstructured, so it has no %s to forward; give --downstream with what they must know", heading)
+			}
+			if rep.ForLater == "" {
+				return fmt.Errorf("the worker's %s is None; give --downstream with what they must know", heading)
 			}
 		}
 		t.ReviewDownstreamFor = targets

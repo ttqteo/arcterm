@@ -97,12 +97,13 @@ func extractPi(file *pisession.File, cutoff time.Time) []Record {
 }
 
 // walkPiFiles collects Pi session files under root. The authoritative window is each entry's own
-// timestamp (a session file is appended over time), so the exact cutoff is stored per scanFile for
-// the parser to apply rather than pruning by modtime — mirroring walkOpencodeFiles.
+// timestamp, so the exact cutoff is stored per scanFile for the parser to apply. A session file is
+// only ever appended to, so one last modified before the cutoff holds no entry inside the window and
+// is skipped unread: parsing every session ever written was half the 7-day scan's time.
 func walkPiFiles(root string, cutoff time.Time) []scanFile {
 	var files []scanFile
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") || !inWindow(path, cutoff) {
 			return nil
 		}
 		files = append(files, scanFile{path: path, kind: scanPi, cutoff: cutoff})

@@ -68,9 +68,9 @@ const e2e = `(async () => {
   const ch = await rpc("createchannel", { name: "runs-piece4", projectpath: CWD });
   const channelId = ch.oid;
 
-  async function getChannel() {
-    const res = await rpc("getchannels", null);
-    return (res.channels || []).find((x) => x.oid === channelId) || {};
+  // a channel's messages are their own rows; the getchannels reply carries none
+  async function getMessages() {
+    return (await rpc("getchannelmessages", { channelid: channelId })).messages || [];
   }
   async function blockOf(tabOref) {
     const tab = await rpc("gettab", tabOref.slice(4));
@@ -101,12 +101,12 @@ const e2e = `(async () => {
   // question (jarvis-answered card text does NOT include the question, so match on the Data payload;
   // card.choice present ⇒ auto-answered, absent ⇒ escalation).
   async function askAndWait(question, options, maxMs) {
-    const beforeIds = new Set(((await getChannel()).messages || []).map((m) => m.id));
+    const beforeIds = new Set((await getMessages()).map((m) => m.id));
     await rpc("ask", { oref: blockOref, questions: [{ question, options }] });
     const deadline = Date.now() + maxMs;
     while (Date.now() < deadline) {
       await sleep(3000);
-      for (const m of (await getChannel()).messages || []) {
+      for (const m of await getMessages()) {
         if (beforeIds.has(m.id) || m.author !== "jarvis") continue;
         if (m.kind !== "jarvis-answered" && m.kind !== "jarvis-escalation") continue;
         let card = null; try { card = JSON.parse(m.data || "{}"); } catch (e) { /* skip */ }

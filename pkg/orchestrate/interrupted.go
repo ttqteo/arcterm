@@ -44,3 +44,32 @@ func MarkInterruptedRuns(ctx context.Context) {
 		sendRunUpdates(run.ChannelOID, run.ID)
 	}
 }
+
+// leadResumeNudge is a lead's first turn after the app restarted under it. The worker nudge would send it
+// back to "the task", and a lead that thinks it is picking its own work up again re-dispatches the dag's.
+const leadResumeNudge = "The app restarted while your run was going, and your process stopped with it. The dag kept running without you, so do not resubmit the plan or redispatch tasks. Start with `wsh jarvis dag status`."
+
+// ResumeInterruptedLeads restarts, in its own tab and session, the lead of every dag run that was going when
+// wavesrv last stopped. The watchdog picks a dag's workers back up by itself, but nothing owned the lead: its
+// tab outlived its process, and the first wake found it dead and handed the run's judgment to the human. A
+// lead that cannot be resumed is logged and left to that path. Call before StartWatchdog, whose first tick
+// can post a wake.
+func ResumeInterruptedLeads(ctx context.Context) {
+	runs, err := wstore.GetRunsByStatus(ctx, jarvis.RunStatus_Executing, jarvis.RunStatus_Planning)
+	if err != nil {
+		log.Printf("listing runs to resume their leads: %v", err)
+		return
+	}
+	for _, run := range runs {
+		// a dag's task runs carry its DagORef too, and the watchdog restarts those
+		if run.Mode != jarvis.RunMode_Orchestrator || run.DagORef == "" || run.SessionId == "" || !workerControllerGone(ctx, run) {
+			continue
+		}
+		if err := jarvis.ResumeRunWorker(ctx, "tab:"+runTabID(run), run.Runtime, run.SessionId, leadResumeNudge); err != nil {
+			log.Printf("resuming run %s's lead: %v", run.ID, err)
+			continue
+		}
+		wakes.leadRestarted(run.ChannelOID, run.ID)
+		appendRunEvent(ctx, run.ChannelOID, run.ID, waveobj.RunEventKindLeadLaunched, nil, map[string]any{"text": leadResumeNudge})
+	}
+}

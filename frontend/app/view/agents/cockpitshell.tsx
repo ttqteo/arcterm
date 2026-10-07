@@ -1,25 +1,26 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
-import { getSettingsKeyAtom } from "@/app/store/global";
+import { CodeSurface } from "@/app/view/code/codesurface";
+import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
 import { AgentSurface } from "./agentsurface";
 import { primeChannels } from "./channelsstore";
-import { initHarnessPreference, loadHarnesses } from "./harnessstore";
-import { CodeSurface } from "@/app/view/code/codesurface";
 import { CockpitSurface } from "./cockpitsurface";
 import { useDockBadge } from "./dockbadgesync";
 import { useDocCompileSync } from "./docpdfstore";
 import { DocReviewDialog } from "./docreviewdialog";
+import { docNotesAtom, pruneNotes } from "./docreviewnotes";
 import { useDocReviewSync } from "./docreviewstore";
 import { FilesSurface } from "./filessurface";
+import { initHarnessPreference, loadHarnesses } from "./harnessstore";
 import { setupRosterSeededLatch } from "./liveagents";
-import { JarvisSurface } from "@/app/view/jarvis/jarvissurface";
 import { NavRail } from "./navrail";
 import { NotifySync } from "./notifysync";
 import { useUnreadTracking } from "./unreadagentsstore";
@@ -96,6 +97,16 @@ function useResetAnswerDraftsOnAskChange(model: AgentsViewModel) {
     }, [asks.map((a) => `${a.id}:${a.askId}`).join(",")]);
 }
 
+// Drops the review notes (docreviewnotes.ts) of every ask that went away. Here rather than in the dialog so
+// an ask answered or cleared while the dialog is hidden is pruned too.
+function usePruneDocNotes(model: AgentsViewModel) {
+    const agents = useAtomValue(model.agentsAtom);
+    const askIds = agents.flatMap((a) => (a.ask?.askId != null ? [a.ask.askId] : []));
+    useEffect(() => {
+        globalStore.set(docNotesAtom, pruneNotes(globalStore.get(docNotesAtom), new Set(askIds)));
+    }, [askIds.join(",")]);
+}
+
 export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: string }) {
     usePrunePendingLaunches(model);
     useResetAnswerDraftsOnAskChange(model);
@@ -103,6 +114,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useDocReviewSync(model);
     // after the sync, so a new .tex review's state exists: its PDF compiles in the background, on any surface
     useDocCompileSync(model);
+    usePruneDocNotes(model);
     useHarnessPreference();
     // prime the channel snapshot at boot so the nav-rail needs-you badge + Cockpit counters dedup
     // correctly even before the Channels surface is first opened.

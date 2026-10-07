@@ -17,6 +17,12 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
+// the tests share one store, and a lead resolves by scanning every run row for its oref, so each
+// test's lead tab is its own
+func leadTabORef(ch *waveobj.Channel) string {
+	return waveobj.MakeORef(waveobj.OType_Tab, "lead-"+ch.OID).String()
+}
+
 func TestCreateChildRunCommand_InheritsAndStampsParent(t *testing.T) {
 	ctx := context.Background()
 	ch, err := wstore.CreateChannel(ctx, "backlog", "/repo")
@@ -26,7 +32,7 @@ func TestCreateChildRunCommand_InheritsAndStampsParent(t *testing.T) {
 	parent := jarvis.NewRun("work the backlog", "ws-1", "/repo",
 		waveobj.PrincipleList{{ID: "clean", Text: "be clean"}},
 		jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
-	leadORef := waveobj.MakeORef(waveobj.OType_Tab, "leadtab").String()
+	leadORef := leadTabORef(ch)
 	parent.Phases[0].WorkerOrefs = []string{leadORef}
 	if err := wstore.AppendRun(ctx, ch.OID, parent); err != nil {
 		t.Fatalf("AppendRun: %v", err)
@@ -88,7 +94,7 @@ func TestCreateChildRunCommand_InheritsParentRuntime(t *testing.T) {
 		nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
 	parent.Runtime = "pi"
 	parent.Model = "opencode/deepseek-v4-pro"
-	leadORef := waveobj.MakeORef(waveobj.OType_Tab, "leadtab").String()
+	leadORef := leadTabORef(ch)
 	parent.Phases[0].WorkerOrefs = []string{leadORef}
 	if err := wstore.AppendRun(ctx, ch.OID, parent); err != nil {
 		t.Fatalf("AppendRun: %v", err)
@@ -131,7 +137,7 @@ func TestCreateChildRunCommand_LegacyParentPersistsClaude(t *testing.T) {
 	}
 	parent := jarvis.NewRun("work the backlog", "ws-1", "/repo",
 		nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
-	leadORef := waveobj.MakeORef(waveobj.OType_Tab, "leadtab").String()
+	leadORef := leadTabORef(ch)
 	parent.Phases[0].WorkerOrefs = []string{leadORef}
 	if err := wstore.AppendRun(ctx, ch.OID, parent); err != nil {
 		t.Fatalf("AppendRun: %v", err)

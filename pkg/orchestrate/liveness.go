@@ -14,6 +14,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/workercap"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -70,7 +71,11 @@ var livenessRuntimes = map[string]bool{"claude": true, "pi": true}
 // that makes "has written nothing yet" mean hung. claude is deliberately absent: in the 2026-09-05
 // live run all four children wrote no transcript at all for their entire successful lifetime, two of
 // them past this deadline while committing correct work, so arming it there is a per-task coin flip
-// that retries and discards a finished worktree. codex is unverified and stays out until measured.
+// that retries and discards a finished worktree. Re-measured 2026-10-06 over the packaged app's 618
+// claude children: 611 wrote one within 15 seconds of spawn and none later, so that run is the
+// exception, not the rule. It is still a real one: a claude that inherits CLAUDE_CODE_CHILD_SESSION
+// (a dev app started from an agent's shell) persists nothing. So a claude that never starts is caught
+// by its process instead: workerStuckStarting and workerControllerGone.
 // The StallThreshold path is unaffected — it needs a transcript to exist before it can age one.
 var firstTokenRuntimes = map[string]bool{"pi": true}
 
@@ -279,7 +284,7 @@ var workerLatestTool = func(ctx context.Context, run *waveobj.Run) string {
 	if blockId == "" || !alive {
 		return ""
 	}
-	st := latestAgentStatus(blockId, runTabID(run))
+	st := LatestAgentStatus(blockId, runTabID(run))
 	if st.State != baseds.AgentState_Working {
 		return ""
 	}
@@ -287,10 +292,24 @@ var workerLatestTool = func(ctx context.Context, run *waveobj.Run) string {
 	return strings.ToValidUTF8(truncateText(st.Detail, MaxLatestToolLen), "")
 }
 
-// workerControllerGone reports whether a child's worker block exists but no controller runs it, which is
-// what a machine restart leaves behind: the block is in the store, the process is not. An unresolvable
-// worker (no tab yet, a run without one) is not gone, only unknown. A var so tests can script it.
-var workerControllerGone = func(ctx context.Context, run *waveobj.Run) bool {
+// workerControllerGone is readWorkerGone, a var so tests can script it.
+var workerControllerGone = readWorkerGone
+
+// SetWorkerGoneForTest stubs the worker-gone check for tests whose fixture workers have no tab.
+func SetWorkerGoneForTest(fn func(context.Context, *waveobj.Run) bool) func() {
+	old := workerControllerGone
+	workerControllerGone = fn
+	return func() { workerControllerGone = old }
+}
+
+// readWorkerGone reports whether a child's worker can no longer be running: its tab is deleted, or its
+// block is in the store with no controller. A machine restart leaves the second. An exit nothing heard
+// leaves the first, because an exited worker's tab closes itself: run d8fe96ab's t-2 died a second after
+// its spawn and its exit failed nothing (most likely it beat the tick's owner stamp on its tab, so the exit
+// hook resolved no run), and the task read running for 15 minutes. A run records its worker's tab only once
+// the tab exists, so a missing one was deleted. An unresolvable worker (a run without a tab, an unreadable store) is
+// not gone, only unknown.
+func readWorkerGone(ctx context.Context, run *waveobj.Run) bool {
 	if run == nil {
 		return false
 	}
@@ -299,10 +318,23 @@ var workerControllerGone = func(ctx context.Context, run *waveobj.Run) bool {
 		return false
 	}
 	tab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId)
-	if err != nil || tab == nil || len(tab.BlockIds) == 0 {
+	if err != nil {
+		return false
+	}
+	if tab == nil {
+		return true
+	}
+	if len(tab.BlockIds) == 0 {
 		return false
 	}
 	return blockcontroller.GetBlockControllerRuntimeStatus(tab.BlockIds[0]) == nil
+}
+
+// childStillOpen re-reads a child run and reports whether it is still working. Its `wsh jarvis complete`
+// lands just before its process exits, so the snapshot a tick loaded can be older than the exit it judges.
+func childStillOpen(ctx context.Context, channelId, runID string) bool {
+	fresh, err := wstore.GetRun(ctx, channelId, runID)
+	return err == nil && (fresh.Status == jarvis.RunStatus_Executing || fresh.Status == jarvis.RunStatus_Planning)
 }
 
 // workerTurnEndedAt is when a worker last reported its turn over (the Stop hook's idle), 0 while its latest
@@ -313,7 +345,7 @@ var workerTurnEndedAt = func(ctx context.Context, run *waveobj.Run) int64 {
 	if blockId == "" || !alive {
 		return 0
 	}
-	st := latestAgentStatus(blockId, runTabID(run))
+	st := LatestAgentStatus(blockId, runTabID(run))
 	if st.State != baseds.AgentState_Idle {
 		return 0
 	}
@@ -338,6 +370,16 @@ func workerStuckStarting(ctx context.Context, run *waveobj.Run) bool {
 
 func shellStuckStarting(blockId string) bool {
 	return blockId != "" && blockShellStatus(blockId) == blockcontroller.Status_Init
+}
+
+// workerAsking reports a worker with a question open in the registry.
+func workerAsking(ctx context.Context, run *waveobj.Run) bool {
+	blockId, _ := workerBlockFn(ctx, run)
+	if blockId == "" {
+		return false
+	}
+	_, asking := agentask.GlobalRegistry.Get(waveobj.MakeORef(waveobj.OType_Block, blockId).String())
+	return asking
 }
 
 // hungWake is the judgment line for a task that just stalled, or "" when its worker is waiting on an answer,

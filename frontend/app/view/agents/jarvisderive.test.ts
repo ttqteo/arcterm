@@ -3,10 +3,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { buildFleetSnapshot, buildJarvisPrompt, fleetCostUsd, pendingAskCount, type WorkerState } from "./jarvisderive";
+import { answeredAskIdsAcross, buildFleetSnapshot, fleetCostUsd, needsHuman, type WorkerState } from "./jarvisderive";
 
-function chan(messages: Partial<ChannelMessage>[]): Channel {
-    return { otype: "channel", oid: "c1", version: 1, name: "payments-api", createdts: 0, meta: {}, messages: messages as ChannelMessage[] };
+// one channel's message list
+function chan(messages: Partial<ChannelMessage>[]): ChannelMessage[] {
+    return messages as ChannelMessage[];
 }
 function agent(over: Partial<AgentVM>): AgentVM {
     return { id: "t1", name: "claude", task: "", state: "working", ...over };
@@ -110,26 +111,12 @@ describe("buildFleetSnapshot", () => {
     });
 });
 
-describe("buildJarvisPrompt", () => {
-    const snap = [{ oref: "tab:t1", name: "claude", state: "asking" as const, task: "build", askText: "A or B?" }];
-    it("includes each worker's name, state, task, and ask", () => {
-        const p = buildJarvisPrompt(snap, chan([]), "");
-        expect(p).toContain("claude [asking]");
-        expect(p).toContain("build");
-        expect(p).toContain("A or B?");
-    });
-    it("uses the focus text as the task when provided", () => {
-        expect(buildJarvisPrompt(snap, chan([]), "what's blocked?")).toContain("what's blocked?");
-    });
-    it("falls back to a default task when focus is empty", () => {
-        expect(buildJarvisPrompt(snap, chan([]), "  ")).toContain("Summarize the current state");
-    });
-});
-
-describe("pendingAskCount", () => {
+// the cockpit's needs-you count: needsHuman over the ask ids answered in any channel's message list
+describe("answeredAskIdsAcross", () => {
     const answeredCard = (askId: string) =>
         JSON.stringify({ askORef: "block:a", askId, workerORef: "tab:x", question: "q", options: [{ label: "y" }], choice: 0 });
-    const testChan = (msgs: unknown[]) => ({ name: "c", messages: msgs }) as unknown as Channel;
+    const answeredMsg = (askId: string) =>
+        ({ id: "1", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: answeredCard(askId) }) as ChannelMessage;
     const testAgent = (id: string, state: string, askId?: string) =>
         ({
             id,
@@ -137,34 +124,38 @@ describe("pendingAskCount", () => {
             state,
             ask: askId ? { oref: "block:a", askId, questions: [{ question: "q?" }] } : undefined,
         }) as unknown as AgentVM;
+    const needsYou = (lists: ChannelMessage[][], agents: AgentVM[]) => {
+        const answered = answeredAskIdsAcross(lists);
+        return agents.filter((a) => needsHuman(a, answered)).length;
+    };
 
     it("counts an asking worker with no answered card", () => {
-        expect(pendingAskCount([testChan([])], [testAgent("w1", "asking", "ask-1")])).toBe(1);
+        expect(needsYou([[]], [testAgent("w1", "asking", "ask-1")])).toBe(1);
     });
     it("drops an asking worker whose ask Jarvis already answered", () => {
-        const msgs = [{ id: "1", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: answeredCard("ask-1") }];
-        expect(pendingAskCount([testChan(msgs)], [testAgent("w1", "asking", "ask-1")])).toBe(0);
+        expect(needsYou([[answeredMsg("ask-1")]], [testAgent("w1", "asking", "ask-1")])).toBe(0);
     });
     it("keeps a NEW ask from a worker whose PREVIOUS ask was answered", () => {
-        const msgs = [{ id: "1", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: answeredCard("ask-old") }];
-        expect(pendingAskCount([testChan(msgs)], [testAgent("w1", "asking", "ask-new")])).toBe(1);
+        expect(needsYou([[answeredMsg("ask-old")]], [testAgent("w1", "asking", "ask-new")])).toBe(1);
     });
     it("ignores non-asking workers", () => {
-        expect(pendingAskCount([testChan([])], [testAgent("w1", "working")])).toBe(0);
+        expect(needsYou([[]], [testAgent("w1", "working")])).toBe(0);
     });
-    it("dedupes an ask answered in ANY channel", () => {
-        const answered = testChan([{ id: "1", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: answeredCard("ask-1") }]);
-        expect(pendingAskCount([testChan([]), answered], [testAgent("w1", "asking", "ask-1")])).toBe(0);
+    it("dedupes an ask answered in a channel that is not the active one", () => {
+        const active: ChannelMessage[] = [];
+        const other = [answeredMsg("ask-1")];
+        expect([...answeredAskIdsAcross([active, other])]).toEqual(["ask-1"]);
+        expect(needsYou([active, other], [testAgent("w1", "asking", "ask-1")])).toBe(0);
     });
     it("is 0 for no channels and no agents", () => {
-        expect(pendingAskCount([], [])).toBe(0);
+        expect(needsYou([], [])).toBe(0);
     });
 });
 
 describe("buildFleetSnapshot dismiss", () => {
     const dispatch = (oref: string, ts: number) => ({ id: String(ts), kind: "dispatch", author: "claude", text: "go", reforef: oref, ts });
     const dismiss = (oref: string, ts: number) => ({ id: "d" + ts, kind: "dismiss", author: "you", text: "", reforef: oref, ts });
-    const chan = (msgs: unknown[]) => ({ name: "c", messages: msgs }) as unknown as Channel;
+    const chan = (msgs: unknown[]) => msgs as ChannelMessage[];
 
     it("hides a gone worker dismissed after its dispatch", () => {
         const snap = buildFleetSnapshot(chan([dispatch("tab:w1", 1), dismiss("tab:w1", 2)]), [] as unknown as AgentVM[]);

@@ -9,7 +9,7 @@ describe("notePeekFacts", () => {
         expect(notePeekFacts("error")).toEqual({ gone: true });
     });
 
-    it("is present, with nothing to focus, when the read landed", () => {
+    it("is present when the read landed", () => {
         expect(notePeekFacts("ok")).toEqual({ gone: false });
     });
 });

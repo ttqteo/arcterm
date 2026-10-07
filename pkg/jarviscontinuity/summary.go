@@ -45,12 +45,12 @@ func terseState(f SummaryFacts) string {
 	return fmt.Sprintf("Paused (%s); no recorded progress yet.", f.RestReason)
 }
 
-// buildSummaryPrompt renders the deterministic facts into the one-shot summary prompt. PLACEHOLDER: the
-// <=4-sentence cap is an untuned default (see docs/deferred.md). Invariant 6 guardrails are explicit.
+// buildSummaryPrompt renders the deterministic facts into the one-shot summary prompt. Invariant 6
+// guardrails are explicit.
 func buildSummaryPrompt(f SummaryFacts) string {
 	var b strings.Builder
 	b.WriteString("You are Jarvis, summarizing where a development task stands so it can be resumed later.\n")
-	b.WriteString("Write ONE short paragraph (at most 4 sentences) describing where the work stands and what remains, using ONLY the facts below.\n")
+	b.WriteString("Write one short paragraph describing where the work stands and what remains, using only the facts below. It is read at a glance on a resume card.\n")
 	b.WriteString("Do not invent decisions. Do not claim the task is complete or correct beyond the stated run status. If a fact is absent, omit it — never speculate.\n\n")
 	b.WriteString("Objective: " + f.Objective + "\n")
 	b.WriteString("State: " + f.RestReason + "\n")

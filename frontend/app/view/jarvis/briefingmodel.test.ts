@@ -454,8 +454,8 @@ describe("unified active work", () => {
 });
 
 const attentionItem = (over: Partial<AttentionItem>): AttentionItem => ({
-    kind: "gate",
-    key: "gate:r1",
+    kind: "dag-gate",
+    key: "dag-gate:r1",
     channelid: "ch-1",
     channelname: "waveterm",
     runid: "r1",
@@ -473,29 +473,21 @@ describe("buildAttentionQueue", () => {
     it("keeps the server's priority order rather than re-sorting on age", () => {
         const q = buildAttentionQueue({
             attention: [
-                item({ key: "gate:r1", kind: "gate", waitingsince: T0 - HOUR }),
+                item({ key: "dag-gate:d1", kind: "dag-gate", waitingsince: T0 - HOUR }),
                 item({ key: "ask:w1", kind: "ask", waitingsince: T0 - DAY }),
             ],
             efforts: [],
         });
-        expect(q.map((r) => r.key)).toEqual(["gate:r1", "ask:w1"]);
+        expect(q.map((r) => r.key)).toEqual(["dag-gate:d1", "ask:w1"]);
     });
 
     it("writes a label for every kind the server can emit", () => {
-        const kinds = ["gate", "escalation", "ask", "dag-gate", "dag-blocked", "plan-gate", "radar-triage"];
+        const kinds = ["escalation", "ask", "dag-gate", "dag-blocked", "radar-triage"];
         const q = buildAttentionQueue({
             attention: kinds.map((k, i) => item({ kind: k, key: k + i })),
             efforts: [],
         });
-        expect(q.map((r) => r.kind)).toEqual([
-            "gate",
-            "escalation",
-            "ask",
-            "dag gate",
-            "dag blocked",
-            "plan gate",
-            "triage",
-        ]);
+        expect(q.map((r) => r.kind)).toEqual(["escalation", "ask", "dag gate", "dag blocked", "triage"]);
     });
 
     it("gives a dag-blocked row the error tone and the rest the asking tone", () => {
@@ -530,18 +522,6 @@ describe("buildAttentionQueue", () => {
         expect(q[0]!.title).toBe("Approve before Jarvis proceeds.");
         expect(q[0]!.detail).toBe("ship the ledger · #waveterm");
         expect(q[0]!.ts).toBe(T0 - HOUR);
-    });
-
-    it("lands a plan gate on its channel like any other gate", () => {
-        const q = buildAttentionQueue({
-            attention: [
-                item({ kind: "plan-gate", key: "plan-gate:d1", text: "Approve the plan before any worker starts." }),
-            ],
-            efforts: [],
-        });
-        expect(q[0]!.kind).toBe("plan gate");
-        expect(q[0]!.nav).toEqual({ kind: "channel", channelId: "ch-1", runId: "r1" });
-        expect(q[0]!.tone).toBe("asking"); // a held plan is waiting, not failing
     });
 
     // the server un-rolled dag gates to one row per task; two tasks of one group must stay two rows.
@@ -593,7 +573,7 @@ describe("buildAttentionQueue", () => {
     // a channel-backed item must not be re-routed just because a stray oref rode along.
     it("prefers the channel for any kind that is not triage", () => {
         const q = buildAttentionQueue({
-            attention: [item({ kind: "gate", oref: "radarreport:r-1" })],
+            attention: [item({ kind: "dag-gate", oref: "radarreport:r-1" })],
             efforts: [],
         });
         expect(q[0]!.nav).toEqual({ kind: "channel", channelId: "ch-1", runId: "r1" });
@@ -654,7 +634,7 @@ describe("buildAttentionQueue", () => {
             })
         ).efforts;
         const q = buildAttentionQueue({ attention: [item({})], efforts });
-        expect(q.map((r) => r.kind)).toEqual(["gate", "chunk blocked"]);
+        expect(q.map((r) => r.kind)).toEqual(["dag gate", "chunk blocked"]);
         expect(q[1]!.ts).toBeNull();
     });
 });
@@ -678,7 +658,7 @@ describe("summarizeAttentionQueue", () => {
     it("ignores rows without an age, and drops the oldest when none has one", () => {
         const queue = buildAttentionQueue({
             attention: [
-                attentionItem({ kind: "gate", key: "g1", waitingsince: 0 }),
+                attentionItem({ kind: "dag-gate", key: "g1", waitingsince: 0 }),
                 attentionItem({ kind: "ask", key: "a1", waitingsince: T0 - HOUR }),
                 attentionItem({ kind: "ask", key: "a2", waitingsince: T0 - 2 * HOUR }),
             ],
@@ -751,8 +731,8 @@ describe("design queue wording", () => {
     const q = (over: Partial<QueueRow>): QueueRow =>
         ({
             key: "k" + Math.random(),
-            kind: "gate",
-            wireKind: "gate",
+            kind: "dag gate",
+            wireKind: "dag-gate",
             title: "t",
             source: "s",
             detail: "",
@@ -765,7 +745,6 @@ describe("design queue wording", () => {
             cites: [],
             channelId: "c1",
             runId: "r1",
-            phaseIdx: 0,
             taskId: "",
             retry: false,
             ...over,
@@ -774,7 +753,7 @@ describe("design queue wording", () => {
         const now = 10 * 3_600_000;
         const s = summarizeAttentionQueue(
             [
-                q({ wireKind: "gate" }),
+                q({ wireKind: "dag-gate" }),
                 q({ wireKind: "ask", ts: now - 2 * 3_600_000 }),
                 q({ wireKind: "dag-blocked", retry: true }),
             ],
@@ -787,7 +766,6 @@ describe("design queue wording", () => {
         expect(summarizeAttentionQueue([q({})], 0)!.title).toBe("1 thing is waiting on you");
     });
     it("maps each wire kind to its in-place action", () => {
-        expect(queueAction(q({ wireKind: "gate" }))).toEqual({ label: "Approve", kind: "approve-gate" });
         expect(queueAction(q({ wireKind: "dag-gate", taskId: "t-3" }))).toEqual({
             label: "Approve",
             kind: "approve-dag",
@@ -810,7 +788,7 @@ describe("design queue wording", () => {
     it("acknowledges all only the rows whose own button is Acknowledge", () => {
         const rows = [
             q({ wireKind: "run-unverified", channelId: "c1", runId: "r1" }),
-            q({ wireKind: "gate", runId: "r2" }),
+            q({ wireKind: "dag-gate", runId: "r2" }),
             q({ wireKind: "run-unverified", runId: null }),
             q({ wireKind: "run-unverified", channelId: "", runId: "r4" }),
             q({ wireKind: "run-unverified", channelId: "c5", runId: "r5" }),

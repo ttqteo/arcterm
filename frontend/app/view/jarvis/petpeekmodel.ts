@@ -18,28 +18,28 @@ export interface PeekRow {
     // null when the kind's text is a constant the verb already implies — see DETAIL_KINDS.
     detail: string | null;
     waitingsince: number;
-    // the row's button, labelled with the item's own verb: an unverified run's in-place ack, otherwise the
-    // escort. null when nothing is addressable behind the item.
+    // the row's button, labelled with the item's own verb: an unverified run's in-place ack, a held land's
+    // retry, otherwise the escort. null when nothing is addressable behind the item.
     primary: PetAct | null;
-    // the escort beside an ack, so settling a row in place does not cost the way to read it first
-    secondary: PetAct | null;
+    // the acts beside the button: the escort, so settling a row in place does not cost the way to read it
+    // first, and a held land's Dismiss
+    links: PetAct[];
 }
 
 // pkg/jarvis/attention.go writes Text per kind, and only these put anything in it that the row's own verb
 // does not already say: an escalation's and an ask's question (askText), a blocked dag's reason, and why a land
-// was held, which is what the human has to clear before Land again can merge. A gate's
-// "Approve before Jarvis proceeds." and a dag-gate's near-twin are constants repeated on every row of that
-// kind, so they are dropped and the width goes to the source — the part that differs.
+// was held, which is what the human has to clear before Land again can merge (or that says to dismiss it).
+// A dag-gate's "Approve <task> before the DAG proceeds." says what its verb already does, so it is dropped and
+// the width goes to the source — the part that differs.
 const DETAIL_KINDS = new Set(["escalation", "dag-blocked", "ask", "run-land-held"]);
 
 // A row names its kind in a word beside its dot, so the kind never rides on colour alone.
 const ROW_KIND_LABEL: Record<string, string> = {
-    gate: "Gate",
     "dag-gate": "Gate",
     escalation: "Escalation",
     "dag-blocked": "Blocked",
     ask: "Question",
-    "run-land-held": "Not merged",
+    "run-land-held": "Land held",
 };
 
 export function rowKindLabel(kind: string): string {
@@ -75,9 +75,9 @@ export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM>
     return (items ?? [])
         .filter((item) => item.kind !== PEEK_EXCLUDED_KIND)
         .map((item) => {
-            // actsForAttention returns [] with no runid, [in-place act, escort] for a gate, a retryable failed
-            // task, an unverified run or a held land, [escort] otherwise
-            const [first, second] = actsForAttention(item);
+            // actsForAttention returns [] with no runid, [in-place act, escort] for a dag gate, a retryable failed
+            // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise
+            const [first, ...links] = actsForAttention(item);
             return {
                 key: item.key,
                 kind: item.kind,
@@ -93,7 +93,7 @@ export function queueRows(items: AttentionItem[], agents: ReadonlyArray<AgentVM>
                         : first.verb === "open"
                           ? ({ ...first, label: item.action } as PetAct)
                           : first,
-                secondary: second ?? null,
+                links,
             };
         });
 }
@@ -147,7 +147,7 @@ export function eventPeekTarget(event: { sources?: PetEventSource[] } | undefine
 
 // What Space on a queue row shows: where its escort would land, without landing there.
 export function rowPeekTarget(row: PeekRow | undefined): PetTarget | null {
-    const escort = [row?.primary, row?.secondary].find((act) => act?.verb === "open");
+    const escort = [row?.primary, ...(row?.links ?? [])].find((act) => act?.verb === "open");
     return escort?.verb === "open" ? escort.target : null;
 }
 
@@ -158,7 +158,6 @@ export function enterHintLabel(act: PetAct | null): string {
             return "acknowledge";
         case "land":
             return "land again";
-        case "approve-phase":
         case "approve-task":
             return "approve";
         case "retry-task":

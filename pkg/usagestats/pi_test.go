@@ -196,6 +196,29 @@ func TestWalkPiFiles(t *testing.T) {
 	}
 }
 
+// a session last written before the window cannot hold an entry inside it, so the walk skips it
+// unread; one written inside the window is kept.
+func TestWalkPiFilesSkipsSessionsLastWrittenBeforeTheWindow(t *testing.T) {
+	sessions := t.TempDir()
+	cutoff := time.Now().AddDate(0, 0, -7)
+	for name, mod := range map[string]time.Time{
+		"stale.jsonl": cutoff.Add(-time.Hour),
+		"fresh.jsonl": cutoff.Add(time.Hour),
+	} {
+		path := filepath.Join(sessions, name)
+		if err := os.WriteFile(path, []byte(piFixture), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := walkPiFiles(sessions, cutoff)
+	if len(files) != 1 || filepath.Base(files[0].path) != "fresh.jsonl" {
+		t.Fatalf("want only fresh.jsonl, got %+v", files)
+	}
+}
+
 // TranscriptUsage routes a /.pi/agent/sessions/ path to the Pi parser (before the Claude/Codex
 // heuristics), producing one per-(provider,model,day) bucket that sums every billed record.
 func TestTranscriptUsageRoutesPiPath(t *testing.T) {

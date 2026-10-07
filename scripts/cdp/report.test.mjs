@@ -47,16 +47,21 @@ describe("formatResults", () => {
 });
 
 describe("contactSheetHtml", () => {
-    it("renders one img per entry with the png src", () => {
-        const html = contactSheetHtml([
-            { name: "cockpit", png: "cockpit.png" },
-            { name: "channels", png: "channels.png" },
-        ]);
+    it("renders one img per shot, its src relative to the sheet's dir", () => {
+        const html = contactSheetHtml(
+            [
+                { name: "cockpit", path: "cdp-shots/cockpit.png" },
+                { name: "nested", path: "cdp-shots/nested/a.png" },
+                { name: "outside", path: "fixtures/seed.png" },
+            ],
+            "cdp-shots"
+        );
         expect(html).toContain('src="cockpit.png"');
-        expect(html).toContain('src="channels.png"');
+        expect(html).toContain('src="nested/a.png"');
+        expect(html).toContain('src="../fixtures/seed.png"');
     });
     it("emits a doctype even when empty", () => {
-        expect(contactSheetHtml([])).toContain("<!doctype html>");
+        expect(contactSheetHtml([], "cdp-shots")).toContain("<!doctype html>");
     });
 });
 

@@ -99,5 +99,8 @@
         "ws": "^8.19.0",
         "yaml": "^2.8.3"
     },
+    "overrides": {
+        "lightningcss": "^1.33.0"
+    },
     "packageManager": "npm@10.9.2"
 }

@@ -27,6 +27,7 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 	if len(title) > 200 {
 		return nil, fmt.Errorf("EC-INVALID-TITLE: title exceeds 200 chars")
 	}
+	data.ParentOID = effortstore.BareOID(data.ParentOID)
 	if data.ParentOID != "" {
 		if _, err := effortstore.Get(ctx, data.ParentOID); err != nil {
 			return nil, fmt.Errorf("EC-BAD-PARENT: parent effort not found: %v", err)
@@ -72,6 +73,12 @@ func (ws *WshServer) EffortCreateCommand(ctx context.Context, data wshrpc.Comman
 }
 
 func (ws *WshServer) EffortMutateCommand(ctx context.Context, data wshrpc.CommandEffortMutateData) (*wshrpc.CommandEffortMutateRtnData, error) {
+	// ids are made bare once, here, so the self-link guard, the stored parent and the session link all
+	// see one form
+	data.EffortOID = effortstore.BareOID(data.EffortOID)
+	for i := range data.Ops {
+		data.Ops[i].ParentOID = effortstore.BareOID(data.Ops[i].ParentOID)
+	}
 	if _, err := effortstore.Get(ctx, data.EffortOID); err != nil {
 		return nil, err
 	}

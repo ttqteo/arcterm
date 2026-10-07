@@ -13,7 +13,7 @@ import (
 )
 
 func TestContinueReRunsAFailedVerify(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, {ID: "t-1", Label: "second"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	merges := stubMerge(t, landedSha)
@@ -61,7 +61,7 @@ func TestContinueReRunsAFailedVerify(t *testing.T) {
 }
 
 func TestContinueAfterConflictRunsVerify(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, func(context.Context, string, string, string) (string, error) { return "", ErrMergeConflict })

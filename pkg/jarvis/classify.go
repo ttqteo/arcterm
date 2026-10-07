@@ -13,6 +13,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/consult"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 const classifyTimeout = 120 * time.Second
@@ -41,10 +42,11 @@ type judgeAnswer struct {
 }
 
 // BuildClassifyPrompt composes a JSON-only prompt: every question with its pick-one / pick-any mode and indexed
-// options, the worker's task, the resolved principles (when any), and a capped recent timeline. The model must
-// return {action, answers, reason}. Empty principles leave the principles section out.
-func BuildClassifyPrompt(questions []baseds.AgentAskQuestion, task string, channel *waveobj.Channel, principles waveobj.PrincipleList) string {
-	timeline := recentTimeline(channel)
+// options, the worker's task, the resolved principles (when any), and a capped recent timeline (messages are the
+// channel's, oldest first; only the last maxTimeline are used). The model must return {action, answers, reason}.
+// Empty principles leave the principles section out.
+func BuildClassifyPrompt(questions []baseds.AgentAskQuestion, task string, channel *waveobj.Channel, messages []*waveobj.ChannelMessage, principles waveobj.PrincipleList) string {
+	timeline := recentTimeline(messages)
 	if task == "" {
 		task = "(unknown task)"
 	}
@@ -95,11 +97,11 @@ func renderQuestions(questions []baseds.AgentAskQuestion) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func recentTimeline(channel *waveobj.Channel) string {
-	if channel == nil || len(channel.Messages) == 0 {
+// recentTimeline renders the last maxTimeline of msgs (a channel's messages, oldest first).
+func recentTimeline(msgs []*waveobj.ChannelMessage) string {
+	if len(msgs) == 0 {
 		return "(none)"
 	}
-	msgs := channel.Messages
 	if len(msgs) > maxTimeline {
 		msgs = msgs[len(msgs)-maxTimeline:]
 	}
@@ -165,9 +167,13 @@ func Classify(ctx context.Context, channel *waveobj.Channel, questions []baseds.
 		return Decision{Action: "escalate", Reason: "claude CLI unavailable"}
 	}
 	principles := resolveGatekeeperPrinciples(channel)
+	messages, err := wstore.GetChannelMessages(ctx, channel.OID, 0, maxTimeline)
+	if err != nil {
+		return Decision{Action: "escalate", Reason: "reading the channel timeline: " + err.Error()}
+	}
 	runCtx, cancel := context.WithTimeout(ctx, classifyTimeout)
 	defer cancel()
-	reply, err := runFn(runCtx, spec, channel.ProjectPath, BuildClassifyPrompt(questions, task, channel, principles), func(string) {})
+	reply, err := runFn(runCtx, spec, channel.ProjectPath, BuildClassifyPrompt(questions, task, channel, messages, principles), func(string) {})
 	if err != nil {
 		return Decision{Action: "escalate", Reason: "classifier error: " + err.Error()}
 	}

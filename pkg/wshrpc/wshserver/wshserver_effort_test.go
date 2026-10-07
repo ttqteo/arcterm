@@ -218,3 +218,65 @@ func TestEffortListIncludeArchived(t *testing.T) {
 		t.Fatalf("includearchived dropped the active effort: %+v", list.Efforts)
 	}
 }
+
+// `wsh effort list` prints ids as effort:<oid>, so that form arrives wherever an id does; it must be
+// stored bare, since every reader rebuilds the oref by prefixing
+func TestEffortParentInORefFormIsStoredBare(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	parent, err := ws.EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{Title: "parent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupEffort(t, parent.EffortOID)
+	prefixed := "effort:" + parent.EffortOID
+
+	created, err := ws.EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{Title: "created child", ParentOID: prefixed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupEffort(t, created.EffortOID)
+	got, err := effortstore.Get(ctx, created.EffortOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ParentOID != parent.EffortOID {
+		t.Fatalf("create: ParentOID = %q, want %q", got.ParentOID, parent.EffortOID)
+	}
+
+	linked, err := ws.EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{Title: "linked child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupEffort(t, linked.EffortOID)
+	rtn, err := ws.EffortMutateCommand(ctx, wshrpc.CommandEffortMutateData{
+		EffortOID: linked.EffortOID,
+		Ops:       []wshrpc.EffortOp{{Op: "link", ParentOID: prefixed}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rtn.Effort.ParentOID != parent.EffortOID {
+		t.Fatalf("link: ParentOID = %q, want %q", rtn.Effort.ParentOID, parent.EffortOID)
+	}
+}
+
+func TestEffortSelfLinkRejectedAcrossIDForms(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	e, err := ws.EffortCreateCommand(ctx, wshrpc.CommandEffortCreateData{Title: "self"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupEffort(t, e.EffortOID)
+	prefixed := "effort:" + e.EffortOID
+	for _, c := range [][2]string{{prefixed, e.EffortOID}, {e.EffortOID, prefixed}} {
+		_, err := ws.EffortMutateCommand(ctx, wshrpc.CommandEffortMutateData{
+			EffortOID: c[0],
+			Ops:       []wshrpc.EffortOp{{Op: "link", ParentOID: c[1]}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "EC-BAD-PARENT") {
+			t.Fatalf("link %s --parent %s: want EC-BAD-PARENT, got %v", c[0], c[1], err)
+		}
+	}
+}

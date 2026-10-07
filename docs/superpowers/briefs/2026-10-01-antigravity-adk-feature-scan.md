@@ -54,6 +54,9 @@ and Request changes carries the quoted passages with the notes. Later, the same 
 agent-written markdown (Code `.md` preview, run report). It is the user's quote-back habit, moved to where the
 reading already happens.
 
+Shipped for the doc-review dialog on 2026-10-05 (`docreviewnotes.ts`, `docreviewnotesview.tsx`); Approve
+carries the notes too. The Code `.md` preview and the run report are not done.
+
 - Delivery: `ControllerInputCommand` submits at the first newline, which is why `codehandoff.ts` keeps each
   payload to one line. A batch of quotes therefore goes the canvas way (`canvassend.ts`): write a file, type
   one line naming it. A doc-review answer goes through the ask's own answer path instead.

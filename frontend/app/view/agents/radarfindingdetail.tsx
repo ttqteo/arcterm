@@ -7,30 +7,28 @@ import { openInCode } from "@/app/view/code/codestore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
-import { ArrowRight, ChevronDown, Target } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { formatAgo } from "./agentsviewmodel";
 import { ambientRefForFinding } from "./ambient";
 import { AmbientTags, RelevantDecisions } from "./ambientviews";
-import { parseUnifiedDiff, type DiffLineKind } from "./gitdiff";
-import { StrengthPips } from "./radarfindingslist";
 import {
     dismissReasons,
-    evidenceRows,
-    findingMode,
-    findingSignalCount,
-    findingSourceCount,
-    groupMeta,
+    dispositionLabel,
+    findingSite,
     investigationView,
-    missedLatestScan,
-    MODE_META,
+    isNewFinding,
+    listGroupMeta,
+    listGroupOf,
     primaryAction,
+    sourceFix,
     subsystemLabel,
     toPendingRunDraft,
+    type DismissReason,
 } from "./radarmodel";
 import { setDisposition } from "./radarstore";
-import { INVESTIGATION_DOT, INVESTIGATION_TEXT, modeBadge, severityPill, TONE_DOT, TONE_TEXT } from "./radarstyles";
+import { INVESTIGATION_DOT, INVESTIGATION_TEXT, LIST_TONE_DOT, LIST_TONE_TEXT, severityPill } from "./radarstyles";
 import { pendingRunDraftAtom } from "./runactions";
 
 // The finding's one accent action, shared with list-nav Enter: open the live run (a Ctrl+click peeks it), or
@@ -50,13 +48,6 @@ export function runPrimaryAction(
     globalStore.set(model.surfaceAtom, "jarvis");
 }
 
-const DIFF_TONE: Record<DiffLineKind, string> = {
-    hunk: "text-accent-soft",
-    add: "bg-success/10 text-success",
-    del: "bg-error/10 text-error",
-    ctx: "text-ink-mid",
-};
-
 const LABEL = cn(REGION_LABEL, "text-muted");
 
 function plural(n: number, word: string): string {
@@ -64,7 +55,7 @@ function plural(n: number, word: string): string {
 }
 
 function formatDate(ts: number): string {
-    return ts ? new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+    return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function investigationDetail(inv: RadarInvestigation, now: number): string {
@@ -82,29 +73,7 @@ function investigationDetail(inv: RadarInvestigation, now: number): string {
     }
 }
 
-function dispositionText(d: RadarDisposition): string {
-    return d.action === "suppress" ? "Pattern suppressed" : `Dismissed: ${(d.reason ?? "no reason").toLowerCase()}`;
-}
-
-function Snippet({ snippet }: { snippet: string }) {
-    const lines = parseUnifiedDiff(snippet).lines;
-    return (
-        <div className="overflow-x-auto rounded-lg border border-edge-mid bg-surface-code py-2">
-            <div className="flex min-w-max flex-col">
-                {lines.map((ln, i) => (
-                    <span
-                        key={i}
-                        className={cn("whitespace-pre px-3 font-mono text-[11.5px] leading-[1.6]", DIFF_TONE[ln.kind])}
-                    >
-                        {ln.kind === "hunk" ? ln.text : `${ln.sign || " "} ${ln.text}`}
-                    </span>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function DismissMenu({ finding, onPick }: { finding: RadarFinding; onPick: (reason: string, note?: string) => void }) {
+function DismissMenu({ finding, onPick }: { finding: RadarFinding; onPick: (entry: DismissReason) => void }) {
     const [open, setOpen] = useState(false);
     return (
         <div className="relative">
@@ -118,30 +87,61 @@ function DismissMenu({ finding, onPick }: { finding: RadarFinding; onPick: (reas
                 <ChevronDown className="h-3 w-3 text-muted" />
             </button>
             {open ? <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} /> : null}
-            <PopoverReveal
-                open={open}
-                origin="top left"
-                className="absolute left-0 top-[calc(100%+6px)] z-[60] flex w-[280px] flex-col gap-px rounded-xl border border-edge-strong bg-surface-raised p-1.5 shadow-popover"
-            >
-                <div className={cn(LABEL, "px-2 py-1.5")}>Dismiss because</div>
-                {dismissReasons(finding).map((r) => (
-                    <button
-                        key={r.reason}
-                        type="button"
-                        onClick={() => {
-                            setOpen(false);
-                            onPick(r.reason, r.note);
-                        }}
-                        className="rounded-[7px] px-2 py-[7px] text-left text-[12.5px] text-ink-hi hover:bg-surface-hover"
-                    >
-                        {r.label}
-                        {r.run ? <span className="ml-1 font-mono text-[11.5px] text-ink-mid">{r.run}</span> : null}
-                    </button>
-                ))}
-                <div className="mt-1 border-t border-edge-mid px-2 pb-1 pt-[7px] text-[11.5px] leading-[1.45] text-muted">
-                    Closes this finding only. It comes back if new evidence arrives.
+            <PopoverReveal open={open} origin="top left" className="absolute left-0 top-[calc(100%+6px)] z-[60]">
+                <div
+                    data-radar-dismiss-menu
+                    className="flex w-[280px] flex-col gap-px rounded-xl border border-edge-strong bg-surface-raised p-1.5 shadow-popover"
+                >
+                    <div className={cn(LABEL, "px-2 py-1.5")}>Dismiss because</div>
+                    {dismissReasons(finding).map((r) => (
+                        <button
+                            key={r.reason}
+                            type="button"
+                            data-radar-dismiss-reason={r.reason}
+                            onClick={() => {
+                                setOpen(false);
+                                onPick(r);
+                            }}
+                            className="rounded-[7px] px-2 py-[7px] text-left text-[12.5px] text-ink-hi hover:bg-surface-hover"
+                        >
+                            {r.label}
+                            {r.run ? <span className="ml-1 font-mono text-[11.5px] text-ink-mid">{r.run}</span> : null}
+                        </button>
+                    ))}
+                    <div className="mt-1 border-t border-edge-mid px-2 pb-1 pt-[7px] text-[11.5px] leading-[1.45] text-muted">
+                        Closes this finding. Its fix commit is audited once, so it stays closed until you reopen it from
+                        Dismissed.
+                    </div>
                 </div>
             </PopoverReveal>
+        </div>
+    );
+}
+
+function SiteCard({ site }: { site: RadarSite }) {
+    return (
+        <div
+            data-radar-site-card
+            className="flex flex-col gap-px overflow-hidden rounded-[10px] border border-edge-mid bg-edge-faint"
+        >
+            <div className="grid grid-cols-[84px_minmax(0,1fr)] items-baseline gap-3 bg-background px-3.5 py-[9px]">
+                <span className="text-xs tabular-nums text-ink-hi">line {site.line}</span>
+                <span className="text-[13.5px] font-semibold leading-normal text-primary">{site.trigger}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-px">
+                <div className="flex min-w-0 flex-col gap-[5px] bg-background px-3.5 pb-2.5 pt-[9px]">
+                    <span className={cn(REGION_LABEL, "text-error")}>Actual</span>
+                    <span className="text-[13px] leading-normal text-secondary">{site.actual}</span>
+                </div>
+                <div className="flex min-w-0 flex-col gap-[5px] bg-background px-3.5 pb-2.5 pt-[9px]">
+                    <span className={cn(REGION_LABEL, "text-success")}>Expected</span>
+                    <span className="text-[13px] leading-normal text-secondary">{site.expected}</span>
+                </div>
+            </div>
+            <div className="grid grid-cols-[84px_minmax(0,1fr)] items-baseline gap-3 bg-background px-3.5 pb-[9px] pt-2">
+                <span className={LABEL}>Fix gap</span>
+                <span className="text-[12.5px] leading-normal text-ink-mid">{site.whynotcovered}</span>
+            </div>
         </div>
     );
 }
@@ -155,9 +155,10 @@ export function RadarFindingDetail({
     report: RadarReport;
     finding: RadarFinding;
 }) {
-    const evidence = evidenceRows(finding, report);
-    const meta = groupMeta(finding.group);
-    const mode = findingMode(finding);
+    const meta = listGroupMeta(listGroupOf(finding), []);
+    const site = findingSite(finding);
+    const sites = finding.sites ?? [];
+    const fix = sourceFix(finding, report);
     const inv = finding.investigation;
     const iv = investigationView(finding);
     const disposition = finding.disposition;
@@ -176,15 +177,20 @@ export function RadarFindingDetail({
         >
             {/* @container, not a media query: the list column eats window width, so only the pane's own
                 width says whether a side column fits */}
-            <div className="flex max-w-[880px] flex-col gap-6 px-[34px] pb-10 pt-[22px] @min-[1300px]:max-w-[1440px]">
-                <div className="flex flex-col gap-3.5">
+            <div className="flex max-w-[880px] flex-col gap-[22px] px-[34px] pb-10 pt-[22px] @min-[1300px]:max-w-[1440px]">
+                <div className="flex flex-col gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                        <span className={cn(REGION_LABEL, "flex items-center gap-1.5", TONE_TEXT[meta.tone])}>
-                            <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[meta.tone])} />
+                        <span className={cn(REGION_LABEL, "flex items-center gap-1.5", LIST_TONE_TEXT[meta.tone])}>
+                            <span className={cn("h-1.5 w-1.5 rounded-full", LIST_TONE_DOT[meta.tone])} />
                             {meta.label}
                         </span>
-                        {missedLatestScan(finding) ? (
-                            <span className="text-[11px] text-muted">not detected in the latest scan</span>
+                        {isNewFinding(finding) ? (
+                            <span
+                                data-radar-new
+                                className="rounded bg-accent/10 px-[7px] py-px text-[10.5px] font-semibold text-accent-soft"
+                            >
+                                new in the latest scan
+                            </span>
                         ) : null}
                         <span
                             className={cn(
@@ -194,26 +200,31 @@ export function RadarFindingDetail({
                         >
                             {finding.severity} severity
                         </span>
-                        {mode !== "correctness" ? (
-                            <span
-                                className={cn(
-                                    "rounded border px-[7px] text-[10.5px] font-bold uppercase tracking-[0.06em]",
-                                    modeBadge(mode)
-                                )}
-                            >
-                                {MODE_META[mode].label}
-                            </span>
-                        ) : null}
                         {subsystemLabel(finding.subsystem) ? (
                             <span className="text-[11.5px] text-ink-mid">{finding.subsystem}</span>
                         ) : null}
                         <AmbientTags {...ambientRefForFinding(finding)} />
-                        <span className="flex-1" />
-                        <span className="flex items-center gap-[7px] text-[11.5px] text-muted">
-                            <StrengthPips strength={finding.strength} tall />
-                            {finding.strength} evidence
-                        </span>
                     </div>
+                    {site ? (
+                        <button
+                            type="button"
+                            data-radar-site-link
+                            aria-label="Open the sibling site in Code"
+                            onClick={() =>
+                                fireAndForget(() =>
+                                    openInCode(model, {
+                                        projectPath: report.projectpath,
+                                        rel: site.path,
+                                        line: site.line,
+                                    })
+                                )
+                            }
+                            className="flex items-center gap-2 self-start text-left text-[13px] text-accent-soft hover:text-accent"
+                        >
+                            {site.path}:{site.line}
+                            <ArrowRight className="h-[13px] w-[13px] flex-none" />
+                        </button>
+                    ) : null}
                     <h2 className="text-[21px] font-bold leading-[1.32] tracking-[-0.01em] text-pretty text-primary">
                         {finding.risk}
                     </h2>
@@ -253,7 +264,6 @@ export function RadarFindingDetail({
                     </div>
                 ) : null}
 
-                {/* actions sit under the title, not after the evidence */}
                 <div className="flex items-center gap-2">
                     <button
                         type="button"
@@ -267,134 +277,61 @@ export function RadarFindingDetail({
                     {disposition ? (
                         <>
                             <span title={disposition.note} className="px-1 text-[12.5px] text-muted">
-                                {dispositionText(disposition)}
+                                {dispositionLabel(disposition)}
                             </span>
                             <button
                                 type="button"
-                                onClick={() => dispose(disposition.action === "suppress" ? "unsuppress" : "reopen")}
+                                onClick={() => dispose("reopen")}
                                 className="rounded-lg border border-edge-mid bg-surface-raised px-3 py-[7px] text-[13px] font-semibold text-secondary hover:border-edge-strong"
                             >
-                                {disposition.action === "suppress" ? "Unsuppress pattern" : "Reopen finding"}
+                                Reopen finding
                             </button>
                         </>
                     ) : (
-                        <>
-                            <DismissMenu
-                                finding={finding}
-                                onPick={(reason, note) => dispose("dismiss", reason, note)}
-                            />
-                            <button
-                                type="button"
-                                title="Hide future findings with this fingerprint until materially different evidence appears"
-                                onClick={() => dispose("suppress")}
-                                className="rounded-lg px-3 py-[7px] text-[13px] font-semibold text-ink-mid hover:text-secondary"
-                            >
-                                Suppress pattern
-                            </button>
-                        </>
+                        <DismissMenu finding={finding} onPick={(r) => dispose(r.action, r.reason, r.note)} />
                     )}
                     <span className="flex-1" />
                     <span className="font-mono text-[11px] text-muted">{finding.fingerprint}</span>
                 </div>
 
-                <div className="flex flex-col gap-6 @min-[1300px]:flex-row @min-[1300px]:items-start @min-[1300px]:gap-8">
-                    <div className="flex min-w-0 flex-1 flex-col gap-6">
+                <div className="flex flex-col gap-[22px] @min-[1300px]:flex-row @min-[1300px]:items-start @min-[1300px]:gap-8">
+                    <div className="flex min-w-0 flex-1 flex-col gap-[22px]">
+                        {sites.length > 0 ? (
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-baseline gap-2.5">
+                                    <h3 className={LABEL}>{sites.length > 1 ? "Sibling sites" : "Sibling site"}</h3>
+                                    <span className="text-[11px] text-muted">{site?.file}</span>
+                                </div>
+                                {sites.map((s, i) => (
+                                    <SiteCard key={i} site={s} />
+                                ))}
+                            </div>
+                        ) : null}
+
                         <div className="flex flex-col gap-2">
-                            <h3 className={LABEL}>Why it matters</h3>
+                            <h3 className={LABEL}>Root cause</h3>
                             <p className="max-w-[72ch] text-[13.5px] leading-[1.65] text-pretty text-muted-foreground">
-                                {finding.why}
+                                {finding.rootcause}
                             </p>
                         </div>
 
                         <RelevantDecisions {...ambientRefForFinding(finding)} />
-
-                        {/* radar's own reading, kept apart from the evidence below */}
-                        <div className="flex flex-col gap-2 rounded-[10px] border border-dashed border-accent/40 bg-surface px-4 pb-3.5 pt-[13px]">
-                            <div className="flex items-center gap-2">
-                                <Target className="h-[13px] w-[13px] text-accent-soft" />
-                                <span className={cn(REGION_LABEL, "text-accent-soft")}>Suggested investigation</span>
-                                <span className="flex-1" />
-                                <span className="text-[11px] text-muted">Radar's interpretation, not evidence</span>
-                            </div>
-                            <p className="max-w-[72ch] text-[13.5px] leading-[1.6] text-pretty text-foreground">
-                                {finding.mission}
-                            </p>
-                        </div>
-
-                        {/* one evidence list: timeline order, collector, source ref, and the diff where there is one */}
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-baseline gap-2.5">
-                                <h3 className={LABEL}>Evidence</h3>
-                                <span className="text-[11px] tabular-nums text-muted">
-                                    {plural(findingSignalCount(finding), "signal")} from{" "}
-                                    {plural(findingSourceCount(finding, report), "collector")}
-                                </span>
-                            </div>
-                            {evidence.length > 0 ? (
-                                <div className="flex flex-col gap-px overflow-hidden rounded-[10px] border border-edge-mid bg-edge-faint">
-                                    {evidence.map((s) => (
-                                        <div key={s.id} className="flex flex-col gap-[9px] bg-background px-3.5 py-2.5">
-                                            <div className="grid grid-cols-[52px_92px_minmax(0,1fr)_auto] items-baseline gap-3">
-                                                <span className="text-[11px] tabular-nums text-muted">
-                                                    {formatDate(s.observedts)}
-                                                </span>
-                                                <span className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-ink-mid">
-                                                    {s.collector}
-                                                </span>
-                                                <span className="text-[13px] leading-[1.45] text-secondary">
-                                                    {s.summary}
-                                                </span>
-                                                {/* transcript refs carry a whole session uuid; uncapped, they squeezed the summary into a wrap */}
-                                                <span
-                                                    title={s.sourceref}
-                                                    className="max-w-[220px] truncate text-[11px] text-muted"
-                                                >
-                                                    {s.sourceref}
-                                                </span>
-                                            </div>
-                                            {s.snippet ? <Snippet snippet={s.snippet} /> : null}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-xs text-muted">No linked signals.</p>
-                            )}
-                        </div>
                     </div>
 
-                    <aside className="flex flex-col gap-6 @min-[1300px]:sticky @min-[1300px]:top-6 @min-[1300px]:w-[340px] @min-[1300px]:flex-none">
-                        {finding.files.length > 0 ? (
-                            <div className="flex flex-col gap-2">
-                                <div className="flex items-baseline gap-2.5">
-                                    <h3 className={LABEL}>Affected files</h3>
-                                    <span className="text-[11px] tabular-nums text-muted">{finding.files.length}</span>
-                                </div>
-                                <div className="flex flex-col gap-px overflow-hidden rounded-[10px] border border-edge-mid bg-edge-faint">
-                                    {finding.files.map((f) => (
-                                        // findings carry no line numbers, so this lands at the top of the file
-                                        <button
-                                            key={f}
-                                            type="button"
-                                            aria-label={`Open ${f} in Code`}
-                                            onClick={() =>
-                                                fireAndForget(() =>
-                                                    openInCode(model, { projectPath: report.projectpath, rel: f })
-                                                )
-                                            }
-                                            className="group flex items-center gap-2.5 bg-background px-3.5 py-[7px] text-left hover:bg-surface-hover"
-                                        >
-                                            <span
-                                                title={f}
-                                                className="min-w-0 flex-1 truncate text-xs text-ink-hi"
-                                            >
-                                                {f}
-                                            </span>
-                                            <span className="text-[11px] text-muted group-hover:text-secondary @min-[1300px]:hidden">
-                                                open in Code
-                                            </span>
-                                            <ArrowRight className="h-3 w-3 text-muted" />
-                                        </button>
-                                    ))}
+                    <aside className="flex flex-col gap-[22px] @min-[1300px]:sticky @min-[1300px]:top-6 @min-[1300px]:w-[340px] @min-[1300px]:flex-none">
+                        {fix ? (
+                            <div data-radar-source-fix className="flex flex-col gap-2">
+                                <h3 className={LABEL}>Found by auditing this fix</h3>
+                                <div className="flex items-baseline gap-3 rounded-[10px] border border-edge-mid bg-surface px-3.5 py-2.5">
+                                    <span className="flex-none font-mono text-xs text-ink-hi">{fix.sha}</span>
+                                    <span className="min-w-0 flex-1 text-[13px] leading-[1.45] text-secondary">
+                                        {fix.subject}
+                                    </span>
+                                    {fix.ts ? (
+                                        <span className="flex-none text-[11px] tabular-nums text-muted">
+                                            {formatDate(fix.ts)}
+                                        </span>
+                                    ) : null}
                                 </div>
                             </div>
                         ) : null}

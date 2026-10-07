@@ -15,16 +15,13 @@ export interface AttentionActInput {
 
 export type AttentionAct = {
     label: "Approve" | "Retry" | "Acknowledge" | "Land again" | "Open";
-    kind: "approve-gate" | "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "open";
+    kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "open";
 };
 
-// Approve and Retry need the exact phase or task the server named; without it, and for anything that needs a
+// Approve and Retry need the exact task the server named; without it, and for anything that needs a
 // judgment rather than a button (a failed final stage, a review or merge failure, a question), the item
 // opens its run instead of guessing.
 export function attentionAct(x: AttentionActInput): AttentionAct {
-    if (x.wireKind === "gate" && x.channelId !== "" && x.runId != null) {
-        return { label: "Approve", kind: "approve-gate" };
-    }
     if (x.wireKind === "dag-gate" && x.taskId !== "" && x.runId != null) {
         return { label: "Approve", kind: "approve-dag" };
     }

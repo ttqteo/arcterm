@@ -154,6 +154,7 @@ func TestSetupFailureFailsTheTaskDropsItsWorktreeAndWakesTheLead(t *testing.T) {
 
 func TestSetupFailedEventKeepsTheCause(t *testing.T) {
 	lead := newFakeLead(t)
+	timedEventsReachTheFakeLead(t)
 	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
 	f.setPlanCommands(t, "", setupCmd)
 	stubPlanCommand(t, func(context.Context, string, string) error {

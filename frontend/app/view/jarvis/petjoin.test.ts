@@ -120,6 +120,7 @@ import {
     askAgent,
     eventFromAsk,
     eventFromNotify,
+    eventFromRunLanded,
     shouldSpeakAsk,
     type AskGateCtx,
 } from "./petjoin";
@@ -238,6 +239,35 @@ function bg(over: Partial<BackgroundAgentData> = {}): BackgroundAgentData {
         ...over,
     };
 }
+
+describe("eventFromRunLanded", () => {
+    const landed = (kind: string, detail: unknown): RunEventData =>
+        ({
+            channelid: "c1",
+            runid: "r1",
+            event: { id: "e1", runid: "r1", channelid: "c1", ts: 5000, kind, detail },
+        }) as any;
+
+    it("says the run landed and carries the run to peek", () => {
+        expect(eventFromRunLanded(landed("landed", { commit: "abc", title: "Coupon codes" }))).toEqual({
+            id: "landed:r1",
+            at: 5000,
+            kind: "notify",
+            level: "info",
+            text: "Coupon codes landed",
+            sources: [{ ref: "run:r1", title: "Coupon codes", sourceType: "run" }],
+        });
+    });
+
+    it("ignores every other run event", () => {
+        expect(eventFromRunLanded(landed("land-held", { reason: "x" }))).toBeNull();
+        expect(eventFromRunLanded(undefined)).toBeNull();
+    });
+
+    it("still speaks without a title", () => {
+        expect(eventFromRunLanded(landed("landed", null))?.text).toBe("A run landed");
+    });
+});
 
 describe("agentFinishedFromDiff", () => {
     it("reports a background agent that disappeared between polls", () => {

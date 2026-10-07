@@ -16,7 +16,7 @@ import { ConfirmDialog } from "@/app/modals/confirmdialog";
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { channelsAtom } from "@/app/view/agents/channelsstore";
+import { channelMessagesAtom, channelsAtom } from "@/app/view/agents/channelsstore";
 import { harnessesAtom } from "@/app/view/agents/harnessstore";
 import { fleetCounts } from "@/app/view/agents/jarviscards";
 import type { RunStatusTone } from "@/app/view/agents/runmodel";
@@ -33,7 +33,6 @@ import {
     loadRecordScope,
     recordDetailAtom,
     recordRunsAtom,
-    recordScopeAtom,
 } from "./jarvissubjectstore";
 import { openAddress, openOrPeekAddress } from "./openref";
 import { closePeek } from "./peekstore";
@@ -192,8 +191,8 @@ export function RecordPeekBody({
 }) {
     const details = useAtomValue(recordDetailAtom);
     const runsByRecord = useAtomValue(recordRunsAtom);
-    const scopes = useAtomValue(recordScopeAtom);
     const channels = useAtomValue(channelsAtom);
+    const messagesByChannel = useAtomValue(channelMessagesAtom);
     const agents = useAtomValue(model.agentsAtom);
     const harnesses = useAtomValue(harnessesAtom);
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -219,8 +218,9 @@ export function RecordPeekBody({
     const runs = runsByRecord[recordId] ?? [];
     const fleet = fleetForRecord({
         channels: channels ?? [],
+        messagesByChannel,
         agents,
-        attributedRunORefs: scopes[recordId]?.runorefs ?? [],
+        attributedRuns: runs,
     });
     const peek =
         detail != null

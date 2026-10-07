@@ -9,6 +9,8 @@ package jarvis
 import (
 	"context"
 	"fmt"
+	"log"
+	"slices"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -43,41 +45,56 @@ func GatekeeperForTier(tier string) (bool, error) {
 	}
 }
 
-// ResolveGatekeeperChannel returns the gatekeeper-enabled channel that dispatched the worker at
-// askingORef ("tab:<id>"), or nil. A channel owns a worker if it has a dispatch/directive message
-// whose RefORef equals askingORef. First enabled owner wins (a worker in one channel is the norm).
-func ResolveGatekeeperChannel(channels []*waveobj.Channel, askingORef string) *waveobj.Channel {
-	for _, ch := range channels {
-		if !GatekeeperOn(ch) {
+// workerMessages returns every message that references the worker at workerORef ("tab:<id>"), across
+// channels, oldest first. A read failure is logged and reads as no messages.
+func workerMessages(ctx context.Context, workerORef string) []*waveobj.ChannelMessage {
+	msgs, err := wstore.GetMessagesByRef(ctx, workerORef)
+	if err != nil {
+		log.Printf("jarvis: reading the messages of worker %s: %v", workerORef, err)
+		return nil
+	}
+	return msgs
+}
+
+// earliestOwner returns the channel of the earliest of msgs whose kind is one of kinds and whose channel
+// passes ok. A message whose channel is gone is skipped.
+func earliestOwner(ctx context.Context, msgs []*waveobj.ChannelMessage, ok func(*waveobj.Channel) bool, kinds ...string) *waveobj.Channel {
+	for _, m := range msgs {
+		if !slices.Contains(kinds, m.Kind) {
 			continue
 		}
-		for _, m := range ch.Messages {
-			if (m.Kind == "dispatch" || m.Kind == "directive") && m.RefORef == askingORef {
-				return ch
-			}
+		ch, err := wstore.DBGet[*waveobj.Channel](ctx, m.ChannelOID)
+		if err != nil {
+			log.Printf("jarvis: loading channel %s of message %s: %v", m.ChannelOID, m.ID, err)
+			continue
+		}
+		if ch != nil && ok(ch) {
+			return ch
 		}
 	}
 	return nil
+}
+
+// resolveGatekeeperChannel returns the gatekeeper-enabled channel that dispatched the worker whose
+// messages are msgs, or nil. A channel owns a worker if it has a dispatch/directive message for it. The
+// earliest such message in an enabled channel wins (a worker in one channel is the norm).
+func resolveGatekeeperChannel(ctx context.Context, msgs []*waveobj.ChannelMessage) *waveobj.Channel {
+	return earliestOwner(ctx, msgs, GatekeeperOn, "dispatch", "directive")
 }
 
 // ResolveDispatchChannel returns the channel that dispatched the worker at workerORef ("tab:<id>"),
-// or nil. Unlike ResolveGatekeeperChannel it is NOT gated by MetaKey_GatekeeperEnabled: a worker's
-// outcome belongs in its channel regardless of the channel's autonomy tier. First dispatch owner wins.
-func ResolveDispatchChannel(channels []*waveobj.Channel, workerORef string) *waveobj.Channel {
-	for _, ch := range channels {
-		for _, m := range ch.Messages {
-			if m.Kind == "dispatch" && m.RefORef == workerORef {
-				return ch
-			}
-		}
-	}
-	return nil
+// or nil. Unlike resolveGatekeeperChannel it is NOT gated by MetaKey_GatekeeperEnabled: a worker's
+// outcome belongs in its channel regardless of the channel's autonomy tier. The earliest dispatch wins.
+func ResolveDispatchChannel(ctx context.Context, workerORef string) *waveobj.Channel {
+	anyChannel := func(*waveobj.Channel) bool { return true }
+	return earliestOwner(ctx, workerMessages(ctx, workerORef), anyChannel, "dispatch")
 }
 
-// workerTaskFor returns the dispatch text for a worker oref (its task), or "" if not found.
-func workerTaskFor(ch *waveobj.Channel, askingORef string) string {
-	for _, m := range ch.Messages {
-		if m.Kind == "dispatch" && m.RefORef == askingORef {
+// workerTaskFor returns the text of the worker's first dispatch in the channel (its task), or "" if
+// there is none. msgs are the worker's own messages.
+func workerTaskFor(msgs []*waveobj.ChannelMessage, channelId string) string {
+	for _, m := range msgs {
+		if m.Kind == "dispatch" && m.ChannelOID == channelId {
 			return m.Text
 		}
 	}
@@ -91,30 +108,11 @@ type RunWorkerMatch struct {
 	PhaseIdx int
 }
 
-// ResolveRunWorker finds the run phase whose WorkerOrefs contains askingORef, across all channels.
-// Unlike ResolveGatekeeperChannel it is NOT gated by the tier: it answers "whose worker is this", and
-// handleAsk applies the tier to the channel it returns. Returns nil when no phase owns the oref.
-// (Piece 5 can add a descendant/subagent predicate here without changing callers.)
-func ResolveRunWorker(channels []*waveobj.Channel, askingORef string) *RunWorkerMatch {
-	for _, ch := range channels {
-		for ri := range ch.Runs {
-			run := &ch.Runs[ri]
-			for pi := range run.Phases {
-				for _, wo := range run.Phases[pi].WorkerOrefs {
-					if wo == askingORef {
-						return &RunWorkerMatch{Channel: ch, Run: run, PhaseIdx: pi}
-					}
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// ResolveRunWorkerFromMeta resolves the run/channel/phase owning a worker oref by reading the Phase-1/2
-// owner stamp (jarvis:runoref/channeloref) off the worker tab, then loading the run + channel rows — an
-// O(1) replacement for the ResolveRunWorker full scan. On any miss (unstamped worker, empty runoref, load
-// error) it falls back to the scan so a best-effort stamp gap can never regress resolution. nil = no run.
+// ResolveRunWorkerFromMeta resolves the run/channel/phase owning a worker oref by reading the owner
+// stamp (jarvis:runoref/channeloref) off the worker tab, then loading the run + channel rows. It is NOT
+// gated by the tier: it answers "whose worker is this", and handleAsk applies the tier to the channel it
+// returns. On any miss (unstamped worker, empty runoref, load error) it falls back to the run-row scan so
+// a best-effort stamp gap can never regress resolution. nil = no run.
 func ResolveRunWorkerFromMeta(ctx context.Context, askingORef string) *RunWorkerMatch {
 	runORef, channelORef, err := wstore.GetWorkerOwner(ctx, askingORef)
 	if err != nil || runORef == "" || channelORef == "" {
@@ -152,40 +150,54 @@ func phaseIdxForWorker(run *waveobj.Run, workerORef string) int {
 	return -1
 }
 
-// resolveRunWorkerByScan is the fallback: the old full scan over GetChannels.
+// resolveRunWorkerByScan is the fallback for a worker with no usable stamp: the oldest run row one of
+// whose phases lists the oref. The store only narrows the rows to those whose text contains the oref, so
+// a run that merely quotes it (in its goal, say) is ruled out here. A run whose channel is gone is skipped.
 func resolveRunWorkerByScan(ctx context.Context, askingORef string) *RunWorkerMatch {
-	channels, err := wstore.GetChannels(ctx)
+	runs, err := wstore.GetRunCandidatesByWorker(ctx, askingORef)
 	if err != nil {
+		log.Printf("jarvis: finding the run of worker %s: %v", askingORef, err)
 		return nil
 	}
-	return ResolveRunWorker(channels, askingORef)
+	for _, run := range runs {
+		phaseIdx := phaseIdxForWorker(run, askingORef)
+		if phaseIdx < 0 {
+			continue
+		}
+		ch, err := wstore.DBGet[*waveobj.Channel](ctx, run.ChannelOID)
+		if err != nil {
+			log.Printf("jarvis: loading channel %s of run %s: %v", run.ChannelOID, run.ID, err)
+			continue
+		}
+		if ch != nil {
+			return &RunWorkerMatch{Channel: ch, Run: run, PhaseIdx: phaseIdx}
+		}
+	}
+	return nil
 }
 
 // resolveGatekeeperChannelByMeta resolves the gatekeeper-enabled channel that dispatched a concierge
-// worker via the channeloref stamp (Task B3), returning the channel + its dispatch task text. Falls back
-// to the message scan on a stamp miss. Returns (nil, "") when no gatekeeper-enabled channel owns it.
+// worker via the channeloref stamp, returning the channel + its dispatch task text. Falls back to the
+// worker's dispatch/directive messages on a stamp miss. Returns (nil, "") when no gatekeeper-enabled
+// channel owns it.
 func resolveGatekeeperChannelByMeta(ctx context.Context, ownerORef string) (*waveobj.Channel, string) {
+	msgs := workerMessages(ctx, ownerORef)
 	_, channelORef, err := wstore.GetWorkerOwner(ctx, ownerORef)
 	if err == nil && channelORef != "" {
 		if chRef, perr := waveobj.ParseORef(channelORef); perr == nil {
 			if ch, gerr := wstore.DBMustGet[*waveobj.Channel](ctx, chRef.OID); gerr == nil && ch != nil {
 				if GatekeeperOn(ch) {
-					return ch, workerTaskFor(ch, ownerORef)
+					return ch, workerTaskFor(msgs, ch.OID)
 				}
-				return nil, "" // owned by a non-gatekeeper channel: not gatekept (matches old skip)
+				return nil, "" // owned by a non-gatekeeper channel: not gatekept
 			}
 		}
 	}
-	// fallback: full scan
-	channels, cerr := wstore.GetChannels(ctx)
-	if cerr != nil {
-		return nil, ""
-	}
-	ch := ResolveGatekeeperChannel(channels, ownerORef)
+	ch := resolveGatekeeperChannel(ctx, msgs)
 	if ch == nil {
 		return nil, ""
 	}
-	return ch, workerTaskFor(ch, ownerORef)
+	return ch, workerTaskFor(msgs, ch.OID)
 }
 
 // RunOwnsWorker reports whether workerORef ("tab:<id>") is a recorded worker of the run — it appears in

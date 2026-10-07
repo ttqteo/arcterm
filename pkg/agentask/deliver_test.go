@@ -136,6 +136,100 @@ func TestDeliverAnswerResolvesWaiterWithoutKeystrokes(t *testing.T) {
 	}
 }
 
+const quotedNotesAnswer = "Approve\n\n> a passage\nreword it"
+
+// a terminal takes one line, so an answer carrying quoted notes is folded onto it rather than refused after the
+// cockpit already showed it as sent.
+func TestDeliverAnswerFoldsMultilineText(t *testing.T) {
+	const want = "Approve | > a passage | reword it"
+	cases := map[string]PendingAsk{
+		"picker": {AskId: "a1", BlockId: "b1", Questions: oneQuestion()},
+		"prose":  prosePending(),
+	}
+	for name, pending := range cases {
+		GlobalRegistry = MakeRegistry()
+		GlobalRegistry.Set("tab:t1", pending)
+		var typed []byte
+		var last []byte
+		orig := sendInput
+		sendInput = func(blockId string, data []byte) error {
+			last = data
+			if string(data) != string(downArrow) && data[0] != enter {
+				typed = append(typed, data...)
+			}
+			return nil
+		}
+		delivered, err := DeliverAnswer("tab:t1", "", []baseds.AgentAnswerItem{{Text: quotedNotesAnswer}})
+		sendInput = orig
+		if err != nil || !delivered {
+			t.Fatalf("%s: want (true,nil), got (%v,%v)", name, delivered, err)
+		}
+		if string(typed) != want {
+			t.Fatalf("%s: typed %q, want %q", name, typed, want)
+		}
+		if len(last) != 1 || last[0] != enter {
+			t.Fatalf("%s: want enter last, got %q", name, last)
+		}
+	}
+}
+
+func TestDeliverAnswerWaiterKeepsMultilineText(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("tab:t1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion()})
+	stubKeys(t)
+	ch := GlobalRegistry.RegisterWaiter("a1")
+	answers := []baseds.AgentAnswerItem{{Text: quotedNotesAnswer}}
+
+	if delivered, err := DeliverAnswer("tab:t1", "", answers); err != nil || !delivered {
+		t.Fatalf("want (true,nil), got (%v,%v)", delivered, err)
+	}
+	select {
+	case res := <-ch:
+		if len(res.Answers) != 1 || res.Answers[0].Text != quotedNotesAnswer {
+			t.Fatalf("a waiter reads the answer as JSON, so its line breaks stay: %#v", res)
+		}
+	default:
+		t.Fatal("waiter must be resolved")
+	}
+}
+
+func TestFoldAnswerLines(t *testing.T) {
+	cases := map[string]string{
+		"no break at all":       "no break at all",
+		"  padded, no break  ":  "  padded, no break  ",
+		"":                      "",
+		"a\r\nb":                "a | b",
+		"a\n\n\n\nb":            "a | b",
+		"a \t\n\t b":            "a | b",
+		"a\rb":                  "a | b",
+		"\n\na\nb\r\n":          "a | b",
+		"a  \n \n  b c":         "a | b c",
+		"\n":                    "",
+		"a | b\nc":              "a | b | c",
+		quotedNotesAnswer:       "Approve | > a passage | reword it",
+		"Approve\n\n> q\n\n> r": "Approve | > q | > r",
+	}
+	for in, want := range cases {
+		if got := foldAnswerLines(in); got != want {
+			t.Errorf("foldAnswerLines(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// a typed answer never mutates what the caller holds: the same slice is what a waiter would have received.
+func TestDeliverAnswerFoldsMultilineTextLeavesCallerAnswers(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("tab:t1", prosePending())
+	stubKeys(t)
+	answers := []baseds.AgentAnswerItem{{Text: quotedNotesAnswer}}
+	if delivered, err := DeliverAnswer("tab:t1", "", answers); err != nil || !delivered {
+		t.Fatalf("want (true,nil), got (%v,%v)", delivered, err)
+	}
+	if answers[0].Text != quotedNotesAnswer {
+		t.Fatalf("caller's answer was rewritten to %q", answers[0].Text)
+	}
+}
+
 // a session answer the agent does not clear within the timeout comes back to the human with the note —
 // the RPC already returned true on the last keystroke, so this is the only signal that it never landed.
 func TestDeliverAnswer_SessionAskAwaitsClear(t *testing.T) {

@@ -5,125 +5,116 @@ package reporadar
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-func TestFinalizePersistsFindingsAndPrunes(t *testing.T) {
-	ctx := context.Background()
-	rpt, _ := wstore.CreateRadarReport(ctx, "pay", "/repos/pay")
-	s1 := newSignal(CollectorGit, "commit:1", 100, []string{"src/coupons/validate.ts"}, "changed", nil, "")
-	s2 := newSignal(CollectorRuns, "run:1:phase:0", 200, []string{"src/coupons/validate.ts"}, "failed", nil, "")
-	s3 := newSignal(CollectorStructure, "struct:no-test:src/unrelated.ts", 50, []string{"src/unrelated.ts"}, "no test", nil, "")
-	pool := []waveobj.RadarSignal{s1, s2, s3}
-	wstore.UpdateRadarReport(ctx, rpt.OID, func(r *waveobj.RadarReport) { r.Candidates = pool })
-	byID := map[string]waveobj.RadarSignal{s1.ID: s1, s2.ID: s2, s3.ID: s3}
-	resp := &SynthResponse{Findings: []SynthFinding{{
-		RiskKind: RiskRepeatedFailure, Risk: "coupon validation keeps failing", Why: "w", Severity: "high",
-		SignalIDs: []string{s1.ID, s2.ID}, Files: []string{"src/coupons/validate.ts"}, Mission: "add tests",
-	}}}
-	validated := validateFindings("/repos/pay", ModeCorrectness, resp, byID)
-	runs := []waveobj.RadarModeRun{{Mode: ModeCorrectness, Status: ModeRunCompleted, ResolvedModel: "claude-sonnet-x"}}
-	finalizeFindings(ctx, rpt.OID, clusterPass{validated: validated, modeRuns: runs, candidates: pool})
-
-	got, _ := wstore.GetRadarReport(ctx, rpt.OID)
-	if got.Status != StatusCompleted {
-		t.Fatalf("want completed, got %q", got.Status)
-	}
-	if len(got.Findings) != 1 || got.Findings[0].Group != GroupNew {
-		t.Fatalf("expected 1 new finding, got %+v", got.Findings)
-	}
-	if len(got.ModeRuns) != 1 || got.ModeRuns[0].Status != ModeRunCompleted {
-		t.Fatalf("expected 1 completed mode run, got %+v", got.ModeRuns)
-	}
-	if len(got.Candidates) != 0 {
-		t.Fatalf("candidates should be pruned after success, got %d", len(got.Candidates))
-	}
-	if len(got.Signals) != 2 {
-		t.Fatalf("expected 2 referenced signals retained, got %d", len(got.Signals))
-	}
-	if got.ResolvedModel != "claude-sonnet-x" {
-		t.Fatalf("resolved model must come from the mode run, got %q", got.ResolvedModel)
-	}
-}
-
-func TestFinalizeRenumbersCollidingLensIDs(t *testing.T) {
-	// Reproduces the "both items selected at once" bug: correctness and security lenses each number
-	// their findings f1.. independently, so the merged set (fed to finalize) collides on "f1". The
-	// frontend keys selection on the id, so a collision highlights two cards for one selection. Finalize
-	// must renumber the persisted set so every finding has a distinct id.
-	ctx := context.Background()
-	rpt, _ := wstore.CreateRadarReport(ctx, "renumber", "/repos/renumber")
-	merged := []waveobj.RadarFinding{
-		{ID: "f1", Fingerprint: "RAD-corr", Group: GroupNew, Mode: ModeCorrectness, RiskKind: RiskTestCoverageGap, Subsystem: "src/a"},
-		{ID: "f1", Fingerprint: "RAD-sec", Group: GroupNew, Mode: ModeSecurity, RiskKind: RiskInputValidationGap, Subsystem: "src/b"},
-	}
-	runs := []waveobj.RadarModeRun{{Mode: ModeCorrectness, Status: ModeRunCompleted}, {Mode: ModeSecurity, Status: ModeRunCompleted}}
-	finalizeFindings(ctx, rpt.OID, clusterPass{validated: merged, modeRuns: runs})
-
-	got, _ := wstore.GetRadarReport(ctx, rpt.OID)
-	if len(got.Findings) != 2 {
-		t.Fatalf("expected 2 findings, got %d", len(got.Findings))
-	}
-	if got.Findings[0].ID == got.Findings[1].ID {
-		t.Fatalf("finding ids must be unique after merge, got %q twice", got.Findings[0].ID)
-	}
-}
-
-func TestFinalizeRetainsCandidatesOnClusterFailure(t *testing.T) {
-	ctx := context.Background()
-	rpt, _ := wstore.CreateRadarReport(ctx, "pay", "/repos/pay")
-	s1 := newSignal(CollectorGit, "commit:1", 100, []string{"src/coupons/validate.ts"}, "changed", nil, "")
-	pool := []waveobj.RadarSignal{s1}
-	wstore.UpdateRadarReport(ctx, rpt.OID, func(r *waveobj.RadarReport) { r.Candidates = pool })
-	runs := []waveobj.RadarModeRun{{Mode: ModeCorrectness, Status: ModeRunClusterFailed, ClusterError: "boom"}}
-	finalizeFindings(ctx, rpt.OID, clusterPass{modeRuns: runs, candidates: pool})
-
-	got, _ := wstore.GetRadarReport(ctx, rpt.OID)
-	if got.Status != StatusFailed {
-		t.Fatalf("all-lenses-failed must be failed, got %q", got.Status)
-	}
-	if len(got.Candidates) != 1 {
-		t.Fatalf("candidates must be retained for retry on failure, got %d", len(got.Candidates))
-	}
-	if got.ClusterError == "" {
-		t.Fatalf("aggregate cluster error must be recorded")
-	}
-}
-
-// A lens that failed to cluster must not turn its findings into No longer detected, and a finding carried
-// from the previous report must keep the evidence it cites even though this scan did not collect it.
-func TestFinalizeCarriesFailedLensAndPriorEvidence(t *testing.T) {
-	ctx := context.Background()
-	rpt, _ := wstore.CreateRadarReport(ctx, "carry", "/repos/carry")
-	old := newSignal(CollectorGit, "commit:old", 100, []string{"src/auth/login.ts"}, "c", nil, "")
-	sec := waveobj.RadarFinding{Fingerprint: "RAD-sec", Group: GroupRecurring, Mode: ModeSecurity, Subsystem: "src/auth", SignalIDs: []string{old.ID}}
-	corr := waveobj.RadarFinding{Fingerprint: "RAD-corr", Group: GroupNew, Mode: ModeCorrectness, Subsystem: "src/a"}
-	runs := []waveobj.RadarModeRun{{Mode: ModeCorrectness, Status: ModeRunCompleted}, {Mode: ModeSecurity, Status: ModeRunClusterFailed, ClusterError: "boom"}}
-	finalizeFindings(ctx, rpt.OID, clusterPass{
-		modeRuns:     runs,
-		baseline:     []waveobj.RadarFinding{sec, corr},
-		priorSignals: []waveobj.RadarSignal{old},
+// review focus 4: a commit is audited once, so later scans re-check its finding against the tree alone.
+func TestCarriedFindingLifecycle(t *testing.T) {
+	dir := newRepo(t)
+	commitFix(t, dir, "src/a.go")
+	var seen calls
+	fakeSessions(t, func(_ context.Context, commit string) (auditSessionResult, error) {
+		seen.add(commit)
+		return hitReply(siblingFile, 3), nil
 	})
+	sibling := filepath.Join(dir, filepath.FromSlash(siblingFile))
+	remove := func() {
+		t.Helper()
+		if err := os.Remove(sibling); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step := func(what, group string, misses int) {
+		t.Helper()
+		got := scan(t, dir)
+		if got.Status != StatusCompleted || len(got.Findings) != 1 || got.Findings[0].Group != group || got.Findings[0].MissCount != misses {
+			t.Fatalf("%s: want one %s finding with %d misses, got status %q findings %+v", what, group, misses, got.Status, got.Findings)
+		}
+	}
 
-	got, _ := wstore.GetRadarReport(ctx, rpt.OID)
-	if got.Status != StatusPartial {
-		t.Fatalf("one failed lens makes the scan partial, got %q", got.Status)
+	step("first scan", GroupNew, 0)
+	step("second scan, commit not audited again", GroupRecurring, 0)
+	remove()
+	step("file deleted", GroupRecurring, 1)
+	writeFile(t, dir, siblingFile, "package src\n\nfunc sibling() {}\n")
+	step("file restored before the second miss", GroupRecurring, 0)
+	remove()
+	step("first miss", GroupRecurring, 1)
+	step("second miss", GroupNoLonger, 2)
+	if got := scan(t, dir); got.Status != StatusCompleted || len(got.Findings) != 0 {
+		t.Fatalf("a no-longer-detected finding missed again is dropped, got %+v", got.Findings)
 	}
-	byFP := map[string]waveobj.RadarFinding{}
-	for _, f := range got.Findings {
-		byFP[f.Fingerprint] = f
+	if n := len(seen.list()); n != 1 {
+		t.Fatalf("the commit must be audited once across every scan, got %d audits", n)
 	}
-	if f := byFP["RAD-sec"]; f.Group != GroupRecurring || f.MissCount != 0 {
-		t.Fatalf("a failed lens's finding must carry unchanged, got %+v", f)
+}
+
+func TestRescanKeepsUserState(t *testing.T) {
+	ctx := context.Background()
+	dir := newRepo(t)
+	writeFile(t, dir, "src/other.go", "package src\n")
+	first := commitFix(t, dir, "src/a.go")
+	commitFix(t, dir, "src/b.go")
+	fakeSessions(t, func(_ context.Context, commit string) (auditSessionResult, error) {
+		if commit == first {
+			return hitReply(siblingFile, 3), nil
+		}
+		return hitReply("src/other.go", 1), nil
+	})
+	rpt := scan(t, dir)
+	if len(rpt.Findings) != 2 {
+		t.Fatalf("fixture: want two findings, got %+v", rpt.Findings)
 	}
-	if f := byFP["RAD-corr"]; f.Group != GroupNew || f.MissCount != 1 {
-		t.Fatalf("a finding the clustered lens missed once stays open, got %+v", f)
+	dismissed, suppressed := rpt.Findings[0], rpt.Findings[1]
+	if err := SetDisposition(ctx, rpt.OID, dismissed.ID, "dismiss", "false-positive", "n"); err != nil {
+		t.Fatal(err)
 	}
-	if len(got.Signals) != 1 || got.Signals[0].ID != old.ID {
-		t.Fatalf("the carried finding must keep its prior evidence, got %+v", got.Signals)
+	if err := SetDisposition(ctx, rpt.OID, suppressed.ID, "suppress", "wontfix", ""); err != nil {
+		t.Fatal(err)
+	}
+	inv := waveobj.RadarInvestigation{RunID: "r1", ChannelID: "c1", Status: "done", FilesTouched: 2}
+	if err := RecordInvestigation(ctx, dir, dismissed.Fingerprint, inv); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 2; i++ {
+		got := scan(t, dir)
+		byFP := map[string]waveobj.RadarFinding{}
+		for _, f := range got.Findings {
+			byFP[f.Fingerprint] = f
+		}
+		d, s := byFP[dismissed.Fingerprint], byFP[suppressed.Fingerprint]
+		if len(got.Findings) != 2 || d.Group != GroupDismissed || d.Disposition == nil || d.Disposition.Reason != "false-positive" {
+			t.Fatalf("rescan %d: the dismissal must hold, got %+v", i+1, d)
+		}
+		if s.Group != GroupSuppressed || s.Disposition == nil || s.Disposition.Action != "suppress" {
+			t.Fatalf("rescan %d: the suppression must hold, got %+v", i+1, s)
+		}
+		if d.Investigation == nil || d.Investigation.RunID != "r1" || s.Investigation != nil {
+			t.Fatalf("rescan %d: the investigation must stay on its finding, got %+v / %+v", i+1, d.Investigation, s.Investigation)
+		}
+		if len(got.Signals) != 2 {
+			t.Fatalf("rescan %d: both carried findings keep their signal, got %+v", i+1, got.Signals)
+		}
+	}
+}
+
+func TestLegacyFindingsDropped(t *testing.T) {
+	dir := newRepo(t)
+	fakeSessions(t, func(context.Context, string) (auditSessionResult, error) { return cleanReply(), nil })
+	kept, sig := carried("RAD-kept", GroupRecurring)
+	legacy, _ := carried("RAD-legacy", GroupRecurring)
+	legacy.SourceCommit = "" // written by the retired collectors
+	seedBaseline(t, dir, []waveobj.RadarSignal{sig}, legacy, kept)
+
+	got := scan(t, dir)
+	if len(got.Findings) != 1 || got.Findings[0].Fingerprint != "RAD-kept" {
+		t.Fatalf("a baseline finding with no source commit must be dropped, got %+v", got.Findings)
 	}
 }
 

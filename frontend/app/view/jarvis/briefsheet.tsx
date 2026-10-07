@@ -267,9 +267,9 @@ function LauncherReading() {
     );
 }
 
-// the header's run line: which run the sheet is on, and, once it has ended, how
+// the header's run line, beside the run's id: what kind of run the sheet is on, and, once it has ended, how
 function runLine(run: Run): string {
-    const line = `${run.mode || "quick"} run ${run.id.slice(0, 4)}`;
+    const line = `${run.mode || "quick"} run`;
     return isTerminal(run.status) ? `${line} · ${run.status === "done" ? "finished" : run.status}` : line;
 }
 
@@ -302,7 +302,7 @@ function SheetChannelPending({ channelId }: { channelId: string }) {
     }
     return (
         <div data-jarvis-brief-sheet-state="loading" className="flex min-h-0 flex-1 flex-col gap-2 p-4">
-            <span className="h-8 animate-pulse rounded-[8px] bg-surface-raised motion-reduce:animate-none" />
+            <span className="h-8 animate-pulse rounded-[8px] bg-edge-strong motion-reduce:animate-none" />
             <span className="text-[12px] text-secondary">Reading this project…</span>
         </div>
     );
@@ -374,12 +374,13 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const visible = open && face.kind !== "none";
     // the exit animation still needs something to draw after the subject clears, so the last shown
     // face and its title are latched rather than read live (petbubble.tsx keeps the same rule)
-    const [shown, setShown] = useState<{ face: SheetFace; title: string; meta?: string } | null>(null);
+    const metaRunId = meta != null ? run?.id : undefined;
+    const [shown, setShown] = useState<{ face: SheetFace; title: string; meta?: string; runId?: string } | null>(null);
     useEffect(() => {
         if (visible) {
-            setShown({ face, title, meta });
+            setShown({ face, title, meta, runId: metaRunId });
         }
-    }, [visible, face, title, meta]);
+    }, [visible, face, title, meta, metaRunId]);
 
     return (
         <ModalShell open={visible} variant="sheet" onClose={close} className="h-full w-[640px] max-w-[92vw]">
@@ -390,6 +391,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                         label={shown.face.kind === "effort" ? "initiative" : "project"}
                         title={shown.title}
                         meta={shown.meta}
+                        runId={shown.runId}
                         actions={
                             // the only way to start a SECOND run in a channel: without it a channel that has any
                             // run could never compose another

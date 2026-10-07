@@ -31,8 +31,26 @@ func TestSetDispositionDismissAndReopen(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	got, _ = wstore.GetRadarReport(ctx, rpt.OID)
-	if got.Findings[0].Group != GroupNew || got.Findings[0].Disposition != nil {
+	if got.Findings[0].Group != GroupRecurring || got.Findings[0].Disposition != nil {
 		t.Fatalf("expected reopened, got %+v", got.Findings[0])
+	}
+}
+
+func TestSetDispositionUnsuppressReturnsToRecurring(t *testing.T) {
+	ctx := context.Background()
+	rpt, _ := wstore.CreateRadarReport(ctx, "pay", "/repos/pay")
+	wstore.UpdateRadarReport(ctx, rpt.OID, func(r *waveobj.RadarReport) {
+		r.Findings = []waveobj.RadarFinding{{ID: "f1", Fingerprint: "RAD-abc", Group: GroupNew}}
+	})
+	if err := SetDisposition(ctx, rpt.OID, "f1", "suppress", "Intentional", ""); err != nil {
+		t.Fatalf("suppress: %v", err)
+	}
+	if err := SetDisposition(ctx, rpt.OID, "f1", "unsuppress", "", ""); err != nil {
+		t.Fatalf("unsuppress: %v", err)
+	}
+	got, _ := wstore.GetRadarReport(ctx, rpt.OID)
+	if got.Findings[0].Group != GroupRecurring || got.Findings[0].Disposition != nil {
+		t.Fatalf("expected recurring with no disposition, got %+v", got.Findings[0])
 	}
 }
 

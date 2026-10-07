@@ -43,7 +43,8 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 	if run.DagORef == "" {
 		return nil
 	}
-	return withDagMutation(run.DagORef, func() error {
+	poke := false
+	err = withDagMutation(run.DagORef, func() error {
 		g, err := wstore.GetDag(ctx, run.DagORef)
 		if err != nil {
 			return fmt.Errorf("loading dag for child outcome: %w", err)
@@ -51,24 +52,27 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 		task := taskByRunID(g, run.ID)
 		if task == nil {
 			// a reviewer's exit: judge now whether it left a verdict, not at the watchdog's next pass
-			if taskByReviewRunID(g, run.ID) != nil {
-				return scheduleLocked(context.WithoutCancel(ctx), g.OID)
-			}
+			poke = taskByReviewRunID(g, run.ID) != nil
 			return nil
 		}
 		if !taskActive(task.State) {
 			return nil
 		}
+		// re-read inside the lock: the child's `wsh jarvis complete` is a synchronous RPC that
+		// lands just before the process exits, so a snapshot taken before the lock can race it.
+		fresh, ferr := wstore.GetRun(ctx, g.ChannelId, run.ID)
+		if ferr != nil {
+			return fmt.Errorf("re-loading child run %s: %w", run.ID, ferr)
+		}
+		// a skip or retry cancels the run, then stops its worker outside this lock: the exit that stop causes is
+		// the action's to record, not a failure to retry
+		if fresh.Status == jarvis.RunStatus_Cancelled {
+			return nil
+		}
 		kind := classifyFailure(data.Summary, data.ExitCode)
 		if data.Status == "done" {
-			// re-read inside the lock: the child's `wsh jarvis complete` is a synchronous RPC that
-			// lands just before the process exits, so a snapshot taken before the lock can race it.
-			// Anything but a still-active run means the exit was accounted for (completed, cancelled
-			// by skip/retry/cancel, already blocked) and there is nothing to record.
-			fresh, ferr := wstore.GetRun(ctx, g.ChannelId, run.ID)
-			if ferr != nil {
-				return fmt.Errorf("re-loading child run %s: %w", run.ID, ferr)
-			}
+			// Anything but a still-active run means the exit was accounted for (completed, already blocked) and
+			// there is nothing to record.
 			if fresh.Status != jarvis.RunStatus_Executing && fresh.Status != jarvis.RunStatus_Planning {
 				return nil
 			}
@@ -110,8 +114,13 @@ func HandleChildOutcome(ctx context.Context, workerORef string, data jarvis.Outc
 		} else {
 			PostWake(ctx, g.ChannelId, g.RunID, taskFailedWake(task.ID, kind))
 		}
-		return scheduleLocked(ctx, g.OID)
+		poke = true
+		return nil
 	})
+	if err != nil || !poke {
+		return err
+	}
+	return runTick(ctx, run.DagORef)
 }
 
 // workerRunIds resolves the channel and run a worker tab was spawned for; empty ids for a tab no run owns.
@@ -165,7 +174,7 @@ const workerExitedNote = "worker exited before completing its phase"
 //     the human instead.
 //   - quick / pipeline: the run's only worker exits before running `wsh jarvis complete`. Nothing else
 //     reconciles these modes (F26): a dag child's exit is HandleChildOutcome's job, not this one.
-func HandleRunWorkerExit(ctx context.Context, workerORef string) error {
+func HandleRunWorkerExit(ctx context.Context, workerORef string, exit jarvis.WorkerExit) error {
 	channelId, runId, err := workerRunIds(ctx, workerORef)
 	if err != nil || runId == "" {
 		return err
@@ -175,6 +184,7 @@ func HandleRunWorkerExit(ctx context.Context, workerORef string) error {
 	if err != nil {
 		return fmt.Errorf("loading run %s: %w", runId, err)
 	}
+	recordWorkerOutput(ctx, run, workerORef, exit)
 	// before the dag early-return, because a lead's tab has to be collected in both shapes: a bounded
 	// run reaches no other close site at all, and a dag run whose lead was still mid-turn when the dag
 	// went terminal was deliberately skipped there for this moment. Best-effort, never fails the exit.
@@ -197,6 +207,19 @@ func HandleRunWorkerExit(ctx context.Context, workerORef string) error {
 	appendRunEvent(ctx, channelId, runId, kind, nil, map[string]any{"reason": reason})
 	sendRunUpdates(channelId, runId)
 	return nil
+}
+
+// recordWorkerOutput keeps what a worker printed before it failed, in the log and on its own run: its tab
+// closes itself with the exit and takes the terminal with it. Only an exit nobody asked for is kept: a worker
+// the engine stopped also exits non-zero, after its run was closed.
+func recordWorkerOutput(ctx context.Context, run *waveobj.Run, workerORef string, exit jarvis.WorkerExit) {
+	if exit.ExitCode == 0 || (run.Status != jarvis.RunStatus_Executing && run.Status != jarvis.RunStatus_Planning) {
+		return
+	}
+	log.Printf("run %s: worker %s exited with code %d: %q", run.ID, workerORef, exit.ExitCode, exit.Output)
+	appendRunEvent(ctx, run.ChannelOID, run.ID, waveobj.RunEventKindWorkerOutput, nil, map[string]any{
+		"exitcode": exit.ExitCode, "output": exit.Output, "worker": workerORef,
+	})
 }
 
 // failRunningPhase fails a non-dag run's running phase when owns accepts that phase's workers, returning

@@ -7,7 +7,7 @@
 // and the list stay in register without the rows knowing any geometry. The column owns its own
 // controls — count, Clear filters, Graph, collapse, and the filter row under them.
 
-import { SkeletonLine } from "@/app/element/skeleton";
+import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
@@ -42,16 +42,16 @@ const SKELETON_WIDTHS = ["w-[120px]", "w-[190px]", "w-[150px]", "w-[210px]", "w-
 
 function HistorySkeleton() {
     return (
-        <div className="px-[14px]">
-            {Array.from({ length: 10 }).map((_, i) => (
+        <SkeletonRows className="h-full px-[14px]">
+            {(i) => (
                 <div key={i} className="flex h-[34px] items-center gap-[10px]">
                     <SkeletonLine className="h-[9px] w-[9px] rounded-full" />
                     <SkeletonLine className={cn("h-[8px]", SKELETON_WIDTHS[i % SKELETON_WIDTHS.length])} />
                     <div className="flex-1" />
                     <SkeletonLine className="h-[8px] w-[34px]" />
                 </div>
-            ))}
-        </div>
+            )}
+        </SkeletonRows>
     );
 }
 

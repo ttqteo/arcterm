@@ -12,11 +12,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-// TestResolveRunWorkerFromMeta_UsesMetaNotScan proves the meta lookup is the source, not the scan: the
-// run exists ONLY as a db_run row (never appended to the channel blob), so the GetChannels scan cannot
-// find it. Resolution therefore succeeds only via the runoref/channeloref stamp. UUID ids are required
-// because ParseORef validates the oid as a UUID.
-func TestResolveRunWorkerFromMeta_UsesMetaNotScan(t *testing.T) {
+// TestResolveRunWorkerFromMeta_ResolvesAStampedWorker covers the stamp path: the runoref/channeloref on
+// the worker tab lead to the run row, its channel and the phase. UUID ids are required because ParseORef
+// validates the oid as a UUID.
+func TestResolveRunWorkerFromMeta_ResolvesAStampedWorker(t *testing.T) {
 	ctx := context.Background()
 	ch, err := wstore.CreateChannel(ctx, "rw-meta", "/p")
 	if err != nil {
@@ -28,15 +27,10 @@ func TestResolveRunWorkerFromMeta_UsesMetaNotScan(t *testing.T) {
 	}
 	workerTab := waveobj.MakeORef(waveobj.OType_Tab, workerTabOID).String()
 	runID := uuid.NewString()
-	// row-only run (DBInsert, not AppendRun) → the channel blob stays empty, so the scan can't see it.
-	row := &waveobj.Run{OID: runID, ID: runID, ChannelOID: ch.OID, Goal: "g", Status: "executing", CreatedTs: 1,
+	run := waveobj.Run{ID: runID, Goal: "g", Status: "executing", CreatedTs: 1,
 		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Plan}, {Kind: PhaseKind_Execute, WorkerOrefs: []string{workerTab}}}}
-	if err := wstore.DBInsert(ctx, row); err != nil {
-		t.Fatalf("insert run row: %v", err)
-	}
-	// sanity: the scan genuinely cannot resolve this worker (blob has no runs)
-	if channels, _ := wstore.GetChannels(ctx); ResolveRunWorker(channels, workerTab) != nil {
-		t.Fatalf("precondition failed: scan resolved a row-only run")
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatalf("append run: %v", err)
 	}
 	if err := wstore.StampWorkerOwner(ctx, workerTab,
 		waveobj.MakeORef(waveobj.OType_Run, runID).String(),
@@ -45,12 +39,12 @@ func TestResolveRunWorkerFromMeta_UsesMetaNotScan(t *testing.T) {
 	}
 	m := ResolveRunWorkerFromMeta(ctx, workerTab)
 	if m == nil || m.Channel.OID != ch.OID || m.Run.ID != runID || m.PhaseIdx != 1 {
-		t.Fatalf("meta resolve wrong (should have found via meta, scan returns nil): %+v", m)
+		t.Fatalf("meta resolve wrong: %+v", m)
 	}
 }
 
-// TestResolveRunWorkerFromMeta_FallsBackToScan proves an unstamped worker still resolves via the
-// GetChannels scan fallback, so a missing best-effort stamp never regresses resolution.
+// TestResolveRunWorkerFromMeta_FallsBackToScan proves a worker with no owner stamp still resolves, to
+// the run row whose phase lists it, so a missing best-effort stamp never regresses resolution.
 func TestResolveRunWorkerFromMeta_FallsBackToScan(t *testing.T) {
 	ctx := context.Background()
 	ch, err := wstore.CreateChannel(ctx, "rw-fallback", "/p")
@@ -67,6 +61,55 @@ func TestResolveRunWorkerFromMeta_FallsBackToScan(t *testing.T) {
 	m := ResolveRunWorkerFromMeta(ctx, unstamped) // no stamp -> fallback scan
 	if m == nil || m.Run.ID != runID || m.PhaseIdx != 0 || m.Channel.OID != ch.OID {
 		t.Fatalf("fallback resolve wrong: %+v", m)
+	}
+}
+
+// The fallback narrows the run rows by a substring match on the oref, so a run that only quotes a tab
+// oref in its goal is a candidate. It is not that tab's run, and must not resolve as one.
+func TestResolveRunWorkerFromMeta_IgnoresAnORefInGoalText(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "rw-goaltext", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	quoted := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	run := waveobj.Run{ID: uuid.NewString(), Goal: "look at what " + quoted + " did", Status: "executing", CreatedTs: 3,
+		Phases: []waveobj.RunPhase{{Kind: PhaseKind_Execute, WorkerOrefs: []string{"tab:" + uuid.NewString()}}}}
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatalf("append run: %v", err)
+	}
+	if m := ResolveRunWorkerFromMeta(ctx, quoted); m != nil {
+		t.Fatalf("a tab only quoted in a goal resolved to run %s", m.Run.ID)
+	}
+}
+
+// A worker whose stamp is missing resolves through its messages: the earliest dispatch or directive in a
+// gatekept channel owns it, and a concierge channel that dispatched it earlier is passed over.
+func TestResolveAskOwner_UnstampedWorkerResolvesByItsMessages(t *testing.T) {
+	ctx := context.Background()
+	concierge := storedChannel(t, false)
+	gatekept := storedChannel(t, true)
+	// no tab row behind the oref, so the dispatch cannot stamp it and the stamp read misses
+	worker := newTabORef()
+	for _, m := range []struct {
+		channel, kind, text string
+		ts                  int64
+	}{
+		{concierge.OID, "dispatch", "concierge task", 10},
+		{gatekept.OID, "directive", "nudge", 20},
+		{gatekept.OID, "dispatch", "gatekept task", 30},
+	} {
+		if _, err := wstore.PostChannelMessage(ctx, m.channel, wstore.NewChannelMessage(m.kind, "claude", m.text, worker, m.ts)); err != nil {
+			t.Fatalf("post %s: %v", m.kind, err)
+		}
+	}
+	ch, task, _ := ResolveAskOwner(ctx, worker)
+	if ch == nil || ch.OID != gatekept.OID || task != "gatekept task" {
+		t.Fatalf("want the gatekept channel and its dispatch text, got ch=%+v task=%q", ch, task)
+	}
+	// the outcome belongs to the channel that dispatched first, whatever its tier
+	if got := ResolveDispatchChannel(ctx, worker); got == nil || got.OID != concierge.OID {
+		t.Fatalf("want the earliest dispatching channel, got %+v", got)
 	}
 }
 
@@ -155,9 +198,14 @@ func TestResolveAskOwner_NonGatekeeper(t *testing.T) {
 	}
 }
 
-func countOutcomes(ch *waveobj.Channel, workerORef string) int {
+func countOutcomes(t *testing.T, ctx context.Context, channelId, workerORef string) int {
+	t.Helper()
+	msgs, err := wstore.GetChannelMessages(ctx, channelId, 0, 0)
+	if err != nil {
+		t.Fatalf("read messages: %v", err)
+	}
 	n := 0
-	for _, m := range ch.Messages {
+	for _, m := range msgs {
 		if m.Kind == "outcome" && m.RefORef == workerORef {
 			n++
 		}
@@ -165,7 +213,7 @@ func countOutcomes(ch *waveobj.Channel, workerORef string) int {
 	return n
 }
 
-// PostOutcome must keep the dispatch-existence gate after the single-channel migration (Design Note 3): a
+// PostOutcome keeps the dispatch-existence gate: a
 // worker WITH a dispatch message earns an outcome; a worker with NO dispatch message (e.g. a run worker
 // that now carries channeloref) does not — even though the channel resolves.
 func TestPostOutcomeOnlyForDispatchedWorker(t *testing.T) {
@@ -181,8 +229,7 @@ func TestPostOutcomeOnlyForDispatchedWorker(t *testing.T) {
 	}
 	full, _ := wstore.DBMustGet[*waveobj.Channel](ctx, ch.OID)
 	PostOutcome(full, worker, "claude", OutcomeData{Status: "done", Summary: "s"})
-	after, _ := wstore.DBMustGet[*waveobj.Channel](ctx, ch.OID)
-	if got := countOutcomes(after, worker); got != 1 {
+	if got := countOutcomes(t, ctx, ch.OID, worker); got != 1 {
 		t.Fatalf("dispatched worker should get exactly 1 outcome, got %d", got)
 	}
 
@@ -194,8 +241,7 @@ func TestPostOutcomeOnlyForDispatchedWorker(t *testing.T) {
 	worker2 := seedWorkerTab(t, ctx)
 	full2, _ := wstore.DBMustGet[*waveobj.Channel](ctx, ch2.OID)
 	PostOutcome(full2, worker2, "claude", OutcomeData{Status: "done", Summary: "s"})
-	after2, _ := wstore.DBMustGet[*waveobj.Channel](ctx, ch2.OID)
-	if got := countOutcomes(after2, worker2); got != 0 {
+	if got := countOutcomes(t, ctx, ch2.OID, worker2); got != 0 {
 		t.Fatalf("undispatched worker must get no outcome, got %d", got)
 	}
 }

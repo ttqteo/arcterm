@@ -39,5 +39,8 @@ export default defineConfig({
         // put every one into the JS bundle as base64; emitted as files, a tree loads only what it shows
         assetsInlineLimit: (file) =>
             file.replace(/\\/g, "/").includes("/material-icon-theme/icons/") ? false : undefined,
+        // the 500 kB default is a network-delivery budget; these chunks load from the app bundle on disk.
+        // monaco alone is 3.8 MB and already lazy, so the limit sits just above it to still catch a jump.
+        chunkSizeWarningLimit: 4000,
     },
 });

@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	maxContextMessages = 20
+	MaxContextMessages = 20
 	maxContextChars    = 4000
 )
 
@@ -244,7 +244,7 @@ func modelForTier(tier Tier) string {
 
 // SpecForTier resolves a runtime spec with the tier's model selection applied.
 // For claude, it appends a --model alias to BaseArgs. pi/codex/opencode keep their own default.
-// For openrouter, it sets spec.Model from the configured tier models.
+// For openrouter, every tier sets spec.Model to the one configured model.
 // Other runtimes are returned unchanged.
 func SpecForTier(runtime string, tier Tier) (RuntimeSpec, bool) {
 	spec, ok := SpecFor(runtime)
@@ -252,12 +252,7 @@ func SpecForTier(runtime string, tier Tier) (RuntimeSpec, bool) {
 		return spec, false
 	}
 	if runtime == "openrouter" {
-		switch tier {
-		case TierCheap:
-			spec.Model = OpenrouterCheapModel()
-		case TierMid, TierCapable:
-			spec.Model = OpenrouterMidModel()
-		}
+		spec.Model = OpenrouterCheapModel()
 		return spec, true
 	}
 	// pi takes no tier model: its ids are provider-namespaced, so a bare id is ambiguous across every
@@ -320,8 +315,8 @@ func OperatorPrinciples() (string, error) {
 // a principles document mid-sentence would mislead the consulted agent).
 func BuildPrompt(history []waveobj.ChannelMessage, userPrompt, principles string) string {
 	start := 0
-	if len(history) > maxContextMessages {
-		start = len(history) - maxContextMessages
+	if len(history) > MaxContextMessages {
+		start = len(history) - MaxContextMessages
 	}
 	var b strings.Builder
 	for _, m := range history[start:] {

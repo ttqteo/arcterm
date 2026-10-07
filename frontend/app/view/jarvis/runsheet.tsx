@@ -821,8 +821,8 @@ function EmptyTasks({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }) {
     if (loading) {
         return (
             <div data-jarvis-brief-sheet-state="loading" className="flex flex-col gap-[11px] pt-0.5">
-                <span className="h-[30px] animate-pulse rounded-[8px] bg-surface-raised motion-reduce:animate-none" />
-                <span className="h-[30px] w-[72%] animate-pulse rounded-[8px] bg-surface-raised motion-reduce:animate-none" />
+                <span className="h-[30px] animate-pulse rounded-[8px] bg-edge-strong motion-reduce:animate-none" />
+                <span className="h-[30px] w-[72%] animate-pulse rounded-[8px] bg-edge-strong motion-reduce:animate-none" />
             </div>
         );
     }
@@ -849,7 +849,7 @@ function Evidence({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }) {
     if (ev == null) {
         return (
             <div data-jarvis-brief-sheet-state="loading" className="flex flex-col gap-[11px] pt-[18px]">
-                <span className="h-[30px] animate-pulse rounded-[8px] bg-surface-raised motion-reduce:animate-none" />
+                <span className="h-[30px] animate-pulse rounded-[8px] bg-edge-strong motion-reduce:animate-none" />
                 <span className="text-[12px] text-ink-mid">Sealing this run's evidence…</span>
             </div>
         );

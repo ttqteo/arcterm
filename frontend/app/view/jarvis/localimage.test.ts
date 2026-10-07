@@ -27,6 +27,15 @@ describe("localFileUrl", () => {
     });
 });
 
+describe("the packaged app's CSP", () => {
+    // useLocalImage shows the bytes as a blob: URL. the dev app has no CSP, so only this catches a packaged-only block
+    it("lets an <img> load a blob: URL", () => {
+        const conf = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+        const imgSrc = (conf.app.security.csp as string).split(";").find((d) => d.trim().startsWith("img-src"));
+        expect(imgSrc?.trim().split(/\s+/)).toContain("blob:");
+    });
+});
+
 describe("imageStatus", () => {
     it("maps 200 to ok, 404 to missing and anything else to error", () => {
         expect(imageStatus(200)).toBe("ok");

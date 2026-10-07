@@ -51,7 +51,7 @@ func BuildDigest(sn DagDigestSnapshot) wshrpc.DagStatusDigest {
 	staleGate := staleMergeGates(gateClock, sn.Now)
 	d := wshrpc.DagStatusDigest{
 		DagVersion: g.Version,
-		Health:     buildHealth(g, askByTask, staleGate),
+		Health:     buildHealth(g, sn.Owner, askByTask, staleGate),
 		Counts:     buildCounts(g, askByTask, retried, staleGate),
 		Next:       buildNext(g, askByTask),
 		Durations:  buildDurations(sn),
@@ -253,7 +253,15 @@ func hasUnsatDep(g *waveobj.TaskGroup, t *waveobj.TaskNode) bool {
 // buildHealth derives aggregate health strictly per spec §5.2 precedence: needs-you (ask, unreleased
 // gate, terminal failure, blocked merge, failed cleanup, blocked dag, terminal-with-debt) -> stalled ->
 // healthy -> done/cancelled.
-func buildHealth(g *waveobj.TaskGroup, askByTask map[string]wshrpc.DagAskItem, staleGate map[string]bool) string {
+func buildHealth(g *waveobj.TaskGroup, owner *waveobj.Run, askByTask map[string]wshrpc.DagAskItem, staleGate map[string]bool) string {
+	// a lead can finish its run past a gate or a failed final stage, and nothing moves the dag off it then:
+	// the run's end is the dag's, and only a worktree the engine could not remove is still the human's
+	if owner != nil && (owner.Status == jarvis.RunStatus_Done || owner.Status == jarvis.RunStatus_Cancelled) {
+		if HasCleanupDebt(g) {
+			return "needs-you"
+		}
+		return owner.Status
+	}
 	if g.Status == DagStatus_Blocked {
 		return "needs-you"
 	}

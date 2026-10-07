@@ -12,14 +12,12 @@ import { petPeekOpenAtom } from "./petstore";
 
 export type PeekTarget = Exclude<OpenTarget, { kind: "channel" } | { kind: "canvas" }>;
 
-// from: whether the peek started on a closed popup or from the hub. Nothing reads it yet: Escape always closes
-// the popup and Back always returns to the hub.
-export type PeekItem = { target: PeekTarget; status: "loading" | "ready"; from: "closed" | "hub" };
+export type PeekItem = { target: PeekTarget; status: "loading" | "ready" };
 
 export const peekItemAtom = atom<PeekItem | null>(null) as PrimitiveAtom<PeekItem | null>;
 
-// What only the item's body knows: whether the target is still there. The body
-// reports them; the item view's buttons read them. null until the body has said.
+// What only the item's body knows: whether the target is still there. The body reports it; the item view's
+// button reads it. null until the body has said.
 export type PeekFacts = { gone: boolean };
 
 export const peekFactsAtom = atom<PeekFacts | null>(null) as PrimitiveAtom<PeekFacts | null>;
@@ -78,7 +76,7 @@ export function startPeek(target: PeekTarget): PeekItem {
         // an item left behind by a popup closed some other way is not something to return to
         base = { item: open ? cur : null, open };
     }
-    const item: PeekItem = { target, status: "loading", from: base.open ? (base.item?.from ?? "hub") : "closed" };
+    const item: PeekItem = { target, status: "loading" };
     globalStore.set(peekItemAtom, item);
     globalStore.set(petPeekOpenAtom, true);
     return item;

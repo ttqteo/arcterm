@@ -9,6 +9,8 @@ import (
 	"log"
 	"reflect"
 	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/filestore"
@@ -138,6 +140,60 @@ func DBGetAllObjsByType[T waveobj.WaveObj](ctx context.Context, otype string) ([
 	})
 }
 
+// sharedObjs holds the objects the Shared readers have decoded, each at the version it was read.
+// ponytail: a deleted row's entry stays until wavesrv exits; drop it in DBDelete if deletes ever add up.
+var sharedObjs = struct {
+	sync.Mutex
+	byORef map[waveobj.ORef]waveobj.WaveObj
+}{byORef: map[waveobj.ORef]waveobj.WaveObj{}}
+
+// sharedFetchChunk keeps one IN list under sqlite's bound-parameter limit.
+const sharedFetchChunk = 500
+
+// selectShared returns the T rows that query selects, in its order. query yields oid and version only:
+// a row's data is read and decoded just when its version is not the one already held, so a poll over
+// rows that seldom change stops re-decoding all of them. The objects are shared between callers and
+// must not be modified.
+func selectShared[T waveobj.WaveObj](ctx context.Context, query string, args ...any) ([]T, error) {
+	otype := getOTypeGen[T]()
+	return WithReadTxRtn(ctx, func(tx *TxWrap) ([]T, error) {
+		var rows []idDataType
+		tx.Select(&rows, query, args...)
+		rtn := make([]T, len(rows))
+		staleIdx := map[string]int{}
+		var stale []any
+		sharedObjs.Lock()
+		for i, row := range rows {
+			held, ok := sharedObjs.byORef[waveobj.ORef{OType: otype, OID: row.OId}]
+			if ok && waveobj.GetVersion(held) == row.Version {
+				rtn[i] = held.(T)
+				continue
+			}
+			staleIdx[row.OId] = i
+			stale = append(stale, row.OId)
+		}
+		sharedObjs.Unlock()
+		for start := 0; start < len(stale); start += sharedFetchChunk {
+			chunk := stale[start:min(start+sharedFetchChunk, len(stale))]
+			marks := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+			var fresh []idDataType
+			tx.Select(&fresh, fmt.Sprintf("SELECT oid, version, data FROM %s WHERE oid IN (%s)", tableNameFromOType(otype), marks), chunk...)
+			for _, row := range fresh {
+				obj, err := waveobj.FromJson(row.Data)
+				if err != nil {
+					return nil, err
+				}
+				waveobj.SetVersion(obj, row.Version)
+				rtn[staleIdx[row.OId]] = obj.(T)
+				sharedObjs.Lock()
+				sharedObjs.byORef[waveobj.ORef{OType: otype, OID: row.OId}] = obj
+				sharedObjs.Unlock()
+			}
+		}
+		return rtn, nil
+	})
+}
+
 func DBResolveEasyOID(ctx context.Context, oid string) (*waveobj.ORef, error) {
 	return WithReadTxRtn(ctx, func(tx *TxWrap) (*waveobj.ORef, error) {
 		for _, rtype := range waveobj.AllWaveObjTypes() {
@@ -251,9 +307,9 @@ func DBInsert(ctx context.Context, val waveobj.WaveObj) error {
 }
 
 // dbUpsertObjTx writes val as a row AND queues a waveobj:update for its oref (published on the enclosing
-// WithTx commit) so FE per-object (run:) subscriptions get live deltas — Phase 2 turned this on (Phase 1
-// deliberately omitted it while nothing subscribed). Call with a tx.Context() already inside a WithTx on
-// the write handle; txwrap reuses that transaction, keeping the row write atomic with the blob write.
+// WithTx commit) so FE per-object (run:) subscriptions get live deltas. Call with a tx.Context() already
+// inside a WithTx on the write handle; txwrap reuses that transaction, keeping the row write atomic with
+// the channel's version bump.
 func dbUpsertObjTx(ctx context.Context, val waveobj.WaveObj) error {
 	oid := waveobj.GetOID(val)
 	if oid == "" {

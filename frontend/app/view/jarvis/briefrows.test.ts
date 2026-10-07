@@ -28,7 +28,7 @@ const NOW = new Date(2026, 8, 15, 12, 0).getTime();
 describe("queueLine", () => {
     const q: QueueRow = {
         key: "gate:1",
-        kind: "plan gate",
+        kind: "dag gate",
         title: "Approve the plan",
         source: "waveterm",
         detail: "waveterm · #arc",
@@ -39,10 +39,9 @@ describe("queueLine", () => {
         attrib: "Orchestrator · S4c",
         why: "2 of 4 done",
         cites: [],
-        wireKind: "plan-gate",
+        wireKind: "dag-gate",
         channelId: "c1",
         runId: "r1",
-        phaseIdx: 0,
         taskId: "",
         retry: false,
     };

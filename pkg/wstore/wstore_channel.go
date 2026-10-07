@@ -26,13 +26,8 @@ func NewChannelMessage(kind, author, text, refORef string, ts int64) waveobj.Cha
 	}
 }
 
-func appendChannelMessage(ch *waveobj.Channel, msg waveobj.ChannelMessage) {
-	ch.Messages = append(ch.Messages, msg)
-}
-
 // stampMessageIdentity sets the object identity and parent link on a message before it is written as a
-// row (and, since it mutates the pointer before the blob append, on the embedded copy too — keeping the
-// two representations identical during dual-write). OID == the message's own UUID.
+// row. OID == the message's own UUID.
 func stampMessageIdentity(channelId string, msg *waveobj.ChannelMessage) {
 	msg.OID = msg.ID
 	msg.ChannelOID = channelId
@@ -114,8 +109,16 @@ func EnsureChannelAtPath(ctx context.Context, name, projectPath string) (*waveob
 	})
 }
 
+// DeleteChannel deletes the channel with the rows that belong to it: its runs, their events and dags, and
+// its messages.
 func DeleteChannel(ctx context.Context, channelId string) error {
-	return DBDelete(ctx, waveobj.OType_Channel, channelId)
+	return WithTx(ctx, func(tx *TxWrap) error {
+		tx.Exec(`DELETE FROM db_run WHERE json_extract(data, '$.channeloid') = ?`, channelId)
+		tx.Exec(`DELETE FROM db_channelmessage WHERE json_extract(data, '$.channeloid') = ?`, channelId)
+		tx.Exec(`DELETE FROM db_runevent WHERE channelid = ?`, channelId)
+		tx.Exec(`DELETE FROM db_dag WHERE json_extract(data, '$.channelid') = ?`, channelId)
+		return DBDelete(tx.Context(), waveobj.OType_Channel, channelId)
+	})
 }
 
 func GetChannels(ctx context.Context) ([]*waveobj.Channel, error) {
@@ -131,7 +134,7 @@ func GetChannels(ctx context.Context) ([]*waveobj.Channel, error) {
 
 // stampDispatchOwner is the concierge/gatekeeper analog of spawnRunWorkers' run stamp: when a dispatch or
 // directive message links a worker tab to a channel, record the channel oref on that worker's meta so the
-// worker→channel lookup (handleAsk/OnWorkerExit) is a direct read, not a full-channel scan. Best-effort.
+// worker→channel lookup (handleAsk/OnWorkerExit) is a direct read, not a search of the rows. Best-effort.
 func stampDispatchOwner(ctx context.Context, channelId string, msg *waveobj.ChannelMessage) {
 	if msg.Kind != "dispatch" && msg.Kind != "directive" {
 		return
@@ -146,15 +149,17 @@ func stampDispatchOwner(ctx context.Context, channelId string, msg *waveobj.Chan
 	}
 }
 
+// bumpChannel raises the channel's version. The channel holds no messages or runs, so the bump is the only
+// thing that tells the frontend one of its lists changed: the active channel refetches them on it. Errors
+// when the channel is gone.
+func bumpChannel(ctx context.Context, channelId string) error {
+	return DBUpdateFn(ctx, channelId, func(*waveobj.Channel) {})
+}
+
 func PostChannelMessage(ctx context.Context, channelId string, msg waveobj.ChannelMessage) (*waveobj.ChannelMessage, error) {
 	stampMessageIdentity(channelId, &msg)
 	err := WithTx(ctx, func(tx *TxWrap) error {
-		ch, err := DBMustGet[*waveobj.Channel](tx.Context(), channelId)
-		if err != nil {
-			return err
-		}
-		appendChannelMessage(ch, msg)
-		if err := DBUpdate(tx.Context(), ch); err != nil {
+		if err := bumpChannel(tx.Context(), channelId); err != nil {
 			return err
 		}
 		return dbUpsertObjTx(tx.Context(), &msg)
@@ -166,22 +171,26 @@ func PostChannelMessage(ctx context.Context, channelId string, msg waveobj.Chann
 	return &msg, nil
 }
 
-// PostChannelMessageIf appends msg to the channel only if cond reports true when evaluated against the
-// current persisted channel inside the write transaction. Because wstore serializes on a single DB
-// connection, two concurrent posters cannot both pass cond: the second transaction reads the first's
-// committed message, so cond sees it. Returns true if the message was posted.
-func PostChannelMessageIf(ctx context.Context, channelId string, msg waveobj.ChannelMessage, cond func(*waveobj.Channel) bool) (bool, error) {
+// PostChannelMessageIf posts msg to the channel only if cond reports true inside the write transaction.
+// cond gets the transaction's context and must read with it: such a read stays on the write connection.
+// Because wstore serializes on a single write connection, two concurrent posters cannot both pass cond:
+// the second transaction reads the first's committed message, so cond sees it. Returns true if the
+// message was posted.
+func PostChannelMessageIf(ctx context.Context, channelId string, msg waveobj.ChannelMessage, cond func(txCtx context.Context) (bool, error)) (bool, error) {
 	var posted bool
 	err := WithTx(ctx, func(tx *TxWrap) error {
 		ch, err := DBMustGet[*waveobj.Channel](tx.Context(), channelId)
 		if err != nil {
 			return err
 		}
-		if !cond(ch) {
+		ok, err := cond(tx.Context())
+		if err != nil {
+			return err
+		}
+		if !ok {
 			return nil
 		}
 		stampMessageIdentity(channelId, &msg)
-		appendChannelMessage(ch, msg)
 		posted = true
 		if err := DBUpdate(tx.Context(), ch); err != nil {
 			return err
@@ -194,63 +203,41 @@ func PostChannelMessageIf(ctx context.Context, channelId string, msg waveobj.Cha
 	return posted, err
 }
 
-func appendRunIn(ch *waveobj.Channel, run waveobj.Run) {
-	ch.Runs = append(ch.Runs, run)
-}
-
-// AppendRun appends a run to the channel and persists it (blob + db_run row).
+// AppendRun adds a run to the channel as its db_run row.
 func AppendRun(ctx context.Context, channelId string, run waveobj.Run) error {
 	stampRunIdentity(channelId, &run)
 	return WithTx(ctx, func(tx *TxWrap) error {
-		ch, err := DBMustGet[*waveobj.Channel](tx.Context(), channelId)
-		if err != nil {
-			return err
-		}
-		appendRunIn(ch, run)
-		if err := DBUpdate(tx.Context(), ch); err != nil {
+		if err := bumpChannel(tx.Context(), channelId); err != nil {
 			return err
 		}
 		return dbUpsertObjTx(tx.Context(), &run)
 	})
 }
 
-// updateRunIn finds the run by id in ch and applies fn in place; errors if not found.
-func updateRunIn(ch *waveobj.Channel, runId string, fn func(*waveobj.Run) error) error {
-	for i := range ch.Runs {
-		if ch.Runs[i].ID == runId {
-			return fn(&ch.Runs[i])
-		}
-	}
-	return fmt.Errorf("run %q not found in channel", runId)
-}
-
-// UpdateRun applies fn to the identified run and persists the channel (blob + db_run row).
+// UpdateRun applies fn to the channel's run and writes its row. The read, fn and the write share one
+// write transaction.
 func UpdateRun(ctx context.Context, channelId, runId string, fn func(*waveobj.Run) error) error {
 	return WithTx(ctx, func(tx *TxWrap) error {
-		ch, err := DBMustGet[*waveobj.Channel](tx.Context(), channelId)
+		if err := bumpChannel(tx.Context(), channelId); err != nil {
+			return err
+		}
+		run, err := DBGet[*waveobj.Run](tx.Context(), runId)
 		if err != nil {
 			return err
 		}
-		var updated *waveobj.Run
-		if err := updateRunIn(ch, runId, func(r *waveobj.Run) error {
-			if err := fn(r); err != nil {
-				return err
-			}
-			updated = r // pointer into ch.Runs; used for the row dual-write below
-			return nil
-		}); err != nil {
+		if run == nil || run.ChannelOID != channelId {
+			return fmt.Errorf("run %q not found in channel", runId)
+		}
+		if err := fn(run); err != nil {
 			return err
 		}
-		stampRunIdentity(channelId, updated)
-		if err := DBUpdate(tx.Context(), ch); err != nil {
-			return err
-		}
-		return dbUpsertObjTx(tx.Context(), updated)
+		// fn may replace the run wholesale
+		stampRunIdentity(channelId, run)
+		return dbUpsertObjTx(tx.Context(), run)
 	})
 }
 
 // GetRun reads a single run by id from its db_run row (runId == oid), verifying it belongs to channelId.
-// Row-backed (Phase 2); the channel blob is no longer scanned for this lookup.
 func GetRun(ctx context.Context, channelId, runId string) (*waveobj.Run, error) {
 	run, err := DBGet[*waveobj.Run](ctx, runId)
 	if err != nil {
@@ -265,12 +252,74 @@ func GetRun(ctx context.Context, channelId, runId string) (*waveobj.Run, error) 
 	return run, nil
 }
 
-// GetChannelRuns returns the db_run rows for a channel (indexed on channeloid), in createdts order —
-// the row-backed replacement for reading Channel.Runs off the blob. Pure read (read pool).
+// GetChannelRuns returns the db_run rows for a channel (indexed on channeloid), in createdts order.
+// Pure read (read pool).
 func GetChannelRuns(ctx context.Context, channelId string) ([]*waveobj.Run, error) {
 	return selectRuns(ctx, `SELECT oid, version, data FROM db_run
 		WHERE json_extract(data, '$.channeloid') = ?
 		ORDER BY json_extract(data, '$.createdts') ASC`, channelId)
+}
+
+// GetChannelsShared is GetChannels for a caller that only reads: the channels are shared, not copies
+// (see selectShared).
+func GetChannelsShared(ctx context.Context) ([]*waveobj.Channel, error) {
+	chans, err := selectShared[*waveobj.Channel](ctx, `SELECT oid, version FROM db_channel`)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(chans, func(i, j int) bool {
+		return chans[i].CreatedTs > chans[j].CreatedTs
+	})
+	return chans, nil
+}
+
+// GetChannelRunsShared is GetChannelRuns for a caller that only reads: the runs are shared, not copies
+// (see selectShared). It sorts here, not in SQL, so the query never touches a row's data.
+func GetChannelRunsShared(ctx context.Context, channelId string) ([]*waveobj.Run, error) {
+	runs, err := selectShared[*waveobj.Run](ctx, `SELECT oid, version FROM db_run WHERE json_extract(data, '$.channeloid') = ?`, channelId)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(runs, func(i, j int) bool {
+		return runs[i].CreatedTs < runs[j].CreatedTs
+	})
+	return runs, nil
+}
+
+// GetChannelRunChanges returns the id of every run in the channel, and the rows of only those whose version
+// is not the one the caller holds in known. A caller that keeps a channel's run list refreshes it with this
+// instead of re-reading every row: the id-and-version pass never touches a row's data. Pure read (read pool).
+func GetChannelRunChanges(ctx context.Context, channelId string, known map[string]int) ([]string, []*waveobj.Run, error) {
+	versions, err := WithReadTxRtn(ctx, func(tx *TxWrap) ([]idDataType, error) {
+		var rows []idDataType
+		tx.Select(&rows, `SELECT oid, version FROM db_run WHERE json_extract(data, '$.channeloid') = ?`, channelId)
+		return rows, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]string, 0, len(versions))
+	var stale []any
+	for _, row := range versions {
+		ids = append(ids, row.OId)
+		if v, ok := known[row.OId]; !ok || v != row.Version {
+			stale = append(stale, row.OId)
+		}
+	}
+	if len(stale) == 0 {
+		return ids, nil, nil
+	}
+	if len(stale) == len(ids) {
+		runs, err := GetChannelRuns(ctx, channelId)
+		return ids, runs, err
+	}
+	// ponytail: one bound parameter per stale run, and sqlite caps a statement's parameters (32766); a
+	// caller that far behind without being wholly behind would need this chunked
+	marks := strings.TrimSuffix(strings.Repeat("?,", len(stale)), ",")
+	runs, err := selectRuns(ctx, `SELECT oid, version, data FROM db_run
+		WHERE json_extract(data, '$.channeloid') = ? AND oid IN (`+marks+`)
+		ORDER BY json_extract(data, '$.createdts') ASC`, append([]any{channelId}, stale...)...)
+	return ids, runs, err
 }
 
 // selectRuns decodes the db_run rows a query selects (oid, version, data). Pure read (read pool).
@@ -289,6 +338,18 @@ func selectRuns(ctx context.Context, query string, args ...any) ([]*waveobj.Run,
 		}
 		return rtn, nil
 	})
+}
+
+// GetRunCandidatesByWorker returns, oldest first, the runs whose row text contains workerORef. That is a
+// substring match made without decoding any row, so it also hits a run that only quotes the oref (in its
+// goal, say): the caller confirms the oref is one of a phase's workers. Pure read (read pool).
+func GetRunCandidatesByWorker(ctx context.Context, workerORef string) ([]*waveobj.Run, error) {
+	if workerORef == "" {
+		return nil, nil
+	}
+	return selectRuns(ctx, `SELECT oid, version, data FROM db_run
+		WHERE instr(data, ?) > 0
+		ORDER BY json_extract(data, '$.createdts') ASC`, workerORef)
 }
 
 // GetRunsBySessionIds returns the runs launched under any of sessionIds (Run.SessionId), across channels.
@@ -323,24 +384,52 @@ func selectRunsWhereIn(ctx context.Context, field string, values []string) ([]*w
 const DefaultChannelMessageLimit = 500
 
 // GetChannelMessages returns a chronological (ts-ascending) window of a channel's messages from
-// db_channelmessage — the row-backed replacement for reading Channel.Messages off the blob. It selects
-// newest-first (hitting idx_channelmessage_channeloid_ts) then reverses to ascending. before==0 means
-// latest; before>0 returns only messages strictly older than that ts (load-older). Pure read.
+// db_channelmessage. It selects newest-first (hitting idx_channelmessage_channeloid_ts) then reverses to
+// ascending. before==0 means latest; before>0 returns only messages strictly older than that ts
+// (load-older). Pure read.
 func GetChannelMessages(ctx context.Context, channelId string, before int64, limit int) ([]*waveobj.ChannelMessage, error) {
 	if limit <= 0 {
 		limit = DefaultChannelMessageLimit
 	}
+	var rtn []*waveobj.ChannelMessage
+	var err error
+	if before > 0 {
+		rtn, err = selectMessages(ctx, `SELECT oid, version, data FROM db_channelmessage
+			WHERE json_extract(data, '$.channeloid') = ? AND json_extract(data, '$.ts') < ?
+			ORDER BY json_extract(data, '$.ts') DESC, rowid DESC LIMIT ?`, channelId, before, limit)
+	} else {
+		rtn, err = selectMessages(ctx, `SELECT oid, version, data FROM db_channelmessage
+			WHERE json_extract(data, '$.channeloid') = ?
+			ORDER BY json_extract(data, '$.ts') DESC, rowid DESC LIMIT ?`, channelId, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	// reverse to chronological ascending (the order the FE renders)
+	for i, j := 0, len(rtn)-1; i < j; i, j = i+1, j-1 {
+		rtn[i], rtn[j] = rtn[j], rtn[i]
+	}
+	return rtn, nil
+}
+
+// GetMessagesByRef returns every message whose RefORef is refORef, across channels, oldest first
+// (idx_channelmessage_reforef). It is how a worker's dispatch, directive and outcome messages are found
+// without walking any channel's history. Inside a write transaction, pass that transaction's context.
+func GetMessagesByRef(ctx context.Context, refORef string) ([]*waveobj.ChannelMessage, error) {
+	if refORef == "" {
+		return nil, nil
+	}
+	return selectMessages(ctx, `SELECT oid, version, data FROM db_channelmessage
+		WHERE json_extract(data, '$.reforef') = ?
+		ORDER BY json_extract(data, '$.ts') ASC, rowid ASC`, refORef)
+}
+
+// selectMessages decodes the db_channelmessage rows a query selects (oid, version, data). A read: on the
+// read pool, or on the caller's transaction when ctx carries one.
+func selectMessages(ctx context.Context, query string, args ...any) ([]*waveobj.ChannelMessage, error) {
 	return WithReadTxRtn(ctx, func(tx *TxWrap) ([]*waveobj.ChannelMessage, error) {
 		var rows []idDataType
-		if before > 0 {
-			tx.Select(&rows, `SELECT oid, version, data FROM db_channelmessage
-				WHERE json_extract(data, '$.channeloid') = ? AND json_extract(data, '$.ts') < ?
-				ORDER BY json_extract(data, '$.ts') DESC LIMIT ?`, channelId, before, limit)
-		} else {
-			tx.Select(&rows, `SELECT oid, version, data FROM db_channelmessage
-				WHERE json_extract(data, '$.channeloid') = ?
-				ORDER BY json_extract(data, '$.ts') DESC LIMIT ?`, channelId, limit)
-		}
+		tx.Select(&rows, query, args...)
 		rtn := make([]*waveobj.ChannelMessage, 0, len(rows))
 		for _, row := range rows {
 			obj, err := waveobj.FromJson(row.Data)
@@ -349,10 +438,6 @@ func GetChannelMessages(ctx context.Context, channelId string, before int64, lim
 			}
 			waveobj.SetVersion(obj, row.Version)
 			rtn = append(rtn, obj.(*waveobj.ChannelMessage))
-		}
-		// reverse to chronological ascending (matches blob order the FE renders)
-		for i, j := 0, len(rtn)-1; i < j; i, j = i+1, j-1 {
-			rtn[i], rtn[j] = rtn[j], rtn[i]
 		}
 		return rtn, nil
 	})
@@ -410,7 +495,7 @@ func StampWorkerOwner(ctx context.Context, workerTabORef, runORef, channelORef s
 	return err
 }
 
-// GetWorkerOwner reads the owning run:/channel: orefs stamped on a worker tab's meta (Phase-1/2 stamp).
+// GetWorkerOwner reads the owning run:/channel: orefs stamped on a worker tab's meta.
 // Empty strings when a key is absent. Errors only for a non-tab oref or a missing tab.
 func GetWorkerOwner(ctx context.Context, workerTabORef string) (runORef string, channelORef string, err error) {
 	oref, perr := waveobj.ParseORef(workerTabORef)

@@ -149,6 +149,9 @@ describe("buildRunPeek: a quick run", () => {
 describe("runPeekFacts", () => {
     it("is gone when the run no longer exists", () => {
         expect(runPeekFacts(undefined)).toEqual({ gone: true });
+    });
+
+    it("is present while the run exists", () => {
         expect(runPeekFacts(run())).toEqual({ gone: false });
     });
 });

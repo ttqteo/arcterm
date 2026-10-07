@@ -56,15 +56,8 @@ func TestCreateDagForRunCommitsDagLinkAndTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storedChannel, err := DBMustGet[*waveobj.Channel](ctx, ch.OID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if storedDag.OID != proposed.OID || storedRun.DagORef != proposed.OID || storedRun.Status != "executing" {
 		t.Fatalf("stored dag/run mismatch: dag=%q run=%+v", storedDag.OID, storedRun)
-	}
-	if len(storedChannel.Runs) != 1 || storedChannel.Runs[0].DagORef != proposed.OID || storedChannel.Runs[0].Status != "executing" {
-		t.Fatalf("embedded run mismatch: %+v", storedChannel.Runs)
 	}
 }
 
@@ -141,6 +134,10 @@ func TestCreateDagForRunRollsBackAllWrites(t *testing.T) {
 		})
 	})
 
+	channelBefore, err := DBMustGet[*waveobj.Channel](ctx, ch.OID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := CreateDagForRun(ctx, ch.OID, run.ID, proposed, transitionDagOwner); err == nil {
 		t.Fatal("want forced run update failure")
 	}
@@ -162,7 +159,8 @@ func TestCreateDagForRunRollsBackAllWrites(t *testing.T) {
 	if storedRun.DagORef != "" || storedRun.Status != "planning" {
 		t.Fatalf("row run changed despite rollback: %+v", storedRun)
 	}
-	if len(storedChannel.Runs) != 1 || storedChannel.Runs[0].DagORef != "" || storedChannel.Runs[0].Status != "planning" {
-		t.Fatalf("embedded run changed despite rollback: %+v", storedChannel.Runs)
+	// the channel's bump rolls back with the run write it announces
+	if storedChannel.Version != channelBefore.Version {
+		t.Fatalf("channel version %d changed despite rollback, was %d", storedChannel.Version, channelBefore.Version)
 	}
 }

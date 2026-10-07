@@ -60,3 +60,7 @@ test-results.xml
 /.waveterm/worktrees
 /.waveterm
 claude/arc-mod/.claude-plugin/types/
+claude/arc-view-mod/.claude-plugin/types/
+
+# orchestrator lead report scratch files (sealed into the run by wsh jarvis complete --report)
+/.arc-run-*-report.md

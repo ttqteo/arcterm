@@ -747,3 +747,27 @@ func TestSetChannelProfileRejectsUnknownLanding(t *testing.T) {
 		}
 	}
 }
+
+// A held land had no way off the attention list short of landing: dismissing it drops the item and leaves
+// the land held, and a run with no held land refuses rather than marking nothing.
+func TestAckRunDismissesAHeldLand(t *testing.T) {
+	ctx := context.Background()
+	ch, run := newEngineRun(t, ctx, "land-dismiss", jarvis.Orchestration_Engine)
+	dismiss := wshrpc.CommandAckRunData{ChannelId: ch.OID, RunId: run.ID, Land: true}
+	if err := (&WshServer{}).AckRunCommand(ctx, dismiss); err == nil {
+		t.Fatalf("dismissing a run with no held land succeeded")
+	}
+	if err := wstore.UpdateRun(ctx, ch.OID, run.ID, func(r *waveobj.Run) error {
+		r.Land = &waveobj.RunLand{State: orchestrate.LandState_Held, Reason: "the merge conflicts with main"}
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateRun: %v", err)
+	}
+	if err := (&WshServer{}).AckRunCommand(ctx, dismiss); err != nil {
+		t.Fatalf("AckRunCommand: %v", err)
+	}
+	got := mustRun(t, ctx, ch.OID, run.ID)
+	if got.Land == nil || !got.Land.Dismissed || got.Land.State != orchestrate.LandState_Held || got.VerificationAckTs != 0 {
+		t.Fatalf("land = %+v, ackts = %d; want a dismissed held land and the unverified outcome untouched", got.Land, got.VerificationAckTs)
+	}
+}

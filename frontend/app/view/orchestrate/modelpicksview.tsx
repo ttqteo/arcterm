@@ -42,7 +42,7 @@ export function ModelPicksBanner({ dagOref, runId }: { dagOref: string; runId: s
         >
             <span className="size-[7px] flex-none rounded-full bg-success" />
             <span className="text-[12.5px] text-ink-hi">
-                Plan review passed and put{" "}
+                The plan reviewer put{" "}
                 <b className="font-semibold">
                     {banner.onLight} of {banner.total} tasks
                 </b>{" "}

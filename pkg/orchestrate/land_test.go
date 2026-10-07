@@ -143,6 +143,9 @@ func TestLandMergesTheBranchIntoACleanCheckout(t *testing.T) {
 	if again := f.landRun(t, false); !reflect.DeepEqual(again, land) {
 		t.Fatalf("second land = %+v, want the first %+v", again, land)
 	}
+	if n := countEvents(t, f.ctx, f.channel, f.ownerID, waveobj.RunEventKindLanded); n != 1 {
+		t.Fatalf("%d landed events, want 1", n)
+	}
 }
 
 // the land runs while the lead is still finishing in its landing tree, so the first removal fails; four runs left

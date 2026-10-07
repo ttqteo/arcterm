@@ -24,9 +24,20 @@ func worktreeDir(projectPath, runID string) string {
 	return filepath.Join(projectPath, ".waveterm", "worktrees", runID)
 }
 
+// gitWaitDelay bounds the wait for a git command's output pipe once its process has exited or its context has
+// ended. A var for tests.
+var gitWaitDelay = planCommandWaitDelay
+
 func git(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	// without it the call waits for the pipe, not the process: a descendant git left behind (a hook, a helper)
+	// holds the pipe open past git's exit and past the context, and most callers hold a dag lock
+	cmd.WaitDelay = gitWaitDelay
 	out, err := cmd.CombinedOutput()
+	// git itself exited 0 and its output is read; only the abandoned pipe was cut
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("git %v: %w: %s", args, err, dropProgress(string(out)))
 	}

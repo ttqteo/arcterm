@@ -72,7 +72,7 @@ export interface ExtraDeps {
     openNewProject: () => void;
 }
 
-// The cockpit actions that have no chord to derive from. The two drills open a picker rather than
+// The cockpit actions that have no chord to derive from. A drill opens a picker rather than
 // acting, so there is one "Switch theme…" row instead of one row per theme.
 export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     return [

@@ -204,3 +204,29 @@ func TestLeadCompleteRefusesALandThatWouldConflict(t *testing.T) {
 		}
 	})
 }
+
+// the land runs after complete has closed the lead's tab, so the human's "land anyway" has to ride on complete
+func TestLeadCompleteCarriesTheForceLandToTheLand(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		f := newLeadCompleteFixture(t)
+		got, calls := false, 0
+		orig := landRun
+		landRun = func(_ context.Context, _, _ string, force bool) (*waveobj.RunLand, error) {
+			got, calls = force, calls+1
+			return nil, nil
+		}
+		t.Cleanup(func() { landRun = orig })
+		if err := (&WshServer{}).AdvanceRunCommand(context.Background(), wshrpc.CommandAdvanceRunData{
+			ChannelId: f.channelId, RunId: f.owner.ID, PhaseIdx: 0, Action: jarvis.RunAction_Complete, ForceLand: force,
+		}); err != nil {
+			t.Fatalf("AdvanceRunCommand: %v", err)
+		}
+		if f.seal == nil {
+			t.Fatal("completing the run dispatched no seal and land")
+		}
+		f.seal()
+		if calls != 1 || got != force {
+			t.Fatalf("land called %d times with force=%v, want once with force=%v", calls, got, force)
+		}
+	}
+}

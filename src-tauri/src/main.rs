@@ -31,7 +31,7 @@ struct WavesrvChild(Mutex<Option<Child>>);
 // the kernel terminates every process in the job. We never close it ourselves — the OS does at
 // process teardown, which is exactly when we want it to fire.
 #[cfg(windows)]
-struct JobHandle(isize);
+struct JobHandle(#[allow(dead_code)] isize);
 #[cfg(windows)]
 unsafe impl Send for JobHandle {}
 #[cfg(windows)]

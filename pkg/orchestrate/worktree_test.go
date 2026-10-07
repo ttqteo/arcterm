@@ -319,6 +319,46 @@ func TestEnsureRunWorktreeLeavesTheProjectIndexAloneForAStrayDirectory(t *testin
 	}
 }
 
+// a `git worktree add -b` cut off at its deadline leaves the branch and a part-written directory; the retry's add
+// must not trip on either
+func TestEnsureRunWorktreeRebuildsWhatAnInterruptedAddLeft(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	key := TaskWorktreeKey("owner-1", "t-1")
+	wt := worktreeDir(dir, key)
+	strayDir := func() {
+		if err := os.MkdirAll(filepath.Join(wt, "half"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name  string
+		leave func()
+	}{
+		{"the branch and an unregistered directory", func() {
+			gitCmd(t, dir, "branch", "wave/"+key, base)
+			strayDir()
+		}},
+		{"a directory and no branch", strayDir},
+		{"a registered tree with none of its files", func() {
+			gitCmd(t, dir, "worktree", "add", "--no-checkout", "-b", "wave/"+key, wt, base)
+		}},
+	}
+	for _, tc := range cases {
+		tc.leave()
+		got, head, created, err := EnsureRunWorktree(context.Background(), dir, key, base)
+		if err != nil || !created || got != wt || head != base {
+			t.Fatalf("%s: want a new tree at %s, got %q head=%q created=%v err=%v", tc.name, base, got, head, created, err)
+		}
+		if !worktreeOnBranch(context.Background(), wt, key) || gitCmd(t, wt, "status", "--porcelain") != "" {
+			t.Fatalf("%s: the rebuilt tree is not a clean checkout of its branch", tc.name)
+		}
+		if err := RemoveRunWorktree(context.Background(), dir, key); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestRemoveWorktreeDirKeepsTheBranch(t *testing.T) {
 	dir := newGitRepo(t)
 	base := gitCmd(t, dir, "rev-parse", "HEAD")

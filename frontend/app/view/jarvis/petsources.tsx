@@ -27,6 +27,7 @@ import {
     eventFromAsk,
     eventFromNotify,
     eventFromResume,
+    eventFromRunLanded,
     eventFromVolunteer,
     shouldSpeakAsk,
     type AskGateCtx,
@@ -134,8 +135,19 @@ export function PetSources({ model }: { model: AgentsViewModel }) {
                 );
             },
         });
+        // unscoped: a landed run is news on every surface, whichever run is in view
+        const unsubLanded = waveEventSubscribeSingle({
+            eventType: "run:event",
+            handler: (event) => {
+                const mapped = eventFromRunLanded(event?.data as RunEventData | undefined);
+                if (mapped != null) {
+                    pushPetEvent(mapped);
+                }
+            },
+        });
         return () => {
             mounted = false;
+            unsubLanded();
             unsubVolunteer();
             unsubNotify();
             unsubAsk();

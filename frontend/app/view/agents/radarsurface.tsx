@@ -3,66 +3,54 @@
 
 import { MOTION } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
-import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
+import { Skeleton, SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { AlertTriangle, Check, ChevronDown, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { projectListAtom, projectsAtom } from "./projectsstore";
+import { RadarAuditList } from "./radarauditlist";
 import { RadarFindingDetail, runPrimaryAction } from "./radarfindingdetail";
 import { RadarFindingsList } from "./radarfindingslist";
 import {
-    classifyScanState,
-    coverageRows,
-    filterByMode,
-    isResultsState,
-    lensHealthText,
-    lensTabs,
-    MODE_META,
+    auditRows,
+    auditSummary,
+    auditTally,
+    auditTallyText,
+    failedAuditShas,
+    failedAuditsSentence,
+    plural,
     primaryAction,
     radarLoadPhase,
-    rescanLabel,
-    resolveLens,
+    radarView,
+    reportMetaAge,
     resolveSelection,
-    scanHealth,
-    scanMetaLine,
-    type CoverageCell,
-    type HealthLine,
-    type LensKey,
+    type RadarView,
 } from "./radarmodel";
 import { RadarScanStatePanel } from "./radarscanstatepanel";
 import {
     currentReportAtom,
-    currentReportIdAtom,
     initRadarScope,
     initRadarScopeFromNewest,
     lastRadarProjectAtom,
     pickInitialScope,
-    radarLensPickAtom,
     radarLoadErrorAtom,
     radarReportsAtom,
     radarScopeAtom,
     radarSelectedIdAtom,
     resolveScope,
-    retryClustering,
+    retryFailedAudits,
     retryRadarLoad,
+    shownReportIdAtom,
     startScan,
     type RadarScope,
 } from "./radarstore";
-import { SubLabel } from "./sectionlabel";
 import { SurfaceError } from "./surfacescaffold";
-
-const COVERAGE_STATUS: Record<CoverageCell, string> = {
-    done: "done",
-    failed: "incomplete",
-    running: "running",
-    queued: "not run",
-};
 
 const POPOVER =
     "absolute top-[calc(100%+6px)] z-[60] box-border flex flex-col rounded-xl border border-edge-strong bg-surface-raised p-1.5 shadow-popover";
@@ -115,166 +103,77 @@ function ScopeSelector({ scope, onSelect }: { scope: RadarScope | null; onSelect
     );
 }
 
-function LensTabs({ report, lens, onPick }: { report: RadarReport; lens: LensKey; onPick: (l: LensKey) => void }) {
-    const tabs = lensTabs(report);
-    if (tabs.length === 0) {
-        return null;
-    }
-    return (
-        <div
-            role="group"
-            aria-label="Lens"
-            className="flex items-center gap-0.5 rounded-[9px] border border-edge-mid bg-surface p-0.5"
-        >
-            {tabs.map((t) => {
-                const on = lens === t.key;
-                return (
-                    <button
-                        key={t.key}
-                        type="button"
-                        aria-pressed={on}
-                        disabled={t.disabled}
-                        onClick={() => onPick(t.key)}
-                        className={cn(
-                            "flex items-center gap-[7px] rounded-[7px] px-2.5 py-1 text-[11.5px] font-semibold transition-colors duration-150 disabled:cursor-default",
-                            on
-                                ? "bg-surface-selected text-ink-hi"
-                                : t.disabled
-                                  ? "text-ink-faint"
-                                  : "text-muted hover:text-secondary"
-                        )}
-                    >
-                        {t.label}
-                        <span
-                            className={cn(
-                                "text-[10.5px] font-medium tabular-nums",
-                                t.failed ? "text-warning" : on ? "text-accent-soft" : "text-muted"
-                            )}
-                        >
-                            {t.failed && t.count === 0 ? "failed" : t.count}
-                        </span>
-                    </button>
-                );
-            })}
-        </div>
-    );
-}
-
-// Collector coverage, collapsed to a count until asked: the full table is detail, the count is the signal.
-function CoveragePopover({ report }: { report: RadarReport }) {
+// The line under the subject bar. With findings on screen the audit summary opens the audited-commit list,
+// which is otherwise the body itself.
+function MetaLine({ report, view }: { report: RadarReport; view: RadarView }) {
     const [open, setOpen] = useState(false);
-    const rows = coverageRows(report);
-    // a collector absent from coverage never ran (a report older than the collector), which is not a failure
-    const ran = rows.filter((r) => r.cell !== "queued");
-    const done = ran.filter((r) => r.cell === "done").length;
+    const rows = auditRows(report);
+    const tally = auditTally(rows);
+    const summary = auditSummary(tally);
     return (
-        <div className="relative">
-            <button
-                type="button"
-                aria-expanded={open}
-                onClick={() => setOpen((v) => !v)}
-                className="flex items-center gap-[7px] rounded-[7px] border border-edge-mid bg-surface px-2.5 py-[5px] text-[11.5px] font-semibold text-ink-mid hover:border-edge-strong"
-            >
-                <span className={cn("h-1.5 w-1.5 rounded-full", done === ran.length ? "bg-success" : "bg-warning")} />
-                <span className="font-medium tabular-nums">
-                    {done}/{ran.length}
-                </span>
-                collectors
-                <ChevronDown className="h-3 w-3 text-muted" />
-            </button>
+        <div className="relative flex items-center gap-[7px] pb-[11px] text-[11.5px] tabular-nums text-muted">
+            <span>{reportMetaAge(report, Date.now())} ·</span>
+            {view === "report" && rows.length > 0 ? (
+                <button
+                    type="button"
+                    data-radar-audits-toggle
+                    aria-expanded={open}
+                    onClick={() => setOpen((v) => !v)}
+                    className="flex items-center gap-[5px] text-secondary"
+                >
+                    {summary}
+                    <ChevronDown className="h-3 w-3 text-muted" />
+                </button>
+            ) : (
+                <span>{summary}</span>
+            )}
+            <span>· {plural(report.findings?.length ?? 0, "finding")}</span>
             {open ? <div className="fixed inset-0 z-50" onClick={() => setOpen(false)} /> : null}
-            <PopoverReveal open={open} origin="top right" className={cn(POPOVER, "right-0 w-[400px]")}>
-                <SubLabel className="px-2 pb-2 pt-1.5">Last scan coverage</SubLabel>
-                {rows.map((r) => (
-                    <div
-                        key={r.name}
-                        className="grid grid-cols-[16px_88px_minmax(0,1fr)_auto] items-center gap-2 rounded-[7px] px-2 py-[7px]"
-                    >
-                        {r.cell === "done" ? (
-                            <Check className="h-[13px] w-[13px] text-success" strokeWidth={2.4} />
-                        ) : r.cell === "queued" ? (
-                            <span />
-                        ) : (
-                            <X className="h-[13px] w-[13px] text-error" strokeWidth={2.4} />
-                        )}
-                        <span className="text-[11.5px] text-ink-hi">{r.name}</span>
-                        <span className="truncate text-xs text-muted">{r.examines}</span>
-                        <span
-                            className={cn(
-                                "text-[10.5px] uppercase tracking-[0.06em]",
-                                r.cell === "failed" ? "text-error" : "text-muted"
-                            )}
-                        >
-                            {COVERAGE_STATUS[r.cell]}
-                        </span>
-                    </div>
-                ))}
+            <PopoverReveal open={open} origin="top left" className={cn(POPOVER, "left-0 top-[22px] w-[660px]")}>
+                <div data-radar-audits-popover className="font-sans">
+                    <RadarAuditList
+                        rows={rows}
+                        title="Audited in the last scan"
+                        tally={auditTallyText(tally)}
+                        framed={false}
+                    />
+                </div>
             </PopoverReveal>
         </div>
     );
 }
 
-function HealthLineText({ line }: { line: HealthLine }) {
-    switch (line.kind) {
-        case "collectors":
-            return (
-                <span>
-                    The{" "}
-                    {line.collectors.map((c, i) => (
-                        <span key={c}>
-                            {i > 0 ? (i === line.collectors.length - 1 ? " and " : ", ") : null}
-                            <span className="text-[11.5px] text-ink-hi">{c}</span>
-                        </span>
-                    ))}{" "}
-                    {line.collectors.length === 1 ? "collector" : "collectors"} did not finish. Findings that rely on
-                    that evidence may be missing.
-                </span>
-            );
-        case "lens":
-            return <span>{lensHealthText(line.modes, line.carried)}</span>;
-        default:
-            return (
-                <span>
-                    The repository changed while this scan ran. Evidence may mix the tree before and after the change.
-                </span>
-            );
-    }
-}
-
-// One strip for every way a scan can be incomplete, each line with its own fix. No heading: a repository
-// change mid-scan is not an incomplete scan, so a shared title would be false for it.
-function ScanHealthStrip({ report }: { report: RadarReport }) {
-    const lines = scanHealth(report);
-    if (lines.length === 0) {
+// A failed audit read nothing, so its commit's sibling bugs are unknown rather than absent.
+function FailedAuditsStrip({ report }: { report: RadarReport }) {
+    const shas = failedAuditShas(report);
+    if (shas.length === 0) {
         return null;
     }
     return (
-        <div className="flex flex-none items-start gap-[11px] border-t border-edge-faint bg-warning/5 px-[18px] pb-[11px] pt-2.5">
-            <AlertTriangle className="mt-px h-[15px] w-[15px] flex-none text-warning" />
-            <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
-                {lines.map((line) => (
-                    <div
-                        key={line.kind}
-                        className={cn(
-                            "flex min-h-[22px] items-center gap-3 text-[12.5px]",
-                            line.kind === "repository-changed" ? "text-muted" : "text-secondary"
-                        )}
-                    >
-                        <span className="min-w-0 flex-1">
-                            <HealthLineText line={line} />
+        <div
+            data-radar-health-strip
+            className="flex flex-none items-center gap-[11px] border-t border-edge-faint bg-warning/5 px-[18px] pb-[11px] pt-2.5"
+        >
+            <AlertTriangle className="h-[15px] w-[15px] flex-none text-warning" />
+            <span className="min-w-0 flex-1 text-[12.5px] text-secondary">
+                {failedAuditsSentence(shas).map((part, i) =>
+                    part.sha ? (
+                        <span key={i} className="font-mono text-[11.5px] text-ink-hi">
+                            {part.text}
                         </span>
-                        {line.kind === "lens" ? (
-                            <button
-                                type="button"
-                                onClick={() => fireAndForget(() => retryClustering(report.oid))}
-                                className="flex-none rounded-md border border-warning/40 px-2.5 py-1 text-[11.5px] font-semibold text-warning-soft hover:bg-warning/10"
-                            >
-                                {line.modes.length === 1 ? `Retry ${MODE_META[line.modes[0]].label}` : "Retry lenses"}
-                            </button>
-                        ) : null}
-                    </div>
-                ))}
-            </div>
+                    ) : (
+                        part.text
+                    )
+                )}
+            </span>
+            <button
+                type="button"
+                data-radar-retry-audits
+                onClick={() => fireAndForget(() => retryFailedAudits(report.oid))}
+                className="flex-none rounded-md border border-warning/40 px-2.5 py-1 text-[11.5px] font-semibold text-warning-soft hover:bg-warning/10"
+            >
+                Retry failed audits
+            </button>
         </div>
     );
 }
@@ -286,7 +185,7 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
     const report = useAtomValue(currentReportAtom);
     const [selectedId, setSelectedId] = useAtom(radarSelectedIdAtom);
     const reports = useAtomValue(radarReportsAtom);
-    const currentReportId = useAtomValue(currentReportIdAtom);
+    const currentReportId = useAtomValue(shownReportIdAtom);
     const loadError = useAtomValue(radarLoadErrorAtom);
     const persisted = useAtomValue(lastRadarProjectAtom);
     const scopeBlocked = pickInitialScope(scope, persisted, filter, projects).action === "wait";
@@ -349,12 +248,10 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
         }
     }, []);
 
-    const state = classifyScanState(report);
-    const isResults = isResultsState(state);
-    const [lensPick, setLensPick] = useAtom(radarLensPickAtom);
-    // a lens that vanished or failed empty after a re-scan falls back to All, so the list is never stuck empty
-    const lens = resolveLens(lensTabs(report), lensPick);
-    const findings = filterByMode(report?.findings ?? [], lens);
+    const view = radarView(report);
+    // the report views carry the meta line and the failed-audit strip; an old-format report has neither
+    const isReport = view === "report" || view === "audits";
+    const findings = report?.findings ?? [];
     const effectiveSelected = resolveSelection(findings, selectedId);
     const selectedFinding = findings.find((f) => f.id === effectiveSelected);
 
@@ -374,35 +271,29 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
                 {loadError != null ? (
                     <SurfaceError message={loadError} onRetry={() => fireAndForget(retryRadarLoad)} />
                 ) : null}
-                {/* subject bar: which repository, which lens, and how complete its last scan was */}
+                {/* subject bar: which repository, and what its last scan audited */}
                 <div className="flex-none px-[18px] pt-3.5">
                     <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 pb-1.5">
                         <h1 className="flex-none text-[16px] font-bold text-primary">Radar</h1>
                         <ScopeSelector scope={scope} onSelect={selectScope} />
-                        {isResults && report ? <LensTabs report={report} lens={lens} onPick={setLensPick} /> : null}
                         <span className="flex-1" />
-                        {isResults && report ? <CoveragePopover report={report} /> : null}
-                        {isResults && scope ? (
+                        {(isReport || view === "old-format") && scope ? (
                             <button
                                 type="button"
+                                data-radar-rescan
                                 onClick={() => fireAndForget(() => startScan(scope.path))}
                                 className="flex items-center gap-[7px] rounded-[7px] border border-edge-mid bg-surface-raised px-[11px] py-[5px] text-[11.5px] font-semibold text-secondary hover:border-edge-strong"
                             >
                                 <RefreshCw className="h-3 w-3" />
-                                {rescanLabel(state)}
+                                Re-scan
                             </button>
                         ) : null}
                     </div>
-                    {isResults && report ? (
-                        <div className="pb-[11px] text-[11.5px] tabular-nums text-muted">
-                            {scanMetaLine(report, Date.now())}
-                        </div>
-                    ) : (
-                        <div className="pb-2" />
-                    )}
+                    {isReport && report ? <MetaLine report={report} view={view} /> : <div className="pb-2" />}
                 </div>
 
-                <div className="min-h-0 flex-1">
+                {phase === "ready" && isReport && report ? <FailedAuditsStrip report={report} /> : null}
+                <div data-radar-view={phase === "ready" ? view : undefined} className="min-h-0 flex-1">
                     <AnimatePresence mode="wait" initial={false}>
                         {phase === "loading" ? (
                             <motion.div
@@ -415,37 +306,32 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
                             >
                                 <RadarBodySkeleton />
                             </motion.div>
-                        ) : phase === "error" ? null : isResults && report ? (
+                        ) : phase === "error" ? null : view === "report" && report ? (
                             <motion.div
                                 key="results"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
-                                className="flex h-full flex-col"
+                                className="flex h-full border-t border-edge-faint"
                             >
-                                <ScanHealthStrip report={report} />
-                                <div className="flex min-h-0 flex-1 border-t border-edge-faint">
-                                    <RadarFindingsList
-                                        reportId={report.oid}
-                                        findings={findings}
-                                        selectedId={effectiveSelected}
-                                        onSelect={setSelectedId}
-                                        onActivate={selectedFinding ? activate : undefined}
-                                        activateLabel={
-                                            selectedFinding
-                                                ? primaryAction(selectedFinding).label.toLowerCase()
-                                                : undefined
-                                        }
-                                    />
-                                    {selectedFinding ? (
-                                        <RadarFindingDetail model={model} report={report} finding={selectedFinding} />
-                                    ) : (
-                                        <div className="flex flex-1 items-center justify-center text-muted-foreground">
-                                            Select a finding
-                                        </div>
-                                    )}
-                                </div>
+                                <RadarFindingsList
+                                    reportId={report.oid}
+                                    findings={findings}
+                                    selectedId={effectiveSelected}
+                                    onSelect={setSelectedId}
+                                    onActivate={selectedFinding ? activate : undefined}
+                                    activateLabel={
+                                        selectedFinding ? primaryAction(selectedFinding).label.toLowerCase() : undefined
+                                    }
+                                />
+                                {selectedFinding ? (
+                                    <RadarFindingDetail model={model} report={report} finding={selectedFinding} />
+                                ) : (
+                                    <div className="flex flex-1 items-center justify-center text-muted-foreground">
+                                        Select a finding
+                                    </div>
+                                )}
                             </motion.div>
                         ) : (
                             <motion.div
@@ -457,7 +343,7 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
                                 className="h-full border-t border-edge-faint"
                             >
                                 <RadarScanStatePanel
-                                    state={state}
+                                    view={view}
                                     report={report}
                                     scopeName={scope?.name}
                                     scopePath={scope?.path}
@@ -475,16 +361,14 @@ export function RadarSurface({ model }: { model: AgentsViewModel }) {
 function RadarBodySkeleton() {
     return (
         <div aria-hidden="true" className="flex h-full border-t border-edge-faint">
-            <div className="flex w-[360px] shrink-0 flex-col gap-2.5 border-r border-edge-faint p-3.5">
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                    <SkeletonLine key={i} className="h-[46px] w-full rounded-[9px]" />
-                ))}
-            </div>
+            <SkeletonRows className="w-[360px] shrink-0 space-y-2.5 border-r border-edge-faint p-3.5">
+                {(i) => <SkeletonLine key={i} className="h-[46px] w-full rounded-[9px]" />}
+            </SkeletonRows>
             <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">
                 <SkeletonLine className="h-[20px] w-[55%]" />
                 <SkeletonLine className="h-[11px] w-[80%]" />
                 <SkeletonLine className="h-[11px] w-[70%]" />
-                <Skeleton className="mt-2 h-[120px] w-full rounded-[10px]" />
+                <Skeleton className="mt-2 min-h-0 w-full flex-1 rounded-[10px]" />
             </div>
         </div>
     );

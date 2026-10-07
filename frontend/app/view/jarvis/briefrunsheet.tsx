@@ -23,6 +23,7 @@ import { MAX_PARALLELISM } from "@/app/view/agents/runconfig";
 import { useDagGroup } from "@/app/view/orchestrate/dagstore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { Check, Copy } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { REGION_LABEL } from "./briefstyle";
 import {
@@ -45,6 +46,33 @@ const FIELD = "rounded-[7px] border border-border bg-background px-2 py-1 text-[
 export const SHEET_BTN =
     "cursor-pointer rounded-[7px] border border-border bg-surface-raised px-2.5 py-1 text-[11px] font-semibold text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 
+const RUN_ID_SHOWN = 8;
+const COPIED_MS = 1200;
+
+// The header's run id: the short form is what is read, the whole id is what is copied.
+function RunIdChip({ id }: { id: string }) {
+    const [copied, setCopied] = useState(false);
+    const copy = () =>
+        fireAndForget(async () => {
+            await navigator.clipboard.writeText(id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), COPIED_MS);
+        });
+    return (
+        <button
+            type="button"
+            data-run-id={id}
+            onClick={copy}
+            title={copied ? "Copied" : `Copy run id ${id}`}
+            aria-label="Copy run id"
+            className="inline-flex flex-none cursor-pointer items-center gap-1.5 rounded-[5px] border border-border bg-surface-raised px-1.5 py-px text-secondary hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            {id.slice(0, RUN_ID_SHOWN)}
+            {copied ? <Check size={11} aria-hidden className="text-success" /> : <Copy size={11} aria-hidden />}
+        </button>
+    );
+}
+
 // The one panel both faces use. `face` is what the sheet is drawing, and it is on the element rather than
 // inferred from the subject so a check can tell a sheet that never opened from one that opened empty.
 export function SheetShell({
@@ -52,6 +80,7 @@ export function SheetShell({
     label,
     title,
     meta,
+    runId,
     actions,
     onClose,
     children,
@@ -59,8 +88,9 @@ export function SheetShell({
     face: string;
     label: string;
     title: string;
-    // the run the header is showing, printed beside the project it belongs to
+    // the run the header is showing, printed under the project it belongs to
     meta?: string;
+    runId?: string;
     actions?: ReactNode;
     onClose: () => void;
     children: ReactNode;
@@ -72,15 +102,27 @@ export function SheetShell({
             // positioning, width, scrim and edge now belong to ModalShell variant="sheet"
             className="flex h-full min-h-0 flex-col"
         >
-            <header className="flex flex-none items-center gap-2.5 border-b border-edge-faint px-4 py-2.5">
-                <span className={cn(REGION_LABEL, "text-accent-soft")}>{label}</span>
-                <span className="min-w-0 truncate text-[13.5px] font-semibold text-ink-hi">{title}</span>
-                {meta ? <span className="min-w-0 truncate text-[10.5px] tabular-nums text-muted">{meta}</span> : null}
-                <span className="flex-1" />
-                {actions}
-                <button type="button" aria-label="Close detail sheet" onClick={onClose} className={SHEET_BTN}>
-                    Close
-                </button>
+            <header className="flex flex-none items-center gap-3 border-b border-edge-faint px-4 py-2.5">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex min-w-0 items-baseline gap-2.5">
+                        <span className={cn(REGION_LABEL, "text-accent-soft")}>{label}</span>
+                        <span title={title} className="min-w-0 truncate text-[13.5px] font-semibold text-ink-hi">
+                            {title}
+                        </span>
+                    </div>
+                    {meta || runId ? (
+                        <div className="flex min-w-0 items-center gap-2 font-mono text-[10.5px] text-muted">
+                            {runId ? <RunIdChip id={runId} /> : null}
+                            {meta ? <span className="min-w-0 truncate">{meta}</span> : null}
+                        </div>
+                    ) : null}
+                </div>
+                <div className="flex flex-none items-center gap-2.5 whitespace-nowrap">
+                    {actions}
+                    <button type="button" aria-label="Close detail sheet" onClick={onClose} className={SHEET_BTN}>
+                        Close
+                    </button>
+                </div>
             </header>
             {children}
         </aside>

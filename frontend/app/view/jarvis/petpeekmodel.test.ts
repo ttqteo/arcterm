@@ -209,52 +209,55 @@ describe("queueRows — an unverified run settles in place", () => {
     it("puts the ack on the button and the escort beside it", () => {
         const row = queueRows([UNVERIFIED])[0];
         expect(row.primary).toMatchObject({ verb: "ack", label: "Acknowledge", channelId: CH, runId: RUN });
-        expect(row.secondary).toMatchObject({ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } });
+        expect(row.links).toMatchObject([{ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } }]);
     });
 
     it("gives a kind no click settles no second act", () => {
-        expect(queueRows([DAG_BLOCKED, ESCALATION, ASK]).map((r) => r.secondary)).toEqual([null, null, null]);
+        expect(queueRows([GATE, DAG_BLOCKED, ESCALATION, ASK]).map((r) => r.links)).toEqual([[], [], [], []]);
     });
 });
 
 // the peek used to escort these away while the Brief's queue settled them in place (attentionact.ts)
-describe("queueRows — a gate and a failed task settle in place", () => {
-    it("puts Approve on a run's gate, keeps its label, and escorts beside it", () => {
-        const row = queueRows([GATE])[0];
-        expect(row.primary).toMatchObject({ verb: "approve-phase", label: "Approve", channelId: CH, runId: RUN, phaseIdx: 0 }); // prettier-ignore
-        expect(row.secondary).toMatchObject({ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } });
-    });
-
-    it("approves a dag task's gate", () => {
+describe("queueRows — a dag gate and a failed task settle in place", () => {
+    it("approves a dag task's gate, and escorts beside it", () => {
         const row = queueRows([{ ...DAG_GATE, taskid: "t-3" }])[0];
         expect(row.primary).toMatchObject({ verb: "approve-task", label: "Approve", taskId: "t-3" });
+        expect(row.links).toMatchObject([{ verb: "open", target: { kind: "oref", ref: `run:${RUN}` } }]);
     });
 
     it("retries a failed task, but only escorts a blocked dag that names none", () => {
         const failed = queueRows([{ ...DAG_BLOCKED, taskid: "t-4", retry: true }])[0];
         expect(failed.primary).toMatchObject({ verb: "retry-task", label: "Retry", taskId: "t-4" });
-        expect(failed.secondary).toMatchObject({ verb: "open" });
+        expect(failed.links).toMatchObject([{ verb: "open" }]);
         expect(queueRows([DAG_BLOCKED])[0].primary).toMatchObject({ verb: "open", label: "Review" });
     });
 });
 
-describe("queueRows — a held land", () => {
-    const HELD = item({ kind: "run-land-held", key: "run-land-held:" + RUN, text: "The run's branch was not merged back: git refused the merge" }); // prettier-ignore
+describe("queueRows — a held land lands again or dismisses in place", () => {
+    const HELD = item({ kind: "run-land-held", key: "run-land-held:" + RUN, text: "The run's branch was not merged back: the merge conflicts with main" }); // prettier-ignore
 
     // the item's action is "Review", which names the escort; relabelling the retry with it would hide what it does
-    it("keeps Land again on the button, shows the reason, and escorts beside it", () => {
-        const [row] = queueRows([HELD]);
-        expect(row.primary).toMatchObject({ verb: "land", label: "Land again" });
-        expect(row.secondary).toMatchObject({ verb: "open" });
-        expect(row.detail).toBe(HELD.text);
-        expect(rowKindLabel(row.kind)).toBe("Not merged");
+    it("keeps Land again on the button, with Dismiss and the escort beside it", () => {
+        const row = queueRows([HELD])[0];
+        expect(row.primary).toMatchObject({ verb: "land", label: "Land again", channelId: CH, runId: RUN });
+        expect(row.links).toMatchObject([
+            { verb: "ack", label: "Dismiss", land: true, channelId: CH, runId: RUN },
+            { verb: "open", target: { kind: "oref", ref: `run:${RUN}` } },
+        ]);
+        expect(enterHintLabel(row.primary)).toBe("land again");
+        expect(rowPeekTarget(row)).toEqual({ kind: "oref", ref: `run:${RUN}` });
+    });
+
+    it("shows the held reason and names the kind in words", () => {
+        expect(queueRows([HELD])[0].detail).toBe("The run's branch was not merged back: the merge conflicts with main");
+        expect(rowKindLabel("run-land-held")).toBe("Land held");
     });
 });
 
 describe("enterHintLabel", () => {
     it("names what Enter does to the focused row", () => {
         expect(enterHintLabel(queueRows([item({ kind: "run-unverified", key: "u" })])[0].primary)).toBe("acknowledge");
-        expect(enterHintLabel(queueRows([GATE])[0].primary)).toBe("approve");
+        expect(enterHintLabel(queueRows([{ ...DAG_GATE, taskid: "t-3" }])[0].primary)).toBe("approve");
         expect(enterHintLabel(queueRows([{ ...DAG_BLOCKED, taskid: "t-4", retry: true }])[0].primary)).toBe("retry");
         expect(enterHintLabel(queueRows([ESCALATION])[0].primary)).toBe("open");
         expect(enterHintLabel(queueRows([item({ kind: "run-land-held", key: "l" })])[0].primary)).toBe("land again");
@@ -280,8 +283,7 @@ describe("peekConditions — every standing condition, readout marked", () => {
 
 describe("rowKindLabel — a row names its kind in a word", () => {
     it("reads every queue kind", () => {
-        expect(["gate", "dag-gate", "escalation", "dag-blocked", "ask"].map(rowKindLabel)).toEqual([
-            "Gate",
+        expect(["dag-gate", "escalation", "dag-blocked", "ask"].map(rowKindLabel)).toEqual([
             "Gate",
             "Escalation",
             "Blocked",

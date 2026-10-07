@@ -60,7 +60,7 @@ describe("effortPeekFacts", () => {
     it("is gone when the effort is missing", () => {
         expect(effortPeekFacts(undefined)).toEqual({ gone: true });
     });
-    it("has no focus when present", () => {
+    it("is present when the effort exists", () => {
         expect(effortPeekFacts(EFFORT)).toEqual({ gone: false });
     });
 });

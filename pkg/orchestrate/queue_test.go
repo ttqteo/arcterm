@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
@@ -171,7 +172,7 @@ func TestUnconfirmedSessionAnswerRepublishesToTheHuman(t *testing.T) {
 
 func TestDispatchFailureWakesLeadAfterCommit(t *testing.T) {
 	f := newFakeLead(t)
-	g := &waveobj.TaskGroup{OID: "dag-1", ChannelId: wakeChannel, RunID: wakeRun, Tasks: []waveobj.TaskNode{{ID: "t-3", State: TaskState_Ready}}}
+	g := &waveobj.TaskGroup{OID: "dag-1", ChannelId: wakeChannel, RunID: wakeRun, Tasks: []waveobj.TaskNode{{ID: "t-3", State: TaskState_Ready, Attempts: MaxAutoDispatchRetries, LastFailureKind: FailureKindSpawn}}}
 	var afterCommit []func()
 
 	failDispatch(context.Background(), g, "t-3", FailureKindSpawn, errors.New("pty refused"), &afterCommit)
@@ -392,4 +393,40 @@ func TestForwardTaskRejectsNothingToForward(t *testing.T) {
 	if err := ForwardTask(h.ctx, h.dagID, "t-0", "  "); err == nil {
 		t.Fatal("a forward without a note tells the human nothing")
 	}
+}
+
+// the event is appended after the batch commits, so it carries the time the dispatch failed
+func TestDispatchFailureEventKeepsItsOwnTime(t *testing.T) {
+	newFakeLead(t)
+	var stamped int64
+	prev := appendRunEventAt
+	appendRunEventAt = func(_ context.Context, ts int64, _, _, kind string, _ *int, _ any) {
+		if kind == waveobj.RunEventKindTaskFailed {
+			stamped = ts
+		}
+	}
+	t.Cleanup(func() { appendRunEventAt = prev })
+	g := &waveobj.TaskGroup{OID: "dag-1", ChannelId: wakeChannel, RunID: wakeRun, Tasks: []waveobj.TaskNode{{ID: "t-3", State: TaskState_Ready, Attempts: MaxAutoDispatchRetries, LastFailureKind: FailureKindSpawn}}}
+	var afterCommit []func()
+
+	failDispatch(context.Background(), g, "t-3", FailureKindSpawn, errors.New("pty refused"), &afterCommit)
+	failed := time.Now().UnixMilli()
+	time.Sleep(30 * time.Millisecond)
+	for _, fn := range afterCommit {
+		fn()
+	}
+	if stamped == 0 || stamped > failed {
+		t.Fatalf("task-failed stamped %d, want the failure's time (at most %d)", stamped, failed)
+	}
+}
+
+// timedEventsReachTheFakeLead sends an event appended with its own time to the fake lead's rows, which
+// only capture the untimed seam. Call it after newFakeLead.
+func timedEventsReachTheFakeLead(t *testing.T) {
+	t.Helper()
+	prev := appendRunEventAt
+	appendRunEventAt = func(ctx context.Context, _ int64, channelId, runId, kind string, phaseIdx *int, detail any) {
+		appendRunEvent(ctx, channelId, runId, kind, phaseIdx, detail)
+	}
+	restoreAfterStages(t, func() { appendRunEventAt = prev })
 }

@@ -79,8 +79,11 @@ func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj
 	if err := saveLand(ctx, channelID, runID, land); err != nil {
 		return nil, err
 	}
-	if land.State == LandState_Held {
+	switch land.State {
+	case LandState_Held:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
+	case LandState_Landed:
+		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLanded, nil, map[string]any{"commit": land.Commit, "title": landTitle(run, g)})
 	}
 	return land, nil
 }

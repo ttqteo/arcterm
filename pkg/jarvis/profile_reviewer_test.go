@@ -149,9 +149,6 @@ func TestMigrateReviewerRoutePins(t *testing.T) {
 	if !routeEq(storedRun.ReviewerRoute, &cheap) {
 		t.Fatalf("run reviewer route = %+v", storedRun.ReviewerRoute)
 	}
-	if len(storedCh.Runs) != 1 || !routeEq(storedCh.Runs[0].ReviewerRoute, &cheap) {
-		t.Fatalf("channel blob runs = %+v", storedCh.Runs)
-	}
 	storedDag, err := wstore.GetDag(ctx, dag.OID)
 	if err != nil {
 		t.Fatal(err)

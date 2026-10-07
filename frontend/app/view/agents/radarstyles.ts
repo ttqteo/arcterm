@@ -4,10 +4,10 @@
 // Presentational token maps for the Radar surface, shared by the master list and detail pane so the
 // two never disagree on a color. Pure class-string lookups — no logic lives here (see radarmodel.ts).
 
-import type { InvestigationTone, RadarMode, RadarTone } from "./radarmodel";
+import type { AuditState, InvestigationTone, ListGroupMeta } from "./radarmodel";
 
 // Severity → pill classes + dot color. Unknown severities fall back to the low/accent styling.
-export const SEVERITY_PILL: Record<string, string> = {
+const SEVERITY_PILL: Record<string, string> = {
     high: "bg-error/15 text-error",
     medium: "bg-warning/15 text-warning",
     low: "bg-accent/15 text-accent",
@@ -17,19 +17,25 @@ export function severityPill(severity: string): string {
     return SEVERITY_PILL[severity] ?? SEVERITY_PILL.low;
 }
 
-// Lifecycle tone → text/dot color, keyed by GROUP_META.tone.
-export const TONE_TEXT: Record<RadarTone, string> = {
-    new: "text-accent",
-    recurring: "text-warning",
-    nolonger: "text-success",
+// List group tone → text/dot color, keyed by ListGroupMeta.tone.
+export const LIST_TONE_TEXT: Record<ListGroupMeta["tone"], string> = {
+    open: "text-accent",
     muted: "text-muted",
 };
 
-export const TONE_DOT: Record<RadarTone, string> = {
-    new: "bg-accent",
-    recurring: "bg-warning",
-    nolonger: "bg-success",
+export const LIST_TONE_DOT: Record<ListGroupMeta["tone"], string> = {
+    open: "bg-accent",
     muted: "bg-muted",
+};
+
+// Audit state → status text color. The live scan list draws a clean row muted instead, since a finished
+// clean audit is not what to watch there.
+export const AUDIT_STATE_TEXT: Record<AuditState, string> = {
+    queued: "text-muted",
+    running: "text-accent-soft",
+    clean: "text-success",
+    hits: "text-accent-soft",
+    failed: "text-error",
 };
 
 // Investigation tone → text and dot color, keyed by InvestigationView.tone.
@@ -46,15 +52,3 @@ export const INVESTIGATION_DOT: Record<InvestigationTone, string> = {
     warning: "bg-warning",
     muted: "bg-muted",
 };
-
-// Mode → badge classes (border + faint fill + text), all @theme tokens. Correctness reuses the
-// surface's existing accent-soft treatment; security/debt reuse error/warning tones.
-export const MODE_BADGE: Record<RadarMode, string> = {
-    correctness: "border-accent/25 bg-accent/10 text-accent-soft",
-    security: "border-error/25 bg-error/10 text-error",
-    debt: "border-warning/25 bg-warning/10 text-warning",
-};
-
-export function modeBadge(mode: RadarMode): string {
-    return MODE_BADGE[mode] ?? MODE_BADGE.correctness;
-}

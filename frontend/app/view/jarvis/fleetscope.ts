@@ -10,8 +10,11 @@ import { buildFleetSnapshot, type WorkerState } from "@/app/view/agents/jarvisde
 
 export interface RecordFleetInput {
     channels: Channel[];
+    // each channel's messages, keyed by channel id (channelMessagesAtom)
+    messagesByChannel: Record<string, ChannelMessage[]>;
     agents: AgentVM[];
-    attributedRunORefs: string[];
+    // the record's attributed runs; each run row names its owning channel
+    attributedRuns: Run[];
 }
 
 export interface RecordFleet {
@@ -43,18 +46,20 @@ export function fleetCountsLine(
 }
 
 export function fleetForRecord(input: RecordFleetInput): RecordFleet {
-    const wanted = new Set(input.attributedRunORefs ?? []);
-    if (wanted.size === 0) {
-        return { workers: [], channelCount: 0 };
+    const owning = new Set<string>();
+    for (const run of input.attributedRuns ?? []) {
+        if (run.channeloid) {
+            owning.add(run.channeloid);
+        }
     }
     const workers: WorkerState[] = [];
     const seen = new Set<string>();
     let channelCount = 0;
+    // over the channel snapshot, not the owning ids: a run whose channel was deleted counts no channel
     for (const channel of input.channels ?? []) {
-        const owns = (channel.runs ?? []).some((r) => wanted.has("run:" + r.id));
-        if (!owns) continue;
+        if (!owning.has(channel.oid)) continue;
         channelCount++;
-        for (const w of buildFleetSnapshot(channel, input.agents)) {
+        for (const w of buildFleetSnapshot(input.messagesByChannel[channel.oid] ?? [], input.agents)) {
             if (seen.has(w.oref)) continue;
             seen.add(w.oref);
             workers.push(w);

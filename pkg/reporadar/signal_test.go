@@ -3,13 +3,9 @@
 
 package reporadar
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-)
-
-func TestSignalIDStableAndDedupes(t *testing.T) {
+func TestSignalIDStable(t *testing.T) {
 	a := newSignal(CollectorGit, "commit:a3f9c1", 100, []string{"src/x.ts"}, "changed x", nil, "")
 	b := newSignal(CollectorGit, "commit:a3f9c1", 100, []string{"src/x.ts"}, "changed x", nil, "")
 	if a.ID != b.ID {
@@ -19,8 +15,7 @@ func TestSignalIDStableAndDedupes(t *testing.T) {
 	if a.ID == c.ID {
 		t.Fatal("different source ref must yield different ID")
 	}
-	deduped := dedupSignals([]waveobj.RadarSignal{a, b, c})
-	if len(deduped) != 2 {
-		t.Fatalf("expected 2 after dedup, got %d", len(deduped))
+	if a.ContentHash != b.ContentHash {
+		t.Fatal("same payload must yield same content hash")
 	}
 }

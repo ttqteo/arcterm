@@ -45,13 +45,13 @@ func TestResumePhaseRefusesEveryOtherPhaseState(t *testing.T) {
 func TestResumeWorkerArgs(t *testing.T) {
 	base := []string{"--dangerously-skip-permissions", "--model", "opus"}
 	for runtime, flag := range map[string]string{"claude": "--resume", "": "--resume", "pi": "--session"} {
-		got, ok := ResumeWorkerArgs(runtime, "sess-1", base)
-		want := []string{flag, "sess-1", "--dangerously-skip-permissions", "--model", "opus", resumeNudge}
+		got, ok := ResumeWorkerArgs(runtime, "sess-1", base, ResumeNudge)
+		want := []string{flag, "sess-1", "--dangerously-skip-permissions", "--model", "opus", ResumeNudge}
 		if !ok || !reflect.DeepEqual(got, want) {
 			t.Errorf("runtime %q: got %v %v, want %v", runtime, got, ok, want)
 		}
 	}
-	if _, ok := ResumeWorkerArgs("codex", "sess-1", base); ok {
+	if _, ok := ResumeWorkerArgs("codex", "sess-1", base, ResumeNudge); ok {
 		t.Error("codex cannot resume a session")
 	}
 }
@@ -89,14 +89,14 @@ func TestResumeRunWorkerRestartsTheBlockInItsSession(t *testing.T) {
 		waveobj.MetaKey_CmdArgs: []string{"--dangerously-skip-permissions", "--session-id", "sess-1", "the task"},
 		"agent:baseargs":        []string{"--dangerously-skip-permissions"},
 	})
-	if err := ResumeRunWorker(context.Background(), tabORef, "claude", "sess-1"); err != nil {
+	if err := ResumeRunWorker(context.Background(), tabORef, "claude", "sess-1", ResumeNudge); err != nil {
 		t.Fatalf("ResumeRunWorker: %v", err)
 	}
 	block, err := wstore.DBMustGet[*waveobj.Block](context.Background(), blockId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"--resume", "sess-1", "--dangerously-skip-permissions", resumeNudge}
+	want := []string{"--resume", "sess-1", "--dangerously-skip-permissions", ResumeNudge}
 	if got := block.Meta.GetStringList(waveobj.MetaKey_CmdArgs); !reflect.DeepEqual(got, want) {
 		t.Fatalf("cmd:args = %v, want %v", got, want)
 	}
@@ -108,11 +108,11 @@ func TestResumeRunWorkerRestartsTheBlockInItsSession(t *testing.T) {
 func TestResumeRunWorkerRefusesWithoutATabOrBaseArgs(t *testing.T) {
 	started := stubWorkerStart(t, nil)
 	gone := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
-	if err := ResumeRunWorker(context.Background(), gone, "claude", "sess-1"); err == nil {
+	if err := ResumeRunWorker(context.Background(), gone, "claude", "sess-1", ResumeNudge); err == nil {
 		t.Error("a missing tab: want an error")
 	}
 	legacy, _ := newWorkerTab(t, waveobj.MetaMapType{waveobj.MetaKey_CmdArgs: []string{"the task"}})
-	if err := ResumeRunWorker(context.Background(), legacy, "claude", "sess-1"); err == nil {
+	if err := ResumeRunWorker(context.Background(), legacy, "claude", "sess-1", ResumeNudge); err == nil {
 		t.Error("a block launched before resume support: want an error")
 	}
 	if len(*started) != 0 {

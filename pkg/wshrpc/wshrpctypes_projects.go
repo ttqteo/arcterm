@@ -11,7 +11,6 @@ type ProjectCommands interface {
 	CreateWorktreeCommand(ctx context.Context, data CommandCreateWorktreeData) (CommandCreateWorktreeRtnData, error)
 	ListBranchesCommand(ctx context.Context, data CommandListBranchesData) (CommandListBranchesRtnData, error)
 	GitChangesCommand(ctx context.Context, data CommandGitChangesData) (*CommandGitChangesRtnData, error)
-	GitRevertCommand(ctx context.Context, data CommandGitRevertData) error
 }
 
 type CommandCreateProjectData struct {
@@ -72,11 +71,4 @@ type CommandGitChangesRtnData struct {
 	// built from, so a commit landing under the surface costs one log re-read and a quiet tick costs
 	// nothing.
 	Head string `json:"head,omitempty"`
-}
-
-type CommandGitRevertData struct {
-	Cwd    string `json:"cwd"`
-	Path   string `json:"path"`
-	Status string `json:"status"`          // porcelain status; used for whole-file revert
-	Patch  string `json:"patch,omitempty"` // if set, reverse-apply this patch; else whole-file
 }

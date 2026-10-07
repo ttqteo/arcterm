@@ -65,6 +65,7 @@ const RUN_KIND: Record<string, RailKind> = {
     "task-failed": "failed",
     "task-verify-failed": "failed",
     "lead-wake-failed": "failed",
+    "engine-stuck": "failed",
     "task-stalled": "quiet",
     "task-told": "told",
     "dag-done": "finished",

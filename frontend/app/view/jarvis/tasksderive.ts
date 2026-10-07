@@ -41,11 +41,6 @@ export function isTerminalTransition(status: string): boolean {
     return status === "completed" || status === "archived";
 }
 
-// the records offered as a focus: ListDossiersCommand's own filter, which feeds the palette's focus drill
-export function isFocusTarget(status: string): boolean {
-    return status === "active" || status === "paused";
-}
-
 // validateDecisionDraft returns an error message, or null when the draft is submittable.
 export function validateDecisionDraft(summary: string, rationale: string): string | null {
     if (rationale.trim() === "") return "Rationale is required.";

@@ -746,7 +746,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const entranceIdsKey = entranceIds.join(",");
     useLayoutEffect(() => {
         entranceRef.current = computeEntrances(entranceRef.current, entranceKey, entranceIds).state;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entranceIdsKey, entranceKey]);
 
     const deltaWindow = useMemo(() => capRegion(model_?.delta ?? [], DELTA_CAP, behindOpen), [model_, behindOpen]);
@@ -1275,15 +1274,6 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 }
             });
         switch (act.kind) {
-            case "approve-gate":
-                return run(`Approved · ${q.source || q.title}`, () =>
-                    RpcApi.AdvanceRunCommand(TabRpcClient, {
-                        channelid: q.channelId,
-                        runid: q.runId!,
-                        phaseidx: q.phaseIdx,
-                        action: "approve",
-                    })
-                );
             case "approve-dag":
                 return run(`Approved ${q.taskId} · ${q.source || q.title}`, () =>
                     RpcApi.DagActionCommand(TabRpcClient, {
@@ -1629,12 +1619,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
                                 data-jarvis-brief-state="loading"
-                                className="flex flex-col gap-[26px]"
+                                className="flex min-h-0 flex-1 flex-col gap-[26px]"
                             >
                                 {Object.entries(REGIONS).map(([id, r]) => (
-                                    <div key={id} className="flex flex-col gap-2">
+                                    <div key={id} className="flex min-h-0 flex-1 flex-col gap-2">
                                         <span className={cn(REGION_LABEL, "text-feed-label")}>{r.label}</span>
-                                        <div className="h-12 animate-pulse rounded-[10px] bg-surface motion-reduce:animate-none" />
+                                        <div className="min-h-12 flex-1 animate-pulse rounded-[10px] bg-edge-strong motion-reduce:animate-none" />
                                     </div>
                                 ))}
                             </motion.div>

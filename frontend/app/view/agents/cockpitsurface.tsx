@@ -44,7 +44,7 @@ import {
 import { hiddenAgentIds, rosterLoadPhase, splitRecentlyIdle } from "./cockpitsurfacemodel";
 import { BackgroundAgentsStrip } from "./backgroundagentsstrip";
 import { BackgroundedSection } from "./backgroundedsection";
-import { channelsAtom } from "./channelsstore";
+import { channelMessagesAtom } from "./channelsstore";
 import { answeredAskIdsAcross, needsHuman } from "./jarvisderive";
 import { IdleSection } from "./idlesection";
 import { LeadCard } from "./leadcard";
@@ -93,8 +93,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // channel-aware "needs you": excludes asks Jarvis already auto-answered, so it matches the Channels
     // rail dot and nav badge (raw asking historically over-counted). it feeds the need-you tab (liveAsking)
     // and each card's needs-you below.
-    const channels = useAtomValue(channelsAtom);
-    const answeredAsks = answeredAskIdsAcross(channels ?? []);
+    const channelMessages = useAtomValue(channelMessagesAtom);
+    const answeredAsks = answeredAskIdsAcross(Object.values(channelMessages));
 
     // `structuralNow` feeds structural computations below (usage-window rollover, the idle-grace window,
     // and which transcripts stay streamed). Subscribe to the coarse (~15s) structural clock REACTIVELY —
@@ -103,14 +103,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     // cues that need per-second precision live in self-subscribing leaves (QuietDot, CockpitEventsRail,
     // CockpitRail), which read the 1s `nowAtom` directly.
     const structuralNow = useAtomValue(model.structuralNowAtom);
-    // The 1s now-clock is driven by a single always-mounted NowTicker (cockpit root); the leaf
+    // Both clocks are driven by the single always-mounted NowTicker (cockpit root); the leaf
     // indicators (QuietDot, CockpitEventsRail, CockpitRail) self-subscribe to `nowAtom` directly.
-    // 15s writer: coarse enough that re-rendering CockpitSurface on it is cheap, frequent enough that
-    // idle-grace collapse / stream teardown / usage rollover can't lag a quiescent fleet indefinitely.
-    useEffect(() => {
-        const t = setInterval(() => globalStore.set(model.structuralNowAtom, Date.now()), 15000);
-        return () => clearInterval(t);
-    }, []);
 
     // A just-finished agent keeps its full row (so you can reply) for the grace window, then collapses
     // into the Idle list. Dismissals are keyed by idle episode (id:idleSince).
@@ -571,13 +565,15 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 }
 
 // Card-shaped placeholders in the grid's own gutters, so the first cards land where the skeleton was.
+// Columns that fill the viewport, as the real cards do (cardgridlayout.ts).
 function CockpitGridSkeleton() {
     return (
-        <div aria-hidden="true" className="absolute inset-0 z-[1] flex items-start gap-2.5 px-5 pt-2.5">
-            {[0, 1, 2].map((col) => (
+        <div aria-hidden="true" className="absolute inset-0 z-[1] flex gap-2.5 px-5 pb-5 pt-2.5">
+            {[2, 2, 1].map((cards, col) => (
                 <div key={col} className="flex min-w-0 flex-1 flex-col gap-2.5">
-                    <Skeleton className="h-[148px] rounded-[13px]" />
-                    {col < 2 ? <Skeleton className="h-[112px] rounded-[13px]" /> : null}
+                    {Array.from({ length: cards }, (_, i) => (
+                        <Skeleton key={i} className="min-h-0 flex-1 rounded-[13px]" />
+                    ))}
                 </div>
             ))}
         </div>

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/consult"
 	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -274,7 +275,7 @@ func stubRunServer(t *testing.T, validRuntime string, spawnErr error, captured .
 	stubHarnessInstalled(t, validRuntime)
 
 	oldSpawn := jarvis.SpawnRunWorker
-	jarvis.SpawnRunWorker = func(_ context.Context, cap runroute.Capability, _, _, _, _ string, _ jarvis.RunWorkerOptions) (string, error) {
+	jarvis.SpawnRunWorker = func(ctx context.Context, cap runroute.Capability, _, _, _, _ string, _ jarvis.RunWorkerOptions) (string, error) {
 		if len(captured) > 0 && captured[0] != nil {
 			*captured[0] = cap
 		}
@@ -284,7 +285,12 @@ func stubRunServer(t *testing.T, validRuntime string, spawnErr error, captured .
 		if spawnErr != nil {
 			return "", spawnErr
 		}
-		return waveobj.MakeORef(waveobj.OType_Tab, "w-"+cap.Runtime).String(), nil
+		// a real tab, as a spawned worker has: the engine reads a worker whose tab is missing as gone
+		tab := &waveobj.Tab{OID: uuid.NewString()}
+		if err := wstore.DBInsert(ctx, tab); err != nil {
+			return "", err
+		}
+		return waveobj.MakeORef(waveobj.OType_Tab, tab.OID).String(), nil
 	}
 	t.Cleanup(func() { jarvis.SpawnRunWorker = oldSpawn })
 

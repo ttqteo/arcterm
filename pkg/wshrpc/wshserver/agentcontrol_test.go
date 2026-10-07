@@ -18,12 +18,12 @@ func TestAgentControlStreamsWhatIsSentUntilTheCallerLeaves(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	oref := waveobj.MakeORef(waveobj.OType_Block, blockId).String()
 	ch := (&WshServer{}).AgentControlCommand(ctx, wshrpc.CommandAgentControlData{ORef: oref})
-	if !agentctl.Send(blockId, "wake: task 1 done") {
+	if !agentctl.Send(blockId, agentctl.Msg{Text: "wake: task 1 done", MidTurn: true}) {
 		t.Fatalf("the open stream did not take the text")
 	}
 	select {
 	case msg := <-ch:
-		if msg.Error != nil || msg.Response.Text != "wake: task 1 done" {
+		if msg.Error != nil || msg.Response.Text != "wake: task 1 done" || !msg.Response.MidTurn {
 			t.Fatalf("got %+v", msg)
 		}
 	case <-time.After(2 * time.Second):

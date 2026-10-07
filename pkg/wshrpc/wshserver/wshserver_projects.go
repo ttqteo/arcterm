@@ -101,10 +101,3 @@ func (ws *WshServer) GitChangesCommand(ctx context.Context, data wshrpc.CommandG
 	}
 	return &wshrpc.CommandGitChangesRtnData{Branch: ch.Branch, StatusZ: ch.StatusZ, Numstat: ch.Numstat, IsRepo: ch.IsRepo, Ref: ref, Head: ch.Head}, nil
 }
-
-func (ws *WshServer) GitRevertCommand(ctx context.Context, data wshrpc.CommandGitRevertData) error {
-	if data.Patch != "" {
-		return gitinfo.RevertHunk(ctx, data.Cwd, data.Path, data.Patch)
-	}
-	return gitinfo.RevertFile(ctx, data.Cwd, data.Path, data.Status)
-}

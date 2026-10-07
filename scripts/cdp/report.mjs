@@ -61,10 +61,13 @@ export function shotsManifest(results, shotsByScenario) {
     });
 }
 
-export function contactSheetHtml(entries) {
-    // entries: [{ name, png }] where png is a path relative to the html file (same dir).
-    const cards = entries
-        .map((e) => `<figure><figcaption>${e.name}</figcaption><img src="${e.png}" alt="${e.name}"></figure>`)
+export function contactSheetHtml(shots, root) {
+    // src is relative to the html file, which sits in root, so a shot written outside root still resolves
+    const cards = shots
+        .map((s) => {
+            const src = relative(resolve(root), resolve(s.path)).split(sep).join("/");
+            return `<figure><figcaption>${s.name}</figcaption><img src="${src}" alt="${s.name}"></figure>`;
+        })
         .join("\n");
     return `<!doctype html><meta charset="utf-8"><title>verify contact sheet</title>
 <style>body{background:#111;color:#eee;font:13px system-ui;margin:16px}

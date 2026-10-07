@@ -114,22 +114,25 @@ func TestNestedReadReusesWriteTx(t *testing.T) {
 
 // The A3 correctness invariant: PostChannelMessageIf's cond-check + append run in one WithTx on the
 // write handle, so concurrent posters still serialize even with the read pool present. With a cond
-// of "only if empty", exactly one of N racing posters may post. Run under -race.
+// of "only if this ref has no message yet", read from the message rows with the transaction's context,
+// exactly one of N racing posters may post. Run under -race.
 func TestPostChannelMessageIfSerializesUnderRace(t *testing.T) {
 	ctx := context.Background()
 	ch, err := CreateChannel(ctx, "serialize", "/p")
 	if err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
+	ref := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
 	var wg sync.WaitGroup
 	var posted int32
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			msg := NewChannelMessage("human", "you", "only-one", "", int64(n))
-			ok, e := PostChannelMessageIf(ctx, ch.OID, msg, func(c *waveobj.Channel) bool {
-				return len(c.Messages) == 0
+			msg := NewChannelMessage("outcome", "you", "only-one", ref, int64(n))
+			ok, e := PostChannelMessageIf(ctx, ch.OID, msg, func(txCtx context.Context) (bool, error) {
+				msgs, err := GetMessagesByRef(txCtx, ref)
+				return len(msgs) == 0, err
 			})
 			if e == nil && ok {
 				atomic.AddInt32(&posted, 1)
@@ -141,12 +144,12 @@ func TestPostChannelMessageIfSerializesUnderRace(t *testing.T) {
 	if posted != 1 {
 		t.Fatalf("want exactly 1 successful post (serialized), got %d", posted)
 	}
-	got, err := DBMustGet[*waveobj.Channel](ctx, ch.OID)
+	got, err := GetChannelMessages(ctx, ch.OID, 0, 0)
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	if len(got.Messages) != 1 {
-		t.Fatalf("want 1 message persisted, got %d", len(got.Messages))
+	if len(got) != 1 {
+		t.Fatalf("want 1 message persisted, got %d", len(got))
 	}
 }
 

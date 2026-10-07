@@ -273,7 +273,8 @@ func BuildQuickPrompt(goal string, principles waveobj.PrincipleList, runtime str
 	fmt.Fprintf(&b, "You are running headless with no human at your terminal. Make reasonable assumptions for low-stakes or easily-reversible choices and keep going — do not ask about them. Only when a decision is genuinely consequential and a wrong assumption would waste real work, pause and use the %s tool (it reaches the human in the cockpit); otherwise proceed to the deliverable.\n", tool)
 	fmt.Fprintf(&b, "If this turns out to be more than one change or needs a design decision, stop and ask with %s instead of pushing on.\n", tool)
 	fmt.Fprintf(&b, "Goal: %s\n", goal)
-	b.WriteString("When the goal is fully accomplished, commit your work and run `wsh jarvis complete --commit $(git rev-parse HEAD)` from your working tree (the SHA of your own final commit), so the run's evidence reflects exactly your changes.\n")
+	// the report goes in with complete: the seal runs then, and with none it takes the last line written before it
+	b.WriteString("When the goal is fully accomplished, commit your work, then write your final report (what you did, and what you could not verify and why) with your file-writing tool to a file in the system temp directory, not in the repository. Then run `wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>` from your working tree (the SHA of your own final commit), so the run's evidence reflects exactly your changes and its summary is your report.\n")
 	b.WriteString(NoAttributionRule + "\n")
 	b.WriteString(SubagentCapRule + "\n")
 	return strings.TrimRight(b.String(), "\n")

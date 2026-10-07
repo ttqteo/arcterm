@@ -35,20 +35,19 @@ export function goneLine(kind: PeekKind): string {
 
 export type ButtonState = "enabled" | "disabled" | "absent";
 
-// Loading (no facts yet) and a vanished target both disable Open, and a view-only kind has no Open at all.
-export function itemButtons(kind: PeekKind, facts: PeekFacts | null): { open: ButtonState } {
+// Loading (no facts yet) and a vanished target both disable; a view-only kind has no Open button.
+export function openButton(kind: PeekKind, facts: PeekFacts | null): ButtonState {
     if (VIEW_ONLY.has(kind)) {
-        return { open: "absent" };
+        return "absent";
     }
-    return { open: facts == null || facts.gone ? "disabled" : "enabled" };
+    return facts == null || facts.gone ? "disabled" : "enabled";
 }
 
 export type ItemHint = { keys: string[]; label: string };
 
-export function itemHints(kind: PeekKind, facts: PeekFacts | null): ItemHint[] {
-    const buttons = itemButtons(kind, facts);
+export function itemHints(kind: PeekKind): ItemHint[] {
     return [
-        ...(buttons.open !== "absent" ? [{ keys: ["↵"], label: openLabel(kind).toLowerCase() }] : []),
+        ...(VIEW_ONLY.has(kind) ? [] : [{ keys: ["↵"], label: openLabel(kind).toLowerCase() }]),
         { keys: ["⌫"], label: "back" },
         { keys: ["esc"], label: "close" },
     ];

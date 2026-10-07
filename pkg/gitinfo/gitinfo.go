@@ -495,59 +495,6 @@ func runErr(ctx context.Context, cwd string, args ...string) (string, error) {
 	return string(out), nil
 }
 
-// runStdin runs git with data piped to stdin (for `apply`). Captures stderr into the error.
-func runStdin(ctx context.Context, cwd, stdin string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cwd}, args...)...)
-	cmd.Stdin = strings.NewReader(stdin)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return string(out), nil
-}
-
-// RevertFile discards a file's uncommitted changes based on its porcelain status:
-// untracked ("?") -> git clean; newly-added/staged ("A") -> git rm; otherwise restore from HEAD.
-func RevertFile(ctx context.Context, cwd, path, status string) error {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
-	defer cancel()
-	s := strings.TrimSpace(status)
-	switch {
-	case strings.Contains(status, "?"):
-		_, err := runErr(ctx, cwd, "clean", "-f", "--", path)
-		return err
-	case strings.HasPrefix(s, "A"):
-		_, err := runErr(ctx, cwd, "rm", "-f", "--", path)
-		return err
-	default:
-		_, err := runErr(ctx, cwd, "checkout", "HEAD", "--", path)
-		return err
-	}
-}
-
-// repoRoot returns the working-tree top-level for cwd, falling back to cwd when it can't be resolved
-// (not a repo / git error). `git apply` resolves patch paths relative to this top-level regardless of
-// the process cwd, so RevertHunk must anchor there.
-func repoRoot(ctx context.Context, cwd string) string {
-	top, err := run(ctx, cwd, "rev-parse", "--show-toplevel")
-	if err != nil || strings.TrimSpace(top) == "" {
-		return cwd
-	}
-	return strings.TrimSpace(top)
-}
-
-// RevertHunk reverse-applies a unified-diff patch (one or more hunks for a single file) to the
-// working tree, discarding exactly those changes. Fails (does not silently no-op) if the patch
-// no longer applies — the caller surfaces that so the user can reload a stale diff.
-func RevertHunk(ctx context.Context, cwd, path, patch string) error {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
-	defer cancel()
-	// git apply resolves the patch's (repo-root-relative) paths against the working-tree top-level, not
-	// cwd — so a subdirectory (microservice) cwd would silently apply nothing. Anchor at the root.
-	_, err := runStdin(ctx, repoRoot(ctx, cwd), patch, "apply", "--reverse", "-")
-	return err
-}
-
 // flattenBranch makes a git ref safe for a filesystem path segment (feat/x -> feat-x).
 func flattenBranch(branch string) string {
 	return strings.ReplaceAll(branch, "/", "-")

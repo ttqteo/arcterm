@@ -114,28 +114,35 @@ func migrateChannelPins(ctx context.Context, channels []*waveobj.Channel) error 
 	return nil
 }
 
-// runs are walked through the channel blob because it keeps its own copy of each run; UpdateRun
-// rewrites that copy and the db_run row together.
+// a run row whose channel is gone is left alone: nothing reads it, and UpdateRun needs the channel.
 func migrateRunPins(ctx context.Context, channels []*waveobj.Channel) error {
+	live := make(map[string]bool, len(channels))
 	for _, ch := range channels {
-		for i := range ch.Runs {
-			run := &ch.Runs[i]
-			workerChanged := migratePin(run.WorkerRoute)
-			reviewerChanged := migratePin(run.ReviewerRoute)
-			if !workerChanged && !reviewerChanged {
-				continue
+		live[ch.OID] = true
+	}
+	runs, err := wstore.DBGetAllObjsByType[*waveobj.Run](ctx, waveobj.OType_Run)
+	if err != nil {
+		return fmt.Errorf("listing runs: %w", err)
+	}
+	for _, run := range runs {
+		if !live[run.ChannelOID] {
+			continue
+		}
+		workerChanged := migratePin(run.WorkerRoute)
+		reviewerChanged := migratePin(run.ReviewerRoute)
+		if !workerChanged && !reviewerChanged {
+			continue
+		}
+		if err := wstore.UpdateRun(ctx, run.ChannelOID, run.ID, func(r *waveobj.Run) error {
+			if workerChanged {
+				r.WorkerRoute = run.WorkerRoute
 			}
-			if err := wstore.UpdateRun(ctx, ch.OID, run.ID, func(r *waveobj.Run) error {
-				if workerChanged {
-					r.WorkerRoute = run.WorkerRoute
-				}
-				if reviewerChanged {
-					r.ReviewerRoute = run.ReviewerRoute
-				}
-				return nil
-			}); err != nil {
-				return fmt.Errorf("migrating run %s route pins: %w", run.ID, err)
+			if reviewerChanged {
+				r.ReviewerRoute = run.ReviewerRoute
 			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("migrating run %s route pins: %w", run.ID, err)
 		}
 	}
 	return nil

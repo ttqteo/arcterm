@@ -67,17 +67,9 @@ async function settle(act: PetAct, call: () => Promise<unknown>): Promise<void> 
 function settleInPlace(act: PetAct): Promise<void> | null {
     switch (act.verb) {
         case "ack":
+            // land: a held land's Dismiss, which drops the item and leaves the branch
             return settle(act, () =>
-                RpcApi.AckRunCommand(TabRpcClient, { channelid: act.channelId, runid: act.runId })
-            );
-        case "approve-phase":
-            return settle(act, () =>
-                RpcApi.AdvanceRunCommand(TabRpcClient, {
-                    channelid: act.channelId,
-                    runid: act.runId,
-                    phaseidx: act.phaseIdx,
-                    action: "approve",
-                })
+                RpcApi.AckRunCommand(TabRpcClient, { channelid: act.channelId, runid: act.runId, land: act.land })
             );
         case "approve-task":
         case "retry-task":

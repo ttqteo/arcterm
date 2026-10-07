@@ -17,6 +17,18 @@ func GetDag(ctx context.Context, dagId string) (*waveobj.TaskGroup, error) {
 	return DBMustGet[*waveobj.TaskGroup](ctx, dagId)
 }
 
+// GetDagShared is GetDag for a caller that only reads: the group is shared, not a copy (see selectShared).
+func GetDagShared(ctx context.Context, dagId string) (*waveobj.TaskGroup, error) {
+	dags, err := selectShared[*waveobj.TaskGroup](ctx, `SELECT oid, version FROM db_dag WHERE oid = ?`, dagId)
+	if err != nil {
+		return nil, err
+	}
+	if len(dags) == 0 {
+		return nil, ErrNotFound
+	}
+	return dags[0], nil
+}
+
 // GetDagsByStatus lists every dag row with the given derived status (e.g. "running") — the watchdog's
 // iteration set.
 func GetDagsByStatus(ctx context.Context, status string) ([]*waveobj.TaskGroup, error) {
@@ -71,19 +83,9 @@ func GetDagsWithPendingCleanup(ctx context.Context) ([]*waveobj.TaskGroup, error
 func CreateDagForRun(ctx context.Context, channelID string, runID string, proposed *waveobj.TaskGroup, transition func(*waveobj.Run) error) (dag *waveobj.TaskGroup, created bool, err error) {
 	err = WithTx(ctx, func(tx *TxWrap) error {
 		txCtx := tx.Context()
-		ch, txErr := DBMustGet[*waveobj.Channel](txCtx, channelID)
+		run, txErr := GetRun(txCtx, channelID, runID)
 		if txErr != nil {
-			return fmt.Errorf("loading channel: %w", txErr)
-		}
-		var run *waveobj.Run
-		for i := range ch.Runs {
-			if ch.Runs[i].ID == runID {
-				run = &ch.Runs[i]
-				break
-			}
-		}
-		if run == nil {
-			return fmt.Errorf("run %q not found in channel", runID)
+			return fmt.Errorf("loading run: %w", txErr)
 		}
 		if run.DagORef != "" {
 			existing, txErr := DBMustGet[*waveobj.TaskGroup](txCtx, run.DagORef)
@@ -94,19 +96,18 @@ func CreateDagForRun(ctx context.Context, channelID string, runID string, propos
 			created = false
 			return nil
 		}
-		if transition != nil {
-			if txErr := transition(run); txErr != nil {
-				return txErr
+		if txErr := UpdateRun(txCtx, channelID, runID, func(r *waveobj.Run) error {
+			if transition != nil {
+				if err := transition(r); err != nil {
+					return err
+				}
 			}
+			r.DagORef = proposed.OID
+			return nil
+		}); txErr != nil {
+			return txErr
 		}
-		run.DagORef = proposed.OID
 		if txErr := DBInsert(txCtx, proposed); txErr != nil {
-			return txErr
-		}
-		if txErr := DBUpdate(txCtx, ch); txErr != nil {
-			return txErr
-		}
-		if txErr := dbUpsertObjTx(txCtx, run); txErr != nil {
 			return txErr
 		}
 		dag = proposed

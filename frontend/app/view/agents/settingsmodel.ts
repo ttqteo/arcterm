@@ -26,6 +26,8 @@ export type SettingRowDef = {
     // value against the shipped default, and revert by deleting the user's override; every other row's
     // value lives somewhere only the surface knows how to reach.
     config?: boolean;
+    // Further wconfig keys a config row writes beside `key` (a route is a runtime key and a model key).
+    morekeys?: string[];
 };
 
 export type SettingSectionDef = {
@@ -47,6 +49,21 @@ export const GROUP_ORDER = ["Cockpit", "Agents", "Data", "Build"] as const;
 // stays because renaming it would orphan every key already stored. Never read back into the UI.
 // Underscore, not colon: SetSecret validates against the shell env-var charset and rejects colons.
 export const OPENROUTER_SECRET_NAME = "jarvis_embedapikey";
+
+// The Radar audit route. Its sessions read and grep the repository, so only a runtime with tools can run
+// them; the empty-key defaults mirror pkg/reporadar's.
+export const RADAR_AUDIT_RUNTIME_KEY = "radar:auditruntime";
+export const RADAR_AUDIT_MODEL_KEY = "radar:auditmodel";
+export const RADAR_AUDIT_RUNTIMES: readonly string[] = ["claude", "pi"];
+const RADAR_AUDIT_DEFAULT_RUNTIME = "claude";
+const RADAR_AUDIT_DEFAULT_CLAUDE_MODEL = "sonnet";
+
+// The route the two settings select. An unset model on pi stays unset: pi runs its own default.
+export function radarAuditRoute(runtime: string, model: string): RoutePin {
+    const rt = runtime || RADAR_AUDIT_DEFAULT_RUNTIME;
+    const m = model || (rt === RADAR_AUDIT_DEFAULT_RUNTIME ? RADAR_AUDIT_DEFAULT_CLAUDE_MODEL : "");
+    return { runtime: rt, ...(m ? { model: m } : {}) };
+}
 
 const THEME_OVERRIDE_KEY = "cockpit.theme.overrides";
 const LAUNCH_FLAGS_KEY = "agent.launch.flags";
@@ -307,7 +324,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "headless",
             name: "Headless AI",
-            blurb: "The runtime background jobs call when no agent is attached.",
+            blurb: "The runtime behind session classify, continuity, the volunteer judge and pi titles, and the route Radar audits run on.",
             group: "Data",
             rows: [
                 {
@@ -328,16 +345,17 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                 {
                     id: "headless.cheap",
                     title: "Cheap model",
-                    desc: "For mechanical tasks: gatekeeper, decompose, continuity, volunteer judge.",
+                    desc: "The OpenRouter model for session classify, continuity, the volunteer judge and pi titles.",
                     key: "headless:openroutercheapmodel",
                     scope: "synced",
                     config: true,
                 },
                 {
-                    id: "headless.mid",
-                    title: "Mid model",
-                    desc: "For synthesis: radar, Jarvis.",
-                    key: "headless:openroutermidmodel",
+                    id: "headless.radaraudit",
+                    title: "Radar audit",
+                    desc: "Each scan runs one read-only session per fix commit on this route. OpenRouter cannot be used: it has no tools.",
+                    key: RADAR_AUDIT_RUNTIME_KEY,
+                    morekeys: [RADAR_AUDIT_MODEL_KEY],
                     scope: "synced",
                     config: true,
                 },
@@ -388,12 +406,17 @@ export function flagRowId(runtime: Runtime, flagId: string): string {
     return `newagent.flag.${runtime}.${flagId}`;
 }
 
+// Every settings key a row stores under, primary first. Empty for a row that stores no setting.
+export function rowKeys(row: SettingRowDef): string[] {
+    return row.key == null ? [] : [row.key, ...(row.morekeys ?? [])];
+}
+
 export function rowMatches(row: SettingRowDef, query: string): boolean {
     const q = query.trim().toLowerCase();
     if (q === "") {
         return true;
     }
-    return `${row.title} ${row.desc} ${row.key ?? ""}`.toLowerCase().includes(q);
+    return `${row.title} ${row.desc} ${rowKeys(row).join(" ")}`.toLowerCase().includes(q);
 }
 
 // The one-line sync state under the Sync remote field. null is "not loaded yet".

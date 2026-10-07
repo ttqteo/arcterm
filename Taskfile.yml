@@ -174,12 +174,11 @@ tasks:
         generates:
             - dist/bin/wavesrv.x64.exe
 
-    # dev-loop backend: wavesrv + wsh for the dev host only, instead of the 8-target wsh matrix
-    # (build:backend/build:wsh stay the full matrix for release). Linux has no quickdev flavor, so
-    # it falls back to the full build. `platforms` must live at task level here: this Task version
+    # dev-loop backend: wavesrv + wsh for the dev host only, without the release build's clean and
+    # strip (build:backend). Linux has no quickdev flavor, so it falls back to the full build. `platforms` must live at task level here: this Task version
     # silently ignores per-cmd `platforms`.
     build:backend:devhost:
-        desc: Build wavesrv + wsh for the dev host only (windows/darwin); release keeps the full matrix via build:backend.
+        desc: Build wavesrv + wsh for the dev host only (windows/darwin); release goes through build:backend.
         internal: true
         platforms: [windows, darwin]
         cmds:
@@ -188,7 +187,7 @@ tasks:
             - task: build:wsh:devhost
 
     build:backend:devhost:full:
-        desc: Fallback backend build for hosts without a quickdev flavor (linux uses the full matrix).
+        desc: Fallback backend build for hosts without a quickdev flavor (linux uses build:backend).
         internal: true
         platforms: [linux]
         cmds:
@@ -230,6 +229,8 @@ tasks:
                       sh: echo {{if eq "arm" ARCH}}arm64{{else}}{{ARCH}}{{end}}
                   GO_ENV_VARS:
                       sh: echo "{{if eq "amd64" ARCH}}CC=\"zig cc -target x86_64-windows-gnu\"{{else}}CC=\"zig cc -target aarch64-windows-gnu\"{{end}}"
+                  # drops DWARF only (31 MB -> 18 MB); panic stacks come from pclntab and survive
+                  GO_LDFLAGS: -s -w
 
     build:server:linux:
         desc: Build the wavesrv component for Linux platforms (only generates artifacts for the current architecture).
@@ -289,16 +290,16 @@ tasks:
             - cmd/wsh/cmd/pi-simplify-gate-core-extension.ts
 
     sync:claudemod:
-        desc: Copy the authored Claude mod (claude/arc-mod) into its go:embed location cmd/wsh/cmd/claude-mod (generated, never hand-edited), without its tests or engine-written types.
+        desc: Copy the authored Claude mods (claude/arc-mod, claude/arc-view-mod) into their go:embed locations cmd/wsh/cmd/claude-mod and claude-view-mod (generated, never hand-edited), without their tests or engine-written types.
         cmds:
-            - cmd: rm -rf cmd/wsh/cmd/claude-mod
-            - cmd: cp -r claude/arc-mod cmd/wsh/cmd/claude-mod
-            - cmd: rm -rf cmd/wsh/cmd/claude-mod/.claude-plugin/types
-            - cmd: rm -f cmd/wsh/cmd/claude-mod/hooks/*.test.ts
+            - for: [{ src: arc-mod, dst: claude-mod }, { src: arc-view-mod, dst: claude-view-mod }]
+              cmd: rm -rf cmd/wsh/cmd/{{.ITEM.dst}} && cp -r claude/{{.ITEM.src}} cmd/wsh/cmd/{{.ITEM.dst}} && rm -rf cmd/wsh/cmd/{{.ITEM.dst}}/.claude-plugin/types && rm -f cmd/wsh/cmd/{{.ITEM.dst}}/hooks/*.test.ts
         sources:
             - claude/arc-mod/**/*
+            - claude/arc-view-mod/**/*
         generates:
             - cmd/wsh/cmd/claude-mod/**/*
+            - cmd/wsh/cmd/claude-view-mod/**/*
 
     build:server:internal:
         deps:
@@ -316,7 +317,7 @@ tasks:
         internal: true
 
     build:wsh:
-        desc: Build the wsh component for all possible targets.
+        desc: Build the wsh component for windows x64, the only target the installer bundles.
         cmds:
             - cmd: rm -f dist/bin/wsh*
               platforms: [darwin, linux]
@@ -324,7 +325,10 @@ tasks:
             - cmd: powershell -NoProfile -NonInteractive -Command "Remove-Item -Force -ErrorAction SilentlyContinue -Path dist/bin/wsh*"
               platforms: [windows]
               ignore_error: true
-            - task: build:wsh:parallel
+            - task: build:wsh:internal
+              vars:
+                  GOOS: windows
+                  GOARCH: amd64
         deps:
             - go:mod:tidy
             - generate
@@ -334,42 +338,6 @@ tasks:
             - package.json
         generates:
             - "dist/bin/wsh*"
-
-    build:wsh:parallel:
-        deps:
-            - task: build:wsh:internal
-              vars:
-                  GOOS: darwin
-                  GOARCH: arm64
-            - task: build:wsh:internal
-              vars:
-                  GOOS: darwin
-                  GOARCH: amd64
-            - task: build:wsh:internal
-              vars:
-                  GOOS: linux
-                  GOARCH: arm64
-            - task: build:wsh:internal
-              vars:
-                  GOOS: linux
-                  GOARCH: amd64
-            - task: build:wsh:internal
-              vars:
-                  GOOS: linux
-                  GOARCH: mips
-            - task: build:wsh:internal
-              vars:
-                  GOOS: linux
-                  GOARCH: mips64
-            - task: build:wsh:internal
-              vars:
-                  GOOS: windows
-                  GOARCH: amd64
-            - task: build:wsh:internal
-              vars:
-                  GOOS: windows
-                  GOARCH: arm64
-        internal: true
 
     build:wsh:internal:
         deps:

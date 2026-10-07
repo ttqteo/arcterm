@@ -206,8 +206,11 @@ export function snippetOf(e: RunEvent): string {
         }
         case "task-verify-passed":
             return num(d.ms) ? `passed in ${secs(num(d.ms))}` : "";
-        case "task-merged":
-            return str(d.commit) ? `commit ${str(d.commit).slice(0, 8)}` : "";
+        case "task-merged": {
+            const commit = str(d.commit) ? `commit ${str(d.commit).slice(0, 8)}` : "";
+            // the last merge runs no Verify of its own
+            return [commit, d.verify === "final" ? "Verify left to the final stage" : ""].filter(Boolean).join(" · ");
+        }
         case "task-review-passed":
         case "task-review-failed":
             return (str(d.note) || str(d.downstream)).split("\n")[0];

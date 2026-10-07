@@ -262,7 +262,7 @@ function QueueRow({
     focused: boolean;
     onLeave: () => void;
 }) {
-    const acts = [row.primary, row.secondary].filter((act) => act != null);
+    const acts = [row.primary, ...row.links].filter((act) => act != null);
     return (
         <div data-pet-row={row.key} className="border-b border-border last:border-b-0">
             <div
@@ -296,9 +296,7 @@ function QueueRow({
                 </div>
                 {row.primary != null ? (
                     <div className="flex flex-none items-center gap-2.5">
-                        {row.secondary != null ? (
-                            <ActLinks model={model} acts={[row.secondary]} onLeave={onLeave} />
-                        ) : null}
+                        <ActLinks model={model} acts={row.links} onLeave={onLeave} />
                         <ActButton model={model} act={row.primary} filled={focused} onLeave={onLeave} />
                     </div>
                 ) : null}
@@ -709,7 +707,7 @@ export function PetPeek({
 
     const hints =
         item != null
-            ? itemHints(item.target.kind, facts)
+            ? itemHints(item.target.kind)
             : [
                   ...(quiet ? [] : [{ keys: ["j", "k"], label: "move" }]),
                   ...(spaceTarget != null ? [{ keys: ["space"], label: "peek" }] : []),

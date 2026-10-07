@@ -30,6 +30,21 @@ func seedPlanReviewDag(t *testing.T) (context.Context, *waveobj.TaskGroup) {
 	return ctx, dag
 }
 
+// the review dialog sends an approval with quoted notes as text, which a lead not told otherwise takes for a
+// change request.
+func TestPlanReviewAskMentionsQuotedNotes(t *testing.T) {
+	for _, want := range []string{
+		"the human can quote passages of the plan with a note on each",
+		"an answer that starts with `Accept all and proceed` is an approval",
+		"its `> ` quoted notes are applied before proceeding",
+		"any other text is a change request",
+	} {
+		if !strings.Contains(proceedPastPlanReview, want) {
+			t.Fatalf("plan review ask missing %q:\n%s", want, proceedPastPlanReview)
+		}
+	}
+}
+
 func loadDag(t *testing.T, ctx context.Context, dagID string) *waveobj.TaskGroup {
 	t.Helper()
 	g, err := wstore.GetDag(ctx, dagID)

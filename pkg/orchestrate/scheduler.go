@@ -150,7 +150,7 @@ func MarkRunning(g *waveobj.TaskGroup, taskID, runID string) error {
 			g.Tasks[i].State = TaskState_Running
 			g.Tasks[i].RunID = runID
 			// an earlier attempt's readings must never describe the new worker
-			g.Tasks[i].CPUSample, g.Tasks[i].CPUSampleTs, g.Tasks[i].BusyTs, g.Tasks[i].LatestTool = 0, 0, 0, ""
+			g.Tasks[i].CPUSample, g.Tasks[i].CPUSampleTs, g.Tasks[i].BusyTs, g.Tasks[i].AskTs, g.Tasks[i].LatestTool = 0, 0, 0, 0, ""
 			g.Tasks[i].ProgressHash, g.Tasks[i].ProgressCheckTs = "", 0
 			g.Tasks[i].SuspectTs, g.Tasks[i].SuspectReason, g.Tasks[i].FlaggedFailures = 0, "", nil
 			g.Tasks[i].ProgressTs = time.Now().UnixMilli()
@@ -213,13 +213,17 @@ func RetryTask(g *waveobj.TaskGroup, taskID string) error {
 	return fmt.Errorf("no task %q", taskID)
 }
 
+func skippable(state string) bool {
+	return state == TaskState_Failed || state == TaskState_Stalled || state == TaskState_Ready || state == TaskState_ReviewFailed
+}
+
 // SkipTask marks a failed/ready task skipped (no spawn).
 func SkipTask(g *waveobj.TaskGroup, taskID string) error {
 	for i := range g.Tasks {
 		if g.Tasks[i].ID != taskID {
 			continue
 		}
-		if g.Tasks[i].State != TaskState_Failed && g.Tasks[i].State != TaskState_Stalled && g.Tasks[i].State != TaskState_Ready && g.Tasks[i].State != TaskState_ReviewFailed {
+		if !skippable(g.Tasks[i].State) {
 			return fmt.Errorf("task %q cannot be skipped from state %q", taskID, g.Tasks[i].State)
 		}
 		g.Tasks[i].State = TaskState_Skipped

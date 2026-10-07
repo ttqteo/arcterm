@@ -48,6 +48,24 @@ export class RpcApiType {
         return client.wshRpcStream("agentcontrol", data, opts);
     }
 
+    // command "agentslist" [call]
+    AgentsListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandAgentsListRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentslist", null, opts);
+        return client.wshRpcCall("agentslist", null, opts);
+    }
+
+    // command "agentsread" [call]
+    AgentsReadCommand(client: WshClient, data: CommandAgentsReadData, opts?: RpcOpts): Promise<CommandAgentsReadRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentsread", data, opts);
+        return client.wshRpcCall("agentsread", data, opts);
+    }
+
+    // command "agentssend" [call]
+    AgentsSendCommand(client: WshClient, data: CommandAgentsSendData, opts?: RpcOpts): Promise<CommandAgentsSendRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentssend", data, opts);
+        return client.wshRpcCall("agentssend", data, opts);
+    }
+
     // command "agentsyncadopt" [call]
     AgentSyncAdoptCommand(client: WshClient, data: CommandAgentSyncAdoptData, opts?: RpcOpts): Promise<CommandAgentSyncAdoptRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentsyncadopt", data, opts);
@@ -462,6 +480,12 @@ export class RpcApiType {
         return client.wshRpcCall("getchannelmessages", data, opts);
     }
 
+    // command "getchannelrunchanges" [call]
+    GetChannelRunChangesCommand(client: WshClient, data: CommandGetChannelRunChangesData, opts?: RpcOpts): Promise<CommandGetChannelRunChangesRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getchannelrunchanges", data, opts);
+        return client.wshRpcCall("getchannelrunchanges", data, opts);
+    }
+
     // command "getchannelruns" [call]
     GetChannelRunsCommand(client: WshClient, data: CommandGetChannelRunsData, opts?: RpcOpts): Promise<CommandGetChannelRunsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getchannelruns", data, opts);
@@ -646,12 +670,6 @@ export class RpcApiType {
     GitListWorktreesCommand(client: WshClient, data: CommandGitListWorktreesData, opts?: RpcOpts): Promise<CommandGitListWorktreesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitlistworktrees", data, opts);
         return client.wshRpcCall("gitlistworktrees", data, opts);
-    }
-
-    // command "gitrevert" [call]
-    GitRevertCommand(client: WshClient, data: CommandGitRevertData, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitrevert", data, opts);
-        return client.wshRpcCall("gitrevert", data, opts);
     }
 
     // command "gitreviewpatch" [call]

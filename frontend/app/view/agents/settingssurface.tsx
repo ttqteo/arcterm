@@ -52,7 +52,12 @@ import {
     flagRowId,
     groupSections,
     OPENROUTER_SECRET_NAME,
+    RADAR_AUDIT_MODEL_KEY,
+    RADAR_AUDIT_RUNTIME_KEY,
+    RADAR_AUDIT_RUNTIMES,
+    radarAuditRoute,
     resolveSelection,
+    rowKeys,
     settingsSections,
     vaultStatusLine,
     type SettingRowDef,
@@ -156,7 +161,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
         for (const row of section.rows) {
             defs.set(row.id, row);
             const isChanged = row.config
-                ? defaults != null && !sameValue(settings[row.key], defaults[row.key])
+                ? defaults != null && rowKeys(row).some((k) => !sameValue(settings[k], defaults[k]))
                 : !!local[row.id]?.changed;
             if (isChanged) {
                 changed.add(row.id);
@@ -167,7 +172,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const revert = (id: string) => {
         const def = defs.get(id);
         if (def?.config) {
-            writeConfig({ [def.key]: null });
+            writeConfig(Object.fromEntries(rowKeys(def).map((k) => [k, null])));
             return;
         }
         local[id]?.revert();
@@ -182,7 +187,9 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
                 continue;
             }
             if (row.config) {
-                patch[row.key] = null;
+                for (const k of rowKeys(row)) {
+                    patch[k] = null;
+                }
             } else {
                 local[row.id]?.revert();
             }
@@ -277,6 +284,7 @@ export function SettingsSurface({ model }: { model: AgentsViewModel }) {
                             </div>
                             <motion.div
                                 key={section.id}
+                                data-settings-section={section.id}
                                 initial={reduce ? false : { opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 transition={{ duration: MOTION.durMicro, ease: MOTION.easeFluid }}
@@ -436,7 +444,7 @@ function SettingRow({ id, stacked, children }: { id: string; stacked?: boolean; 
             {def.key != null ? (
                 <div className="mt-1.5 flex items-center gap-[7px] font-mono text-[10.5px] text-muted">
                     {def.scope != null ? <ScopeDot scope={def.scope} /> : null}
-                    {def.key}
+                    {rowKeys(def).join(" · ")}
                 </div>
             ) : null}
         </div>
@@ -453,7 +461,7 @@ function SettingRow({ id, stacked, children }: { id: string; stacked?: boolean; 
 
     if (stacked) {
         return (
-            <div className="border-b border-edge-faint py-[15px]">
+            <div data-setting-row={id} className="border-b border-edge-faint py-[15px]">
                 <div className="flex items-start justify-between gap-6">
                     {header}
                     {revert}
@@ -463,7 +471,10 @@ function SettingRow({ id, stacked, children }: { id: string; stacked?: boolean; 
         );
     }
     return (
-        <div className="flex items-center justify-between gap-6 border-b border-edge-faint py-[15px]">
+        <div
+            data-setting-row={id}
+            className="flex items-center justify-between gap-6 border-b border-edge-faint py-[15px]"
+        >
             {header}
             <div className="flex flex-none items-center gap-2.5">
                 {children}
@@ -1347,7 +1358,8 @@ function MemorySection() {
 function HeadlessAISection() {
     const runtime = (useAtomValue(getSettingsKeyAtom("headless:runtime")) as string) ?? "";
     const cheapModel = (useAtomValue(getSettingsKeyAtom("headless:openroutercheapmodel")) as string) ?? "";
-    const midModel = (useAtomValue(getSettingsKeyAtom("headless:openroutermidmodel")) as string) ?? "";
+    const auditRuntime = (useAtomValue(getSettingsKeyAtom(RADAR_AUDIT_RUNTIME_KEY)) as string) ?? "";
+    const auditModel = (useAtomValue(getSettingsKeyAtom(RADAR_AUDIT_MODEL_KEY)) as string) ?? "";
 
     const [hasKey, setHasKey] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -1537,7 +1549,20 @@ function HeadlessAISection() {
                 ) : null}
             </SettingRow>
             {modelRow("headless.cheap", cheapModel, "deepseek/deepseek-v4-flash", "headless:openroutercheapmodel")}
-            {modelRow("headless.mid", midModel, "deepseek/deepseek-v4-pro", "headless:openroutermidmodel")}
+            <SettingRow id="headless.radaraudit">
+                <RoutePicker
+                    value={radarAuditRoute(auditRuntime, auditModel)}
+                    title="Radar audit route"
+                    runtimes={RADAR_AUDIT_RUNTIMES}
+                    onChange={(route) =>
+                        route &&
+                        writeConfig({
+                            [RADAR_AUDIT_RUNTIME_KEY]: route.runtime,
+                            [RADAR_AUDIT_MODEL_KEY]: route.model ?? null,
+                        })
+                    }
+                />
+            </SettingRow>
             {isOpenRouter && !hasKey ? (
                 <Note>OpenRouter key not set — background AI features stay off until a key is stored.</Note>
             ) : null}

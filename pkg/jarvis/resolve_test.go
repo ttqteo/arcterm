@@ -12,47 +12,70 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-func ch(name string, enabled bool, msgs ...waveobj.ChannelMessage) *waveobj.Channel {
-	// explicit both ways: an unset flag now means on, so "disabled" has to be written
-	meta := waveobj.MetaMapType{MetaKey_GatekeeperEnabled: enabled}
-	return &waveobj.Channel{OID: name, Name: name, Meta: meta, Messages: msgs}
-}
-func dispatch(oref, text string) waveobj.ChannelMessage {
-	return waveobj.ChannelMessage{Kind: "dispatch", Author: "claude", Text: text, RefORef: oref}
-}
-
-func chWithRun(name string, enabled bool, run waveobj.Run) *waveobj.Channel {
-	c := ch(name, enabled)
-	c.Runs = []waveobj.Run{run}
+// storedChannel creates a channel with the gatekeeper flag written explicitly both ways: an unset flag
+// means on, so "disabled" has to be written. The store is shared by the package's tests, so every id a
+// test resolves by is a fresh uuid.
+func storedChannel(t *testing.T, enabled bool, runs ...waveobj.Run) *waveobj.Channel {
+	t.Helper()
+	ctx := context.Background()
+	c, err := wstore.CreateChannel(ctx, "resolve-"+uuid.NewString(), "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if _, err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Channel, c.OID),
+		waveobj.MetaMapType{MetaKey_GatekeeperEnabled: enabled}, false); err != nil {
+		t.Fatalf("set gatekeeper flag: %v", err)
+	}
+	for _, run := range runs {
+		if err := wstore.AppendRun(ctx, c.OID, run); err != nil {
+			t.Fatalf("append run: %v", err)
+		}
+	}
 	return c
 }
 
+func newTabORef() string {
+	return waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+}
+
+// dispatchTo posts a dispatch for a worker with no tab row behind it, so no owner stamp lands and the
+// resolvers have only the message to go on.
+func dispatchTo(t *testing.T, channelId, oref, text string) {
+	t.Helper()
+	msg := wstore.NewChannelMessage("dispatch", "claude", text, oref, 1)
+	if _, err := wstore.PostChannelMessage(context.Background(), channelId, msg); err != nil {
+		t.Fatalf("post dispatch: %v", err)
+	}
+}
+
 func TestResolveRunWorker_MatchesPhaseWorker(t *testing.T) {
-	run := waveobj.Run{ID: "r1", Goal: "ship coupons", Phases: []waveobj.RunPhase{
-		{Kind: PhaseKind_Brainstorm, State: PhaseState_Done, WorkerOrefs: []string{"tab:t0"}},
-		{Kind: PhaseKind_Plan, Skill: "superpowers:writing-plans", State: PhaseState_Running, WorkerOrefs: []string{"tab:t1"}},
+	worker := newTabORef()
+	run := waveobj.Run{ID: uuid.NewString(), Goal: "ship coupons", Phases: []waveobj.RunPhase{
+		{Kind: PhaseKind_Brainstorm, State: PhaseState_Done, WorkerOrefs: []string{newTabORef()}},
+		{Kind: PhaseKind_Plan, Skill: "superpowers:writing-plans", State: PhaseState_Running, WorkerOrefs: []string{worker}},
 	}}
-	c := chWithRun("c1", true, run)
-	m := ResolveRunWorker([]*waveobj.Channel{c}, "tab:t1")
-	if m == nil || m.Channel.OID != "c1" || m.Run.ID != "r1" || m.PhaseIdx != 1 {
-		t.Fatalf("want c1/r1/phase 1, got %+v", m)
+	c := storedChannel(t, true, run)
+	m := resolveRunWorkerByScan(context.Background(), worker)
+	if m == nil || m.Channel.OID != c.OID || m.Run.ID != run.ID || m.PhaseIdx != 1 {
+		t.Fatalf("want %s/%s/phase 1, got %+v", c.OID, run.ID, m)
 	}
 }
 
 func TestResolveRunWorker_MatchesRegardlessOfToggle(t *testing.T) {
-	run := waveobj.Run{ID: "r1", Goal: "g", Phases: []waveobj.RunPhase{
-		{Kind: PhaseKind_Execute, State: PhaseState_Running, WorkerOrefs: []string{"tab:t1"}},
+	worker := newTabORef()
+	run := waveobj.Run{ID: uuid.NewString(), Goal: "g", Phases: []waveobj.RunPhase{
+		{Kind: PhaseKind_Execute, State: PhaseState_Running, WorkerOrefs: []string{worker}},
 	}}
-	c := chWithRun("c1", false, run) // gatekeeper toggle OFF
-	if m := ResolveRunWorker([]*waveobj.Channel{c}, "tab:t1"); m == nil {
+	storedChannel(t, false, run) // gatekeeper toggle OFF
+	if m := resolveRunWorkerByScan(context.Background(), worker); m == nil {
 		t.Fatalf("run workers must resolve even with the gatekeeper toggle off")
 	}
 }
 
 func TestResolveRunWorker_NilForUnknown(t *testing.T) {
-	run := waveobj.Run{ID: "r1", Phases: []waveobj.RunPhase{{Kind: PhaseKind_Plan, WorkerOrefs: []string{"tab:t1"}}}}
-	c := chWithRun("c1", true, run)
-	if m := ResolveRunWorker([]*waveobj.Channel{c}, "tab:nope"); m != nil {
+	run := waveobj.Run{ID: uuid.NewString(), Phases: []waveobj.RunPhase{{Kind: PhaseKind_Plan, WorkerOrefs: []string{newTabORef()}}}}
+	storedChannel(t, true, run)
+	if m := resolveRunWorkerByScan(context.Background(), newTabORef()); m != nil {
 		t.Fatalf("want nil for unknown oref, got %+v", m)
 	}
 }
@@ -70,26 +93,31 @@ func TestRunWorkerTask_MentionsPhaseAndGoal(t *testing.T) {
 }
 
 func TestResolve_EnabledOwner(t *testing.T) {
-	c := ch("c1", true, dispatch("tab:t1", "harden webhooks"))
-	got := ResolveGatekeeperChannel([]*waveobj.Channel{c}, "tab:t1")
-	if got == nil || got.OID != "c1" {
-		t.Fatalf("want c1, got %v", got)
+	c := storedChannel(t, true)
+	worker := newTabORef()
+	dispatchTo(t, c.OID, worker, "harden webhooks")
+	got, task := resolveGatekeeperChannelByMeta(context.Background(), worker)
+	if got == nil || got.OID != c.OID {
+		t.Fatalf("want %s, got %v", c.OID, got)
 	}
-	if task := workerTaskFor(c, "tab:t1"); task != "harden webhooks" {
+	if task != "harden webhooks" {
 		t.Fatalf("want task, got %q", task)
 	}
 }
 
 func TestResolve_NotEnabledIgnored(t *testing.T) {
-	c := ch("c1", false, dispatch("tab:t1", "x"))
-	if got := ResolveGatekeeperChannel([]*waveobj.Channel{c}, "tab:t1"); got != nil {
+	c := storedChannel(t, false)
+	worker := newTabORef()
+	dispatchTo(t, c.OID, worker, "x")
+	if got, _ := resolveGatekeeperChannelByMeta(context.Background(), worker); got != nil {
 		t.Fatalf("want nil for disabled channel, got %v", got)
 	}
 }
 
 func TestResolve_NoOwner(t *testing.T) {
-	c := ch("c1", true, dispatch("tab:t1", "x"))
-	if got := ResolveGatekeeperChannel([]*waveobj.Channel{c}, "tab:t2"); got != nil {
+	c := storedChannel(t, true)
+	dispatchTo(t, c.OID, newTabORef(), "x")
+	if got, _ := resolveGatekeeperChannelByMeta(context.Background(), newTabORef()); got != nil {
 		t.Fatalf("want nil for unowned oref, got %v", got)
 	}
 }
@@ -167,16 +195,24 @@ func TestResolveProfile_DefaultMode(t *testing.T) {
 
 func TestResolveDispatchChannelFindsConciergeChannel(t *testing.T) {
 	// concierge (gatekeeper OFF) channel still owns its dispatch
-	c := ch("c1", false, dispatch("tab:w1", "do a thing"))
-	got := ResolveDispatchChannel([]*waveobj.Channel{c}, "tab:w1")
-	if got == nil || got.OID != "c1" {
-		t.Fatalf("got %v, want c1", got)
+	c := storedChannel(t, false)
+	worker := newTabORef()
+	dispatchTo(t, c.OID, worker, "do a thing")
+	got := ResolveDispatchChannel(context.Background(), worker)
+	if got == nil || got.OID != c.OID {
+		t.Fatalf("got %v, want %s", got, c.OID)
 	}
 }
 
 func TestResolveDispatchChannelNoMatch(t *testing.T) {
-	c := ch("c1", false, waveobj.ChannelMessage{Kind: "human", RefORef: ""})
-	if got := ResolveDispatchChannel([]*waveobj.Channel{c}, "tab:w1"); got != nil {
+	ctx := context.Background()
+	c := storedChannel(t, false)
+	worker := newTabORef()
+	// a message that names the worker without dispatching it does not make the channel its owner
+	if _, err := wstore.PostChannelMessage(ctx, c.OID, wstore.NewChannelMessage("outcome", "claude", "done", worker, 1)); err != nil {
+		t.Fatalf("post outcome: %v", err)
+	}
+	if got := ResolveDispatchChannel(ctx, worker); got != nil {
 		t.Fatalf("got %v, want nil", got)
 	}
 }
@@ -203,14 +239,13 @@ func TestResolveRunWorker_ResolvesALeadToItsOwnRunBesideAnotherRunOfTheSameProje
 	const project = `C:\repo`
 	tabOID := uuid.NewString()
 	blockOID := uuid.NewString()
-	other := waveobj.Run{ID: "r-other", DagORef: "g1", ProjectPath: project, Phases: []waveobj.RunPhase{
-		{Kind: PhaseKind_Execute, State: PhaseState_Running, WorkerOrefs: []string{"tab:other-lead"}},
+	other := waveobj.Run{ID: uuid.NewString(), DagORef: "g1", ProjectPath: project, CreatedTs: 1, Phases: []waveobj.RunPhase{
+		{Kind: PhaseKind_Execute, State: PhaseState_Running, WorkerOrefs: []string{newTabORef()}},
 	}}
-	own := waveobj.Run{ID: "r-own", DagORef: "g2", ProjectPath: project, Phases: []waveobj.RunPhase{
+	own := waveobj.Run{ID: uuid.NewString(), DagORef: "g2", ProjectPath: project, CreatedTs: 2, Phases: []waveobj.RunPhase{
 		{Kind: PhaseKind_Execute, State: PhaseState_Running, WorkerOrefs: []string{"tab:" + tabOID}},
 	}}
-	c := ch("c1", true)
-	c.Runs = []waveobj.Run{other, own}
+	storedChannel(t, true, other, own)
 	// the lead tab's first block carries cmd:cwd = the project checkout (UUID ids: ParseORef validates)
 	tab := &waveobj.Tab{OID: tabOID, BlockIds: []string{blockOID}}
 	if err := wstore.DBInsert(context.Background(), tab); err != nil {
@@ -224,8 +259,8 @@ func TestResolveRunWorker_ResolvesALeadToItsOwnRunBesideAnotherRunOfTheSameProje
 		wstore.DBDelete(context.Background(), waveobj.OType_Tab, tabOID)
 		wstore.DBDelete(context.Background(), waveobj.OType_Block, blockOID)
 	})
-	m := ResolveRunWorker([]*waveobj.Channel{c}, "tab:"+tabOID)
-	if m == nil || m.Run.ID != "r-own" {
+	m := resolveRunWorkerByScan(context.Background(), "tab:"+tabOID)
+	if m == nil || m.Run.ID != own.ID {
 		t.Fatalf("lead must resolve to its own run, got %+v", m)
 	}
 }

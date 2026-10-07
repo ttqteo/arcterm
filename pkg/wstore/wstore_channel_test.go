@@ -24,45 +24,47 @@ func TestNewChannelMessageSetsFieldsAndID(t *testing.T) {
 	}
 }
 
-func TestAppendChannelMessageAppendsInOrder(t *testing.T) {
-	ch := &waveobj.Channel{OID: "c1"}
-	appendChannelMessage(ch, NewChannelMessage("human", "you", "first", "", 1))
-	appendChannelMessage(ch, NewChannelMessage("human", "you", "second", "", 2))
-	if len(ch.Messages) != 2 {
-		t.Fatalf("want 2 messages, got %d", len(ch.Messages))
+func TestUpdateRunMutatesOnlyTheMatch(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "update-run", "/p")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ch.Messages[0].Text != "first" || ch.Messages[1].Text != "second" {
-		t.Errorf("wrong order: %+v", ch.Messages)
+	other, err := CreateChannel(ctx, "update-run-other", "/p")
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestAppendRunInAppends(t *testing.T) {
-	ch := &waveobj.Channel{OID: "c1"}
-	appendRunIn(ch, waveobj.Run{ID: "r1", Goal: "a"})
-	appendRunIn(ch, waveobj.Run{ID: "r2", Goal: "b"})
-	if len(ch.Runs) != 2 || ch.Runs[0].ID != "r1" || ch.Runs[1].ID != "r2" {
-		t.Fatalf("unexpected runs: %+v", ch.Runs)
+	first, second, foreign := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	for id, channelId := range map[string]string{first: ch.OID, second: ch.OID, foreign: other.OID} {
+		if err := AppendRun(ctx, channelId, waveobj.Run{ID: id, Status: "planning"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-}
-
-func TestUpdateRunInMutatesMatch(t *testing.T) {
-	ch := &waveobj.Channel{OID: "c1", Runs: []waveobj.Run{{ID: "r1"}, {ID: "r2"}}}
-	err := updateRunIn(ch, "r2", func(r *waveobj.Run) error {
+	markDone := func(r *waveobj.Run) error {
 		r.Status = "done"
 		return nil
-	})
-	if err != nil {
+	}
+	if err := UpdateRun(ctx, ch.OID, second, markDone); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ch.Runs[1].Status != "done" || ch.Runs[0].Status != "" {
-		t.Errorf("wrong run mutated: %+v", ch.Runs)
+	for id, want := range map[string]string{first: "planning", second: "done"} {
+		got, err := GetRun(ctx, ch.OID, id)
+		if err != nil || got.Status != want {
+			t.Errorf("run %s status = %+v (err %v), want %s", id, got, err, want)
+		}
 	}
-}
-
-func TestUpdateRunInErrorsWhenMissing(t *testing.T) {
-	ch := &waveobj.Channel{OID: "c1", Runs: []waveobj.Run{{ID: "r1"}}}
-	if err := updateRunIn(ch, "nope", func(*waveobj.Run) error { return nil }); err == nil {
-		t.Fatalf("expected error for missing run id")
+	if err := UpdateRun(ctx, ch.OID, uuid.NewString(), markDone); err == nil {
+		t.Errorf("expected error for missing run id")
+	}
+	// a run that exists under another channel is not this channel's
+	if err := UpdateRun(ctx, ch.OID, foreign, markDone); err == nil {
+		t.Errorf("expected error for a run in another channel")
+	}
+	if got, err := GetRun(ctx, other.OID, foreign); err != nil || got.Status != "planning" {
+		t.Errorf("the other channel's run changed: %+v (err %v)", got, err)
+	}
+	if err := UpdateRun(ctx, uuid.NewString(), second, markDone); err == nil {
+		t.Errorf("expected error for a missing channel")
 	}
 }
 

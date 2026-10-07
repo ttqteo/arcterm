@@ -15,6 +15,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/runroute"
+	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -124,6 +125,42 @@ func (ws *WshServer) EventPublishCommand(ctx context.Context, data wps.WaveEvent
 	if data.Sender == "" {
 		data.Sender = rpcSource
 	}
+	publishEvent(ctx, data)
+	return nil
+}
+
+// staleStatusWindowMs bounds how much older than the retained report a state report may be and still be
+// taken for an overtaken one. Older than that is a clock that stepped back, and dropping those would
+// freeze the agent's status until the clock caught up.
+const staleStatusWindowMs = 60_000
+
+// staleAgentStatus reports whether a state report was overtaken: its scope already retains a newer one.
+// The per-tool hooks run in the background, so a slow one can land after the report of a later event,
+// and a working that outlives its turn's idle would hold every wake to that lead.
+func staleAgentStatus(ev *wps.WaveEvent) bool {
+	var data baseds.AgentStatusData
+	if utilfn.ReUnmarshal(&data, ev.Data) != nil || data.State == "" || data.Ts == 0 {
+		return false
+	}
+	for _, scope := range ev.Scopes {
+		for _, prev := range wps.Broker.ReadEventHistory(wps.Event_AgentStatus, scope, 1) {
+			var last baseds.AgentStatusData
+			if utilfn.ReUnmarshal(&last, prev.Data) != nil {
+				continue
+			}
+			if age := last.Ts - data.Ts; age > 0 && age <= staleStatusWindowMs {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// publishEvent is EventPublishCommand past its caller check, which a test cannot satisfy.
+func publishEvent(ctx context.Context, data wps.WaveEvent) {
+	if data.Event == wps.Event_AgentStatus && staleAgentStatus(&data) {
+		return
+	}
 	if data.Event == wps.Event_AgentStatus {
 		PiTitleProviderInstance.NoteEvent(&data)
 		retireAskOnResume(&data)
@@ -133,8 +170,8 @@ func (ws *WshServer) EventPublishCommand(ctx context.Context, data wps.WaveEvent
 		// after the publish: the wake adapter re-reads the lead's state from event history, which has
 		// to hold this event already
 		orchestrate.NoteLeadStatus(ctx, &data)
+		noteAgentTurnEnded(ctx, &data)
 	}
-	return nil
 }
 
 func (ws *WshServer) EventSubCommand(ctx context.Context, data wps.SubscriptionRequest) error {

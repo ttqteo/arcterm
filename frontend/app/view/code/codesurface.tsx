@@ -6,7 +6,7 @@
 // to agents and runs — this answers "what does this code look like", not "what changed".
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
-import { SkeletonLine } from "@/app/element/skeleton";
+import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { useSyncMonacoTheme } from "@/app/monaco/monacotheme";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -501,23 +501,31 @@ function CodeBody({ model, onPickProject }: { model: AgentsViewModel; onPickProj
     }
 }
 
+const TREE_SKELETON_WIDTHS = ["w-[70%]", "w-[55%]", "w-[80%]", "w-[45%]", "w-[65%]", "w-[50%]"];
+const EDITOR_SKELETON_WIDTHS = ["w-[60%]", "w-[85%]", "w-[75%]", "w-[40%]", "w-[90%]", "w-[70%]"];
+
 // the file tree at its default width beside the editor, so the listing lands where the skeleton was
 function CodePanesSkeleton() {
     return (
         <div aria-hidden="true" className="flex h-full">
-            <div
-                className="flex shrink-0 flex-col gap-2 border-r border-border px-3 pt-3"
-                style={{ width: CODE_SIDEBAR_DEFAULT_WIDTHS.files }}
-            >
-                {["w-[70%]", "w-[55%]", "w-[80%]", "w-[45%]", "w-[65%]", "w-[50%]"].map((w, i) => (
-                    <SkeletonLine key={i} className={cn("h-[11px]", w)} />
-                ))}
+            <div className="flex shrink-0 border-r border-border" style={{ width: CODE_SIDEBAR_DEFAULT_WIDTHS.files }}>
+                <SkeletonRows className="flex-1 space-y-2 px-3 pt-3">
+                    {(i) => (
+                        <SkeletonLine
+                            key={i}
+                            className={cn("h-[11px]", TREE_SKELETON_WIDTHS[i % TREE_SKELETON_WIDTHS.length])}
+                        />
+                    )}
+                </SkeletonRows>
             </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-5">
-                {["w-[60%]", "w-[85%]", "w-[75%]", "w-[40%]", "w-[90%]", "w-[70%]"].map((w, i) => (
-                    <SkeletonLine key={i} className={cn("h-[11px]", w)} />
-                ))}
-            </div>
+            <SkeletonRows className="min-w-0 flex-1 space-y-2.5 p-5">
+                {(i) => (
+                    <SkeletonLine
+                        key={i}
+                        className={cn("h-[11px]", EDITOR_SKELETON_WIDTHS[i % EDITOR_SKELETON_WIDTHS.length])}
+                    />
+                )}
+            </SkeletonRows>
         </div>
     );
 }

@@ -16,13 +16,12 @@ import type { PetEventSource } from "./petvoice";
 // Where an escort lands; every landing is an address that goes through openAddress.
 export type PetTarget = { kind: "oref"; ref: string; anchor?: string };
 
-// approve-phase approves a run's gate (the phase the server named); approve-task and retry-task act on one
-// task of a dag
+// approve-task and retry-task act on one task of a dag
 export type PetAct =
     | { id: string; verb: "open"; label: string; target: PetTarget }
-    | { id: string; verb: "ack"; label: string; channelId: string; runId: string }
+    // land: true dismisses the run's held land instead of acknowledging its unverified outcome
+    | { id: string; verb: "ack"; label: string; channelId: string; runId: string; land?: boolean }
     | { id: string; verb: "land"; label: string; channelId: string; runId: string }
-    | { id: string; verb: "approve-phase"; label: string; channelId: string; runId: string; phaseIdx: number }
     | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
     | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string };
 
@@ -37,9 +36,10 @@ export interface PetActState {
 }
 
 // The button a click settles, the same one the Brief's queue offers (attentionact.ts), followed by the Open
-// escort for reading the run first: Approve a gate, Retry a failed task, Acknowledge an unverified run, Land a
-// held land again. Everything else needs a written answer, a picked option or a judgment, none of which is a
-// button, so the escort alone covers it.
+// escort for reading the run first: Approve a dag gate, Retry a failed task, Acknowledge an unverified run.
+// A held land gets Land again (a branch merged by hand lands at once) and Dismiss beside it, the way out
+// for a branch that will never land. Everything else needs a written answer, a picked option or a judgment,
+// none of which is a button, so the escort alone covers it.
 export function actsForAttention(item: AttentionItem): PetAct[] {
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved
@@ -55,18 +55,6 @@ export function actsForAttention(item: AttentionItem): PetAct[] {
     const taskId = item.taskid ?? "";
     const act = attentionAct({ wireKind: item.kind, channelId, runId, taskId, retry: item.retry === true });
     switch (act.kind) {
-        case "approve-gate":
-            return [
-                {
-                    id: `${item.key}:approve`,
-                    verb: "approve-phase",
-                    label: act.label,
-                    channelId,
-                    runId,
-                    phaseIdx: item.phaseidx ?? 0,
-                },
-                escort,
-            ];
         case "approve-dag":
             return [
                 { id: `${item.key}:approve`, verb: "approve-task", label: act.label, channelId, runId, taskId },
@@ -80,7 +68,11 @@ export function actsForAttention(item: AttentionItem): PetAct[] {
         case "ack-run":
             return [{ id: `${item.key}:ack`, verb: "ack", label: act.label, channelId, runId }, escort];
         case "land-run":
-            return [{ id: `${item.key}:land`, verb: "land", label: act.label, channelId, runId }, escort];
+            return [
+                { id: `${item.key}:land`, verb: "land", label: act.label, channelId, runId },
+                { id: `${item.key}:dismiss`, verb: "ack", label: "Dismiss", land: true, channelId, runId },
+                escort,
+            ];
         default:
             return [escort];
     }

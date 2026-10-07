@@ -37,7 +37,6 @@ const (
 
 	ConfigKey_HeadlessRuntime                = "headless:runtime"
 	ConfigKey_HeadlessOpenRouterCheapModel   = "headless:openroutercheapmodel"
-	ConfigKey_HeadlessOpenRouterMidModel     = "headless:openroutermidmodel"
 
 	ConfigKey_JarvisVaultPath                = "jarvis:vaultpath"
 
@@ -67,5 +66,8 @@ const (
 
 	ConfigKey_ClaudeClear                    = "claude:*"
 	ConfigKey_ClaudeActiveAccount            = "claude:activeaccount"
+
+	ConfigKey_RadarAuditRuntime              = "radar:auditruntime"
+	ConfigKey_RadarAuditModel                = "radar:auditmodel"
 )
 

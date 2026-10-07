@@ -182,12 +182,12 @@ func TestHandleChildOutcomeResetsAttemptCountWhenKindChanges(t *testing.T) {
 func TestHandleChildOutcomeUsesStampedUndispatchedRunWorker(t *testing.T) {
 	h := newChildOutcomeHarness(t, 1)
 	worker := h.workers[0]
-	ch, err := wstore.DBMustGet[*waveobj.Channel](h.ctx, h.channel)
+	msgs, err := wstore.GetMessagesByRef(h.ctx, worker)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, msg := range ch.Messages {
-		if msg.RefORef == worker && msg.Kind == "dispatch" {
+	for _, msg := range msgs {
+		if msg.Kind == "dispatch" {
 			t.Fatal("run worker unexpectedly has a dispatch message")
 		}
 	}
@@ -307,7 +307,7 @@ func newLeadExitRun(t *testing.T, mutate func(*waveobj.Run)) (context.Context, s
 
 func TestLeadExitBeforeSubmitFailsTheRunWithAReason(t *testing.T) {
 	ctx, channelId, run, rows := newLeadExitRun(t, nil)
-	if err := HandleRunWorkerExit(ctx, "tab:lead-tab"); err != nil {
+	if err := HandleRunWorkerExit(ctx, "tab:lead-tab", jarvis.WorkerExit{}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := wstore.GetRun(ctx, channelId, run.ID)
@@ -336,7 +336,7 @@ func TestLeadExitLeavesOtherRunsAlone(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, channelId, run, rows := newLeadExitRun(t, mutate)
 			before := run.Status
-			if err := HandleRunWorkerExit(ctx, "tab:lead-tab"); err != nil {
+			if err := HandleRunWorkerExit(ctx, "tab:lead-tab", jarvis.WorkerExit{}); err != nil {
 				t.Fatal(err)
 			}
 			got, err := wstore.GetRun(ctx, channelId, run.ID)
@@ -354,7 +354,7 @@ func TestWorkerExitFailsAQuickOrPipelineRun(t *testing.T) {
 	for name, mode := range map[string]string{"quick": jarvis.RunMode_Quick, "pipeline": jarvis.RunMode_Pipeline} {
 		t.Run(name, func(t *testing.T) {
 			ctx, channelId, run, rows := newLeadExitRun(t, func(r *waveobj.Run) { r.Mode = mode })
-			if err := HandleRunWorkerExit(ctx, "tab:lead-tab"); err != nil {
+			if err := HandleRunWorkerExit(ctx, "tab:lead-tab", jarvis.WorkerExit{}); err != nil {
 				t.Fatal(err)
 			}
 			got, err := wstore.GetRun(ctx, channelId, run.ID)
@@ -377,7 +377,7 @@ func TestWorkerExitIgnoresAWorkerOutsideTheRunningPhase(t *testing.T) {
 		r.Phases[0].WorkerOrefs = []string{"tab:next-phase-worker"}
 	})
 	// the exiting tab belonged to an earlier phase; its late exit must not fail the phase now running
-	if err := HandleRunWorkerExit(ctx, "tab:lead-tab"); err != nil {
+	if err := HandleRunWorkerExit(ctx, "tab:lead-tab", jarvis.WorkerExit{}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := wstore.GetRun(ctx, channelId, run.ID)
@@ -405,5 +405,48 @@ func TestHandleChildOutcomeOutlivesTheExitDeadline(t *testing.T) {
 	}
 	if task := h.loadDag(t).Tasks[0]; task.Attempts != 1 || task.LastFailureKind != FailureKindToolError {
 		t.Fatalf("outcome not recorded: attempts %d kind %q", task.Attempts, task.LastFailureKind)
+	}
+}
+
+// a worker that exits non-zero while its run is open leaves its last output on that run: the tab and its
+// terminal are deleted with the exit. A worker the engine stopped exits non-zero too, after its run closed.
+func TestWorkerExitRecordsAFailingWorkersOutputOnItsRun(t *testing.T) {
+	exit := jarvis.WorkerExit{ExitCode: 1, Output: "Error: session id already in use"}
+	cases := []struct {
+		name   string
+		mutate func(*waveobj.Run)
+		exit   jarvis.WorkerExit
+		want   bool
+	}{
+		{name: "a dag child still working", mutate: func(r *waveobj.Run) { r.Mode = jarvis.RunMode_Quick; r.DagORef = "dag-1" }, exit: exit, want: true},
+		{name: "a clean exit", mutate: func(r *waveobj.Run) { r.Mode = jarvis.RunMode_Quick; r.DagORef = "dag-1" }, exit: jarvis.WorkerExit{}, want: false},
+		{name: "a worker stopped after its run was cancelled", mutate: func(r *waveobj.Run) {
+			r.Mode = jarvis.RunMode_Quick
+			r.DagORef = "dag-1"
+			*r = jarvis.CancelRun(*r)
+		}, exit: exit, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _, _, rows := newLeadExitRun(t, tc.mutate)
+			if err := HandleRunWorkerExit(ctx, "tab:lead-tab", tc.exit); err != nil {
+				t.Fatal(err)
+			}
+			var outputs []map[string]any
+			for _, row := range *rows {
+				if row["eventkind"] == waveobj.RunEventKindWorkerOutput {
+					outputs = append(outputs, row)
+				}
+			}
+			if !tc.want {
+				if len(outputs) != 0 {
+					t.Fatalf("want no worker-output row, got %+v", outputs)
+				}
+				return
+			}
+			if len(outputs) != 1 || outputs[0]["exitcode"] != 1 || outputs[0]["output"] != exit.Output || outputs[0]["worker"] != "tab:lead-tab" {
+				t.Fatalf("want one worker-output row with the exit code and the output, got %+v", outputs)
+			}
+		})
 	}
 }

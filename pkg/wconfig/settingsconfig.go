@@ -69,7 +69,6 @@ type SettingsType struct {
 	MemoryVaultPath              string `json:"memory:vaultpath,omitempty"`
 	HeadlessRuntime              string `json:"headless:runtime,omitempty"`
 	HeadlessOpenRouterCheapModel string `json:"headless:openroutercheapmodel,omitempty"`
-	HeadlessOpenRouterMidModel   string `json:"headless:openroutermidmodel,omitempty"`
 	JarvisVaultPath              string `json:"jarvis:vaultpath,omitempty"`
 
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`
@@ -98,6 +97,9 @@ type SettingsType struct {
 
 	ClaudeClear         bool   `json:"claude:*,omitempty"`
 	ClaudeActiveAccount string `json:"claude:activeaccount,omitempty"`
+
+	RadarAuditRuntime string `json:"radar:auditruntime,omitempty"`
+	RadarAuditModel   string `json:"radar:auditmodel,omitempty"`
 }
 
 type ConfigError struct {

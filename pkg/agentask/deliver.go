@@ -6,6 +6,8 @@ package agentask
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
@@ -67,6 +69,7 @@ func injectAnswer(oref string, pending PendingAsk, answers []baseds.AgentAnswerI
 	if GlobalRegistry.ResolveWaiter(pending.AskId, WaitResult{Answers: answers}) {
 		return true, nil
 	}
+	answers = foldAnswers(answers)
 	var keys [][]byte
 	var err error
 	var typedText string
@@ -104,6 +107,31 @@ func injectAnswer(oref string, pending PendingAsk, answers []baseds.AgentAnswerI
 	// dag child as much as for a plain session, so every keystroke delivery awaits its clear.
 	GlobalRegistry.awaitClear(oref, pending, time.Now().UnixMilli())
 	return true, nil
+}
+
+const foldedLineBreak = " | "
+
+var lineBreakRun = regexp.MustCompile(`[ \t]*[\r\n][ \t\r\n]*`)
+
+// foldAnswerLines puts a multi-line answer on the one line a terminal takes: a typed line break would submit
+// the answer half written. Text with no break comes back untouched.
+// ponytail: typed one rune per KeystrokeDelay, so a long folded answer is slow; a bracketed paste if this path matters
+func foldAnswerLines(text string) string {
+	if !strings.ContainsAny(text, "\r\n") {
+		return text
+	}
+	folded := lineBreakRun.ReplaceAllString(text, foldedLineBreak)
+	return strings.TrimSuffix(strings.TrimPrefix(folded, foldedLineBreak), foldedLineBreak)
+}
+
+// foldAnswers folds each answer's text into a copy: the caller's answers are also what a waiter would receive.
+func foldAnswers(answers []baseds.AgentAnswerItem) []baseds.AgentAnswerItem {
+	out := make([]baseds.AgentAnswerItem, len(answers))
+	for i, a := range answers {
+		a.Text = foldAnswerLines(a.Text)
+		out[i] = a
+	}
+	return out
 }
 
 // proseAnswerText is the text a prose ask's answer is typed as. Prose asks have no native

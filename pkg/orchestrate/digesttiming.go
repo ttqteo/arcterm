@@ -29,6 +29,7 @@ type timingDetail struct {
 	TaskId string   `json:"taskid"`
 	Batch  []string `json:"batch"`
 	Ms     int64    `json:"ms"`
+	Verify string   `json:"verify"`
 }
 
 func readTimingDetail(ev waveobj.RunEvent) timingDetail {
@@ -150,8 +151,9 @@ func buildTiming(sn DagDigestSnapshot) *wshrpc.DagTimingDigest {
 			// failReview hands the lead a review whose reviewer may never have started
 			review.end(d.TaskId, ev.Ts, false)
 		case waveobj.RunEventKindTaskMerged:
-			// with a Verify line the merge-point Verify outcome is the boundary, not the squash
-			if g.Verify == "" {
+			// with a Verify line the merge-point Verify outcome is the boundary, not the squash, unless the
+			// merge left its Verify to the final stage
+			if g.Verify == "" || d.Verify == mergeVerifyFinal {
 				merge.end(d.TaskId, ev.Ts, true)
 			}
 		case waveobj.RunEventKindTaskVerifyPassed, waveobj.RunEventKindTaskVerifyFailed:

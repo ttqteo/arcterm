@@ -6,36 +6,42 @@ function agent(id: string, state: AgentVM["state"]): AgentVM {
     return { id, name: id, state } as unknown as AgentVM;
 }
 
-// a channel whose dispatch message points at the worker tab, which is what buildFleetSnapshot resolves.
-function channel(oid: string, runIds: string[], workerIds: string[]): Channel {
-    return {
-        oid,
-        name: oid,
-        runs: runIds.map((id) => ({ id })),
-        messages: workerIds.map((w, i) => ({
-            id: `m${i}`,
-            kind: "dispatch",
-            reforef: `tab:${w}`,
-            text: "do a thing",
-        })),
-    } as unknown as Channel;
+function channel(oid: string): Channel {
+    return { oid, name: oid } as unknown as Channel;
+}
+
+// a run row names its owning channel
+function run(id: string, channeloid: string): Run {
+    return { id, channeloid } as unknown as Run;
+}
+
+// dispatch messages pointing at the worker tabs, which is what buildFleetSnapshot resolves.
+function dispatches(workerIds: string[]): ChannelMessage[] {
+    return workerIds.map((w, i) => ({
+        id: `m${i}`,
+        kind: "dispatch",
+        reforef: `tab:${w}`,
+        text: "do a thing",
+    })) as unknown as ChannelMessage[];
 }
 
 describe("fleetForRecord", () => {
     it("returns no workers and no channels when the record has no attributed runs", () => {
         const out = fleetForRecord({
-            channels: [channel("c1", ["r1"], ["w1"])],
+            channels: [channel("c1")],
+            messagesByChannel: { c1: dispatches(["w1"]) },
             agents: [agent("w1", "working")],
-            attributedRunORefs: [],
+            attributedRuns: [],
         });
         expect(out).toEqual({ workers: [], channelCount: 0 });
     });
 
     it("counts only the channels that own an attributed run", () => {
         const out = fleetForRecord({
-            channels: [channel("c1", ["r1"], ["w1"]), channel("c2", ["r9"], ["w9"])],
+            channels: [channel("c1"), channel("c2")],
+            messagesByChannel: { c1: dispatches(["w1"]), c2: dispatches(["w9"]) },
             agents: [agent("w1", "working"), agent("w9", "working")],
-            attributedRunORefs: ["run:r1"],
+            attributedRuns: [run("r1", "c1")],
         });
         expect(out.channelCount).toBe(1);
         expect(out.workers.map((w) => w.oref)).toEqual(["tab:w1"]);
@@ -43,9 +49,10 @@ describe("fleetForRecord", () => {
 
     it("rolls up workers across several channels", () => {
         const out = fleetForRecord({
-            channels: [channel("c1", ["r1"], ["w1"]), channel("c2", ["r2"], ["w2"])],
+            channels: [channel("c1"), channel("c2")],
+            messagesByChannel: { c1: dispatches(["w1"]), c2: dispatches(["w2"]) },
             agents: [agent("w1", "working"), agent("w2", "asking")],
-            attributedRunORefs: ["run:r1", "run:r2"],
+            attributedRuns: [run("r1", "c1"), run("r2", "c2")],
         });
         expect(out.channelCount).toBe(2);
         expect(out.workers.map((w) => w.oref).sort()).toEqual(["tab:w1", "tab:w2"]);
@@ -53,21 +60,44 @@ describe("fleetForRecord", () => {
 
     it("dedups a worker reachable through two channels", () => {
         const out = fleetForRecord({
-            channels: [channel("c1", ["r1"], ["w1"]), channel("c2", ["r2"], ["w1"])],
+            channels: [channel("c1"), channel("c2")],
+            messagesByChannel: { c1: dispatches(["w1"]), c2: dispatches(["w1"]) },
             agents: [agent("w1", "working")],
-            attributedRunORefs: ["run:r1", "run:r2"],
+            attributedRuns: [run("r1", "c1"), run("r2", "c2")],
         });
         expect(out.workers).toHaveLength(1);
         expect(out.channelCount).toBe(2);
     });
 
-    it("tolerates a channel with no runs", () => {
+    it("counts a channel once however many of its runs are attributed", () => {
         const out = fleetForRecord({
-            channels: [channel("c1", [], ["w1"])],
+            channels: [channel("c1")],
+            messagesByChannel: { c1: dispatches(["w1"]) },
             agents: [agent("w1", "working")],
-            attributedRunORefs: ["run:r1"],
+            attributedRuns: [run("r1", "c1"), run("r2", "c1")],
+        });
+        expect(out.channelCount).toBe(1);
+        expect(out.workers).toHaveLength(1);
+    });
+
+    it("tolerates a channel that owns none of the attributed runs", () => {
+        const out = fleetForRecord({
+            channels: [channel("c1")],
+            messagesByChannel: { c1: dispatches(["w1"]) },
+            agents: [agent("w1", "working")],
+            attributedRuns: [run("r1", "gone")],
         });
         expect(out).toEqual({ workers: [], channelCount: 0 });
+    });
+
+    it("counts a channel whose run is attributed even when it has no dispatch messages", () => {
+        const out = fleetForRecord({
+            channels: [channel("c1"), channel("c2")],
+            messagesByChannel: { c1: [] },
+            agents: [],
+            attributedRuns: [run("r1", "c1"), run("r2", "c2")],
+        });
+        expect(out).toEqual({ workers: [], channelCount: 2 });
     });
 });
 

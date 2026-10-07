@@ -44,7 +44,7 @@ func (b *openrouterBackend) RunWithUsage(ctx context.Context, spec RuntimeSpec, 
 
 	model := spec.Model
 	if model == "" {
-		model = OpenrouterMidModel()
+		model = OpenrouterCheapModel()
 	}
 
 	body := map[string]any{
@@ -136,12 +136,4 @@ func OpenrouterCheapModel() string {
 		return cfg.Settings.HeadlessOpenRouterCheapModel
 	}
 	return "deepseek/deepseek-v4-flash"
-}
-
-// OpenrouterMidModel returns the configured mid model or the default.
-func OpenrouterMidModel() string {
-	if cfg := wconfig.GetWatcher().GetFullConfig(); cfg.Settings.HeadlessOpenRouterMidModel != "" {
-		return cfg.Settings.HeadlessOpenRouterMidModel
-	}
-	return "deepseek/deepseek-v4-pro"
 }

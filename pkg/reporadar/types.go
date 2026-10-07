@@ -1,17 +1,19 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package reporadar scans a single registered repository for evidence-backed correctness-risk
-// hypotheses. It collects deterministic signals, spends one bounded model call to cluster them,
-// validates the result, and tracks findings across scans. It never mutates the repository and
-// never runs tests, commands, or agents. Persisted types live in pkg/waveobj.
+// Package reporadar scans a single registered repository for bugs a recent fix left behind at sibling
+// sites. It picks the window's fix commits deterministically, runs one read-only agent session per commit
+// that reads the code for the same bug elsewhere, keeps only the hits that name a real file, line and
+// trigger, and tracks the findings across scans. It never mutates the repository and never runs tests,
+// builds or the app. Persisted types live in pkg/waveobj.
 package reporadar
 
 import "time"
 
 func nowMilli() int64 { return time.Now().UnixMilli() }
 
-// scan status (mirrors waveobj.RadarReport.Status)
+// scan status (mirrors waveobj.RadarReport.Status). The wire values predate the audit pipeline:
+// collecting is fix-commit selection, clustering is the audit sessions.
 const (
 	StatusCollecting = "collecting"
 	StatusClustering = "clustering"
@@ -30,128 +32,38 @@ const (
 	GroupSuppressed = "suppressed"
 )
 
-// collector kinds (RadarSignal.Collector)
-const (
-	CollectorStructure  = "structure"
-	CollectorGit        = "git"
-	CollectorRuns       = "runs"
-	CollectorTranscript = "transcript"
-	CollectorConfig     = "config"
-	CollectorDependency = "dependency"
-)
+// CollectorGit is the one signal kind left (RadarSignal.Collector): a finding's source fix commit.
+const CollectorGit = "git"
 
-// per-collector coverage status (RadarReport.Coverage values), also used per lens in LensProgress.
-// Streamed as each collector or lens runs so the scan checklist ticks queued -> running -> done;
-// "running" is transient and replaced by ok/failed.
 const (
-	CoverageQueued  = "queued"
-	CoverageRunning = "running"
-	CoverageOK      = "ok"
-	CoverageFailed  = "failed"
-)
-
-// evidence strength / severity
-const (
-	StrengthStrong   = "strong"
-	StrengthModerate = "moderate"
-	StrengthLimited  = "limited"
-
 	SeverityLow    = "low"
 	SeverityMedium = "medium"
 	SeverityHigh   = "high"
 )
 
-// v1 correctness-risk taxonomy
-const (
-	RiskTestCoverageGap     = "test-coverage-gap"
-	RiskMigrationSafety     = "migration-safety"
-	RiskConfigContractDrift = "configuration-contract-drift"
-	RiskRepeatedFailure     = "repeated-failure-boundary"
-	RiskRuntimeOnlyBehavior = "runtime-only-behavior"
-	RiskCrossLayerMismatch  = "cross-layer-contract-mismatch"
-)
+var severityRank = map[string]int{SeverityHigh: 3, SeverityMedium: 2, SeverityLow: 1}
 
-var V1RiskKinds = []string{
-	RiskTestCoverageGap, RiskMigrationSafety, RiskConfigContractDrift,
-	RiskRepeatedFailure, RiskRuntimeOnlyBehavior, RiskCrossLayerMismatch,
+func normalizeSeverity(s string) string {
+	switch s {
+	case SeverityHigh, SeverityMedium, SeverityLow:
+		return s
+	default:
+		return SeverityMedium
+	}
 }
 
-// v1 security-risk taxonomy (globally unique vs. the correctness kinds — see TestRiskKindsGloballyUnique)
-const (
-	RiskAuthBoundaryFragility      = "auth-boundary-fragility"
-	RiskSecretHandlingBoundaryRisk = "secret-handling-boundary-risk"
-	RiskInputValidationGap         = "input-validation-gap"
-	RiskDependencyExposure         = "dependency-exposure"
-)
+// maxEvidenceTextLen bounds a commit subject quoted in a signal summary.
+const maxEvidenceTextLen = 160
 
-var V1SecurityRiskKinds = []string{
-	RiskAuthBoundaryFragility, RiskSecretHandlingBoundaryRisk,
-	RiskInputValidationGap, RiskDependencyExposure,
-}
+// maxRawResponseBytes bounds a stored session reply; it is an audit trail, not a transcript.
+const maxRawResponseBytes = 64 * 1024
 
-// riskKindMeaning is what each kind means, spelled out in the clustering prompt so the model labels by
-// evidence instead of by name. test-coverage-gap is also gated in validateFindings.
-var riskKindMeaning = map[string]string{
-	RiskTestCoverageGap:            "production code no test exercises; must cite a structure signal that observed a source without a test (tool errors or failures alone are repeated-failure-boundary)",
-	RiskMigrationSafety:            "schema or data migrations that can fail, lose data, or not roll back",
-	RiskConfigContractDrift:        "configuration keys, defaults, or schemas that disagree with the code reading them",
-	RiskRepeatedFailure:            "the same boundary keeps failing: repeated run failures, tool errors, or fix-after-fix commits",
-	RiskRuntimeOnlyBehavior:        "behavior that only shows at runtime (timing, environment, platform), so static checks and unit tests miss it",
-	RiskCrossLayerMismatch:         "two layers (frontend/backend, client/server, generated/hand-written) disagree on a shared contract",
-	RiskAuthBoundaryFragility:      "an authentication or authorization boundary that keeps changing or failing",
-	RiskSecretHandlingBoundaryRisk: "secrets or credentials handled at a boundary that keeps changing or failing",
-	RiskInputValidationGap:         "external input reaching logic without validation at a boundary that keeps changing or failing",
-	RiskDependencyExposure:         "a dependency pinned or configured so that it exposes the project",
-}
-
-// signal fact-class tags (RadarSignal.Facts["classes"]). Distinct from risk kinds: a class labels
-// evidence, a risk kind labels a finding. ClassDependencyPin intentionally does NOT reuse the
-// dependency-exposure risk-kind string.
-const (
-	ClassSecurityBoundary  = "security-boundary"
-	ClassConfigSecurity    = "config-security"
-	ClassDependencyPin     = "dependency-pin"
-	ClassSourceWithoutTest = "source-without-test"
-)
-
-// scan modes (RadarFinding.Mode). Correctness is the only mode wired in Plan 1; the security and
-// debt lenses append themselves to V1Modes in their own plans.
-const (
-	ModeCorrectness = "correctness"
-	ModeSecurity    = "security"
-	ModeDebt        = "debt"
-)
-
-// V1Modes is the ordered set of modes a scan runs. Lens plans append ModeSecurity / ModeDebt.
-var V1Modes = []string{ModeCorrectness, ModeSecurity}
-
-// RiskKindsByMode is the per-mode taxonomy. Kind names MUST be globally unique across modes (see
-// TestRiskKindsGloballyUnique) — that uniqueness is what lets the fingerprint stay mode-free.
-var RiskKindsByMode = map[string][]string{
-	ModeCorrectness: V1RiskKinds,
-	ModeSecurity:    V1SecurityRiskKinds,
-}
-
-// per-mode clustering outcome (RadarModeRun.Status)
-const (
-	ModeRunCompleted     = "completed"
-	ModeRunClusterFailed = "clustering-failed"
-	ModeRunSkipped       = "skipped" // reserved for a future per-project mode toggle
-)
-
-// DefaultRadarPayloadBudget caps the prepared payload Radar sends to the model (estimated tokens).
-// It is NOT a cap on total provider usage — Claude Code adds unmeasured runtime context.
-const DefaultRadarPayloadBudget = 40_000
-
-// MaxFindings caps New+Recurring findings surfaced per scan.
-const MaxFindings = 10
-
-// EvidenceWindow is how far back every scan looks for activity. It is rolling rather than since-last-scan
-// so back-to-back scans see the same evidence and a finding keeps its identity instead of vanishing.
+// EvidenceWindow is how far back every scan looks for fix commits. It is rolling rather than
+// since-last-scan, so a commit whose audit failed is still in reach of the next scan.
 const EvidenceWindow = 30 * 24 * time.Hour
 
 // NoLongerAfterMisses is how many consecutive scans must miss an open finding before it moves to
-// No longer detected; a single miss is usually model variance, not vanished evidence.
+// No longer detected.
 const NoLongerAfterMisses = 2
 
 // ReportsKeptPerProject bounds stored reports per project; attention triage loads every report.
@@ -159,12 +71,3 @@ const ReportsKeptPerProject = 20
 
 // InvestigationOrphaned marks an investigation whose run no longer exists, so it can never finish.
 const InvestigationOrphaned = "orphaned"
-
-func ValidRiskKind(mode, kind string) bool {
-	for _, k := range RiskKindsByMode[mode] {
-		if k == kind {
-			return true
-		}
-	}
-	return false
-}

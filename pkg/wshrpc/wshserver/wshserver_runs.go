@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/gitinfo"
 	"github.com/wavetermdev/waveterm/pkg/harness"
@@ -47,6 +46,9 @@ const ErrWorkerReportRequired = "a task worker completes with --report <file>"
 // sealAsync dispatches the best-effort evidence seal off the RPC handler's goroutine so a slow git diff
 // can't hold the response past the caller's client timeout. A var so tests can run it inline.
 var sealAsync = func(fn func()) { go fn() }
+
+// landRun is the land a completed run gets. A var so a test can read what it was asked for.
+var landRun = orchestrate.LandRun
 
 // publishRunUpdate broadcasts a mutated run to the frontend on BOTH orefs: run:<id> (the focused-run view
 // subscribes to the per-run WOS object — channel-scaling Phase 2) and channel:<id> (the run-list read
@@ -107,18 +109,19 @@ const continuityCaptureTimeout = 90 * time.Second
 // diff. Note the continuity capture AdvanceRun also runs on its done-path is deliberately not here —
 // there is no lead transcript to summarize.
 func SealDoneRunEvidenceAsync(channelId, runId string) {
-	sealAsync(func() { sealThenLand(channelId, runId) })
+	sealAsync(func() { sealThenLand(channelId, runId, false) })
 }
 
 // sealThenLand seals a done run, then merges its branch back. The land comes second so the seal reads the
 // branch before the land deletes it, and it is not gated on the seal: a seal left to the backfill is no reason
-// to leave the run's work off its base.
-func sealThenLand(channelId, runId string) {
+// to leave the run's work off its base. force lands past a failed final stage: the human's answer, which the
+// lead carries on complete because the land runs after its tab has closed.
+func sealThenLand(channelId, runId string, force bool) {
 	sealDoneRunEvidence(channelId, runId)
 	ctx, cancel := context.WithTimeout(context.Background(), orchestrate.LandTimeout)
 	defer cancel()
 	// a held land is on the run with its reason and raises an attention item; `wsh runs land` retries it
-	if _, err := orchestrate.LandRun(ctx, channelId, runId, false); err != nil {
+	if _, err := landRun(ctx, channelId, runId, force); err != nil {
 		log.Printf("landing run %s: %v", runId, err)
 	}
 }
@@ -289,6 +292,13 @@ func spawnRunWorkersWithPrompt(ctx context.Context, channelId, runId, projectNam
 		for _, w := range spawned {
 			if serr := wstore.StampWorkerOwner(ctx, w.ORef, runORef, channelORef); serr != nil {
 				log.Printf("spawnRunWorkers: stamp worker %s: %v", w.ORef, serr)
+			}
+		}
+		// last: the exit hook fails a run through the worker orefs and the stamp recorded above, and a worker
+		// that dies at launch beats whichever is written after its process starts
+		for _, w := range spawned {
+			if serr := jarvis.StartRunWorker(ctx, w.ORef); serr != nil {
+				spawnErr = errors.Join(spawnErr, fmt.Errorf("starting worker %s: %w", w.ORef, serr))
 			}
 		}
 	}
@@ -637,7 +647,7 @@ func (ws *WshServer) CreateChildRunCommand(ctx context.Context, data wshrpc.Comm
 	return &wshrpc.CommandCreateChildRunRtnData{RunId: child.ID}, nil
 }
 
-// steerRunLead sends a line of input into the block of a run worker (tab oref "tab:<id>"), resuming a
+// steerRunLead sends a line to the session in the block of a run worker (tab oref "tab:<id>"), resuming a
 // long-lived lead in place. Best-effort: resolution/send failures are logged, never fatal. It is a var so
 // tests can observe the parent notify-back without a live PTY.
 var steerRunLead = func(ctx context.Context, tabORef, text string) {
@@ -651,9 +661,8 @@ var steerRunLead = func(ctx context.Context, tabORef, text string) {
 		log.Printf("steerRunLead: no block for %q: %v", tabORef, err)
 		return
 	}
-	if err := blockcontroller.SendInput(tab.BlockIds[0], &blockcontroller.BlockInputUnion{InputData: []byte(text)}); err != nil {
-		log.Printf("steerRunLead: sending input to %q: %v", tabORef, err)
-	}
+	// the line's own \r was its Enter when it was typed raw; the send submits it itself
+	orchestrate.SendToSession(tab.BlockIds[0], strings.TrimRight(text, "\r"))
 }
 
 // applyRunAction dispatches a run action to the matching engine transition (pure; no persistence).
@@ -699,7 +708,7 @@ func resumeRefusal(run *waveobj.Run, phaseIdx int) string {
 	case run.SessionId == "":
 		return "the run has no session to resume"
 	}
-	if _, ok := jarvis.ResumeWorkerArgs(run.Runtime, run.SessionId, nil); !ok {
+	if _, ok := jarvis.ResumeWorkerArgs(run.Runtime, run.SessionId, nil, jarvis.ResumeNudge); !ok {
 		return fmt.Sprintf("runtime %q cannot resume a session", run.Runtime)
 	}
 	return ""
@@ -726,7 +735,7 @@ func resumeRun(ctx context.Context, channelId, runId string, phaseIdx int) error
 	if err != nil {
 		return fmt.Errorf("cannot resume run %s: %w", runId, err)
 	}
-	if rerr := jarvis.ResumeRunWorker(ctx, worker, runtime, sessionId); rerr != nil {
+	if rerr := jarvis.ResumeRunWorker(ctx, worker, runtime, sessionId, jarvis.ResumeNudge); rerr != nil {
 		if err := wstore.UpdateRun(ctx, channelId, runId, func(r *waveobj.Run) error {
 			if r.Phases[phaseIdx].State != jarvis.PhaseState_Running {
 				return nil // the exit hook already failed it
@@ -832,8 +841,8 @@ func (ws *WshServer) AdvanceRunCommand(ctx context.Context, data wshrpc.CommandA
 			// blocking the handler on it surfaced as EC-TIME even though the transition above had already
 			// persisted. It's best-effort and idempotent, with SealRunEvidenceCommand as the backfill — so
 			// dispatch it off-band and let the RPC return as soon as the transition is durable.
-			channelId, runId := data.ChannelId, data.RunId
-			sealAsync(func() { sealThenLand(channelId, runId) })
+			channelId, runId, force := data.ChannelId, data.RunId, data.ForceLand
+			sealAsync(func() { sealThenLand(channelId, runId, force) })
 		}
 		// parent-notify stays synchronous: it's a cheap PTY input send, and a child's parent must learn its
 		// child is done as soon as the transition lands, not whenever the background seal happens to finish.
@@ -955,6 +964,7 @@ func (ws *WshServer) ReportRunPhaseCommand(ctx context.Context, data wshrpc.Comm
 		Commit:    data.Commit,
 		Report:    data.Report,
 		HoldLand:  data.HoldLand,
+		ForceLand: data.ForceLand,
 	})
 }
 
@@ -1108,12 +1118,20 @@ func (ws *WshServer) LandRunCommand(ctx context.Context, data wshrpc.CommandLand
 }
 
 // AckRunCommand records that the human read a done run's unverified outcome, which clears its attention item.
+// With Land it dismisses the run's held land instead: the branch stays, and `wsh runs land` still retries it.
 func (ws *WshServer) AckRunCommand(ctx context.Context, data wshrpc.CommandAckRunData) error {
 	if data.ChannelId == "" || data.RunId == "" {
 		return fmt.Errorf("channelid and runid are required")
 	}
 	if err := wstore.UpdateRun(ctx, data.ChannelId, data.RunId, func(r *waveobj.Run) error {
-		r.VerificationAckTs = time.Now().UnixMilli()
+		if !data.Land {
+			r.VerificationAckTs = time.Now().UnixMilli()
+			return nil
+		}
+		if r.Land == nil || r.Land.State != orchestrate.LandState_Held {
+			return fmt.Errorf("run %s has no held land to dismiss", data.RunId)
+		}
+		r.Land.Dismissed = true
 		return nil
 	}); err != nil {
 		return fmt.Errorf("acknowledging run: %w", err)

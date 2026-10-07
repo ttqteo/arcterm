@@ -75,7 +75,7 @@ func TestPlanReviewPromptUnchangedWithoutPicks(t *testing.T) {
 		"Read the spec at " + DocPath(g, "tree", "s.md") + ", the plan at " + DocPath(g, "tree", "p.md") + ", and the files they name.\n" +
 		"Check that:\n" +
 		"- every requirement in the spec has a task;\n" +
-		"- no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time;\n" +
+		"- no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;\n" +
 		"- types, functions and flags have the same names in every task that mentions them;\n" +
 		"- each task states its acceptance criteria and names the tests that prove them;\n" +
 		"- the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;\n" +
@@ -171,7 +171,10 @@ func TestPlanReviewPassRefusesBadPicks(t *testing.T) {
 		}), nil, "t-1"},
 		{"sonnet the harness cannot run", true, ReviewVerdict_Pass, goodPicks(), errors.New("claude is not installed"), "pick lead"},
 		{"picks on a non-picks group", false, ReviewVerdict_Pass, goodPicks(), nil, "Reviewer picks"},
-		{"picks on fail", true, ReviewVerdict_Fail, goodPicks(), nil, "pass"},
+		{"unknown on a fail", true, ReviewVerdict_Fail, with(func(p []wshrpc.DagModelPick) []wshrpc.DagModelPick {
+			return append(p, wshrpc.DagModelPick{TaskId: "t-9", Model: PickModel_Lead, Reason: "x"})
+		}), nil, "t-9"},
+		{"picks on a failed non-picks group", false, ReviewVerdict_Fail, goodPicks(), nil, "Reviewer picks"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -189,6 +192,48 @@ func TestPlanReviewPassRefusesBadPicks(t *testing.T) {
 				t.Fatalf("a refused verdict changes nothing, got %+v with tasks %+v", g.PlanReview, g.Tasks)
 			}
 		})
+	}
+}
+
+// a fail may pick for only some tasks; the picks wait on the held tasks, and an accept dispatches on them
+func TestPlanReviewFailKeepsItsPicksThroughAccept(t *testing.T) {
+	ctx, dag, reviewer := seedPicksDag(t, true)
+	var details []map[string]any
+	old := appendRunEvent
+	appendRunEvent = func(_ context.Context, _, _, kind string, _ *int, detail any) {
+		if d, ok := detail.(map[string]any); ok && kind == waveobj.RunEventKindPlanReviewed {
+			details = append(details, d)
+		}
+	}
+	restoreAfterStages(t, func() { appendRunEvent = old })
+	partial := goodPicks()[:1]
+	if err := RecordPlanReviewVerdict(ctx, dag.OID, reviewer, ReviewVerdict_Fail, "the findings", partial); err != nil {
+		t.Fatal(err)
+	}
+	if len(details) != 1 || details[0]["state"] != PlanReviewState_Failed || !reflect.DeepEqual(details[0]["picks"], partial) {
+		t.Fatalf("the fail event must carry its picks, got %+v", details)
+	}
+	onLight := func(when string) {
+		t.Helper()
+		g := loadDag(t, ctx, dag.OID)
+		t1, t2 := taskByID(g, "t-1"), taskByID(g, "t-2")
+		if t1.RunSpec.Runtime != LightPickRoute.Runtime || t1.RunSpec.Model != LightPickRoute.Model || t1.ModelSource != waveobj.TaskModelSource_Reviewer {
+			t.Fatalf("%s: the picked task is on the light route, got %+v", when, t1)
+		}
+		if t2.RunSpec.Model != "" || t2.ModelSource != "" || t2.PickReason != "" {
+			t.Fatalf("%s: a task the fail left out stays on the lead, got %+v", when, t2)
+		}
+	}
+	onLight("after the fail")
+	if g := loadDag(t, ctx, dag.OID); g.PlanReview.State != PlanReviewState_Failed || !planReviewHolds(g) {
+		t.Fatalf("a fail with picks still holds every worker, got %+v", g.PlanReview)
+	}
+	if err := AcceptPlanReview(ctx, dag.OID, "the human said to go on"); err != nil {
+		t.Fatal(err)
+	}
+	onLight("after the accept")
+	if g := loadDag(t, ctx, dag.OID); g.PlanReview.State != PlanReviewState_Accepted {
+		t.Fatalf("want accepted, got %+v", g.PlanReview)
 	}
 }
 

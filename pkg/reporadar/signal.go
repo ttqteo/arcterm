@@ -14,7 +14,7 @@ import (
 
 // newSignal builds a canonical signal. The ID derives from (collector, sourceRef) — the canonical
 // source+event identity — NOT from presentation, so the same commit surfaced many ways is one
-// signal. The content hash derives from the semantic payload and is the dedup key.
+// signal. The content hash derives from the semantic payload.
 func newSignal(collector, sourceRef string, observedTs int64, paths []string, summary string, facts map[string]any, snippet string) waveobj.RadarSignal {
 	sort.Strings(paths)
 	id := shortHash(collector + "\x00" + sourceRef)
@@ -36,18 +36,4 @@ func newSignal(collector, sourceRef string, observedTs int64, paths []string, su
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])[:16]
-}
-
-// dedupSignals collapses signals sharing a content hash, keeping the first (stable) occurrence.
-func dedupSignals(sigs []waveobj.RadarSignal) []waveobj.RadarSignal {
-	seen := map[string]bool{}
-	var out []waveobj.RadarSignal
-	for _, s := range sigs {
-		if seen[s.ContentHash] {
-			continue
-		}
-		seen[s.ContentHash] = true
-		out = append(out, s)
-	}
-	return out
 }

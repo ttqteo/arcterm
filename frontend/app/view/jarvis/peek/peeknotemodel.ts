@@ -5,7 +5,7 @@
 
 import type { PeekFacts } from "../peekstore";
 
-// A note is gone when its read is rejected. It has no surface and nothing to focus on.
+// A note is gone when its read is rejected.
 export function notePeekFacts(result: "ok" | "error"): PeekFacts {
     return { gone: result === "error" };
 }

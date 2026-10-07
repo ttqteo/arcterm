@@ -38,19 +38,9 @@ describe("actsForAttention", () => {
         }
     });
 
-    // the peek used to offer only Open here while the Brief's queue approved in place (attentionact.ts)
-    it("approves a run's gate in place, and still escorts to it for reading first", () => {
-        expect(actsForAttention(gate())).toEqual([
-            {
-                id: "gate:run1:approve",
-                verb: "approve-phase",
-                label: "Approve",
-                channelId: "ch1",
-                runId: "run1",
-                phaseIdx: 1,
-            },
-            { id: "gate:run1:open", verb: "open", label: "Open", target: { kind: "oref", ref: "run:run1" } },
-        ]);
+    // the server no longer emits a run's review gate (the dag's own gate replaced it), so the escort alone covers it
+    it("only escorts a run-level gate", () => {
+        expect(actsForAttention(gate()).map((a) => a.verb)).toEqual(["open"]);
     });
 
     it("approves a dag task's gate in place", () => {
@@ -101,18 +91,14 @@ describe("actsForAttention", () => {
         ]);
     });
 
-    it("lands a held run again in place, and still escorts to it", () => {
+    it("lands a held run again or dismisses it in place, and still escorts to its run", () => {
         const held = { ...gate(), kind: "run-land-held", key: "run-land-held:run1" } as AttentionItem;
         expect(actsForAttention(held)).toEqual([
             { id: "run-land-held:run1:land", verb: "land", label: "Land again", channelId: "ch1", runId: "run1" },
-            {
-                id: "run-land-held:run1:open",
-                verb: "open",
-                label: "Open",
-                target: { kind: "oref", ref: "run:run1" },
-            },
+            { id: "run-land-held:run1:dismiss", verb: "ack", label: "Dismiss", land: true, channelId: "ch1", runId: "run1" }, // prettier-ignore
+            { id: "run-land-held:run1:open", verb: "open", label: "Open", target: { kind: "oref", ref: "run:run1" } },
         ]);
-        expect(actsForAttention({ ...held, channelid: "" }).map((a) => a.verb)).toEqual(["open"]);
+        expect(actsForAttention({ ...held, channelid: "" } as AttentionItem).map((a) => a.verb)).toEqual(["open"]);
     });
 
     it("escorts an unverified run that names no channel, since the ack needs one", () => {

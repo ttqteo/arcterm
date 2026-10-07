@@ -408,7 +408,7 @@ func workRefFromFlags(cmd *cobra.Command) (string, string, error) {
 
 // --- shared helpers ---
 
-// mutateOne sends a single-op batch; asJSON prints the post-mutation object when set.
+// mutateOne sends a single-op batch and prints the post-mutation object (asJSON) or a one-line confirmation.
 func mutateOne(effortOID string, op wshrpc.EffortOp, asJSON bool) error {
 	data := wshrpc.CommandEffortMutateData{EffortOID: effortOID, Ops: []wshrpc.EffortOp{op}}
 	if RpcContext.BlockId != "" {
@@ -421,6 +421,8 @@ func mutateOne(effortOID string, op wshrpc.EffortOp, asJSON bool) error {
 	if asJSON {
 		return jsonOut(rtn)
 	}
+	// a silent success reads the same as a no-op, and resending an add or a note is not harmless
+	fmt.Printf("%s applied to effort %s\n", op.Op, effortOID)
 	return nil
 }
 

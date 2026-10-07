@@ -100,10 +100,6 @@ func TestMigrateTierPinsRewritesEveryStore(t *testing.T) {
 	if storedRun.WorkerRoute == nil || *storedRun.WorkerRoute != wantRunRoute {
 		t.Fatalf("run row worker route = %+v", storedRun.WorkerRoute)
 	}
-	// the channel blob keeps its own copy of every run, and UpdateRun and CreateDagForRun read it
-	if len(storedCh.Runs) != 1 || storedCh.Runs[0].WorkerRoute == nil || *storedCh.Runs[0].WorkerRoute != wantRunRoute {
-		t.Fatalf("channel blob runs = %+v", storedCh.Runs)
-	}
 	storedDag, err := wstore.GetDag(ctx, dag.OID)
 	if err != nil {
 		t.Fatal(err)

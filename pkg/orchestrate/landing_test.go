@@ -93,7 +93,7 @@ func TestDirtyCheckoutDoesNotHoldBranchMerges(t *testing.T) {
 }
 
 func TestVerifyIsScopedToWhatTheMergeChanged(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.land(t)
 	f.finish(t, "t-0")
@@ -120,7 +120,7 @@ func TestVerifyIsScopedToWhatTheMergeChanged(t *testing.T) {
 
 // a merge the engine cannot diff still gets its Verify: unscoped is the safe direction
 func TestVerifyRunsUnscopedWhenTheMergeCannotBeListed(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	f.finish(t, "t-0")
 	stubMerge(t, landedSha) // "sha-1" is no commit
@@ -142,7 +142,7 @@ func TestVerifyRunsUnscopedWhenTheMergeCannotBeListed(t *testing.T) {
 }
 
 func TestVerifyRunsInTheLandingTree(t *testing.T) {
-	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}, stillOpen})
 	f.setPlanCommands(t, verifyCmd, "")
 	tree := f.land(t)
 	f.finish(t, "t-0")

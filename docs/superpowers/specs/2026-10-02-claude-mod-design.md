@@ -88,23 +88,79 @@ mod made none. Not yet watched in the cockpit: the agent row turning idle on Esc
 Added 2026-10-04. The engine woke a lead by pasting into its terminal and pressing Enter
 (`typeWake`), which lands in the composer the human may be typing in. The mod now holds
 `wsh agentctl` from `session.start` for the session's life: a stream RPC (`AgentControlCommand`)
-that registers the block in `pkg/agentctl` and prints each prompt as one JSON line `{"text"}`. The
-mod runs a line as typing it would (`hooks/control-core.ts`, vitest): a leading slash is
-`$.command.run` (the handoff `/compact`), anything else `$.prompt.submit` with `asUser: true`, so
+that registers the block in `pkg/agentctl` and prints each message as one JSON line: `{"text"}`, a
+prompt, or `{"compact"}`, a compaction with those instructions (the handoff). The mod runs a prompt as
+typing it would (`hooks/control-core.ts`, vitest): a leading slash is `$.command.run`, anything else
+`$.prompt.submit` with `asUser: true`. A compaction is `$.session.compact`, with the `/compact`
+command as its fallback. So
 the model reads the text bare and not as "The arc plugin sent a message".
 
-`typeWake` sends over the stream when the block has one and its latest state is at the prompt
-(`overStream`), and types otherwise: no stream (pi, an older Claude, a mod that failed to load), or
-a working session, since the mod's prompt waits for the running turn to end where typed text
-reaches the turn itself, which a `dag tell` to a busy worker relies on. The retry's Enter alone is
+`typeWake` sends over the stream when the block has one (`overStream`), and types otherwise: no
+stream (pi, an older Claude, a mod that failed to load). The retry's Enter alone is
 dropped for a block with a stream: it would submit the human's draft. The waker is otherwise
 unchanged; it still confirms a wake on the working report.
 
 Probed 2026-10-04 on 2.1.289, the real mod in a pty against a stub `wsh` whose `agentctl` streamed
 lines from a file: the prompt ran with `UserPromptSubmit` and `Stop` fired and the prompt text bare,
 `/compact` ran with `PreCompact` (`manual`), and a draft typed in the composer beforehand was still
-there afterwards. Not covered: the stream RPC end to end against a real `wavesrv`, and
-`steerRunLead` (a child run's notice to its parent lead), which still types.
+there afterwards. Not covered: the stream RPC end to end against a real `wavesrv`.
+
+Amended 2026-10-05: **a working session is not typed into either.** A prompt from the mod waits for
+the running turn to end, where a `dag tell` to a busy worker is for the turn itself, so that text
+used to be typed, into the composer and onto whatever the human had drafted there. `overStream` now
+sends it with `midturn` set when the session is not at its prompt, and the mod joins it to the
+running turn with `$.session.append` (a user-role row the model reads at its next request). That row
+draws nothing, so `$.ui.log` adds one dim line the model never reads: `arc: read mid-turn: <text>`.
+A wake never sets `midturn`: the waker confirms a wake on the working report its prompt raises, which
+an appended row does not. `steerRunLead` (a child run's notice to its parent lead) goes the same way
+through `orchestrate.SendToSession` in place of raw bytes into the pty.
+
+The mod keeps the turn (`Turn` in `hooks/control-core.ts`, vitest): `turn.start` opens it, a main-loop
+`turn.complete` closes it, and a `midturn` text with no turn open is a prompt. A joined text is held
+as unread until a tool result follows it, which means another request carries it; one still unread
+when the turn ends was appended during the final answer, so it is submitted as a prompt. Two known
+edges, both marked `ponytail:` in `register.ts`: a text joined between the last tool result and the
+final answer's request is read and then submitted again, and `turn.start` does not say whose turn it
+is, so a background subagent starting one in an idle session reads as open. A mod older than
+`midturn` runs the text as a prompt once the turn ends.
+
+Probed 2026-10-05 on 2.1.289 (Haiku) in a pty, a scratch copy of the mod against a stub `wsh` whose
+`agentctl` printed one `midturn` line during a 15 s Bash call: the model ran the extra command the
+line asked for before answering, the log line drew under the running tool, and no second turn
+started. A row appended to an idle session was stored and started no turn, which is why idle stays a
+prompt. Not covered: a real `dag tell` in the dev app, the unread-at-turn-end path live, and the
+cockpit transcript's view of the appended row.
+
+### The wake's transcript row (`claude/arc-view-mod`)
+
+Added 2026-10-05. A wake sent over the stream showed in the lead's transcript as the engine's raw
+text: every `wake:` line with its command, then the `Unverified:` and `Since your last wake:`
+sections. A second mod, `arc-view`, hooks `ui.render` on `UserMessage` rows whose origin is the arc
+plugin and draws a wake as what it holds (`hooks/wake-core.ts`, vitest; `hooks/wake-row.tsx`): a
+summary line, one row per event with a mark for its kind (`!` a failure, `i` a passed review's note,
+`✓` run finished, `?` the question line) and its trailing command dim at the right or, on a narrow
+terminal, under it; up to two of the lines that follow an event, then a count; each unverified
+caveat whole; the recaps as a count. The model reads the wake as sent, ctrl+o shows that text, and
+a prompt that is not a wake (a tell, a review note) is left to the engine.
+
+It is a mod of its own, embedded as `claude-view-mod` and installed to `~/.arc/claude-view-mod` with
+its own `CLAUDE_CODE_PLUGIN_DIRS` entry, because the engine skips a plugin's render hook on a row
+that plugin raised (debug log: `ui.render skipped: re-entry (the plugin's own code raised it)`); a
+later `$.ui.invalidate` or a resize does not get past it, and `claude plugin test` does not apply
+it. Probed 2026-10-05 on 2.1.289 in a pty with scratch copies of both mods: the row drew at 120 and
+150 columns and with the command dropped at 64. Not yet seen: its colours, and a real wake from
+`wavesrv` in the dev app. A wake that is typed (pi, an older Claude, a busy session), a child run's
+notice and a lead's launch prompt are not the arc plugin's rows and stay as the terminal draws them.
+
+The same probe compacted from the plugin (`$.session.compact({ instructions })`) in place of running
+`/compact`: `PreCompact` and `SessionStart` (`compact`) fired in the mod and in the settings hooks,
+the transcript showed the engine's spinner and no prompt row, and a headless session refused the
+call. The handoff compacts that way since 2026-10-05, and runs `/compact` when the call is refused:
+the terminal shows the spinner alone, with no echo of the instructions and no `Compacted` line. A dev
+run confirmed the waker still sees it (`PreCompact` reads working, `SessionStart` `compact` idle) and
+the wake held behind it arrives after. The transcript takes the same `compact_boundary` and summary
+records, so the cockpit's transcript still shows the compaction; the `/compact` command records are
+what it no longer holds.
 
 ### Retiring the statusLine wrapper
 
@@ -174,6 +230,25 @@ and for calls it does not race; for a call it races, its `classic.PreToolUse` ho
 `ask --clear` (PostToolUse) still runs when the dialog answers, clearing a card already gone. They
 keep the keystroke path working wherever the mod is not loaded. `pkg/agentask` keystroke injection
 stays for that fallback and for pi.
+
+### Refused shell commands (`tool.call` on `Bash` and `PowerShell`), added 2026-10-05
+
+Sessions run with permissions skipped, so a rule in a prompt is the only thing between a model and a
+command. `hooks/guard-core.ts` refuses a few in code; the model reads the reason as the tool's error.
+
+- **Every session inside Arc:** a kill aimed at `wave-tauri` or `wavesrv` by image name (`taskkill /IM`,
+  `Stop-Process` without `-Id`, `kill -Name`, `pkill`, `killall`). A stop by pid passes.
+- **A session whose directory is under `.waveterm/worktrees/`** (a task worker, its reviewer, the final
+  verifier): `git push`, `git worktree add|remove|move|prune`, `git switch` and `git checkout -b`.
+
+The match is on the command's text, so a refused phrase quoted inside another command is refused too, and
+a script file that runs one is not seen. `git checkout <name>` passes: a path and a branch read the same.
+The plan's Verify is not refused: the mod does not know the command, and the workers' costly runs were
+whole packages, which an exact match would miss.
+
+Checked live 2026-10-05 (2.1.289, Haiku, pty, scratch copy of the mod in a fake task worktree): a
+`git push` came back as the refusal text. The kill rule is covered by unit tests only, since a miss in a
+live check would stop the running Arc.
 
 ### To verify in implementation (not assumed)
 

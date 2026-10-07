@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +60,28 @@ func TestFilterUsageLines(t *testing.T) {
 		if in[i] != orig[i] {
 			t.Fatalf("filterUsageLines mutated its input at %d: %q != %q", i, in[i], orig[i])
 		}
+	}
+}
+
+func TestReadClaudeLinesKeepsOnlyUsageLines(t *testing.T) {
+	usage := `{"type":"assistant","message":{"usage":{"input_tokens":1}}}`
+	long := `{"type":"assistant","message":{"usage":{}},"pad":"` + strings.Repeat("x", 200_000) + `"}` // past the scanner's default 64 KB line cap
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	body := strings.Join([]string{
+		usage,
+		`{"type":"user","message":{}}`, // dropped
+		`{"payload":{"info":{"total_token_usage":{"input_tokens":9}}}}`, // Codex: dropped (no "usage" match)
+		"   ",
+		long, // no trailing newline
+	}, "\r\n")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readClaudeLines(path); !slices.Equal(got, []string{usage, long}) {
+		t.Fatalf("want the two usage lines, got %d lines", len(got))
+	}
+	if got := readLines(path); len(got) != 4 {
+		t.Fatalf("readLines: want the 4 non-blank lines, got %d", len(got))
 	}
 }
 
@@ -729,5 +753,47 @@ func TestExtractClaude_SkipsPrintModeRecords(t *testing.T) {
 	interactive := `{"type":"assistant","timestamp":"2026-06-26T10:00:00.000Z","entrypoint":"cli","message":{"model":"m",` + usage + `}}`
 	if got := extractClaude([]string{interactive}); len(got) != 1 {
 		t.Fatalf("interactive usage should be counted, got %+v", got)
+	}
+}
+
+// parseFiles re-reads a file only when its modtime or size changed: an unchanged file is served from
+// the cache, and one that grew is parsed again.
+func TestParseFilesReparsesOnlyChangedFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	turn := func(input int) string {
+		return fmt.Sprintf(`{"type":"assistant","timestamp":"2026-06-26T10:00:00Z","message":{"model":"claude-haiku-4-5","usage":{"input_tokens":%d}}}`+"\n", input)
+	}
+	inputs := func() []int {
+		var out []int
+		for _, r := range parseFiles([]scanFile{{path: path, kind: scanClaude}}) {
+			out = append(out, r.Input)
+		}
+		return out
+	}
+	if err := os.WriteFile(path, []byte(turn(1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inputs(); !slices.Equal(got, []int{1}) {
+		t.Fatalf("first parse = %v, want [1]", got)
+	}
+	// same size, same modtime, different content: only a cached parse still answers 1
+	if err := os.WriteFile(path, []byte(turn(2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if got := inputs(); !slices.Equal(got, []int{1}) {
+		t.Fatalf("unchanged file = %v, want the cached [1]", got)
+	}
+	if err := os.WriteFile(path, []byte(turn(2)+turn(3)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := inputs(); !slices.Equal(got, []int{2, 3}) {
+		t.Fatalf("grown file = %v, want [2 3]", got)
 	}
 }

@@ -165,7 +165,6 @@ export interface QueueRow {
     wireKind: string;
     channelId: string;
     runId: string | null;
-    phaseIdx: number;
     taskId: string;
     retry: boolean;
 }
@@ -193,14 +192,12 @@ export function queueOpenTarget(nav: QueueNav | null): QueueOpenTarget | null {
 }
 
 const QUEUE_KIND_LABEL: Record<string, string> = {
-    gate: "gate",
     escalation: "escalation",
     ask: "ask",
     "dag-gate": "dag gate",
     "dag-blocked": "dag blocked",
     "run-land-held": "land held",
     "run-unverified": "unverified",
-    "plan-gate": "plan gate",
     "radar-triage": "triage",
 };
 
@@ -248,7 +245,6 @@ export function buildAttentionQueue(input: {
             wireKind: a.kind,
             channelId,
             runId: a.runid || null,
-            phaseIdx: a.phaseidx ?? 0,
             taskId: a.taskid ?? "",
             retry: a.retry === true,
         };
@@ -275,7 +271,6 @@ export function buildAttentionQueue(input: {
                 wireKind: "chunk-blocked",
                 channelId: "",
                 runId: null,
-                phaseIdx: 0,
                 taskId: "",
                 retry: false,
             });
@@ -300,7 +295,6 @@ export function buildAttentionQueue(input: {
             cites: [],
             channelId: "",
             runId: null,
-            phaseIdx: 0,
             taskId: "",
             retry: false,
         });
@@ -317,8 +311,6 @@ export interface QueueSummary {
 // the design's four kind words (design L1010-1013); every wire kind reads as one of them
 export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "blocked" | "triage" {
     switch (row.wireKind) {
-        case "gate":
-        case "plan-gate":
         case "dag-gate":
             return "gate";
         case "ask":

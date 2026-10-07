@@ -60,11 +60,12 @@ func newFakeLead(t *testing.T) *fakeLead {
 		state: leadState{BlockId: wakeLeadBlock, TabId: wakeLeadTab, Alive: true, State: baseds.AgentState_Idle},
 		now:   1_000_000,
 	}
-	origWakes, origState, origSend, origNow, origAppend, origReg := wakes, leadStateFn, sendWakeFn, wakeNow, appendRunEvent, agentask.GlobalRegistry
+	origWakes, origState, origSend, origType, origNow, origAppend, origReg := wakes, leadStateFn, sendWakeFn, typeWakeFn, wakeNow, appendRunEvent, agentask.GlobalRegistry
 	wakes = newWaker()
 	agentask.GlobalRegistry = agentask.MakeRegistry()
 	leadStateFn = func(context.Context, string, string) leadState { return f.state }
 	sendWakeFn = func(_ string, text string) { f.sends = append(f.sends, text) }
+	typeWakeFn = sendWakeFn
 	wakeNow = func() int64 { return f.now }
 	appendRunEvent = func(_ context.Context, _, _, kind string, _ *int, detail any) {
 		row := map[string]any{"eventkind": kind}
@@ -76,7 +77,7 @@ func newFakeLead(t *testing.T) *fakeLead {
 		f.rows = append(f.rows, row)
 	}
 	restoreAfterStages(t, func() {
-		wakes, leadStateFn, sendWakeFn, wakeNow, appendRunEvent, agentask.GlobalRegistry = origWakes, origState, origSend, origNow, origAppend, origReg
+		wakes, leadStateFn, sendWakeFn, typeWakeFn, wakeNow, appendRunEvent, agentask.GlobalRegistry = origWakes, origState, origSend, origType, origNow, origAppend, origReg
 	})
 	return f
 }
@@ -720,20 +721,32 @@ func TestWakeGoesOverAnIdleSessionsStream(t *testing.T) {
 	if !overStream("stream-idle", "wake: task 1 done", baseds.AgentState_Idle) {
 		t.Fatalf("an idle session with a stream was left to be typed into")
 	}
-	if got := <-msgs; got != "wake: task 1 done" {
-		t.Fatalf("stream got %q", got)
+	if got := <-msgs; got.Text != "wake: task 1 done" || got.Compact != "" || got.MidTurn {
+		t.Fatalf("stream got %+v", got)
 	}
 }
 
-// the mod's prompt waits for a running turn to end; typed text reaches the turn, which a tell needs.
-func TestTextForABusySessionIsTypedDespiteItsStream(t *testing.T) {
+// typed, the handoff is the slash command; over a stream the mod is asked for the compaction itself.
+func TestHandoffGoesOverAStreamAsACompaction(t *testing.T) {
+	msgs, done := agentctl.Register("stream-handoff")
+	defer done()
+	if !overStream("stream-handoff", HandoffCompact, baseds.AgentState_Idle) {
+		t.Fatalf("an idle session with a stream was left to be typed into")
+	}
+	if got := <-msgs; got.Text != HandoffCompact || got.Compact != handoffInstructions {
+		t.Fatalf("stream got %+v", got)
+	}
+}
+
+// a prompt would wait for the running turn to end; a tell is for the turn itself.
+func TestTextForABusySessionJoinsItsTurnOverTheStream(t *testing.T) {
 	msgs, done := agentctl.Register("stream-busy")
 	defer done()
-	if overStream("stream-busy", "stop and rebase", baseds.AgentState_Working) {
-		t.Fatalf("a working session's text went over the stream")
+	if !overStream("stream-busy", "stop and rebase", baseds.AgentState_Working) {
+		t.Fatalf("a working session with a stream was left to be typed into")
 	}
-	if len(msgs) != 0 {
-		t.Fatalf("the stream holds %d messages", len(msgs))
+	if got := <-msgs; got.Text != "stop and rebase" || !got.MidTurn {
+		t.Fatalf("stream got %+v", got)
 	}
 }
 
@@ -752,5 +765,86 @@ func TestRetryEnterIsNotTypedIntoASessionWithAStream(t *testing.T) {
 func TestSessionWithNoStreamIsTyped(t *testing.T) {
 	if overStream("no-stream", "wake", baseds.AgentState_Idle) || overStream("no-stream", "", baseds.AgentState_Idle) {
 		t.Fatalf("a session with no stream was not left to be typed into")
+	}
+}
+
+// a mod handed the wake and never ran it: nothing is in the composer for Enter to submit.
+func TestUnconfirmedStreamWakeIsRetypedWhole(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	_, done := agentctl.Register(wakeLeadBlock)
+	defer done()
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+
+	if len(f.sends) != 2 || f.sends[1] != finishedLine {
+		t.Fatalf("the retry types the whole wake into a session with a stream, got %q", f.sends)
+	}
+}
+
+func TestUnconfirmedHandoffIsDroppedAndTheLeadKeepsItsWakes(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	PostHandoff(ctx, wakeChannel, wakeRun)
+	PostWake(ctx, wakeChannel, wakeRun, failedLine)
+
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+
+	if LeadDead(wakeRun) || f.countKind(waveobj.RunEventKindLeadWakeFailed) != 0 {
+		t.Fatalf("a compaction that never ran is not a dead lead, dead=%v rows=%+v", LeadDead(wakeRun), f.rows)
+	}
+	if got := f.sends[len(f.sends)-1]; got != failedLine {
+		t.Fatalf("the held wake goes out once the handoff is given up on, got %q", f.sends)
+	}
+}
+
+func TestLeadBackAtWorkGetsWhatItMissed(t *testing.T) {
+	f := newFakeLead(t)
+	ctx := context.Background()
+	PostWake(ctx, wakeChannel, wakeRun, finishedLine)
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+	f.now += WakeConfirmTimeout.Milliseconds()
+	tickWakes(ctx)
+	PostWake(ctx, wakeChannel, wakeRun, failedLine)
+	sent := len(f.sends)
+
+	// the human typed into the lead's terminal
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Working))
+	if f.countKind(waveobj.RunEventKindLeadRevived) != 1 {
+		t.Fatalf("a lead back at work records one lead-revived row, got %+v", f.rows)
+	}
+	NoteLeadStatus(ctx, f.status(baseds.AgentState_Idle))
+
+	if len(f.sends) != sent+1 || f.sends[sent] != failedLine {
+		t.Fatalf("the event that arrived while the lead was given up on is its next wake, got %q", f.sends[sent:])
+	}
+}
+
+func TestRelaunchRevivesALeadGivenUpOnWhoseProcessStillRuns(t *testing.T) {
+	f := newRelaunchFixture(t)
+	wakes.lock.Lock()
+	wakes.leadDiedLocked(f.ctx, f.ownerID, wakes.runLocked(f.channel, f.ownerID), wakeUnconfirmedNote)
+	wakes.lock.Unlock()
+	PostWake(f.ctx, f.channel, f.ownerID, failedLine)
+	f.fake.state = leadState{BlockId: wakeLeadBlock, TabId: "lead-tab", Alive: true, State: baseds.AgentState_Idle}
+
+	if err := RelaunchLead(f.ctx, f.channel, f.ownerID); err != nil {
+		t.Fatalf("a live lead given up on is taken back, got %v", err)
+	}
+
+	if f.spawns != 0 || runTabID(f.owner(t)) != "lead-tab" {
+		t.Fatalf("a live lead is not replaced, got %d spawns, tab %q", f.spawns, runTabID(f.owner(t)))
+	}
+	if len(f.fake.sends) != 1 || f.fake.sends[0] != failedLine {
+		t.Fatalf("the lead is woken with what it missed, got %q", f.fake.sends)
+	}
+	if f.fake.countKind(waveobj.RunEventKindLeadRevived) != 1 {
+		t.Fatalf("want one lead-revived row, got %+v", f.fake.rows)
 	}
 }

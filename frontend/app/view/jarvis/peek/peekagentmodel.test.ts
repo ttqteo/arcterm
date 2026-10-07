@@ -42,7 +42,7 @@ describe("agentPeekFacts", () => {
     it("is gone when the agent is missing from the roster", () => {
         expect(agentPeekFacts(undefined)).toEqual({ gone: true });
     });
-    it("is present while the roster has the agent", () => {
+    it("is present for an agent in the roster", () => {
         expect(agentPeekFacts(AGENT)).toEqual({ gone: false });
     });
 });

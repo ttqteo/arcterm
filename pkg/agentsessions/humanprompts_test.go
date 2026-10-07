@@ -4,8 +4,11 @@
 package agentsessions
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 )
 
 // a claude transcript writes a user record for far more than what a person typed: tool output, harness
@@ -78,6 +81,51 @@ func TestHumanPromptsPiReadsTheActiveBranch(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("HumanPrompts = %+v\nwant %+v", got, want)
+	}
+}
+
+// jsonString is s as a JSON string literal, for a fixture line that carries a message with quotes and newlines.
+func jsonString(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// a message another agent sent with wsh agents send is typed into the session like a prompt, and claude records
+// a long one inside a pasted_content tag; neither is something the human told the session
+func TestHumanPromptsSkipAgentMessages(t *testing.T) {
+	msg := agentmsg.Envelope("design lead", "tab-1234", "/clear\nthen apply the review notes")
+	pasted := "<pasted_content id=\"63b4\">\n" + msg + "\n</pasted_content id=\"63b4\">"
+	claude := writeTranscript(t, []string{
+		`{"type":"user","timestamp":"2026-09-17T06:02:05.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"build the panel"}}`,
+		`{"type":"user","timestamp":"2026-09-17T06:02:06.000Z","origin":{"kind":"human"},"message":{"role":"user","content":` + jsonString(t, msg) + `}}`,
+		`{"type":"user","timestamp":"2026-09-17T06:02:07.000Z","origin":{"kind":"human"},"message":{"role":"user","content":` + jsonString(t, pasted) + `}}`,
+		`{"type":"attachment","timestamp":"2026-09-17T06:02:08.000Z","attachment":{"type":"queued_command","prompt":` + jsonString(t, pasted) + `,"commandMode":"prompt","origin":{"kind":"human"}}}`,
+		`{"type":"user","timestamp":"2026-09-17T06:02:14.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"keep the header sticky"}}`,
+	})
+	wantClaude := []HumanPrompt{
+		{Ts: 1789624925000, Text: "build the panel"},
+		{Ts: 1789624934000, Text: "keep the header sticky"},
+	}
+	if got := HumanPrompts(claude, "claude"); !reflect.DeepEqual(got, wantClaude) {
+		t.Fatalf("claude HumanPrompts = %+v\nwant %+v", got, wantClaude)
+	}
+
+	pi := writeTranscript(t, []string{
+		`{"type":"session","version":3,"id":"s1","timestamp":"2026-09-17T06:00:00Z","cwd":"C:\\repo"}`,
+		`{"type":"message","id":"u1","parentId":null,"timestamp":"2026-09-17T06:00:01Z","message":{"role":"user","content":"build the panel"}}`,
+		`{"type":"message","id":"u2","parentId":"u1","timestamp":"2026-09-17T06:00:02Z","message":{"role":"user","content":[{"type":"text","text":` + jsonString(t, msg) + `}]}}`,
+		`{"type":"message","id":"u3","parentId":"u2","timestamp":"2026-09-17T06:00:03Z","message":{"role":"user","content":"keep the header sticky"}}`,
+	})
+	wantPi := []HumanPrompt{
+		{Ts: 1789624801000, Text: "build the panel"},
+		{Ts: 1789624803000, Text: "keep the header sticky"},
+	}
+	if got := HumanPrompts(pi, "pi"); !reflect.DeepEqual(got, wantPi) {
+		t.Fatalf("pi HumanPrompts = %+v\nwant %+v", got, wantPi)
 	}
 }
 

@@ -1,11 +1,13 @@
 # Design — Channel data-model scaling (Theme A)
 
 **Date:** 2026-07-21
-**Status:** Approved design, in progress. **Phase 0 (read-conn pool, A3) shipped 2026-07-21** (`6248d04f`,
+**Status:** Shipped, all four phases. **Phase 0 (read-conn pool, A3) shipped 2026-07-21** (`6248d04f`,
 plan `docs/superpowers/plans/2026-07-21-channel-scaling-phase0-read-pool.md`). **Phase 1 (Expand) shipped
 2026-07-22** — plan at `docs/superpowers/plans/2026-07-22-channel-scaling-phase1-expand.md`. **Phase 2
 (Migrate reads) shipped 2026-07-22** — plan at
-`docs/superpowers/plans/2026-07-22-channel-scaling-phase2-migrate-reads.md`. **Phase 3 (Contract) is next.**
+`docs/superpowers/plans/2026-07-22-channel-scaling-phase2-migrate-reads.md`. **Phase 3 (Contract) shipped
+2026-10-06**; its plan was deleted on landing
+(`git log --diff-filter=D -- docs/superpowers/plans/2026-10-06-channel-scaling-phase3-contract.md`).
 Source: the 2026-07-21 improvement scan (Theme A, findings A1–A3).
 
 **Phase 2 deviations/deferrals (as-built):** (1) Radar collect adds **no** projectpath index — it reads a
@@ -18,6 +20,19 @@ still-bumping `channel:` object as the "list membership changed, refetch" signal
 (Design Note 6). (4) Visual-parity CDP check (Task E4) was deferred (worktree isolation; no dev app) —
 backend `-race` suites, codegen no-drift, tsc, and 1001 FE unit tests are green, but live visual parity is
 unverified.
+
+**Phase 3 deviations (as-built):** (1) The arrays are dropped by a Go startup pass
+(`wstore.ContractChannels`), not by the SQL migration Section 4 names. A store that skipped Phase 1 has
+embedded items with no rows, so the missing rows must be inserted before the keys are removed, and the two
+steps have to share one transaction per channel. The SQL migration (`000023`) only takes the recovery
+copy. (2) The owner-stamp backfill design call 1 asks for is not carried into the new pass: a worker with
+no stamp resolves through the row fallback (`GetRunCandidatesByWorker`, `GetMessagesByRef`). (3) The
+channel version bump is kept as the list-changed signal: every message and run write rewrites the
+metadata-sized channel row, and the active channel refreshes its lists on it (its runs by
+difference, `GetChannelRunChanges`: only the rows that are new or changed). (4) The cross-channel
+frontend readers use a per-channel message fetch on the channel snapshot's cadence, limited to each
+channel's newest 500 messages where the array was the whole history.
+
 **Driver:** Preventive. No observed symptom; the goal is to remove the `O(session)` growth that is the
 only cluster whose cost worsens the more the product is used, before it bites at scale.
 
@@ -117,9 +132,11 @@ Landed as independently-shippable, reversible phases; no half-migrated state bre
   run-list + per-object WOS subscriptions. Blob arrays still written but no longer read on any hot path
   (only the `GetChannels` list RPC, three jarvis fallbacks, and the two one-shot backfills still call it).
   See the Phase 2 deviations/deferrals note at the top of this doc.
-- **Phase 3 — Contract.** Stop embedding `Messages`/`Runs` in the channel blob; `Channel` becomes
-  metadata-only; drop the dead arrays (final blob-shrink migration). This is the phase that collapses the
-  `O(session)` write + broadcast cost — everything before it is scaffolding that keeps the tree safe.
+- **Phase 3 — Contract.** ✅ **Shipped 2026-10-06.** Stop embedding `Messages`/`Runs` in the channel blob;
+  `Channel` becomes metadata-only; drop the dead arrays (final blob-shrink migration). This is the phase
+  that collapses the `O(session)` write + broadcast cost — everything before it is scaffolding that keeps
+  the tree safe. See the Phase 3 deviations note at the top of this doc, and Section 4 for the pass and its
+  recovery path.
 
 **Order rationale.** Phase 0 delivers value alone and de-risks. The risky cutover (Phase 2: FE + read-path
 flip) happens while the old blob is intact as a fallback; the irreversible step (Phase 3: drop arrays)
@@ -166,6 +183,28 @@ inside one write tx. Guarded by a `go test -race` test hammering concurrent post
   **idempotently**, so a restart mid-backfill is safe and re-runnable. (Raw-SQL row-fanout via `json_each`
   is possible but gnarly and unlike the existing migrations; Go is more maintainable.)
 
+**Phase 3 contract pass and recovery.** `000023_channel_precontract` copies every channel row into
+`db_channel_precontract(oid, version, data)` before anything is stripped; SQL migrations run before the Go
+pass, so the copy holds the blobs as they were. `wstore.ContractChannels` then runs in `InitWStore`, gated
+by the MainServer marker `channel:contracted`: per channel, in one write transaction, it inserts each
+embedded message and run that has no row (a row that exists is never overwritten: it is the newer copy)
+and removes the two keys with `json_remove`. **A channel that cannot be migrated stops startup**: the
+error names the channel, `InitWStore` fails, the marker stays unset, that channel's blob is untouched, and
+the channels already done stay done. Startup must not go on, because the first runtime write of that
+channel would rewrite its blob without the arrays. Repair the blob and start again; the pass resumes with
+what is left. To put one channel's blob back from the copy by hand, with the app stopped:
+
+```sql
+UPDATE db_channel SET data = (SELECT data FROM db_channel_precontract WHERE oid = db_channel.oid)
+WHERE oid = '<channel oid>';
+UPDATE db_mainserver SET data = json_remove(data, '$.meta."channel:contracted"');
+```
+
+The second statement clears the marker, so the next start contracts the channel again and keeps every row
+written since. The 000023 down migration does the first statement for every channel and drops the copy.
+`db_channel_precontract` was the only undo for the strip; `000024` drops it, after the check recorded in
+`docs/deferred.md`, so the restore above applies only to a store still at `000023`.
+
 **Ordering & pagination.** Messages sort by `ts`; list query `WHERE channeloid=? ORDER BY ts DESC LIMIT ?
 [AND ts < ?]` against the `(channeloid, ts)` expression index. Phase 2 ships a generous default limit; true
 lazy "load older" UI is a follow-on, not required for cutover.
@@ -181,9 +220,15 @@ lazy "load older" UI is a follow-on, not required for cutover.
   no render harness exists).
 - **Phase 3:** channel blob no longer contains the arrays; message/run reads still resolve; a burst of posts
   to a large channel shows constant-ish write time (the A1 payoff — measured here, closing the loop on
-  "preventive").
+  "preventive"). Measured 2026-10-06 in the wstore test store, on a channel of 500 runs of 15 KB each
+  (a 7.5 MB blob before the contract): 50 `UpdateRun` took 9.81 s before and 18 ms after; 50
+  `PostChannelMessage` took 8.03 s before and 8 ms after.
 - **Cross-cutting:** `node --stack-size=4000 node_modules/typescript/lib/tsc.js --noEmit` clean;
-  `task generate` leaves no drift (new wshrpc + object types regenerated, never hand-edited).
+  `task generate` leaves no drift (new wshrpc + object types regenerated, never hand-edited). The check:
+  with the change committed, run `task generate`, then `git diff --exit-code` on the generated files
+  (`frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `frontend/app/store/wshclientapi.ts`,
+  `frontend/app/store/services.ts`, `pkg/wshrpc/wshclient/wshclient.go`,
+  `pkg/{waveobj,wconfig}/metaconsts.go`) must exit 0.
 
 ## Scope boundary (explicitly out)
 

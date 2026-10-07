@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pure helpers for the Channels Jarvis surface: parse the ChannelMessage.data payload into the rich
-// Gatekeeper card model, derive unread counts and fleet counts. No React, no jotai — unit-tested in
+// Gatekeeper card model, derive pending asks and fleet counts. No React, no jotai — unit-tested in
 // jarviscards.test.ts.
-
-export const READ_TS_META = "read:ts";
 
 export interface JarvisCardOption {
     label: string;
@@ -63,24 +61,6 @@ export function answeredAskIds(messages: ChannelMessage[]): Set<string> {
         }
     }
     return out;
-}
-
-// Workers genuinely blocked on the human: asking, and not already auto-answered by Jarvis. An ask Jarvis
-// answered on the worker's behalf is Jarvis's to resume, not a "needs you" for the human — so it drops
-// out even if the worker's live state is briefly still "asking". Matched by the worker's CURRENT ask
-// id, so a new ask from the same worker still surfaces. Generic over any {state, askId}-shaped row.
-export function pendingAsks<T extends { state: string; askId?: string }>(
-    snapshot: T[],
-    messages: ChannelMessage[]
-): T[] {
-    const answered = answeredAskIds(messages);
-    return snapshot.filter((w) => w.state === "asking" && !(w.askId && answered.has(w.askId)));
-}
-
-// unreadCount = channel messages strictly after lastReadTs, excluding the human's own posts.
-export function unreadCount(messages: ChannelMessage[] | undefined, lastReadTs: number | undefined): number {
-    const since = lastReadTs ?? 0;
-    return (messages ?? []).filter((m) => m.ts > since && m.author !== "you").length;
 }
 
 // fleetCounts tallies working + waiting(=asking) from a fleet snapshot; idle/gone are excluded.

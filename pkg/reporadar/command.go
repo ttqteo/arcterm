@@ -119,9 +119,8 @@ func Cancel(reportId string) error {
 	return nil
 }
 
-// Retry re-runs clustering for the failed lenses of a failed or partial report using its retained
-// candidate signals, without recollecting. Rejected when the report has no retained candidates, no
-// failed lens, or is not in a retryable state.
+// Retry re-audits the commits whose audit failed in a failed or partial report, without reselecting.
+// Rejected when the report is not in a retryable state, never finished its scan, or has no failed audit.
 func Retry(ctx context.Context, reportId string) error {
 	rpt, err := wstore.GetRadarReport(ctx, reportId)
 	if err != nil {
@@ -130,16 +129,21 @@ func Retry(ctx context.Context, reportId string) error {
 	if rpt.Status != StatusFailed && rpt.Status != StatusPartial {
 		return fmt.Errorf("report %s is not in a retryable state (%s)", reportId, rpt.Status)
 	}
-	if len(rpt.Candidates) == 0 {
-		return fmt.Errorf("no retained candidate signals to retry")
+	if rpt.FatalError != "" {
+		// it never reconciled, so finishing its audits would make a baseline that drops every carried finding
+		return fmt.Errorf("report %s did not finish its scan (%s); start a new scan", reportId, rpt.FatalError)
 	}
-	if len(retryModes(rpt)) == 0 {
-		return fmt.Errorf("report %s has no failed lens to retry", reportId)
+	if len(failedAuditCommits(rpt)) == 0 {
+		return fmt.Errorf("report %s has no failed audit to retry", reportId)
+	}
+	route, err := scanAuditRoute()
+	if err != nil {
+		return err
 	}
 	scanCtx, ok := mgr.register(reportId)
 	if !ok {
 		return fmt.Errorf("a scan is already running for this report")
 	}
-	StartClusterOnly(scanCtx, reportId)
+	StartRetry(scanCtx, reportId, route)
 	return nil
 }

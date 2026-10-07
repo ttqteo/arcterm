@@ -48,6 +48,20 @@ func classifyFailure(summary string, exitCode int) string {
 	}
 }
 
+// MaxAutoDispatchRetries is how many times in a row the engine dispatches a task again itself after its worktree
+// or its worker tab could not be made. Those fail on a deadline when the machine is busy, and each attempt has
+// already waited out its own (jarvis.RunWorkerSpawnTimeout), so the retries are spread over minutes without a
+// backoff. A fault that outlasts them is not transient: the task fails and the lead is woken.
+const MaxAutoDispatchRetries = 3
+
+// retryDecision reports whether the engine retries a failure of kind itself, given the consecutive failures of
+// that kind the task already has.
 func retryDecision(kind string, attempts int) bool {
-	return kind == FailureKindToolError && attempts == 0
+	switch kind {
+	case FailureKindToolError:
+		return attempts == 0
+	case FailureKindWorktree, FailureKindSpawn:
+		return attempts < MaxAutoDispatchRetries
+	}
+	return false
 }

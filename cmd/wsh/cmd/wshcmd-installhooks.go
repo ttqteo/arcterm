@@ -30,28 +30,32 @@ type managedHook struct {
 	Matcher string // "" => no matcher key (matches all)
 	Args    string // wsh subcommand + flags, e.g. "agent-hook", "ask", "ask --clear"
 	Timeout int
+	// Async runs the hook in the background, so claude does not wait for it. Only the two reports that
+	// fire on every tool call take it: the rest fire once a turn, and a headless claude kills an async
+	// hook still running at teardown, which would lose a Stop.
+	Async bool
 }
 
 // order is deterministic so re-runs produce stable output
 var managedHooks = []managedHook{
-	{"PreToolUse", "", "agent-hook", 10},
-	{"PreToolUse", "AskUserQuestion", "ask", 3600},
-	{"PostToolUse", "", "agent-hook", 10},
-	{"PostToolUse", "AskUserQuestion", "ask --clear", 10},
-	{"Notification", "", "agent-hook", 10},
-	{"Stop", "", "agent-hook", 10},
-	{"SubagentStop", "", "agent-hook", 10},
-	{"UserPromptSubmit", "", "agent-hook", 10},
+	{Event: "PreToolUse", Args: "agent-hook", Timeout: 10, Async: true},
+	{Event: "PreToolUse", Matcher: "AskUserQuestion", Args: "ask", Timeout: 3600},
+	{Event: "PostToolUse", Args: "agent-hook", Timeout: 10, Async: true},
+	{Event: "PostToolUse", Matcher: "AskUserQuestion", Args: "ask --clear", Timeout: 10},
+	{Event: "Notification", Args: "agent-hook", Timeout: 10},
+	{Event: "Stop", Args: "agent-hook", Timeout: 10},
+	{Event: "SubagentStop", Args: "agent-hook", Timeout: 10},
+	{Event: "UserPromptSubmit", Args: "agent-hook", Timeout: 10},
 	// a compaction reports working and its end reports idle: the wake adapter types a lead's handoff
 	// /compact as a wake that working confirms, and holds later wakes until the session is back
-	{"PreCompact", "", "agent-hook", 10},
-	{"SessionStart", "compact", "agent-hook", 10},
+	{Event: "PreCompact", Args: "agent-hook", Timeout: 10},
+	{Event: "SessionStart", Matcher: "compact", Args: "agent-hook", Timeout: 10},
 	// a compaction drops a lead's launch prompt, so its orchestration rules come back in its place
-	{"SessionStart", "compact", "jarvis dag rules --inject", 15},
+	{Event: "SessionStart", Matcher: "compact", Args: "jarvis dag rules --inject", Timeout: 15},
 	// /clear opens a new transcript: report it now so the cockpit follows the new file before the next prompt
-	{"SessionStart", "clear", "agent-hook", 10},
+	{Event: "SessionStart", Matcher: "clear", Args: "agent-hook", Timeout: 10},
 	// a resume (--resume, /resume) is silent until its next prompt: report it at its prompt, with its title
-	{"SessionStart", "resume", "agent-hook", 10},
+	{Event: "SessionStart", Matcher: "resume", Args: "agent-hook", Timeout: 10},
 }
 
 func managedEventOrder() []string {
@@ -143,37 +147,49 @@ func stableWshPath(home string) string {
 	return filepath.Join(home, ".arc", "bin", name)
 }
 
-//go:embed all:claude-mod
+//go:embed all:claude-mod all:claude-view-mod
 var claudeModFS embed.FS
 
-// claudeModFSRoot is the embedded mod's directory, written by `task sync:claudemod` from claude/arc-mod.
-const claudeModFSRoot = "claude-mod"
+// claudeMods are the embedded mods' directories, written by `task sync:claudemod` from claude/arc-mod and
+// claude/arc-view-mod. The view mod is its own plugin because claude never runs a plugin's render hook
+// on a transcript row that plugin raised.
+var claudeMods = []string{"claude-mod", "claude-view-mod"}
 
 const claudePluginDirsVar = "CLAUDE_CODE_PLUGIN_DIRS"
 
-// claudeModDir is where the arcterm Claude mod is installed: fixed and versionless like stableWshPath, so
-// the CLAUDE_CODE_PLUGIN_DIRS entry naming it never goes stale.
-func claudeModDir(home string) string {
-	return filepath.Join(home, ".arc", "claude-mod")
+// claudeModDirs is where the arcterm Claude mods are installed, in claudeMods' order: fixed and versionless
+// like stableWshPath, so the CLAUDE_CODE_PLUGIN_DIRS entries naming them never go stale.
+func claudeModDirs(home string) []string {
+	dirs := make([]string, len(claudeMods))
+	for i, name := range claudeMods {
+		dirs[i] = filepath.Join(home, ".arc", name)
+	}
+	return dirs
 }
 
-// installClaudeMod writes the embedded mod into claudeModDir with the wsh path substituted. A file
+// installClaudeMod writes the embedded mods into claudeModDirs with the wsh path substituted. A file
 // whose bytes already match is left alone: every interactive claude session watches its plugin
 // folders and reloads the mod on a write, so rewriting on every arcterm launch would reload it everywhere.
 func installClaudeMod(home, wshExe string) error {
-	dir := claudeModDir(home)
-	return fs.WalkDir(claudeModFS, claudeModFSRoot, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	for i, dir := range claudeModDirs(home) {
+		root := claudeMods[i]
+		err := fs.WalkDir(claudeModFS, root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			body, err := claudeModFS.ReadFile(p)
+			if err != nil {
+				return fmt.Errorf("reading embedded %s: %w", p, err)
+			}
+			want := strings.ReplaceAll(string(body), `"__WSH_PATH__"`, jsonString(wshExe))
+			rel := strings.TrimPrefix(p, root+"/")
+			return writeFileIfChanged(filepath.Join(dir, filepath.FromSlash(rel)), want)
+		})
+		if err != nil {
 			return err
 		}
-		body, err := claudeModFS.ReadFile(p)
-		if err != nil {
-			return fmt.Errorf("reading embedded %s: %w", p, err)
-		}
-		want := strings.ReplaceAll(string(body), `"__WSH_PATH__"`, jsonString(wshExe))
-		rel := strings.TrimPrefix(p, claudeModFSRoot+"/")
-		return writeFileIfChanged(filepath.Join(dir, filepath.FromSlash(rel)), want)
-	})
+	}
+	return nil
 }
 
 // writeFileIfChanged writes body to path through a temp file and a rename, unless path already holds it.
@@ -202,10 +218,10 @@ func samePath(a, b string) bool {
 	return a == b
 }
 
-// mergeClaudePluginDirs returns a copy of existing whose env.CLAUDE_CODE_PLUGIN_DIRS lists modDir once,
-// last, after the user's own entries in their order. Claude reads that variable from the user settings'
-// env block and loads each folder as --plugin-dir, which covers every launch without touching any.
-func mergeClaudePluginDirs(existing map[string]any, modDir string) map[string]any {
+// mergeClaudePluginDirs returns a copy of existing whose env.CLAUDE_CODE_PLUGIN_DIRS lists each of modDirs
+// once, last, after the user's own entries in their order. Claude reads that variable from the user
+// settings' env block and loads each folder as --plugin-dir, which covers every launch without touching any.
+func mergeClaudePluginDirs(existing map[string]any, modDirs ...string) map[string]any {
 	out := map[string]any{}
 	if b, err := json.Marshal(existing); err == nil {
 		_ = json.Unmarshal(b, &out)
@@ -217,24 +233,35 @@ func mergeClaudePluginDirs(existing map[string]any, modDir string) map[string]an
 	cur, _ := env[claudePluginDirsVar].(string)
 	var entries []string
 	for _, e := range filepath.SplitList(cur) {
-		if e != "" && !samePath(e, modDir) {
+		if e != "" && !listsPath(modDirs, e) {
 			entries = append(entries, e)
 		}
 	}
-	env[claudePluginDirsVar] = strings.Join(append(entries, modDir), string(os.PathListSeparator))
+	env[claudePluginDirsVar] = strings.Join(append(entries, modDirs...), string(os.PathListSeparator))
 	out["env"] = env
 	return out
 }
 
-func pluginDirsInclude(existing map[string]any, modDir string) bool {
-	env, _ := existing["env"].(map[string]any)
-	cur, _ := env[claudePluginDirsVar].(string)
-	for _, e := range filepath.SplitList(cur) {
-		if samePath(e, modDir) {
+func listsPath(paths []string, want string) bool {
+	for _, p := range paths {
+		if samePath(p, want) {
 			return true
 		}
 	}
 	return false
+}
+
+// pluginDirsInclude reports whether env.CLAUDE_CODE_PLUGIN_DIRS already lists every one of modDirs.
+func pluginDirsInclude(existing map[string]any, modDirs []string) bool {
+	env, _ := existing["env"].(map[string]any)
+	cur, _ := env[claudePluginDirsVar].(string)
+	listed := filepath.SplitList(cur)
+	for _, dir := range modDirs {
+		if !listsPath(listed, dir) {
+			return false
+		}
+	}
+	return true
 }
 
 // syncStableWsh makes dst a byte-identical copy of src and leaves an identical copy untouched. The
@@ -291,15 +318,15 @@ func resolveHookWsh(exe, home string) string {
 }
 
 func buildManagedGroup(mh managedHook, wshExe string) map[string]any {
-	group := map[string]any{
-		"hooks": []any{
-			map[string]any{
-				"type":    "command",
-				"command": quotePath(wshExe) + " " + mh.Args,
-				"timeout": mh.Timeout,
-			},
-		},
+	hook := map[string]any{
+		"type":    "command",
+		"command": quotePath(wshExe) + " " + mh.Args,
+		"timeout": mh.Timeout,
 	}
+	if mh.Async {
+		hook["async"] = true
+	}
+	group := map[string]any{"hooks": []any{hook}}
 	if mh.Matcher != "" {
 		group["matcher"] = mh.Matcher
 	}
@@ -322,6 +349,16 @@ func groupIsManaged(group any) bool {
 		}
 		if c, ok := hm["command"].(string); ok && isManagedCommand(c) {
 			return true
+		}
+	}
+	return false
+}
+
+// managedHookAsync is whether arcterm writes the (event, matcher, args) hook as a background one.
+func managedHookAsync(event, matcher, args string) bool {
+	for _, mh := range managedHooks {
+		if mh.Event == event && mh.Matcher == matcher && mh.Args == args {
+			return mh.Async
 		}
 	}
 	return false
@@ -506,7 +543,7 @@ func unwrapStatusLine(existing map[string]any) map[string]any {
 // install would write. When true the install skips its
 // rewrite, so a working config is not rewritten every launch. A config naming any other binary (a
 // versioned build a rebuild will delete, or one already gone) returns false and the caller rewrites it.
-func configIsHealthy(existing map[string]any, wantExe, modDir string, modsSupported bool) bool {
+func configIsHealthy(existing map[string]any, wantExe string, modDirs []string, modsSupported bool) bool {
 	hooks, _ := existing["hooks"].(map[string]any)
 	if hooks == nil {
 		return false
@@ -529,7 +566,13 @@ func configIsHealthy(existing map[string]any, wantExe, modDir string, modsSuppor
 				if !isManagedCommand(c) {
 					continue
 				}
-				if exe, _ := splitFirstToken(c); exe != wantExe {
+				exe, rest := splitFirstToken(c)
+				if exe != wantExe {
+					return false
+				}
+				// a hook written before its async flag changed is rewritten, like one naming an old binary
+				matcher, _ := gm["matcher"].(string)
+				if async, _ := hm["async"].(bool); async != managedHookAsync(event, matcher, strings.TrimSpace(rest)) {
 					return false
 				}
 				count++
@@ -539,7 +582,7 @@ func configIsHealthy(existing map[string]any, wantExe, modDir string, modsSuppor
 	if count != len(managedHooks) {
 		return false
 	}
-	if !pluginDirsInclude(existing, modDir) {
+	if !pluginDirsInclude(existing, modDirs) {
 		return false
 	}
 	sl, _ := existing["statusLine"].(map[string]any)
@@ -894,8 +937,8 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolving wsh path: %w", err)
 	}
 	wsh := resolveHookWsh(exe, home)
-	modDir := claudeModDir(home)
-	// the files land before settings name their folder, so no claude launch loads a missing mod
+	modDirs := claudeModDirs(home)
+	// the files land before settings name their folders, so no claude launch loads a missing mod
 	if err := installClaudeMod(home, wsh); err != nil {
 		return err
 	}
@@ -908,7 +951,7 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 	}
 
 	modsSupported := claudeSupportsMods()
-	if configIsHealthy(existing, wsh, modDir, modsSupported) {
+	if configIsHealthy(existing, wsh, modDirs, modsSupported) {
 		fmt.Printf("arcterm agent hooks already installed in %s (skipping)\n", path)
 	} else {
 		merged := mergeAgentHooks(existing, wsh)
@@ -917,7 +960,7 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 		} else {
 			merged = mergeStatusLine(merged, wsh)
 		}
-		merged = mergeClaudePluginDirs(merged, modDir)
+		merged = mergeClaudePluginDirs(merged, modDirs...)
 		out, err := json.MarshalIndent(merged, "", "  ")
 		if err != nil {
 			return fmt.Errorf("encoding settings: %w", err)

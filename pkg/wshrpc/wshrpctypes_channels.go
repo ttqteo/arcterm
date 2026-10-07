@@ -13,8 +13,9 @@ type ChannelCommands interface {
 	CreateChannelCommand(ctx context.Context, data CommandCreateChannelData) (*waveobj.Channel, error)
 	DeleteChannelCommand(ctx context.Context, data CommandDeleteChannelData) error
 	GetChannelsCommand(ctx context.Context) (*CommandGetChannelsRtnData, error)
-	GetChannelRunsCommand(ctx context.Context, data CommandGetChannelRunsData) (*CommandGetChannelRunsRtnData, error)             // row-backed run list for a channel (Phase-2 active-channel surface)
-	GetChannelMessagesCommand(ctx context.Context, data CommandGetChannelMessagesData) (*CommandGetChannelMessagesRtnData, error) // row-backed message window for a channel (before/limit cursor)
+	GetChannelRunsCommand(ctx context.Context, data CommandGetChannelRunsData) (*CommandGetChannelRunsRtnData, error)                   // row-backed run list for a channel (Phase-2 active-channel surface)
+	GetChannelRunChangesCommand(ctx context.Context, data CommandGetChannelRunChangesData) (*CommandGetChannelRunChangesRtnData, error) // a channel's run ids, and the rows of the runs the caller does not hold at their current version
+	GetChannelMessagesCommand(ctx context.Context, data CommandGetChannelMessagesData) (*CommandGetChannelMessagesRtnData, error)       // row-backed message window for a channel (before/limit cursor)
 	PostChannelMessageCommand(ctx context.Context, data CommandPostChannelMessageData) (*waveobj.ChannelMessage, error)
 	SetChannelTierCommand(ctx context.Context, data CommandSetChannelTierData) error       // sets a channel's Jarvis autonomy tier (concierge|gatekeeper)
 	SetChannelReadCommand(ctx context.Context, data CommandSetChannelReadData) error       // stamps a channel's last-read timestamp for unread counts
@@ -43,6 +44,16 @@ type CommandGetChannelRunsRtnData struct {
 	Runs []*waveobj.Run `json:"runs"`
 }
 
+type CommandGetChannelRunChangesData struct {
+	ChannelId string         `json:"channelid"`
+	Known     map[string]int `json:"known,omitempty"` // run id -> the version the caller holds
+}
+
+type CommandGetChannelRunChangesRtnData struct {
+	RunIds []string       `json:"runids"` // every run in the channel, in no order
+	Runs   []*waveobj.Run `json:"runs"`   // the runs that are new to the caller or changed, in createdts order
+}
+
 type CommandGetChannelMessagesData struct {
 	ChannelId string `json:"channelid"`
 	Before    int64  `json:"before,omitempty"` // ts cursor; 0 = latest
@@ -59,6 +70,7 @@ type CommandPostChannelMessageData struct {
 	Author    string `json:"author"`
 	Text      string `json:"text"`
 	RefORef   string `json:"reforef,omitempty"`
+	Data      string `json:"data,omitempty"` // the message's JSON payload, stored as given
 }
 
 type CommandSetChannelTierData struct {

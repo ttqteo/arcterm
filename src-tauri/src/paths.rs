@@ -52,6 +52,7 @@ pub fn data_home_dirs(base: &Path) -> (PathBuf, PathBuf) {
 // opening a profile the running packaged app holds destabilizes it — killing the packaged window
 // and, via our RunEvent::Exit handler, its wavesrv. Isolate dev onto the same -dev base the data
 // store already uses so the two never share a WebView2 browser process.
+#[cfg(any(debug_assertions, test))]
 pub fn dev_webview_data_dir(app_local_data_dir: &Path) -> PathBuf {
     data_base_for(app_local_data_dir, true).join("EBWebView")
 }

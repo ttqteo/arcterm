@@ -71,7 +71,6 @@ export function useCardStreams(wanted: WantedCard[], opts?: { trackGit?: boolean
                 void refreshCardGit(id, w.path, w.blockId);
             }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wantedKey, trackGit]);
 
     // debounced git re-load when a tracked card narrates. First sighting adopts the current activity
@@ -109,6 +108,5 @@ export function useCardStreams(wanted: WantedCard[], opts?: { trackGit?: boolean
             gitTrackedRef.current.clear();
             gitSeenActivityRef.current.clear();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 }

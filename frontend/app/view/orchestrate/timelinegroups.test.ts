@@ -91,6 +91,9 @@ describe("snippetOf / eventDetail", () => {
             "worktree 1.2s · setup 1m 5s · spawn 0.3s"
         );
         expect(snippetOf(ev(0, "task-merged", "t", { commit: "f00dcafe12345678" }))).toBe("commit f00dcafe");
+        expect(snippetOf(ev(0, "task-merged", "t", { commit: "f00dcafe12345678", verify: "final" }))).toBe(
+            "commit f00dcafe · Verify left to the final stage"
+        );
     });
     it("falls back to the first item with a snippet", () => {
         const g = groupEvents([ev(0, "task-spawned", "t", { worktreems: 1000 }), ev(1, "task-first-activity", "t")]);

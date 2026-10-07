@@ -50,9 +50,8 @@ func InitWStore() error {
 	if err != nil {
 		return err
 	}
-	// one-shot Phase-1 channel-blob → row backfill; uses its own 30s ctx (not the 2s init ctx above)
-	// and only the write handle, so it runs after both handles exist without touching the startup order.
-	if err := BackfillChannelRows(); err != nil {
+	// before anything can write a channel: the first write of a channel drops whatever its blob still embeds
+	if err := ContractChannels(); err != nil {
 		return err
 	}
 	log.Printf("wstore initialized\n")
@@ -114,7 +113,7 @@ func WithTxRtn[RT any](ctx context.Context, fn func(tx *TxWrap) (RT, error)) (rt
 // read and a dependent write span what would otherwise be two connections. Every such site does its
 // read AND its write inside ONE WithTx on the write handle, so the read pool cannot regress it:
 //
-//   - PostChannelMessageIf (wstore_channel.go)  cond-check + append in one WithTx        -> safe
+//   - PostChannelMessageIf (wstore_channel.go)  cond-check + insert in one WithTx        -> safe
 //   - DBUpdateFn / DBUpdateFnErr (wstore_dbops.go)  DBMustGet + DBUpdate in one WithTx    -> safe
 //   - run-state transitions (wshserver_runs.go)  read + mutate in one nested WithTx       -> safe
 //

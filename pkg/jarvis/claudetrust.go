@@ -113,6 +113,19 @@ func claudeGitRoot(dir string) string {
 	}
 }
 
+// MainCheckout is the main checkout of the repository holding dir: projects are registered there, so a
+// session in a linked worktree or a subfolder still belongs to its project. Outside a repository it is dir.
+func MainCheckout(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	root := claudeGitRoot(dir)
+	if root == "" {
+		return dir
+	}
+	return claudeCanonicalRoot(root)
+}
+
 // claudeCanonicalRoot resolves a linked worktree's git root back to its main repository, the way
 // Claude Code canonicalizes a root before using it as a config key. A worktree's `.git` is a file
 // pointing at <main>/.git/worktrees/<name>; the commondir and gitdir back-reference are verified

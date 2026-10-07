@@ -123,6 +123,7 @@ describe("eventKindTitle", () => {
         expect(eventKindTitle("lead-woken")).toBe("Lead woken");
         expect(eventKindTitle("lead-launched")).toBe("Lead started");
         expect(eventKindTitle("lead-wake-failed")).toBe("Lead wake failed");
+        expect(eventKindTitle("lead-revived")).toBe("Lead taking wakes again");
         expect(eventKindTitle("lead-exited")).toBe("Lead exited");
         expect(eventKindTitle("worker-exited")).toBe("Worker exited");
         expect(eventKindTitle("interrupted")).toBe("Interrupted by restart");
@@ -132,7 +133,7 @@ describe("eventKindTitle", () => {
     });
 
     it("titles every kind the engine writes, never the raw kind", () => {
-        for (const kind of ["land-held", "stage-session-started", "plan-reviewed"]) {
+        for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed"]) {
             expect(eventKindTitle(kind)).not.toBe(kind);
         }
     });

@@ -28,7 +28,10 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
     pi.registerTool({
         name: "wave_run_command",
         label: "Run Command in Wave",
-        description: "Run a command visibly in a new Wave tab and return the command's block id.",
+        description:
+            "Run a shell command in a new arcterm terminal tab the user can see, and return the id of the block it runs in. " +
+            "With capture, also returns up to the last 4000 characters of that command's output as it stood when the tool returned. " +
+            "Use it when the user should watch the command; fails outside an arcterm block.",
         promptSnippet: "Run a command visibly in a Wave tab",
         promptGuidelines: ["Use wave_run_command when the user wants a command run and visible in Wave."],
         parameters: Type.Object({
@@ -56,7 +59,9 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
     pi.registerTool({
         name: "wave_open_file",
         label: "Open File in Wave",
-        description: "Open an existing file in the arcterm cockpit code surface.",
+        description:
+            "Open an existing file in the arcterm cockpit's code surface, for the user to read. Takes an absolute path. " +
+            "It does not return the file's contents; fails outside an arcterm block.",
         promptSnippet: "Open a file in the arcterm code surface",
         promptGuidelines: ["Use wave_open_file when the user wants a file opened in Wave."],
         parameters: Type.Object({
@@ -74,7 +79,10 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
     pi.registerTool({
         name: "wave_query_sessions",
         label: "Query Wave Sessions",
-        description: "List open Wave blocks (terminal and edit views) as JSON so the model can reference them.",
+        description:
+            "List the open arcterm blocks (terminal and edit views) as JSON, so a later call can name one by id. " +
+            "The output is cut to its last 8000 characters, so a long list loses its earliest entries. " +
+            "Fails outside an arcterm block.",
         promptSnippet: "List open Wave tabs/blocks",
         promptGuidelines: ["Use wave_query_sessions to list open Wave tabs before referencing one."],
         parameters: Type.Object({}),
@@ -90,7 +98,9 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
     pi.registerTool({
         name: "wave_notify",
         label: "Notify in Wave",
-        description: "Send a Wave notification (title required; optional message and level).",
+        description:
+            "Show the user a notification in arcterm. The title is required; message and level (info, warn or error; default info) are optional. " +
+            "Returns only a confirmation; fails outside an arcterm block.",
         promptSnippet: "Send a Wave notification",
         promptGuidelines: ["Use wave_notify to send a short notification into Wave."],
         parameters: Type.Object({

@@ -568,7 +568,7 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		var err error
 		switch {
 		case data.Action == "planreview-accept" && len(data.Picks) > 0:
-			err = fmt.Errorf("--pick goes with the plan reviewer's pass only")
+			err = fmt.Errorf("--pick goes with the plan reviewer's verdict only")
 		case data.Action == "planreview-accept":
 			err = orchestrate.AcceptPlanReview(ctx, run.DagORef, data.Notes)
 		default:

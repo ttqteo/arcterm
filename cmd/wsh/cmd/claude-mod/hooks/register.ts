@@ -4,7 +4,9 @@
 import type { EngineInterface, Register } from "claude-code";
 import type { AskQuestion } from "./ask-core";
 import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
-import { controlText, deliver, takeLines } from "./control-core";
+import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
+import type { Turn } from "./control-core";
+import { denial } from "./guard-core";
 import { idleArgs } from "./status-core";
 import { usageArgs } from "./usage-core";
 
@@ -29,6 +31,11 @@ function racesCard(questions: readonly AskQuestion[]): boolean {
 // the tool_use_ids of the calls the card is racing right now, so the PostToolUse hook below knows them
 const racing = new Set<string>();
 
+// ponytail: turn.start does not say whose turn it is, so a background subagent starting one while the
+// session is idle reads as open, and a mid-turn text sent then waits for the next turn. track turn ids
+// against turn.step's agentId if that ever loses a tell
+const turn: Turn = { isOpen: false, unread: [] };
+
 // true while the cockpit's prompt stream is held, so a second session.start (a /clear) opens no second one
 let listening = false;
 
@@ -42,7 +49,9 @@ async function listenToCockpit($: EngineInterface) {
     const session = {
         // asUser: the model reads the engine's or the person's words bare, not as a note from a plugin
         submit: (text: string) => $.prompt.submit({ text, asUser: true }),
+        steer: (text: string) => steerTurn($, text),
         command: (name: string, args: string) => $.command.run({ command: name, args }),
+        compact: (instructions: string) => $.session.compact({ instructions }),
     };
     let buffered = "";
     try {
@@ -53,12 +62,12 @@ async function listenToCockpit($: EngineInterface) {
             const taken = takeLines(buffered + chunk.text);
             buffered = taken.rest;
             for (const line of taken.lines) {
-                const text = controlText(line);
-                if (text === null) {
+                const msg = controlMsg(line);
+                if (msg === null) {
                     continue;
                 }
                 // not awaited: a prompt resolves only when its turn starts, and the next line may be due first
-                void deliver(session, text).catch((err) =>
+                void deliver(session, msg, turn).catch((err) =>
                     $.ui.log(`arc: running the cockpit's prompt failed: ${String(err)}`, { to: "debug" })
                 );
             }
@@ -68,6 +77,21 @@ async function listenToCockpit($: EngineInterface) {
     } finally {
         listening = false;
     }
+}
+
+// appends text to the running turn as a row the model reads at its next request. that row draws nothing,
+// so a log line the model never reads shows the person what arrived
+async function steerTurn($: EngineInterface, text: string) {
+    const kept = await $.session.append({ message: { type: "user", content: [{ type: "text", text }] } });
+    if (kept.deny !== undefined) {
+        throw new Error(kept.deny);
+    }
+    $.ui.log(steerNotice(text));
+}
+
+// why this session may not run the shell command; null when it may, and always outside arcterm
+async function refusal($: EngineInterface, command: string): Promise<string | null> {
+    return active ? denial(command, await $.session.cwd()) : null;
 }
 
 export const register: Register = (on) => {
@@ -101,7 +125,27 @@ export const register: Register = (on) => {
         return next(e);
     });
 
+    on("turn.start", ($, e, next) => {
+        turn.isOpen = true;
+        return next(e);
+    });
+
+    // a tool's result means another request follows, and it carries every row joined so far.
+    // ponytail: a text joined between the last result and a final answer's request is read and then
+    // submitted again at the turn's end; twice beats never
+    on("session.append", { door: "tool-result" }, ($, e, next) => {
+        if (!e.agentId) {
+            turn.unread = [];
+        }
+        return next(e);
+    });
+
     on("turn.complete", async ($, e, next) => {
+        for (const text of e.agentId ? [] : endTurn(turn)) {
+            void $.prompt.submit({ text, asUser: true }).catch((err) =>
+                $.ui.log(`arc: submitting an unread mid-turn text failed: ${String(err)}`, { to: "debug" })
+            );
+        }
         const args = active ? idleArgs(e, transcriptPath) : null;
         if (args) {
             try {
@@ -115,6 +159,17 @@ export const register: Register = (on) => {
             }
         }
         return next(e);
+    });
+
+    // refused in code: a prompt's rule is one the model can talk itself out of
+    on("tool.call", { tool: "Bash" }, async ($, e, next) => {
+        const why = await refusal($, e.command);
+        return why === null ? next(e) : { deny: why };
+    });
+
+    on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
+        const why = await refusal($, e.command);
+        return why === null ? next(e) : { deny: why };
     });
 
     // claude's own dialog asks in the terminal while the cockpit card asks beside it, and the first answer

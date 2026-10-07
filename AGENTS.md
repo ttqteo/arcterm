@@ -23,7 +23,7 @@ The build is orchestrated by [Task](https://taskfile.dev) (`Taskfile.yml`), a `m
 |---|---|
 | `task init` | First-time setup: `npm install` + `go mod tidy`. |
 | `task dev` (alias of `task tauri:dev`) | The main way to run. Builds the dev-host backend only (wavesrv + host wsh), syncs `pi/` artifacts and the version, then `cargo tauri dev` (Vite dev server on `:5174`, HMR). |
-| `task build:backend` | Builds `wavesrv` + `wsh` for the full release matrix into `dist/bin/`. |
+| `task build:backend` | Release backend build: a stripped `wavesrv` + `wsh` for windows x64 (the only target the installer bundles) into `dist/bin/`. |
 | `task build:backend:quickdev:windows` | Rebuilds only `wavesrv` (no wsh, no generate) — the fast loop for Go server changes. |
 | `task generate` | Regenerates TS + Go bindings from Go source. **Run after changing any wshrpc / waveobj / wconfig type.** |
 | `task check:ts` | Typecheck the frontend (see the tsc gotcha below). |
@@ -36,6 +36,7 @@ The build is orchestrated by [Task](https://taskfile.dev) (`Taskfile.yml`), a `m
 Other useful commands:
 
 - **Single frontend test:** `npx vitest run frontend/app/view/agents/projectname.test.ts`, or filter by name: `npx vitest run -t "handles backslash paths"`.
+- **Go tests:** one test is `go test ./pkg/x -run '^TestName$'`. For a whole package, list your changed paths in a file and run `ARC_VERIFY_CHANGED=<that file> node scripts/verify.mjs ./pkg/x ./pkg/y` (`git diff --name-only main > <file>`): it tests only the packages those paths can break and deals a large package's tests across 4 processes. `pkg/orchestrate` is ~760 tests and ~6,000 git launches: 4 to 7 min as plain `go test`, under 2 min this way. Keep go's default 10-minute timeout: a run that reaches it holds a hung test, and the timeout's goroutine dump names it.
 - **Rust tests:** `cargo test --manifest-path src-tauri/Cargo.toml`.
 - **Lint / format:** flat ESLint config (`eslint.config.js`) + Prettier (`prettier.config.cjs`), but **no Task/npm wrapper** — run `npx eslint` and `npx prettier --check` directly, **on paths**: `npx eslint .` also walks the worktree copies under `.worktrees/` and `.claude/worktrees/`.
 - **HEAD is not formatter-clean** (`gofmt -l pkg cmd` lists ~50 files; prettier fails in places too). Check only the files you touched; never `--write` the tree. Never run prettier on `scripts/*.mjs` — `.editorconfig` omits `.mjs`, so prettier reindents those hand-formatted 4-space files to 2.
@@ -48,7 +49,7 @@ Other useful commands:
 - **Task resolves the global `VERSION` var once per `task` process.** Bumping the version and building in the same invocation stamps the Go binaries (and the `wsh-<version>-*` filenames) with the *pre-bump* version. That is why `tauri:build` shells out to `tauri:build:post-bump` instead of using a nested `task:` call — and why the callee can't be marked `internal`.
 - **Never hand-edit generated files, including merge conflicts.** Go is the source of truth for the wire protocol and object types; `task generate` writes `frontend/app/store/wshclientapi.ts`, `frontend/app/store/services.ts`, `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, and `pkg/{waveobj,wconfig}/metaconsts.go`. Edit the Go definitions, then regenerate.
 - **`pi/` is the source for the pi artifacts `wsh` embeds.** `task sync:piartifacts` (run by every dev and backend build) copies `pi/extensions/*` and `pi/themes/arc.json` over `cmd/wsh/cmd/pi-*-extension.ts` and `cmd/wsh/cmd/arc-theme.json` — edit `pi/`, never the copies.
-- **`claude/arc-mod/` is the source for the Claude Code mod `wsh` embeds.** `task sync:claudemod` (run by every dev and backend build) copies it, minus tests, to `cmd/wsh/cmd/claude-mod/` — edit `claude/`, never the copy. `wsh install-agent-hooks` writes it to `~/.arc/claude-mod` and lists that folder in `env.CLAUDE_CODE_PLUGIN_DIRS` of `~/.claude/settings.json`, so every claude launch loads it. Check it with `claude plugin validate claude/arc-mod`; its pure logic is in `hooks/*-core.ts`, tested by vitest.
+- **`claude/arc-mod/` is the source for the Claude Code mod `wsh` embeds.** `task sync:claudemod` (run by every dev and backend build) copies it, minus tests, to `cmd/wsh/cmd/claude-mod/` — edit `claude/`, never the copy. `wsh install-agent-hooks` writes it to `~/.arc/claude-mod` and lists that folder in `env.CLAUDE_CODE_PLUGIN_DIRS` of `~/.claude/settings.json`, so every claude launch loads it. Check it with `claude plugin validate claude/arc-mod`; its pure logic is in `hooks/*-core.ts`, tested by vitest. `claude/arc-view-mod/` is a second mod that travels the same way (embed `claude-view-mod`, installed to `~/.arc/claude-view-mod`): it draws the transcript rows of prompts the arc mod submits, and must stay its own plugin because Claude Code never runs a plugin's `ui.render` hook on a row that plugin raised. `claude plugin test` does not apply that rule, so judge a drawn row in a live session.
 - **arcterm's own skills live in `skills/`** (cockpit-runs, cockpit-ui, design-local, effort-tracking), embedded into `wavesrv` by `skills/skills.go`. Every agent-sync apply (each agent launch) seeds them into the vault's skills root, which then projects them into each harness's skills dir — edit `skills/`, never the vault or `~/.claude/skills` copies, which the next launch overwrites. A skill's `.arc/` delta directory in the vault is kept. `pi/skills/arc-dev` belongs to the pi package and stays there.
 - **`src-tauri/icons/icon.ico`, `icon.icns` and `icon.png` are generated by `node scripts/gen-app-icon.mjs`**,
   which draws every frame pixel-exact from the mark's grid. Don't regenerate it with `cargo tauri icon`: that downscales
@@ -85,6 +86,7 @@ There is no jsdom/render-test harness for the cockpit — verify rendered UI by 
 - **Enable:** `src-tauri/src/main.rs` sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, gated by `#[cfg(debug_assertions)]` (compiled out of `cargo tauri build` — never ships).
 - **Capture:** `node scripts/cdp-shot.mjs [out.png] [port]` — discovers the page target (port defaults to `9222`; it ignores `CDP_PORT`) and writes a PNG (the page is the Vite app inside WebView2, `http://localhost:5174/`). The same attach pattern drives full CDP (`Runtime.evaluate` to read the DOM / jotai atoms, `Input.dispatchKeyEvent` for keys). `claude-in-chrome` MCP can't attach (needs Chrome + extension) — use raw CDP.
 - **Scenario harness:** `task verify:ui -- <name...>` (→ `scripts/cdp/verify.mjs`) runs each scenario in `scripts/cdp/scenarios.mjs` as arrange → goto → shot → assert → teardown, prints a PASS/FAIL table, writes a contact sheet to `cdp-shots/index.html`, and exits nonzero on failure. With no names it runs every scenario. Prefer this over ad-hoc `cdp-shot.mjs` when a repeatable check exists; shared attach logic is in `scripts/cdp/attach.mjs`.
+- **A scenario that needs a run with a DAG** follows `docs/reference/cdp-run-fixtures.md`: the arrange, seed and teardown helpers already exist in `scenarios.mjs`.
 - **Inject test data first** if you need a populated cockpit: `node scripts/inject-live-agents.mjs <scenario>` (see that script's header).
 
 ## Architecture
@@ -98,7 +100,7 @@ before working in an area you don't already know.
   window is borderless and the titlebar is drawn in React.
 - **Go backend (`cmd/`, `pkg/`)** — `wavesrv` (SQLite object store + HTTP + websocket RPC) and `wsh`
   (CLI helper shipped into terminals). **Agents report into and drive the cockpit through `wsh`**
-  (`wsh agent-hook`, `wsh ask`; `wsh runs`, `wsh ui`, `wsh effort`). The launch-time
+  (`wsh agent-hook`, `wsh ask`; `wsh runs`, `wsh agents`, `wsh ui`, `wsh effort`). The launch-time
   `install-agent-hooks` writes the Claude Code hooks into
   `~/.claude/settings.json` and the pi/opencode extensions, all pointing at a fixed copy under
   `~/.arc/bin/` — not PATH. The managed hook list is `cmd/wsh/cmd/wshcmd-installhooks.go`.
@@ -138,7 +140,7 @@ Load-bearing rules:
   `docs/keyboard-shortcuts.md` mirrors the bindings.
 - **`pkg/orchestrate`** is the deterministic DAG engine behind orchestrator runs (worktrees, lanes,
   merges, Setup/Verify); UI in `frontend/app/view/orchestrate`. The plan gate, task cap, adaptive
-  orchestration, and pipeline mode were deleted (1e4bb179) and run workers are claude + pi only —
+  orchestration, and pipeline mode are gone and run workers are claude + pi only —
   older specs still describe the removed model; `docs/orchestrator-guide.md` is current.
 
 ### Frontend conventions

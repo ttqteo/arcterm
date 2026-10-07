@@ -12,9 +12,6 @@ func TestOpenrouterModelDefaults(t *testing.T) {
 	if m := "deepseek/deepseek-v4-flash"; OpenrouterCheapModel() != m {
 		t.Logf("OpenrouterCheapModel: got %q, expected %q (when no config set)", OpenrouterCheapModel(), m)
 	}
-	if m := "deepseek/deepseek-v4-pro"; OpenrouterMidModel() != m {
-		t.Logf("OpenrouterMidModel: got %q, expected %q (when no config set)", OpenrouterMidModel(), m)
-	}
 }
 
 func TestDecodeOpenrouterStreamReadsUsage(t *testing.T) {

@@ -51,7 +51,20 @@ declare global {
 
     // wshrpc.AgentControlMsg
     type AgentControlMsg = {
-        text: string;
+        text?: string;
+        compact?: string;
+        midturn?: boolean;
+    };
+
+    // wshrpc.AgentInfo
+    type AgentInfo = {
+        tabid: string;
+        name: string;
+        projectpath: string;
+        project: string;
+        runid: string;
+        harness: string;
+        state: string;
     };
 
     // baseds.AgentStatusData
@@ -284,8 +297,6 @@ declare global {
         name: string;
         projectpath?: string;
         createdts: number;
-        messages?: ChannelMessage[];
-        runs?: Run[];
     };
 
     // waveobj.ChannelMessage
@@ -340,6 +351,7 @@ declare global {
     type CommandAckRunData = {
         channelid: string;
         runid: string;
+        land?: boolean;
     };
 
     // wshrpc.CommandAdvanceRunData
@@ -354,6 +366,7 @@ declare global {
         commit?: string;
         report?: string;
         holdland?: boolean;
+        forceland?: boolean;
     };
 
     // wshrpc.CommandAgentControlData
@@ -416,6 +429,38 @@ declare global {
     type CommandAgentSyncSteeringWriteRtnData = {
         mtime: number;
         conflict: boolean;
+    };
+
+    // wshrpc.CommandAgentsListRtnData
+    type CommandAgentsListRtnData = {
+        agents: AgentInfo[];
+    };
+
+    // wshrpc.CommandAgentsReadData
+    type CommandAgentsReadData = {
+        tab: string;
+    };
+
+    // wshrpc.CommandAgentsReadRtnData
+    type CommandAgentsReadRtnData = {
+        tabid: string;
+        state: string;
+        answer: string;
+        answerts: number;
+    };
+
+    // wshrpc.CommandAgentsSendData
+    type CommandAgentsSendData = {
+        tab: string;
+        text: string;
+        fromoref: string;
+    };
+
+    // wshrpc.CommandAgentsSendRtnData
+    type CommandAgentsSendRtnData = {
+        tabid: string;
+        sentts: number;
+        midturn: boolean;
     };
 
     // wshrpc.CommandAnswerAgentData
@@ -850,6 +895,18 @@ declare global {
         messages: ChannelMessage[];
     };
 
+    // wshrpc.CommandGetChannelRunChangesData
+    type CommandGetChannelRunChangesData = {
+        channelid: string;
+        known?: {[key: string]: number};
+    };
+
+    // wshrpc.CommandGetChannelRunChangesRtnData
+    type CommandGetChannelRunChangesRtnData = {
+        runids: string[];
+        runs: Run[];
+    };
+
     // wshrpc.CommandGetChannelRunsData
     type CommandGetChannelRunsData = {
         channelid: string;
@@ -1172,14 +1229,6 @@ declare global {
         worktrees: GitWorktree[];
     };
 
-    // wshrpc.CommandGitRevertData
-    type CommandGitRevertData = {
-        cwd: string;
-        path: string;
-        status: string;
-        patch?: string;
-    };
-
     // wshrpc.CommandGitReviewPatchData
     type CommandGitReviewPatchData = {
         cwd: string;
@@ -1306,6 +1355,7 @@ declare global {
         author: string;
         text: string;
         reforef?: string;
+        data?: string;
     };
 
     // wshrpc.CommandReadVaultNoteData
@@ -1355,6 +1405,7 @@ declare global {
         commit?: string;
         report?: string;
         holdland?: boolean;
+        forceland?: boolean;
     };
 
     // wshrpc.CommandResolveAmbientRtnData
@@ -2316,6 +2367,24 @@ declare global {
         delta?: TimelineEvent[];
     };
 
+    // waveobj.RadarAudit
+    type RadarAudit = {
+        commit: string;
+        subject: string;
+        committs: number;
+        files: string[];
+        status: string;
+        rootcause?: string;
+        hitcount?: number;
+        keptcount?: number;
+        error?: string;
+        resolvedmodel?: string;
+        totaltokens?: number;
+        cachereadtokens?: number;
+        durationms?: number;
+        rawresponse?: string;
+    };
+
     // waveobj.RadarDisposition
     type RadarDisposition = {
         action: string;
@@ -2331,20 +2400,21 @@ declare global {
         id: string;
         fingerprint: string;
         group: string;
-        mode?: string;
         riskkind: string;
         subsystem: string;
-        boundarylabel?: string;
         risk: string;
         why: string;
         severity: string;
-        strength: string;
         signalids: string[];
         files: string[];
         mission: string;
         disposition?: RadarDisposition;
         investigation?: RadarInvestigation;
         misscount?: number;
+        sourcecommit?: string;
+        sourcesubject?: string;
+        rootcause?: string;
+        sites?: RadarSite[];
     };
 
     // waveobj.RadarInvestigation
@@ -2360,19 +2430,6 @@ declare global {
         deltotal?: number;
         verifspass?: number;
         verifsfail?: number;
-    };
-
-    // waveobj.RadarModeRun
-    type RadarModeRun = {
-        mode: string;
-        status: string;
-        clustererror?: string;
-        payloadtokens?: number;
-        totaltokens?: number;
-        tokensestimated?: boolean;
-        resolvedmodel?: string;
-        findingcount?: number;
-        rawresponse?: string;
     };
 
     // waveobj.RadarReport
@@ -2391,21 +2448,16 @@ declare global {
         windowendts?: number;
         startedts: number;
         completedts?: number;
-        coverage?: {[key: string]: string};
-        partialsources?: string[];
         fatalerror?: string;
         clustererror?: string;
         configuredmodel?: string;
         resolvedmodel?: string;
-        payloadtokens?: number;
         totaltokens?: number;
-        totaltokensestimated?: boolean;
         candidates?: RadarSignal[];
         signals?: RadarSignal[];
         findings?: RadarFinding[];
-        moderuns?: RadarModeRun[];
-        lensprogress?: {[key: string]: string};
         clusterstartedts?: number;
+        audits?: RadarAudit[];
     };
 
     // waveobj.RadarSignal
@@ -2420,6 +2472,15 @@ declare global {
         facts?: {[key: string]: any};
         snippet?: string;
         contenthash: string;
+    };
+
+    // waveobj.RadarSite
+    type RadarSite = {
+        line: number;
+        trigger: string;
+        actual: string;
+        expected: string;
+        whynotcovered: string;
     };
 
     // wshrpc.ResumeCardData
@@ -2585,6 +2646,7 @@ declare global {
         reason?: string;
         commit?: string;
         notes?: string[];
+        dismissed?: boolean;
     };
 
     // waveobj.RunPhase
@@ -2705,7 +2767,6 @@ declare global {
         "memory:vaultpath"?: string;
         "headless:runtime"?: string;
         "headless:openroutercheapmodel"?: string;
-        "headless:openroutermidmodel"?: string;
         "jarvis:vaultpath"?: string;
         "editor:minimapenabled"?: boolean;
         "editor:stickyscrollenabled"?: boolean;
@@ -2728,6 +2789,8 @@ declare global {
         "harness:updatecheck"?: boolean;
         "claude:*"?: boolean;
         "claude:activeaccount"?: string;
+        "radar:auditruntime"?: string;
+        "radar:auditmodel"?: string;
     };
 
     // wshrpc.ShippedItem
@@ -2875,6 +2938,7 @@ declare global {
         cpusample?: number;
         cpusamplets?: number;
         busyts?: number;
+        askts?: number;
         latesttool?: string;
         progresshash?: string;
         progressts?: number;
@@ -2894,6 +2958,7 @@ declare global {
         verifyerror?: string;
         verifyoutput?: string;
         verifystartedts?: number;
+        verifydeferred?: boolean;
         mergeerror?: string;
         mergefailures?: number;
         reviewrunid?: string;

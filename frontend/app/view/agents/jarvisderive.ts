@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pure derivations for Jarvis (the observe-only manager). buildFleetSnapshot resolves the workers a
-// channel dispatched into their current roster state; buildJarvisPrompt turns that snapshot + recent
-// timeline into the prompt handed to a headless `claude -p`. No React, no Wave runtime imports.
+// channel dispatched into their current roster state. No React, no Wave runtime imports.
 
 import type { AgentVM } from "./agentsviewmodel";
 import { answeredAskIds } from "./jarviscards";
@@ -23,18 +22,17 @@ export interface WorkerState {
 }
 
 export const OREF_PREFIX = "tab:";
-const MAX_TIMELINE = 12;
 
-// Resolve every worker this channel dispatched/steered to its current state. A dispatched oref with no
-// live roster row is "gone" (its terminal exited) and falls back to the dispatch message's runtime +
-// task. Dedup by oref (a channel steers the same worker repeatedly).
-export function buildFleetSnapshot(channel: Channel, agents: AgentVM[]): WorkerState[] {
+// Resolve every worker one channel's messages dispatched/steered to its current state. A dispatched oref
+// with no live roster row is "gone" (its terminal exited) and falls back to the dispatch message's runtime
+// + task. Dedup by oref (a channel steers the same worker repeatedly).
+export function buildFleetSnapshot(messages: ChannelMessage[], agents: AgentVM[]): WorkerState[] {
     const orefs: string[] = [];
     const dispatchInfo = new Map<string, { name: string; task?: string }>();
     const activeTs = new Map<string, number>(); // latest dispatch/directive ts per oref
     const dismissTs = new Map<string, number>(); // latest dismiss ts per oref
     const outcomeByOref = new Map<string, { ts: number; outcome: { status: string; summary: string } }>();
-    for (const m of channel.messages ?? []) {
+    for (const m of messages) {
         if (!m.reforef?.startsWith(OREF_PREFIX)) {
             continue;
         }
@@ -102,46 +100,12 @@ export function fleetCostUsd(snapshot: WorkerState[]): number {
     return snapshot.reduce((sum, w) => sum + (w.costUsd ?? 0), 0);
 }
 
-// Compose the fleet snapshot + a capped recent timeline into the prompt for `claude -p`. focus narrows the
-// summary to one question; empty focus => a general fleet summary.
-export function buildJarvisPrompt(snapshot: WorkerState[], channel: Channel, focus: string): string {
-    const fleetLines = snapshot.length
-        ? snapshot
-              .map((w) => {
-                  const bits = [`- ${w.name} [${w.state}]`];
-                  if (w.task) {
-                      bits.push(`task: ${w.task}`);
-                  }
-                  if (w.askText) {
-                      bits.push(`asking: ${w.askText}`);
-                  }
-                  return bits.join(" — ");
-              })
-              .join("\n")
-        : "(no workers dispatched in this channel)";
-    const timeline = (channel.messages ?? [])
-        .slice(-MAX_TIMELINE)
-        .map((m) => `${m.author}: ${m.text}`)
-        .join("\n");
-    const task = focus.trim() || "Summarize the current state of this channel's workers.";
-    return [
-        `You are Jarvis, a concise engineering assistant watching a fleet of coding agents in the "${channel.name}" channel.`,
-        `Task: ${task}`,
-        `Answer in 2-4 short lines: which workers are up, which are blocked (and on what), which are done. Be specific and terse. Do not invent workers not listed.`,
-        ``,
-        `Fleet:`,
-        fleetLines,
-        ``,
-        `Recent channel messages:`,
-        timeline || "(none)",
-    ].join("\n");
-}
-
 // the set of ask ids Jarvis has auto-answered across all channels (drives every "needs you" surface).
-export function answeredAskIdsAcross(channels: Channel[]): Set<string> {
+// takes one message list per channel.
+export function answeredAskIdsAcross(messageLists: ChannelMessage[][]): Set<string> {
     const answered = new Set<string>();
-    for (const ch of channels) {
-        for (const o of answeredAskIds(ch.messages ?? [])) {
+    for (const messages of messageLists) {
+        for (const o of answeredAskIds(messages)) {
             answered.add(o);
         }
     }
@@ -151,13 +115,4 @@ export function answeredAskIdsAcross(channels: Channel[]): Set<string> {
 // whether a worker is genuinely blocked on the human: asking, and not already answered by Jarvis.
 export function needsHuman(a: AgentVM, answered: Set<string>): boolean {
     return a.state === "asking" && !(a.ask?.askId && answered.has(a.ask.askId));
-}
-
-// Fleet-wide count of workers genuinely blocked on the human, deduped against Jarvis-answered asks across
-// ALL channels. This is the whole-fleet reading (every asking agent, dispatched or not); the nav-rail
-// badges instead split the server-computed attention list (attentionstore.splitAttention), and the Cockpit
-// "need you" counter inlines the same needsHuman filter (sharing its answered-set with the sticky bar).
-export function pendingAskCount(channels: Channel[], agents: AgentVM[]): number {
-    const answered = answeredAskIdsAcross(channels);
-    return agents.filter((a) => needsHuman(a, answered)).length;
 }

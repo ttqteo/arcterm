@@ -44,24 +44,24 @@ func TestGatherAttentionFromLedger_UsesCallerRowsAndWindowsMessages(t *testing.T
 	agentask.GlobalRegistry.Set(oldAskORef, agentask.PendingAsk{Ts: 1})
 
 	items, err := GatherAttentionFromLedger(ctx, []*waveobj.Channel{ch},
-		map[string][]*waveobj.Run{ch.OID: {gatedRun("r-ledger", "from caller ledger", 500)}})
+		map[string][]*waveobj.Run{ch.OID: {heldRun("r-ledger", "from caller ledger", 500)}})
 	if err != nil {
 		t.Fatalf("GatherAttentionFromLedger: %v", err)
 	}
 
-	var sawGateFromLedger, sawPlainAsk bool
+	var sawRunFromLedger, sawPlainAsk bool
 	for _, it := range items {
 		switch {
-		case it.Kind == AttentionGate && it.RunId == "r-ledger":
-			sawGateFromLedger = true
+		case it.Kind == AttentionRunLandHeld && it.RunId == "r-ledger":
+			sawRunFromLedger = true
 		case it.Kind == AttentionAsk:
 			sawPlainAsk = true
 		case it.Kind == AttentionEscalation:
 			t.Fatalf("escalation card scanned past the window: %+v", it)
 		}
 	}
-	if !sawGateFromLedger {
-		t.Fatalf("gate from caller-provided run row missing: %+v", items)
+	if !sawRunFromLedger {
+		t.Fatalf("held land from caller-provided run row missing: %+v", items)
 	}
 	if !sawPlainAsk {
 		t.Fatalf("pending ask outside the message window did not degrade to a plain ask: %+v", items)
