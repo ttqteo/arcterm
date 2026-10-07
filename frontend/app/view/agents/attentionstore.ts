@@ -22,24 +22,20 @@ export const attentionLoadedAtom = atom(false) as PrimitiveAtom<boolean>;
 let latestAttentionLoad = 0;
 
 // splitAttention keeps the nav-rail badges disjoint by construction rather than by derivations agreeing.
-// Radar triage is routed by kind before the channel test: it names no channel either, and falling through
-// would count it on Cockpit, a surface with nothing that can clear it.
+// Everything that needs you but a radar finding is the Cockpit's: its asks are cards there and its other
+// items (gates, blocked tasks, runs to acknowledge or land, escalations) are the Needs-you strip's, so
+// Jarvis's nav entry carries no attention badge. Radar triage is routed by kind: the Cockpit has nothing
+// that can clear it, and Radar does.
 export function splitAttention(items: AttentionItem[]): {
-    channel: AttentionItem[];
-    standalone: AttentionItem[];
+    cockpit: AttentionItem[];
     radar: AttentionItem[];
 } {
-    const channel: AttentionItem[] = [];
-    const standalone: AttentionItem[] = [];
+    const cockpit: AttentionItem[] = [];
     const radar: AttentionItem[] = [];
     for (const i of items ?? []) {
-        if (i.kind === "radar-triage") {
-            radar.push(i);
-        } else {
-            (i.channelid ? channel : standalone).push(i);
-        }
+        (i.kind === "radar-triage" ? radar : cockpit).push(i);
     }
-    return { channel, standalone, radar };
+    return { cockpit, radar };
 }
 
 // A failed poll leaves the last good list in place. Blanking the badge on one dropped request would

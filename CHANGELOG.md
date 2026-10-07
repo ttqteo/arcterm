@@ -30,6 +30,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- What needs you (run approvals, blocked tasks, runs to acknowledge or land, escalations) now shows at the top of the
+  Cockpit with its action buttons, and its nav and Dock badge moved from Jarvis to Cockpit.
 - **`g` `c`** opens the Cockpit (it was `g` `h`).
 - Claude tool calls no longer wait on arcterm's status reports.
 - Usage, attention and channel views load faster on long histories.
@@ -37,6 +39,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A Claude session you send to the background from its own tab keeps reporting to that tab: its status, transcript
+  and subagents stay current.
 - After an update, a crash or a quit, the claude, pi and opencode agents that were running come back on their own,
   each in its own session, instead of staying gone until reopened from history.
 - Claude plan usage now follows the real account (its email) across `/login` changes, and a token account can be tied

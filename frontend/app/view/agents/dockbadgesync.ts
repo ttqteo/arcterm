@@ -16,7 +16,7 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 export function useDockBadge(): void {
     const unread = useAtomValue(unreadAgentsAtom);
     const attention = useAtomValue(attentionAtom);
-    const count = dockBadgeCount(unread.size, splitAttention(attention).channel.length);
+    const count = dockBadgeCount(unread.size, splitAttention(attention).cockpit.length);
     useEffect(() => {
         if (isWindows()) {
             return;

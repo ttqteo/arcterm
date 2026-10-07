@@ -9,6 +9,7 @@ import { AnimatePresence, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildCockpitBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed } from "@/app/store/keybindings/dispatcher";
+import { openTarget } from "@/app/view/jarvis/openref";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cheatsheetOpenAtom } from "@/app/cockpit/shortcuts-cheatsheet";
 import { dismissAgent, toggleAgentBackground } from "./agentactions";
@@ -63,6 +64,7 @@ import { summarizeUsage } from "./runusage";
 import { useRunDigests } from "./runlineagestore";
 import { useCockpitKeyboard } from "./usecockpitkeyboard";
 import { useCardStreams } from "./usecardstreams";
+import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
 import { useSubagentTracking } from "./subagenttracking";
 import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
@@ -337,6 +339,19 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         setTimeout(() => setPulseId((p) => (p === id ? undefined : p)), 1200);
     };
 
+    // An escalation's Open in the Needs-you strip: the asking agent's card, where its ask is answered. An agent
+    // with no card on screen (a status tab or backgrounding hides it) opens in the Agent surface instead, through
+    // the one router.
+    const focusAgentCard = (agentId: string) => {
+        const stop = cursorAlias[agentId] ?? agentId;
+        if (navigableIds.includes(stop)) {
+            setCursorId(stop);
+            scrollToPulse(stop);
+            return;
+        }
+        fireAndForget(() => openTarget(model, { kind: "agent", tabId: agentId }));
+    };
+
     const focusRowComposer = (id: string) => {
         (document.querySelector(`[data-agent-id="${id}"] textarea`) as HTMLTextAreaElement)?.focus();
     };
@@ -512,6 +527,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                         </div>
                     </div>
                 </div>
+
+                <NeedsYouStrip model={model} onFocusAgent={focusAgentCard} />
 
                 <div className="relative flex min-h-0 flex-1 flex-col">
                     <AnimatePresence initial={false}>

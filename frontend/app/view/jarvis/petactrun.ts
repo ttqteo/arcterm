@@ -52,7 +52,7 @@ async function escort(
 }
 
 // An ack, an approve and a retry settle their row in place, so the peek stays open; the reload drops the row
-// now instead of on the next 10s poll. The calls are the Brief queue's own (briefsurface.tsx actOnQueue).
+// now instead of on the next 10s poll. The calls are the Brief queue's own (attentionrun.ts).
 async function settle(act: PetAct, call: () => Promise<unknown>): Promise<void> {
     setActState(act.id, { status: "running" });
     try {

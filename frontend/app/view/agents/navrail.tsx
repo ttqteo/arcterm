@@ -57,16 +57,15 @@ const BADGE_FILL: Partial<Record<SurfaceKey, string>> = { agent: "bg-accent" };
 
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
-    // Three disjoint "needs you" badges from one server-computed list: Jarvis counts everything a channel
-    // owns (review gates, Gatekeeper escalations, dispatched workers), Cockpit counts standalone agents
-    // no channel dispatched, Radar counts projects with untriaged findings. Each sits on the surface that
-    // clears it. Agent counts the agents that finished a turn you have not looked at yet (unreadagents.ts).
+    // Two disjoint "needs you" badges from one server-computed list: Cockpit counts everything waiting on
+    // you (asks as cards, the rest in its Needs-you strip), Radar counts projects with untriaged findings.
+    // Each sits on the surface that clears it; Jarvis has none. Agent counts the agents that finished a turn
+    // you have not looked at yet (unreadagents.ts).
     const attention = useAtomValue(attentionAtom);
     const split = splitAttention(attention);
     const unread = useAtomValue(unreadAgentsAtom);
     const badges: Partial<Record<SurfaceKey, number>> = {
-        cockpit: split.standalone.length,
-        jarvis: split.channel.length,
+        cockpit: split.cockpit.length,
         agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
         radar: split.radar.length,
     };

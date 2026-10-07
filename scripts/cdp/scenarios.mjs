@@ -2019,7 +2019,7 @@ const usageCharts = {
 
 // --- the review-gate blind spot ----------------------------------------------------------------
 // The whole defect in three steps: hold a run's DAG at a gate in one channel, make a DIFFERENT channel
-// the active subject, then walk away to Usage and read the Jarvis nav badge. Before the attention list
+// the active subject, then walk away to Usage and read the Cockpit nav badge. Before the attention list
 // moved server-side this read zero — the badge counted only live `asking` workers, and a gate has none
 // (its task finished and it is waiting on a human), while the frontend's cross-channel list came from a
 // channel snapshot refetched only on create/delete/rename/archive.
@@ -2126,17 +2126,17 @@ const attentionCrossChannel = {
         // 4. leave for a surface nowhere near Jarvis, then wait for one poll tick
         await h.goto("usage");
         await settle(400);
-        const jarvisBadge = () =>
+        const cockpitBadge = () =>
             h.ev(`(() => {
-                const b = document.querySelector('nav button[aria-label="Jarvis"]');
+                const b = document.querySelector('nav button[aria-label="Cockpit"]');
                 if (!b) return null;
                 const s = [...b.querySelectorAll('span')].find((x) => /^\\d+$/.test((x.textContent || '').trim()));
                 return s ? Number(s.textContent.trim()) : 0;
             })()`);
-        let badge = await jarvisBadge();
+        let badge = await cockpitBadge();
         for (let i = 0; i < 30 && !(badge >= 1); i++) {
             await settle(500);
-            badge = await jarvisBadge();
+            badge = await cockpitBadge();
         }
         rec(
             "4. a poll delivered a non-empty attention list to the nav rail",
@@ -2144,11 +2144,11 @@ const attentionCrossChannel = {
             `badge=${JSON.stringify(badge)} (waited up to 15s for a 10s poll)`
         );
 
-        // 5. the assertion the defect failed: the badge is lit from a surface that is not Jarvis, for a
+        // 5. the assertion the defect failed: the badge is lit from a surface that is not the Cockpit, for a
         // gate in a channel that is not active
         const onUsage = await h.activeSurfaceLabel();
         rec(
-            "5. the Jarvis badge counts a review gate in a non-active channel, read from Usage",
+            "5. the Cockpit badge counts a review gate in a non-active channel, read from Usage",
             onUsage === "Usage" && badge >= 1,
             `surface=${onUsage} badge=${badge}`
         );

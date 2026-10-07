@@ -41,14 +41,21 @@ describe("loadAttention", () => {
 });
 
 describe("splitAttention", () => {
-    it("routes items with a channel to the Jarvis badge and the rest to Cockpit", () => {
+    it("counts every item but radar triage on Cockpit, channel or not", () => {
         const out = splitAttention([
             item({ key: "a", channelid: "c1" }),
             item({ key: "b" }),
-            item({ key: "c", kind: "gate", channelid: "c2" }),
+            item({ key: "c", kind: "dag-gate", channelid: "c2" }),
+            item({ key: "d", kind: "escalation", channelid: "c1" }),
+            item({ key: "e", kind: "run-land-held", channelid: "c1" }),
         ]);
-        expect(out.channel.map((i) => i.key)).toEqual(["a", "c"]);
-        expect(out.standalone.map((i) => i.key)).toEqual(["b"]);
+        expect(out.cockpit.map((i) => i.key)).toEqual(["a", "b", "c", "d", "e"]);
+        expect(out.radar).toHaveLength(0);
+    });
+
+    it("gives Jarvis no group: its nav entry carries no attention badge", () => {
+        const out = splitAttention([item({ key: "a", channelid: "c1" })]);
+        expect(Object.keys(out).sort()).toEqual(["cockpit", "radar"]);
     });
 
     it("routes radar triage to the Radar badge, not Cockpit, even though it names no channel", () => {
@@ -57,23 +64,23 @@ describe("splitAttention", () => {
             item({ key: "b" }),
         ]);
         expect(out.radar.map((i) => i.key)).toEqual(["r"]);
-        expect(out.standalone.map((i) => i.key)).toEqual(["b"]);
-        expect(out.channel).toHaveLength(0);
+        expect(out.cockpit.map((i) => i.key)).toEqual(["b"]);
     });
 
-    it("keeps the three groups disjoint and complete", () => {
+    it("keeps the two groups disjoint and complete, in server order", () => {
         const items = [
             item({ key: "a", channelid: "c1" }),
-            item({ key: "b" }),
             item({ key: "r", kind: "radar-triage" }),
+            item({ key: "b" }),
         ];
         const out = splitAttention(items);
-        expect(out.channel.length + out.standalone.length + out.radar.length).toBe(items.length);
+        expect(out.cockpit.length + out.radar.length).toBe(items.length);
+        expect(out.cockpit.map((i) => i.key)).toEqual(["a", "b"]);
     });
 
-    it("treats an empty channel id as standalone, not as a channel named empty", () => {
-        const out = splitAttention([item({ key: "a", channelid: "" })]);
-        expect(out.standalone).toHaveLength(1);
-        expect(out.channel).toHaveLength(0);
+    it("reads a missing list as empty", () => {
+        const out = splitAttention(undefined as unknown as AttentionItem[]);
+        expect(out.cockpit).toHaveLength(0);
+        expect(out.radar).toHaveLength(0);
     });
 });

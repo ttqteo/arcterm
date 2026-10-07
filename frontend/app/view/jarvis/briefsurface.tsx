@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, type Variants } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { runAttentionAct } from "./attentionrun";
 import { AutonomyLadder } from "./autonomyladderview";
 import { briefFleet } from "./brieffleet";
 import { BRIEFING_FIXTURES } from "./briefingfixtures";
@@ -170,7 +171,6 @@ import {
     readingNoteAtom,
 } from "./jarvisstore";
 import { clearSubject, persistedSubjectAtom, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
-import { landAgain } from "./landrun";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
@@ -1264,51 +1264,19 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     // anything else opens the row's run
     const actOnQueue = (q: QueueRow, l: BriefLine) => {
         const act = queueAction(q);
-        const run = (label: string, fn: () => Promise<void>) =>
-            fireAndForget(async () => {
-                try {
-                    await fn();
-                    briefUndo.notify(label);
-                } catch (e) {
-                    briefUndo.error(e instanceof Error ? e.message : String(e));
-                }
-            });
-        switch (act.kind) {
-            case "approve-dag":
-                return run(`Approved ${q.taskId} · ${q.source || q.title}`, () =>
-                    RpcApi.DagActionCommand(TabRpcClient, {
-                        channelid: q.channelId,
-                        runid: q.runId!,
-                        taskid: q.taskId,
-                        action: "approve",
-                    })
-                );
-            case "retry-dag":
-                return run(`Retrying ${q.taskId}`, () =>
-                    RpcApi.DagActionCommand(TabRpcClient, {
-                        channelid: q.channelId,
-                        runid: q.runId!,
-                        taskid: q.taskId,
-                        action: "retry",
-                    })
-                );
-            case "ack-run":
-                return run(`Acknowledged · ${q.source || q.title}`, () =>
-                    RpcApi.AckRunCommand(TabRpcClient, { channelid: q.channelId, runid: q.runId! })
-                );
-            case "land-run":
-                // a held answer throws, so the undo bar reads the reason rather than "Landed"
-                return run(`Landed · ${q.source || q.title}`, async () => {
-                    const outcome = await landAgain(q.channelId, q.runId!);
-                    if (outcome.failed) {
-                        throw new Error(outcome.text);
-                    }
-                });
-            default:
-                if (l.target != null) {
-                    openLine(l.target);
-                }
+        if (act.kind === "open") {
+            if (l.target != null) {
+                openLine(l.target);
+            }
+            return;
         }
+        // the Cockpit's Needs-you strip runs the same call (attentionrun.ts), answering in its own toast
+        fireAndForget(() =>
+            runAttentionAct(act, q, {
+                done: (text) => briefUndo.notify(text),
+                fail: (text) => briefUndo.error(text),
+            })
+        );
     };
     const queueOf = (l: BriefLine) => queue.find((q) => "waiting:" + q.key === l.id)!;
     const ackable = ackableRuns(queue);
