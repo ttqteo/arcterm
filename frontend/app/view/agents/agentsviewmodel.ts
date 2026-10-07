@@ -34,7 +34,7 @@ export type ActionDetail =
 // One item of "previous info": something the agent said, or something it did.
 export type AgentEntry =
     | { kind: "message"; text: string }
-    | { kind: "user"; text: string }
+    | { kind: "user"; text: string; images?: string[] } // images: what was pasted with it, as data URLs
     | { kind: "command"; name: string; args?: string; isSkill?: boolean }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string }
     // a background Task/subagent finished (Claude's <task-notification>): summary + optional full result
@@ -212,7 +212,7 @@ export function detailExceedsInline(d: ActionDetail): boolean {
 // is stable because entries are append-only). Shorter runs stay as inline `action` items.
 export type TimelineItem =
     | { kind: "message"; text: string; index: number }
-    | { kind: "user"; text: string; index: number }
+    | { kind: "user"; text: string; images?: string[]; index: number }
     | { kind: "command"; name: string; args?: string; isSkill?: boolean; index: number }
     | { kind: "compaction"; trigger?: string; preTokens?: number; postTokens?: number; summary?: string; index: number }
     | { kind: "notification"; summary: string; status?: string; result?: string; index: number }
@@ -273,7 +273,11 @@ export function groupTimeline(entries: AgentEntry[], threshold = CollapseRunThre
         if (e.kind === "message") {
             items.push({ kind: "message", text: e.text, index: i });
         } else if (e.kind === "user") {
-            items.push({ kind: "user", text: e.text, index: i });
+            items.push(
+                e.images
+                    ? { kind: "user", text: e.text, images: e.images, index: i }
+                    : { kind: "user", text: e.text, index: i }
+            );
         } else if (e.kind === "command") {
             items.push({ kind: "command", name: e.name, args: e.args, isSkill: e.isSkill, index: i });
         } else if (e.kind === "compaction") {

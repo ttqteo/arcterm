@@ -210,9 +210,21 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
             if (!Array.isArray(content)) {
                 continue;
             }
+            // a pasted image rides in the same record as the prompt's text: it goes on that prompt, or is one alone
+            const images = content.flatMap((b: any) =>
+                b?.type === "image" && b.source?.type === "base64" && typeof b.source.data === "string"
+                    ? [`data:${b.source.media_type ?? "image/png"};base64,${b.source.data}`]
+                    : []
+            );
+            let prompt: { kind: "user"; text: string; images?: string[] } | undefined;
             for (const block of content) {
                 if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
-                    entries.push(isInterrupted(block.text) ? { kind: "interrupted" } : { kind: "user", text: block.text });
+                    if (isInterrupted(block.text)) {
+                        entries.push({ kind: "interrupted" });
+                    } else {
+                        prompt = { kind: "user", text: block.text };
+                        entries.push(prompt);
+                    }
                     continue;
                 }
                 if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") {
@@ -249,6 +261,13 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                     action.outcome = "fail";
                 } else if (action.verb === "ran") {
                     action.outcome = "ok";
+                }
+            }
+            if (images.length > 0) {
+                if (prompt != null) {
+                    prompt.images = images;
+                } else if (!content.some((b: any) => b?.type === "tool_result")) {
+                    entries.push({ kind: "user", text: "", images });
                 }
             }
             continue;

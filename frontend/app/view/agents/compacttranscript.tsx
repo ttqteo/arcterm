@@ -26,6 +26,7 @@ import {
     CommandChip,
     CompactionDivider,
     InterruptedDivider,
+    PromptImages,
     TaskNotificationRow,
     ToolDetailBody,
     ToolLine,
@@ -40,8 +41,16 @@ function Caret({ open }: { open: boolean }) {
     return <Icon size={12} strokeWidth={2.2} aria-hidden className="shrink-0" />;
 }
 
-// your message: a box, no label, long ones clamped
-function UserMessage({ text, onContextMenu }: { text: string; onContextMenu: (e: React.MouseEvent) => void }) {
+// your message: a box, no label, long ones clamped, with what you pasted under it
+function UserMessage({
+    text,
+    images,
+    onContextMenu,
+}: {
+    text: string;
+    images?: string[];
+    onContextMenu: (e: React.MouseEvent) => void;
+}) {
     const clamp = userNeedsClamp(text);
     const [open, setOpen] = useState(false);
     return (
@@ -69,6 +78,7 @@ function UserMessage({ text, onContextMenu }: { text: string; onContextMenu: (e:
                     {open ? "Show less" : "Show more"}
                 </button>
             ) : null}
+            {images ? <PromptImages images={images} /> : null}
         </div>
     );
 }
@@ -227,7 +237,7 @@ export function CompactTranscript({
     const visible = items.length > RENDER_CAP ? items.slice(items.length - RENDER_CAP) : items;
     const rootRef = useRef<HTMLDivElement>(null);
     const pinned = usePinnedPrompt(rootRef);
-    const prompts = visible.flatMap((item) => (item.kind === "user" ? [item.text] : []));
+    const prompts = visible.flatMap((item) => (item.kind === "user" ? [item.text || "Image"] : []));
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [
@@ -259,7 +269,14 @@ export function CompactTranscript({
             {visible.map((item, idx) => {
                 switch (item.kind) {
                     case "user":
-                        return <UserMessage key={item.index} text={item.text} onContextMenu={copyMenu(item.text)} />;
+                        return (
+                            <UserMessage
+                                key={item.index}
+                                text={item.text}
+                                images={item.images}
+                                onContextMenu={copyMenu(item.text)}
+                            />
+                        );
                     case "message":
                         return <AssistantMessage key={item.index} text={item.text} onContextMenu={copyMenu(item.text)} />;
                     case "work":

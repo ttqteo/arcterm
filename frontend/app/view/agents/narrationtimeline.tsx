@@ -315,6 +315,30 @@ export function ToolLine({ action }: { action: AgentActionEntry }) {
 
 // A folded run of consecutive edits (Wave-transcript-feed.dc.html burst). Summary row: "N files
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
+// the images pasted with a prompt, as thumbnails; a click shows one at its full width, another click shrinks it back
+export function PromptImages({ images }: { images: string[] }) {
+    const [open, setOpen] = useState<number | null>(null);
+    return (
+        <div data-prompt-images className="mt-1.5 flex flex-wrap gap-1.5">
+            {images.map((src, i) => (
+                <img
+                    key={i}
+                    src={src}
+                    alt={`Pasted image ${i + 1}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setOpen((cur) => (cur === i ? null : i));
+                    }}
+                    className={cn(
+                        "max-w-full rounded-[6px] border border-edge-mid object-contain",
+                        open === i ? "cursor-zoom-out" : "max-h-[160px] cursor-zoom-in"
+                    )}
+                />
+            ))}
+        </div>
+    );
+}
+
 export function CommandChip({ name, args, isSkill }: { name: string; args?: string; isSkill?: boolean }) {
     return (
         <div className="mt-2 flex justify-end">
@@ -546,7 +570,7 @@ export function NarrationTimeline({
     const visibleItems = items.length > TIMELINE_RENDER_CAP ? items.slice(items.length - TIMELINE_RENDER_CAP) : items;
     const rootRef = useRef<HTMLDivElement>(null);
     const pinned = usePinnedPrompt(rootRef);
-    const prompts = visibleItems.flatMap((item) => (item.kind === "user" ? [item.text] : []));
+    const prompts = visibleItems.flatMap((item) => (item.kind === "user" ? [item.text || "Image"] : []));
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [
@@ -612,7 +636,8 @@ export function NarrationTimeline({
                                 <div className="mb-0.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                                     You
                                 </div>
-                                <p className="text-[13px] leading-[1.5] text-primary">{item.text}</p>
+                                {item.text ? <p className="text-[13px] leading-[1.5] text-primary">{item.text}</p> : null}
+                                {item.images ? <PromptImages images={item.images} /> : null}
                             </div>
                         </motion.div>
                     );

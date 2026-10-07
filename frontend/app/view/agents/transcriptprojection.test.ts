@@ -86,6 +86,22 @@ describe("projectTranscript user turns", () => {
         expect(out).toEqual([{ kind: "user", text: "option B" }]);
     });
 
+    it("carries a pasted image on the prompt it was sent with, as a data URL", () => {
+        const img = { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0K" } };
+        const out = projectTranscript([
+            L({ type: "user", message: { content: [{ type: "text", text: "[Image #3] two columns?" }, img] } }),
+        ]);
+        expect(out).toEqual([
+            { kind: "user", text: "[Image #3] two columns?", images: ["data:image/png;base64,iVBORw0K"] },
+        ]);
+    });
+
+    it("projects an image sent with no text as a prompt of its own", () => {
+        const img = { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "/9j/" } };
+        const out = projectTranscript([L({ type: "user", message: { content: [img] } })]);
+        expect(out).toEqual([{ kind: "user", text: "", images: ["data:image/jpeg;base64,/9j/"] }]);
+    });
+
     it("emits no user entry for a tool_result-only record but still applies the outcome", () => {
         const out = projectTranscript([
             L({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }] } }),
