@@ -20,8 +20,8 @@ and `tauri-plugin-notification` (macOS).
 
 **Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: notify-toast needs CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs notify-toast`
 
-Conventions for every task: work on `main`; commit only the files the task names (the tree has unrelated edits);
-no `Co-Authored-By` trailer; never push. Check formatting only on files you touched (`npx prettier --check <files>`,
+Conventions for every task: commit on the branch you are given; commit only the files the task names; no
+`Co-Authored-By` trailer; never push. Check formatting only on files you touched (`npx prettier --check <files>`,
 `gofmt -l <files>`); never prettier `scripts/*.mjs`.
 
 ---
@@ -80,6 +80,9 @@ git commit -m "feat(config): notify:os, notify:toast and notify:reply settings"
 `waiting` now comes only from the input-needed Notification types (`permission_prompt`, `elicitation_*`,
 `agent_needs_input`; `idle_prompt` maps to idle since `82e21f80`), so it is a real "needs you", not a generic nudge.
 Consumers already handle `asking` without an `ask` object (AskUserQuestion falling back to the terminal).
+
+**Shown by:** `notify-toast` step 7, "a waiting agent reads as asking" (Task 10): the agent's tree row reads asking
+(amber) after it publishes `waiting`.
 
 **Files:**
 - Modify: `frontend/app/view/agents/agentsviewmodel.ts:488-500` (`agentVMFromInput` and its doc comment)
@@ -219,6 +222,7 @@ import {
     coalesce,
     diffEvents,
     notifyEventOf,
+    parseTarget,
     routeNotify,
     snapshotOf,
     type NotifyEvent,
@@ -297,6 +301,17 @@ describe("notifyEventOf", () => {
     it("drops an empty one", () => {
         expect(notifyEventOf(undefined)).toBeNull();
         expect(notifyEventOf({ title: "", message: "", level: "info" })).toBeNull();
+    });
+});
+
+describe("parseTarget", () => {
+    it("reads the target an OS toast carried back", () => {
+        expect(parseTarget('{"kind":"agent","agentId":"a"}')).toEqual({ kind: "agent", agentId: "a" });
+    });
+    it("falls back to none for garbage or a payload with no kind", () => {
+        expect(parseTarget("not json")).toEqual({ kind: "none" });
+        expect(parseTarget("{}")).toEqual({ kind: "none" });
+        expect(parseTarget(undefined)).toEqual({ kind: "none" });
     });
 });
 
@@ -481,6 +496,17 @@ export function notifyEventOf(data: NotifyCommandData | undefined): NotifyEvent 
     return { kind: "notify", target: { kind: "none" }, title: data.title || data.message, body: data.title ? data.message : "", loud: false };
 }
 
+/** Pure: the target an OS toast hands back on click (notify.rs emits the JSON notify_os was given); none for anything
+ *  unreadable. */
+export function parseTarget(raw: unknown): NotifyTarget {
+    try {
+        const t = JSON.parse(String(raw)) as NotifyTarget | null;
+        return t?.kind ? t : { kind: "none" };
+    } catch {
+        return { kind: "none" };
+    }
+}
+
 export interface RouteCtx {
     focused: boolean;
     viewing: ReadonlySet<string>;
@@ -633,6 +659,8 @@ git commit -m "refactor(cockpit): openNeedsTarget shared by the palette, and an 
 ### Task 6: Clickable toasts
 
 **Depends on:** none
+
+**Shown by:** `notify-toast` step 3, "clicking the toast opens the agent" (Task 10).
 
 **Files:**
 - Modify: `frontend/app/cockpit/notificationstore.ts`
@@ -826,6 +854,11 @@ git commit -m "feat(tauri): notify_os shows an OS toast and reports its click"
 
 **Depends on:** Task 1, Task 3, Task 4, Task 5, Task 6, Task 7
 
+**Shown by:** `notify-toast` (Task 10) steps 2 "a toast appears when an out-of-view agent starts asking", 3 "clicking
+the toast opens the agent", 4 "no toast for the agent in view", 8 "backgrounded, an ask goes to the OS, not a toast"
+and 9 "an OS toast's click opens the agent". The WinRT toast itself is covered only by `notify.rs`'s cargo tests
+(Task 7): CDP cannot see it.
+
 **Files:**
 - Create: `frontend/app/view/agents/notifysync.tsx`
 - Modify: `frontend/app/view/agents/cockpitshell.tsx` (mount it after `useDockBadge()` … inside the returned tree)
@@ -860,6 +893,7 @@ import {
     COALESCE_MS,
     diffEvents,
     notifyEventOf,
+    parseTarget,
     routeNotify,
     snapshotOf,
     type NotifyEvent,
@@ -889,15 +923,6 @@ function openNotifyTarget(model: AgentsViewModel, t: NotifyTarget): void {
             return;
         case "none":
             return;
-    }
-}
-
-function parseTarget(raw: unknown): NotifyTarget {
-    try {
-        const t = JSON.parse(String(raw)) as NotifyTarget;
-        return t?.kind ? t : { kind: "none" };
-    } catch {
-        return { kind: "none" };
     }
 }
 
@@ -1019,11 +1044,11 @@ Expected: clean (a react-hooks exhaustive-deps warning on the effects that close
 with a one-line `// eslint-disable-next-line react-hooks/exhaustive-deps` and a reason only if the config treats it as
 an error).
 
-**Step 4: Smoke in the dev app** (if one is running; do not start a build just for this): background the window, flip
-an agent to asking (any real Claude session hitting a permission prompt), see the OS toast, click it, see the agent
-open. Note the result in the commit body; if no dev app is running, say "not run".
+The `notify-toast` scenario (Task 10) records `notify_os` by wrapping `window.__TAURI_INTERNALS__.invoke`, so keep the
+call going through `invoke` from `@tauri-apps/api/core` (it looks that function up at call time); do not cache a
+reference to it at module load.
 
-**Step 5: Commit**
+**Step 4: Commit**
 
 ```bash
 git add frontend/app/view/agents/notifysync.tsx frontend/app/view/agents/cockpitshell.tsx
@@ -1036,10 +1061,13 @@ git commit -m "feat(agents): notify when an agent needs you or finishes, in app 
 
 **Depends on:** Task 1
 
+**Shown by:** `notify-toast` (Task 10) steps 5 "Settings lists the Notifications section" and 6 "In-app toasts off
+silences a toast".
+
 **Files:**
 - Modify: `frontend/app/view/agents/settingsmodel.ts` (a new section after `general`)
 - Modify: `frontend/app/view/agents/settingssurface.tsx` (`SectionBody` case + `NotificationsSection`)
-- Test: `frontend/app/view/agents/settingsmodel.test.ts` (only if it pins the section list)
+- Test: `frontend/app/view/agents/settingsmodel.test.ts`
 
 **Step 1: Section def** (after the `general` section):
 
@@ -1104,8 +1132,12 @@ function NotificationsSection() {
 
 **Step 3: Tests**
 
+`settingsmodel.test.ts` "marks exactly the wconfig-backed rows as config rows" pins the ordered list of config keys,
+and the three new rows are config rows: add `"notify:os"`, `"notify:toast"`, `"notify:reply"` right after
+`"term:fontfamily"` (the Fonts section comes before General, and Notifications follows General).
+
 Run: `npx vitest run frontend/app/view/agents/settingsmodel.test.ts`
-Expected: PASS; if a test pins the section ids or counts, add `notifications` where `general` sits.
+Expected: PASS; if another test pins the section ids or counts, add `notifications` where `general` sits.
 
 **Step 4: Commit**
 
@@ -1118,25 +1150,35 @@ git commit -m "feat(settings): a Notifications section"
 
 ### Task 10: CDP scenario `notify-toast`
 
-**Depends on:** Task 8, Task 9
+**Depends on:** Task 2, Task 8, Task 9
 
 **Files:**
 - Modify: `scripts/cdp/scenarios.mjs` (a new scenario before `export const SCENARIOS`, and its entry in the list)
 
-Model it on `agentUploads` (`scripts/cdp/scenarios.mjs:15871`): its `openUploadsAgent` / `publishUploadsStatus`
-helpers make a plain terminal tab an agent by publishing `agent:status`, and its teardown closes the tab and waits for
-the roster to drop it. Do not run prettier on this file.
+Model it on the `agent-uploads` scenario (`scripts/cdp/scenarios.mjs`, `name: "agent-uploads"` near line 15872): its
+`openUploadsAgent` / `publishUploadsStatus` helpers make a plain terminal tab an agent by publishing `agent:status`
+(`h.rpc("eventpublish", …)`), and its teardown closes the tab and waits for the roster to drop it. Write this
+scenario's own helpers in the same shape (a `state` parameter on the publish helper); do not change agent-uploads'.
+Do not run prettier on this file.
 
-**Steps the scenario asserts** (each a `rec(step, ok, detail)`):
+**Steps the scenario asserts** (each a `rec(step, ok, detail)`, named exactly as below; the tasks that build each
+behaviour cite these names):
 
 1. *arrange:* a terminal tab `verify-notify` published as a working claude agent; `h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true })` then `h.ev('window.dispatchEvent(new Event("focus"))')` so `documentHasFocus` is true; `h.goto("cockpit")` so no agent is in view; wait until the roster lists the agent (`[data-agent-row="<tabId>"]` exists after a brief `h.goto("agent")` and back, or poll the Cockpit for its name).
-2. **"a toast appears when an out-of-view agent starts asking"**: publish `state: "asking"` for the block; `polishWaitFor` up to 6000 ms for a `[data-notification-toast]` whose text includes `verify-notify needs you` (the agent's name is the published `title`; adjust to the name the roster shows). Shot.
-3. **"clicking the toast opens the agent"**: click that toast; wait for the Agent surface to show `[data-agent-terminal="<tabId>"]` not `hidden`.
+2. **"a toast appears when an out-of-view agent starts asking"**: on the Cockpit, publish `state: "asking"` for the block; `polishWaitFor` up to 6000 ms for a `[data-notification-toast]` whose text includes `verify-notify needs you` (the agent's name is the published `title`; adjust to the name the roster shows). Shot.
+3. **"clicking the toast opens the agent"**: click that toast (it carries `data-notification-open`); wait for the Agent surface to show `[data-agent-terminal="<tabId>"]` not `hidden`.
 4. **"no toast for the agent in view"**: with that agent focused, publish `working` then `asking` again; wait 3000 ms; assert no new toast with that text.
 5. **"Settings lists the Notifications section"**: `h.goto("settings")`, click `[data-section="notifications"]`, assert the three row titles (`OS notifications`, `In-app toasts`, `When an agent finishes`) are in the page. Shot.
+6. **"In-app toasts off silences a toast"**: click `[role="switch"][aria-label="In-app toasts"]`; wait for its `aria-checked` to read `"false"`; dismiss any toast left; publish `working` then `asking` (on Settings the agent is not in view); wait 3000 ms; assert no `[data-notification-toast]` with the agent's text. Then click the switch back and wait for `aria-checked="true"`.
+7. **"a waiting agent reads as asking"**: `h.goto("agent")` with the agent focused (in view, so no toast); publish `working`, then `state: "waiting"`; `polishWaitFor` the agent's `[data-agent-row="<tabId>"]` to read asking (read how the row marks an asking agent in `agenttree.tsx`, e.g. its text or an `aria-label="asking"` mark, and assert that). Shot.
+8. **"backgrounded, an ask goes to the OS, not a toast"**: `h.goto("cockpit")`; publish `working`; wrap `window.__TAURI_INTERNALS__.invoke` so a `notify_os` call is pushed to `window.__notifyCalls` and resolves without reaching Rust (every other command passes through to the saved original, kept on `window.__notifyOrigInvoke`); `h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false })` and `h.ev('window.dispatchEvent(new Event("blur"))')`; publish `asking`; `polishWaitFor` up to 6000 ms for a recorded call whose `title` includes the agent's name and whose `loud` is `true`; assert no `[data-notification-toast]` with that text. Then focus again as in arrange.
+9. **"an OS toast's click opens the agent"**: on the Cockpit, emit what `notify.rs` emits on a click: `window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "os-notify-activated", payload: JSON.stringify({ kind: "agent", agentId: "<tabId>" }) })` (through the saved original if the wrapper is still in place); wait for the Agent surface to show `[data-agent-terminal="<tabId>"]` not `hidden`. The WinRT toast itself and its click callback are covered only by `notify.rs`'s cargo tests (Task 7): CDP cannot see an OS toast.
 
-*teardown:* close the tab (as `agentUploads` does), `Emulation.setFocusEmulationEnabled { enabled: false }`, dismiss any
-toast left (`document.querySelectorAll("[data-notification-toast]")` click).
+*teardown* (each part in its own try, as agent-uploads' teardown does): restore `window.__TAURI_INTERNALS__.invoke`
+from `window.__notifyOrigInvoke`; set `notify:toast` back to true over the config RPC the Settings surface's
+`writeConfig` uses (`h.rpc("setconfig", { "notify:toast": true })`), in case step 6 failed half way; close the tab (as
+agent-uploads does); `Emulation.setFocusEmulationEnabled { enabled: false }`; dismiss any toast left
+(`document.querySelectorAll("[data-notification-toast]")` click).
 
 **Run** (only against a dev app that is already running; do not start one just for this):
 `task verify:ui -- notify-toast`
@@ -1158,25 +1200,33 @@ git commit -m "test(cdp): notify-toast scenario"
 **Files:**
 - Modify: `CHANGELOG.md` (top section, `Unreleased`; open one if the top section has a date)
 - Modify: `docs/open-issues.md:168`
-- Modify: `docs/superpowers/specs/2026-10-07-agent-notifications-design.md` (Status line)
+- Modify: `docs/superpowers/specs/2026-10-07-agent-notifications-design.md`
 
 **Step 1: CHANGELOG** — under `Added`: "Notifications when an agent needs you or finishes its turn: a system
 notification while arcterm is in the background (click it to open the agent), a toast while it is in front. Settings →
 Notifications turns each off." Under `Changed`: "An agent waiting on a permission prompt now shows amber, like one
-asking a question."
+asking a question." Under `Fixed`: "A turn an agent finishes while arcterm is in the background now stays unread, even
+when that agent is the one on screen."
 
 **Step 2: open-issues row** — rewrite it to: "(arcterm) Windows taskbar overlay badge when arcterm is backgrounded (OS
 notifications ship, 2026-10-07; the Dock badge covers macOS) — measure-first | feature | S | `dockbadgesync.ts`".
 
-**Step 3: Spec status** — "Status: built 2026-10-07." and note the Settings section under Settings.
+**Step 3: Spec** — bring the spec in line with what was built:
+
+- Status line: "Status: built 2026-10-07."
+- Pieces, `notifyevents.ts`: the model keeps no seen set; the previous snapshot is its memory, so an attention item
+  that leaves the list and comes back fires again. Mention `parseTarget` (the OS toast's click payload) beside it.
+- Settings: name the Notifications section (Cockpit group, after General) and its three rows.
+- Testing: replace "attention seen set" with "an attention item fires once while it stays listed, and again after it
+  leaves and returns"; replace the CDP bullet and the hand check with the `notify-toast` steps as built (in-app toast,
+  click, nothing for the agent in view, the Settings section and its In-app toasts switch, `waiting` reads as asking,
+  the backgrounded route recorded through a wrapped `__TAURI_INTERNALS__.invoke`, and an emitted `os-notify-activated`
+  opening the agent), and say the WinRT toast itself is covered only by `notify.rs`'s cargo tests.
+- Docs: add the `Fixed` line (unread while backgrounded).
 
 **Step 4: Commit**
 
 ```bash
 git add CHANGELOG.md docs/open-issues.md docs/superpowers/specs/2026-10-07-agent-notifications-design.md
-git commit -m "docs: agent notifications in the changelog and open issues"
+git commit -m "docs: agent notifications in the changelog, open issues and spec"
 ```
-
-Note: `CHANGELOG.md` had uncommitted edits from other work when this plan was written, and interactive staging is
-unavailable. If `git diff CHANGELOG.md` still shows hunks that are not yours, leave `CHANGELOG.md` out of the commit and
-tell the user, rather than committing someone else's lines.
