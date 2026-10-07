@@ -30,7 +30,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the footer under it changes height (switching to the Cockpit) it hops up or drops down to the new edge rather than
   jumping.
 - The RAM chip in the app bar shows the free RAM (`1.3 GB free`) instead of how many more workers fit; that
-  number moved to its tooltip, and the chip still turns amber with a ⚠ when not one more worker fits.
+  number moved to its tooltip. The chip turns amber with a ⚠ only when free RAM drops below 512 MB, not whenever
+  another worker would not fit.
 - On macOS the app's shortcuts use `Cmd` instead of `Ctrl`: `Cmd+P` search, `Cmd+N` new agent, `Cmd+1`…`7`
   surfaces, `Cmd+Enter` to send or approve, `Cmd+S` save, `Cmd+G` go-to from the terminal. `Ctrl+P` and `Ctrl+N`
   now reach the shell in a terminal. `Ctrl+Tab` and the double `Ctrl+C` that closes an agent stay as they were.

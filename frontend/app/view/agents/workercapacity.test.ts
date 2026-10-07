@@ -8,6 +8,7 @@ import {
     capacityWarnTitle,
     extraWorkers,
     formatGB,
+    lowRam,
     newAgentRamWarning,
     overCapacity,
     type WorkerCapacity,
@@ -68,6 +69,14 @@ describe("capacityChipLabel", () => {
     it("says the free RAM", () => {
         expect(capacityChipLabel(cap())).toBe("1.3 GB free");
         expect(capacityChipLabel(cap({ availablebytes: GIB, moreworkers: 0 }))).toBe("1 GB free");
+    });
+});
+
+describe("lowRam", () => {
+    it("is low only below memgate's 512 MB headroom, however many workers fit", () => {
+        expect(lowRam(cap({ availablebytes: 1.7 * GIB, moreworkers: 0 }))).toBe(false);
+        expect(lowRam(cap({ availablebytes: 512 * 1024 ** 2, moreworkers: 0 }))).toBe(false);
+        expect(lowRam(cap({ availablebytes: 0.4 * GIB, moreworkers: 0 }))).toBe(true);
     });
 });
 

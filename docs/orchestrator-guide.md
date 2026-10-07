@@ -165,8 +165,8 @@ last 10 finished ones; 1 GB until one has been measured), and one heavy job's ex
 measured) is held back once: `more = (free − growth room of live workers − (heavy − typical)) ÷ typical`, rounded
 down. When a width you pick on + Run, or on a live run's **Adjust → Worker parallelism**, adds more workers than
 that, the number turns amber with a ⚠ whose tooltip says how many fit, and Jarvis says so once. It only warns; the
-run starts as picked. When not one more fits, the chip turns amber with a ⚠ and Jarvis wears its tired look with a
-sweat drop.
+run starts as picked. When not one more fits, Jarvis wears its tired look with a sweat drop. The chip turns amber
+with a ⚠ only when free RAM drops below 512 MB, where `wsh memgate` starts holding heavy commands.
 
 The route picker filters by harness (**All / Pi / Claude Code**) and accepts a custom model id:
 

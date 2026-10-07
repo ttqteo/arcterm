@@ -28,10 +28,21 @@ function moreFit(n: number): string {
     return `~${n} more ${n === 1 ? "fits" : "fit"}`;
 }
 
+/** Free RAM below this is low: pkg/memgate's Headroom, below which the machine swaps hard and a heavy command
+ * waits on the Low RAM card. */
+export const LOW_RAM_BYTES = 512 * 1024 ** 2;
+
 /** The app bar chip's text: the free RAM, which is what a glance wants. How many workers that holds is in the
- * tooltip, and the chip's tone says when not one more fits. */
+ * tooltip. */
 export function capacityChipLabel(cap: WorkerCapacity): string {
     return `${formatGB(cap.availablebytes)} free`;
+}
+
+/** Whether the chip warns: when the free RAM it shows is low, not when one more worker does not fit. That holds
+ * back a heavy job's extra (2 GB by default), so on an 8 GB machine it is nearly always true; the steppers and
+ * the New agent modal warn about it where a pick adds one. */
+export function lowRam(cap: WorkerCapacity): boolean {
+    return cap.availablebytes < LOW_RAM_BYTES;
 }
 
 /** The app bar chip's tooltip, one fact per line. */

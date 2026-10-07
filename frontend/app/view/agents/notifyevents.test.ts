@@ -258,9 +258,20 @@ describe("answerLine", () => {
         );
         expect(answerLine("> - **Drop:** it falls")).toBe("Drop: it falls");
     });
-    it("cuts a long line at a word and marks it", () => {
+    it("keeps only the first sentence", () => {
+        expect(answerLine("Shortcut done and documented. Adding the changelog lines, then the tests.")).toBe(
+            "Shortcut done and documented."
+        );
+        expect(answerLine("Done! Next up: tests.")).toBe("Done!");
+    });
+    it("does not end a sentence inside a version or a file name", () => {
+        expect(answerLine("Built v0.15.4 from notifyevents.ts and installed it.")).toBe(
+            "Built v0.15.4 from notifyevents.ts and installed it."
+        );
+    });
+    it("cuts a long sentence at a word and marks it", () => {
         const line = answerLine("word ".repeat(60));
-        expect(line.length).toBeLessThanOrEqual(141);
+        expect(line.length).toBeLessThanOrEqual(81);
         expect(line.endsWith("…")).toBe(true);
         expect(line).not.toMatch(/\s…$/);
     });

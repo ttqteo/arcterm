@@ -240,10 +240,10 @@ export function osText(e: NotifyEvent, answer?: string): { title: string; body: 
     return { title: `${project}${e.label}: ${e.title}`, body: answer || e.body };
 }
 
-const ANSWER_LINE_MAX = 140;
+const ANSWER_LINE_MAX = 80;
 
-/** Pure: the line of an agent's last answer an OS toast shows: its first line with text, markdown marks dropped, cut
- *  at a word past ANSWER_LINE_MAX characters. */
+/** Pure: what an OS toast shows of an agent's last answer: the first sentence of its first line with text, markdown
+ *  marks dropped, cut at a word past ANSWER_LINE_MAX characters, so the banner stays one line. */
 export function answerLine(answer: string): string {
     for (const raw of answer.split("\n")) {
         if (raw.trim().startsWith("```")) {
@@ -258,10 +258,12 @@ export function answerLine(answer: string): string {
         if (line === "") {
             continue;
         }
-        if (line.length <= ANSWER_LINE_MAX) {
-            return line;
+        // a sentence ends at . ! or ? followed by a space, so v0.15.4 and notifyevents.ts stay whole
+        const sentence = line.match(/^.*?[.!?](?=\s)/)?.[0] ?? line;
+        if (sentence.length <= ANSWER_LINE_MAX) {
+            return sentence;
         }
-        const cut = line.slice(0, ANSWER_LINE_MAX);
+        const cut = sentence.slice(0, ANSWER_LINE_MAX);
         const space = cut.lastIndexOf(" ");
         return (space > 0 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "") + "…";
     }

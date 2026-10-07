@@ -18584,6 +18584,9 @@ const CAPACITY_FULL = {
 };
 // the chip's text for CAPACITY_FULL: its 1 GB free
 const CAPACITY_FULL_CHIP = "1 GB free";
+// no room left and free RAM under the chip's 512 MB low mark (LOW_RAM_BYTES), the one state the chip warns in
+const CAPACITY_LOW = { ...CAPACITY_FULL, availablebytes: 0.4 * 2 ** 30 };
+const CAPACITY_LOW_CHIP = "0.4 GB free";
 const CAPACITY_MOCK_KEY = "__arcCapacityMock";
 
 // Answers getworkercapacity with `reading` from the page, through RpcApi's mock client (installAhMock's pattern),
@@ -18623,8 +18626,8 @@ const removeCapacityMock = (h) =>
     })()`);
 
 // The app bar's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows the free RAM
-// ("1.3 GB free") with how many workers that holds in its tooltip. The machine's real RAM decides whether one
-// more fits, so step 4 forces +0 with a mocked reading to see the warning tone.
+// ("1.3 GB free") with how many workers that holds in its tooltip. It warns on low free RAM, not on +0: step 4
+// mocks +0 with 1 GB free and sees it stay muted, step 5 mocks 0.4 GB free and sees the warning tone.
 const workerCapacity = {
     name: "worker-capacity",
     surface: "cockpit",
@@ -18661,20 +18664,36 @@ const workerCapacity = {
             chip ? chip.title : ""
         );
 
+        // the mock is read by the 5 s poll, so a reading takes up to one poll to reach the chip
+        const readChip = async (text) => {
+            let c = null;
+            for (let waited = 0; waited <= 8000; waited += 250) {
+                c = await h.ev(
+                    `(() => { const c = document.querySelector("[data-worker-capacity]"); return c ? { text: c.textContent.trim(), amber: c.classList.contains("text-warning"), triangle: !!c.querySelector("svg.lucide-triangle-alert") } : null; })()`
+                );
+                if (c && c.text === text) break;
+                await settle(250);
+            }
+            return c;
+        };
+
         const mocked = await installCapacityMock(h, CAPACITY_FULL);
-        let full = null;
-        for (let waited = 0; waited <= 8000; waited += 250) {
-            full = await h.ev(
-                `(() => { const c = document.querySelector("[data-worker-capacity]"); return c ? { text: c.textContent.trim(), amber: c.classList.contains("text-warning"), triangle: !!c.querySelector("svg.lucide-triangle-alert") } : null; })()`
-            );
-            if (full && full.text === CAPACITY_FULL_CHIP) break;
-            await settle(250);
-        }
+        const full = await readChip(CAPACITY_FULL_CHIP);
         await h.shot("cdp-shots/worker-capacity-full.png");
         rec(
-            "4. at +0 the chip turns amber with a TriangleAlert",
-            mocked === "installed" && !!full && full.text === CAPACITY_FULL_CHIP && full.amber && full.triangle,
+            "4. at +0 with 1 GB free the chip stays muted",
+            mocked === "installed" && !!full && full.text === CAPACITY_FULL_CHIP && !full.amber && !full.triangle,
             `mock=${mocked} ${JSON.stringify(full)}`
+        );
+
+        await removeCapacityMock(h);
+        const mockedLow = await installCapacityMock(h, CAPACITY_LOW);
+        const low = await readChip(CAPACITY_LOW_CHIP);
+        await h.shot("cdp-shots/worker-capacity-low.png");
+        rec(
+            "5. under 512 MB free the chip turns amber with a TriangleAlert",
+            mockedLow === "installed" && !!low && low.text === CAPACITY_LOW_CHIP && low.amber && low.triangle,
+            `mock=${mockedLow} ${JSON.stringify(low)}`
         );
         return steps;
     },
