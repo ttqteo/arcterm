@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ctrlHeldAtom } from "@/app/cockpit/ctrlheld";
 import { useSettle } from "@/app/element/motionhooks";
 import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
@@ -24,6 +25,7 @@ import {
     History as HistoryIcon,
     Pencil,
     Play,
+    Plus,
     SquareTerminal,
     Trash2,
     Workflow,
@@ -1266,21 +1268,24 @@ function SplitRow({ model, agents }: { model: AgentsViewModel; agents: AgentVM[]
 }
 
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
-// and, at the far end, `trailing`, which a folded folder keeps (what in it wants you, how much it holds).
+// and, at the far end, `trailing`, which a folded folder keeps (what in it wants you, how much it holds). `action` is a
+// button over the far end that shows while the row is hovered, outside the toggle so its click never folds the folder.
 function FolderRow({
     section,
     project,
     open,
     onToggle,
     trailing,
+    action,
 }: {
     section: SidebarSection;
     project: string;
     open: boolean;
     onToggle: () => void;
     trailing?: React.ReactNode;
+    action?: React.ReactNode;
 }) {
-    return (
+    const row = (
         <button
             type="button"
             onClick={onToggle}
@@ -1301,6 +1306,50 @@ function FolderRow({
             )}
             <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{project}</span>
             {trailing}
+        </button>
+    );
+    if (action == null) {
+        return row;
+    }
+    return (
+        <div className="group/folder relative">
+            {row}
+            <div className="absolute inset-y-0 right-[4px] hidden items-center group-hover/folder:flex group-focus-within/folder:flex">
+                {action}
+            </div>
+        </div>
+    );
+}
+
+// Opens a plain terminal in a registered project, the New launcher's Terminal pick without the dialog. Like the
+// launcher's, it starts in the background and lands in the Terminals section.
+function quickTerminal(model: AgentsViewModel, project: string, path: string) {
+    fireAndForget(() =>
+        launchAgent(model, {
+            runtime: "terminal",
+            startupCommand: "",
+            task: "",
+            projectPath: path,
+            projectName: project,
+        })
+    );
+}
+
+// The small "+" that opens a terminal in `project` (a folder row's hover action, the filtered header's trailing)
+function NewTerminalButton({ model, project, path }: { model: AgentsViewModel; project: string; path: string }) {
+    return (
+        <button
+            type="button"
+            data-agent-new-terminal={project}
+            title={`New terminal in ${project}`}
+            aria-label={`New terminal in ${project}`}
+            onClick={(e) => {
+                e.stopPropagation();
+                quickTerminal(model, project, path);
+            }}
+            className="flex h-[20px] w-[20px] flex-none cursor-pointer items-center justify-center rounded-[5px] bg-surface text-muted hover:bg-surface-hover hover:text-primary"
+        >
+            <Plus size={13} aria-hidden />
         </button>
     );
 }
@@ -1347,6 +1396,7 @@ function TerminalsSection({ model }: { model: AgentsViewModel }) {
     const terminals = useAtomValue(model.terminalsAtom);
     const filter = useAtomValue(model.projectFilterAtom);
     const collapsedList = useAtomValue(collapsedTerminalProjectsAtom);
+    const registered = useAtomValue(projectsAtom);
     const open = useSectionOpen("terminals");
     const rows = useMemo(
         () => terminalTree(terminals, filter, new Set(collapsedList)),
@@ -1354,12 +1404,23 @@ function TerminalsSection({ model }: { model: AgentsViewModel }) {
     );
     // filtered, the list is flat: every row is a terminal
     const count = filter === ALL_PROJECTS ? terminals.length : rows.length;
+    // a "+" only where the project is registered with a path to open in ("ungrouped" and unregistered folders have none)
+    const newTerminal = (project: string) => {
+        const path = registered?.[project]?.path;
+        return path ? <NewTerminalButton model={model} project={project} path={path} /> : null;
+    };
     return (
         <div
             data-agent-terminals
             className="max-h-[40%] flex-none overflow-y-auto border-t border-border px-[8px] pb-[8px] pt-[6px]"
         >
-            <SectionHeader section="terminals" label="Terminals" count={count} first />
+            <SectionHeader
+                section="terminals"
+                label="Terminals"
+                count={count}
+                first
+                trailing={filter !== ALL_PROJECTS ? <div className="ml-auto">{newTerminal(filter)}</div> : null}
+            />
             {open && rows.length === 0 ? (
                 <div className="px-[10px] py-[6px] text-[12px] text-muted">
                     {filter !== ALL_PROJECTS ? `No terminals in ${filter}` : "No terminals open"}
@@ -1377,6 +1438,7 @@ function TerminalsSection({ model }: { model: AgentsViewModel }) {
                                 onToggle={() =>
                                     globalStore.set(collapsedTerminalProjectsAtom, toggleFold(collapsedList, r.project))
                                 }
+                                action={newTerminal(r.project)}
                                 trailing={
                                     r.open ? null : (
                                         <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">

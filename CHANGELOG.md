@@ -10,6 +10,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
+  project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
+
 ### Changed
 
 - The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
