@@ -68,18 +68,41 @@ conversation about the result (opening an agent tab seeded with it).
     not overwrite the file. A failed write is logged and the result is still returned.
 - `usage:insightslang` is a new `wconfig` setting. Run `task generate` after adding the types.
 
-### 3. UI: two sections in the Usage detail pane
+### 3. UI: provider tabs, two new sections, a compact chart row
 
-Both show only when the rail's scope is Claude (or Claude is the solo harness).
+The mockup is `.superpowers/design/usage-insights/` (Main: the whole surface on the Claude tab;
+InsightsStates: the card's other states).
+
+**Provider tabs replace the rail.** The 392 px harness rail goes. A tab strip under the surface header
+holds one tab per harness with usage or a quota reading, ordered by tokens in the window, then **All**
+at the right end. A tab shows the provider dot, the name, a LIVE / SAVED pill when the provider reports
+quota, and its meta: `5h N% · wk N%` when it reports quota, else its tokens. The default tab is the
+harness with the most tokens (Claude, for a Claude-heavy user). The strip is a `role="tablist"` in the
+underline style of the details rail tabs (`TAB`, `TAB_ON`, `TAB_OFF` in `agentrailpanel.tsx`). The
+rail's "Reporting quota / History only" grouping survives only as that meta. The detail pane takes the
+full width and its `DetailHeader` goes, since the tab names the provider and its state.
+`usageHarnessFilterAtom` stays the one selection; the tabs write it as the rail rows did.
+
+**Order in the pane.**
 
 ```
-Header
-Live limits | Historical            (unchanged)
-INSIGHTS ─────────────── [Analyze]  new, under the KPI row
-Daily chart | Where it goes         (unchanged)
-Models                              (unchanged)
-BY SESSION ──── 314 tabs · 7 days   new, last
+Provider tabs                          replaces the rail
+Live limits | Historical               unchanged
+INSIGHTS ─────────────── [Analyze]     new, Claude tab only
+BY SESSION ──── 314 tabs · 7 days      new, Claude tab only
+Daily | Where it goes | Models         compacted into one row of three cards
 ```
+
+**The chart row, compacted, on every tab.** `DailyChart`, `SplitCard` and `ModelGroup` sit in one grid
+row (`1.25fr 1fr 1fr`, one column below the `@container` breakpoint) of equal-height cards:
+
+- `DailyChart`: plot 96 px high; the Tokens / Spend toggle moves onto the section rule; day labels show
+  the day only and a bar's tooltip carries its date and value; one line under the plot names the peak
+  day.
+- `SplitCard`: keeps the token and spend bars; the class table becomes a 2×2 legend, each cell
+  `<class> <token %> · <spend %>`, with absolute tokens and dollars in the cell's tooltip.
+- `ModelGroup`: one card per provider, 5 px bars, model names without the provider prefix the card
+  heading already shows.
 
 **Insights card.** States, as a pure reducer in `usageinsights.ts`:
 
@@ -94,7 +117,7 @@ BY SESSION ──── 314 tabs · 7 days   new, last
 | no Claude sessions | no button, "No Claude tabs in this window" |
 
 **By session table.** One row per session, sorted by spend, 25 rows then "Show all". Columns: title,
-project, model, a bar with the session's share of the window's Claude spend, average / peak context,
+project (after a green "open" dot when the session's tab is still open), model, a bar with the session's share of the window's Claude spend, average / peak context,
 cold resumes, subagent share of spend, lifetime. Deterministic chips under the title
 (`usagesessions.ts`, pure):
 
@@ -107,7 +130,9 @@ Clicking a row opens the session through the router: a live tab with `openTarget
 one with `showSession`. The table follows the 7 days / All time control like the rest of the pane.
 
 **Keys.** `a` runs Analyze on the Usage surface, bound in `bindings.ts` and listed in
-`docs/keyboard-shortcuts.md`. `j`/`k` keep driving the rail.
+`docs/keyboard-shortcuts.md`. With the rail gone, `←`/`→` switch provider tabs, `j`/`k` move
+through the By session rows and `Enter` opens one: `useSurfaceListNav` moves from the rail to the
+table.
 
 Styling uses the existing `SectionRule`, `REGION_LABEL` and theme tokens (DESIGN.md). A `.dc.html`
 mockup is approved before the UI is built.
@@ -117,15 +142,18 @@ mockup is approved before the UI is built.
 - **Go, `pkg/usagestats`:** session attribution, including subagent files → parent; average and peak
   context; the cold-resume rule at its edges (59 min no, 61 min with >50k cache write yes, 61 min with
   a small write no); dedupe; title from `ai-title`, then the first prompt; engine-run worktrees fold
-  to one project.
+  to one project. Over one fixture corpus, the session totals sum to the same tokens per class as
+  `ScanUsage`'s buckets, so the By session table and the KPI row cannot disagree.
 - **Go, digest:** deterministic output, capped at 25 sessions, no conversation text; the prompt handed
   to `consult` is checked with a scripted runner; a concurrent call returns without calling it; an
   empty reply does not overwrite the saved result.
 - **Vitest:** `usagesessions.ts` (pricing through `usagepricing`, chip thresholds, sort, the 25-row
   cut) and `usageinsights.ts` (the card's states, including held at 95%).
 - **CDP:** a `usage-insights` scenario in `scripts/cdp/scenarios.mjs` injects sessions and a saved
-  result, opens Usage → Claude, and screenshots the By session table and the Insights card done and
-  empty.
+  result, opens Usage on the Claude tab, and screenshots the provider tabs, the By session table, the
+  compact chart row, and the Insights card done and empty. The existing `usage-charts` scenario selects
+  scopes through the rail's `data-usage-harness` buttons; the tabs keep that attribute so it keeps
+  working, and its shots change to the new layout.
 
 ## Docs
 
