@@ -10,8 +10,11 @@
 import { normalizeRepoPath } from "@/util/paths";
 import type { DiffScope } from "./diffscope";
 
-// The picker's two kinds of source. A run is neither, which is why it is absent here.
-export type FilesSource = { kind: "agent"; id: string } | { kind: "project"; name: string };
+// The kinds of source the picker can mark current. A run is none of them, which is why it is absent here.
+export type FilesSource =
+    | { kind: "agent"; id: string }
+    | { kind: "project"; name: string }
+    | { kind: "worktree"; path: string };
 
 // the picker needs no more of an agent than this
 export interface SourceAgent {
@@ -27,6 +30,9 @@ export function sourceFor(scope: DiffScope | null, focusId: string | undefined):
     if (origin?.kind === "project") {
         return { kind: "project", name: origin.name };
     }
+    if (origin?.kind === "worktree") {
+        return { kind: "worktree", path: origin.path };
+    }
     if (origin?.kind === "agent") {
         return { kind: "agent", id: origin.id };
     }
@@ -37,8 +43,8 @@ export function sourceFor(scope: DiffScope | null, focusId: string | undefined):
 }
 
 // The agent the surface should re-scope to when focus moves, or null to stay put. Focus only moves a
-// surface that is already showing an agent (or showing nothing yet): pinning a project or arriving
-// from a run outranks it, which is the whole precedence in one guard.
+// surface that is already showing an agent (or showing nothing yet): pinning a project or a worktree,
+// or arriving from a run, outranks it, which is the whole precedence in one guard.
 export function focusFollowAgent(
     scope: DiffScope | null,
     focusId: string | undefined,

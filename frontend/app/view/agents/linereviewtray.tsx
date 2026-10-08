@@ -11,13 +11,13 @@
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { liveAgentsForProject } from "@/app/view/code/codehandoff";
 import { formatChordString } from "@/util/keysym";
-import { sameRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Check, ChevronUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { scopeProjectName } from "./diffscope";
 import { historyRowsAtom } from "./githistorystore";
 import { commentSources, formatLineComments, type LineComment } from "./linecomments";
 import { lineReviewAtom, recordSend, sendBlock, type LineReviewState, type SendResult } from "./linecommentstore";
@@ -98,9 +98,7 @@ export function LineReviewTray({ repoKey, model }: { repoKey: string; model: Age
 
     const origin = scope?.repo.origin;
     const scoped = origin?.kind === "agent" ? agents.find((a) => a.id === origin.id) : undefined;
-    // a run's (or a vanished agent's) repository is matched to its registered project by path
-    const projectName =
-        origin?.kind === "project" ? origin.name : (projects.find((p) => sameRepoPath(p.path, repoKey))?.name ?? "");
+    const projectName = scopeProjectName(origin, projects, repoKey);
     const live = scoped ? [] : liveAgentsForProject(agents, projectName);
     const target: Target = scoped
         ? { kind: "agent", agent: scoped }

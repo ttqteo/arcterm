@@ -22,11 +22,19 @@ const runScope: DiffScope = {
     repo: { origin: { kind: "run", runId: "r1", cwd: "/repo", baseCommit: "" }, label: "run r1" },
     range: { kind: "run", runId: "r1", baseCommit: "" },
 };
+const worktreeScope: DiffScope = {
+    repo: { origin: { kind: "worktree", path: "/repo/.worktrees/feat", project: "waveterm" }, label: "feat" },
+    range: { kind: "working" },
+};
 
 describe("what the source picker is pointed at", () => {
     it("names the scoped project or agent", () => {
         expect(sourceFor(projectScope, "a1")).toEqual({ kind: "project", name: "waveterm" });
         expect(sourceFor(agentScope("a2"), "a1")).toEqual({ kind: "agent", id: "a2" });
+    });
+
+    it("names the scoped worktree by its path", () => {
+        expect(sourceFor(worktreeScope, "a1")).toEqual({ kind: "worktree", path: "/repo/.worktrees/feat" });
     });
 
     // The picker falls back to the scope's own label for a run, which it can only reach if nothing
@@ -50,6 +58,10 @@ describe("run beats project beats agent", () => {
     it("leaves a pinned project or a run where it is", () => {
         expect(focusFollowAgent(projectScope, "a1", agents)).toBeNull();
         expect(focusFollowAgent(runScope, "a1", agents)).toBeNull();
+    });
+
+    it("leaves a picked worktree where it is", () => {
+        expect(focusFollowAgent(worktreeScope, "a1", agents)).toBeNull();
     });
 
     it("does not re-scope to the agent it is already showing", () => {
