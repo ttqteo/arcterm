@@ -85,6 +85,20 @@ describe("buildMachineServers", () => {
         expect(v.noOwnerCount).toBe(1);
     });
 
+    // Docker Desktop, OneDrive, wavesrv: an app whose launcher exited reads as itself, not as a stray server
+    it("a detached process outside any repo is badged by its own name, not no owner", () => {
+        const onedrive = row({
+            pid: 144668,
+            name: "OneDrive.Sync.Service.exe",
+            cmdline: "OneDrive.Sync.Service.exe",
+            owner: { kind: "detached" },
+        });
+        const v = buildMachineServers([onedrive], agents, {});
+        expect(v.other[0].badge).toEqual({ kind: "app", text: "OneDrive.Sync.Service" });
+        expect(v.other[0].stopConfirm).toBe("Stop OneDrive.Sync.Service?");
+        expect(v.noOwnerCount).toBe(0);
+    });
+
     it("groups by repo, no-owner groups first, then by name; the rest go to Other", () => {
         const v = buildMachineServers([vite, uvicorn, astro, code, docker], agents, {});
         expect(v.groups.map((g) => g.title)).toEqual(["SIEM/apps/website", "SIEM/apps/portal", "work/arcterm"]);
