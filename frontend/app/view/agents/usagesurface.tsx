@@ -1,14 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Usage surface (handoff redesign: Wave-usage-redesign.dc.html artboard 1B). Master-detail, the same
-// shape Conversation History and Radar use: a harness rail on the left grouped by whether the harness reports a
-// quota window at all, and a detail pane holding that harness's two trust zones — LIVE LIMITS
-// (ephemeral 5h/weekly quota, merged live-over-saved via ratelimitstore so it survives idle) and
-// HISTORICAL (durable token-class split, daily series, per-model breakdown, folded from the backend
-// usage scan). Rail selection IS usageHarnessFilterAtom, so the scope picker and the historical
-// filter are one piece of state rather than two that can disagree; that atom re-aggregates
-// model.usageStatsAtom, so the detail is simply the surface scoped to one harness.
+// Usage surface (handoff redesign: Wave-usage-redesign.dc.html artboard 1B). Provider tabs across the top
+// (one per harness with usage or a quota reading, busiest first, then All) over a full-width pane holding that
+// provider's two trust zones — LIVE LIMITS (ephemeral 5h/weekly quota, merged live-over-saved via
+// ratelimitstore so it survives idle) and HISTORICAL (durable token-class split, daily series, per-model
+// breakdown, folded from the backend usage scan). The selected tab IS usageHarnessFilterAtom, so the scope
+// picker and the historical filter are one piece of state rather than two that can disagree; that atom
+// re-aggregates model.usageStatsAtom, so the pane is simply the surface scoped to one harness.
 // Loads on mount + a 60s refresh for the current window; a 1s tick keeps reset countdowns current.
 
 import { Meter, StackedMeter } from "@/app/element/meter";
@@ -16,14 +15,16 @@ import { useDidBecomeTrue } from "@/app/element/motionhooks";
 import { cardVariants } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { SkeletonLine } from "@/app/element/skeleton";
+import { buildUsageBindings } from "@/app/store/keybindings/bindings";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
+import { useKeybindings } from "@/app/store/keybindings/store";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { MotionConfig, motion } from "motion/react";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
-import { formatReset, usageLevel } from "./agentsviewmodel";
+import { formatReset, moveCursor, usageLevel } from "./agentsviewmodel";
 import { providerDot, providerLabel } from "./cockpitrailmodel";
 import { DailyChart } from "./dailychart";
 import { harnessesAtom } from "./harnessstore";
@@ -35,35 +36,39 @@ import {
     savedRateLimitsAtom,
     type DonutWindow,
 } from "./ratelimitstore";
-import { runtimeMeta } from "./runtimemeta";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
 import { kpiGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
 import {
     buildUsageRail,
     countReporting,
+    defaultTab,
     railRows,
+    tabMeta,
+    tabRows,
     worstWindow,
     type AggregateWindow,
-    type UsageRailGroup,
     type UsageRailRow,
 } from "./usagerail";
 import { showUsageRefresh } from "./usagerefresh";
 import { UsageRefreshButton } from "./usagerefreshbutton";
 import type { ClassUsage, ProviderUsage, UsageStats } from "./usagestats";
-import { CLASS_FILL, fmt, foldModels, modelGridClass, usd } from "./usagestats";
+import { CLASS_FILL, fmt, foldModels, usd } from "./usagestats";
 import {
     allUsageStatsAtom,
     loadUsage,
     usageErrorAtom,
     usageLoadedAtom,
     usageMetricAtom,
+    usageTabChosenAtom,
     usageWindowAtom,
 } from "./usagestore";
 import { formatProjectedDate, projectWeeklyExhaustion } from "./weeklyforecast";
 
 const ALL = "all";
-// the daily series takes the width a time axis can use; the class split sits beside it once the pane fits both
-const BREAKDOWN_GRID = "mb-3.5 grid grid-cols-1 gap-3.5 @6xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]";
+// daily, where it goes and models in one row of three cards (one column below the breakpoint); the cards in a row
+// stretch to the tallest
+const CHART_ROW = "grid grid-cols-1 gap-3.5 @6xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]";
+const CARD = "flex min-w-0 flex-col rounded-[14px] border border-border bg-surface-raised px-[18px] py-4";
 
 const LEVEL_FILL: Record<"ok" | "warn" | "hot", string> = {
     ok: "bg-success",
@@ -81,12 +86,12 @@ const LEVEL_TEXT: Record<"ok" | "warn" | "hot", string> = {
 const MODEL_SEQ = ["bg-accent-200", "bg-accent-400", "bg-accent-600", "bg-accent-800"];
 const MAX_MODEL_ROWS = MODEL_SEQ.length;
 
-// Selected/idle treatment for a rail row, matching Conversation History's list (the pane this body is
-// modeled on) rather than minting a second selection vocabulary for one surface.
-const ROW_BASE =
-    "cursor-pointer rounded-[11px] border px-[13px] py-[11px] text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-const ROW_ON = "border-accent bg-surface-hover";
-const ROW_OFF = "border-border bg-surface hover:border-edge-strong";
+// The underline tab of the details rail (TAB / TAB_ON / TAB_OFF in agentrailpanel.tsx), sized for a provider
+// name, its state pill and its meta rather than an icon.
+const TAB =
+    "flex h-10 flex-none cursor-pointer items-center gap-2 border-0 border-b-2 bg-transparent px-3.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent";
+const TAB_ON = "border-primary text-primary";
+const TAB_OFF = "border-transparent text-muted hover:text-secondary";
 
 function pctStr(n: number): string {
     if (n >= 10) return Math.round(n) + "%";
@@ -214,116 +219,95 @@ function LimitCard({
     );
 }
 
-function RailRow({
+// One tab per harness, then All at the right end. `data-usage-harness` is what the CDP scenarios select a scope
+// by. The state pill is never colour alone: it names LIVE or SAVED, and a provider with no quota reading shows
+// its tokens instead (tabMeta).
+function UsageTab({
+    id,
     row,
     active,
     now,
+    allTokens,
     onSelect,
 }: {
-    row: UsageRailRow;
+    id: string;
+    row?: UsageRailRow;
     active: boolean;
     now: number;
-    onSelect: () => void;
+    allTokens: number;
+    onSelect: (id: string) => void;
 }) {
-    const st = stateMeta(row, now);
+    const st = row != null && row.state !== "none" ? stateMeta(row, now) : null;
     return (
-        <motion.button
-            layout
-            variants={cardVariants}
-            initial="initial"
-            animate="animate"
+        <button
             type="button"
-            data-usage-harness={row.harness}
-            aria-pressed={active}
-            onClick={onSelect}
-            className={cn("flex flex-col gap-2", ROW_BASE, active ? ROW_ON : ROW_OFF)}
+            role="tab"
+            data-usage-harness={id}
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onSelect(id)}
+            className={cn(TAB, active ? TAB_ON : TAB_OFF)}
         >
-            <span className="flex items-center gap-2.5">
-                <span className={cn("h-2 w-2 flex-none rounded-full", providerDot(row.harness))} />
-                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary">
-                    {providerLabel(row.harness)}
-                </span>
+            {row != null ? (
+                <span className={cn("h-2 w-2 flex-none rounded-full", providerDot(id))} />
+            ) : (
+                <span className="flex-none text-[12px] text-accent-soft">Σ</span>
+            )}
+            <span className={cn("text-[13px]", active ? "font-semibold" : "font-medium")}>
+                {row != null ? providerLabel(id) : "All"}
+            </span>
+            {st != null ? (
                 <span
-                    className="flex-none rounded-[4px] px-1.5 py-0.5 text-[10.5px] font-bold uppercase tabular-nums tracking-[0.06em]"
+                    className="flex-none rounded-[4px] px-[5px] py-px text-[9.5px] font-bold uppercase tabular-nums tracking-[0.06em]"
                     style={{ color: st.color, backgroundColor: PILL_TINT }}
                 >
                     {st.label}
                 </span>
+            ) : null}
+            <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
+                {row != null ? tabMeta(row) : `${fmt(allTokens)} tok`}
             </span>
-            <span className="flex items-center gap-2 text-[10.5px] tabular-nums text-muted">
-                <span className="text-secondary">{fmt(row.tokens)} tok</span>
-                <span className="text-muted">·</span>
-                <span>≈ {usd(row.spendUsd)}</span>
-                <span className="flex-1" />
-                {row.state === "none" ? (
-                    <span>history only</span>
-                ) : (
-                    <>
-                        <span>5h {row.fivehour.pct != null ? Math.round(row.fivehour.pct) + "%" : "—"}</span>
-                        <span className="text-muted">·</span>
-                        <span>wk {row.week.pct != null ? Math.round(row.week.pct) + "%" : "—"}</span>
-                    </>
-                )}
-            </span>
-        </motion.button>
+        </button>
     );
 }
 
-function UsageRail({
-    groups,
+function UsageTabs({
+    rows,
     sel,
     now,
-    totalTokens,
+    allTokens,
     onSelect,
 }: {
-    groups: UsageRailGroup[];
+    rows: UsageRailRow[];
     sel: string;
     now: number;
-    totalTokens: number;
+    allTokens: number;
     onSelect: (id: string) => void;
 }) {
     return (
-        <div className="w-[392px] flex-none overflow-y-auto border-r border-edge-faint p-3 pb-10">
-            <button
-                type="button"
-                data-usage-harness={ALL}
-                aria-pressed={sel === ALL}
-                onClick={() => onSelect(ALL)}
-                className={cn("mb-3.5 flex w-full items-center gap-[11px]", ROW_BASE, sel === ALL ? ROW_ON : ROW_OFF)}
-            >
-                <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] border border-accent bg-accentbg text-[14px] font-semibold text-accent-soft">
-                    Σ
-                </span>
-                <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] font-semibold text-primary">All providers</span>
-                    <span className="block text-[11px] text-muted">every transcript in window</span>
-                </span>
-                <span className="flex-none rounded-full bg-surface-hover px-2 py-0.5 text-[11px] tabular-nums text-secondary">
-                    {fmt(totalTokens)}
-                </span>
-            </button>
-
-            {groups.map((g) => (
-                <div key={g.key} className="mb-3.5">
-                    <SectionRule label={g.label} meta={String(g.rows.length)} accent={g.key === "reporting"} />
-                    <div className="flex flex-col gap-[7px]">
-                        {g.rows.map((r) => (
-                            <RailRow
-                                key={r.harness}
-                                row={r}
-                                active={sel === r.harness}
-                                now={now}
-                                onSelect={() => onSelect(r.harness)}
-                            />
-                        ))}
-                    </div>
-                </div>
+        <div
+            role="tablist"
+            aria-label="Provider"
+            className="flex flex-none items-end gap-0.5 overflow-x-auto border-b border-edge-faint px-5"
+        >
+            {tabRows(rows).map((r) => (
+                <UsageTab
+                    key={r.harness}
+                    id={r.harness}
+                    row={r}
+                    active={sel === r.harness}
+                    now={now}
+                    allTokens={allTokens}
+                    onSelect={onSelect}
+                />
             ))}
+            <div className="min-w-3 flex-1" />
+            <UsageTab id={ALL} active={sel === ALL} now={now} allTokens={allTokens} onSelect={onSelect} />
         </div>
     );
 }
 
-function SplitCard({ split: all, scope }: { split: ClassUsage[]; scope: string }) {
+function SplitCard({ split: all }: { split: ClassUsage[] }) {
     const split = visibleClasses(all);
     const tokTotal = split.reduce((s, c) => s + c.tokens, 0);
     const spdTotal = split.reduce((s, c) => s + c.spendUsd, 0);
@@ -331,11 +315,10 @@ function SplitCard({ split: all, scope }: { split: ClassUsage[]; scope: string }
     const cachePct = tokTotal > 0 && cacheRead ? (cacheRead.tokens / tokTotal) * 100 : 0;
     const share = (n: number, total: number) => pctStr(total > 0 ? (n / total) * 100 : 0);
     return (
-        <div className="rounded-[14px] border border-border bg-surface-raised px-5 py-[18px]">
-            <SectionRule label="Where it goes" meta={scope} />
-            <p className="mb-4 text-[11px] leading-[1.5] text-muted">
-                {pctStr(cachePct)} of tokens are cache reads. They price at a fraction of input, so spend splits
-                differently.
+        <div className={CARD}>
+            <SectionRule label="Where it goes" meta="tokens · spend" />
+            <p className="mb-3.5 text-[11px] leading-[1.5] text-muted">
+                {pctStr(cachePct)} of tokens are cache reads, priced far below input.
             </p>
 
             <div className="mb-1.5 flex items-baseline justify-between">
@@ -343,8 +326,8 @@ function SplitCard({ split: all, scope }: { split: ClassUsage[]; scope: string }
                 <span className="text-[11.5px] font-bold tabular-nums text-primary">{fmt(tokTotal)}</span>
             </div>
             <StackedMeter
-                className="mb-3"
-                height={10}
+                className="mb-2.5"
+                height={8}
                 radius={4}
                 track="bg-background"
                 segs={split.map((c) => ({ key: c.cls, value: c.tokens, fill: CLASS_FILL[c.cls] }))}
@@ -357,131 +340,59 @@ function SplitCard({ split: all, scope }: { split: ClassUsage[]; scope: string }
                 <span className="text-[11.5px] font-bold tabular-nums text-primary">{usd(spdTotal)}</span>
             </div>
             <StackedMeter
-                className="mb-4"
-                height={10}
+                className="mb-3"
+                height={8}
                 radius={4}
                 track="bg-background"
                 segs={split.map((c) => ({ key: c.cls, value: c.spendUsd, fill: CLASS_FILL[c.cls] }))}
             />
 
-            <table className="w-full border-t border-edge-faint text-[10.5px] tabular-nums">
-                <thead>
-                    <tr className="text-muted">
-                        <th className="pb-1 pt-3 text-left font-medium">
-                            <span className="sr-only">Class</span>
-                        </th>
-                        <th colSpan={2} className="pb-1 pt-3 text-right font-medium">
-                            tokens
-                        </th>
-                        <th colSpan={2} className="pb-1 pt-3 text-right font-medium">
-                            spend
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {split.map((c) => (
-                        <tr key={c.cls}>
-                            <td className="py-[3px] pr-3">
-                                <span className="flex items-center gap-[7px] text-[11px] text-secondary">
-                                    <span
-                                        className={cn("h-[8px] w-[8px] flex-none rounded-[2px]", CLASS_FILL[c.cls])}
-                                    />
-                                    {c.label}
-                                </span>
-                            </td>
-                            <td className="py-[3px] text-right text-secondary">{fmt(c.tokens)}</td>
-                            <td className="w-[52px] py-[3px] text-right text-muted">{share(c.tokens, tokTotal)}</td>
-                            <td className="py-[3px] pl-4 text-right text-secondary">{usd(c.spendUsd)}</td>
-                            <td className="w-[52px] py-[3px] text-right text-muted">{share(c.spendUsd, spdTotal)}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+            {/* a 2x2 legend: each class with its share of tokens, then of spend; the absolute numbers are in
+                the tooltip */}
+            <div className="grid grid-cols-2 gap-x-3.5 gap-y-1.5">
+                {split.map((c) => (
+                    <span
+                        key={c.cls}
+                        className="flex min-w-0 items-center gap-1.5 text-[10.5px] tabular-nums text-secondary"
+                        title={`${c.label}: ${fmt(c.tokens)} tokens · ${usd(c.spendUsd)}`}
+                    >
+                        <span className={cn("h-2 w-2 flex-none rounded-[2px]", CLASS_FILL[c.cls])} />
+                        <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                        <span className="flex-none text-muted">
+                            {share(c.tokens, tokTotal)} · {share(c.spendUsd, spdTotal)}
+                        </span>
+                    </span>
+                ))}
+            </div>
         </div>
     );
 }
 
 // Grouped by UPSTREAM provider ("anthropic" | "openai"), which is what the transcript buckets carry —
-// deliberately a different axis from the harness rail, so the heading names the provider raw.
+// deliberately a different axis from the provider tabs, so the card's meta names the provider raw.
 function ModelGroup({ p }: { p: ProviderUsage }) {
     return (
-        <div className="rounded-[14px] border border-border bg-surface-raised px-5 py-[18px]">
-            <SectionRule label={p.provider} meta={fmt(p.tokens)} />
+        <div className={CARD}>
+            <SectionRule label="Models" meta={`${p.provider} · ${fmt(p.tokens)}`} />
             {foldModels(p.models, MAX_MODEL_ROWS).map((m, i) => (
-                <div key={m.model} className="mb-3">
-                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                        {/* the provider prefix is what tells Pi's openai-codex/gpt-5.5 from Codex's
-                            openai/gpt-5.5 — same model id, different upstream bucket */}
+                <div key={m.model} className="mb-2.5 last:mb-0">
+                    <div className="mb-1 flex items-baseline justify-between gap-3">
+                        {/* the provider is in the card's meta, so the name drops its prefix; the title keeps the
+                            full id, which is what tells Pi's openai-codex/gpt-5.5 from Codex's openai/gpt-5.5 —
+                            same model id, different upstream bucket */}
                         <span
-                            className="min-w-0 truncate text-[11.5px] tabular-nums text-secondary"
-                            title={`${p.provider}/${m.model}`}
+                            className="min-w-0 truncate text-[11px] tabular-nums text-secondary"
+                            title={m.model === "Other" ? m.model : `${p.provider}/${m.model}`}
                         >
-                            {m.model === "Other" ? m.model : `${p.provider}/${m.model}`}
+                            {m.model}
                         </span>
                         <span className="flex-none text-[10.5px] tabular-nums text-muted">
                             {fmt(m.tokens)} · <span className="font-semibold text-secondary">{pctStr(m.pct)}</span>
                         </span>
                     </div>
-                    <Meter pct={m.pct} fill={MODEL_SEQ[i]} height={7} radius={4} track="bg-edge-strong" />
+                    <Meter pct={m.pct} fill={MODEL_SEQ[i]} height={5} radius={3} track="bg-edge-strong" />
                 </div>
             ))}
-        </div>
-    );
-}
-
-// Name and state only: the totals live in the kpi row right under it, so the header doesn't repeat them.
-function DetailHeader({
-    sel,
-    row,
-    stats,
-    now,
-    reportingLabel,
-}: {
-    sel: string;
-    row?: UsageRailRow;
-    stats: UsageStats;
-    now: number;
-    reportingLabel: string;
-}) {
-    const all = sel === ALL;
-    const meta = runtimeMeta(sel);
-    const st = row != null ? stateMeta(row, now) : null;
-    const modelCount = stats.providers.reduce((s, p) => s + p.models.length, 0);
-    return (
-        <div className="mb-5 flex items-center gap-3 border-b border-edge-faint pb-4">
-            <span
-                className={cn(
-                    "flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] border text-[14px] font-semibold",
-                    all ? "border-accent bg-accentbg text-accent-soft" : cn(meta.line, meta.softBg, meta.text)
-                )}
-            >
-                {all ? "Σ" : meta.glyph}
-            </span>
-            <h2 className="min-w-0 truncate text-[17px] font-bold tracking-[-0.01em] text-primary">
-                {all ? "All providers" : providerLabel(sel)}
-            </h2>
-            <span
-                className="flex-none rounded-[5px] px-1.5 py-[3px] text-[10.5px] font-bold uppercase tabular-nums tracking-[0.06em]"
-                style={{
-                    color: all ? "var(--color-accent-soft)" : (st?.color ?? "var(--color-muted)"),
-                    backgroundColor: PILL_TINT,
-                }}
-            >
-                {all ? "Aggregate" : (st?.label ?? "No reading")}
-            </span>
-            <span className="flex-1" />
-            <div className="flex flex-none gap-x-2.5 text-[11px] tabular-nums text-muted">
-                <span>
-                    {"models "}
-                    <span className="text-secondary">{modelCount}</span>
-                </span>
-                {all ? (
-                    <span>
-                        {"quota "}
-                        <span className="text-secondary">{reportingLabel}</span>
-                    </span>
-                ) : null}
-            </div>
         </div>
     );
 }
@@ -502,24 +413,30 @@ function StatTilesSkeleton() {
 
 function BreakdownSkeleton() {
     return (
-        <div className={BREAKDOWN_GRID}>
-            <div className="rounded-[14px] border border-border bg-surface-raised px-5 py-[18px]">
-                <SkeletonLine className="mb-5 h-[13px] w-[92px]" />
-                <div className="flex h-[156px] items-end gap-[7px] border-b border-l border-border px-1">
-                    <SkeletonLine className="h-[42px] flex-1 rounded-t-[3px]" />
-                    <SkeletonLine className="h-[75px] flex-1 rounded-t-[3px]" />
-                    <SkeletonLine className="h-[58px] flex-1 rounded-t-[3px]" />
-                    <SkeletonLine className="h-[104px] flex-1 rounded-t-[3px]" />
-                    <SkeletonLine className="h-[66px] flex-1 rounded-t-[3px]" />
-                    <SkeletonLine className="h-[122px] flex-1 rounded-t-[3px]" />
+        <div className={CHART_ROW}>
+            <div className={CARD}>
+                <SkeletonLine className="mb-3 h-[11px] w-[64px]" />
+                <div className="flex h-[96px] items-end gap-[7px] border-b border-l border-border px-1">
+                    <SkeletonLine className="h-[28px] flex-1 rounded-t-[3px]" />
+                    <SkeletonLine className="h-[52px] flex-1 rounded-t-[3px]" />
+                    <SkeletonLine className="h-[40px] flex-1 rounded-t-[3px]" />
+                    <SkeletonLine className="h-[72px] flex-1 rounded-t-[3px]" />
+                    <SkeletonLine className="h-[46px] flex-1 rounded-t-[3px]" />
                     <SkeletonLine className="h-[84px] flex-1 rounded-t-[3px]" />
+                    <SkeletonLine className="h-[58px] flex-1 rounded-t-[3px]" />
                 </div>
             </div>
-            <div className="rounded-[14px] border border-border bg-surface-raised px-5 py-[18px]">
-                <SkeletonLine className="mb-3 h-[13px] w-[128px]" />
-                <SkeletonLine className="mb-4 h-[11px] w-[80%]" />
-                <SkeletonLine className="mb-3 h-[10px] w-full rounded-[4px]" />
-                <SkeletonLine className="h-[10px] w-full rounded-[4px]" />
+            <div className={CARD}>
+                <SkeletonLine className="mb-3 h-[11px] w-[96px]" />
+                <SkeletonLine className="mb-3 h-[11px] w-[80%]" />
+                <SkeletonLine className="mb-3 h-[8px] w-full rounded-[4px]" />
+                <SkeletonLine className="h-[8px] w-full rounded-[4px]" />
+            </div>
+            <div className={CARD}>
+                <SkeletonLine className="mb-3 h-[11px] w-[56px]" />
+                <SkeletonLine className="mb-2.5 h-[5px] w-full rounded-[3px]" />
+                <SkeletonLine className="mb-2.5 h-[5px] w-full rounded-[3px]" />
+                <SkeletonLine className="h-[5px] w-full rounded-[3px]" />
             </div>
         </div>
     );
@@ -538,8 +455,17 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const now = useAtomValue(model.nowAtom);
     const [usageWindow, setUsageWindow] = useAtom(usageWindowAtom);
     const [usageMetric, setUsageMetric] = useAtom(usageMetricAtom);
-    // the rail's selection and the historical scope filter are the same state, by construction
+    // the selected tab and the historical scope filter are the same state, by construction
     const [sel, setSel] = useAtom(model.usageHarnessFilterAtom);
+    const [tabChosen, setTabChosen] = useAtom(usageTabChosenAtom);
+    // a click or a key is the person's choice; the default tab below stops following the busiest provider
+    const pickTab = useCallback(
+        (id: string) => {
+            setTabChosen(true);
+            setSel(id);
+        },
+        [setTabChosen, setSel]
+    );
 
     useEffect(() => {
         const days = usageWindow === "7d" ? 7 : 0;
@@ -566,22 +492,50 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const scope = solo ?? sel;
     const selRow = rows.find((r) => r.harness === scope);
 
-    // A window reload can remove the selected harness from the rail (e.g. its history falls outside
-    // the window and it reports no quota). Fall back to the aggregate so the detail never points at a
-    // row that isn't there. Only once loaded — an empty rail mid-load would otherwise reset a
-    // deliberate selection on every window switch.
-    useEffect(() => {
-        if (usageLoaded && sel !== ALL && !rows.some((r) => r.harness === sel)) {
+    // usageHarnessFilterAtom is the one selection (model.usageStatsAtom re-aggregates by it), so the default tab
+    // is written into it rather than computed beside it: the KPIs, the charts and anything scoped to the tab
+    // read the harness the person sees. Until they pick a tab that is the busiest provider; the layout effect
+    // keeps the frame after the first load from painting the aggregate. Only once loaded — an empty tab strip
+    // mid-load would otherwise reset the selection on every window switch.
+    // After a pick, a window reload can remove the selected harness from the tabs (its history falls outside
+    // the window and it reports no quota): fall back to the aggregate so the pane never points at a tab that
+    // isn't there.
+    useLayoutEffect(() => {
+        if (!usageLoaded) {
+            return;
+        }
+        if (!tabChosen) {
+            const dflt = defaultTab(rows);
+            if (sel !== dflt) {
+                setSel(dflt);
+            }
+        } else if (sel !== ALL && !rows.some((r) => r.harness === sel)) {
             setSel(ALL);
         }
-    }, [usageLoaded, rows, sel, setSel]);
+    }, [usageLoaded, tabChosen, rows, sel, setSel]);
 
-    const navIds = useMemo(() => [ALL, ...rows.map((r) => r.harness)], [rows]);
+    // the ids in the order the strip draws them; none when the strip is hidden for a lone provider
+    const tabIds = useMemo(() => (solo != null ? [] : [...tabRows(rows).map((r) => r.harness), ALL]), [solo, rows]);
     const listNav = useMemo<ListNavController>(
-        () => ({ surface: "usage", navigableIds: navIds, cursorId: sel, setCursor: setSel }),
-        [navIds, sel, setSel]
+        () => ({ surface: "usage", navigableIds: tabIds, cursorId: sel, setCursor: pickTab }),
+        [tabIds, sel, pickTab]
     );
     useSurfaceListNav(listNav);
+
+    // ← / → switch tabs. The bindings are built once; the handlers read the live ids and selection from a ref.
+    const tabNav = useRef({ ids: tabIds, sel, pickTab });
+    tabNav.current = { ids: tabIds, sel, pickTab };
+    const usageBindings = useMemo(() => {
+        const step = (delta: number) => {
+            const { ids, sel: cur, pickTab: pick } = tabNav.current;
+            const next = moveCursor(ids, cur, delta);
+            if (next != null && next !== cur) {
+                pick(next);
+            }
+        };
+        return buildUsageBindings({ prevTab: () => step(-1), nextTab: () => step(1) });
+    }, []);
+    useKeybindings(usageBindings);
 
     const claudeRow = rows.find((r) => r.harness === "claude");
     const weeklyProjectionMs =
@@ -595,7 +549,6 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
             : null;
 
     const reporting = countReporting(groups);
-    const reportingLabel = `${reporting} of ${rows.length} reporting`;
     const all = scope === ALL;
     // the aggregate can't average independent per-account quotas — it reports whichever is closest to
     // its cap (worstWindow) and says whose it is.
@@ -613,7 +566,6 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const hasHistory = stats.providers.length > 0 || stats.totals.tokensWindow > 0;
     const revealHistory = useDidBecomeTrue(hasHistory);
     const chartHarnesses = all ? rows.map((r) => r.harness) : [scope];
-    const scopeLabel = all ? "all providers" : providerLabel(scope);
     const windowLabel = usageWindow === "7d" ? "last 7 days" : "all time";
 
     const estimateSub = (coveragePct: number | null) =>
@@ -690,9 +642,9 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                             </span>
                         ) : (
                             <span className="block max-w-[680px] leading-[1.5]">
-                                Live provider quota while agents run, and the durable history behind it. Pick a scope on
-                                the left; reported cost is what each agent source recorded, the API-equivalent estimate
-                                comes from a bundled price table. Neither is a bill.
+                                Live provider quota while agents run, and the durable history behind it. Pick a provider
+                                tab; reported cost is what each agent source recorded, the API-equivalent estimate comes
+                                from a bundled price table. Neither is a bill.
                             </span>
                         )
                     }
@@ -710,120 +662,107 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
                 {loadError ? <SurfaceError message="Couldn’t refresh — showing the last loaded usage." /> : null}
 
-                <div className="flex min-h-0 flex-1">
-                    {solo == null ? (
-                        <UsageRail
-                            groups={groups}
-                            sel={sel}
-                            now={now}
-                            totalTokens={allStats.totals.tokensWindow}
-                            onSelect={setSel}
-                        />
-                    ) : null}
+                {/* with one provider there is nothing to pick between, so no strip */}
+                {solo == null ? (
+                    <UsageTabs
+                        rows={rows}
+                        sel={sel}
+                        now={now}
+                        allTokens={allStats.totals.tokensWindow}
+                        onSelect={pickTab}
+                    />
+                ) : null}
 
-                    <div
-                        data-usage-detail={scope}
-                        className="@container min-w-0 flex-1 overflow-y-auto px-7 pb-12 pt-5"
-                    >
-                        <DetailHeader
-                            sel={scope}
-                            row={selRow}
-                            stats={stats}
-                            now={now}
-                            reportingLabel={reportingLabel}
-                        />
-
-                        {/* live and historical share a row but stay two labelled groups: one is an
+                <div
+                    role="tabpanel"
+                    data-usage-detail={scope}
+                    className="@container min-h-0 min-w-0 flex-1 overflow-y-auto px-7 pb-12 pt-5"
+                >
+                    {/* live and historical share a row but stay two labelled groups: one is an
                             ephemeral reading, the other durable history, and they must not read as one */}
-                        <div className={cn("mb-5 grid gap-x-4 gap-y-5", kpiGridClass(statCards.length))}>
-                            <section className="min-w-0">
-                                <SectionRule
-                                    label="Live limits"
-                                    meta={
-                                        all ? "highest reading · ephemeral" : selRow ? stateMeta(selRow, now).long : "—"
-                                    }
-                                    action={refreshShown ? <UsageRefreshButton className="h-6 w-6" /> : null}
-                                />
-                                {hasLimits ? (
-                                    <div className="grid grid-cols-2 gap-2.5">
-                                        <LimitCard
-                                            kind="fivehour"
-                                            title="5-hour"
-                                            w={fiveHour}
-                                            now={now}
-                                            used={all && fiveHour.harness ? providerLabel(fiveHour.harness) : undefined}
-                                        />
-                                        <LimitCard
-                                            kind="week"
-                                            title="Weekly"
-                                            w={week}
-                                            now={now}
-                                            used={all && week.harness ? providerLabel(week.harness) : undefined}
-                                            projectedExhaustion={projectionForWeek}
-                                        />
-                                    </div>
-                                ) : (
-                                    <p className="rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
-                                        No quota reading{all ? "" : ` for ${providerLabel(scope)}`}. Claude&apos;s
-                                        windows are read from your Claude Code login with no session running, once it
-                                        has signed in; other providers&apos; are known only while an agent that
-                                        publishes them runs. The last snapshot is kept per provider, and rolls to empty
-                                        once its window passes. History is unaffected.
-                                    </p>
-                                )}
-                            </section>
-
-                            <section className="min-w-0">
-                                <SectionRule label="Historical" meta={`durable · ${windowLabel}`} />
-                                {!usageLoaded ? (
-                                    <StatTilesSkeleton />
-                                ) : !hasHistory ? (
-                                    <p className="rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
-                                        No usage in this window
-                                        {all ? " — start an agent." : ` for ${providerLabel(scope)}.`}
-                                    </p>
-                                ) : (
-                                    <motion.div
-                                        variants={cardVariants}
-                                        initial={revealHistory ? "initial" : false}
-                                        animate="animate"
-                                        className={cn("grid gap-2.5", statGridClass(statCards.length))}
-                                    >
-                                        {statCards.map((c) => (
-                                            <StatCard key={c.label} {...c} />
-                                        ))}
-                                    </motion.div>
-                                )}
-                            </section>
-                        </div>
-
-                        {!usageLoaded ? (
-                            <BreakdownSkeleton />
-                        ) : hasHistory ? (
-                            <motion.div
-                                variants={cardVariants}
-                                initial={revealHistory ? "initial" : false}
-                                animate="animate"
-                            >
-                                <div className={BREAKDOWN_GRID}>
-                                    <DailyChart
-                                        daily={stats.daily}
-                                        window={usageWindow}
-                                        metric={usageMetric}
-                                        onMetric={setUsageMetric}
-                                        harnesses={chartHarnesses}
+                    <div className={cn("mb-5 grid gap-x-4 gap-y-5", kpiGridClass(statCards.length))}>
+                        <section className="min-w-0">
+                            <SectionRule
+                                label="Live limits"
+                                meta={all ? "highest reading · ephemeral" : selRow ? stateMeta(selRow, now).long : "—"}
+                                action={refreshShown ? <UsageRefreshButton className="h-6 w-6" /> : null}
+                            />
+                            {hasLimits ? (
+                                <div className="grid grid-cols-2 gap-2.5">
+                                    <LimitCard
+                                        kind="fivehour"
+                                        title="5-hour"
+                                        w={fiveHour}
+                                        now={now}
+                                        used={all && fiveHour.harness ? providerLabel(fiveHour.harness) : undefined}
                                     />
-                                    <SplitCard split={stats.split} scope={scopeLabel} />
+                                    <LimitCard
+                                        kind="week"
+                                        title="Weekly"
+                                        w={week}
+                                        now={now}
+                                        used={all && week.harness ? providerLabel(week.harness) : undefined}
+                                        projectedExhaustion={projectionForWeek}
+                                    />
                                 </div>
+                            ) : (
+                                <p className="rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
+                                    No quota reading{all ? "" : ` for ${providerLabel(scope)}`}. Claude&apos;s windows
+                                    are read from your Claude Code login with no session running, once it has signed in;
+                                    other providers&apos; are known only while an agent that publishes them runs. The
+                                    last snapshot is kept per provider, and rolls to empty once its window passes.
+                                    History is unaffected.
+                                </p>
+                            )}
+                        </section>
 
-                                <div className={modelGridClass(stats.providers.length)}>
-                                    {stats.providers.map((p) => (
-                                        <ModelGroup key={p.provider} p={p} />
+                        <section className="min-w-0">
+                            <SectionRule label="Historical" meta={`durable · ${windowLabel}`} />
+                            {!usageLoaded ? (
+                                <StatTilesSkeleton />
+                            ) : !hasHistory ? (
+                                <p className="rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">
+                                    No usage in this window
+                                    {all ? " — start an agent." : ` for ${providerLabel(scope)}.`}
+                                </p>
+                            ) : (
+                                <motion.div
+                                    variants={cardVariants}
+                                    initial={revealHistory ? "initial" : false}
+                                    animate="animate"
+                                    className={cn("grid gap-2.5", statGridClass(statCards.length))}
+                                >
+                                    {statCards.map((c) => (
+                                        <StatCard key={c.label} {...c} />
                                     ))}
-                                </div>
-                            </motion.div>
-                        ) : null}
+                                </motion.div>
+                            )}
+                        </section>
                     </div>
+
+                    {!usageLoaded ? (
+                        <BreakdownSkeleton />
+                    ) : hasHistory ? (
+                        <motion.div
+                            variants={cardVariants}
+                            initial={revealHistory ? "initial" : false}
+                            animate="animate"
+                        >
+                            <div className={CHART_ROW}>
+                                <DailyChart
+                                    daily={stats.daily}
+                                    window={usageWindow}
+                                    metric={usageMetric}
+                                    onMetric={setUsageMetric}
+                                    harnesses={chartHarnesses}
+                                />
+                                <SplitCard split={stats.split} />
+                                {stats.providers.map((p) => (
+                                    <ModelGroup key={p.provider} p={p} />
+                                ))}
+                            </div>
+                        </motion.div>
+                    ) : null}
                 </div>
             </div>
         </MotionConfig>

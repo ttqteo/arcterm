@@ -282,6 +282,13 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Mod`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
 | `Esc` | Clear filters, else leave compare, else back to the Cockpit |
 
+### Usage
+
+| Keys | Action |
+|---|---|
+| `←` / `→` | Previous / next provider tab (the busiest provider first, All last). `j` / `k` and `↓` / `↑` step through the same tabs for now |
+| `Esc` | Back to the Cockpit |
+
 ### Route DAG (the orchestrator run's graph)
 
 | Keys | Action |

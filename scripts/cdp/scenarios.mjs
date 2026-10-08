@@ -1651,6 +1651,30 @@ const buildUsageFixture = () => {
     return buckets;
 };
 
+// The Models cards of the open provider tab. A model row's text drops the provider its title keeps ("gpt-5.5" with
+// title "openai/gpt-5.5"), and the provider is named in the card's rule beside the heading ("Models … openai · 3K").
+const usageModelsProbe = `(() => {
+    const d = document.querySelector("[data-usage-detail]");
+    const ids = [...(d ? d.querySelectorAll("span[title]") : [])].map((s) => s.getAttribute("title"));
+    const providers = [...document.querySelectorAll("h3")]
+        .filter((x) => (x.textContent || "").trim() === "Models")
+        .map((x) => (x.parentElement.textContent || "").replace("Models", "").split("·")[0].trim());
+    return { ids, providers };
+})()`;
+
+// After a reload the nav takes as long as the dev server needs to serve the app again, which a fixed sleep misses on a
+// loaded machine: wait for it (30s at most) before the next goto. The first sleep lets the navigation start, so the
+// poll does not read the nav of the page being replaced; an evaluate cut off by the navigation is not an answer.
+const usageWaitForNav = async (h) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    for (let i = 0; i < 60; i++) {
+        if (await h.ev(`!!document.querySelector("nav button")`).catch(() => false)) {
+            return;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+    }
+};
+
 const usageCharts = {
     name: "usage-charts",
     surface: "usage",
@@ -1677,7 +1701,7 @@ const usageCharts = {
         await h.ev(`localStorage.setItem('wave:ratelimits', ${JSON.stringify(JSON.stringify(rateLimits))})`);
         // reload so savedRateLimitsAtom (module-load seeded) and the Usage surface both read the snapshot
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        await usageWaitForNav(h);
         return ctx;
     },
     async assert(h) {
@@ -1694,6 +1718,30 @@ const usageCharts = {
             if (!ready) await settle(250);
         }
         rec("0. usage surface loaded and the chart mounted", ready, ready ? "chart present" : "timed out after 10s");
+
+        // Before any click the surface opens on the busiest provider (Claude here), not on All, and the strip is a
+        // tablist of one tab per harness plus All. The selection is usageHarnessFilterAtom, so the pane's scope agrees.
+        const tabs = await h.ev(`(() => {
+            const list = document.querySelector('[role="tablist"][aria-label="Provider"]');
+            const on = list ? [...list.querySelectorAll('[role="tab"][aria-selected="true"]')] : [];
+            const d = document.querySelector("[data-usage-detail]");
+            return {
+                tablist: !!list,
+                tabs: list ? [...list.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute("data-usage-harness")) : [],
+                selected: on.map((t) => t.getAttribute("data-usage-harness")),
+                scope: d ? d.getAttribute("data-usage-detail") : null,
+            };
+        })()`);
+        rec(
+            "0b. the provider tabs open on the busiest provider, All last",
+            tabs.tablist &&
+                tabs.selected.length === 1 &&
+                tabs.selected[0] === "claude" &&
+                tabs.scope === "claude" &&
+                tabs.tabs[0] === "claude" &&
+                tabs.tabs[tabs.tabs.length - 1] === "all",
+            JSON.stringify(tabs)
+        );
 
         // the visx chart renders an <svg> with axis ticks and at least one bar rect
         const chart = await h.ev(`(() => {
@@ -1805,19 +1853,18 @@ const usageCharts = {
         }
         rec("6. All-time renders the brush strip under the chart", !!brush.brushStrip, JSON.stringify(brush));
 
-        // The scope picker is now the master rail, keyed by data-usage-harness (a text query would match
-        // the detail pane's own copy of a provider name). Every seeded harness needs a row plus the
-        // pinned aggregate.
+        // The scope picker is the provider tab strip, keyed by data-usage-harness (a text query would match
+        // the pane's own copy of a provider name). Every seeded harness needs a tab plus All.
         const railKeys = await h.ev(
             `[...document.querySelectorAll("[data-usage-harness]")].map((b) => b.getAttribute("data-usage-harness"))`
         );
         rec(
-            "7. the rail lists all, claude, codex, opencode, and pi",
+            "7. the tabs list all, claude, codex, opencode, and pi",
             ["all", "claude", "codex", "opencode", "pi"].every((k) => railKeys.includes(k)),
             JSON.stringify(railKeys)
         );
 
-        // select the OpenCode rail row, then assert only OpenCode history remains
+        // select the OpenCode tab, then assert only OpenCode history remains
         const clickedOpenCode = await h.ev(`(() => {
             const b = document.querySelector('[data-usage-harness="opencode"]');
             if (!b) return false;
@@ -1825,18 +1872,20 @@ const usageCharts = {
             return true;
         })()`);
         await settle(400);
+        const openCodeModels = await h.ev(usageModelsProbe);
         const openCodeState = await h.ev(`(() => {
-            const h3s = [...document.querySelectorAll("h3")].map((x) => (x.textContent || "").trim());
             const body = document.body.textContent || "";
             return {
-                hasOpenaiModel: body.includes("openai/gpt-5.5"),
-                hasUnpricedModel: body.includes("opencode-go/unpriced-test-model"),
-                hasAnthropicHeading: h3s.includes("anthropic"),
                 hasReasoning: body.includes("Reasoning"),
                 hasReportedCostLabel: body.includes("Reported cost"),
                 hasEstimateLabel: body.includes("API-equivalent"),
             };
         })()`);
+        Object.assign(openCodeState, {
+            hasOpenaiModel: openCodeModels.ids.includes("openai/gpt-5.5"),
+            hasUnpricedModel: openCodeModels.ids.includes("opencode-go/unpriced-test-model"),
+            hasAnthropicHeading: openCodeModels.providers.includes("anthropic"),
+        });
         rec(
             "8. selecting OpenCode leaves only OpenCode model cards and totals",
             clickedOpenCode &&
@@ -1903,8 +1952,8 @@ const usageCharts = {
             JSON.stringify({ limitsOpenCode, limitsAll })
         );
 
-        // the rail selection IS the harness filter, and it lives in the long-lived view model, so it
-        // survives the surface unmounting on a nav switch
+        // the tab selection IS the harness filter, and it lives in the long-lived view model, so it
+        // survives the surface unmounting on a nav switch (and, being a pick, is not overwritten by the default tab)
         await h.ev(`(() => {
             const b = document.querySelector('[data-usage-harness="opencode"]');
             if (b) b.click();
@@ -1917,13 +1966,13 @@ const usageCharts = {
             const b = document.querySelector('[data-usage-harness="opencode"]');
             const d = document.querySelector("[data-usage-detail]");
             return {
-                pressed: b ? b.getAttribute("aria-pressed") : null,
+                selected: b ? b.getAttribute("aria-selected") : null,
                 scope: d ? d.getAttribute("data-usage-detail") : null,
             };
         })()`);
         rec(
             "13. OpenCode selection survives a surface switch",
-            filterSurvived.pressed === "true" && filterSurvived.scope === "opencode",
+            filterSurvived.selected === "true" && filterSurvived.scope === "opencode",
             JSON.stringify(filterSurvived)
         );
 
@@ -1973,7 +2022,7 @@ const usageCharts = {
             JSON.stringify(legend)
         );
 
-        // select the Pi rail row, then assert only Pi history remains and its provider/model stays
+        // select the Pi tab, then assert only Pi history remains and its provider/model stays
         // distinct from Codex's openai bucket and OpenCode's opencode-go bucket.
         const clickedPi = await h.ev(`(() => {
             const b = document.querySelector('[data-usage-harness="pi"]');
@@ -1982,17 +2031,14 @@ const usageCharts = {
             return true;
         })()`);
         await settle(400);
-        const piState = await h.ev(`(() => {
-            const h3s = [...document.querySelectorAll("h3")].map((x) => (x.textContent || "").trim());
-            const body = document.body.textContent || "";
-            return {
-                hasPiProvider: body.includes("openai-codex"),
-                hasPiModelRow: body.includes("openai-codex/gpt-5.5"),
-                noCodexCard: !body.includes("openai/gpt-5.5"),
-                noOpenCodeCard: !body.includes("opencode-go"),
-                noAnthropicHeading: !h3s.includes("anthropic"),
-            };
-        })()`);
+        const piModels = await h.ev(usageModelsProbe);
+        const piState = {
+            hasPiProvider: piModels.providers.includes("openai-codex"),
+            hasPiModelRow: piModels.ids.includes("openai-codex/gpt-5.5"),
+            noCodexCard: !piModels.ids.includes("openai/gpt-5.5"),
+            noOpenCodeCard: !piModels.ids.some((id) => id.startsWith("opencode-go/")),
+            noAnthropicHeading: !piModels.providers.includes("anthropic"),
+        };
         rec(
             "16. selecting Pi leaves only Pi model cards with a provider/model distinct from Codex and OpenCode",
             clickedPi &&
@@ -2016,7 +2062,7 @@ const usageCharts = {
         await h.ev(restore("wave:dev-usage-buckets", ctx.prevUsage));
         await h.ev(restore("wave:ratelimits", ctx.prevRate));
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        await usageWaitForNav(h);
         await h.goto("usage");
         await h.ev(`(() => {
             const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "7 days");

@@ -25,6 +25,9 @@ export const usageLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 // on every tab switch. Module-level atoms keep the user's window/metric choice across unmount.
 export const usageWindowAtom = atom<"7d" | "all">("7d");
 export const usageMetricAtom = atom<"tokens" | "spend">("tokens");
+// true once the person has picked a provider tab (click or key). Until then the surface writes the busiest
+// provider into usageHarnessFilterAtom; after, the person's tab is left alone.
+export const usageTabChosenAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 
 // DEV-only fixture seam: a deterministic localStorage array of wire buckets (see the usage-charts CDP
 // scenario). Compiled out behaviorally in production because import.meta.env.DEV is false. Malformed

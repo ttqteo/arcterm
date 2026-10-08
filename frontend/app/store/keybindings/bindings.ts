@@ -780,6 +780,37 @@ export function buildCockpitBindings(): Binding[] {
     ];
 }
 
+// Usage surface: the arrows switch provider tabs. `[` `]` stay the global surface switch, and the arrows are bound
+// elsewhere only on the agent and code surfaces, so they are free here. The tab strip lives in UsageSurface, which
+// owns the ids and the selection, so these only call back into it (Task 6 adds `a` for Analyze).
+export function buildUsageBindings(handlers: {
+    prevTab: () => void;
+    nextTab: () => void;
+    analyze?: () => void;
+}): Binding[] {
+    const on = (ctx: KeyContext) => ctx.surface === "usage" && !ctx.editable && !ctx.modalOpen;
+    return [
+        {
+            id: "usage:prev-tab",
+            keys: "ArrowLeft",
+            group: "Usage",
+            label: "Previous provider tab",
+            when: on,
+            paletteHidden: true,
+            run: handlers.prevTab,
+        },
+        {
+            id: "usage:next-tab",
+            keys: "ArrowRight",
+            group: "Usage",
+            label: "Next provider tab",
+            when: on,
+            paletteHidden: true,
+            run: handlers.nextTab,
+        },
+    ];
+}
+
 // History and a session's transcript cover the terminal, so the keys that act on the focused agent (j/k, the arrows, d, f,
 // r, c) stand down there: History publishes its own list cursor on this surface, and j/k must belong to it alone
 const centerAtRest = () => globalStore.get(centerModeAtom) === "terminal";
