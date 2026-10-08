@@ -17751,8 +17751,10 @@ const agentRailTabs = {
             await h.goto("agent");
             ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${RAIL_TABS_AGENT}"]')`, 15000);
             if (!ctx.inRoster) return ctx;
-            // the Agent surface mounts every terminal's pane, which starts its shell
+            // a pane starts its shell when it is first shown (a hidden one has no size to start it at, and its block has no
+            // controller to type into), so the terminal is shown first; the agent is shown again below
             const term = ctx.terminals[0];
+            await h.rpc("uireveal", { address: `agent:${term.tabId}` }, UI_ROUTE);
             ctx.shellUp = await uploadsShellUp(h, term.blockId);
             // forward slashes in single quotes: the same in Git Bash, pwsh and cmd
             ctx.printedPath = `${ctx.repo.replace(/\\/g, "/")}/a.txt:2`;
@@ -19864,6 +19866,667 @@ const agentUploads = {
             if (!(await ahReload(h))) console.error("agent-uploads teardown: the page did not come back after the reload");
         });
         await step("go home", () => h.goto("cockpit"));
+    },
+};
+
+// The Agent panel's Files tab and dragging its rows onto a terminal (docs/superpowers/specs/2026-10-08-rail-worktree-files-
+// design.md), run on the dev app. Three fixture agents share the roster:
+//   - A, whose block is a real shell (a drop reaches a live xterm). The shell starts in ~ (a shell in the temp dir would
+//     lock it), and its `cmd:cwd` is then set to a seeded git repo, which is where the rail and the drop target read the
+//     agent's cwd;
+//   - B, in a directory that is not a git repository;
+//   - C, in a repo holding one file more than the server lists (maxListFiles in pkg/gitinfo), all committed under bulk/.
+// B and C have no shell: their block ids are made up and their cwd comes from a one-line transcript. A plain terminal T
+// (in no agent row, `cmd:cwd` ~) is the other drop target. A pane starts its shell when it is first shown, so arrange
+// shows A and then T (which docks under the agent shown, and stays there). What a drop typed is read from the xterm
+// buffer's cursor line (window.__arcTermPathLinks.cursorLine), never from the block's term file, which strips the
+// whitespace a drop's text is made of. Teardown puts back the user's fixture roster, the keys this touches and the
+// repo's index, and removes the temp directory.
+const RWF_AGENT_A = "fx-rwf-a";
+const RWF_AGENT_B = "fx-rwf-b";
+const RWF_AGENT_C = "fx-rwf-c";
+const RWF_BLOCK_B = "fx-blk-rwf-b";
+const RWF_BLOCK_C = "fx-blk-rwf-c";
+const RWF_PROJECT = "verify-rail-files";
+const RWF_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", GRID_KEY];
+// the server's listing cap (maxListFiles, pkg/gitinfo/gitinfo.go), mirrored: agent C's repo holds one file more
+const RWF_LISTING_CAP = 20000;
+// RAIL_PATHS_MIME (frontend/app/view/agents/pathdrop.ts), mirrored: what a drag from the tree carries
+const RWF_PATHS_MIME = "application/x-arc-paths";
+const RWF_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
+const RWF_TREE = `${RWF_ASIDE}?.querySelector("[data-rail-tree]")`;
+const RWF_TREE_STATE = `${RWF_TREE}?.getAttribute("data-rail-tree-state")`;
+const rwfRowSel = (path) => `[data-rail-tree-row="${path}"]`;
+const rwfRow = (path) => `${RWF_ASIDE}?.querySelector(${JSON.stringify(rwfRowSel(path))})`;
+// the rows in the order drawn, which is the order the tree's selection and a drag use
+const RWF_ROWS = `[...(${RWF_ASIDE}?.querySelectorAll("[data-rail-tree-row]") ?? [])].map((r) => ({
+    path: r.getAttribute("data-rail-tree-row"),
+    selected: r.getAttribute("aria-selected") === "true",
+    cursor: r.hasAttribute("data-cursor"),
+    ignored: r.hasAttribute("data-ignored"),
+    expanded: r.getAttribute("aria-expanded"),
+}))`;
+const rwfPaneSel = (agentId) => `[data-agent-terminal="${agentId}"] .cockpit-focus-pane`;
+const rwfPaths = (rows) => rows.map((r) => r.path);
+const rwfSelected = (rows) => rows.filter((r) => r.selected).map((r) => r.path);
+const rwfSameSet = (a, b) => a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+// the same path, whichever way the OS spells its separators and its drive letter
+const rwfNorm = (p) => p.replace(/\\/g, "/").toLowerCase();
+const rwfQuoted = (p) => (/\s/.test(p) ? `"${p}"` : p);
+
+function rwfFixture(base) {
+    const git = (dir, ...args) =>
+        execFileSync("git", ["-C", dir, "-c", "user.email=v@v", "-c", "user.name=v", ...args], { stdio: "pipe" });
+    const repo = join(base, "repo");
+    const plain = join(base, "plain");
+    const big = join(base, "big");
+    // outside every repo, so the transcripts are not among the files a tree lists
+    const logs = join(base, "transcripts");
+    for (const dir of [repo, plain, big, logs]) mkdirSync(dir);
+
+    git(repo, "init", "-q", "--initial-branch=main");
+    mkdirSync(join(repo, "src", "app"), { recursive: true });
+    mkdirSync(join(repo, "docs"));
+    writeFileSync(join(repo, "src", "app", "main.ts"), "export const main = 1;\n");
+    writeFileSync(join(repo, "src", "util.ts"), "export const util = 2;\n");
+    writeFileSync(join(repo, "README.md"), "# Readme\n");
+    writeFileSync(join(repo, "docs", "my notes.md"), "notes\n");
+    writeFileSync(join(repo, ".gitignore"), "build/\n");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "seed");
+    // untracked and ignored: the tree lists build/ whole, dimmed
+    mkdirSync(join(repo, "build"));
+    writeFileSync(join(repo, "build", "out.js"), "console.log(1);\n");
+
+    git(big, "init", "-q", "--initial-branch=main");
+    writeFileSync(join(big, "README.md"), "# Big\n");
+    // Under one directory, so the tree draws one row for them while the listing is cut at its cap. They are committed:
+    // the rail counts the added lines of every untracked file of the agent's repo (untrackedNumstat in pkg/gitinfo), and
+    // with 20,001 of them its Overview, and the Files tab with it, was still loading two minutes in on some runs
+    mkdirSync(join(big, "bulk"));
+    for (let i = 0; i <= RWF_LISTING_CAP; i++) {
+        writeFileSync(join(big, "bulk", `f${String(i).padStart(5, "0")}.txt`), "");
+    }
+    git(big, "add", ".");
+    git(big, "commit", "-qm", "seed");
+
+    // a record with a cwd is how the rail finds a directory for an agent whose block names none
+    const transcript = (name, cwd) => {
+        const path = join(logs, name);
+        const prompt = { type: "user", message: { role: "user", content: [{ type: "text", text: "list the files" }] } };
+        writeFileSync(path, JSON.stringify({ cwd, ...prompt }) + "\n");
+        return path;
+    };
+    return {
+        repo,
+        plain,
+        big,
+        transcriptB: transcript("b.jsonl", plain),
+        transcriptC: transcript("c.jsonl", big),
+    };
+}
+
+const rwfRoster = (ctx) =>
+    [
+        { id: RWF_AGENT_A, name: "files agent", blockId: ctx.terminals[0]?.blockId },
+        { id: RWF_AGENT_B, name: "plain dir agent", blockId: RWF_BLOCK_B, transcriptPath: ctx.transcriptB },
+        { id: RWF_AGENT_C, name: "big repo agent", blockId: RWF_BLOCK_C, transcriptPath: ctx.transcriptC },
+    ].map((a) => ({
+        project: RWF_PROJECT,
+        task: "list the files",
+        state: "idle",
+        agent: "claude",
+        model: "opus",
+        idleSince: Date.now() - 60_000,
+        ...a,
+    }));
+
+// the agent's pane is the one shown (a lone cell, with the grid emptied), and its rail follows
+async function rwfShow(h, id) {
+    await h.rpc("uireveal", { address: `agent:${id}` }, UI_ROUTE);
+    return polishWaitFor(
+        h,
+        `(() => { const p = document.querySelector('[data-agent-terminal="${id}"]'); return p != null && !p.classList.contains("hidden"); })()`,
+        8000
+    );
+}
+
+// The Files tab of the shown agent's panel, once its strip has drawn it (the rail knows the cwd by then, which for a big
+// repo is after its git status). Right after another agent is chosen the strip is still the previous agent's until the
+// rail has loaded this one's, and a click on that one is lost with it, so the click is repeated until the tree is up
+async function rwfOpenFilesTab(h, ms = 120000) {
+    for (let waited = 0; waited < ms; waited += 1500) {
+        const clicked = await h.ev(`(() => {
+            const tab = ${RWF_ASIDE}?.querySelector('[data-rail-tab="tree"]');
+            tab?.click();
+            return tab != null;
+        })()`);
+        if (clicked && (await polishWaitFor(h, `!!${RWF_TREE}`, 1500))) return true;
+        if (!clicked) await polishNap(1500);
+    }
+    return false;
+}
+
+const rwfReady = (h, ms = 20000) => polishWaitFor(h, `${RWF_TREE_STATE} === "ready"`, ms);
+const rwfHasRows = (h, paths, ms = 8000) =>
+    polishWaitFor(h, `${JSON.stringify(paths)}.every((p) => !!${RWF_ASIDE}?.querySelector('[data-rail-tree-row="' + p + '"]'))`, ms);
+
+// a click on a row; `mods` are the MouseEvent's modifier flags (ctrlKey, shiftKey)
+const rwfClick = (h, path, mods = {}, type = "click") =>
+    h.ev(`(() => {
+        const el = ${rwfRow(path)};
+        if (!el) return false;
+        el.dispatchEvent(new MouseEvent(${JSON.stringify(type)}, { bubbles: true, cancelable: true, ...${JSON.stringify(mods)} }));
+        return true;
+    })()`);
+
+// the tree owns the keys while it holds focus, and a click made from the page does not give it focus
+const rwfFocusTree = (h) => h.ev(`(() => { const t = ${RWF_ASIDE}?.querySelector('[role="tree"]'); t?.focus(); return document.activeElement === t; })()`);
+
+// a directory row the scenario needs open: a plain click opens it (and selects it, so this runs before the selection a
+// step builds)
+async function rwfEnsureOpen(h, path) {
+    const rows = await h.ev(RWF_ROWS);
+    if (rows.find((r) => r.path === path)?.expanded === "false") {
+        await rwfClick(h, path);
+        await polishNap(300);
+    }
+}
+
+const rwfCursorLine = (h, blockId) => h.ev(`window.__arcTermPathLinks?.cursorLine?.(${JSON.stringify(blockId)}) ?? null`);
+const rwfInput = (h, blockId, text) =>
+    h.rpc("controllerinput", { blockid: blockId, inputdata64: Buffer.from(text).toString("base64") });
+
+// The shell's prompt: its cursor line once that has stopped changing. Null when there is none within the wait
+async function rwfPrompt(h, blockId) {
+    let last = null;
+    for (let i = 0; i < 40; i++) {
+        const line = await rwfCursorLine(h, blockId);
+        if (line != null && line.trim() !== "" && line === last) return line;
+        last = line;
+        await polishNap(500);
+    }
+    return null;
+}
+
+// Ctrl+C abandons the line in every shell the app starts (pwsh, Git Bash, cmd) and draws a fresh prompt; true once the
+// cursor line is the prompt alone
+async function rwfClearLine(h, blockId, prompt) {
+    await rwfInput(h, blockId, "\x03");
+    return polishWaitFor(
+        h,
+        `window.__arcTermPathLinks?.cursorLine?.(${JSON.stringify(blockId)}) === ${JSON.stringify(prompt)}`,
+        8000
+    );
+}
+
+// What a drop typed. The paste follows an await (the cwd lookup), so the line is polled for
+async function rwfTyped(h, blockId, expected) {
+    const ok = await polishWaitFor(
+        h,
+        `(window.__arcTermPathLinks?.cursorLine?.(${JSON.stringify(blockId)}) ?? "").endsWith(${JSON.stringify(expected)})`,
+        10000
+    );
+    return { ok, line: await rwfCursorLine(h, blockId) };
+}
+
+// dragstart on a tree row (a fresh DataTransfer the app fills), then dragenter and dragover on a pane. The DataTransfer
+// stays on window for the drop. `end` also ends the drag at once, for a drop on a pane the rail does not outlive
+const rwfDragExpr = (rowPath, paneSel, end = false) => `(() => {
+    const src = ${rwfRow(rowPath)};
+    const pane = document.querySelector(${JSON.stringify(paneSel)});
+    if (!src || !pane) return { ok: false, src: !!src, pane: !!pane };
+    const dt = new DataTransfer();
+    window.__rwfDrag = { dt, src };
+    const fire = (el, type) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+    fire(src, "dragstart");
+    ${end ? 'fire(src, "dragend");' : ""}
+    fire(pane, "dragenter");
+    const notCanceled = fire(pane, "dragover");
+    return { ok: true, types: [...dt.types], accepted: notCanceled === false, payload: dt.getData(${JSON.stringify(RWF_PATHS_MIME)}) };
+})()`;
+const rwfDropExpr = (paneSel) => `(() => {
+    const d = window.__rwfDrag;
+    const pane = document.querySelector(${JSON.stringify(paneSel)});
+    if (!d || !pane) return { ok: false };
+    const drop = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: d.dt });
+    pane.dispatchEvent(drop);
+    // a drag the rail still shows ends there; the row of one it has gone from is no longer in the page
+    d.src.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer: d.dt }));
+    window.__rwfDrag = null;
+    return { ok: true, taken: drop.defaultPrevented };
+})()`;
+const rwfHint = (paneSel) =>
+    `document.querySelector(${JSON.stringify(paneSel)})?.querySelector("[data-upload-drop][data-paths-drop]")?.textContent ?? null`;
+
+const agentRailWorktreeFiles = {
+    name: "rail-worktree-files",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "vrf-"));
+        const ctx = {
+            base,
+            terminals: [],
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        try {
+            for (const k of RWF_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            Object.assign(ctx, rwfFixture(base));
+            ctx.index = join(ctx.repo, ".git", "index");
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            // terminals[0] is agent A's shell, terminals[1] the plain terminal T
+            await openRailTerminal(h, ctx, RWF_PROJECT);
+            await openRailTerminal(h, ctx, RWF_PROJECT);
+            const [a, t] = ctx.terminals;
+            // A's tab is an agent's, as launchAgent marks one, so the surface lists its block under A alone. Without it the
+            // block is also a terminal until the page has the tab's agent status, and the second pane for it takes the
+            // first one's paste handle and cursor-line hook with it when it goes
+            await h.rpc("setmeta", { oref: `tab:${a.tabId}`, meta: { "session:agent": "claude" } });
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(rwfRoster(ctx), null, 2));
+            ctx.wroteFixture = true;
+            // a known rail: open, every section at its default, Overview, the default width; an empty grid, so each agent
+            // is shown alone
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth"])}) localStorage.removeItem(k);
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
+            })()`);
+            // the roster and the dev hooks (window.__arcTermPathLinks) are read once per page load
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(
+                h,
+                `${JSON.stringify([RWF_AGENT_A, RWF_AGENT_B, RWF_AGENT_C, t.tabId])}.every((id) => !!document.querySelector('[data-agent-terminal="' + id + '"]'))`,
+                15000
+            );
+            if (!ctx.inRoster) return ctx;
+            // a pane starts its shell when it is first shown (a hidden one has no size to start it at), so each is shown in
+            // turn. A terminal shown while an agent is docks under that agent, and stays there
+            await rwfShow(h, RWF_AGENT_A);
+            ctx.shellUpA = await uploadsShellUp(h, a.blockId);
+            await rwfShow(h, t.tabId);
+            ctx.shellUpT = await uploadsShellUp(h, t.blockId);
+            // the agent's cwd is read from its block's meta first: now that the shell is up, it can name the repo
+            await h.rpc("setmeta", { oref: `block:${a.blockId}`, meta: { "cmd:cwd": ctx.repo } });
+            // the rail reads the cwd when an agent is chosen, so choose another one and come back
+            await rwfShow(h, RWF_AGENT_B);
+            await rwfShow(h, RWF_AGENT_A);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true;
+        rec(
+            "0. the three fixture agents and the plain terminal are in the surface",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shellUpA: ctx.shellUpA, shellUpT: ctx.shellUpT })
+        );
+        if (!ready) return steps;
+        const [termA, termT] = ctx.terminals;
+        const paneA = rwfPaneSel(RWF_AGENT_A);
+        const paneT = rwfPaneSel(termT.tabId);
+        const repoFwd = ctx.repo.replace(/\\/g, "/");
+        const snap = () => h.ev(RWF_ROWS);
+        const shot = (name) => h.shot(`cdp-shots/rail-worktree-files-${name}.png`);
+        const key = (name, code, keyCode) => railTabsKey(h, name, code, keyCode);
+
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // --- 1. the first load -------------------------------------------------------------------------------
+            // The pane mounts already loading, so the inserted node is where `loading` is seen; a later change is an
+            // attribute change on it
+            await h.ev(`(() => {
+                window.__rwfStates = [];
+                const note = (v) => { if (v != null && window.__rwfStates.at(-1) !== v) window.__rwfStates.push(v); };
+                window.__rwfObserver?.disconnect();
+                window.__rwfObserver = new MutationObserver((records) => {
+                    for (const r of records) {
+                        if (r.type === "attributes") note(r.target.getAttribute("data-rail-tree-state"));
+                        for (const n of r.addedNodes) {
+                            if (n.nodeType !== 1) continue;
+                            note(n.getAttribute("data-rail-tree-state") ?? n.querySelector("[data-rail-tree-state]")?.getAttribute("data-rail-tree-state"));
+                        }
+                    }
+                });
+                window.__rwfObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-rail-tree-state"] });
+            })()`);
+            const tab1 = await rwfOpenFilesTab(h);
+            const settled1 = tab1 && (await rwfReady(h));
+            const states1 = await h.ev("window.__rwfStates");
+            await h.ev("window.__rwfObserver?.disconnect()");
+            await shot("1-loaded");
+            rec(
+                "1. the Files tab shows loading, then settles on ready",
+                tab1 && settled1 && states1.includes("loading") && states1.at(-1) === "ready",
+                { tab1, settled1, states1 }
+            );
+            if (!settled1) return steps;
+
+            // --- 2. the top level ----------------------------------------------------------------------------------
+            const rows2 = await snap();
+            const top = ["build", "docs", "src", ".gitignore", "README.md"];
+            await shot("2-top-level");
+            rec(
+                "2. the tree lists src, docs, README.md and .gitignore, and build dimmed",
+                rwfSameSet(rwfPaths(rows2), top) && rows2.find((r) => r.path === "build")?.ignored === true &&
+                    rows2.filter((r) => r.ignored).length === 1,
+                rows2
+            );
+
+            // --- 3. expand -------------------------------------------------------------------------------------------
+            await rwfClick(h, "src");
+            const open3 = await rwfHasRows(h, ["src/app", "src/util.ts"]);
+            const rows3 = await snap();
+            await shot("3-expanded");
+            rec(
+                "3. clicking src opens it: src/app and src/util.ts show",
+                open3 && rows3.find((r) => r.path === "src")?.expanded === "true",
+                rwfPaths(rows3)
+            );
+
+            // --- 4. Ctrl-click ---------------------------------------------------------------------------------------
+            await rwfClick(h, "README.md");
+            await rwfClick(h, "src/util.ts", { ctrlKey: true });
+            await polishNap(200);
+            const sel4 = rwfSelected(await snap());
+            await shot("4-ctrl-click");
+            rec("4. click README.md, Ctrl-click src/util.ts: exactly those two are selected", rwfSameSet(sel4, ["README.md", "src/util.ts"]), sel4);
+
+            // --- 5. Shift-click --------------------------------------------------------------------------------------
+            await rwfClick(h, "docs");
+            await rwfHasRows(h, ["docs/my notes.md"]);
+            await rwfClick(h, "README.md", { shiftKey: true });
+            await polishNap(200);
+            const rows5 = await snap();
+            const order5 = rwfPaths(rows5);
+            const between = order5.slice(order5.indexOf("docs"), order5.indexOf("README.md") + 1);
+            const sel5 = rwfSelected(rows5);
+            await shot("5-shift-click");
+            rec(
+                "5. click docs, Shift-click README.md: the visible rows from one to the other are selected, nothing else",
+                between.length > 4 && rwfSameSet(sel5, between) && !sel5.includes("build"),
+                { between, sel5 }
+            );
+
+            // --- 6. keys ---------------------------------------------------------------------------------------------
+            await rwfClick(h, "docs/my notes.md");
+            const focused6 = await rwfFocusTree(h);
+            const before6 = await snap();
+            await key("ArrowDown", "ArrowDown", 40);
+            await key("ArrowDown", "ArrowDown", 40);
+            const after6 = await snap();
+            const at = (rows, path) => rows.findIndex((r) => r.path === path);
+            const moved6 = at(after6, after6.find((r) => r.cursor)?.path) - at(before6, before6.find((r) => r.cursor)?.path);
+            await key("ArrowUp", "ArrowUp", 38);
+            const onSrc6 = (await snap()).find((r) => r.cursor)?.path === "src";
+            await key("ArrowLeft", "ArrowLeft", 37);
+            const collapsed6 = await snap();
+            await key("ArrowRight", "ArrowRight", 39);
+            const reopened6 = await snap();
+            await shot("6-keys");
+            rec(
+                "6. ArrowDown twice moves the cursor two rows; ArrowLeft collapses the open src and ArrowRight opens it again",
+                focused6 && moved6 === 2 && onSrc6 &&
+                    collapsed6.find((r) => r.path === "src")?.expanded === "false" && !rwfPaths(collapsed6).includes("src/util.ts") &&
+                    reopened6.find((r) => r.path === "src")?.expanded === "true" && rwfPaths(reopened6).includes("src/util.ts"),
+                { focused6, moved6, onSrc6, collapsed: rwfPaths(collapsed6), reopened: rwfPaths(reopened6) }
+            );
+
+            // --- 7. Enter on a file ----------------------------------------------------------------------------------
+            await rwfClick(h, "README.md");
+            const focused7 = await rwfFocusTree(h);
+            await key("Enter", "Enter", 13);
+            const file7 = await polishWaitFor(h, `${railTabsFileText}.includes("README.md")`, 10000);
+            const tabs7 = await h.ev(railTabLabels);
+            await shot("7-enter-opens-file");
+            await h.ev(`${RWF_ASIDE}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            const back7 = await rwfReady(h);
+            rec(
+                "7. Enter on README.md opens it on the File tab, and the Files tab is one click back",
+                focused7 && file7 && tabs7.includes("File README.md*") && back7,
+                { focused7, file7, tabs7, back7 }
+            );
+
+            // --- 8. double-click a file ------------------------------------------------------------------------------
+            await rwfHasRows(h, ["src/util.ts"]);
+            await rwfClick(h, "src/util.ts");
+            await rwfClick(h, "src/util.ts", {}, "dblclick");
+            const file8 = await polishWaitFor(h, `${railTabsFileText}.includes("util.ts")`, 10000);
+            const tabs8 = await h.ev(railTabLabels);
+            await shot("8-double-click-opens-file");
+            await h.ev(`${RWF_ASIDE}?.querySelector('[data-rail-tab="tree"]')?.click()`);
+            const back8 = await rwfReady(h);
+            rec(
+                "8. double-clicking src/util.ts opens it on the File tab, and the Files tab is one click back",
+                file8 && tabs8.some((l) => l.startsWith("File ") && l.includes("util.ts") && l.endsWith("*")) && back8,
+                { file8, tabs8, back8 }
+            );
+
+            // --- 9. Refresh ------------------------------------------------------------------------------------------
+            writeFileSync(join(ctx.repo, "NEW.md"), "new\n");
+            await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-refresh]")?.click()`);
+            const newRow = await rwfHasRows(h, ["NEW.md"], 10000);
+            await shot("9-refreshed");
+            rec("9. a file written since, then Refresh: a NEW.md row appears", newRow, rwfPaths(await snap()));
+
+            // --- 10. the surface switch ------------------------------------------------------------------------------
+            const before10 = await snap();
+            await h.goto("cockpit");
+            await h.goto("agent");
+            const back10 = (await polishWaitFor(h, `!!${RWF_TREE}`, 10000)) && (await rwfReady(h)) && (await rwfHasRows(h, ["src/util.ts"]));
+            const after10 = await snap();
+            await shot("10-after-surface-switch");
+            rec(
+                "10. another surface and back: src is still open and the selection is as it was",
+                back10 && after10.find((r) => r.path === "src")?.expanded === "true" &&
+                    rwfSameSet(rwfSelected(after10), rwfSelected(before10)) && rwfSelected(before10).length > 0,
+                { before: rwfSelected(before10), after: rwfSelected(after10) }
+            );
+
+            // --- 11. error and Retry ---------------------------------------------------------------------------------
+            ctx.indexBackup = readFileSync(ctx.index);
+            writeFileSync(ctx.index, "this is not a git index\n");
+            await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-refresh]")?.click()`);
+            const err11 = await polishWaitFor(h, `(${RWF_ASIDE}?.querySelector("[data-rail-tree-error]")?.textContent ?? "").trim() !== ""`, 15000);
+            const errText = await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-error]")?.textContent ?? null`);
+            const errState = await h.ev(RWF_TREE_STATE);
+            await shot("11-error");
+            writeFileSync(ctx.index, ctx.indexBackup);
+            ctx.indexBackup = null;
+            await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-retry]")?.click()`);
+            const retried11 = (await rwfReady(h)) && (await rwfHasRows(h, ["README.md", "src/util.ts"]));
+            await shot("11-retried");
+            rec(
+                "11. a corrupt index and Refresh show the error text; the index put back and Retry bring the rows back",
+                err11 && errState === "error" && retried11,
+                { err11, errState, errText, retried11 }
+            );
+
+            // --- 12. the drop hint -----------------------------------------------------------------------------------
+            const promptA = ctx.shellUpA === true ? await rwfPrompt(h, termA.blockId) : null;
+            await rwfEnsureOpen(h, "docs");
+            await rwfEnsureOpen(h, "src");
+            await rwfClick(h, "README.md");
+            await rwfClick(h, "src/util.ts", { ctrlKey: true });
+            await polishNap(200);
+            const sel12 = rwfSelected(await snap());
+            const drag12 = await h.ev(rwfDragExpr("src/util.ts", paneA));
+            const hint12 = await polishWaitFor(h, `${rwfHint(paneA)} === "Drop to insert the paths"`, 3000);
+            await shot("12-drop-hint");
+            const sent12 = drag12.ok ? JSON.parse(drag12.payload) : null;
+            rec(
+                "12. dragging the two selected rows over agent A's terminal shows Drop to insert the paths",
+                rwfSameSet(sel12, ["README.md", "src/util.ts"]) && drag12.ok && drag12.accepted && hint12 &&
+                    drag12.types.includes(RWF_PATHS_MIME) && drag12.types.includes("text/plain") &&
+                    sent12?.length === 2 && sent12.every((p) => rwfNorm(p).startsWith(rwfNorm(repoFwd) + "/")),
+                { sel12, drag12, hint12 }
+            );
+
+            // --- 13. the drop on an agent ----------------------------------------------------------------------------
+            const shellA = ctx.shellUpA === true && promptA != null;
+            // the hint is up on a pane whose line may still hold what an earlier run left
+            const clear13 = shellA && (await rwfClearLine(h, termA.blockId, promptA));
+            const drop13 = await h.ev(rwfDropExpr(paneA));
+            const typed13 = shellA ? await rwfTyped(h, termA.blockId, "@src/util.ts @README.md ") : { ok: false, line: null };
+            await shot("13-dropped-on-agent");
+            rec(
+                "13. the drop types the selected paths, in row order, as @ mentions relative to the agent's cwd",
+                shellA && clear13 && drop13.ok && drop13.taken && typed13.ok,
+                { shellUpA: ctx.shellUpA, promptA, clear13, drop13, line: typed13.line }
+            );
+
+            // --- 14. one path, a quoted path, a directory ------------------------------------------------------------
+            const single = async (rowPath, hintText, expected) => {
+                const cleared = shellA && (await rwfClearLine(h, termA.blockId, promptA));
+                const drag = await h.ev(rwfDragExpr(rowPath, paneA));
+                const hint = await polishWaitFor(h, `${rwfHint(paneA)} === ${JSON.stringify(hintText)}`, 3000);
+                const drop = await h.ev(rwfDropExpr(paneA));
+                const typed = shellA ? await rwfTyped(h, termA.blockId, expected) : { ok: false, line: null };
+                return { ok: cleared && drag.ok && hint && drop.ok && typed.ok, cleared, hint, line: typed.line };
+            };
+            const quoted14 = await single("docs/my notes.md", "Drop to insert the path", '@"docs/my notes.md" ');
+            await shot("14-quoted-path");
+            const dir14 = await single("src", "Drop to insert the path", "@src/ ");
+            await shot("14-directory");
+            rec(
+                "14. a row dragged on its own types @\"docs/my notes.md\" with quotes for the space, and a directory as @src/",
+                quoted14.ok && dir14.ok,
+                { quoted14, dir14 }
+            );
+
+            // --- 14b. an agent row dragged over the terminal ---------------------------------------------------------
+            const agent14b = await h.ev(`(async () => {
+                const src = document.querySelector('[data-agent-row="${RWF_AGENT_B}"]');
+                const pane = document.querySelector(${JSON.stringify(paneA)});
+                if (!src || !pane) return { ok: false, src: !!src, pane: !!pane };
+                const dt = new DataTransfer();
+                const fire = (el, type) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+                fire(src, "dragstart");
+                // the app writes its drag atom a tick after dragstart, and the pane renders its hint a tick after dragover
+                await new Promise((r) => setTimeout(r, 300));
+                fire(pane, "dragenter");
+                fire(pane, "dragover");
+                await new Promise((r) => setTimeout(r, 400));
+                const out = {
+                    ok: true,
+                    types: [...dt.types],
+                    pathsHint: pane.querySelector("[data-paths-drop]") != null,
+                    anyHint: pane.querySelector("[data-upload-drop]") != null,
+                };
+                fire(src, "dragend");
+                return out;
+            })()`);
+            await shot("14b-agent-drag");
+            rec(
+                "14b. dragging an agent row over agent A's terminal shows no drop hint",
+                agent14b.ok && agent14b.types.includes(UPLOADS_AGENT_MIME) && !agent14b.pathsHint && !agent14b.anyHint,
+                agent14b
+            );
+
+            // --- 15. the drop on a plain terminal --------------------------------------------------------------------
+            const shellT = ctx.shellUpT === true;
+            const promptT = shellT ? await rwfPrompt(h, termT.blockId) : null;
+            // the drag starts in A's tree, from README.md alone (a drag of a selected row carries the whole selection, so
+            // it is made the only one first); the terminal is shown after it, and the rail goes with A
+            await rwfClick(h, "README.md");
+            const start15 = await h.ev(rwfDragExpr("README.md", paneA, true));
+            const shown15 = await rwfShow(h, termT.tabId);
+            const clear15 = shellT && promptT != null && (await rwfClearLine(h, termT.blockId, promptT));
+            const over15 = await h.ev(`(() => {
+                const pane = document.querySelector(${JSON.stringify(paneT)});
+                const d = window.__rwfDrag;
+                if (!pane || !d) return { ok: false };
+                const fire = (type) => pane.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: d.dt }));
+                fire("dragenter");
+                return { ok: true, accepted: fire("dragover") === false };
+            })()`);
+            const hint15 = await polishWaitFor(h, `${rwfHint(paneT)} === "Drop to insert the path"`, 3000);
+            await shot("15-plain-terminal-hint");
+            const drop15 = await h.ev(rwfDropExpr(paneT));
+            const expected15 = rwfQuoted(`${repoFwd}/README.md`) + " ";
+            const typed15 = shellT && promptT != null ? await rwfTyped(h, termT.blockId, expected15) : { ok: false, line: null };
+            await shot("15-plain-terminal-dropped");
+            rec(
+                "15. README.md dropped on the plain terminal types its absolute path with forward slashes, no @",
+                shellT && start15.ok && shown15 && clear15 && over15.ok && over15.accepted && hint15 && drop15.ok && drop15.taken &&
+                    typed15.ok && !typed15.line.slice(promptT.length).includes("@"),
+                { shellUpT: ctx.shellUpT, promptT, start15, shown15, clear15, over15, hint15, drop15, expected15, line: typed15.line }
+            );
+
+            // --- 16. a directory that is not a repository ------------------------------------------------------------
+            const shownB = await rwfShow(h, RWF_AGENT_B);
+            const tabB = shownB && (await rwfOpenFilesTab(h));
+            const notRepo = tabB && (await polishWaitFor(h, `!!${RWF_ASIDE}?.querySelector("[data-rail-tree-notrepo]")`, 20000));
+            const textB = await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-notrepo]")?.textContent ?? null`);
+            await shot("16-not-a-repo");
+            rec(
+                "16. an agent in a directory that is not a git repository shows the not-a-repo note",
+                notRepo && /Not a git repository/.test(textB ?? ""),
+                { shownB, tabB, notRepo, textB }
+            );
+
+            // --- 17. the listing cap ---------------------------------------------------------------------------------
+            const shownC = await rwfShow(h, RWF_AGENT_C);
+            const tabC = shownC && (await rwfOpenFilesTab(h));
+            const cut = tabC && (await polishWaitFor(h, `!!${RWF_ASIDE}?.querySelector("[data-rail-tree-truncated]")`, 90000));
+            const textC = await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-truncated]")?.textContent ?? null`);
+            const rowsC = await snap();
+            await shot("17-truncated");
+            rec(
+                "17. a repo with more files than the server lists says Showing the first 20,000 files, and draws bulk as one row",
+                cut && new RegExp(`Showing the first ${String(RWF_LISTING_CAP).replace(/(\d)(?=(\d{3})$)/, "$1,?")} files`).test(textC ?? "") &&
+                    rwfPaths(rowsC).includes("bulk") && !rwfPaths(rowsC).some((p) => p.startsWith("bulk/")),
+                { shownC, tabC, cut, textC, rows: rwfPaths(rowsC) }
+            );
+
+            // --- 18. back on A -----------------------------------------------------------------------------------------
+            const shownA = await rwfShow(h, RWF_AGENT_A);
+            const selected18 = await polishWaitFor(h, `${RWF_ASIDE}?.querySelector('[data-rail-tab="tree"]')?.getAttribute("aria-selected") === "true" && !!${RWF_TREE}`, 15000);
+            await shot("18-back-on-agent-a");
+            rec("18. back on agent A, its Files tab is still the selected tab", shownA && selected18, { shownA, selected18 });
+        } catch (e) {
+            rec("a call threw before the scenario finished", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`rail-worktree-files teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.indexBackup != null) {
+            await step("put the repo's index back", () => writeFileSync(ctx.index, ctx.indexBackup));
+        }
+        for (const t of ctx.terminals ?? []) {
+            await step("close the terminal", () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false]));
+        }
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(restoreStorageKey(k, v));
+            }
+        });
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }));
     },
 };
 
@@ -24059,6 +24722,7 @@ export const SCENARIOS = [
     agentGrid,
     agentUploads,
     agentRailTabs,
+    agentRailWorktreeFiles,
     mdComments,
     workerCapacity,
     consumersPopover,

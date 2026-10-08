@@ -185,15 +185,29 @@ export function trackForDev(blockId: string, term: Terminal, hooks: PathLinkHook
             return null;
         },
         // the line the cursor is on, up to the cursor and untrimmed, so a scenario reads what a drop typed: its trailing
-        // space and quotes included
+        // space and quotes included. A line the terminal wrapped is one line to the shell, so the rows above the cursor's
+        // that it continues are part of it
         cursorLine: (id: string) => {
             const t = devTerms.get(id);
             if (t == null) {
                 return null;
             }
             const buf = t.term.buffer.active;
-            const line = buf.getLine(buf.baseY + buf.cursorY);
-            return line != null ? line.translateToString(false).slice(0, buf.cursorX) : null;
+            let y = buf.baseY + buf.cursorY;
+            let row = buf.getLine(y);
+            if (row == null) {
+                return null;
+            }
+            let text = row.translateToString(false).slice(0, buf.cursorX);
+            while (row.isWrapped && y > 0) {
+                y--;
+                row = buf.getLine(y);
+                if (row == null) {
+                    break;
+                }
+                text = row.translateToString(false) + text;
+            }
+            return text;
         },
         open: async (id: string, linkText: string) => {
             const t = devTerms.get(id);
