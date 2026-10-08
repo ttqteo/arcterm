@@ -1651,6 +1651,30 @@ const buildUsageFixture = () => {
     return buckets;
 };
 
+// The Models cards of the open provider tab. A model row's text drops the provider its title keeps ("gpt-5.5" with
+// title "openai/gpt-5.5"), and the provider is named in the card's rule beside the heading ("Models … openai · 3K").
+const usageModelsProbe = `(() => {
+    const d = document.querySelector("[data-usage-detail]");
+    const ids = [...(d ? d.querySelectorAll("span[title]") : [])].map((s) => s.getAttribute("title"));
+    const providers = [...document.querySelectorAll("h3")]
+        .filter((x) => (x.textContent || "").trim() === "Models")
+        .map((x) => (x.parentElement.textContent || "").replace("Models", "").split("·")[0].trim());
+    return { ids, providers };
+})()`;
+
+// After a reload the nav takes as long as the dev server needs to serve the app again, which a fixed sleep misses on a
+// loaded machine: wait for it (30s at most) before the next goto. The first sleep lets the navigation start, so the
+// poll does not read the nav of the page being replaced; an evaluate cut off by the navigation is not an answer.
+const usageWaitForNav = async (h) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    for (let i = 0; i < 60; i++) {
+        if (await h.ev(`!!document.querySelector("nav button")`).catch(() => false)) {
+            return;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+    }
+};
+
 const usageCharts = {
     name: "usage-charts",
     surface: "usage",
@@ -1677,7 +1701,7 @@ const usageCharts = {
         await h.ev(`localStorage.setItem('wave:ratelimits', ${JSON.stringify(JSON.stringify(rateLimits))})`);
         // reload so savedRateLimitsAtom (module-load seeded) and the Usage surface both read the snapshot
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        await usageWaitForNav(h);
         return ctx;
     },
     async assert(h) {
@@ -1694,6 +1718,30 @@ const usageCharts = {
             if (!ready) await settle(250);
         }
         rec("0. usage surface loaded and the chart mounted", ready, ready ? "chart present" : "timed out after 10s");
+
+        // Before any click the surface opens on the busiest provider (Claude here), not on All, and the strip is a
+        // tablist of one tab per harness plus All. The selection is usageHarnessFilterAtom, so the pane's scope agrees.
+        const tabs = await h.ev(`(() => {
+            const list = document.querySelector('[role="tablist"][aria-label="Provider"]');
+            const on = list ? [...list.querySelectorAll('[role="tab"][aria-selected="true"]')] : [];
+            const d = document.querySelector("[data-usage-detail]");
+            return {
+                tablist: !!list,
+                tabs: list ? [...list.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute("data-usage-harness")) : [],
+                selected: on.map((t) => t.getAttribute("data-usage-harness")),
+                scope: d ? d.getAttribute("data-usage-detail") : null,
+            };
+        })()`);
+        rec(
+            "0b. the provider tabs open on the busiest provider, All last",
+            tabs.tablist &&
+                tabs.selected.length === 1 &&
+                tabs.selected[0] === "claude" &&
+                tabs.scope === "claude" &&
+                tabs.tabs[0] === "claude" &&
+                tabs.tabs[tabs.tabs.length - 1] === "all",
+            JSON.stringify(tabs)
+        );
 
         // the visx chart renders an <svg> with axis ticks and at least one bar rect
         const chart = await h.ev(`(() => {
@@ -1805,19 +1853,18 @@ const usageCharts = {
         }
         rec("6. All-time renders the brush strip under the chart", !!brush.brushStrip, JSON.stringify(brush));
 
-        // The scope picker is now the master rail, keyed by data-usage-harness (a text query would match
-        // the detail pane's own copy of a provider name). Every seeded harness needs a row plus the
-        // pinned aggregate.
+        // The scope picker is the provider tab strip, keyed by data-usage-harness (a text query would match
+        // the pane's own copy of a provider name). Every seeded harness needs a tab plus All.
         const railKeys = await h.ev(
             `[...document.querySelectorAll("[data-usage-harness]")].map((b) => b.getAttribute("data-usage-harness"))`
         );
         rec(
-            "7. the rail lists all, claude, codex, opencode, and pi",
+            "7. the tabs list all, claude, codex, opencode, and pi",
             ["all", "claude", "codex", "opencode", "pi"].every((k) => railKeys.includes(k)),
             JSON.stringify(railKeys)
         );
 
-        // select the OpenCode rail row, then assert only OpenCode history remains
+        // select the OpenCode tab, then assert only OpenCode history remains
         const clickedOpenCode = await h.ev(`(() => {
             const b = document.querySelector('[data-usage-harness="opencode"]');
             if (!b) return false;
@@ -1825,18 +1872,20 @@ const usageCharts = {
             return true;
         })()`);
         await settle(400);
+        const openCodeModels = await h.ev(usageModelsProbe);
         const openCodeState = await h.ev(`(() => {
-            const h3s = [...document.querySelectorAll("h3")].map((x) => (x.textContent || "").trim());
             const body = document.body.textContent || "";
             return {
-                hasOpenaiModel: body.includes("openai/gpt-5.5"),
-                hasUnpricedModel: body.includes("opencode-go/unpriced-test-model"),
-                hasAnthropicHeading: h3s.includes("anthropic"),
                 hasReasoning: body.includes("Reasoning"),
                 hasReportedCostLabel: body.includes("Reported cost"),
                 hasEstimateLabel: body.includes("API-equivalent"),
             };
         })()`);
+        Object.assign(openCodeState, {
+            hasOpenaiModel: openCodeModels.ids.includes("openai/gpt-5.5"),
+            hasUnpricedModel: openCodeModels.ids.includes("opencode-go/unpriced-test-model"),
+            hasAnthropicHeading: openCodeModels.providers.includes("anthropic"),
+        });
         rec(
             "8. selecting OpenCode leaves only OpenCode model cards and totals",
             clickedOpenCode &&
@@ -1903,8 +1952,8 @@ const usageCharts = {
             JSON.stringify({ limitsOpenCode, limitsAll })
         );
 
-        // the rail selection IS the harness filter, and it lives in the long-lived view model, so it
-        // survives the surface unmounting on a nav switch
+        // the tab selection IS the harness filter, and it lives in the long-lived view model, so it
+        // survives the surface unmounting on a nav switch (and, being a pick, is not overwritten by the default tab)
         await h.ev(`(() => {
             const b = document.querySelector('[data-usage-harness="opencode"]');
             if (b) b.click();
@@ -1917,13 +1966,13 @@ const usageCharts = {
             const b = document.querySelector('[data-usage-harness="opencode"]');
             const d = document.querySelector("[data-usage-detail]");
             return {
-                pressed: b ? b.getAttribute("aria-pressed") : null,
+                selected: b ? b.getAttribute("aria-selected") : null,
                 scope: d ? d.getAttribute("data-usage-detail") : null,
             };
         })()`);
         rec(
             "13. OpenCode selection survives a surface switch",
-            filterSurvived.pressed === "true" && filterSurvived.scope === "opencode",
+            filterSurvived.selected === "true" && filterSurvived.scope === "opencode",
             JSON.stringify(filterSurvived)
         );
 
@@ -1973,7 +2022,7 @@ const usageCharts = {
             JSON.stringify(legend)
         );
 
-        // select the Pi rail row, then assert only Pi history remains and its provider/model stays
+        // select the Pi tab, then assert only Pi history remains and its provider/model stays
         // distinct from Codex's openai bucket and OpenCode's opencode-go bucket.
         const clickedPi = await h.ev(`(() => {
             const b = document.querySelector('[data-usage-harness="pi"]');
@@ -1982,17 +2031,14 @@ const usageCharts = {
             return true;
         })()`);
         await settle(400);
-        const piState = await h.ev(`(() => {
-            const h3s = [...document.querySelectorAll("h3")].map((x) => (x.textContent || "").trim());
-            const body = document.body.textContent || "";
-            return {
-                hasPiProvider: body.includes("openai-codex"),
-                hasPiModelRow: body.includes("openai-codex/gpt-5.5"),
-                noCodexCard: !body.includes("openai/gpt-5.5"),
-                noOpenCodeCard: !body.includes("opencode-go"),
-                noAnthropicHeading: !h3s.includes("anthropic"),
-            };
-        })()`);
+        const piModels = await h.ev(usageModelsProbe);
+        const piState = {
+            hasPiProvider: piModels.providers.includes("openai-codex"),
+            hasPiModelRow: piModels.ids.includes("openai-codex/gpt-5.5"),
+            noCodexCard: !piModels.ids.includes("openai/gpt-5.5"),
+            noOpenCodeCard: !piModels.ids.some((id) => id.startsWith("opencode-go/")),
+            noAnthropicHeading: !piModels.providers.includes("anthropic"),
+        };
         rec(
             "16. selecting Pi leaves only Pi model cards with a provider/model distinct from Codex and OpenCode",
             clickedPi &&
@@ -2016,13 +2062,663 @@ const usageCharts = {
         await h.ev(restore("wave:dev-usage-buckets", ctx.prevUsage));
         await h.ev(restore("wave:ratelimits", ctx.prevRate));
         await h.ev("location.reload()");
-        await new Promise((r) => setTimeout(r, 2500));
+        await usageWaitForNav(h);
         await h.goto("usage");
         await h.ev(`(() => {
             const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "7 days");
             if (b) b.click();
         })()`);
         await h.goto("cockpit");
+    },
+};
+
+// --- usage insights: the Claude tab's Insights card and By session table ------------------------
+// (docs/superpowers/specs/2026-10-08-usage-insights-design.md.) Everything is seeded, so no transcript is scanned and
+// no Claude call is made: wave:dev-usage-buckets gives the tabs and the charts, wave:ratelimits a Claude snapshot far
+// under the 95% hold, and wave:dev-usage-insights (usageinsightsstore.ts) the 30 sessions, the saved analysis and what
+// Analyze does next. One session is also run by a fixture-roster agent whose transcript carries its id, which is what
+// marks its row open. The store reads the fixture whenever a load runs or Analyze is called, so changing `analyze` needs
+// no reload; but a hung or failed run leaves its state in atoms that outlive the surface, and the held reading is the
+// card's own state, so the steps that need a clean card reload (ahReload) and the rest only leave and re-enter Usage.
+const UI_KEY = "wave:dev-usage-insights";
+const UI_AGENT = "fx-usage-ins";
+const UI_BLOCK = "fx-blk-usage-ins";
+const UI_SESSIONS = 30;
+const UI_DAY_MS = 24 * 3_600_000;
+
+// [title, project] per session, most expensive first. The last has no title: a subagent file whose main transcript is
+// outside the window, which the table calls Untitled and gives no context.
+const UI_TITLES = [
+    ["Rework the billing webhooks retry path", "nnew-site"],
+    ["Tune the Usage surface and its Insights card", "arcterm"],
+    ["Overnight crawl of the exam archive", "nnew-site"],
+    ["Fix flaky CDP scenarios on the agent rail", "arcterm"],
+    ["Draft the related-work section", "mit-thesis"],
+    ["Migrate the docs site to the new layout", "vnstock-js"],
+    ["Chase the cold-resume spike on Mondays", "arcterm"],
+    ["Land the DAG observability tasks", "engine run"],
+    ["Port the screener to the streaming API", "vnstock-js"],
+    ["Review the seminar slides", "mit-thesis"],
+    ["Wire the quota hold into Analyze", "arcterm"],
+    ["Explain the orchestrator merge queue", "arcterm"],
+    ["Add retry to the market-data client", "vnstock-js"],
+    ["Proofread chapter 3", "mit-thesis"],
+    ["Split the settings surface by provider", "arcterm"],
+    ["Backfill the portfolio journal entries", "nnew-site"],
+    ["Clean up the run worktrees", "engine run"],
+    ["Check the NSIS bundle contents", "arcterm"],
+    ["Rename the harness catalog fields", "arcterm"],
+    ["Summarise the reviewer comments", "mit-thesis"],
+    ["Fix the date picker on small screens", "nnew-site"],
+    ["Trace a slow websocket reconnect", "arcterm"],
+    ["Tidy the changelog", "arcterm"],
+    ["Rebuild the symbol index", "vnstock-js"],
+    ["Answer a question about Tailwind tokens", "arcterm"],
+    ["Sketch the figure for the threat model", "mit-thesis"],
+    ["Bump the Rust toolchain", "arcterm"],
+    ["Quick regex for the log parser", "nnew-site"],
+    ["Rename a variable", "arcterm"],
+    ["", ""],
+];
+
+// Strictly falling spend, so the table's order is this order. Row 0 puts most of its money into subagents; row 1 (the open
+// one) runs at a large context with cold resumes; row 2 has lived over a day; row 4 is the other large context and row 7
+// the other cold-resume count at the threshold; so each chip has a row over its line and the rest sit under all of them.
+function usageInsightsSessions(now) {
+    const H = 3_600_000;
+    const tokens = (model, o) => ({ model, input: 0, output: 0, cacheread: 0, cachecreate: 0, cachecreate1h: 0, ...o });
+    const opus = (o) => tokens("claude-opus-4-8", o);
+    return UI_TITLES.map(([title, project], i) => {
+        const base = {
+            id: `usage-ins-${String(i + 1).padStart(2, "0")}`,
+            title,
+            project,
+            turns: 40 + (UI_SESSIONS - i) * 5,
+            subturns: 0,
+            avgctx: 50_000 + i * 2_000,
+            maxctx: Math.round((50_000 + i * 2_000) * 1.4),
+            coldresumes: i % 5 === 0 ? 1 : 0,
+            coldtokens: 0,
+            firstts: now - (2 + (i % 6)) * H,
+            lastts: now - (1 + (i % 3)) * 20 * 60_000,
+            models: [
+                opus({
+                    input: 20_000,
+                    output: (UI_SESSIONS - i) * 7_000,
+                    cacheread: 1_000_000,
+                    cachecreate: 100_000,
+                    cachecreate1h: 50_000,
+                }),
+            ],
+        };
+        if (i === 0) {
+            return {
+                ...base,
+                subturns: 340,
+                avgctx: 90_000,
+                maxctx: 140_000,
+                coldresumes: 1,
+                coldtokens: 300_000,
+                firstts: now - 5 * H,
+                lastts: now - 20 * 60_000,
+                models: [
+                    opus({ input: 20_000, output: 150_000, cacheread: 4_000_000, cachecreate: 300_000, cachecreate1h: 100_000 }),
+                    opus({
+                        sub: true,
+                        input: 40_000,
+                        output: 500_000,
+                        cacheread: 3_000_000,
+                        cachecreate: 200_000,
+                        cachecreate1h: 0,
+                    }),
+                ],
+            };
+        }
+        if (i === 1) {
+            return {
+                ...base,
+                avgctx: 240_000,
+                maxctx: 310_000,
+                coldresumes: 4,
+                coldtokens: 1_600_000,
+                firstts: now - 6 * H,
+                lastts: now - 60_000,
+                models: [
+                    opus({ input: 30_000, output: 380_000, cacheread: 8_000_000, cachecreate: 400_000, cachecreate1h: 200_000 }),
+                ],
+            };
+        }
+        if (i === 2) {
+            return {
+                ...base,
+                avgctx: 130_000,
+                maxctx: 180_000,
+                firstts: now - 70 * H,
+                lastts: now - 2 * H,
+                models: [opus({ input: 20_000, output: 300_000, cacheread: 1_000_000, cachecreate: 100_000, cachecreate1h: 50_000 })],
+            };
+        }
+        if (i === 4) return { ...base, avgctx: 215_000, maxctx: 260_000 };
+        if (i === 7) return { ...base, coldresumes: 3, coldtokens: 900_000 };
+        if (i === 9) return { ...base, firstts: now - 31 * H, lastts: now - H };
+        if (i === UI_SESSIONS - 1) {
+            return {
+                ...base,
+                turns: 0,
+                subturns: 12,
+                avgctx: 0,
+                maxctx: 0,
+                coldresumes: 0,
+                firstts: now - 3 * H,
+                lastts: now - 2 * H,
+                models: [tokens("claude-haiku-4-5", { sub: true, output: 1_000, cacheread: 50_000 })],
+            };
+        }
+        if (i % 5 === 0) {
+            return {
+                ...base,
+                subturns: 8,
+                models: [...base.models, tokens("claude-haiku-4-5", { sub: true, output: 2_000, cacheread: 100_000 })],
+            };
+        }
+        return base;
+    });
+}
+
+// a saved analysis with four sections, so the last becomes the side tile
+const usageInsightsSaved = (analyzedts, windowdays = 7) => ({
+    markdown: [
+        "## Where it goes",
+        "",
+        "Two tabs spend 41% of the window: **Rework the billing webhooks retry path** (most of it in subagents) and **Tune the Usage surface**.",
+        "",
+        "## Why those two",
+        "",
+        "- The first fans out to subagents that each re-read the whole repo.",
+        "- The second runs at 240K of context and was resumed cold four times.",
+        "",
+        "## What stays cheap",
+        "",
+        "Short single-purpose tabs under 60K of context cost almost nothing.",
+        "",
+        "## What to change",
+        "",
+        "1. Start a fresh tab instead of resuming one past 200K of context.",
+        "2. Give subagents a narrower brief.",
+    ].join("\n"),
+    analyzedts,
+    windowdays,
+    model: "sonnet",
+});
+
+// patch the fixture in place; a null drops its key
+const uiSetFixture = (h, patch) =>
+    h.ev(`(() => {
+        const key = ${JSON.stringify(UI_KEY)};
+        const next = Object.assign(JSON.parse(localStorage.getItem(key) || "{}"), ${JSON.stringify(patch)});
+        for (const k of Object.keys(next)) if (next[k] === null) delete next[k];
+        localStorage.setItem(key, JSON.stringify(next));
+    })()`);
+
+// a key through the real input pipeline, after taking focus off the nav button the last goto clicked
+const uiPress = async (h, key, code, keyCode, text) => {
+    await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", {
+            type,
+            key,
+            code,
+            windowsVirtualKeyCode: keyCode,
+            ...(text != null && type === "keyDown" ? { text } : {}),
+        });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+};
+
+// the Insights section as it stands, or null while the surface shows its placeholder
+const uiCard = (h) =>
+    h.ev(`(() => {
+        const s = document.querySelector("[data-usage-insights]");
+        if (!s) return null;
+        const b = s.querySelector("[data-usage-analyze]");
+        return {
+            kind: s.getAttribute("data-usage-insights"),
+            stale: !!s.querySelector("[data-usage-insights-stale]"),
+            held: !!s.querySelector("[data-usage-insights-held]"),
+            buttons: s.querySelectorAll("[data-usage-analyze]").length,
+            button: b
+                ? {
+                      label: [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim(),
+                      disabled: b.disabled,
+                      title: b.title,
+                      primary: /(^|\\s)bg-accent(\\s|$)/.test(b.className),
+                      inCard: !!b.closest("section > div:not(:first-child)"),
+                  }
+                : null,
+            headings: s.querySelectorAll(".heading").length,
+            tile: (s.querySelector("div.self-start")?.firstElementChild?.textContent ?? "").trim(),
+            alert: s.querySelector('[role="alert"]')?.textContent?.trim() ?? null,
+            meta: s.querySelector("h3")?.parentElement?.textContent?.trim() ?? "",
+        };
+    })()`);
+
+// the By session rows: their ids in order, the cursor, the open dots, and each row's chips
+const uiRows = (h) =>
+    h.ev(`(() => {
+        const rows = [...document.querySelectorAll("[data-usage-session]")];
+        return {
+            count: rows.length,
+            ids: rows.map((r) => r.getAttribute("data-usage-session")),
+            cursor: rows.findIndex((r) => r.className.includes("bg-surface-selected")),
+            current: rows.findIndex((r) => r.getAttribute("aria-current") === "true"),
+            live: rows.map((r, i) => (r.querySelector("[data-usage-session-live]") ? i : -1)).filter((i) => i >= 0),
+            chips: rows.map((r) => [...r.querySelectorAll("span.bg-askingbg")].map((c) => c.textContent.trim())),
+        };
+    })()`);
+
+// the provider strip: its tabs in order and which is selected
+const uiTabs = (h) =>
+    h.ev(`(() => {
+        const list = document.querySelector('[role="tablist"][aria-label="Provider"]');
+        const tabs = list ? [...list.querySelectorAll('[role="tab"]')] : [];
+        return {
+            tabs: tabs.map((t) => t.getAttribute("data-usage-harness")),
+            selected: tabs.filter((t) => t.getAttribute("aria-selected") === "true").map((t) => t.getAttribute("data-usage-harness")),
+            insights: !!document.querySelector("[data-usage-insights]"),
+            sessions: !!document.querySelector("[data-usage-sessions]"),
+        };
+    })()`);
+
+// the compact chart row: how many cards it holds and where each starts
+const uiChartRow = (h) =>
+    h.ev(`(() => {
+        let row = [...document.querySelectorAll("h3")].find((x) => (x.textContent || "").trim() === "Daily");
+        while (row && !String(row.className).includes("@6xl:grid-cols")) row = row.parentElement;
+        if (!row) return null;
+        const cards = [...row.children];
+        return {
+            cards: cards.length,
+            tops: cards.map((c) => Math.round(c.getBoundingClientRect().top)),
+            titles: cards.map((c) => c.querySelector("h3")?.textContent?.trim() ?? ""),
+        };
+    })()`);
+
+const usageInsights = {
+    name: "usage-insights",
+    surface: "usage",
+    async arrange(h) {
+        const now = Date.now();
+        const sessions = usageInsightsSessions(now);
+        const ctx = {
+            sessions,
+            liveId: sessions[1].id,
+            base: mkdtempSync(join(tmpdir(), "verify-usage-insights-")),
+            prevUsage: await h.ev(`localStorage.getItem('wave:dev-usage-buckets')`),
+            prevRate: await h.ev(`localStorage.getItem('wave:ratelimits')`),
+            prevInsights: await h.ev(`localStorage.getItem(${JSON.stringify(UI_KEY)})`),
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+        };
+        // a throw past this point still returns ctx, so teardown puts back whatever was already changed
+        try {
+            // the open row: a claude agent in the fixture roster, whose transcript is named for the second session
+            const transcript = join(ctx.base, `${ctx.liveId}.jsonl`);
+            writeFileSync(
+                transcript,
+                JSON.stringify({ type: "user", message: { role: "user", content: "tune the usage surface" } }) + "\n"
+            );
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: UI_AGENT,
+                            name: "usage insights agent",
+                            project: "verify-usage-insights",
+                            task: "tune the usage surface",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            blockId: UI_BLOCK,
+                            transcriptPath: transcript,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            const nowSec = Math.floor(now / 1000);
+            const rateLimits = {
+                "claude:default": {
+                    fivehourpct: 62,
+                    fivehourreset: nowSec + 3 * 3600,
+                    weekpct: 41,
+                    weekreset: nowSec + 6 * 24 * 3600,
+                    capturedAt: now,
+                },
+            };
+            const insights = { sessions, saved: usageInsightsSaved(now), analyze: "ok" };
+            await h.ev(
+                `localStorage.setItem('wave:dev-usage-buckets', ${JSON.stringify(JSON.stringify(buildUsageFixture()))})`
+            );
+            await h.ev(`localStorage.setItem('wave:ratelimits', ${JSON.stringify(JSON.stringify(rateLimits))})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(UI_KEY)}, ${JSON.stringify(JSON.stringify(insights))})`);
+            // the roster fixture is read once at boot, and the quota snapshot seeds an atom at module load
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const surface = () => h.activeSurfaceLabel();
+        // back on Usage with the card in `kind`: re-entering the surface reloads the sessions and the saved analysis
+        const reenter = async (kind) => {
+            await h.goto("cockpit");
+            await h.goto("usage");
+            return ahWait(h, `document.querySelector('[data-usage-insights="${kind}"]')`, 15000);
+        };
+        // a fresh page, for a state the atoms would otherwise carry over (a hung run, a failed one)
+        const restart = async (kind) => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("usage");
+            return ahWait(h, `document.querySelector('[data-usage-insights="${kind}"]')`, 15000);
+        };
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            rec(
+                "0. the sessions, the quota snapshot and the open agent are in place",
+                ctx.arrangeError == null,
+                ctx.arrangeError ?? `${ctx.sessions.length} sessions, live=${ctx.liveId}`
+            );
+
+            // 1: the whole surface on the Claude tab
+            const ready = await ahWait(
+                h,
+                `document.querySelector('[data-usage-insights="done"]') && document.querySelectorAll("[data-usage-session]").length > 0`,
+                20000
+            );
+            await h.shot("cdp-shots/usage-insights-main.png");
+            const tabs = await uiTabs(h);
+            const card = await uiCard(h);
+            const rows = await uiRows(h);
+            const chartRow = await uiChartRow(h);
+            const table = await h.ev(
+                `document.querySelector("[data-usage-sessions]")?.querySelector("h3")?.parentElement?.textContent?.trim() ?? ""`
+            );
+            rec(
+                "1a. usage-insights-main: the tabs open on Claude with All last, and the card shows the analysis with its side tile",
+                ready === true &&
+                    tabs.selected.length === 1 &&
+                    tabs.selected[0] === "claude" &&
+                    tabs.tabs[0] === "claude" &&
+                    tabs.tabs[tabs.tabs.length - 1] === "all" &&
+                    card?.kind === "done" &&
+                    !card.stale &&
+                    card.tile === "What to change" &&
+                    card.headings >= 3 &&
+                    card.button?.label === "Re-analyze" &&
+                    !card.button.disabled,
+                JSON.stringify({ ready, tabs, card })
+            );
+            const allChips = new Set(rows.chips.flat());
+            rec(
+                "1b. usage-insights-main: By session lists 25 of the 30 tabs, the first flagged heavy subagents, every flag present, and only the open tab's row has the green dot",
+                rows.count === 25 &&
+                    rows.ids[0] === ctx.sessions[0].id &&
+                    JSON.stringify(rows.chips[0]) === JSON.stringify(["heavy subagents"]) &&
+                    ["large context", "cold resumes", "heavy subagents", "long-lived"].every((c) => allChips.has(c)) &&
+                    JSON.stringify(rows.live) === JSON.stringify([1]) &&
+                    rows.ids[1] === ctx.liveId &&
+                    /30 tabs · 7 days · by spend/.test(table),
+                JSON.stringify({ count: rows.count, first: rows.ids[0], chips: rows.chips.slice(0, 5), live: rows.live, table })
+            );
+            rec(
+                "1c. usage-insights-main: the chart row is three cards (daily, split, models) on one line",
+                chartRow != null &&
+                    chartRow.cards === 3 &&
+                    chartRow.tops.every((t) => Math.abs(t - chartRow.tops[0]) <= 1) &&
+                    chartRow.titles[0] === "Daily" &&
+                    chartRow.titles[2] === "Models",
+                JSON.stringify(chartRow)
+            );
+
+            // 2: ← / → move between the tabs, and the Claude-only sections go with the Claude tab
+            await uiPress(h, "ArrowRight", "ArrowRight", 39);
+            const right = await uiTabs(h);
+            await h.shot("cdp-shots/usage-insights-tabs.png");
+            await uiPress(h, "ArrowLeft", "ArrowLeft", 37);
+            const left = await uiTabs(h);
+            const back = await ahWait(h, `document.querySelector('[data-usage-insights="done"]')`, 4000);
+            rec(
+                "2. usage-insights-tabs: ArrowRight selects the next tab (no Insights or By session there), ArrowLeft returns to Claude",
+                right.selected.length === 1 &&
+                    right.selected[0] === tabs.tabs[1] &&
+                    !right.insights &&
+                    !right.sessions &&
+                    left.selected[0] === "claude" &&
+                    back === true,
+                JSON.stringify({ tabs: tabs.tabs, right, left, back })
+            );
+
+            // 3: j / k move the cursor through the By session rows only
+            await uiPress(h, "j", "KeyJ", 74, "j");
+            const j1 = await uiRows(h);
+            await uiPress(h, "j", "KeyJ", 74, "j");
+            const j2 = await uiRows(h);
+            await h.shot("cdp-shots/usage-insights-cursor.png");
+            await uiPress(h, "k", "KeyK", 75, "k");
+            const k1 = await uiRows(h);
+            rec(
+                "3. usage-insights-cursor: j lands on the first row, j again one further down, k back",
+                j1.cursor === 0 &&
+                    j1.current === 0 &&
+                    j2.cursor === j1.cursor + 1 &&
+                    j2.current === j2.cursor &&
+                    k1.cursor === j1.cursor,
+                JSON.stringify({ j1: j1.cursor, j2: j2.cursor, k1: k1.cursor, current: [j1.current, j2.current, k1.current] })
+            );
+
+            // 4: Enter and a click open an ended tab's transcript in Agent
+            const ended = k1.cursor >= 0 && !k1.live.includes(k1.cursor);
+            await uiPress(h, "Enter", "Enter", 13, "\r");
+            const enterOpened = await ahWait(h, `document.querySelector("[data-agent-session]")`, 6000);
+            const enterSurface = await surface();
+            await h.shot("cdp-shots/usage-insights-open-ended.png");
+            await h.goto("usage");
+            await ahWait(h, `document.querySelectorAll("[data-usage-session]").length > 0`, 8000);
+            const clickIndex = 2;
+            await h.ev(`document.querySelectorAll("[data-usage-session]")[${clickIndex}]?.click()`);
+            const clickOpened = await ahWait(h, `document.querySelector("[data-agent-session]")`, 6000);
+            const clickSurface = await surface();
+            rec(
+                "4. usage-insights-open-ended: Enter on an ended row, and a click on another, open the transcript in the Agent surface",
+                ended &&
+                    enterOpened === true &&
+                    enterSurface === SURFACE_LABEL.agent &&
+                    clickOpened === true &&
+                    clickSurface === SURFACE_LABEL.agent,
+                JSON.stringify({ ended, enterOpened, enterSurface, clickOpened, clickSurface })
+            );
+
+            // 5: the open row focuses its agent instead
+            await h.goto("usage");
+            await ahWait(h, `document.querySelector("[data-usage-session-live]")`, 8000);
+            await h.ev(`document.querySelector("[data-usage-session-live]")?.closest("[data-usage-session]")?.click()`);
+            // a lone fixture agent can already be the focused one, so the proof is the transcript step 4 left open going away
+            const focused = await ahWait(
+                h,
+                `document.querySelector('[data-agent-row="${UI_AGENT}"]')?.className.includes("bg-surface-selected") && !document.querySelector("[data-agent-session]")`,
+                8000
+            );
+            const liveState = await h.ev(`(() => ({
+                transcript: !!document.querySelector("[data-agent-session]"),
+                row: !!document.querySelector('[data-agent-row="${UI_AGENT}"]'),
+            }))()`);
+            await h.shot("cdp-shots/usage-insights-open-live.png");
+            rec(
+                "5. usage-insights-open-live: the open tab's row goes to Agent with that agent focused, and no transcript over its terminal",
+                focused === true && (await surface()) === SURFACE_LABEL.agent && liveState.row && !liveState.transcript,
+                JSON.stringify({ focused, ...liveState })
+            );
+
+            // 6: Analyze (the a key) starts a run; the fixture never finishes it
+            await h.goto("usage");
+            await ahWait(h, `document.querySelector('[data-usage-insights="done"]')`, 8000);
+            await uiSetFixture(h, { analyze: "hang" });
+            await uiPress(h, "a", "KeyA", 65, "a");
+            const running = await ahWait(h, `document.querySelector('[data-usage-insights="running"]')`, 6000);
+            const runCard = await uiCard(h);
+            await h.shot("cdp-shots/usage-insights-running.png");
+            rec(
+                "6. usage-insights-running: a starts the analysis and the card shows it running with the button off",
+                running === true && runCard?.button?.disabled === true && /reading 30 tabs/.test(runCard.meta),
+                JSON.stringify(runCard)
+            );
+
+            // 7: never analysed
+            await uiSetFixture(h, { saved: null, analyze: "ok" });
+            const never = await restart("never");
+            const neverCard = await uiCard(h);
+            await h.shot("cdp-shots/usage-insights-never.png");
+            rec(
+                "7. usage-insights-never: with no saved analysis the card invites one, Analyze the primary button inside it",
+                never === true &&
+                    neverCard?.buttons === 1 &&
+                    neverCard.button.label === "Analyze" &&
+                    neverCard.button.primary &&
+                    neverCard.button.inCard &&
+                    !neverCard.button.disabled &&
+                    !neverCard.held,
+                JSON.stringify(neverCard)
+            );
+
+            // 8: an analysis from two days ago is shown with a stale line
+            await uiSetFixture(h, { saved: usageInsightsSaved(Date.now() - 2 * UI_DAY_MS) });
+            const stale = await reenter("done");
+            const staleCard = await uiCard(h);
+            await h.shot("cdp-shots/usage-insights-stale.png");
+            rec(
+                "8. usage-insights-stale: a two-day-old analysis still shows, with the stale line and a secondary Re-analyze",
+                stale === true &&
+                    staleCard?.stale === true &&
+                    staleCard.headings >= 3 &&
+                    staleCard.button?.label === "Re-analyze" &&
+                    !staleCard.button.primary &&
+                    !staleCard.button.inCard,
+                JSON.stringify(staleCard)
+            );
+
+            // 9: a failed run keeps the previous analysis under the message
+            await uiSetFixture(h, { analyze: "error" });
+            await uiPress(h, "a", "KeyA", 65, "a");
+            const errored = await ahWait(h, `document.querySelector('[data-usage-insights="error"]')`, 8000);
+            const errCard = await uiCard(h);
+            await h.shot("cdp-shots/usage-insights-error.png");
+            rec(
+                "9. usage-insights-error: the failure is shown above the previous analysis, with Try again",
+                errored === true &&
+                    /did not finish/i.test(errCard?.alert ?? "") &&
+                    /Your last analysis is below/.test(errCard?.alert ?? "") &&
+                    errCard.headings >= 3 &&
+                    errCard.button?.label === "Try again" &&
+                    !errCard.button.disabled,
+                JSON.stringify(errCard)
+            );
+
+            // 10: Claude's 5-hour window at 96% holds Analyze, for the button and for the key
+            await uiSetFixture(h, { saved: null, analyze: "ok", heldPct: 96 });
+            const held = await restart("never");
+            const heldCard = await uiCard(h);
+            await uiPress(h, "a", "KeyA", 65, "a");
+            const heldAfterKey = await uiCard(h);
+            await h.shot("cdp-shots/usage-insights-held.png");
+            rec(
+                "10. usage-insights-held: at 96% Analyze is disabled with the quota in its tooltip, the card says why, and a does nothing",
+                held === true &&
+                    heldCard?.held === true &&
+                    heldCard.button?.disabled === true &&
+                    /Claude quota is at 96%/.test(heldCard.button.title) &&
+                    heldAfterKey?.kind === "never",
+                JSON.stringify({ heldCard, afterKey: heldAfterKey?.kind })
+            );
+
+            // 11: no Claude sessions in the window
+            await uiSetFixture(h, { sessions: [], heldPct: null });
+            const empty = await reenter("no-sessions");
+            const emptyCard = await uiCard(h);
+            const tableShown = await h.ev(`!!document.querySelector("[data-usage-sessions]")`);
+            await h.shot("cdp-shots/usage-insights-empty.png");
+            rec(
+                "11. usage-insights-empty: with no sessions the card says so and there is no By session section",
+                empty === true && emptyCard?.kind === "no-sessions" && emptyCard.buttons === 0 && tableShown === false,
+                JSON.stringify({ emptyCard, tableShown })
+            );
+
+            // 12: Show all N lists every tab
+            await uiSetFixture(h, { sessions: ctx.sessions, saved: usageInsightsSaved(Date.now()) });
+            await reenter("done");
+            await ahWait(h, `document.querySelectorAll("[data-usage-session]").length === 25`, 8000);
+            const clicked = await h.ev(`(() => {
+                const b = [...document.querySelectorAll("[data-usage-sessions] button")].find((x) => x.textContent.trim() === "Show all 30");
+                if (!b) return false;
+                b.click();
+                return true;
+            })()`);
+            const all = await ahWait(h, `document.querySelectorAll("[data-usage-session]").length === 30`, 6000);
+            const lastRow = await h.ev(`(() => {
+                const r = document.querySelector('[data-usage-session="${ctx.sessions[UI_SESSIONS - 1].id}"]');
+                return r ? r.textContent.replace(/\\s+/g, " ").trim() : null;
+            })()`);
+            const footer = await h.ev(`document.querySelector("[data-usage-sessions]")?.textContent ?? ""`);
+            await h.shot("cdp-shots/usage-insights-show-all.png");
+            rec(
+                "12. usage-insights-show-all: Show all 30 lists all 30 rows, the Untitled one with a dash for its context",
+                clicked === true &&
+                    all === true &&
+                    /^Untitled · usage-in/.test(lastRow ?? "") &&
+                    /—/.test(lastRow ?? "") &&
+                    /All 30/.test(footer) &&
+                    /Show top 25/.test(footer),
+                JSON.stringify({ clicked, all, lastRow })
+            );
+        } catch (e) {
+            rec("usage-insights ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // puts the three storage keys and the fixture roster back, reloads onto them, and leaves for the Cockpit
+    async teardown(h, ctx) {
+        const errors = [];
+        const step = async (label, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                errors.push(`${label}: ${String(e?.message ?? e)}`);
+            }
+        };
+        await step("restore the storage keys", async () => {
+            await h.ev(restoreStorageKey("wave:dev-usage-buckets", ctx.prevUsage));
+            await h.ev(restoreStorageKey("wave:ratelimits", ctx.prevRate));
+            await h.ev(restoreStorageKey(UI_KEY, ctx.prevInsights));
+        });
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null
+                    ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                    : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("reload onto the restored roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true }));
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+        if (errors.length > 0) throw new Error(errors.join("; "));
     },
 };
 
@@ -23317,6 +24013,7 @@ export const SCENARIOS = [
     jarvisPeek,
     jarvisVolunteer,
     usageCharts,
+    usageInsights,
     attentionCrossChannel,
     cockpitNeedsYouCrossChannel,
     harnessPicker,

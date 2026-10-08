@@ -38,7 +38,7 @@ conversation about the result (opening an agent tab seeded with it).
 - `ScanSessionUsage(windowDays) []SessionUsage` walks the Claude root only, keeps the records inside the
   window, dedupes them as `ScanUsage` does, drops `<synthetic>`, and folds them per `Session`:
   - `ID`, `Title`, `Project`: the last segment of the main records' `Cwd`, except that a cwd under a
-    `.waveterm-worktrees` directory is "engine run";
+    `.waveterm/worktrees` directory (an engine run's worktree, `pkg/orchestrate/worktree.go`) is "engine run";
   - `Models`: one entry per (model, sub) with the token classes (input, output, cache read, cache
     write, cache write 1h), so the frontend prices each with its own model's rate;
   - `Turns` and `SubTurns` (records), and over the main-session turns only `AvgCtx` and `MaxCtx`,
@@ -118,12 +118,12 @@ row (`1.25fr 1fr 1fr`, one column below the `@container` breakpoint) of equal-he
 
 | State | Shows |
 |---|---|
-| never analysed | one line ("Claude reads the per-tab numbers, not your conversations, and points at what spends quota") and **Analyze** |
+| never analysed | one line ("Claude reads the per-tab numbers, not your conversations, and points at what spends quota") and **Analyze**, the primary button inside the card (every other state keeps it on the section rule) |
 | running | skeleton lines, "Analysing… (~30 s)", button disabled |
 | done | the markdown through `element/markdown.tsx`; meta "analysed 14:30 · 7 days · sonnet"; button reads **Re-analyze** |
 | stale | done, plus a muted line when the result is older than 24 h or its window differs from the selected 7 days / All time. It never re-runs on its own |
 | error | `SurfaceError` with retry; the previous result stays |
-| held | Claude's live 5-hour or weekly window (`ratelimitstore`, the readings Live limits shows) is at or above 95%: button disabled, tooltip "Claude quota is at N% until …" |
+| held | Claude's live 5-hour or weekly window (`ratelimitstore`, the readings Live limits shows) is at or above 95%: button disabled, tooltip "Claude quota is at N%, resets in …" (a `formatReset` countdown, naming the window that clears last when both are held) |
 | no Claude sessions | no button, "No Claude tabs in this window" |
 
 **By session table.** One row per session, sorted by spend, 25 rows then "Show all". Columns: title,

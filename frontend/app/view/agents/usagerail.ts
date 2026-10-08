@@ -1,15 +1,16 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure derivation for the Usage surface's master-detail rail (handoff redesign:
-// Wave-usage-redesign.dc.html artboard 1B). The rail is keyed on HARNESS ("claude" | "codex" | …),
+// Pure derivation for the Usage surface's provider tabs (handoff redesign:
+// Wave-usage-redesign.dc.html artboard 1B, whose rail the tabs replaced). The rows are keyed on HARNESS ("claude" | "codex" | …),
 // not on the upstream provider the historical buckets carry ("anthropic" | "openai"): quota windows
 // are account-level per harness and the historical scope filter (usageHarnessFilterAtom) is per
 // harness too, so the harness is the only key both halves of the surface share. Pure module — no
 // React, no Wave runtime imports.
 
+import { providerLabel } from "./cockpitrailmodel";
 import type { DonutWindow, ProviderDonuts } from "./ratelimitstore";
-import type { DailyUsage } from "./usagestats";
+import { fmt, type DailyUsage } from "./usagestats";
 
 // "live" = a running agent is reporting now; "saved" = last snapshot from ratelimitstore; "none" =
 // this harness has never reported a quota window (opencode/pi don't publish one at all).
@@ -117,6 +118,29 @@ export function worstWindow(rows: UsageRailRow[], which: "fivehour" | "week"): A
 
 export function railRows(groups: UsageRailGroup[]): UsageRailRow[] {
     return groups.flatMap((g) => g.rows);
+}
+
+// The provider tabs, busiest first. The rail's "reporting / quiet" grouping is gone: a tab says whether its
+// provider reports quota in its own meta, so the order is by what the window spent, ties by the label shown.
+export function tabRows(rows: UsageRailRow[]): UsageRailRow[] {
+    return [...rows].sort(
+        (a, b) => b.tokens - a.tokens || providerLabel(a.harness).localeCompare(providerLabel(b.harness))
+    );
+}
+
+// The tab shown until the person picks one: the harness with the most tokens, "all" when there is none.
+export function defaultTab(rows: UsageRailRow[]): string {
+    return tabRows(rows)[0]?.harness ?? "all";
+}
+
+// A tab's meta: the quota windows the provider reports ("5h 41% · wk 72%"; Codex has only the week), else what
+// the window spent in tokens. A provider with a reading but neither window filled in falls back to tokens too.
+export function tabMeta(row: UsageRailRow): string {
+    const windows = [
+        row.state !== "none" && row.fivehour.pct != null ? `5h ${Math.round(row.fivehour.pct)}%` : null,
+        row.state !== "none" && row.week.pct != null ? `wk ${Math.round(row.week.pct)}%` : null,
+    ].filter((w): w is string => w != null);
+    return windows.length > 0 ? windows.join(" · ") : `${fmt(row.tokens)} tok`;
 }
 
 export function countReporting(groups: UsageRailGroup[]): number {

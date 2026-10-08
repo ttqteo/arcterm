@@ -44,6 +44,7 @@ import {
     buildJarvisBindings,
     buildJarvisGraphBindings,
     buildListNavBindings,
+    buildUsageBindings,
     closeTargetForDoubleCtrlC,
 } from "./bindings";
 import { listNavAtom } from "./listnav";
@@ -695,6 +696,60 @@ describe("new agent chord", () => {
         expect(b.keys).toBe("Mod:n");
         b.run(ctx());
         expect(globalStore.get(model.launcherAtom)).toBe("agent");
+    });
+});
+
+describe("usage surface bindings", () => {
+    const prevTab = vi.fn();
+    const nextTab = vi.fn();
+    const analyze = vi.fn();
+    const bindings = () => buildUsageBindings({ prevTab, nextTab, analyze });
+    const find = (id: string) => {
+        const b = bindings().find((x) => x.id === id);
+        if (b == null) {
+            throw new Error(`no binding ${id}`);
+        }
+        return b;
+    };
+    const usage = ctx("usage");
+
+    beforeEach(() => {
+        prevTab.mockClear();
+        nextTab.mockClear();
+        analyze.mockClear();
+    });
+
+    it("binds the arrows to the provider tabs, `a` to Analyze, and nothing else", () => {
+        expect(bindings().map((b) => [b.id, b.keys])).toEqual([
+            ["usage:prev-tab", "ArrowLeft"],
+            ["usage:next-tab", "ArrowRight"],
+            ["usage:analyze", "a"],
+        ]);
+    });
+
+    // `[` / `]` are the global surface switch; a second claim on them would make assertNoConflicts throw
+    it("leaves [ and ] to the global surface switch", () => {
+        expect(bindings().some((b) => b.keys === "[" || b.keys === "]")).toBe(false);
+    });
+
+    it("runs the handlers", () => {
+        find("usage:prev-tab").run(usage);
+        find("usage:next-tab").run(usage);
+        find("usage:analyze").run(usage);
+        expect(prevTab).toHaveBeenCalledTimes(1);
+        expect(nextTab).toHaveBeenCalledTimes(1);
+        expect(analyze).toHaveBeenCalledTimes(1);
+    });
+
+    it("is live only on the Usage surface, outside a field and a modal", () => {
+        for (const id of ["usage:prev-tab", "usage:next-tab", "usage:analyze"]) {
+            const b = find(id);
+            expect(b.when?.(usage)).toBe(true);
+            expect(b.when?.(ctx("agent"))).toBe(false);
+            expect(b.when?.(ctx("code"))).toBe(false);
+            expect(b.when?.({ ...usage, editable: true })).toBe(false);
+            expect(b.when?.({ ...usage, modalOpen: true })).toBe(false);
+        }
     });
 });
 

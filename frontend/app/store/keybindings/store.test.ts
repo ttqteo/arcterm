@@ -34,6 +34,7 @@ import {
     buildGlobalBindings,
     buildJarvisBindings,
     buildListNavBindings,
+    buildUsageBindings,
 } from "./bindings";
 import { listNavAtom } from "./listnav";
 import { bindingsAtom, registerBindings, unregisterBindings } from "./store";
@@ -274,6 +275,26 @@ describe("keybinding conflict invariant", () => {
         const model = stubModel();
         globalStore.set(listNavAtom, null);
         expect(() => assertNoConflicts([...buildGlobalBindings(model), ...buildCockpitBindings()])).not.toThrow();
+    });
+
+    // The Usage tab arrows sit beside the agent surface's and the Code tree's arrows; each is gated by its surface,
+    // so none may claim a key another holds on the same surface, and the list nav (j/k/↑/↓/Enter) stays apart.
+    it("global + list-nav + usage tab keys do not conflict with the arrow keys of other surfaces", () => {
+        const model = stubModel();
+        globalStore.set(listNavAtom, { surface: "usage", navigableIds: [], cursorId: undefined, setCursor() {} });
+        try {
+            expect(() =>
+                assertNoConflicts([
+                    ...buildGlobalBindings(model),
+                    ...buildListNavBindings(model),
+                    ...buildAgentBindings(model),
+                    ...buildCodeBindings(),
+                    ...buildUsageBindings({ prevTab() {}, nextTab() {}, analyze() {} }),
+                ])
+            ).not.toThrow();
+        } finally {
+            globalStore.set(listNavAtom, null);
+        }
     });
 
     it("global + channels ask bindings (with an active asking worker) do not conflict", () => {

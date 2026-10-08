@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentctl"
@@ -15,8 +16,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/usageinsights"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
@@ -67,6 +70,58 @@ func (ws *WshServer) GetUsageStatsCommand(ctx context.Context, data wshrpc.Comma
 		out[i] = usageBucketToWire(b)
 	}
 	return &wshrpc.CommandGetUsageStatsRtnData{Buckets: out}, nil
+}
+
+func sessionUsageToWire(s usagestats.SessionUsage) wshrpc.UsageSession {
+	models := make([]wshrpc.UsageSessionModel, len(s.Models))
+	for i, m := range s.Models {
+		models[i] = wshrpc.UsageSessionModel{
+			Model: m.Model, Sub: m.Sub,
+			Input: m.Input, Output: m.Output, CacheRead: m.CacheRead,
+			CacheCreate: m.CacheCreate, CacheCreate1h: m.CacheCreate1h,
+		}
+	}
+	return wshrpc.UsageSession{
+		ID: s.ID, Title: s.Title, Project: s.Project, Models: models,
+		Turns: s.Turns, SubTurns: s.SubTurns, AvgCtx: s.AvgCtx, MaxCtx: s.MaxCtx,
+		ColdResumes: s.ColdResumes, ColdTokens: s.ColdTokens,
+		FirstTs: s.FirstTs, LastTs: s.LastTs,
+	}
+}
+
+func usageInsightsToWire(ins usageinsights.Insights) *wshrpc.UsageInsights {
+	return &wshrpc.UsageInsights{
+		Markdown: ins.Markdown, AnalyzedTs: ins.AnalyzedTs, WindowDays: ins.WindowDays, Model: ins.Model,
+	}
+}
+
+func (ws *WshServer) GetSessionUsageCommand(ctx context.Context, data wshrpc.CommandGetSessionUsageData) (*wshrpc.CommandGetSessionUsageRtnData, error) {
+	sessions := usagestats.ScanSessionUsage(data.WindowDays)
+	out := make([]wshrpc.UsageSession, len(sessions))
+	for i, s := range sessions {
+		out[i] = sessionUsageToWire(s)
+	}
+	return &wshrpc.CommandGetSessionUsageRtnData{Sessions: out}, nil
+}
+
+func (ws *WshServer) AnalyzeUsageCommand(ctx context.Context, data wshrpc.CommandAnalyzeUsageData) (*wshrpc.UsageInsights, error) {
+	if strings.TrimSpace(data.Digest) == "" {
+		return nil, fmt.Errorf("the usage digest is empty; there is nothing to analyse")
+	}
+	lang := wconfig.GetWatcher().GetFullConfig().Settings.UsageInsightsLang
+	ins, err := usageinsights.Analyze(ctx, usageinsights.Dir(), data.WindowDays, data.Digest, lang, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	return usageInsightsToWire(ins), nil
+}
+
+func (ws *WshServer) GetUsageInsightsCommand(ctx context.Context) (*wshrpc.UsageInsights, error) {
+	ins, err := usageinsights.Load(usageinsights.Dir())
+	if err != nil {
+		return nil, fmt.Errorf("reading the saved usage analysis: %w", err)
+	}
+	return usageInsightsToWire(ins), nil
 }
 
 func (ws *WshServer) GetRecentSessionsCommand(ctx context.Context, data wshrpc.CommandGetRecentSessionsData) (*wshrpc.CommandGetRecentSessionsRtnData, error) {

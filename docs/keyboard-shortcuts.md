@@ -282,6 +282,16 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Mod`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
 | `Esc` | Clear filters, else leave compare, else back to the Cockpit |
 
+### Usage
+
+| Keys | Action |
+|---|---|
+| `←` / `→` | Previous / next provider tab (the busiest provider first, All last) |
+| `j` / `k` and `↓` / `↑` | On the Claude tab, move through the By session rows |
+| `Enter` | On the Claude tab, open the By session row under the cursor: its tab in Agent if it is still open, else its transcript |
+| `a` | On the Claude tab, Analyze: have Claude read the per-tab numbers and say where the quota goes. Does nothing while an analysis runs, with no Claude tabs in the window, or while Claude's 5-hour or weekly window is at 95% or more |
+| `Esc` | Back to the Cockpit |
+
 ### Route DAG (the orchestrator run's graph)
 
 | Keys | Action |

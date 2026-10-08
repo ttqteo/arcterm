@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Usage shows Claude usage per tab (context size, cold resumes, subagent share) and an Analyze button that has Claude
+  explain where your quota goes and what to change; providers are tabs across the top and the charts sit in one
+  compact row.
 - From any other surface, the **Agent** item in the left rail shows a pulsing green dot with the number of agents
   still working, so you can see a run is busy from Code or Diff. Hover it for the count in words.
 - An agent whose last turn ended on a git commit, once you have read that turn, offers to close itself: a **✓ Close**

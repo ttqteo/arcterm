@@ -10,6 +10,8 @@
 
 import { MOTION, easeFluidCss } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
+import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { cn } from "@/util/util";
 import useResizeObserver from "@react-hook/resize-observer";
 import { AxisBottom, AxisLeft } from "@visx/axis";
 import { Brush } from "@visx/brush";
@@ -19,7 +21,8 @@ import { motion, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { fmt, usd, type DailyUsage } from "./usagestats";
 
-const CHART_H = 156;
+// one of three cards in a compact row (usagesurface.tsx), so the plot is short
+const CHART_H = 96;
 const BRUSH_H = 28;
 const MARGIN = { top: 6, right: 4, bottom: 22, left: 46 };
 const BAR_MAX = 30;
@@ -47,8 +50,25 @@ function harnessMeta(h: string): { label: string; color: string } {
 
 export interface Row {
     day: string; // "MM-DD"
+    date: string; // "YYYY-MM-DD", for the tooltip
     values: Record<string, number>;
     total: number;
+}
+
+// the axis label: the day of the month alone ("08-10" -> "10"); the month is in the tooltip and the peak line
+export function dayLabel(day: string): string {
+    return day.slice(3);
+}
+
+// the busiest day of what is drawn, or null when nothing was spent in it
+export function peakRow(rows: Row[]): Row | null {
+    let peak: Row | null = null;
+    for (const r of rows) {
+        if (r.total > 0 && (peak == null || r.total > peak.total)) {
+            peak = r;
+        }
+    }
+    return peak;
 }
 
 // A rect's rx rounds ALL FOUR corners, so using it for the top segment made that segment read as a
@@ -66,7 +86,12 @@ export function toRows(daily: DailyUsage[], metric: "tokens" | "spend", harnesse
         const values = Object.fromEntries(
             harnesses.map((h) => [h, d.byHarness[h]?.[metric === "tokens" ? "tokens" : "spendUsd"] ?? 0])
         );
-        return { day: d.day.slice(5), values, total: Object.values(values).reduce((sum, value) => sum + value, 0) };
+        return {
+            day: d.day.slice(5),
+            date: d.day,
+            values,
+            total: Object.values(values).reduce((sum, value) => sum + value, 0),
+        };
     });
 }
 
@@ -107,6 +132,7 @@ export function DailyChart({
 
     const innerW = Math.max(0, width - MARGIN.left - MARGIN.right);
     const axisFmt = (v: number) => (metric === "tokens" ? fmt(v) : usd(v));
+    const peak = peakRow(view);
 
     const x = scaleBand<string>({ domain: view.map((r) => r.day), range: [0, innerW], padding: 0.28 });
     const y = scaleLinear<number>({
@@ -145,28 +171,31 @@ export function DailyChart({
     }
 
     return (
-        <div className="rounded-[14px] border border-border bg-surface-raised px-[22px] pb-5 pt-[18px]">
-            <div className="mb-5 flex flex-wrap items-center gap-3">
-                <h3 className="text-[15px] font-bold tracking-[-0.01em] text-primary">Daily</h3>
-                <span className="text-[11px] text-muted">
+        <div className="flex min-w-0 flex-col rounded-[14px] border border-border bg-surface-raised px-[18px] py-4">
+            {/* the section rule the other cards in the row use; the metric toggle sits on it */}
+            <div className="mb-3 flex items-center gap-2.5">
+                <h3 className={cn(REGION_LABEL, "text-muted")}>Daily</h3>
+                <div className="h-px min-w-3 flex-1 bg-edge-faint" />
+                <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
                     {win === "7d"
                         ? "last 7 days"
                         : view.length === rows.length
                           ? "all time"
                           : `${view[0]?.day ?? ""} – ${view[view.length - 1]?.day ?? ""}`}
                 </span>
-                <div className="flex-1" />
-                <div className="flex items-center gap-[14px]">
-                    {harnesses.map((h) => (
-                        <span
-                            key={h}
-                            className="flex items-center gap-[5px] text-[10.5px] text-secondary"
-                        >
-                            <span className="h-[9px] w-[9px] rounded-[2px]" style={{ background: harnessMeta(h).color }} />
-                            {harnessMeta(h).label}
-                        </span>
-                    ))}
-                </div>
+                {harnesses.length > 1 ? (
+                    <div className="flex flex-none items-center gap-[10px]">
+                        {harnesses.map((h) => (
+                            <span key={h} className="flex items-center gap-[5px] text-[10.5px] text-secondary">
+                                <span
+                                    className="h-[9px] w-[9px] rounded-[2px]"
+                                    style={{ background: harnessMeta(h).color }}
+                                />
+                                {harnessMeta(h).label}
+                            </span>
+                        ))}
+                    </div>
+                ) : null}
                 <Segmented
                     value={metric}
                     onChange={onMetric}
@@ -203,6 +232,7 @@ export function DailyChart({
                                 top={CHART_H}
                                 scale={x}
                                 tickValues={tickDays}
+                                tickFormat={(v) => dayLabel(String(v))}
                                 stroke="var(--color-border)"
                                 tickStroke="var(--color-border)"
                                 tickLabelProps={() => ({
@@ -346,8 +376,8 @@ export function DailyChart({
                             top={tooltipTop}
                             className="!rounded-[7px] !border !border-border !bg-surface-raised !px-[10px] !py-[7px] !shadow-lg"
                         >
-                            <div className="mb-[5px] text-[10.5px] font-semibold text-primary">
-                                {tooltipData.day}
+                            <div className="mb-[5px] text-[10.5px] font-semibold tabular-nums text-primary">
+                                {tooltipData.date}
                             </div>
                             {harnesses.map((h) => (
                                 <div key={h} className="flex items-center gap-[6px] text-[10.5px] tabular-nums">
@@ -369,6 +399,12 @@ export function DailyChart({
                     ) : null}
                 </div>
             )}
+
+            {peak != null ? (
+                <div className="mt-2 text-[10.5px] tabular-nums text-muted">
+                    peak {peak.day} · {axisFmt(peak.total)}
+                </div>
+            ) : null}
         </div>
     );
 }

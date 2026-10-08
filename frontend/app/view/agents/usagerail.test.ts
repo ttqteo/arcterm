@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { mergeRateLimitWindows } from "./ratelimitstore";
-import { buildUsageRail, countReporting, harnessTotals, railRows, worstWindow } from "./usagerail";
+import {
+    buildUsageRail,
+    countReporting,
+    defaultTab,
+    harnessTotals,
+    railRows,
+    tabMeta,
+    tabRows,
+    worstWindow,
+} from "./usagerail";
 import type { DailyUsage } from "./usagestats";
 
 const now = 1_800_000_000_000;
@@ -88,6 +97,92 @@ describe("buildUsageRail", () => {
         expect(buildUsageRail(["claude"], [], donuts, catalog).map((g) => g.key)).toEqual(["reporting"]);
         expect(buildUsageRail(["opencode"], [], [], catalog).map((g) => g.key)).toEqual(["quiet"]);
         expect(buildUsageRail([], [], [], catalog)).toEqual([]);
+    });
+});
+
+describe("tabRows / defaultTab", () => {
+    const daily = [
+        day("2026-09-01", {
+            claude: { tokens: 900, spendUsd: 9 },
+            codex: { tokens: 400, spendUsd: 4 },
+            opencode: { tokens: 400, spendUsd: 1 },
+            pi: { tokens: 5, spendUsd: 0 },
+        }),
+    ];
+    const rows = railRows(buildUsageRail(["claude", "codex", "opencode", "pi"], daily, [], []));
+
+    it("orders the tabs by window tokens, descending", () => {
+        expect(tabRows(rows).map((r) => r.harness)).toEqual(["claude", "codex", "opencode", "pi"]);
+        const flipped = railRows(
+            buildUsageRail(
+                [],
+                [day("2026-09-01", { pi: { tokens: 50, spendUsd: 0 }, claude: { tokens: 10, spendUsd: 0 } })],
+                [],
+                ["claude", "pi"]
+            )
+        );
+        expect(tabRows(flipped).map((r) => r.harness)).toEqual(["pi", "claude"]);
+    });
+
+    // equal tokens fall back to the label people read, not the harness id: "Antigravity" is agy
+    it("breaks a tie by provider label", () => {
+        const tied = railRows(
+            buildUsageRail(
+                [],
+                [day("2026-09-01", { opencode: { tokens: 7, spendUsd: 0 }, agy: { tokens: 7, spendUsd: 0 } })],
+                [],
+                []
+            )
+        );
+        expect(tabRows(tied).map((r) => r.harness)).toEqual(["agy", "opencode"]);
+    });
+
+    it("does not reorder the rows it is given", () => {
+        const before = rows.map((r) => r.harness);
+        tabRows([...rows].reverse());
+        expect(rows.map((r) => r.harness)).toEqual(before);
+    });
+
+    it("defaults to the harness with the most tokens, or all when there are none", () => {
+        expect(defaultTab(rows)).toBe("claude");
+        expect(defaultTab(tabRows(rows).slice().reverse())).toBe("claude");
+        expect(defaultTab([])).toBe("all");
+    });
+});
+
+describe("tabMeta", () => {
+    const daily = [
+        day("2026-09-01", {
+            claude: { tokens: 1000, spendUsd: 12 },
+            codex: { tokens: 2_500_000, spendUsd: 3 },
+            pi: { tokens: 18_000_000, spendUsd: 1 },
+        }),
+    ];
+    const metaOf = (harness: string, donuts: ReturnType<typeof mergeRateLimitWindows>): string =>
+        tabMeta(railRows(buildUsageRail([], daily, donuts, [])).find((r) => r.harness === harness)!);
+
+    it("shows both windows for a provider that reports them", () => {
+        const donuts = mergeRateLimitWindows(
+            [{ provider: "claude", usage: { fivehourpct: 41.2, weekpct: 72 } }],
+            {},
+            now
+        );
+        expect(metaOf("claude", donuts)).toBe("5h 41% · wk 72%");
+    });
+
+    it("shows only the window a provider reports", () => {
+        const donuts = mergeRateLimitWindows([{ provider: "codex", usage: { weekpct: 11 } }], {}, now);
+        expect(metaOf("codex", donuts)).toBe("wk 11%");
+    });
+
+    it("falls back to tokens for a provider with no quota reading", () => {
+        expect(metaOf("pi", [])).toBe("18M tok");
+    });
+
+    // a reading with neither window filled in says nothing about quota, so the tab names tokens instead
+    it("falls back to tokens when the reading carries no window", () => {
+        const donuts = mergeRateLimitWindows([{ provider: "claude", usage: {} }], {}, now);
+        expect(metaOf("claude", donuts)).toBe("1K tok");
     });
 });
 

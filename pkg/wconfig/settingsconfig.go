@@ -100,6 +100,8 @@ type SettingsType struct {
 
 	RadarAuditRuntime string `json:"radar:auditruntime,omitempty"`
 	RadarAuditModel   string `json:"radar:auditmodel,omitempty"`
+
+	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
 }
 
 type ConfigError struct {
