@@ -117,18 +117,31 @@ const slashed = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
 const samePath = (p: string) => slashed(p).toLowerCase();
 const isUnder = (p: string, root: string) => samePath(p).startsWith(samePath(root) + "/");
 
-// linkedWorktree names the linked worktree cwd is inside, relative to the main checkout when it sits under it, else
-// by its full path. Undefined in the main checkout or outside every listed worktree.
-export function linkedWorktree(cwd: string, worktrees: GitWorktree[]): string | undefined {
-    const own = worktrees
+// containingWorktree is the deepest worktree whose path is cwd or contains it: a linked worktree under the main
+// checkout's directory wins over the main checkout. Undefined outside every listed worktree.
+export function containingWorktree<W extends { path: string }>(cwd: string, worktrees: W[]): W | undefined {
+    return worktrees
         .filter((wt) => samePath(cwd) === samePath(wt.path) || isUnder(cwd, wt.path))
         .sort((a, b) => b.path.length - a.path.length)[0];
+}
+
+// worktreeRelPath names a worktree by its path from the main checkout when it sits under it, else by its full path.
+export function worktreeRelPath(wt: { path: string }, main: { path: string } | undefined): string {
+    if (main == null || !isUnder(wt.path, main.path)) {
+        return slashed(wt.path);
+    }
+    return slashed(wt.path).slice(slashed(main.path).length + 1);
+}
+
+// linkedWorktree names the linked worktree cwd is inside (worktreeRelPath). Undefined in the main checkout or
+// outside every listed worktree.
+export function linkedWorktree(cwd: string, worktrees: GitWorktree[]): string | undefined {
+    const own = containingWorktree(cwd, worktrees);
     if (own == null || own.ismain) {
         return undefined;
     }
-    const main = worktrees.find((wt) => wt.ismain);
-    if (main == null || !isUnder(own.path, main.path)) {
-        return slashed(own.path);
-    }
-    return slashed(own.path).slice(slashed(main.path).length + 1);
+    return worktreeRelPath(
+        own,
+        worktrees.find((wt) => wt.ismain)
+    );
 }
