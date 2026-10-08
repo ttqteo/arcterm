@@ -15,6 +15,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/workercap"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -197,7 +198,7 @@ func sampleChildTree(blockId string) (treeSample, bool) {
 	var totalSec float64
 	var rss uint64
 	// one walk for both: listing the tree is the costly part (on darwin Children() reads every process)
-	for _, p := range processTree(root) {
+	for _, p := range memusage.ProcessTree(root) {
 		if times, err := p.Times(); err == nil {
 			totalSec += times.User + times.System
 		}
@@ -206,20 +207,6 @@ func sampleChildTree(blockId string) (treeSample, bool) {
 		}
 	}
 	return treeSample{CPUMs: int64(totalSec * 1000), RSS: rss}, true
-}
-
-// processTree is root and every descendant. gopsutil lists only direct children, and a test run is a
-// shell, then go, then the compiled test binary.
-func processTree(root *process.Process) []*process.Process {
-	tree := []*process.Process{root}
-	for i := 0; i < len(tree); i++ {
-		children, err := tree[i].Children()
-		if err != nil {
-			continue
-		}
-		tree = append(tree, children...)
-	}
-	return tree
 }
 
 // cpuSampleEvery is the least time between two CPU readings of a worker: event-driven Schedule calls land
