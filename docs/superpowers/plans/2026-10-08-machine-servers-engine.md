@@ -19,8 +19,9 @@ Conventions for every task: commit only the files the task names; no `Co-Authore
 ### Task 1: RPC `ListAllDevServersCommand`
 
 **Depends on:** none
+**Files:** `pkg/wshrpc/wshrpctypes_devservers.go`, `pkg/wshrpc/wshserver/wshserver_devservers.go`, `pkg/wshrpc/wshserver/wshserver_devservers_test.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
-**Files:**
+**Changes:**
 - Modify: `pkg/wshrpc/wshrpctypes_devservers.go`
 - Modify: `pkg/wshrpc/wshserver/wshserver_devservers.go`
 - Test: `pkg/wshrpc/wshserver/wshserver_devservers_test.go` (create)
@@ -124,8 +125,9 @@ func (ws *WshServer) ListAllDevServersCommand(ctx context.Context) (*wshrpc.Comm
 ### Task 2: store, chip, popover
 
 **Depends on:** Task 1
+**Files:** `frontend/app/view/agents/machineserversstore.ts`, `frontend/app/view/agents/machineserverschip.tsx`, `frontend/app/view/agents/machineserverspanel.tsx`, `frontend/app/view/agents/railservers.tsx`, `frontend/app/view/agents/consumersstore.ts`, `frontend/app/cockpit/footerstatus.tsx`, `frontend/app/cockpit/cockpit-root.tsx`, `CHANGELOG.md`
 
-**Files:**
+**Changes:**
 - Create: `frontend/app/view/agents/machineserversstore.ts`
 - Create: `frontend/app/view/agents/machineserverschip.tsx`
 - Create: `frontend/app/view/agents/machineserverspanel.tsx`
@@ -134,6 +136,8 @@ func (ws *WshServer) ListAllDevServersCommand(ctx context.Context) (*wshrpc.Comm
 - Modify: `frontend/app/cockpit/footerstatus.tsx` (chip before `WorkerCapacityChip`)
 - Modify: `frontend/app/cockpit/cockpit-root.tsx` (mount the panel beside `ConsumersPanel`)
 - Modify: `CHANGELOG.md` (one `Added` line in the top `Unreleased` section; stage only that hunk if other sessions have edits there)
+
+**Acceptance:** the `machine-servers` scenario (Task 3) shows each view and interaction this task builds: the chip's plain, no-owner and failed states (its steps 1 and 7), the open popover with its groups (step 2), Other collapsed and expanded (step 3), every badge kind and the no-owner tooltip (step 4), a row's hover actions and the Stop confirm and stop (step 5), the app Stop confirm and Esc (step 6), the backdrop close and the mutual exclusion with Consumers (step 8). `rail-servers` and `consumers-popover` still pass.
 
 **Step 1: store** — `machineserversstore.ts`:
 
@@ -211,7 +215,7 @@ In `consumersstore.ts`, `toggleConsumers` also sets `machineServersOpenAtom` to 
 export function ServerStopButton({ confirmLabel, onStop }: { confirmLabel: string; onStop: () => void }) { ... }
 ```
 
-carrying the `confirming` state, the 3 s timer, `STOP_BTN` / the confirm style and the `data-dev-server-stop` attribute exactly as today (`confirmLabel` replaces the literal `"Stop?"`). It must also tell its parent when it is confirming, because `DevServerItem` keeps the actions visible while confirming: give it an `onConfirmingChange?: (c: boolean) => void` prop, or keep the visibility rule with CSS `focus-within` (the button keeps focus after the first click). `DevServerItem` uses it with `confirmLabel="Stop?"` and `onStop={() => fireAndForget(() => stopDevServer(row))}`. Run `npx vitest run frontend/app/view/agents` and the `rail-servers` CDP scenario later (Task 3's verify run) to confirm the rail is unchanged.
+carrying the `confirming` state, the 3 s timer, `STOP_BTN` / the confirm style and the `data-dev-server-stop` attribute exactly as today (`confirmLabel` replaces the literal `"Stop?"`). It must also tell its parent when it is confirming, because `DevServerItem` keeps the actions visible while confirming: give it an `onConfirmingChange?: (c: boolean) => void` prop, or keep the visibility rule with CSS `focus-within` (the button keeps focus after the first click). `DevServerItem` uses it with `confirmLabel="Stop?"` and `onStop={() => fireAndForget(() => stopDevServer(row))}`. The `rail-servers` CDP scenario, which Final runs, (Task 3's verify run) confirms the rail is unchanged.
 
 **Step 3: chip** — `machineserverschip.tsx`. Reads `machineServersReadingAtom`, the roster (`model.agentsAtom`, `model.terminalsAtom`) and `backgroundTasksByIdAtom`, builds the view with `buildMachineServers`, and renders a button styled like `WorkerCapacityChip` (`text-[11.5px] font-semibold tabular-nums`, `hover:bg-surface-hover`), with `data-machine-servers-chip`, `aria-haspopup="dialog"`, the lucide `Network` icon, then:
 - no reading yet: nothing (like the RAM chip);
@@ -235,7 +239,7 @@ A row (`data-machine-server={pid}`), laid out like `DevServerItem`: the success 
 - **Copy**: `copyText(row.server)` to the clipboard;
 - **Stop**: `<ServerStopButton confirmLabel={row.stopConfirm} onStop={...} />`, where onStop awaits `RpcApi.StopDevServerCommand(TabRpcClient, { pid, createms })`, then `forgetMachineServer(row.server)`; on error `pushToast` (see how `consumerspanel.tsx` calls it) with "That process already exited" when the error text mentions the PID was reused or the process is not running, else the error's text, and `fireAndForget(loadMachineServers)`.
 
-**Step 5:** `task check:ts` (give it a 4-minute timeout; the baseline is clean) and `npx vitest run frontend/app/view/agents` → clean. `npx eslint` + `npx prettier --check` on the touched files. Don't start a dev app: the run's Final starts one and runs the CDP scenarios.
+**Step 5:** `task check:ts` (give it a 4-minute timeout; the baseline is clean) and `npx vitest run frontend/app/view/agents/machineservers.test.ts frontend/app/view/agents/devserversmodel.test.ts frontend/app/view/agents/consumers.test.ts` → clean. `npx eslint` + `npx prettier --check` on the touched files. Don't start a dev app: the run's Final starts one and runs the CDP scenarios.
 
 **Step 6:** CHANGELOG `Added` line, e.g.: "The footer has a **Servers** chip: how many servers run inside your repos, and how many nothing holds any more. Click it to see every listening process on the machine, grouped by repo, with what each belongs to (an agent, a terminal, an app, or no owner), and open, read the log of, copy or stop it." Commit the named files — `feat(cockpit): Servers on this machine, a footer chip and popover`.
 
@@ -244,8 +248,9 @@ A row (`data-machine-server={pid}`), laid out like `DevServerItem`: the success 
 ### Task 3: CDP scenario `machine-servers`
 
 **Depends on:** Task 2
+**Files:** `scripts/cdp/scenarios.mjs`
 
-**Files:**
+**Changes:**
 - Modify: `scripts/cdp/scenarios.mjs` (hand-formatted, 4-space; never run prettier on it)
 
 **Step 1:** add a scenario modelled on `consumers-popover` (search `CONSUMERS_MOCK_KEY`): install a mock RPC client with `api.setMockRpcClient` that answers `listalldevservers` from a fixture (modes `ok`, `fail`, `empty`) and records `stopdevserver` calls without stopping anything, passing every other command through. Fixture rows (`repo`, `owner`, `launchercmdline` set as in `frontend/app/view/agents/machineservers.test.ts`): `:4321 astro` detached in `D:/fx/website` (no owner), `:8100 uvicorn` owned by an agent, `:5174 vite` owned by a terminal, `Code.exe` and `com.docker.backend.exe` as apps with no repo. Use a fixture roster the way `consumers-popover` does if the agent badge must show a name; otherwise assert the badge falls back to the owner's name.
