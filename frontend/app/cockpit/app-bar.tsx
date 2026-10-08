@@ -110,7 +110,7 @@ function withChord(label: string, keys: string | undefined): string {
     return keys == null ? label : `${label} (${formatChordString(keys)})`;
 }
 
-function WindowControls() {
+export function WindowControls() {
     const win = getCurrentWindow();
     const maximized = useWindowMaximized();
     return (

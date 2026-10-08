@@ -10,6 +10,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- Float: the agent header's Float button (or `Shift+F`) shrinks the window to the focused agent's terminal, which a
+  pin keeps on top of your other apps. Leaving it gives the window its size back, and the next float opens where
+  the last one was.
+
 ### Changed
 
 - In the New dialog, `→` moves from the Agent column to the Project column and `←` moves back; the key legend shows

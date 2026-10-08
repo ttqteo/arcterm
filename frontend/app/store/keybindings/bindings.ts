@@ -23,6 +23,7 @@ import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents
 import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
+import { toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
     graphOnAtom,
@@ -969,6 +970,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Toggle terminal fullscreen",
             when: nav,
             run: () => globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom)),
+        },
+        {
+            id: "agent:float",
+            keys: "Shift:f",
+            group: "Agent",
+            label: "Toggle float window",
+            when: nav,
+            run: () => void toggleFloat(model),
         },
         {
             id: "agent:review",

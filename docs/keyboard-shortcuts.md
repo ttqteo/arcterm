@@ -162,6 +162,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent |
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
+| `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `Esc` | Back to Cockpit, or exit fullscreen first; from Conversation History or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
