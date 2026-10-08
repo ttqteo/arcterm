@@ -10,9 +10,7 @@ lists what each version changed for the user.
 | --- | --- |
 | `open-issues.md` | **The single "what's left" list** — actionable, blocked, held and declined items. Start here. |
 | `deferred.md` | Append-only log of intentionally-deferred work and why. Append at the top, then mirror a one-line row into `open-issues.md`. |
-| `orchestrator-guide.md` | How to use the orchestrator: Quick, goal-led and plan-file runs, answering a lead, steering, landing, and the rough edges. |
 | `orchestrator-redesign-flaws.md` | Living flaws tracker for the orchestrator engine; resolved rows kept as one-line summaries. |
-| `diff-tab.md` | Reference and walkthrough for the Diff surface. |
 | `keyboard-shortcuts.md` | Human-readable mirror of the keybinding registry (`frontend/app/store/keybindings/` is the source of truth). |
 
 ## Directories
@@ -25,7 +23,7 @@ lists what each version changed for the user.
 | `superpowers/plans/` | Implementation plans while their work is in flight. Deleted once shipped; git history keeps them. |
 | `superpowers/briefs/` | Findings reports, roadmaps and decision briefs, kept only while something live cites them. |
 | `prototype/` | The few pre-rule design canvases that code comments and CDP scripts still cite. New mockups are never committed (`DESIGN.md` "Mockups"). |
-| `images/` | Screenshots referenced by the docs above. |
+| `guide/` | The user guide (Vietnamese): one page per surface, runs, the plan format and agent integration. Start at `guide/README.md`; its screenshots go in `guide/images/`. |
 
 ## Conventions
 

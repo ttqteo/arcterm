@@ -1,158 +1,120 @@
 # arcterm
 
-**A desktop cockpit for coding agents.** See what is running, answer what is blocked, and review what changed—without hopping between terminal windows.
+**A desktop cockpit for coding agents.** See what is running, answer what is blocked, and review what changed, without hopping between terminal windows.
 
-arcterm brings agent terminals, questions, task graphs, Git diffs, and run history into one workspace. Use it to supervise an individual agent or coordinate a larger change across parallel workers.
+arcterm brings agent terminals, questions, task graphs, Git diffs and run history into one window. Use it to supervise a single agent or to run a larger change across parallel workers.
 
-![arcterm's Agent surface: project-grouped agents on the left, a live terminal in the center, and context and usage details on the right](docs/images/orchestrator-guide/22-agent-tree-executing.png)
+![The Agent surface with demo agents grouped by project in the sidebar, a live terminal in the center and the details rail on the right](docs/guide/images/agent-overview.png)
 
-_The Agent surface keeps the actual agent terminal at the center, with project, run, and usage context alongside it._
+[What it does](#what-it-does) · [Surfaces](#surfaces) · [How a run works](#how-a-run-works) · [Run from source](#run-from-source) · [Documentation](#documentation)
 
-[App tour](#app-tour) · [How a run works](#how-a-run-works) · [Run from source](#run-from-source) · [Documentation](#documentation)
-
-> **Personal project · Windows-only · Build from source.** There are no published releases, download page, or support channel. Contributions are not currently accepted.
+> **Personal project · Build from source.** Runs on **Windows** and **macOS on Apple silicon** (13 or later). There are no published releases, download page or support channel, and contributions are not currently accepted.
 >
-> Screenshots are real dev-app captures from September 2026. Navigation and some controls have since changed; the Memory/Vault surface visible in older captures has been removed.
+> The user guide under [`docs/guide/`](docs/guide/README.md) is written in Vietnamese.
 
-## Why arcterm
+## What it does
 
-Running more agents creates more work to supervise: which one needs a decision, which task is waiting on another, what actually landed, and whether it was verified. arcterm puts that context next to the work rather than leaving it scattered across terminals and transcripts.
+Running more agents means more to supervise: which one needs a decision, which task is waiting on another, what actually landed, and whether it was verified. arcterm puts that context next to the work.
 
-- **Watch and intervene.** Group agents by project, open their live terminals, inspect context and usage, and take control when needed.
-- **Keep questions visible.** Agent questions and review requests surface in the cockpit instead of disappearing into terminal scrollback.
-- **Coordinate larger changes.** Run a dependency-aware plan with parallel workers, worktree isolation, task reviews, merges, and verification.
-- **Inspect the result.** Follow a run's timeline and outcomes, then read its Git changes in the same app.
-- **Keep your tools.** arcterm wraps existing coding-agent CLIs; it is not a replacement model or a separate coding harness. Orchestrator leads run on **Claude Code or pi**; plan task workers run on Claude Code, pi or **Antigravity**.
+- **Watch and intervene.** Agents are grouped by project. Open a live terminal, read its context and usage, and type into it.
+- **Keep questions visible.** Agent questions and review requests surface on the Cockpit, in Jarvis and in notifications instead of scrolling past in a terminal.
+- **Coordinate larger changes.** Run a dependency-aware plan with parallel workers in isolated worktrees, with task reviews, merges, verification and a final check of the combined result.
+- **Inspect the result.** Follow a run's timeline, then read its Git changes in the same app.
+- **Keep your tools.** arcterm wraps the coding-agent CLIs you already have: **Claude Code**, **pi**, **Antigravity** (`agy`), **Codex** and **OpenCode**. It provides no model or account. Orchestrator leads run on Claude Code or pi; plan task workers on Claude Code, pi or Antigravity.
 
-## App tour
+## Surfaces
 
-### Supervise agents
+The cockpit is one window with several surfaces on its nav rail. `Ctrl+P` (`Cmd+P` on macOS) searches everything; `Ctrl+N` opens **New** for an agent or a run.
 
-The **Cockpit** gives you an overview; **Agent** opens the selected agent's terminal. A run's workers are grouped under its lead, so you can move from the overall job to the task that needs attention.
-
-The terminal is interactive—not just a transcript viewer. You can talk directly to a worker while keeping its run and task context in view.
-
-Past conversations live in the same place: the **Agent** sidebar keeps live agents under **Active** and lists recent ended sessions below them as one **Conversations** list, newest first, each row naming its project (a filter narrows it to one), an ended session opens as a readable transcript with **Resume**, and **Conversation History** shows them all.
-
-### Answer decisions where they arise
-
-**Jarvis** is the briefing and coordination surface: initiatives, runs, and work waiting on you. Open a run to see its task states, questions, timeline, and controls.
-
-![A run waiting for a product decision, with the worker's question and answer options shown beside the briefing](docs/images/orchestrator-guide/15-question-for-you.png)
-
-_An escalated worker question appears with the run it belongs to. Answer it and the worker can continue._
-
-For orchestrated work, the lead handles questions it can resolve from the plan and forwards decisions that need you. Spec and plan review requests open a document-and-decisions dialog.
-
-### Follow the task graph
-
-The orchestrator's **DAG view** shows dependencies, task states, and a lifecycle timeline. It makes the difference between “waiting for another task” and “blocked on a failure” visible, with actions to retry, skip, escalate, or resolve a blocked merge.
-
-![arcterm's orchestrator task graph showing completed and running tasks, a dependent task, and the lifecycle timeline](docs/images/orchestrator-guide/17-dag.png)
-
-_Task dependencies on the left; reviews, merges, verification, and attention events on the right._
-
-Scheduling, worktrees, merges, and command execution belong to the deterministic engine. Agents handle implementation and judgment; you handle the decisions they cannot safely make.
-
-### Review the changes
-
-The **Diff** surface puts Git history, changed files, and the selected file's diff side by side. Inspect the working tree, changes since an agent's session started, a run's changes, or a comparison between two refs. Diff review is read-only; **Code** is the separate editing surface.
-
-![arcterm's Diff surface with a Git commit graph, changed-file list, and file diff in three panes](docs/images/diff-tab/three-panes-wide.png)
-
-_History → files → diff, without leaving the cockpit._
-
-### The rest of the workspace
-
-| Surface   | What it is for                                                |
-| --------- | ------------------------------------------------------------- |
-| **Code**  | Browse and edit project files.                                |
-| **Radar** | Inspect repository findings and turn them into work.          |
-| **Usage** | Inspect token usage and estimated API-equivalent cost.        |
-| **Setup** | Manage shared instructions and skills across agent harnesses. |
-
-Search and commands are available through `Ctrl+P`; `Ctrl+N` opens **New agent**. See the [keyboard shortcuts](docs/keyboard-shortcuts.md) for surface navigation and context-specific controls.
+| Surface | What it is for | Guide |
+|---|---|---|
+| **Cockpit** | Every agent as a card, the **Needs you** strip, answers in place | [cockpit.md](docs/guide/cockpit.md) |
+| **Jarvis** | The brief: initiatives, runs, what is waiting on you, run defaults | [jarvis.md](docs/guide/jarvis.md) |
+| **Agent** | Each agent's real terminal, a grid of up to four, conversation history | [agent.md](docs/guide/agent.md) |
+| **Usage** | 5-hour and weekly quota, tokens, estimated cost | [usage.md](docs/guide/usage.md) |
+| **Code** | Browse and edit project files | [code.md](docs/guide/code.md) |
+| **Diff** | Git history, changed files and diffs, line review | [diff.md](docs/guide/diff.md) |
+| **Radar** | Findings from auditing bug-fix commits, turned into runs | [radar.md](docs/guide/radar.md) |
+| **Setup** | Instructions and skills shared across every harness | [setup.md](docs/guide/setup.md) |
+| **Settings** | Claude accounts, run routes, appearance, terminal | [settings.md](docs/guide/settings.md) |
 
 ## How a run works
 
-Register a local repository through the project switcher, then open **+ Run** in Jarvis and choose the shape of the work:
+Register a repository through the project switcher on the app bar, then open **New** and pick a run:
 
-| Starting point                         | Flow                           | What happens                                                                                                  |
-| -------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| A small, well-defined change           | **Quick**                      | One fresh worker tackles the goal. No lead or task graph.                                                     |
-| A goal that needs design decisions     | **Orchestrator → A goal**      | A lead works through the goal with you, then handles a bounded change itself or submits a plan to the engine. |
-| An implementation plan already on disk | **Orchestrator → A plan file** | The engine reviews the plan before dispatching its tasks; a lead is launched when judgment is needed.         |
+| You have | Choose | What runs |
+|---|---|---|
+| A small change you can say in a sentence | **Quick run** | One fresh worker. No lead, no task graph. |
+| A goal that still needs design decisions | **Orchestrate → goal** | A lead works through the goal with you, then does it itself or hands the engine a plan. |
+| A plan already written | **Orchestrate → plan file** | The engine reviews the plan and runs its tasks; a lead is woken only when something needs judgment. |
 
 For a planned run:
 
-1. **Review the plan.** A reviewer checks requirements, dependencies, file ownership, and verification before workers start.
-2. **Execute the tasks.** The engine schedules dependency-ready work in isolated worktrees. Workers implement and report; reviewers check their changes.
-3. **Merge and verify.** Completed lanes merge into the run's branch. Verification failures and conflicts go to the lead, or to you when necessary.
-4. **Check the combined result.** The final stage runs the configured checks and records anything that could not be verified.
-5. **Land the work.** By default, the run uses its own `wave/<runId>` branch and worktree, then merges back into the base branch on completion. If landing cannot proceed, the run is held with a reason.
+1. **Plan review.** A reviewer checks the plan against its spec before any worker starts.
+2. **Tasks.** The engine dispatches dependency-ready tasks into isolated worktrees; a reviewer checks each one.
+3. **Merge and verify.** Each finished lane merges into the run's branch and runs the plan's Verify command. Conflicts and failures go to the lead, and to you when the lead should not decide.
+4. **Final stage.** The combined result runs the plan's checks and a final verifier, and records what could not be verified.
+5. **Land.** The run works on its own `wave/<runId>` branch and merges back into the base branch when it completes, or holds with a reason.
 
-The [orchestrator guide](docs/orchestrator-guide.md) covers setup, plan format, model routing, steering, recovery, and current rough edges.
+Code does the mechanics (scheduling, worktrees, merges, commands); agents do the implementation and the judgment; you get the decisions they cannot safely make. The [orchestrator guide](docs/guide/orchestrator.md) and the [plan format](docs/guide/plan-format.md) cover routes, steering, recovery and landing.
 
 ## Run from source
 
 ### Prerequisites
 
-The desktop app is currently built and packaged for **Windows**. Install:
+| | Windows | macOS (Apple silicon, 13+) |
+|---|---|---|
+| [Task](https://taskfile.dev), [Node.js and npm](https://nodejs.org/) | yes | yes |
+| [Go](https://go.dev/dl/), the version in [`go.mod`](go.mod) | yes | yes |
+| [Rust](https://rustup.rs/) and `cargo tauri` (tauri-cli 2.x) | yes | yes |
+| C compiler for CGO | [Zig](https://ziglang.org/download/) | Xcode Command Line Tools |
+| [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) | C++ build tools, WebView2 | Xcode Command Line Tools |
+| Git | [Git for Windows](https://git-scm.com/downloads/win) with Git Bash (plan commands run in a POSIX shell) | built in |
 
-- [Task](https://taskfile.dev/), used to orchestrate the build.
-- [Node.js and npm](https://nodejs.org/).
-- [Go](https://go.dev/dl/), matching the version required by [`go.mod`](go.mod).
-- [Rust](https://rustup.rs/) and the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/), including C++ build tools and WebView2.
-- [Zig](https://ziglang.org/download/), used for CGO cross/static linking.
-- [Git for Windows](https://git-scm.com/downloads/win), including Git Bash for orchestrator plan commands.
-
-To run agents, install and authenticate the coding-agent CLI you intend to use. arcterm does not provide model access or credentials.
+Install and sign in to the agent CLIs you want to use; arcterm lists only the ones it finds.
 
 ### Start the dev app
 
-From the repository root:
-
 ```sh
-task init   # install npm dependencies and tidy Go modules
-task dev    # build the dev backend and launch Tauri + Vite
+task init   # npm install + go mod tidy
+task dev    # build the backend for this machine, then Tauri + Vite
 ```
 
-Vite serves the frontend on `localhost:5174` with hot reload. The native app starts its own Go backend; you do not need to launch it separately. Dev and packaged builds use separate app stores.
+Vite serves the frontend on `localhost:5174` with hot reload, and the app starts its own Go backend. The dev app keeps its data apart from an installed build. On an 8 GB Mac, prefix Vite builds and `task check:ts` with `NODE_OPTIONS=--max-old-space-size=4096`.
 
-**Before launching:** arcterm installs or refreshes agent integrations on startup. These include Claude Code hooks and, when installed, pi extensions, an OpenCode status plugin and Antigravity (`agy`) hooks. They write to global harness configuration under your home directory. For a dev session that must leave those integrations untouched, set `ARC_DEV_NO_GLOBAL_INSTALL=1` before `task dev`.
+**Before launching:** on every start arcterm installs or refreshes its agent integrations: Claude Code hooks and the arcterm Claude mod, and, when present, pi extensions, an OpenCode status plugin and Antigravity hooks. They write to harness configuration under your home directory ([agent integration](docs/guide/agent-integration.md)). To leave them untouched in a dev session, set `ARC_DEV_NO_GLOBAL_INSTALL=1` before `task dev`.
 
-Once open, register your repository and use **+ New agent** for an interactive session or **+ Run** in Jarvis for tracked work.
-
-### Build an installer
+### Build and install
 
 ```sh
-task tauri:build
+task tauri:build   # sync the version, build the backend, cargo tauri build
+task install       # install that build over arcterm and reopen it
 ```
 
-This syncs the app version, builds the backend binaries, and packages a Windows NSIS installer. `npm run build` runs the same task; a separate `task build:backend` is not required.
+On Windows this produces an NSIS installer; on a Mac an ad-hoc signed `.app` and `.dmg` (not notarized). `task install` closes the running arcterm and every agent in it.
 
-Build commands, test commands, data locations, and troubleshooting notes live in [AGENTS.md](AGENTS.md).
+Build and test commands, data locations and gotchas are in [AGENTS.md](AGENTS.md). Setup in more detail: [getting started](docs/guide/getting-started.md).
 
 ## Under the hood
 
-arcterm began as a fork of [Wave Terminal](https://github.com/wavetermdev/waveterm). It retains the terminal and `wshrpc` foundations, but replaces the Electron shell with Tauri and centers the interface on agent supervision rather than terminal multiplexing.
+arcterm began as a fork of [Wave Terminal](https://github.com/wavetermdev/waveterm). It keeps the terminal and `wshrpc` foundations, replaces the Electron shell with Tauri, and centers the interface on supervising agents. Many internal names still use Wave's (`wavesrv`, `wsh`, `waveobj`).
 
-| Layer        | Stack                                                           | Responsibility                                                         |
-| ------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Desktop host | Tauri / Rust · [`src-tauri/`](src-tauri/)                       | Native window, startup, and backend lifecycle.                         |
-| Backend      | Go / SQLite · [`cmd/`](cmd/), [`pkg/`](pkg/)                    | Agent integration, persistent state, RPC, and the orchestrator engine. |
-| Frontend     | React 19 / Vite / Tailwind 4 / jotai · [`frontend/`](frontend/) | Cockpit surfaces, live terminals, and review workflows.                |
+| Layer | Stack | Responsibility |
+|---|---|---|
+| Desktop host | Tauri / Rust · [`src-tauri/`](src-tauri/) | Native window, startup, backend lifecycle |
+| Backend | Go / SQLite · [`cmd/`](cmd/), [`pkg/`](pkg/) | Agent integration, persistent state, RPC, the orchestrator engine |
+| Frontend | React 19 / Vite / Tailwind 4 / jotai · [`frontend/`](frontend/) | Cockpit surfaces, live terminals, review |
 
-The bundled `wsh` CLI lets agents report status, ask questions, inspect runs, and drive the cockpit. Many internal names still use Wave terminology.
+The bundled `wsh` CLI is how agents report status, ask questions, start and inspect runs, and drive the cockpit.
 
 ## Documentation
 
-- [Orchestrator guide](docs/orchestrator-guide.md) — launch, supervise, steer, and recover runs.
-- [Diff walkthrough](docs/diff-tab.md) — Git history, review ranges, and comparisons.
-- [Keyboard shortcuts](docs/keyboard-shortcuts.md) — navigation and commands.
-- [Architecture](docs/reference/architecture.md) — desktop, backend, and frontend map.
-- [Development reference](AGENTS.md) — build/test commands and gotchas.
-- [Docs index](docs/README.md) — reference notes, design records, and issue trackers.
+- [User guide](docs/guide/README.md) (Vietnamese) — every surface, runs, the plan format, agent integration.
+- [Keyboard shortcuts](docs/keyboard-shortcuts.md)
+- [Architecture](docs/reference/architecture.md) — desktop, backend and frontend map.
+- [AGENTS.md](AGENTS.md) — development reference: build, test, gotchas.
+- [Docs index](docs/README.md) — reference notes, design records, issue trackers.
+- [Changelog](CHANGELOG.md)
 
 ## License and attribution
 
