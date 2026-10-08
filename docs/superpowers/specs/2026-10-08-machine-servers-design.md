@@ -1,6 +1,6 @@
 # Servers on this machine: every listening process, who owns it, and stopping it — design
 
-Status: built 2026-10-08 (run 48306843). The `machine-servers` CDP scenario was written but has not yet passed a run.
+Status: built 2026-10-08 (run 48306843); the `machine-servers`, `rail-servers` and `consumers-popover` CDP scenarios pass on the dev app (2026-10-08). `go test -race` for `machineLister` has not run: no cgo toolchain on the build machine.
 
 ## Problem
 
