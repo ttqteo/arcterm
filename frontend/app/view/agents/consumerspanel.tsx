@@ -1,15 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent by RAM or by tokens of the last
-// 10 minutes, a run's workers under their run, and Stop / → Sonnet per row. The RAM view shows each row's RAM, free
-// RAM and arcterm's own processes; the Tokens view shows each row's tokens and spend and the 5-hour quota. Opened from
-// the RAM chip (RAM) and the plan-usage meters (Tokens). Rows are ranked when it opens and keep their place while it
-// is open. consumers.ts decides; this draws.
+// The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent with its RAM and its tokens and
+// spend of the last 10 minutes, a run's workers under their run, and Stop / → Sonnet per row; free RAM and the 5-hour
+// quota in the header, arcterm's own processes below. Opened from the RAM chip (ranked by RAM) and the plan-usage
+// meters (ranked by tokens). Rows are ranked when it opens and keep their place while it is open. consumers.ts
+// decides; this draws.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
-import { Segmented } from "@/app/element/segmented";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
@@ -33,7 +32,6 @@ import {
     stopWorkerMessage,
     switchToastText,
     type ConsumerRow,
-    type ConsumersSort,
 } from "./consumers";
 import { consumersOpenAtom, consumersOpenerAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
 import { usePlanDonuts } from "./usagemeters";
@@ -46,11 +44,6 @@ const MODEL_SWITCH_APPLIES_MIDTURN = false;
 
 // stopping a worker waits for it to exit
 const STOP_TIMEOUT_MS = 60_000;
-
-const SORTS: { key: ConsumersSort; label: string }[] = [
-    { key: "ram", label: "RAM" },
-    { key: "tokens", label: "Tokens" },
-];
 
 function close(): void {
     globalStore.set(consumersOpenAtom, null);
@@ -103,7 +96,7 @@ function toSonnet(row: ConsumerRow): void {
     });
 }
 
-function Row({ row, model, sort }: { row: ConsumerRow; model: AgentsViewModel; sort: ConsumersSort }) {
+function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
     return (
         <div data-consumer-row={row.id} className="flex items-center gap-2 px-3 py-[5px] hover:bg-surface-hover">
             <span
@@ -132,26 +125,24 @@ function Row({ row, model, sort }: { row: ConsumerRow; model: AgentsViewModel; s
                     {row.model}
                 </span>
             ) : null}
-            {sort === "ram" ? (
-                <span data-consumer-ram className="w-[72px] text-right text-[12px] tabular-nums text-secondary">
-                    {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
-                </span>
-            ) : (
-                <span
-                    data-consumer-tokens
-                    className="flex w-[112px] items-center justify-end gap-1 text-[12px] tabular-nums text-secondary"
-                >
-                    {row.burn ? (
-                        <TriangleAlert
-                            data-consumer-burn
-                            size={12}
-                            className="text-warning"
-                            aria-label="Spending fastest"
-                        />
-                    ) : null}
-                    {row.tokens === undefined ? "—" : `${fmt(row.tokens)} · ${usd(row.spendUsd ?? 0)}`}
-                </span>
-            )}
+            <span data-consumer-ram title="RAM" className="w-[64px] text-right text-[12px] tabular-nums text-secondary">
+                {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
+            </span>
+            <span
+                data-consumer-tokens
+                title="Tokens and estimated spend, last 10 minutes"
+                className="flex w-[112px] items-center justify-end gap-1 text-[12px] tabular-nums text-secondary"
+            >
+                {row.burn ? (
+                    <TriangleAlert
+                        data-consumer-burn
+                        size={12}
+                        className="text-warning"
+                        aria-label="Spending fastest"
+                    />
+                ) : null}
+                {row.tokens === undefined ? "—" : `${fmt(row.tokens)} · ${usd(row.spendUsd ?? 0)}`}
+            </span>
             {row.canSonnet ? (
                 <button
                     type="button"
@@ -214,7 +205,7 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
     }, [open]);
-    // the order the panel first drew, held while it is open so switching views or a new reading never moves a row
+    // the order the panel first drew, held while it is open so a new reading never moves a row
     const heldOrder = useRef<string[] | null>(null);
     if (!open) {
         heldOrder.current = null;
@@ -238,18 +229,9 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">
                         <span data-consumers-header className="flex-1 text-[12px] text-secondary">
-                            {sort === "tokens"
-                                ? `Tokens, last 10 min${fiveHour != null ? ` · 5h quota ${Math.round(fiveHour)}%` : ""}`
-                                : view
-                                  ? `${formatGB(view.freeBytes)} free of ${formatGB(view.totalBytes)}`
-                                  : "Reading…"}
+                            {view ? `${formatGB(view.freeBytes)} free of ${formatGB(view.totalBytes)}` : "Reading…"}
+                            {fiveHour != null ? ` · 5h quota ${Math.round(fiveHour)}%` : ""}
                         </span>
-                        <Segmented
-                            value={sort ?? "ram"}
-                            options={SORTS}
-                            onChange={(v) => globalStore.set(consumersOpenAtom, v)}
-                            ariaLabel="Sort by"
-                        />
                     </div>
                     {reading.failed ? (
                         <div data-consumers-stale className="px-3 py-1.5 text-[11.5px] text-warning">
@@ -278,41 +260,35 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                         </div>
                                     ) : null}
                                     {g.rows.map((r) => (
-                                        <Row key={r.id} row={r} model={model} sort={sort ?? "ram"} />
+                                        <Row key={r.id} row={r} model={model} />
                                     ))}
                                 </div>
                             ))
                         )}
                     </div>
-                    {sort !== "tokens" ? (
-                        <div className="border-t border-border px-3 py-1.5">
-                            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted">
-                                arcterm
-                            </div>
-                            {(view?.own ?? []).map((o) => (
-                                <div
-                                    key={o.label}
-                                    data-consumers-own={o.label}
-                                    className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
-                                >
-                                    <span>{o.label}</span>
-                                    <span className="tabular-nums">
-                                        {o.bytes === undefined ? "—" : ramLabel(o.bytes)}
-                                    </span>
-                                </div>
-                            ))}
+                    <div className="border-t border-border px-3 py-1.5">
+                        <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted">arcterm</div>
+                        {(view?.own ?? []).map((o) => (
                             <div
-                                data-consumers-app-total
-                                title="Everything arcterm runs: the rows above and every agent"
-                                className="mt-[3px] flex items-center justify-between border-t border-border pt-[4px] text-[12px] font-semibold text-primary"
+                                key={o.label}
+                                data-consumers-own={o.label}
+                                className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
                             >
-                                <span>Total, with agents</span>
-                                <span className="tabular-nums">
-                                    {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
-                                </span>
+                                <span>{o.label}</span>
+                                <span className="tabular-nums">{o.bytes === undefined ? "—" : ramLabel(o.bytes)}</span>
                             </div>
+                        ))}
+                        <div
+                            data-consumers-app-total
+                            title="Everything arcterm runs: the rows above and every agent"
+                            className="mt-[3px] flex items-center justify-between border-t border-border pt-[4px] text-[12px] font-semibold text-primary"
+                        >
+                            <span>Total, with agents</span>
+                            <span className="tabular-nums">
+                                {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                            </span>
                         </div>
-                    ) : null}
+                    </div>
                     <div className="flex justify-end border-t border-border px-3 py-1.5">
                         <button
                             type="button"

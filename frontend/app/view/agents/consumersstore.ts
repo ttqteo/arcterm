@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Consumers panel's state: whether it is open and on which sort, and its last GetConsumers reading. The poll
+// The Consumers panel's state: whether it is open and which measure ranked it, and its last GetConsumers reading. The poll
 // runs only while the panel is open.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -43,12 +43,17 @@ export async function loadConsumers(
     }
 }
 
-/** An opener's click: opens on its sort, closes when the panel already shows that sort, else switches to it. The
- * panel hangs from `opener`. It closes the Servers popover, so only one of them is open. */
+/** An opener's click: opens the panel ranked by the opener's measure, and closes it when it is open, whichever opener
+ * opened it (RAM and tokens are one view). The panel hangs from `opener`. It closes the Servers popover, so only one
+ * of them is open. */
 export function toggleConsumers(sort: ConsumersSort, opener: Element | null = null): void {
     globalStore.set(machineServersOpenAtom, false);
+    if (globalStore.get(consumersOpenAtom) != null) {
+        globalStore.set(consumersOpenAtom, null);
+        return;
+    }
     globalStore.set(consumersOpenerAtom, opener);
-    globalStore.set(consumersOpenAtom, (cur) => (cur === sort ? null : sort));
+    globalStore.set(consumersOpenAtom, sort);
 }
 
 /** Polls while open: one read at once, then every CONSUMERS_POLL_MS, stopped when the panel closes. */

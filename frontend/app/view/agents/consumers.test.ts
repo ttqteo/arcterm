@@ -217,7 +217,7 @@ describe("holdOrder", () => {
         expect(opened.order).toEqual(["a", "b", "w1"]);
     });
 
-    it("does not move a row when the view switches to tokens", () => {
+    it("does not move a row when a reading ranks by tokens", () => {
         const opened = holdOrder(buildConsumers(read(), roster, "ram"), null);
         const switched = holdOrder(buildConsumers(read(), roster, "tokens"), opened.order);
         expect(order(switched)).toEqual(["a", "b", "w1"]);

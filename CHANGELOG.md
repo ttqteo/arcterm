@@ -14,6 +14,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - The plan-usage meters and the free-RAM chip are back in the app bar, where they are easier to read; clicking either
   opens Consumers below it. The Servers chip and the version stay in the footer.
+- Consumers shows each agent's RAM and its tokens and spend on the same row, with free RAM and the 5-hour quota
+  together in its header, instead of making you switch between a RAM and a Tokens view.
 
 ### Fixed
 

@@ -37,12 +37,14 @@ describe("loadConsumers", () => {
 describe("toggleConsumers", () => {
     beforeEach(() => globalStore.set(consumersOpenAtom, null));
 
-    it("opens on a sort, closes on the same opener, and switches sort from the other", () => {
+    it("opens ranked by its opener's measure and closes on either opener's next click", () => {
         toggleConsumers("ram");
         expect(globalStore.get(consumersOpenAtom)).toBe("ram");
+        toggleConsumers("ram");
+        expect(globalStore.get(consumersOpenAtom)).toBeNull();
         toggleConsumers("tokens");
         expect(globalStore.get(consumersOpenAtom)).toBe("tokens");
-        toggleConsumers("tokens");
+        toggleConsumers("ram");
         expect(globalStore.get(consumersOpenAtom)).toBeNull();
     });
 });

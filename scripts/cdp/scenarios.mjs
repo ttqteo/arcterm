@@ -20201,9 +20201,9 @@ const consumersPopover = {
         })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "3. rows by RAM: the run's worker first under its run, free RAM in the header, each row's RAM and no tokens",
+            "3. rows by RAM: the run's worker first under its run, free RAM and the 5-hour quota in the header, each row's RAM and tokens side by side",
             !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
-                ram.header.includes("free of") && !ram.header.includes("5h quota") && ram.ramCols === 4 && ram.tokenCols === 0,
+                ram.header.includes("free of") && ram.header.includes("5h quota 62%") && ram.ramCols === 4 && ram.tokenCols === 4,
             JSON.stringify(ram)
         );
 
@@ -20233,31 +20233,22 @@ const consumersPopover = {
             JSON.stringify(marks)
         );
 
-        await h.ev(`[...document.querySelectorAll("[data-consumers-panel] button")].find((b) => b.textContent.trim() === "Tokens")?.click()`);
-        await settle(300);
         const tokens = await h.ev(`(() => {
             const p = document.querySelector("[data-consumers-panel]");
             const w = ${consumersRowExpr("fx-consumers-worker")};
             const mine = ${consumersRowExpr("fx-consumers-mine")};
             const pi = ${consumersRowExpr("fx-consumers-pi")};
             return {
-                sort: p?.dataset.sort ?? null,
-                first: p?.querySelector("[data-consumer-row]")?.dataset.consumerRow ?? null,
-                header: p?.querySelector("[data-consumers-header]")?.textContent ?? "",
-                ramCols: p?.querySelectorAll("[data-consumer-ram]").length ?? -1,
-                tokenCols: p?.querySelectorAll("[data-consumer-tokens]").length ?? -1,
-                own: p?.querySelectorAll("[data-consumers-own]").length ?? -1,
+                toggle: !!p?.querySelector('[aria-label="Sort by"]'),
+                workerTokens: w?.querySelector("[data-consumer-tokens]")?.textContent ?? "",
                 workerBurn: !!w?.querySelector("[data-consumer-burn]"),
                 mineBurn: !!mine?.querySelector("[data-consumer-burn]"),
                 piTokens: pi?.querySelector("[data-consumer-tokens]")?.textContent.includes("—") ?? false,
             };
         })()`);
-        await h.shot("cdp-shots/consumers-tokens.png");
         rec(
-            "6. the Tokens view keeps the rows where they were, shows tokens and spend instead of RAM, the 5-hour quota in the header, no arcterm processes; the Opus worker burns fastest and the pi agent's tokens are unread",
-            tokens.sort === "tokens" && tokens.first === "fx-consumers-worker" && tokens.header.includes("5h quota 62%") &&
-                !tokens.header.includes("free of") && tokens.ramCols === 0 && tokens.tokenCols === 4 && tokens.own === 0 &&
-                tokens.workerBurn && !tokens.mineBurn && tokens.piTokens,
+            "6. one view, no RAM | Tokens toggle: each row's tokens and spend sit beside its RAM; the Opus worker burns fastest and the pi agent's tokens are unread",
+            !tokens.toggle && tokens.workerTokens.includes("$") && tokens.workerBurn && !tokens.mineBurn && tokens.piTokens,
             JSON.stringify(tokens)
         );
 

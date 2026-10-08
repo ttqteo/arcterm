@@ -152,10 +152,10 @@ export function buildConsumers(
     };
 }
 
-/** Keeps the rows where they were while the panel stays open: switching between RAM and Tokens, or a new reading,
- * does not move a row. `held` is the row ids in the order the panel first drew them (null on open: the view's own
- * ranking is kept). A row not in `held` (an agent that started since) goes after the held ones of its group, a new
- * group after the held groups, both in the view's ranking. Returns the view in that order and the order to hold next. */
+/** Keeps the rows where they were while the panel stays open: a new reading does not move a row. `held` is the row
+ * ids in the order the panel first drew them (null on open: the view's own ranking is kept). A row not in `held` (an
+ * agent that started since) goes after the held ones of its group, a new group after the held groups, both in the
+ * view's ranking. Returns the view in that order and the order to hold next. */
 export function holdOrder(view: ConsumersView, held: string[] | null): { view: ConsumersView; order: string[] } {
     const flat = (groups: ConsumerGroup[]) => groups.flatMap((g) => g.rows.map((r) => r.id));
     if (held == null) {
@@ -185,7 +185,7 @@ export interface Placement {
     origin: "top right" | "bottom right";
 }
 
-export const PANEL_WIDTH = 520;
+export const PANEL_WIDTH = 580;
 const PANEL_GAP = 6; // between the opener and the panel
 const PANEL_MARGIN = 8; // the nearest it comes to the window's edge
 
