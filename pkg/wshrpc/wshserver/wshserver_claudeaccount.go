@@ -6,6 +6,7 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
@@ -35,7 +36,14 @@ func (ws *WshServer) ClaudeAccountListCommand(ctx context.Context) (*wshrpc.Comm
 }
 
 func (ws *WshServer) ClaudeAccountAddCommand(ctx context.Context, data wshrpc.CommandClaudeAccountAddData) (*wshrpc.ClaudeAccountData, error) {
-	a, err := claudeaccount.Add(data.Label, data.Token, data.Email)
+	token := claudeaccount.NormalizeToken(data.Token)
+	// a value that is not shaped like a token is refused by Add without a network call
+	if strings.HasPrefix(token, claudeaccount.TokenPrefix) {
+		if err := claudeaccount.CheckToken(ctx, token); err != nil {
+			return nil, err
+		}
+	}
+	a, err := claudeaccount.Add(data.Label, token, data.Email)
 	if err != nil {
 		return nil, err
 	}

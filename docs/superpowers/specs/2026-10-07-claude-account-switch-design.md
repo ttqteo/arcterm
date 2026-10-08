@@ -115,8 +115,11 @@ A "Claude account" section in `settingssurface.tsx`:
   posing as Claude Code's client on an unpublished API.
 - "Dán token" (secondary): a disclosure in the Claude account section itself, not part of the sign-in
   dialog, holding a label field and a token field, for a token made elsewhere.
-  Saving checks the shape only (`sk-ant-oat` prefix); a bad token surfaces as a 401 on the next claude
-  run.
+  Saving checks the shape (`sk-ant-oat` prefix), then, for either path, sends the token an empty
+  `POST /v1/messages` (`claudeaccount.CheckToken`, added 2026-10-08): a 401 refuses the token, a 400 (the
+  body) means it was accepted, and nothing is generated. A check that cannot decide (offline, 429, 5xx)
+  lets the token through. The usage endpoint can't serve here: it answered 429, not 401, for a cut-off
+  token.
 - Removing the active account switches to Default first.
 
 A token works for model calls and is refused by the usage endpoint: checked 2026-10-07, `claude -p` ran
