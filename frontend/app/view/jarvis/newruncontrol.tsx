@@ -27,19 +27,13 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { CapacityWarn } from "../agents/capacitywarn";
-import { channelsAtom, createChannel, primeChannels } from "../agents/channelsstore";
-import { noteRecentProject, projectListAtom, recentProjectsAtom } from "../agents/projectsstore";
+import { channelsAtom, primeChannels } from "../agents/channelsstore";
+import { startLauncherRun } from "../agents/launcherrun";
+import { projectListAtom, recentProjectsAtom } from "../agents/projectsstore";
 import { RoutePicker } from "../agents/routepicker";
-import {
-    channelOverrideAtom,
-    createRun,
-    loadResolvedProfile,
-    resolveChannelLaunchRoute,
-    resolvedProfileAtom,
-} from "../agents/runactions";
+import { channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "../agents/runactions";
 import { START_OPTIONS, launchBlocker, startNote, type StartFrom } from "../agents/runconfig";
 import {
-    endRunConfigDraft,
     hydrateRunConfigFromProfile,
     parallelismAtom,
     planPathAtom,
@@ -66,14 +60,7 @@ import { ShapeCards, WorkerStepper, usePlanPreview } from "../agents/runlauncher
 import { extraWorkers, overCapacity } from "../agents/workercapacity";
 import { useWorkerCapacity } from "../agents/workercapacitystore";
 import { planShapeText, planWarnings } from "../orchestrate/dagdigest";
-import {
-    initialPick,
-    launchGoal,
-    launchOptsFromConfig,
-    prefillToLaunch,
-    resolveChannelTarget,
-    type NewRunPrefill,
-} from "./newrun";
+import { initialPick, prefillToLaunch, resolveChannelTarget, type NewRunPrefill } from "./newrun";
 import { planMixLine, planModelRows, workersModelName, type PlanModelTone, type WorkersSetting } from "./newrunplan";
 import { openTarget } from "./openref";
 import { ProjectPicker } from "./projectpickerview";
@@ -401,32 +388,30 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
         setStarting(true);
         setError(null);
         fireAndForget(async () => {
-            let oid: string;
-            let run: Run;
+            let started: { channelId: string; run: Run };
             try {
-                // a channel minted here and then orphaned by a failed launch is the project's channel
-                // either way, so there is nothing to roll back — the next run finds it
-                oid = target.kind === "existing" ? target.oid : await createChannel(target.name, target.path);
-                // a route the user picked in the Models section is the answer; otherwise resolve the
-                // project's own, which also validates that the route is actually available right now
-                const route = routeTouched && runRoute != null ? runRoute : await resolveChannelLaunchRoute(oid);
-                run = await createRun(oid, launchGoal(config, goal), route, launchOptsFromConfig(config));
+                // a route the user picked in the Models section is the answer; otherwise the project's own
+                // resolves, which also validates that the route is actually available right now
+                started = await startLauncherRun({
+                    target,
+                    projectName: picked,
+                    config,
+                    goal,
+                    pickedRoute: routeTouched ? runRoute : null,
+                });
             } catch (e) {
                 // only a failure BEFORE the run exists keeps this modal: there is still a launch to retry
                 setError(String(e));
                 setStarting(false);
                 return;
             }
-            noteRecentProject(picked);
-            // the launch consumed this draft, so the next one starts from the project's saved defaults
-            endRunConfigDraft(globalStore.get(resolvedProfileAtom)[oid]);
             // The run exists, so the launch has succeeded and the modal's work is done. Landing on it is a
             // separate concern that reports its own failures (openTarget toasts) — holding the modal open
             // over a run that is already running told the user their launch had failed. openTarget rather
             // than openChannelSheet because + New run is on the app bar: a launch from any surface has to
             // switch to the Brief, or the sheet opens where nobody is looking.
             onClose();
-            await openTarget(model, { kind: "channel", channelId: oid, runId: run.id });
+            await openTarget(model, { kind: "channel", channelId: started.channelId, runId: started.run.id });
         });
     };
 
