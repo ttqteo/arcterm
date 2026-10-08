@@ -12,7 +12,7 @@ Cockpit cho bạn cái nhìn tổng quan ([Cockpit](cockpit.md)); Agent là nơi
 ┌─────────────────┬──────────────────────────────────────────────┬──────────────────┐
 │ Sidebar (248px) │ Header: tên · harness · trạng thái · model    │ Rail chi tiết    │
 │                 │         · context · project      [Split][⤢][×]│ (tab Overview,   │
-│ Conversation    ├──────────────────────────────────────────────┤  File)           │
+│ Conversation    ├──────────────────────────────────────────────┤  Files, File)    │
 │ History         │                                              │                  │
 │ Active          │      Terminal của agent (hoặc lưới 2x2)       │ Status / Needs   │
 │  └ project ▸    │                                              │ you / Subagents  │
@@ -119,7 +119,7 @@ Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus v�
 | Chuyển sang agent kế tiếp | `Ctrl+Tab`, dùng được cả khi con trỏ đang ở trong terminal; gõ phím theo sang terminal của agent mới |
 | Chuyển sang agent kế tiếp **đang hỏi** | `Ctrl+Shift+Tab` (đi tiến, chỉ qua các agent đang hỏi) |
 | Mở file/đường dẫn in ra trong terminal | `Ctrl+click` trên đường dẫn: mở ở tab **File** của rail; trong một terminal thường thì mở ở [Code](code.md) |
-| Dán ảnh / thả file | Dán ảnh hoặc thả file lên terminal: đường dẫn được gõ vào prompt của agent; xem mục Uploads ở rail |
+| Dán ảnh / thả file | Dán ảnh hoặc thả file lên terminal: đường dẫn được gõ vào prompt của agent; xem mục Uploads ở rail. Kéo từ tab [Files](#tab-files) của rail thì gõ `@đường/dẫn` |
 
 Hình ảnh trong terminal (Sixel, iTerm inline image, như `imgcat`, `chafa`) được vẽ tại chỗ.
 
@@ -192,7 +192,7 @@ Khi chuyển giữa các agent bằng phím (`Ctrl+Tab`, `j`/`k`…): nếu agen
 
 ## Rail chi tiết bên phải
 
-Rail có hai tab: **Overview** và **File** (tab File chỉ có khi một file đang mở). Thanh tab có thêm sáu biểu tượng đếm — **Subagents**, **Files changed**, **Artifacts**, **Uploads**, **Servers**, **Background tasks** — luôn theo đúng thứ tự đó để rail không đổi hình dạng giữa các agent; bấm một biểu tượng có số thì mở và cuộn tới mục đó. Phần thân chỉ liệt kê mục nào đang có nội dung.
+Rail có ba tab: **Overview**, **Files** (cây thư mục làm việc của agent, chỉ có khi agent có thư mục) và **File** (chỉ có khi một file đang mở). Thanh tab có thêm sáu biểu tượng đếm — **Subagents**, **Files changed**, **Artifacts**, **Uploads**, **Servers**, **Background tasks** — luôn theo đúng thứ tự đó để rail không đổi hình dạng giữa các agent; bấm một biểu tượng có số thì mở và cuộn tới mục đó. Phần thân chỉ liệt kê mục nào đang có nội dung.
 
 Nhấn `d` (hoặc bấm mũi tên ở rail) để thu rail thành một dải 44 px hiện huy hiệu số câu hỏi đang chờ và thanh context. **Settings → General → Show details rail by default** đặt trạng thái ban đầu. Terminal thường không có rail.
 
@@ -213,6 +213,15 @@ Nhấn `d` (hoặc bấm mũi tên ở rail) để thu rail thành một dải 4
 Chân rail: dòng trạng thái (`idle 3m · cache 4m left`: cache là thời gian prompt cache của Claude còn lại; khi nó là `expired`, lượt kế tiếp phải ghi lại cả context), và một nút: **Resume** (gõ `continue` cho agent đang rảnh) hoặc **Stop** (ngắt lượt đang chạy).
 
 ![Rail chi tiết bên phải của một agent Claude: khối Status (vòng context, chi phí), thanh đếm Subagents/Files changed/…, mục Files changed có vài file, mục Servers](images/agent-rail.png)
+
+### Tab Files
+
+Cây file của thư mục làm việc (worktree) của agent, lấy từ git: file đã track và chưa track, file bị `.gitignore` hiện mờ (một thư mục bị ignore cả, như `node_modules/`, chỉ liệt kê khi mở ra). Thư mục không phải git repo thì tab chỉ báo vậy; repo quá lớn thì báo **Showing the first N files**. Danh sách tải lại khi bạn mở tab, khi agent đổi trạng thái (vd. hết một lượt), và khi bấm **Refresh** ở đầu tab; lỗi thì hiện nội dung lỗi cùng nút **Retry**.
+
+- **Chọn:** bấm một dòng (bấm thư mục thì mở/đóng nó), `Ctrl`+bấm để thêm/bớt, `Shift`+bấm để chọn cả đoạn. `↑`/`↓` di chuyển, `←`/`→` đóng/mở thư mục, `Enter` mở thư mục hoặc mở file ở tab File; bấm đúp một file cũng mở nó.
+- **Kéo vào terminal:** kéo file hoặc thư mục (kéo một dòng đang chọn thì kéo cả vùng chọn) thả lên terminal; đường dẫn được gõ vào prompt, chưa nhấn Enter. Trên terminal của agent nó thành `@src/util.ts`, thư mục là `@src/app/`, đường dẫn có khoảng trắng là `@"docs/my notes.md"`, tính tương đối theo thư mục của agent nhận. Trên terminal thường thì không có `@`.
+
+Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent khi bạn đổi agent hay đổi surface. Tab Files rộng như tab File.
 
 ### Tab File
 
