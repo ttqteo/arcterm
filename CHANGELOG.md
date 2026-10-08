@@ -8,7 +8,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
+## 0.15.7 — 2026-10-09
 
 ### Added
 
