@@ -37,14 +37,15 @@
 - Content column: `max-w-[720px]`, padding `px-10 pt-7 pb-12`, cards `gap-[22px]`. Page title `text-[18px] font-bold tracking-[-0.01em]`, blurb `text-[12.5px] text-muted`.
 - Never hand-edit generated files. Never run prettier on `scripts/*.mjs`. `npx tsc` overflows: typecheck with the Check line (about 2 minutes). Commits carry no Co-Authored-By trailer.
 - Scope inside shared files: Task 1 edits `settingssurface.tsx` only to keep it compiling. `scripts/cdp/scenarios.mjs` belongs to Task 2 and Task 7 only; Tasks 3–6 run in parallel and do not touch it.
-- If a Storage section (from `docs/superpowers/plans/2026-10-08-storage-cleanup.md`) exists in `settingsSections` when a task starts, it becomes a seventh page placed before About, its rows in one card `storage`, built with the same primitives; do not drop it.
+- If a Storage section (from `docs/superpowers/plans/2026-10-08-storage-cleanup.md`) exists in `settingsSections` when a task starts, it becomes a seventh page placed before About, its rows in one card `storage`, built with the same primitives; do not drop it. Then Task 1's tests gain it too: the page-order test lists `storage` before `about` (name as today), the card test asserts `storage/storage` holds its rows in order, and the row-count test adds its row count to 34; Task 2's `settings-pages` scenario gets a `storage` page step, and `resolveSectionId("storage")` passes through.
 
 ## Review Focus
 
 1. **Search across merged pages:** "caret" must still find both cursor rows on Terminal, "claude account" must reach the Agents page through its card label though the card has no rows, and a query that empties the selected page moves the selection to the first page left. Pinned in Task 1 (`filterSections` tests).
 2. **A retired section id from a deep link** (`pendingSettingsSectionAtom` holding `run`) opens Agents, never a blank pane. Pinned in Task 1 (`resolveSectionId`).
 3. **Changed counts after the merge:** Terminal now holds `fonts.term`; its count and Reset section must include it, and Reset section still writes one settings.json patch for all of a page's config rows. Pinned in Task 1 (`changedCount`) and Task 2 (`resetSection` over `sectionRows`).
-4. **The key pill copies the key without stealing the row's control focus**, and a row with no key shows no pill. Pinned in Task 2 (`keyPillTitle` tests) and the `settings-pages` `key-pill` step.
+4. **The key pill copies the key without stealing the row's control focus**, and a row that stores no setting shows no pill: no key, or a key but no scope (the build-info rows on About, whose "keys" are provenance like `tauri.conf.json`). Pinned in Task 2 (`keyPillTitle` tests) and the `settings-pages` `key-pill` step.
+5. **Changed state end to end:** a changed config row shows the dot and the revert button, its page's index entry shows the count, and Reset section appears. Pinned by the `settings-pages` `changed` step (Task 2).
 
 ---
 
@@ -249,7 +250,7 @@ In `settingssurface.tsx`, only enough to compile and render as before: `useRowBi
 
 **Depends on:** Task 1
 
-**Files:** `frontend/app/view/agents/settingsui.tsx`, `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingspages/terminal.tsx`, `frontend/app/view/agents/settingspages/agents.tsx`, `frontend/app/view/agents/settingspages/backgroundai.tsx`, `frontend/app/view/agents/settingspages/about.tsx`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/settingsui.tsx`, `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingspages/terminal.tsx`, `frontend/app/view/agents/settingspages/agents.tsx`, `frontend/app/view/agents/settingspages/backgroundai.tsx`, `frontend/app/view/agents/settingspages/about.tsx`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/routepicker.tsx`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Failing test for the key pill's title.** Add to `settingsmodel.test.ts`:
 
@@ -271,6 +272,8 @@ describe("keyPillTitle", () => {
 
     it("has no pill for a row that stores no setting", () => {
         expect(keyPillTitle({ id: "d", title: "", desc: "" })).toBeNull();
+        // build info: a provenance "key" but no scope, like about.app
+        expect(keyPillTitle({ id: "about.app", title: "App version", desc: "This shell.", key: "tauri.conf.json" })).toBeNull();
     });
 });
 ```
@@ -280,29 +283,29 @@ Run `npx vitest run frontend/app/view/agents/settingsmodel.test.ts -t keyPillTit
 - [ ] **Step 2: Implement `keyPillTitle`** in `settingsmodel.ts`:
 
 ```ts
-// The key pill's tooltip: what a click copies, then where the value lives. A row without a scope (build
-// info) says only what it copies.
+// The key pill's tooltip: what a click copies, then where the value lives. Null — no pill — for a row that
+// stores no setting: no key, or no scope (build info, whose key only names where the value came from).
 export function keyPillTitle(row: SettingRowDef): string | null {
     const keys = rowKeys(row);
-    if (keys.length === 0) {
+    if (keys.length === 0 || row.scope == null) {
         return null;
     }
-    const where =
-        row.scope === "synced" ? " · synced in settings.json" : row.scope === "local" ? " · stored on this machine only" : "";
-    return `Copy ${keys.join(" · ")}${where}`;
+    const where = row.scope === "synced" ? "synced in settings.json" : "stored on this machine only";
+    return `Copy ${keys.join(" · ")} · ${where}`;
 }
 ```
 
 Run the test again — expected PASS.
 
-- [ ] **Step 3: Move the primitives into `settingsui.tsx`** and restyle them to the spec's Frame, Row and Controls sections. Export: `RowCtx`/`RowCtxValue` (add `visibleCards: Set<string> | null`), `SettingCard`, `SettingRow`, `CardFooter`, `CardWarning`, `Toggle`, `Segmented`, `Stepper`, `CommitText`, `SecretInput`, `Select`, `ChoiceRow`, `Value`.
-  - `SettingCard({ id, label, children, header?, footer? })`: returns null when `ctx.visibleCards` is set and lacks `id`; renders the label, then the card box with `data-setting-card={id}`, `header` (a `CardWarning` or a tab strip) above the children and `footer` below.
+- [ ] **Step 3: Move the primitives into `settingsui.tsx`** and restyle them to the spec's Frame, Row and Controls sections. Export: `RowCtx`/`RowCtxValue` (add `visibleCards: Set<string> | null`), `SettingCard`, `SettingRow`, `CardFooter`, `CardWarning`, `Toggle`, `Segmented`, `Stepper`, `CommitText`, `SecretInput`, `Select`, `ChoiceRow`, `Value`, `Note` (moved unchanged from `settingssurface.tsx`; `run.route`'s error and the vault errors use it).
+  - `SettingCard({ id, label, children, header?, footer?, rowId? })`: returns null when `ctx.visibleCards` is set and lacks `id`; renders the label, then the card box with `data-setting-card={id}`, `header` (a `CardWarning` or a tab strip) above the children and `footer` below. With `rowId` (a card that draws one row without its own title line, like the theme grid), the label line takes that row's changed state exactly as `SettingRow` draws it: the 5px dot before the label and the `RotateCcw` "Revert to default" button at the line's right end, through the same helper `SettingRow` uses so the two never drift.
   - `SettingRow({ id, compact?, inline?, children })`: two tiers (or one with `inline`, the description on the title line, used by flag rows); `group` class so `group-hover:`/`group-focus-within:` reveal the key pill; on hover/focus-within the row takes `bg-surface-hover`. Changed: a 5px `bg-accent` dot before the title (`title="Changed from the default"`) and after the control an icon button (`RotateCcw` 14px, `aria-label="Revert to default"`, `title="Revert to default"`). The key pill: `rounded bg-pill px-1.5 font-mono text-[10.5px] text-muted` with the keys and a `Copy` 11px icon, then the scope word (`synced` or `this machine`) in `text-[11px] text-ink-faint`; a `<button>` whose `title` is `keyPillTitle(def)` and whose click runs `navigator.clipboard.writeText(rowKeys(def).join(" "))`; hidden (`invisible`) until row hover or focus-within; absent when `keyPillTitle` is null. Keeps `data-setting-row={id}`.
   - `Toggle`: 32×18 track, `bg-accent` when on, `bg-edge-strong` off; knob 14px.
   - `Segmented`: `flex gap-0.5 p-0.5 rounded-sm border border-edge-mid bg-surface`; options `px-2.5 py-1 rounded-[4px] text-[12px] font-semibold`; selected `bg-surface-selected text-primary`, others `text-muted hover:text-primary`. Optional per-option `fontFamily` (style) for the font rows.
   - `Stepper`: one 28px box `rounded-sm border border-edge-mid bg-surface`, value `min-w-10 tabular-nums font-semibold`.
   - `CommitText`/`SecretInput`: 30px tall, `bg-surface border-edge-mid rounded-sm`, default width 260px.
   - `Select({ value, label, items, ariaLabel })`: a 28px button (`bg-surface border-edge-mid`, `ChevronDown` 12px) that opens `ContextMenuModel.getInstance().showContextMenu(items, e)`; `items` are `ContextMenuItem`s (radio items with `checked`, `sublabel`, separators).
+  - `RoutePicker` (`routepicker.tsx`) gains `size="select"` beside `default`/`compact`: its trigger then matches `Select`'s button (28px, `rounded-sm border-edge-mid bg-surface`, `text-[12px]`, `ChevronDown` 12px). The popover and every other caller are unchanged. Tasks 5 and 6 only pass `size="select"`; neither edits `routepicker.tsx`.
   - `ChoiceRow({ selected, dim?, onPick, children })`: a card row button, `bg-surface-selected` plus a `Check` 14px when selected, `text-muted` name when `dim`.
   - `CardWarning`: `bg-askingbg` band, `TriangleAlert` 14px `text-warning`, `text-[12.5px] text-warning-soft`, `border-b border-edge-mid`.
   - `CardFooter({ dot?, children })`: `border-t border-edge-mid px-4 py-2.5 text-[12px]`; with `dot`, a 6px `bg-ink-faint` dot first.
@@ -311,7 +314,7 @@ Run the test again — expected PASS.
 
 - [ ] **Step 5: One file per page.** Move each old section component out of `settingssurface.tsx` into its page file, wrapped in `SettingCard`s by the card membership table (cards in order, each holding its rows' `SettingRow`s), using the `settingsui.tsx` primitives. Keep every control's behavior as it is today; Tasks 3–6 restyle inside their page. The page files export `GeneralPage`, `AppearancePage`, `TerminalPage`, `AgentsPage`, `BackgroundAIPage`, `AboutPage`; `SectionBody` renders them. `fonts.term` moves to `TerminalPage`'s `text` card here. Shared helpers the pages need (`writeConfig`, `FLAG_RUNTIMES`, `startupLabel`) move to `settingsui.tsx`.
 
-- [ ] **Step 6: The `settings-pages` CDP scenario.** (Task 2 creates the page files listed above; `settingssurface.tsx` keeps the shell.) Add it to `scripts/cdp/scenarios.mjs` (4-space indent, no prettier), modelled on `settings-radar-audit`: arrange opens Settings (`surface:settings` via the nav button) at 1600×1000; one step per page, each clicking `[data-section="<id>"]`, asserting the page's card ids from `[data-setting-card]` in order, and taking `cdp-shots/settings-pages-<id>.png`. Add the step `key-pill`: on Terminal, hover `[data-setting-row="terminal.scrollback"]` (CDP `Input.dispatchMouseEvent` mouseMoved over its rect), assert its key pill is visible and titled `Copy term:scrollback · synced in settings.json`, and assert `[data-setting-row="about.app"]` has no pill; shot `settings-pages-key-pill.png`. Move every `[data-section="…"]` click in other scenarios that names a retired id to its new id (`route-picker-flat` and `agy-harness` `run` → `agents`; `harness-update` `about` stays; `settings-claude-account` `claudeaccount` → `agents`; `notify-toast` `notifications` → `general`; `agy-harness` `newagent` → `agents`).
+- [ ] **Step 6: The `settings-pages` CDP scenario.** (Task 2 creates the page files listed above; `settingssurface.tsx` keeps the shell.) Add it to `scripts/cdp/scenarios.mjs` (4-space indent, no prettier), modelled on `settings-radar-audit`: arrange opens Settings (`surface:settings` via the nav button) at 1600×1000; one step per page, each clicking `[data-section="<id>"]`, asserting the page's card ids from `[data-setting-card]` in order, and taking `cdp-shots/settings-pages-<id>.png`. Add the step `key-pill`: on Terminal, hover `[data-setting-row="terminal.scrollback"]` (CDP `Input.dispatchMouseEvent` mouseMoved over its rect), assert its key pill is visible and titled `Copy term:scrollback · synced in settings.json`; shot `settings-pages-key-pill.png`; then click `[data-section="about"]` and assert `[data-setting-row="about.app"]` is rendered and has no pill. Add the step `changed`: arrange saves `term:fontsize` from `h.rpc("getfullconfig", null)` (null when unset), the step sets it to a non-default value with `h.rpc("setconfig", { "term:fontsize": <default + 2> })` and waits for the config event (`settle(600)`), opens Terminal, and asserts `[data-setting-row="terminal.fontsize"]` shows the changed dot and a button `aria-label="Revert to default"`, the `[data-section="terminal"]` index entry shows a count of at least 1, and the page header shows Reset section; shot `settings-pages-changed.png`. Teardown writes the saved value back (`setconfig` with the saved value, or `null` to remove it), in a `finally` so a failed assert still restores it. Move every `[data-section="…"]` click in other scenarios that names a retired id to its new id (`route-picker-flat` and `agy-harness` `run` → `agents`; `harness-update` `about` stays; `settings-claude-account` `claudeaccount` → `agents`; `notify-toast` `notifications` → `general`; `agy-harness` `newagent` → `agents`).
 
 - [ ] **Step 7: Run.** `npx vitest run frontend/app/view/agents/settingsmodel.test.ts`, then the Check line — expected PASS, exit 0.
 
@@ -387,7 +390,7 @@ Run the test — expected PASS.
 
 **Files:** `frontend/app/view/agents/settingspages/appearance.tsx`
 
-- [ ] **Step 1: Theme card.** The theme picker becomes a `grid grid-cols-3 gap-1.5 p-3` of chips: 38px buttons, `rounded-sm border px-2.5 text-[12.5px] font-semibold`, a 2×2 grid of 10px swatches (the palette's background, raised surface, accent, success, from `THEMES`) then the name, then `Check` 13px on the selected one; selected `border-edge-strong bg-surface-selected`, others `border-edge-mid bg-surface`. The swatch colors are data, so they go in `style={{ background }}` from the palette (as the current picker does), not in classes. The row's title/description are not drawn above the grid (the card label says Theme); the changed dot and revert sit in the card label's line instead.
+- [ ] **Step 1: Theme card.** The theme picker becomes a `grid grid-cols-3 gap-1.5 p-3` of chips: 38px buttons, `rounded-sm border px-2.5 text-[12.5px] font-semibold`, a 2×2 grid of 10px swatches (the palette's background, raised surface, accent, success, from `THEMES`) then the name, then `Check` 13px on the selected one; selected `border-edge-strong bg-surface-selected`, others `border-edge-mid bg-surface`. The swatch colors are data, so they go in `style={{ background }}` from the palette (as the current picker does), not in classes. The row's title/description are not drawn above the grid (the card label says Theme); the changed dot and revert sit in the card label's line instead, by passing `rowId="appearance.theme"` to the `theme` card's `SettingCard` (Task 2 built that slot; do not edit `settingsui.tsx`).
 
 - [ ] **Step 2: Colors card.** Accent keeps its swatch row (18px swatches, the current one ringed) and custom picker; Working, Asking and Blocked are compact rows with the hex in `font-mono text-[11.5px] text-muted` and a 26×18 swatch that opens the color input as today.
 
@@ -409,7 +412,7 @@ Run the test — expected PASS.
 
 - [ ] **Step 1: Claude account card.** Each account is a card row: a `Check` column (the active account), the email `text-[13px] font-semibold`, the method tag (`/login` or `token`, `rounded bg-pill px-1.5 text-[11px] text-ink-mid`), "new agents use this" in `text-[11.5px] text-muted` on the active one; below, 5h and Week meters (a 64×4 `bg-edge-mid` track with a `bg-accent` fill, `bg-warning` from 80%, then the percent `tabular-nums text-secondary`) and the last-seen age, all from the existing `rowQuota`/`quotaLine` data; the ⋯ button opens the existing per-row menu. The active row has `bg-surface-selected`. "+ Add account" is the card's `CardFooter` button and opens the existing Add account dialog. Every existing behavior (switch, rename, remove, restart prompt) stays.
 
-- [ ] **Step 2: Runs card.** `run.route` keeps its `RoutePicker`, restyled to the `Select` button look.
+- [ ] **Step 2: Runs card.** `run.route` keeps its `RoutePicker`, passing `size="select"` (Task 2 added it; do not edit `routepicker.tsx`).
 
 - [ ] **Step 3: Launch flags card.** The runtime `Segmented` becomes the card's header tab strip (`FLAG_RUNTIMES`, selected tab `bg-surface-selected`), with "per runtime" at its right in `text-[11.5px] text-muted`. `newagent.runtime`'s row is the tab strip itself (its `SettingRow` wraps the strip so search and `data-setting-row` keep working). Then `newagent.remember` as a normal row, then each flag as a compact `inline` row: the flag in `font-mono text-[12px] font-medium`, its description on the same line in `text-muted` (truncated), a toggle. Pi's empty catalog keeps its "no flags" line.
 
@@ -429,7 +432,7 @@ Run the test — expected PASS.
 
 - [ ] **Step 1: Runtime card.** The radio cards become `ChoiceRow`s: name, the command in `font-mono text-[11px] text-ink-faint`, then at the right a 6px dot and a word (`installed` `text-success`/`bg-success`, `not installed` `text-muted`/`bg-ink-faint`, `default · key missing` `text-warning`/`bg-warning`); a runtime that is not installed is `dim` and cannot be picked, as today.
 
-- [ ] **Step 2: OpenRouter and Radar cards.** The "key not set" note moves from the bottom of the page to the OpenRouter card's `CardWarning` header, with today's condition and copy. API key `SecretInput`, cheap model `CommitText`; the Radar audit route keeps its picker in the `Select` look.
+- [ ] **Step 2: OpenRouter and Radar cards.** The "key not set" note moves from the bottom of the page to the OpenRouter card's `CardWarning` header, with today's condition and copy. API key `SecretInput`, cheap model `CommitText`; the Radar audit route keeps its `RoutePicker`, passing `size="select"` (Task 2 added it; do not edit `routepicker.tsx`).
 
 - [ ] **Step 3: About.** Versions card: four compact rows with the value at the right in `text-[13px] text-secondary tabular-nums`. Coding agents card: one row per harness (name, an "N available" pill `rounded-full bg-accentbg px-2 text-[11px] font-semibold text-accent-soft` when `harnessRowState` says a newer release is out, with today's update action, and the version `tabular-nums`), then `about.updatecheck` as a toggle row.
 
@@ -447,7 +450,7 @@ Run the test — expected PASS.
 
 **Files:** `CHANGELOG.md`, `frontend/app/view/agents/settingssurface.tsx`, `scripts/cdp/scenarios.mjs`
 
-- [ ] **Step 1:** Delete anything in `settingssurface.tsx` no page uses any more (the old `Legend`, `ScopeDot`, `Note`, `countLabel` imports, the group code, unused imports). `settingssurface.tsx` keeps the surface shell, the index and `useRowBindings`.
+- [ ] **Step 1:** Delete anything in `settingssurface.tsx` no page uses any more (the old `Legend`, `ScopeDot`, `countLabel` imports, any copy of `Note` left behind — the pages import it from `settingsui.tsx`, which keeps it — the group code, unused imports). `settingssurface.tsx` keeps the surface shell, the index and `useRowBindings`.
 - [ ] **Step 2: Detail steps in `settings-pages`** (after the page steps, before `key-pill`; 4-space indent, no prettier):
   - `general-select`: on General, click the Startup surface select, assert the themed context menu lists "Last opened" first with the sublabel "the one you left", a separator next, and exactly one checked item; shot `settings-pages-general-select.png`; press Escape.
   - `appearance-detail`: seven theme chips with exactly one checked; the Fonts card's segmented options each carry their own `font-family`; shot `settings-pages-appearance-detail.png`.
