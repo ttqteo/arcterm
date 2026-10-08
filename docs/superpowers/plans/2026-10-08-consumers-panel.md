@@ -37,6 +37,8 @@
 - **A transcript is replaced or truncated mid-session** (a `/clear`, a rewrite). The reader starts that file over instead of reading past its end. Pinned in Task 3 (`TestWindowRereadsATruncatedFile`).
 - **The poll fails while the panel is open** (wavesrv restarting). The last reading stays, dimmed, under "Couldn't read usage · last at 12:03". Pinned in Task 6 (`staleLine`) and Task 7 (`loadConsumers keeps the last reading when a poll fails`).
 - **Stop on a worker whose task finished a moment ago.** The engine refuses with its reason and the task is untouched. Pinned in Task 4 (`TestStopRefusesATaskWithNoWorker`).
+- **Stop on a worker whose tab will not close.** The tab closes only after the task is recorded Failed, so the action fails with the reason and the task stays stopped, never Running on a cancelled run (which would cancel the dag). Pinned in Task 4 (`TestStopKeepsTheTaskStoppedWhenItsTabWillNotClose`).
+- **A pi agent that fanned out to subagents.** The window reads its child sessions as `TranscriptUsage` does, so the panel and the rail agree. Pinned in Task 3 (`TestWindowCountsPiSubagentSessions`).
 - **→ Sonnet for a pi agent, or a model string that is not one word.** The server refuses and sends nothing; the panel never offers it for pi. Pinned in Task 5 (`TestAgentsSetModelRefusesPi`, `TestAgentsSetModelRefusesAMultiWordModel`) and Task 6 (`offers → Sonnet only to Claude on Opus`).
 - **→ Sonnet for an agent asking a question with no control stream.** Typed into its terminal, `/model sonnet` would answer the question; the server refuses as `AgentsSendCommand` does and the panel's toast shows why. Pinned in Task 5 (`TestAgentsSetModelRefusesAnAskingAgentWithNoStream`).
 
@@ -49,11 +51,12 @@
 | `pkg/memusage/footprint_darwin.go` (new) | cgo: `footprint` via `proc_pid_rusage`, `responsiblePid` |
 | `pkg/memusage/footprint_other.go` (new) | `footprint` via gopsutil RSS; `responsiblePid` always false |
 | `pkg/memusage/memusage_test.go` (new) | table, tree, measure, live footprint |
+| `pkg/memusage/footprint_darwin_test.go` (new) | the live footprint against macOS's `footprint` tool (the spec's Activity Monitor check) |
 | `pkg/orchestrate/liveness.go` | uses `memusage.ProcessTree`; its local `processTree` goes |
-| `pkg/usagestats/window.go` (new) | `WindowReader`: incremental per-file read, 10-minute ring, `Forget` |
+| `pkg/usagestats/window.go` (new) | `WindowReader`: incremental per-file read of a transcript and its Claude or pi subagents', 10-minute ring, `Forget` |
 | `pkg/usagestats/window_test.go` (new) | its tests |
 | `pkg/orchestrate/retry.go` | `FailureKindStopped` |
-| `pkg/orchestrate/mutation.go` | the `stop` action (prepare + apply) |
+| `pkg/orchestrate/mutation.go` | the `stop` action (prepare + apply, then close the worker's tab) |
 | `pkg/orchestrate/mutation_test.go` | stop tests |
 | `pkg/jarvis/leadprompt.go` | the lead leaves a stopped task alone |
 | `cmd/wsh/cmd/wshcmd-jarvisdag.go` (+ `_test.go`) | `wsh jarvis dag stop`, its done line |
@@ -71,52 +74,59 @@
 | `frontend/app/cockpit/app-bar.tsx` | mounts the panel under the right-hand group |
 | `scripts/cdp/scenarios.mjs` | the `consumers-popover` scenario |
 | `docs/orchestrator-guide.md`, `CHANGELOG.md` | the `dag stop` row; the user-facing line |
+| `docs/open-issues.md` | Task 1's follow-up row, only when `/model` does not apply mid-turn or was not checked |
 
 ---
 
 ### Task 1: Spike — does `/model` apply inside a running turn?
 **Depends on:** none
-**Files:** `docs/superpowers/plans/2026-10-08-consumers-panel.md`
+**Files:** `docs/superpowers/plans/2026-10-08-consumers-panel.md`, `docs/open-issues.md`
 
-This answers spec decision 9's open question. It changes no product code: its output is a line in this plan's **Execution notes** (bottom of the file), which Task 7 reads. It needs a Claude Code session the worker can type into; if the worker cannot drive one, it records `unverified` and why.
+This answers spec decision 9's open question. It changes no product code: its output is a line in this plan's **Execution notes** (bottom of the file), which Task 7 reads, and, when the answer is not `yes`, the follow-up row spec decision 9 asks for in `docs/open-issues.md`. It needs a Claude Code session the worker can type into; if the worker cannot drive one, it records `unverified` and why.
 
-- Modify: `docs/superpowers/plans/2026-10-08-consumers-panel.md` (the Execution notes section only)
+The spike's Claude must not be wired to arcterm. You run inside an arcterm block, and your shell carries its `WAVETERM_*` variables (`WAVETERM_BLOCKID`, `WAVETERM_JWT`, …) and your own Claude Code session's (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, …). A claude started with them would report its hooks into your block (`wsh agent-hook` acts on any `WAVETERM_BLOCKID`, `cmd/wsh/cmd/wshcmd-agenthook.go`) and its arc mod would take your block's control stream (`claude/arc-mod/hooks/register.ts` turns on when `WAVETERM_BLOCKID` and `WAVETERM_JWT` are set). So the spike runs on its own tmux server (`tmux -L modelspike`), started with every one of those variables unset; a tmux server keeps the environment it started with, so the claude inside it never sees them. `CLAUDE_CODE_OAUTH_TOKEN` is kept: it is the signed-in account, when one was picked.
+
+- Modify: `docs/superpowers/plans/2026-10-08-consumers-panel.md` (the Execution notes section only), `docs/open-issues.md` (one row in `## 1 · Actionable`, only when the answer is `no` or `unverified`)
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the Execution notes line `model-switch-midturn: yes|no|unverified — <evidence>`. Task 7 sets `MODEL_SWITCH_APPLIES_MIDTURN` from it (`yes` → `true`; `no` or `unverified` → `false`). Whatever it finds, nothing else in the plan changes: with `no`, → Sonnet's toast says "from its next turn", and re-running a worker's task on Sonnet stays out of this work (spec decision 9).
+- Produces: the Execution notes line `model-switch-midturn: yes|no|unverified — <evidence>`. Task 7 sets `MODEL_SWITCH_APPLIES_MIDTURN` from it (`yes` → `true`; `no` or `unverified` → `false`). Whatever it finds, nothing else in the plan changes: with `no`, → Sonnet's toast says "from its next turn", and re-running a worker's task on Sonnet stays out of this work; it is filed as the follow-up row in `docs/open-issues.md` (spec decision 9).
 
 - [ ] **Step 1: Check that tmux and claude are on PATH**
 
 Run: `command -v tmux && command -v claude`
 Expected: two paths. If either is missing, go to Step 6 with `unverified — tmux or claude missing`.
 
-- [ ] **Step 2: Start a throwaway Claude session in tmux, on Opus, in a temp directory**
+- [ ] **Step 2: Start a throwaway Claude session on its own tmux server, on Opus, in a temp directory, with none of your session's variables**
 
-Shell state does not carry between your commands, so the spike uses one fixed directory, `$TMPDIR/arc-model-spike`, in every step.
+Shell state does not carry between your commands, so the spike uses one fixed directory, `$TMPDIR/arc-model-spike`, and one tmux server name, `modelspike`, in every step. Every `tmux` command below carries `-L modelspike`; one without it would reach another tmux server and inherit its environment.
 
 ```bash
 SPIKE_DIR="${TMPDIR:-/tmp}/arc-model-spike"
 rm -rf "$SPIKE_DIR" && mkdir -p "$SPIKE_DIR"
-tmux new-session -d -s modelspike -x 200 -y 50 "cd $SPIKE_DIR && claude --model opus"
+tmux -L modelspike kill-server 2>/dev/null
+# the unquoted $( ) splits into "-u NAME" pairs in bash and zsh alike
+env $(env | cut -d= -f1 | grep -E '^(WAVETERM|CLAUDECODE$|CLAUDE_PID$|CLAUDE_CODE_)' | grep -vx 'CLAUDE_CODE_OAUTH_TOKEN' | sed 's/^/-u /') \
+    tmux -L modelspike new-session -d -s modelspike -x 200 -y 50 "cd '$SPIKE_DIR' && claude --model opus"
+tmux -L modelspike show-environment -g | grep -E '^(WAVETERM|CLAUDECODE=|CLAUDE_PID=|CLAUDE_CODE_)' | grep -v '^CLAUDE_CODE_OAUTH_TOKEN=' || echo "spike env clean"
 sleep 8
-tmux capture-pane -p -t modelspike | tail -5
+tmux -L modelspike capture-pane -p -t modelspike | tail -5
 ```
-Expected: the Claude prompt is on screen. If a trust dialog shows, send `tmux send-keys -t modelspike Enter` and capture again.
+Expected: `spike env clean` (any variable printed instead is a leak: run `tmux -L modelspike kill-server`, fix the filter and start again; never go on with a leak), then the Claude prompt on screen. If a trust dialog shows, send `tmux -L modelspike send-keys -t modelspike Enter` and capture again.
 
 - [ ] **Step 3: Give it a turn that lasts about a minute**
 
 ```bash
-tmux send-keys -t modelspike "Run these one at a time with the Bash tool, one call each: sleep 20, then sleep 20, then sleep 20. After each, say which model you are." Enter
+tmux -L modelspike send-keys -t modelspike "Run these one at a time with the Bash tool, one call each: sleep 20, then sleep 20, then sleep 20. After each, say which model you are." Enter
 sleep 10
 ```
 
 - [ ] **Step 4: While the turn runs, type `/model sonnet`**
 
 ```bash
-tmux send-keys -t modelspike "/model sonnet" Enter
+tmux -L modelspike send-keys -t modelspike "/model sonnet" Enter
 sleep 60
-tmux capture-pane -p -S -200 -t modelspike > "${TMPDIR:-/tmp}/arc-model-spike/pane.txt"
+tmux -L modelspike capture-pane -p -S -200 -t modelspike > "${TMPDIR:-/tmp}/arc-model-spike/pane.txt"
 ```
 
 - [ ] **Step 5: Read which model answered each step from the transcript**
@@ -124,14 +134,14 @@ tmux capture-pane -p -S -200 -t modelspike > "${TMPDIR:-/tmp}/arc-model-spike/pa
 The spike's transcript is in its own project directory, which Claude Code names after the session's cwd with every non-alphanumeric character turned into `-`, so it ends in `arc-model-spike`. Never take the machine's newest transcript: that is your own session.
 
 ```bash
-T=$(ls -t ~/.claude/projects/*arc-model-spike/*.jsonl | head -1)
+T=$(ls -t "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*arc-model-spike/*.jsonl | head -1)
 echo "$T"
 grep -o '"model":"[^"]*"' "$T" | uniq -c
 grep -n '/model' "$T" | head -5
 ```
 Expected: one path under a directory ending in `arc-model-spike`; if none matches, record `unverified — the spike's transcript was not found`. Then the assistant messages' `"model"` values in order. If a `claude-sonnet-*` model answers a step **before** the turn's last message, write `yes`; if every message of that turn is `claude-opus-*` and Sonnet appears only in a later turn (or the command waited in the queue until the turn ended), write `no`.
 
-- [ ] **Step 6: Record the result and clean up**
+- [ ] **Step 6: Record the result, file the follow-up, and clean up**
 
 Replace the `model-switch-midturn:` line under **Execution notes** with one of:
 
@@ -141,9 +151,20 @@ model-switch-midturn: no — <transcript path>: the whole turn was opus; /model 
 model-switch-midturn: unverified — <why the worker could not drive a session>
 ```
 
+With `no` or `unverified`, append one row as the last row of the table under `## 1 · Actionable` in `docs/open-issues.md` (the table's columns are Item | Kind | Effort | Source / notes). With `yes`, leave that file alone.
+
+`no`:
+```
+| (arcterm) The Consumers panel's → Sonnet switches a Claude agent only from its next turn (`/model` waits for the running turn, the Consumers plan's Task 1 spike): a run worker on Opus mid-turn keeps spending Opus until its turn ends. Follow-up from spec decision 9: offer the panel's worker rows a re-run of the task on Sonnet, through the existing `escalate` dag action (`wsh jarvis dag escalate <task> --model sonnet`) | feature | S | `docs/superpowers/specs/2026-10-08-consumers-panel-design.md` decision 9; the `model-switch-midturn` line in the Execution notes of `docs/superpowers/plans/2026-10-08-consumers-panel.md` |
+```
+`unverified`:
+```
+| (arcterm) Whether `/model` applies inside a running Claude turn was never checked (the Consumers plan's Task 1 spike could not drive a session: <why>), so the panel's → Sonnet toast says "from its next turn". Check it as the spike describes; if the switch waits for the turn, add spec decision 9's fallback: a re-run of a worker's task on Sonnet through the existing `escalate` dag action (`wsh jarvis dag escalate <task> --model sonnet`) | verification gap | S | `docs/superpowers/specs/2026-10-08-consumers-panel-design.md` decision 9; Task 1 of `docs/superpowers/plans/2026-10-08-consumers-panel.md` |
+```
+
 ```bash
-tmux kill-session -t modelspike 2>/dev/null; rm -rf "${TMPDIR:-/tmp}/arc-model-spike"
-git add docs/superpowers/plans/2026-10-08-consumers-panel.md
+tmux -L modelspike kill-server 2>/dev/null; rm -rf "${TMPDIR:-/tmp}/arc-model-spike"
+git add docs/superpowers/plans/2026-10-08-consumers-panel.md docs/open-issues.md
 git commit -m "docs(plan): record whether /model applies inside a running turn"
 ```
 
@@ -152,8 +173,8 @@ git commit -m "docs(plan): record whether /model applies inside a running turn"
 ### Task 2: `pkg/memusage` — process table, footprint and the breakdown
 **Depends on:** none
 
-**Files:** `pkg/memusage/memusage.go`, `pkg/memusage/breakdown.go`, `pkg/memusage/footprint_darwin.go`, `pkg/memusage/footprint_other.go`, `pkg/memusage/memusage_test.go`, `pkg/orchestrate/liveness.go`
-- Create: `pkg/memusage/memusage.go`, `pkg/memusage/breakdown.go`, `pkg/memusage/footprint_darwin.go`, `pkg/memusage/footprint_other.go`, `pkg/memusage/memusage_test.go`
+**Files:** `pkg/memusage/memusage.go`, `pkg/memusage/breakdown.go`, `pkg/memusage/footprint_darwin.go`, `pkg/memusage/footprint_other.go`, `pkg/memusage/memusage_test.go`, `pkg/memusage/footprint_darwin_test.go`, `pkg/orchestrate/liveness.go`
+- Create: `pkg/memusage/memusage.go`, `pkg/memusage/breakdown.go`, `pkg/memusage/footprint_darwin.go`, `pkg/memusage/footprint_other.go`, `pkg/memusage/memusage_test.go`, `pkg/memusage/footprint_darwin_test.go`
 - Modify: `pkg/orchestrate/liveness.go` (lines 188–223: `sampleChildTree` and `processTree`)
 
 **Interfaces:**
@@ -305,6 +326,102 @@ func TestReadTableFindsThisProcess(t *testing.T) {
 	if !tb.Has(int32(os.Getpid())) {
 		t.Fatal("the process table must list this test")
 	}
+}
+```
+
+`pkg/memusage/footprint_darwin_test.go` owns the spec's check of the panel's numbers against Activity Monitor: the figure `Live()` reads for a live process must be the one macOS's own `footprint` tool reports for it (Activity Monitor's Memory column and `top`'s MEM are that same physical footprint). It runs in the plan's Verify on a Mac; it is cgo-only because the fallback reads RSS.
+
+```go
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+//go:build darwin && cgo
+
+package memusage
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"regexp"
+	"runtime"
+	"strconv"
+	"testing"
+)
+
+// the summary line of footprint(1): "memusage.test [4242]: 64-bit    Footprint: 71 MB (16384 bytes per page)"
+var footprintLine = regexp.MustCompile(`Footprint: ([0-9.]+) (KB|MB|GB)`)
+
+// The panel's figure for a process is the one macOS shows for it: footprint(1), Activity Monitor's Memory column
+// and top's MEM all read the physical footprint. Checked on a live child holding 64 MB, so a wrong field or unit
+// cannot hide in a rounding error.
+func TestLiveFootprintMatchesTheFootprintTool(t *testing.T) {
+	tool, err := exec.LookPath("footprint")
+	if err != nil {
+		t.Skip("this Mac has no footprint tool")
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestHoldMemoryHelper$")
+	child.Env = append(os.Environ(), "MEMUSAGE_HOLD=1")
+	stdin, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stdin.Close()
+		child.Wait()
+	})
+	if line, err := bufio.NewReader(stdout).ReadString('\n'); err != nil || line != "holding\n" {
+		t.Fatalf("helper said %q, %v; want holding", line, err)
+	}
+	pid := int32(child.Process.Pid)
+
+	got, ok := Live().Footprint(pid)
+	if !ok {
+		t.Fatalf("Live().Footprint(%d) could not read a live child", pid)
+	}
+	out, err := exec.Command(tool, "-p", strconv.Itoa(int(pid))).CombinedOutput()
+	if err != nil {
+		t.Fatalf("footprint -p %d: %v\n%s", pid, err, out)
+	}
+	m := footprintLine.FindSubmatch(out)
+	if m == nil {
+		t.Fatalf("no Footprint line in:\n%s", out)
+	}
+	n, err := strconv.ParseFloat(string(m[1]), 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := uint64(n * map[string]float64{"KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30}[string(m[2])])
+	// the tool reads a moment later and rounds to its unit: 5%, and at least 1 MB
+	tol := max(want/20, 1<<20)
+	diff := max(got, want) - min(got, want)
+	if want < 64<<20 || diff > tol {
+		t.Fatalf("Live().Footprint = %d bytes; footprint(1) says %s %s (%d bytes): off by %d, tolerance %d", got, m[1], m[2], want, diff, tol)
+	}
+}
+
+// TestHoldMemoryHelper is TestLiveFootprintMatchesTheFootprintTool's child: it dirties 64 MB, says so, and holds
+// it until its stdin closes.
+func TestHoldMemoryHelper(t *testing.T) {
+	if os.Getenv("MEMUSAGE_HOLD") != "1" {
+		t.Skip("the child of TestLiveFootprintMatchesTheFootprintTool")
+	}
+	buf := make([]byte, 64<<20)
+	for i := 0; i < len(buf); i += 4096 {
+		buf[i] = 1
+	}
+	fmt.Println("holding")
+	io.Copy(io.Discard, os.Stdin)
+	runtime.KeepAlive(buf)
 }
 ```
 
@@ -595,7 +712,7 @@ func responsiblePid(int32) (int32, bool) {
 - [ ] **Step 6: Run the tests, with and without cgo**
 
 Run: `go test ./pkg/memusage/ && CGO_ENABLED=0 go test ./pkg/memusage/`
-Expected: PASS both times (without cgo `TestLiveResponsibleOnDarwin` skips).
+Expected: PASS both times (without cgo `TestLiveResponsibleOnDarwin` skips, and `footprint_darwin_test.go` is not built). On a Mac, check the first run ran the comparison: `go test ./pkg/memusage/ -run TestLiveFootprintMatchesTheFootprintTool -v -count=1` prints `--- PASS`, not `--- SKIP`. A FAIL there is the panel disagreeing with Activity Monitor: fix `footprint`, never widen the tolerance.
 
 - [ ] **Step 7: Move orchestrate's tree walk onto `memusage.ProcessTree`**
 
@@ -630,7 +747,9 @@ git commit -m "feat(memusage): measure agents' process trees, the webview, waves
 - Create: `pkg/usagestats/window.go`, `pkg/usagestats/window_test.go`
 
 **Interfaces:**
-- Consumes: the package's `extractClaude`, `filterUsageLines`, `extractPi`, `isPiTranscriptPath`, `subagentsDir`, `dedupe`, `bucket`, `Record`, `Bucket`.
+- Consumes: the package's `extractClaude`, `filterUsageLines`, `extractPi`, `isPiTranscriptPath`, `subagentsDir`, `dedupe`, `bucket`, `Record`, `Bucket`; `TranscriptUsage` (in a test only).
+
+The window reads the same files `TranscriptUsage` folds into a session (`transcriptRecords`, `pkg/usagestats/usagestats.go`), so the panel counts what the rail counts (spec decision 6): the transcript itself, plus a Claude parent's subagent transcripts (`subagentRecords`, under `subagentsDir`) or a pi parent's child sessions (`piSubagentRecords`, every `.jsonl` under the parent's own file stem, `strings.TrimSuffix(path, ".jsonl")`). A child session path is still under `/.pi/agent/sessions/`, so `read` parses it as pi.
 - Produces: `func NewWindowReader() *WindowReader`, `func (w *WindowReader) Window(path string, now time.Time, window time.Duration) ([]Bucket, bool)`, `func (w *WindowReader) Forget(before time.Time)`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -760,6 +879,41 @@ func TestWindowCountsSubagentTranscripts(t *testing.T) {
 	}
 }
 
+// one pi session file: its header, a model change and one assistant message at `at`, in TranscriptUsage's pi test shape
+func piSession(id string, at time.Time, model string, output int) string {
+	ts := at.Format(time.RFC3339)
+	return fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":%q,"cwd":"/repo"}`+"\n"+
+		`{"type":"model_change","id":"%s-mc","parentId":null,"timestamp":%q,"provider":"anthropic","modelId":%q}`+"\n"+
+		`{"type":"message","id":"%s-m","parentId":null,"timestamp":%q,"message":{"role":"assistant","content":"x","usage":{"input":0,"output":%d,"totalTokens":%d,"cost":{"total":0}}}}`+"\n",
+		id, ts, id, ts, model, id, ts, output, output)
+}
+
+// pi-subagents writes a parent's child sessions under <parent without .jsonl>/<runId>/run-<n>/session.jsonl, and
+// TranscriptUsage folds them in (piSubagentRecords): the window must too, or the panel under-counts a pi agent
+// that fanned out against the rail
+func TestWindowCountsPiSubagentSessions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".pi", "agent", "sessions", "proj")
+	child := filepath.Join(dir, "parent", "runAbc", "run-0")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(dir, "parent.jsonl")
+	if err := os.WriteFile(parent, []byte(piSession("p1", windowNow.Add(-time.Minute), "claude-opus-4-8", 10)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(child, "session.jsonl"), []byte(piSession("c1", windowNow.Add(-time.Minute), "claude-sonnet-4-6", 4)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := NewWindowReader().Window(parent, windowNow, 10*time.Minute)
+	if !ok || outputOf(got) != 14 {
+		t.Fatalf("pi child sessions bill like the parent: window = %+v, %v; want 14 output tokens", got, ok)
+	}
+	rail, err := TranscriptUsage(parent)
+	if err != nil || outputOf(rail) != outputOf(got) {
+		t.Fatalf("the window counts %d, TranscriptUsage %d (%v): the panel must count what the rail counts", outputOf(got), outputOf(rail), err)
+	}
+}
+
 func TestWindowOfAMissingFileIsNotRead(t *testing.T) {
 	if _, ok := NewWindowReader().Window(filepath.Join(t.TempDir(), "none.jsonl"), windowNow, 10*time.Minute); ok {
 		t.Fatal("a missing transcript must report not read")
@@ -806,8 +960,9 @@ import (
 
 // WindowReader keeps, per transcript, how far it has read and the usage records still inside the window, so a
 // poll every few seconds parses only what was appended: Claude transcripts and their subagents' are append-only
-// JSONL. A file that shrank was replaced and is read again from the start. A pi session is re-read whole when its
-// size changes. The records are TranscriptUsage's, so a window counts what the rail counts.
+// JSONL. A file that shrank was replaced and is read again from the start. A pi session, and each of its child
+// sessions, is re-read whole when its size changes. The files and records are TranscriptUsage's, so a window
+// counts what the rail counts.
 type WindowReader struct {
 	mu    sync.Mutex
 	files map[string]*windowFile
@@ -824,8 +979,8 @@ func NewWindowReader() *WindowReader {
 	return &WindowReader{files: map[string]*windowFile{}}
 }
 
-// Window is the usage of path, and of the Claude subagent transcripts beside it, timestamped after now-window,
-// bucketed as TranscriptUsage buckets it. ok is false when path itself cannot be read.
+// Window is the usage of path, and of the subagent transcripts it spawned, timestamped after now-window, bucketed
+// as TranscriptUsage buckets it. ok is false when path itself cannot be read.
 func (w *WindowReader) Window(path string, now time.Time, window time.Duration) ([]Bucket, bool) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, false
@@ -851,12 +1006,16 @@ func (w *WindowReader) Forget(before time.Time) {
 	}
 }
 
+// windowPaths is path and the subagent transcripts TranscriptUsage folds into it: a Claude parent's under its
+// subagents dir (subagentRecords), a pi parent's child sessions under its own file stem (piSubagentRecords). A
+// parent that spawned none has no such dir and yields only itself.
 func windowPaths(path string) []string {
 	out := []string{path}
+	root := subagentsDir(path)
 	if isPiTranscriptPath(path) {
-		return out
+		root = strings.TrimSuffix(path, ".jsonl")
 	}
-	_ = filepath.WalkDir(subagentsDir(path), func(p string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".jsonl") {
 			out = append(out, p)
 		}
@@ -954,7 +1113,7 @@ git commit -m "feat(usagestats): read a transcript's last minutes incrementally"
 **Depends on:** none
 **Files:** `pkg/orchestrate/retry.go`, `pkg/orchestrate/mutation.go`, `pkg/orchestrate/mutation_test.go`, `pkg/jarvis/leadprompt.go`, `cmd/wsh/cmd/wshcmd-jarvisdag.go`, `cmd/wsh/cmd/wshcmd-jarvisdag_test.go`, `pkg/wshrpc/wshrpctypes_dag.go`, `docs/orchestrator-guide.md`
 
-Spec decision 8: `stop` marks a running or stalled task **Failed** with the failure kind `stopped-by-human`, never Cancelled, because one Cancelled task turns the whole dag Cancelled (`RecomputeDagStatus`, `pkg/orchestrate/dag.go`), and a task that keeps its cancelled run is mapped back to Cancelled by `DeriveTaskStates`. So `stop` cancels and stops the worker's run exactly as `retry` and `skip` do (`prepareActionLocked` → `cancelTaskRun`, then `stopRunWorkers`), and leaves the task Failed with `LastFailureKind = "stopped-by-human"` and no run: the dag holds as Blocked, the scheduler dispatches nothing for it, and `retry`, `skip` and `escalate` all accept a Failed task. The lead is told to leave such a task to the human. A reviewing task has no worker to stop and is refused.
+Spec decision 8: `stop` marks a running or stalled task **Failed** with the failure kind `stopped-by-human`, never Cancelled, because one Cancelled task turns the whole dag Cancelled (`RecomputeDagStatus`, `pkg/orchestrate/dag.go`), and a task that keeps its cancelled run is mapped back to Cancelled by `DeriveTaskStates`. So `stop` cancels and stops the worker's run exactly as `retry` and `skip` do (`prepareActionLocked` → `cancelTaskRun`, then `stopRunWorkers`), and leaves the task Failed with `LastFailureKind = "stopped-by-human"` and no run: the dag holds as Blocked, the scheduler dispatches nothing for it, and `retry`, `skip` and `escalate` all accept a Failed task. Then, unlike `retry` and `skip` (which leave a stopped worker's tab where it is), it closes the worker's tab, as the spec says: `closeLeadTab` (`pkg/orchestrate/leadclose.go`) deletes the tab `runTabID` names (a dag child's worker as well as a lead) in the run's workspace, through the `deleteLeadTab` seam. It closes the tab only after the task is recorded Failed: a tab that will not close then fails the action with a reason but leaves no task a tick would relaunch. The lead is told to leave such a task to the human. A reviewing task has no worker to stop and is refused.
 
 - Modify: `pkg/orchestrate/retry.go` (the first const block), `pkg/orchestrate/mutation.go` (`prepareActionLocked`, `applyActionLocked`), `pkg/orchestrate/mutation_test.go` (its tests, including the lead-prompt one, which reads `jarvis.OrchestrationRules`)
 - Modify: `pkg/jarvis/leadprompt.go:75`
@@ -962,7 +1121,7 @@ Spec decision 8: `stop` marks a running or stalled task **Failed** with the fail
 - Modify: `pkg/wshrpc/wshrpctypes_dag.go:86` (the Action comment), `docs/orchestrator-guide.md` (the dag command table, after the `dag retry`/`dag skip` row)
 
 **Interfaces:**
-- Consumes: `ApplyAction(ctx, dagID, taskID, action string, target waveobj.RoutePin) error`, `cancelTaskRun`, `stopRunWorkers`, `taskByID`.
+- Consumes: `ApplyAction(ctx, dagID, taskID, action string, target waveobj.RoutePin) error`, `cancelTaskRun`, `stopRunWorkers`, `taskByID`, `closeLeadTab` and its seam `deleteLeadTab` (`leadclose.go`, unchanged).
 - Produces: `const FailureKindStopped = "stopped-by-human"`; the dag action `"stop"` accepted by `DagActionCommand` (it already falls through to `orchestrate.ApplyAction`); `wsh jarvis dag stop <task>`.
 
 - [ ] **Step 1: Write the failing engine tests**
@@ -970,22 +1129,41 @@ Spec decision 8: `stop` marks a running or stalled task **Failed** with the fail
 Append to `pkg/orchestrate/mutation_test.go`:
 
 ```go
-func TestStopEndsARunningTaskWithoutARetry(t *testing.T) {
-	ctx, dag, _, child := seedRunningDag(t)
-	oldStop := stopRunWorkers
-	stopped := false
+// stubStop scripts what `stop` does outside the store: the worker's stop and its tab's close. It returns the runs
+// stopped and the tabs closed ("<workspace>/<tab>"), in order, and fails the close with closeErr when set.
+func stubStop(t *testing.T, closeErr error) (*[]string, *[]string) {
+	t.Helper()
+	oldStop, oldDelete := stopRunWorkers, deleteLeadTab
+	var stopped, closed []string
 	stopRunWorkers = func(_ context.Context, run *waveobj.Run) error {
-		stopped = run.ID == child.ID
+		stopped = append(stopped, run.ID)
 		return nil
 	}
-	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+	deleteLeadTab = func(_ context.Context, workspaceId, tabId string) error {
+		if len(stopped) == 0 {
+			t.Error("the tab closed before its worker was stopped")
+		}
+		closed = append(closed, workspaceId+"/"+tabId)
+		return closeErr
+	}
+	restoreAfterStages(t, func() { stopRunWorkers, deleteLeadTab = oldStop, oldDelete })
+	return &stopped, &closed
+}
+
+func TestStopEndsARunningTaskWithoutARetry(t *testing.T) {
+	ctx, dag, _, child := seedRunningDag(t)
+	stopped, closed := stubStop(t, nil)
 
 	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{}); err != nil {
 		t.Fatal(err)
 	}
 	gotChild, _ := wstore.GetRun(ctx, dag.ChannelId, child.ID)
-	if !stopped || gotChild.Status != jarvis.RunStatus_Cancelled {
-		t.Fatalf("worker stop=%v run status=%q, want stopped/cancelled", stopped, gotChild.Status)
+	if len(*stopped) != 1 || (*stopped)[0] != child.ID || gotChild.Status != jarvis.RunStatus_Cancelled {
+		t.Fatalf("workers stopped %v, run status %q; want %s stopped and cancelled", *stopped, gotChild.Status, child.ID)
+	}
+	// seedRunningDag's worker runs in tab "worker" of workspace "ws-1"
+	if len(*closed) != 1 || (*closed)[0] != "ws-1/worker" {
+		t.Fatalf("tabs closed = %v, want the worker's tab ws-1/worker", *closed)
 	}
 	got, _ := wstore.GetDag(ctx, dag.OID)
 	task := got.Tasks[0]
@@ -1012,23 +1190,34 @@ func TestStopAlsoStopsAStalledTask(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	oldStop := stopRunWorkers
-	stopRunWorkers = func(context.Context, *waveobj.Run) error { return nil }
-	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+	_, closed := stubStop(t, nil)
 	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := wstore.GetDag(ctx, dag.OID)
-	if got.Tasks[0].State != TaskState_Failed {
-		t.Fatalf("stalled task after stop = %q, want failed", got.Tasks[0].State)
+	if got.Tasks[0].State != TaskState_Failed || len(*closed) != 1 {
+		t.Fatalf("stalled task after stop = %q, tabs closed %v; want failed and its tab closed", got.Tasks[0].State, *closed)
+	}
+}
+
+// the close comes after the task is recorded: a tab that will not close fails the action with its reason, and the
+// task stays stopped rather than running with a cancelled run, which would cancel the whole dag
+func TestStopKeepsTheTaskStoppedWhenItsTabWillNotClose(t *testing.T) {
+	ctx, dag, _, _ := seedRunningDag(t)
+	stubStop(t, errors.New("workspace gone"))
+	err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{})
+	if err == nil || !strings.Contains(err.Error(), "workspace gone") {
+		t.Fatalf("stop with a tab that will not close = %v, want its reason", err)
+	}
+	got, _ := wstore.GetDag(ctx, dag.OID)
+	if got.Tasks[0].State != TaskState_Failed || got.Tasks[0].LastFailureKind != FailureKindStopped || got.Status == DagStatus_Cancelled {
+		t.Fatalf("task %q kind %q dag %q; want the task stopped and the dag not cancelled", got.Tasks[0].State, got.Tasks[0].LastFailureKind, got.Status)
 	}
 }
 
 func TestAStoppedTaskCanBeSkipped(t *testing.T) {
 	ctx, dag, _, _ := seedRunningDag(t)
-	oldStop := stopRunWorkers
-	stopRunWorkers = func(context.Context, *waveobj.Run) error { return nil }
-	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+	stubStop(t, nil)
 	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{}); err != nil {
 		t.Fatal(err)
 	}
@@ -1051,9 +1240,13 @@ func TestStopRefusesATaskWithNoWorker(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			stopped, closed := stubStop(t, nil)
 			err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{})
 			if err == nil || !strings.Contains(err.Error(), "cannot be stopped") {
 				t.Fatalf("stop from %s = %v, want a refusal", state, err)
+			}
+			if len(*stopped) != 0 || len(*closed) != 0 {
+				t.Fatalf("a refused stop stopped %v and closed %v", *stopped, *closed)
 			}
 			got, _ := wstore.GetDag(ctx, dag.OID)
 			gotChild, _ := wstore.GetRun(ctx, dag.ChannelId, child.ID)
@@ -1074,7 +1267,7 @@ func TestTheLeadIsToldToLeaveAStoppedTask(t *testing.T) {
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `go test ./pkg/orchestrate/ -run 'Stop|StoppedTask' -count=1`
-Expected: FAIL — `undefined: FailureKindStopped`.
+Expected: FAIL — `undefined: FailureKindStopped`. (`mutation_test.go` already imports `errors`, `strings` and `context`; check, and add any that is missing.)
 
 - [ ] **Step 3: Add the failure kind**
 
@@ -1086,7 +1279,7 @@ In `pkg/orchestrate/retry.go`, inside the first `const (` block, after `FailureK
 	FailureKindStopped = "stopped-by-human"
 ```
 
-- [ ] **Step 4: Validate and prepare `stop` in `prepareActionLocked`**
+- [ ] **Step 4: Validate and prepare `stop` in `prepareActionLocked`, and close the worker's tab once it is recorded**
 
 In `pkg/orchestrate/mutation.go`, change the first line of `prepareActionLocked` from
 
@@ -1106,9 +1299,49 @@ and add this case to its `switch action {` (before `case "retry":`):
 		if !taskActive(task.State) {
 			return nil, fmt.Errorf("task %q cannot be stopped from state %q: only a running or stalled task has a worker", taskID, task.State)
 		}
+		prep.closeTab = true
 ```
 
 (The code after the switch already cancels the task's run into `prep.stop`, which `prep.run` stops outside the lock.) Also update the function's comment: `// prepareActionLocked validates a skip, retry, escalate or stop, cancels the run of the worker it will stop and returns`.
+
+Add the field to `taskPrep`, after `rewind`:
+
+```go
+	// stop only: close the stopped worker's tab, once the task is recorded
+	closeTab bool
+```
+
+and, after `checkUnmoved`, its method:
+
+```go
+// closeWorkerTab closes a stopped worker's tab, the one runTabID names, in its run's workspace. It runs after the
+// task is recorded Failed, so a tab that will not close leaves no task a tick would relaunch, only an error saying so.
+func (p *taskPrep) closeWorkerTab(ctx context.Context, taskID string) error {
+	if p == nil || !p.closeTab || p.stop == nil {
+		return nil
+	}
+	if _, err := closeLeadTab(ctx, p.stop); err != nil {
+		return fmt.Errorf("task %q is stopped, but its worker's tab did not close: %w", taskID, err)
+	}
+	return nil
+}
+```
+
+In `applyAction`, replace its last statement, `return withDagMutation(dagID, func() error { … })`, with:
+
+```go
+	if err := withDagMutation(dagID, func() error {
+		if err := prep.checkUnmoved(ctx, dagID, taskID); err != nil {
+			return err
+		}
+		return applyActionLocked(ctx, dagID, taskID, action, target)
+	}); err != nil {
+		return err
+	}
+	return prep.closeWorkerTab(ctx, taskID)
+```
+
+(`ctx` is already `context.WithoutCancel` there whenever `prep` is set, so the close finishes even if the caller stopped waiting.)
 
 - [ ] **Step 5: Record `stop` in `applyActionLocked`**
 
@@ -1145,7 +1378,7 @@ Expected: PASS.
 In `cmd/wsh/cmd/wshcmd-jarvisdag.go`, add to `dagDoneLines` after the `"skip"` entry:
 
 ```go
-	"stop":              "task {task} stopped; its worker is gone and nothing retries it until you retry, escalate or skip it",
+	"stop":              "task {task} stopped; its worker's tab is closed and nothing retries it until you retry, escalate or skip it",
 ```
 
 and add `dagActionWithin("stop", 60_000)` to the `jarvisDagCmd.AddCommand(` call, after `dagAction("skip")` (stopping a worker waits for it to exit).
@@ -1166,7 +1399,7 @@ In `pkg/wshrpc/wshrpctypes_dag.go`, in the `Action` field's comment of `CommandD
 In `docs/orchestrator-guide.md`, after the row ``| `dag retry <task>` / `dag skip <task>` | retry or skip a failed or stalled task |`` add:
 
 ```
-| `dag stop <task>` | stop a running or stalled task's worker; the task fails as `stopped-by-human` and waits until it is retried, escalated or skipped (the Consumers panel's Stop on a worker) |
+| `dag stop <task>` | stop a running or stalled task's worker and close its tab; the task fails as `stopped-by-human` and waits until it is retried, escalated or skipped (the Consumers panel's Stop on a worker) |
 ```
 
 No `task generate` here: the Action comment does not reach the generated files (checked: `gotypes.d.ts` and `wshclient.go` carry no copy of it), and Task 5 regenerates them in parallel.
@@ -1191,7 +1424,7 @@ Expected: gofmt prints nothing.
 - Generated by `task generate`: `frontend/types/gotypes.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
 **Interfaces:**
-- Consumes: `memusage.ReadTable`, `memusage.Live`, `memusage.Measure`, `memusage.Breakdown` (Task 2); `usagestats.NewWindowReader`, `(*WindowReader).Window`, `.Forget` (Task 3); in package `wshserver`: `loadAgentRosterFacts`, `buildAgentRoster`, `resolveAgentTab`, `agentTranscriptPath`, `askTargetForBlock`, `usageBucketToWire`, `virtualMemory`, `deliverAgentMessage`.
+- Consumes: `memusage.ReadTable`, `memusage.Live`, `memusage.Measure`, `memusage.Breakdown` (Task 2); `usagestats.NewWindowReader`, `(*WindowReader).Window`, `.Forget` (Task 3); in package `wshserver`: `loadAgentRosterFacts`, `buildAgentRoster`, `ownerRun`, `resolveAgentTab`, `agentTranscriptPath`, `usageBucketToWire`, `virtualMemory`, `deliverAgentMessage`; `wstore.GetDag`.
 - Produces (Go → TS via generate):
   - `GetConsumersCommand(ctx) (*CommandGetConsumersRtnData, error)` → `RpcApi.GetConsumersCommand(client, opts?)`
   - `AgentsSetModelCommand(ctx, CommandAgentsSetModelData) (*CommandAgentsSetModelRtnData, error)` → `RpcApi.AgentsSetModelCommand(client, data, opts?)`
@@ -1271,15 +1504,32 @@ import (
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 const consumersMB uint64 = 1 << 20
 
-// scriptConsumers scripts the shell pids, the process table, the sampler, the dag lookup and the system memory.
-func scriptConsumers(t *testing.T, pids map[string]int, table memusage.Table, foot map[int32]uint64) {
+// the run whose dag the scripted workers' tasks are in: B works on t-3 (child run run-b), C on t-4 (run-c)
+var consumersDag = &waveobj.TaskGroup{
+	OID: "dag-1", ChannelId: "ch-1", RunID: "run-owner",
+	Tasks: []waveobj.TaskNode{{ID: "t-3", RunID: "run-b"}, {ID: "t-4", RunID: "run-c"}},
+}
+
+// consumersRuns are the roster's runs: the worker runs of B and C, which carry their dag, and A's own run, a
+// quick run with no dag
+func consumersRuns() []*waveobj.Run {
+	worker := func(id, tab, dag string) *waveobj.Run {
+		return &waveobj.Run{OID: id, DagORef: dag, Phases: []waveobj.RunPhase{{WorkerOrefs: []string{"tab:" + tab}}}}
+	}
+	return []*waveobj.Run{worker("run-a", agentsTabA, ""), worker("run-b", agentsTabB, "dag-1"), worker("run-c", agentsTabC, "dag-1")}
+}
+
+// scriptConsumers scripts the shell pids, the process table, the sampler, the dag store and the system memory. It
+// returns how many times a dag was read.
+func scriptConsumers(t *testing.T, pids map[string]int, table memusage.Table, foot map[int32]uint64) *int {
 	t.Helper()
-	oldPid, oldTable, oldSampler, oldDag, oldVM := consumerBlockPid, consumerTable, consumerSampler, consumerDagTarget, virtualMemory
+	oldPid, oldTable, oldSampler, oldDag, oldVM := consumerBlockPid, consumerTable, consumerSampler, consumerLoadDag, virtualMemory
 	consumerBlockPid = func(blockId string) int { return pids[blockId] }
 	consumerTable = func() (memusage.Table, error) { return table, nil }
 	consumerSampler = func() memusage.Sampler {
@@ -1291,18 +1541,21 @@ func scriptConsumers(t *testing.T, pids map[string]int, table memusage.Table, fo
 			Responsible: func(int32) (int32, bool) { return 0, false },
 		}
 	}
-	consumerDagTarget = func(_ context.Context, blockId string) *wshrpc.ConsumerDag {
-		if blockId == agentsBlockB {
-			return &wshrpc.ConsumerDag{ChannelId: "ch-1", RunId: "run-owner", TaskId: "t-3"}
+	dagReads := 0
+	consumerLoadDag = func(_ context.Context, dagId string) (*waveobj.TaskGroup, error) {
+		dagReads++
+		if dagId != consumersDag.OID {
+			return nil, fmt.Errorf("no dag %q", dagId)
 		}
-		return nil
+		return consumersDag, nil
 	}
 	virtualMemory = func(context.Context) (*mem.VirtualMemoryStat, error) {
 		return &mem.VirtualMemoryStat{Total: 8 << 30, Available: 2 << 30}, nil
 	}
 	t.Cleanup(func() {
-		consumerBlockPid, consumerTable, consumerSampler, consumerDagTarget, virtualMemory = oldPid, oldTable, oldSampler, oldDag, oldVM
+		consumerBlockPid, consumerTable, consumerSampler, consumerLoadDag, virtualMemory = oldPid, oldTable, oldSampler, oldDag, oldVM
 	})
+	return &dagReads
 }
 
 func recentOpusLine(output int) string {
@@ -1317,9 +1570,10 @@ func TestGetConsumersReportsEachAgentsRamTokensAndTask(t *testing.T) {
 	}
 	facts := threeAgents()
 	facts.Tabs[0].Status.TranscriptPath = transcript
+	facts.Runs = consumersRuns()
 	scriptAgents(t, facts)
 	// A's shell 100 runs claude 101; B's shell is 200; C's shell has exited (no pid)
-	scriptConsumers(t,
+	dagReads := scriptConsumers(t,
 		map[string]int{agentsBlockA: 100, agentsBlockB: 200},
 		memusage.NewTable(map[int32]int32{100: 1, 101: 100, 200: 1}),
 		map[int32]uint64{100: 5 * consumersMB, 101: 300 * consumersMB, 200: 1024 * consumersMB})
@@ -1342,11 +1596,18 @@ func TestGetConsumersReportsEachAgentsRamTokensAndTask(t *testing.T) {
 	if !a.TokensRead || len(a.Tokens) != 1 || a.Tokens[0].Output != 4200 || a.Tokens[0].Model != "claude-opus-4-8" {
 		t.Fatalf("A's tokens = %+v (read %v)", a.Tokens, a.TokensRead)
 	}
-	if b.RamBytes == nil || *b.RamBytes != 1024*consumersMB || b.Dag == nil || b.Dag.TaskId != "t-3" || b.Dag.RunId != "run-owner" {
-		t.Fatalf("B = %+v", b)
+	if b.RamBytes == nil || *b.RamBytes != 1024*consumersMB || b.Dag == nil || *b.Dag != (wshrpc.ConsumerDag{ChannelId: "ch-1", RunId: "run-owner", TaskId: "t-3"}) {
+		t.Fatalf("B = %+v (dag %+v), want 1 GB and task t-3 of the owner run", b, b.Dag)
 	}
 	if c.TabId != agentsTabC || c.RamBytes != nil {
 		t.Fatalf("C's shell is gone: its RAM must be absent, got %+v", c)
+	}
+	if a.Dag != nil || c.Dag == nil || c.Dag.TaskId != "t-4" {
+		t.Fatalf("A's run has no dag, C works on t-4: A %+v, C %+v", a.Dag, c.Dag)
+	}
+	// B and C share one dag: it is read once a reading, from the runs the roster already loaded
+	if *dagReads != 1 {
+		t.Fatalf("dag reads = %d, want 1", *dagReads)
 	}
 }
 
@@ -1413,6 +1674,7 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"runtime"
@@ -1423,6 +1685,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 // ConsumersTokenWindow is how far back a GetConsumers reading counts each agent's tokens.
@@ -1431,21 +1694,41 @@ const ConsumersTokenWindow = 10 * time.Minute
 // consumersTokens keeps each transcript's read offset between polls, so a poll parses only what was appended.
 var consumersTokens = usagestats.NewWindowReader()
 
-// seams, so tests script the shell pids, the process table, the sampler and a worker's dag task
+// seams, so tests script the shell pids, the process table, the sampler and the dag store
 var (
-	consumerBlockPid  = blockcontroller.GetBlockControllerPid
-	consumerTable     = memusage.ReadTable
-	consumerSampler   = memusage.Live
-	consumerDagTarget = readConsumerDag
+	consumerBlockPid = blockcontroller.GetBlockControllerPid
+	consumerTable    = memusage.ReadTable
+	consumerSampler  = memusage.Live
+	consumerLoadDag  = wstore.GetDag
 )
 
-// readConsumerDag is the dag task a run worker's block works on, nil for any other block.
-func readConsumerDag(ctx context.Context, blockId string) *wshrpc.ConsumerDag {
-	_, target, ok := askTargetForBlock(ctx, waveobj.MakeORef(waveobj.OType_Block, blockId).String(), "")
-	if !ok {
+// consumerDag is the dag task a run worker works on, nil for any other agent. run is the worker's own run, the
+// roster's ownerRun over the runs it already loaded; a dag child's run carries its dag (DagORef), and that dag the
+// task whose run it is. dags keeps each dag this reading read, so the workers of one run share a read. A dag that
+// cannot be read is logged and leaves the row without its task (the panel then offers the plain close); the next
+// reading tries it again.
+func consumerDag(ctx context.Context, dags map[string]*waveobj.TaskGroup, run *waveobj.Run) *wshrpc.ConsumerDag {
+	if run == nil || run.DagORef == "" {
 		return nil
 	}
-	return &wshrpc.ConsumerDag{ChannelId: target.ChannelId, RunId: target.RunID, TaskId: target.TaskId}
+	g, seen := dags[run.DagORef]
+	if !seen {
+		var err error
+		if g, err = consumerLoadDag(ctx, run.DagORef); err != nil {
+			log.Printf("consumers: reading dag %s of run %s: %v", run.DagORef, run.OID, err)
+			g = nil
+		}
+		dags[run.DagORef] = g
+	}
+	if g == nil {
+		return nil
+	}
+	for i := range g.Tasks {
+		if g.Tasks[i].RunID == run.OID {
+			return &wshrpc.ConsumerDag{ChannelId: g.ChannelId, RunId: g.RunID, TaskId: g.Tasks[i].ID}
+		}
+	}
+	return nil
 }
 
 // GetConsumersCommand is one reading of the Consumers panel: every live agent's RAM and its tokens of the last
@@ -1481,9 +1764,10 @@ func (ws *WshServer) GetConsumersCommand(ctx context.Context) (*wshrpc.CommandGe
 		ServerBytes:    bd.Server,
 		HostBytes:      bd.Host,
 	}
+	dags := map[string]*waveobj.TaskGroup{}
 	for i := range rows {
 		r := &rows[i]
-		a := wshrpc.ConsumerAgent{TabId: r.TabId, BlockId: r.blockId, Dag: consumerDagTarget(ctx, r.blockId)}
+		a := wshrpc.ConsumerAgent{TabId: r.TabId, BlockId: r.blockId, Dag: consumerDag(ctx, dags, ownerRun(facts.Runs, r.TabId))}
 		if n, ok := bd.Agents[r.blockId]; ok {
 			a.RamBytes = &n
 		}
@@ -1977,6 +2261,7 @@ git commit -m "feat(agents): the Consumers panel's model: rows by RAM or tokens,
 | The plan-usage meters open it sorted by tokens | 15 |
 | Open Usage | 16 |
 | A click on an agent's name opens it | 17 |
+| Stop on a live agent: Close agent ends its session and its tab | 18 |
 
 - [ ] **Step 1: Write the failing store tests**
 
@@ -2476,10 +2761,12 @@ git commit -m "feat(agents): the Consumers panel: agents by RAM or tokens, Stop 
 - Modify: `scripts/cdp/scenarios.mjs` (a new scenario beside `workerCapacity`, its registration in `SCENARIOS`)
 
 **Interfaces:**
-- Consumes: Task 7's DOM hooks (its **Shown by** table maps each to a step here); the fixture roster file `TREE_RAIL_FIXTURE` (`public/cockpit-fixtures/active.json`); the saved plan windows in `localStorage["wave:ratelimits"]` (`ratelimitstore.ts`, seeded as `usage-charts` does); `ahResolveModules`, `ahReload`, `polishWaitFor`, `restoreStorageKey`, `DRM_HEADER_NAME`; the `h` harness (`h.rpc`, `h.ev`, `h.cdp`, `h.shot`, `h.goto`, `h.activeSurfaceLabel`), `SURFACE_LABEL`.
+- Consumes: Task 7's DOM hooks (its **Shown by** table maps each to a step here); the fixture roster file `TREE_RAIL_FIXTURE` (`public/cockpit-fixtures/active.json`); the saved plan windows in `localStorage["wave:ratelimits"]` (`ratelimitstore.ts`, seeded as `usage-charts` does); `ahResolveModules`, `ahReload`, `polishWaitFor`, `restoreStorageKey`, `DRM_HEADER_NAME`, `waveService` (the wavesrv service call `openCanvasTerminal` uses); the `h` harness (`h.rpc`, `h.ev`, `h.cdp`, `h.shot`, `h.goto`, `h.activeSurfaceLabel`), `SURFACE_LABEL`.
 - Produces: the scenario the plan's Final names, writing `cdp-shots/consumers-{loading,ram,tokens,stop-worker,stop-agent,stale,empty}.png`.
 
-The scenario drives every control and state Task 7 builds. `getconsumers`, `agentssetmodel` and `dagaction` are mocked through RpcApi's mock client, so nothing real is stopped or switched and each call the panel makes is recorded. Plan windows are seeded so the plan-usage meters are always drawn: their step fails, never skips. The spec's by-hand Mac checks (the numbers against Activity Monitor, Stop on a live agent) belong to no task. This task's report lists them under **Not verified**.
+The scenario drives every control and state Task 7 builds. `getconsumers`, `agentssetmodel` and `dagaction` are mocked through RpcApi's mock client, so no real worker is stopped and no model switched, and each call the panel makes is recorded; only step 18's throwaway tab is really closed. Plan windows are seeded so the plan-usage meters are always drawn: their step fails, never skips.
+
+The spec's by-hand checks each have an owner. **Stop on a live agent** is this scenario's step 18: the roster's fourth agent is real, a throwaway terminal tab that arrange opens in the page's workspace (the way `openRailTerminal` and `openCanvasTerminal` do, its shell started) and names in the fixture, and step 18 stops it from its row through the real close (`confirmCloseSession` → `WorkspaceService.CloseTab`), then checks its tab has left the workspace. Teardown closes the tab if step 18 did not. **The panel's numbers against Activity Monitor** are Task 2's `TestLiveFootprintMatchesTheFootprintTool`, which compares `Live()`'s figure with macOS's `footprint` tool on a live process in the plan's Verify.
 
 - [ ] **Step 1: Add the scenario**
 
@@ -2488,11 +2775,14 @@ In `scripts/cdp/scenarios.mjs`, after the `workerCapacity` scenario's closing `}
 ```js
 // --- consumers-popover: the Consumers panel (docs/superpowers/specs/2026-10-08-consumers-panel-design.md), opened from
 // the RAM chip and the plan-usage meters. The roster is a fixture (an agent you opened, a run worker on Opus, a pi
-// agent); getconsumers, agentssetmodel and dagaction are mocked, so the order, grouping, warnings and every action are
-// known and nothing real is stopped. A saved plan window makes the meters draw.
+// agent, and a real throwaway terminal tab); getconsumers, agentssetmodel and dagaction are mocked, so the order,
+// grouping, warnings and every action are known, and only the throwaway tab is really stopped (step 18). A saved
+// plan window makes the meters draw.
 const CONSUMERS_MOCK_KEY = "__arcConsumersMock";
 const CONSUMERS_RATE_KEY = "wave:ratelimits";
 const CONSUMERS_MINE = "tối ưu RAM";
+// the real throwaway tab arrange opens: step 18 stops it
+const CONSUMERS_LIVE = "consumers throwaway";
 const CONSUMERS_FIXTURE = [
     { id: "fx-consumers-mine", name: CONSUMERS_MINE, project: "arcterm", task: "", state: "working", agent: "claude", model: "sonnet", blockId: "fx-blk-mine" },
     { id: "fx-consumers-worker", name: "worker t-3", project: "arcterm", task: "", state: "working", agent: "claude", model: "opus", blockId: "fx-blk-worker", runId: "fx-child-run" },
@@ -2516,12 +2806,13 @@ const CONSUMERS_READING = {
 const CONSUMERS_STOP_WORKER =
     "Stop worker t-3 of run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run.";
 const CONSUMERS_STOP_MINE = `End the session for "${CONSUMERS_MINE}"? This stops the agent and can't be undone.`;
+const CONSUMERS_STOP_LIVE = `End the session for "${CONSUMERS_LIVE}"? This stops the agent and can't be undone.`;
 
 // One mock for the whole scenario. `mode` picks getconsumers' answer: "hold" keeps the poll waiting (the loading
-// state) until consumersMode moves on, "reading" answers CONSUMERS_READING, "empty" no agents, "fail" an error.
-// agentssetmodel and dagaction answer as the server would and are recorded in `calls`. A reload drops it, so
-// install it after the scenario's last reload.
-async function installConsumersMock(h) {
+// state) until consumersMode moves on, "reading" answers `reading` (CONSUMERS_READING plus the throwaway tab),
+// "empty" no agents, "fail" an error. agentssetmodel and dagaction answer as the server would and are recorded in
+// `calls`. A reload drops it, so install it after the scenario's last reload.
+async function installConsumersMock(h, reading) {
     const resolved = await ahResolveModules(h);
     if (resolved.error) return `unresolved: ${resolved.error}`;
     return h.ev(`(async () => {
@@ -2529,7 +2820,7 @@ async function installConsumersMock(h) {
         if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
         if (window.${CONSUMERS_MOCK_KEY}) return "already-installed";
         const prev = api.mockClient ?? null;
-        const m = { api, prev, mode: "hold", reading: ${JSON.stringify(CONSUMERS_READING)}, held: [], calls: [] };
+        const m = { api, prev, mode: "hold", reading: ${JSON.stringify(reading)}, held: [], calls: [] };
         const answer = () => {
             if (m.mode === "hold") return new Promise((resolve) => m.held.push(resolve));
             if (m.mode === "fail") return Promise.reject(new Error("wavesrv restarting"));
@@ -2603,8 +2894,25 @@ const consumersPopover = {
     async arrange(h) {
         const ctx = { prevRate: await h.ev(`localStorage.getItem(${JSON.stringify(CONSUMERS_RATE_KEY)})`) };
         try {
+            // a real terminal tab in the page's workspace stands in for a live agent (step 18 stops it). It is on ctx
+            // as soon as it exists, so teardown closes it whatever fails after
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.liveTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, CONSUMERS_LIVE, false]);
+            const liveTab = await waveService(h, "object", "GetObject", [`tab:${ctx.liveTabId}`]);
+            const liveBlockId = liveTab?.blockids?.[0];
+            if (!liveBlockId) throw new Error(`the throwaway tab ${ctx.liveTabId} has no block`);
+            await h.rpc("setmeta", { oref: `block:${liveBlockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+            await h.rpc("controllerresync", { tabid: ctx.liveTabId, blockid: liveBlockId, forcerestart: true });
+            const liveAgent = { id: ctx.liveTabId, name: CONSUMERS_LIVE, project: "arcterm", task: "", state: "idle", agent: "claude", model: "sonnet", blockId: liveBlockId };
+            ctx.reading = {
+                ...CONSUMERS_READING,
+                agents: [...CONSUMERS_READING.agents, { tabid: ctx.liveTabId, blockid: liveBlockId, rambytes: 100 * 2 ** 20, tokensread: true, tokens: [] }],
+            };
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
-            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(CONSUMERS_FIXTURE, null, 2));
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify([...CONSUMERS_FIXTURE, liveAgent], null, 2));
             ctx.wroteFixture = true;
             // a current Default-account window with future resets, so the meters draw and the header shows 62%
             const nowSec = Math.floor(Date.now() / 1000);
@@ -2614,7 +2922,7 @@ const consumersPopover = {
             await h.ev(`localStorage.setItem(${JSON.stringify(CONSUMERS_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`);
             // the fixture roster and the saved windows are read at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
-            ctx.mock = await installConsumersMock(h);
+            ctx.mock = await installConsumersMock(h, ctx.reading);
             if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
@@ -2658,7 +2966,7 @@ const consumersPopover = {
         );
 
         await consumersMode(h, "reading");
-        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 3`, 5000);
+        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 4`, 5000);
         const ram = await h.ev(`(() => {
             const p = document.querySelector("[data-consumers-panel]");
             if (!p) return null;
@@ -2671,7 +2979,7 @@ const consumersPopover = {
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
             "3. rows by RAM: the run's worker first under its run, with free RAM and the 5-hour quota in the header",
-            !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 3 && ram.runLabel &&
+            !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
                 ram.header.includes("free of") && ram.header.includes("5h quota 62%"),
             JSON.stringify(ram)
         );
@@ -2756,7 +3064,7 @@ const consumersPopover = {
         await h.shot("cdp-shots/consumers-stale.png");
         rec(
             "10. a failed poll keeps the last reading, dimmed, under \"Couldn't read usage · last at HH:MM\"",
-            staleShown && /^Couldn't read usage · last at \d{2}:\d{2}$/.test(stale.line ?? "") && stale.dimmed && stale.rows === 3,
+            staleShown && /^Couldn't read usage · last at \d{2}:\d{2}$/.test(stale.line ?? "") && stale.dimmed && stale.rows === 4,
             JSON.stringify(stale)
         );
         await consumersMode(h, "reading");
@@ -2815,10 +3123,34 @@ const consumersPopover = {
             nameClosed && landed.surface === SURFACE_LABEL.agent && landed.name === CONSUMERS_MINE,
             JSON.stringify({ nameClosed, ...landed })
         );
+
+        // a live agent: Stop on the throwaway tab's row goes through the real close, and its tab leaves the workspace
+        await h.goto("cockpit");
+        await openFromChip();
+        await polishWaitFor(h, `!!${consumersRowExpr(ctx.liveTabId)}`, 5000);
+        await h.ev(`${consumersRowExpr(ctx.liveTabId)}?.querySelector("[data-consumer-stop]")?.click()`);
+        const liveConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_LIVE)}`, 3000);
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_LIVE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Close agent")?.click()`);
+        const liveTabOpen = async () =>
+            (await h.rpc("workspacelist", null)).some((w) => (w.workspacedata?.tabids ?? []).includes(ctx.liveTabId));
+        let liveGone = false;
+        for (let i = 0; i < 25 && !(liveGone = !(await liveTabOpen())); i++) await settle(200);
+        if (liveGone) ctx.liveTabClosed = true;
+        rec(
+            "18. Stop on a live agent asks the Close agent confirm, and Close agent ends it: its tab leaves the workspace",
+            liveConfirm && liveGone,
+            JSON.stringify({ liveConfirm, liveGone, tab: ctx.liveTabId })
+        );
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
         return steps;
     },
     async teardown(h, ctx) {
         await removeConsumersMock(h);
+        if (ctx.liveTabId && !ctx.liveTabClosed) {
+            await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.liveTabId, false]).catch((e) =>
+                console.error(`consumers-popover teardown: closing the throwaway tab ${ctx.liveTabId}: ${e?.message ?? e}`)
+            );
+        }
         if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
         await h.ev(restoreStorageKey(CONSUMERS_RATE_KEY, ctx.prevRate ?? null));
         if (!(await ahReload(h))) console.error("consumers-popover teardown: the page did not come back after the reload");
@@ -2839,7 +3171,7 @@ Expected: no syntax error, then `true`.
 - [ ] **Step 3: Run it where CDP answers**
 
 On Windows (WebView2 answers CDP): start the dev app (`task dev`), then `task verify:ui -- consumers-popover worker-capacity`.
-Expected: all 17 `consumers-popover` steps and the `worker-capacity` steps PASS. The shots show the panel in each state: `consumers-ram.png` has the worker row first under `RUN 85548D0B`, with its amber `opus`, its ⚠ and `→ Sonnet`, and Interface/Server/Host below. On a Mac this step cannot run (WKWebView answers no CDP). Say so in the task's report and leave it to the Final.
+Expected: all 18 `consumers-popover` steps and the `worker-capacity` steps PASS. The shots show the panel in each state: `consumers-ram.png` has the worker row first under `RUN 85548D0B`, with its amber `opus`, its ⚠ and `→ Sonnet`, and Interface/Server/Host below. On a Mac this step cannot run (WKWebView answers no CDP). Say so in the task's report and leave it to the Final.
 
 - [ ] **Step 4: Commit**
 
