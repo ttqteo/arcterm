@@ -41,3 +41,29 @@ export function getCommandRunningAtom(blockId: string): PrimitiveAtom<boolean> {
 export function setCommandRunning(blockId: string, running: boolean): void {
     globalStore.set(getCommandRunningAtom(blockId), running);
 }
+
+/** Pure: what a change in a block's shell process status means for its running mark — false when the shell is not
+ *  running (no command can be), and false when it has just started again (a new shell is at its first prompt, and
+ *  that prompt's mark can land while the terminal is still loading); null leaves the mark alone. */
+export function runningAfterProcStatus(prev: string | null | undefined, next: string | null | undefined): false | null {
+    if (next !== "running") {
+        return false;
+    }
+    if (prev != null && prev !== "running") {
+        return false;
+    }
+    return null;
+}
+
+/** Pure: the OSC 16162 command letter of a mark that says where the shell is — "prompt" (A, or R for a reset),
+ *  "command" (C) — or null for any other mark. */
+export function shellPosition(oscData: string): "prompt" | "command" | null {
+    const command = oscData.split(";", 1)[0];
+    if (command === "A" || command === "R") {
+        return "prompt";
+    }
+    if (command === "C") {
+        return "command";
+    }
+    return null;
+}

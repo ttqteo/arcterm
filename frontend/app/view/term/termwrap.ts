@@ -94,6 +94,8 @@ export class TermWrap {
     serializeAddon: SerializeAddon;
     mainFileSubject: SubjectWithRef<WSFileEventData>;
     loaded: boolean;
+    // where the shell is by the last prompt (A) or command (C) mark in the output replayed while loading
+    replayPosition: "prompt" | "command" | null = null;
     heldData: Uint8Array[];
     handleResize_debounced: () => void;
     hasResized: boolean;
@@ -471,6 +473,11 @@ export class TermWrap {
             await this.loadInitialTerminalData();
         } finally {
             this.loaded = true;
+        }
+        // a prompt replayed after the runtime info was read (a command that ended, or a shell started, while this
+        // loaded) clears the running mark; a replayed command never sets it, since its shell may be gone
+        if (this.replayPosition === "prompt") {
+            setCommandRunning(this.blockId, false);
         }
         this.runProcessIdleTimeout();
     }

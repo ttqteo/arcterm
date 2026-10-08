@@ -42,6 +42,7 @@ import {
     Type,
 } from "lucide-react";
 import * as React from "react";
+import { runningAfterProcStatus, setCommandRunning } from "./lastcommand";
 import { trimTerminalSelection } from "./termutil";
 import { TermWrap, WebGLSupported } from "./termwrap";
 
@@ -321,6 +322,9 @@ export class TermViewModel implements ViewModel {
         const curStatus = globalStore.get(this.shellProcFullStatus);
         if (curStatus == null || curStatus.version < fullStatus.version) {
             globalStore.set(this.shellProcFullStatus, fullStatus);
+            if (runningAfterProcStatus(curStatus?.shellprocstatus, fullStatus.shellprocstatus) === false) {
+                setCommandRunning(this.blockId, false);
+            }
         }
     }
 

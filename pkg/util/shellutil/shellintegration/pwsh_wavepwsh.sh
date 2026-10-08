@@ -16,6 +16,8 @@ wsh completion powershell | Out-String | Invoke-Expression
 # cockpit names a plain terminal for what it last ran. The history handler sees the whole line before it runs; the
 # handler already set (PSReadLine's sensitive-line filter by default) still decides whether it is saved.
 # The host may load PSReadLine only once this script has run, so load it here.
+# PSReadLine also runs the handler on every line it loads from the history file (the whole file on the first prompt,
+# then what other sessions added since), with an empty buffer; only a line the buffer holds was just accepted here.
 if (-not (Get-Module PSReadLine)) {
     Import-Module PSReadLine -ErrorAction SilentlyContinue
 }
@@ -24,8 +26,13 @@ if (-not ($env:TMUX -or $env:STY) -and (Get-Module PSReadLine)) {
     Set-PSReadLineOption -AddToHistoryHandler {
         param([string]$line)
         try {
-            $cmd64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($line))
-            [Console]::Write([char]27 + ']16162;C;{"cmd64":"' + $cmd64 + '"}' + [char]7)
+            $buffer = $null
+            $cursor = 0
+            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$buffer, [ref]$cursor)
+            if ($buffer -ceq $line) {
+                $cmd64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($line))
+                [Console]::Write([char]27 + ']16162;C;{"cmd64":"' + $cmd64 + '"}' + [char]7)
+            }
         } catch {}
         if ($Global:_waveterm_si_historyhandler) {
             return $Global:_waveterm_si_historyhandler.Invoke($line)

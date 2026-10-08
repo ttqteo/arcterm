@@ -6,7 +6,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getOverrideConfigAtom, globalStore, WOS } from "@/store/global";
 import { base64ToString, fireAndForget } from "@/util/util";
 import debug from "debug";
-import { setCommandRunning, setLastCommand } from "./lastcommand";
+import { setCommandRunning, setLastCommand, shellPosition } from "./lastcommand";
 import type { TermWrap } from "./termwrap";
 
 const dlog = debug("wave:termwrap");
@@ -213,6 +213,11 @@ export function handleOsc7Command(data: string, blockId: string, loaded: boolean
 export function handleOsc16162Command(data: string, blockId: string, loaded: boolean, termWrap: TermWrap): boolean {
     const terminal = termWrap.terminal;
     if (!loaded) {
+        // replayed output acts on nothing, but its last prompt or command mark is where the shell is now
+        const position = shellPosition(data ?? "");
+        if (position != null) {
+            termWrap.replayPosition = position;
+        }
         return true;
     }
     if (!data || data.length === 0) {
