@@ -1,6 +1,6 @@
 # Servers on this machine: every listening process, who owns it, and stopping it — design
 
-Status: built 2026-10-08 (run 48306843); the `machine-servers`, `rail-servers` and `consumers-popover` CDP scenarios pass on the dev app (2026-10-08). `go test -race` for `machineLister` has not run: no cgo toolchain on the build machine.
+Status: built 2026-10-08 (run 48306843); the `machine-servers` and `rail-servers` CDP scenarios pass on the dev app (2026-10-08), and `consumers-popover` all but its step 15b (the Consumers panel overlaps the footer by 1px since it hangs from its opener, 64b17b3f). `go test -race` for `machineLister` has not run: no cgo toolchain on the build machine.
 
 ## Problem
 
