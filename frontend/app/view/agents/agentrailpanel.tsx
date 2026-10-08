@@ -24,7 +24,7 @@ import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agen
 import { closeRailFile, railWideDragAtom, railWideWidthAtom, selectRailTab } from "./agentrailstore";
 import {
     clampWideWidth,
-    fileLabel,
+    fileTabLabel,
     nextTab,
     RAIL_WIDE_MIN_PX,
     visibleTabs,
@@ -88,14 +88,14 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
                     <button
                         type="button"
                         {...tabProps("file")}
-                        aria-label={`File ${fileLabel(file).name}`}
+                        aria-label={`File ${fileTabLabel(file)}`}
                         title={file.abs}
                         className="flex min-w-0 cursor-pointer items-center gap-[7px] border-0 bg-transparent py-0 pl-2.5 pr-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                     >
                         <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
                         {/* on Overview's 300px the tab is its icon, so the counts beside it keep their room */}
                         <span className={cn("min-w-0 truncate text-[11.5px]", panel.tab !== "file" && "hidden")}>
-                            {fileLabel(file).name}
+                            {fileTabLabel(file)}
                         </span>
                     </button>
                     <button

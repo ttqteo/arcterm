@@ -535,13 +535,18 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
             for (const text of notificationTexts(rec)) {
                 const toolUseId = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(text)?.[1]?.trim();
                 const status = NOTIFIED_STATUS[/<status>([^<]+)<\/status>/.exec(text)?.[1]?.trim() ?? ""];
-                const t = toolUseId ? tasks.get(toolUseId) : undefined;
-                if (t && status) {
-                    t.status = status;
-                }
                 const outputFile = /<output-file>([^<]+)<\/output-file>/.exec(text)?.[1]?.trim();
-                if (t && outputFile) {
-                    t.outputFile = outputFile;
+                // a resumed session's orphan summary carries no tool-use-id, only one <task-id> per unfinished task
+                const targets = toolUseId
+                    ? [tasks.get(toolUseId)]
+                    : [...text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map((m) => byTaskId.get(m[1].trim()));
+                for (const t of targets) {
+                    if (t && status) {
+                        t.status = status;
+                    }
+                    if (t && outputFile) {
+                        t.outputFile = outputFile;
+                    }
                 }
             }
         }

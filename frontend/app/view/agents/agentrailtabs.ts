@@ -19,6 +19,9 @@ export interface FileRef {
     // a background task's output: it opens following live (the Live toggle) and wrapped, with no Open in Code (a
     // temp file, nothing to edit); absent, an ordinary file
     live?: boolean;
+    // what the tab calls it in place of the file name: a background task's output file is a meaningless id, so a log
+    // opened from Servers says its ports and command, one from Background tasks the task's label
+    title?: string;
     // opened from Files changed: the repository path git knows it by, and the commit that list is measured from ("" is
     // HEAD). Set, the tab offers Diff, against the same base as the list's +N -N
     diff?: { rel: string; base: string };
@@ -154,4 +157,9 @@ export function fileLabel(ref: FileRef): { dir: string; name: string } {
         ref.root != null && isUnderRoot(ref.root, ref.abs) ? toRel(ref.root, ref.abs) : ref.abs.replace(/\\/g, "/");
     const i = shown.lastIndexOf("/");
     return i < 0 ? { dir: "", name: shown } : { dir: shown.slice(0, i + 1), name: shown.slice(i + 1) };
+}
+
+// how the File tab names what it holds: the title it was opened with, else the file's name
+export function fileTabLabel(ref: FileRef): string {
+    return ref.title || fileLabel(ref).name;
 }

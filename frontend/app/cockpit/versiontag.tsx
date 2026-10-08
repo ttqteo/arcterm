@@ -4,7 +4,7 @@
 import { useAtomValue } from "jotai";
 import { formatBuildTime, UNKNOWN_VERSION, versionInfoAtom } from "./versioninfo";
 
-// The app's version at the right end of a hints bar, so which build is running is always one glance away. Nothing
+// The app's version at the right end of a hints bar (FooterStatus), so which build is running is always one glance away. Nothing
 // until boot has read it.
 export function VersionTag() {
     const version = useAtomValue(versionInfoAtom);
@@ -16,7 +16,7 @@ export function VersionTag() {
         <span
             data-app-version
             title={`arcterm ${version.app} · backend ${version.server}${built}`}
-            className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-muted"
+            className="shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-muted"
         >
             v{version.app}
         </span>

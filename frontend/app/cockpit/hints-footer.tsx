@@ -20,27 +20,34 @@ import { useEffect, useState } from "react";
 import { ctrlHeldAtom } from "./ctrlheld";
 import { visibleHints } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS } from "./footerhints";
-import { VersionTag } from "./versiontag";
+import { FooterStatus } from "./footerstatus";
 
-function FooterBar({ children, dim }: { children?: React.ReactNode; dim?: boolean }) {
+// dim: focus is in the terminal, so the hints step back; the status at the right end (usage, version) does not
+function FooterBar({ model, children, dim }: { model: AgentsViewModel; children?: React.ReactNode; dim?: boolean }) {
     return (
         <div
             data-pet-ledge
-            className={cn(
-                "flex h-7 shrink-0 items-center gap-4 border-t border-edge-strong bg-modalbg px-4",
-                dim && "opacity-60"
-            )}
+            className="flex h-7 shrink-0 items-center gap-4 border-t border-edge-strong bg-modalbg px-4"
         >
-            {children}
-            <VersionTag />
+            <div className={cn("flex min-w-0 flex-1 items-center gap-4", dim && "opacity-60")}>{children}</div>
+            <FooterStatus model={model} />
         </div>
     );
 }
 
+// One line tall, wrapping onto lines it clips: a narrow window drops the chips that don't fit whole rather than
+// pushing the status off the bar or growing the footer (the Cockpit's HintsBar does the same).
+const CHIP_ROW = "flex h-[22px] min-w-0 flex-1 flex-wrap content-start items-center gap-x-4 gap-y-8 overflow-hidden";
+
 // lit: the chip's key is held right now (Ctrl for peek), so it reads as armed
 function Chip({ glyph, label, lit }: { glyph: string; label: string; lit?: boolean }) {
     return (
-        <span className={cn("flex items-center gap-1.5 text-[12px]", lit ? "text-accent-soft" : "text-secondary")}>
+        <span
+            className={cn(
+                "flex h-[22px] shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px]",
+                lit ? "text-accent-soft" : "text-secondary"
+            )}
+        >
             <span
                 className={cn(
                     "rounded-[5px] border px-[6px] py-0.5 font-mono text-[10.5px] text-primary",
@@ -81,9 +88,9 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
             .filter((b) => b.keys.startsWith(leader + " "))
             .map((b) => ({ next: b.keys.split(" ")[1], label: b.label }));
         return (
-            <FooterBar>
+            <FooterBar model={model}>
                 <span className="shrink-0 font-mono text-[11px] text-accent-soft">{formatChordString(leaderChord(leader))} →</span>
-                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+                <div className={CHIP_ROW}>
                     {items.map((it) => (
                         <Chip key={it.next} glyph={it.next} label={it.label} />
                     ))}
@@ -103,8 +110,8 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
     const ctx = deriveKeyContext();
     const chips = visibleHints(ctx, bindings, SURFACE_HINTS[surface] ?? [], GLOBAL_HINTS);
     return (
-        <FooterBar dim={ctx.editable}>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+        <FooterBar model={model} dim={ctx.editable}>
+            <div className={CHIP_ROW}>
                 {chips.map((c) => (
                     <Chip
                         key={(c.glyph ?? c.keys) + c.label}

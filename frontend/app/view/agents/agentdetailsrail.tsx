@@ -44,7 +44,7 @@ import {
     type BgTaskLabel,
 } from "./agentrailsections";
 import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
-import { fileLabel, panelFor, RAIL_OVERVIEW_PX } from "./agentrailtabs";
+import { fileTabLabel, panelFor, RAIL_OVERVIEW_PX } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -805,6 +805,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                           root: null,
                                           reread: Date.now(),
                                           live: true,
+                                          title: t.label,
                                       })
                                 : undefined
                         }
@@ -877,7 +878,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                           {
                               key: "file",
                               icon: <FileText size={17} strokeWidth={1.8} aria-hidden />,
-                              ariaLabel: `File ${fileLabel(fileRef).name}`,
+                              ariaLabel: `File ${fileTabLabel(fileRef)}`,
                               onClick: () => {
                                   selectRailTab(agent.id, "file");
                                   showRail();

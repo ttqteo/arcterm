@@ -21,6 +21,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The plan-usage meters and the free-RAM chip moved from the app bar to the footer, beside the version, on every
+  surface, which leaves the app bar more room for search and **New**. Each provider's meters start with its logo,
+  and clicking the meters or the chip opens Consumers upward from the footer.
 - Go to… opens only with `Ctrl`+`G` (`Cmd`+`G` on a Mac), the same on every surface and inside the terminal: a bare
   `g` no longer opens it, and every go-to key is now `Ctrl`+`G` then a letter (`Ctrl`+`G` `a` for Agent).
 - Consumers' **RAM** and **Tokens** are now two views, not two sort orders of one list: RAM shows each agent's RAM,

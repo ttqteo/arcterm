@@ -7,6 +7,7 @@ import {
     closeFile,
     currentFileView,
     fileLabel,
+    fileTabLabel,
     fileViews,
     goBack,
     goForward,
@@ -65,6 +66,12 @@ describe("the File tab", () => {
     it("does not select File while no file is open", () => {
         const p = panelFor({}, "x", "overview");
         expect(selectTab(p, "file")).toBe(p);
+    });
+
+    it("names the tab by the title it was opened with, else by the file name", () => {
+        const log = { abs: "C:/tmp/tasks/bwwscwi9k.output", root: null, live: true };
+        expect(fileTabLabel(log)).toBe("bwwscwi9k.output");
+        expect(fileTabLabel({ ...log, title: ":8100 uvicorn app.main:app" })).toBe(":8100 uvicorn app.main:app");
     });
 
     it("labels a file by its path under the root, else by its absolute path", () => {

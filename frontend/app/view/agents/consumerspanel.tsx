@@ -212,8 +212,9 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
             {open ? <div data-consumers-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}
             <PopoverReveal
                 open={open}
-                origin="top right"
-                className="absolute right-0 top-[calc(100%+7px)] z-[60] w-[520px] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
+                origin="bottom right"
+                // its openers (RAM chip, usage meters) sit at the footer's right end, so it rises from just above it
+                className="fixed bottom-[42px] right-4 z-[60] w-[520px] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
             >
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">

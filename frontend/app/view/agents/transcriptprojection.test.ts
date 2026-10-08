@@ -535,6 +535,23 @@ describe("extractBackgroundTasks", () => {
         expect(extractBackgroundTasks(lines)[0].status).toBe("completed");
     });
 
+    it("a resumed session's orphan summary, which names tasks only by task id, stops each of them", () => {
+        const lines = [
+            bash("t9", { command: "uv run fastapi", run_in_background: true }),
+            result("t9", "Command running in background with ID: b9"),
+            bash("t10", { command: "pnpm run start", run_in_background: true }),
+            result("t10", "Command running in background with ID: b10"),
+            JSON.stringify({
+                type: "user",
+                message: {
+                    content:
+                        "<task-notification>\n<task-id>b9</task-id>\n<task-id>b10</task-id>\n<task-id>__orphan_summary__:shell</task-id>\n<status>stopped</status>\n<summary>2 background shell command tasks didn't finish before the previous session ended.</summary>\n</task-notification>",
+                },
+            }),
+        ];
+        expect(extractBackgroundTasks(lines).map((t) => t.status)).toEqual(["stopped", "stopped"]);
+    });
+
     it("a PowerShell background command is a task too", () => {
         const lines = [
             asst([

@@ -65,8 +65,8 @@ const ATTENTION_GATE = "dag-gate";
 const ATTENTION_ESCALATION = "escalation";
 const ATTENTION_ASK = "ask";
 
-// After a surface switch the new surface's ledge can arrive late (the Cockpit draws its HintsBar only once
-// its roster is ready), and a resting creature would not look again for up to half a minute. So a switch
+// After a surface switch the new surface's ledge can arrive late (a surface mounts after the switch, and its
+// bar's height settles as its content loads), and a resting creature would not look again for up to half a minute. So a switch
 // measures on the next frame and again at each of these.
 const SWITCH_SETTLE_MS = [150, 500, 1500, 3000];
 

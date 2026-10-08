@@ -15,6 +15,7 @@ import { bootSurface, lastSurfaceAtom, rememberSurface, startupSurfaceAtom } fro
 import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { useApplyCockpitFonts } from "@/app/view/agents/fontstore";
 import { CockpitShell } from "@/app/view/agents/cockpitshell";
+import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
 import { NowTicker } from "@/app/view/agents/nowticker";
 import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
@@ -147,6 +148,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <CockpitShell model={model} tabId={tabIdRef.current} />
             </div>
             <HintsFooter model={model} />
+            {/* opened from the footer's RAM chip and usage meters, which both hints bars draw: one panel for both */}
+            <ConsumersPanel model={model} />
             <NewProjectModal model={model} />
             <LauncherModal model={model} />
             <NewInitiativeHost model={model} />

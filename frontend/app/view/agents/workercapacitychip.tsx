@@ -7,9 +7,9 @@ import { toggleConsumers } from "./consumersstore";
 import { capacityChipLabel, capacityTitle, lowRam } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
-// The app bar's RAM chip: the free RAM, with how many more workers that holds in the tooltip; a click opens the
-// Consumers panel sorted by RAM. Nothing until there is a reading. When the free RAM is low (lowRam) it takes the
-// warning tone of the version-mismatch pill beside it.
+// The footer's RAM chip, between the usage meters and the version: the free RAM, with how many more workers that
+// holds in the tooltip; a click opens the Consumers panel sorted by RAM. Nothing until there is a reading. When the
+// free RAM is low (lowRam) it takes the warning tone.
 export function WorkerCapacityChip() {
     const cap = useWorkerCapacity();
     if (cap == null) {

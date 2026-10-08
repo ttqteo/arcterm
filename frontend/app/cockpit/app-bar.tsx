@@ -6,11 +6,8 @@ import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
-import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
-import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -77,8 +74,6 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
             <div data-tauri-drag-region className="relative flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
-                <WorkerCapacityChip />
-                <HeaderUsageMeters model={model} />
                 {/* one button, one dialog: it opens on whatever the last open left picked, and the digits switch
                     between an agent and a run. Cmd+N and Cmd+Shift+R open it on an agent or a run row. */}
                 <button
@@ -97,7 +92,6 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </button>
 
                 {mac ? null : <WindowControls />}
-                <ConsumersPanel model={model} />
             </div>
         </div>
     );

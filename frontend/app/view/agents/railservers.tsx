@@ -30,6 +30,9 @@ const STOP_CONFIRM_MS = 3000;
 
 const ACTION_BTN =
     "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] px-[3px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+// Stop is destructive, so it reads red before it is ever clicked
+const STOP_BTN =
+    "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] px-[3px] text-error hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 // One listening process: its ports (each opens in the browser), what it runs and for how long, then its PID and who
 // started it. Log, Copy and Stop appear on the second line while the row is hovered or focused; Stop asks twice.
@@ -42,7 +45,7 @@ function DevServerItem({
     row: DevServerRow;
     now: number;
     logTask: BackgroundTask | undefined;
-    onOpenLog: (task: BackgroundTask) => void;
+    onOpenLog: (task: BackgroundTask, title: string) => void;
 }) {
     const [confirming, setConfirming] = useState(false);
     const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,7 +113,7 @@ function DevServerItem({
                                 data-dev-server-log
                                 title="Open its log"
                                 aria-label="Open its log"
-                                onClick={() => onOpenLog(logTask)}
+                                onClick={() => onOpenLog(logTask, `${portsLabel(row.ports)} ${serverLabel(row)}`)}
                                 className={ACTION_BTN}
                             >
                                 <FileText size={12} aria-hidden />
@@ -135,7 +138,7 @@ function DevServerItem({
                             className={
                                 confirming
                                     ? "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] border border-error/30 px-[6px] text-[10.5px] font-semibold text-error hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                    : ACTION_BTN
+                                    : STOP_BTN
                             }
                         >
                             {confirming ? "Stop?" : <Square size={12} aria-hidden />}
@@ -162,9 +165,10 @@ export function ServersSection({
     bgTasks: BackgroundTask[];
     now: number;
 }) {
-    // a server's log is its launching background task's output file, followed live (the task is running)
-    const openLog = (task: BackgroundTask) =>
-        openFileInPanel(model, agentId, { abs: task.outputFile!, root: null, reread: Date.now(), live: true });
+    // a server's log is its launching background task's output file, followed live (the task is running), its tab
+    // named by the server's ports and command
+    const openLog = (task: BackgroundTask, title: string) =>
+        openFileInPanel(model, agentId, { abs: task.outputFile!, root: null, reread: Date.now(), live: true, title });
     return (
         <div data-rail-servers className="flex flex-col gap-[7px]">
             {failed ? (
