@@ -12,10 +12,18 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Ellipsis } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Ellipsis } from "lucide-react";
+import { lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "../agents";
-import { defaultAccountName, knownClaudeEmails, quotaLine, restartCandidates, rowQuota } from "../claudeaccount";
+import { formatAgeShort } from "../agentsviewmodel";
+import {
+    defaultAccountName,
+    knownClaudeEmails,
+    quotaLine,
+    restartCandidates,
+    rowQuota,
+    type RowQuota,
+} from "../claudeaccount";
 import { harnessPreferenceAtom, leadRuntimesAtom, setPreferredRoute } from "../harnessstore";
 import { RUNTIME_FLAGS, type Runtime } from "../launch";
 import { naFlagsAtom, naRememberFlagsAtom } from "../naflagsstore";
@@ -28,7 +36,7 @@ import {
 } from "../ratelimitstore";
 import { RoutePicker } from "../routepicker";
 import { flagRowId } from "../settingsmodel";
-import { FLAG_RUNTIMES, Note, Segmented, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
+import { CardFooter, FLAG_RUNTIMES, Note, RowCtx, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
 
 export function AgentsPage({
     model,
@@ -41,20 +49,55 @@ export function AgentsPage({
 }) {
     return (
         <>
-            <SettingCard id="claudeaccount" label="Claude account">
-                <ClaudeAccountList model={model} />
-            </SettingCard>
+            <ClaudeAccountCard model={model} />
             <SettingCard id="runs" label="Runs">
                 <RunRouteRow />
             </SettingCard>
-            <SettingCard id="flags" label="Launch flags">
-                <LaunchFlagRows runtime={runtime} onRuntime={onRuntime} />
+            <SettingCard id="flags" label="Launch flags" header={<FlagTabs runtime={runtime} onRuntime={onRuntime} />}>
+                <LaunchFlagRows runtime={runtime} />
             </SettingCard>
         </>
     );
 }
 
-function LaunchFlagRows({ runtime, onRuntime }: { runtime: Runtime; onRuntime: (r: Runtime) => void }) {
+// The card's header strip: one tab per runtime whose flag set the rows below edit. It is the stand-in for
+// the `newagent.runtime` row (a title line would only repeat what the strip says), so it carries that row's
+// data-setting-row and follows the search the way SettingRow does.
+function FlagTabs({ runtime, onRuntime }: { runtime: Runtime; onRuntime: (r: Runtime) => void }) {
+    const ctx = useContext(RowCtx);
+    if (ctx.visible != null && !ctx.visible.has("newagent.runtime")) {
+        return null;
+    }
+    return (
+        <div
+            data-setting-row="newagent.runtime"
+            data-flag-tabs
+            role="tablist"
+            aria-label="Launch flags runtime"
+            className="flex items-center gap-0.5 border-b border-edge-mid px-3 py-2"
+        >
+            {FLAG_RUNTIMES.map((r) => (
+                <button
+                    key={r.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={r.id === runtime}
+                    onClick={() => onRuntime(r.id)}
+                    className={cn(
+                        "cursor-pointer whitespace-nowrap rounded-[5px] px-2.5 py-1 text-[12px] font-semibold transition-colors",
+                        r.id === runtime ? "bg-surface-selected text-primary" : "text-muted hover:text-primary"
+                    )}
+                >
+                    {r.name}
+                </button>
+            ))}
+            <span className="flex-1" />
+            <span className="text-[11.5px] text-muted">per runtime</span>
+        </div>
+    );
+}
+
+function LaunchFlagRows({ runtime }: { runtime: Runtime }) {
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
     const catalog = RUNTIME_FLAGS[runtime];
@@ -66,22 +109,15 @@ function LaunchFlagRows({ runtime, onRuntime }: { runtime: Runtime; onRuntime: (
             <SettingRow id="newagent.remember">
                 <Toggle on={remember} onToggle={() => setRemember((v) => !v)} label="Remember flags" />
             </SettingRow>
-            <SettingRow id="newagent.runtime">
-                <Segmented
-                    options={FLAG_RUNTIMES.map((r) => ({ id: r.id, label: r.name }))}
-                    value={runtime}
-                    onChange={onRuntime}
-                />
-            </SettingRow>
             {catalog.length === 0 ? (
-                <div className="border-t border-edge-mid px-4 py-3 text-[12px] text-muted">
+                <div className="border-t border-edge-mid px-4 py-3 text-[12px] text-muted first:border-t-0">
                     {FLAG_RUNTIMES.find((r) => r.id === runtime)?.name} takes no launch flags.
                 </div>
             ) : (
                 catalog.map((f) => {
                     const on = !!runtimeFlags[f.id];
                     return (
-                        <SettingRow key={f.id} id={flagRowId(runtime, f.id)}>
+                        <SettingRow key={f.id} id={flagRowId(runtime, f.id)} compact inline>
                             <Toggle on={on} onToggle={() => setFlag(f.id, !on)} label={f.flag} />
                         </SettingRow>
                     );
@@ -101,6 +137,7 @@ function RunRouteRow() {
                     value={preference.route}
                     canInherit={false}
                     runtimes={leadRuntimes}
+                    size="select"
                     onChange={(route) => route && setPreferredRoute(route)}
                 />
             </SettingRow>
@@ -190,9 +227,9 @@ function RowInlineInput({
 // The account list and the tokens live behind the claudeaccount RPCs, not in settings; only the active
 // id is a setting (claude:activeaccount). wavesrv applies that setting to its own environment before it
 // broadcasts the change, so re-listing whenever the setting moves reads back what was actually applied —
-// `active` falls back to Default when the account's token is gone, and the radios show that, not the
-// setting.
-function ClaudeAccountList({ model }: { model: AgentsViewModel }) {
+// `active` falls back to Default when the account's token is gone, and the checked row shows that, not the
+// setting. The card owns its footer (+ Add account), so this component draws the whole card, not just the rows.
+function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
     const setting = (useAtomValue(getSettingsKeyAtom("claude:activeaccount")) as string) ?? "";
     const saved = useAtomValue(savedRateLimitsAtom);
     const identity = useAtomValue(claudeIdentityAtom);
@@ -313,11 +350,26 @@ function ClaudeAccountList({ model }: { model: AgentsViewModel }) {
         ...(list?.accounts ?? []).map((a) => ({ id: a.id, account: a })),
     ];
     return (
-        <div className="p-3">
-            <div role="radiogroup" aria-label="claude account" className="flex flex-col gap-1.5">
+        <SettingCard
+            id="claudeaccount"
+            label="Claude account"
+            footer={
+                <CardFooter>
+                    <button
+                        type="button"
+                        data-claude-account-add
+                        onClick={() => setSigninOpen(true)}
+                        className="cursor-pointer rounded text-[12px] font-semibold text-secondary transition-colors hover:text-primary"
+                    >
+                        + Add account
+                    </button>
+                </CardFooter>
+            }
+        >
+            <div role="radiogroup" aria-label="claude account">
                 {rows.map(({ id, account }) => {
                     const on = id === active;
-                    const quota = quotaLine(rowQuota(saved, claudeQuotaKey(id, identity), now), now);
+                    const quota = rowQuota(saved, claudeQuotaKey(id, identity), now);
                     return (
                         <div
                             key={id || "default"}
@@ -325,6 +377,7 @@ function ClaudeAccountList({ model }: { model: AgentsViewModel }) {
                             aria-checked={on}
                             tabIndex={0}
                             data-claude-account-row={id || "default"}
+                            data-account-active={on ? "" : undefined}
                             onClick={() => select(id)}
                             onKeyDown={(e) => {
                                 if (e.target === e.currentTarget && (e.key === " " || e.key === "Enter")) {
@@ -333,77 +386,84 @@ function ClaudeAccountList({ model }: { model: AgentsViewModel }) {
                                 }
                             }}
                             className={cn(
-                                "flex w-full cursor-pointer items-center gap-2.5 rounded-[11px] border p-[10px] text-left transition-colors",
-                                on ? "border-accent-700 bg-surface-hover" : "border-border hover:border-edge-strong"
+                                "flex w-full cursor-pointer items-start gap-3 border-t border-edge-mid px-4 py-3 text-left transition-colors first:border-t-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                                on ? "bg-surface-selected" : "hover:bg-surface-hover"
                             )}
                         >
-                            <span
-                                className={cn(
-                                    "flex h-4 w-4 flex-none items-center justify-center rounded-full border-2 transition-colors",
-                                    on ? "border-accent" : "border-edge-strong"
-                                )}
-                            >
-                                {on ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
+                            <span className="flex w-4 flex-none pt-[2px] text-primary">
+                                {on ? <Check size={14} aria-hidden /> : null}
                             </span>
-                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                {account != null && renaming === id ? (
-                                    <RowInlineInput
-                                        initial={account.label}
-                                        placeholder="Account name"
-                                        label="Account name"
-                                        attrs={{ "data-claude-account-rename-input": id }}
-                                        onCommit={(v) => {
-                                            setRenaming(null);
-                                            rename(id, v);
-                                        }}
-                                        onCancel={() => setRenaming(null)}
-                                    />
-                                ) : (
+                            <div className="min-w-0 flex-1">
+                                <div className="flex min-h-[20px] flex-wrap items-center gap-x-2 gap-y-1">
+                                    {account != null && renaming === id ? (
+                                        <RowInlineInput
+                                            initial={account.label}
+                                            placeholder="Account name"
+                                            label="Account name"
+                                            attrs={{ "data-claude-account-rename-input": id }}
+                                            onCommit={(v) => {
+                                                setRenaming(null);
+                                                rename(id, v);
+                                            }}
+                                            onCancel={() => setRenaming(null)}
+                                        />
+                                    ) : (
+                                        <span
+                                            data-claude-account-name={id || "default"}
+                                            className={cn(
+                                                "truncate text-[13px] font-semibold",
+                                                on ? "text-primary" : "text-secondary"
+                                            )}
+                                        >
+                                            {account == null ? defaultAccountName(identity.loginEmail) : account.label}
+                                        </span>
+                                    )}
                                     <span
-                                        data-claude-account-name={id || "default"}
-                                        className={cn(
-                                            "truncate text-[13px] font-semibold",
-                                            on ? "text-primary" : "text-secondary"
-                                        )}
+                                        data-claude-account-tag={id || "default"}
+                                        data-claude-account-login-tag={account == null ? "" : undefined}
+                                        className="rounded bg-pill px-1.5 text-[11px] text-ink-mid"
                                     >
-                                        {account == null ? defaultAccountName(identity.loginEmail) : account.label}
-                                        {account == null ? (
-                                            <span
-                                                data-claude-account-login-tag
-                                                className="ml-1.5 rounded border border-edge-mid px-1 align-middle text-[10.5px] font-normal text-muted"
-                                            >
-                                                /login
+                                        {account == null ? "/login" : "token"}
+                                    </span>
+                                    {account != null && emailing === id ? (
+                                        <RowInlineInput
+                                            initial=""
+                                            placeholder="name@example.com"
+                                            label="Account email"
+                                            attrs={{ "data-claude-account-email-input": id }}
+                                            onCommit={(v) => {
+                                                setEmailing(null);
+                                                setEmail(id, v);
+                                            }}
+                                            onCancel={() => setEmailing(null)}
+                                        />
+                                    ) : account?.email ? (
+                                        <span
+                                            data-claude-account-email={id}
+                                            className="truncate text-[11.5px] text-muted"
+                                        >
+                                            {account.email}
+                                        </span>
+                                    ) : null}
+                                    {on ? <span className="text-[11.5px] text-muted">new agents use this</span> : null}
+                                </div>
+                                <div
+                                    data-claude-account-quota={id || "default"}
+                                    className="mt-[7px] flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[11.5px] text-muted"
+                                >
+                                    {quota == null ? (
+                                        <span>{quotaLine(null, now).text}</span>
+                                    ) : (
+                                        <>
+                                            <QuotaMeter name="5h" label="5h" pct={quota.fivehourpct} />
+                                            <QuotaMeter name="week" label="Week" pct={quota.weekpct} />
+                                            <span data-claude-account-seen className="tabular-nums">
+                                                {formatAgeShort(now - quota.capturedAt)} ago
                                             </span>
-                                        ) : null}
-                                    </span>
-                                )}
-                                {account != null && emailing === id ? (
-                                    <RowInlineInput
-                                        initial=""
-                                        placeholder="name@example.com"
-                                        label="Account email"
-                                        attrs={{ "data-claude-account-email-input": id }}
-                                        onCommit={(v) => {
-                                            setEmailing(null);
-                                            setEmail(id, v);
-                                        }}
-                                        onCancel={() => setEmailing(null)}
-                                    />
-                                ) : account?.email ? (
-                                    <span data-claude-account-email={id} className="truncate text-[11px] text-muted">
-                                        {account.email}
-                                    </span>
-                                ) : null}
-                            </span>
-                            <span
-                                data-claude-account-quota={id || "default"}
-                                className={cn(
-                                    "flex-none text-[11px] tabular-nums",
-                                    quota.warn ? "text-warning" : "text-muted"
-                                )}
-                            >
-                                {quota.text}
-                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
                             {account != null ? (
                                 <button
                                     type="button"
@@ -413,7 +473,7 @@ function ClaudeAccountList({ model }: { model: AgentsViewModel }) {
                                         e.stopPropagation();
                                         showAccountMenu(account, e);
                                     }}
-                                    className="flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded text-muted transition-colors hover:bg-surface-hover hover:text-primary"
+                                    className="-my-0.5 flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded text-muted transition-colors hover:bg-edge-mid hover:text-primary"
                                 >
                                     <Ellipsis size={14} aria-hidden />
                                 </button>
@@ -422,22 +482,39 @@ function ClaudeAccountList({ model }: { model: AgentsViewModel }) {
                     );
                 })}
             </div>
-            <div className="mt-3">
-                <button
-                    type="button"
-                    data-claude-account-add
-                    onClick={() => setSigninOpen(true)}
-                    className="cursor-pointer rounded border border-edge-mid px-3 py-[6px] text-[12px] font-semibold text-secondary transition-colors hover:border-edge-strong hover:text-primary"
-                >
-                    + Add account
-                </button>
-            </div>
-            {error ? <Note tone="error">{error}</Note> : null}
+            {error ? (
+                <div className="px-4 pb-3">
+                    <Note tone="error">{error}</Note>
+                </div>
+            ) : null}
             {signinOpen ? (
                 <Suspense fallback={null}>
                     <ClaudeSigninModal onClose={() => setSigninOpen(false)} onAdded={reload} />
                 </Suspense>
             ) : null}
-        </div>
+        </SettingCard>
+    );
+}
+
+// A usage window: its name, a 64x4 bar filled to the percent, and the percent. The bar turns to the warning
+// tone from 80%; a window with no reading yet shows a dash and an empty bar.
+function QuotaMeter({ name, label, pct }: { name: string; label: string; pct: RowQuota["fivehourpct"] }) {
+    const fill = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+    return (
+        <span
+            data-claude-account-meter={name}
+            data-pct={pct == null ? undefined : Math.round(pct)}
+            className="flex items-center gap-[7px]"
+        >
+            {label}
+            <span className="flex h-1 w-16 flex-none overflow-hidden rounded-[2px] bg-edge-mid">
+                <span
+                    data-meter-fill
+                    style={{ width: `${fill}%` }}
+                    className={cn("h-full", fill >= 80 ? "bg-warning" : "bg-accent")}
+                />
+            </span>
+            <span className="tabular-nums text-secondary">{pct == null ? "—" : `${Math.round(pct)}%`}</span>
+        </span>
     );
 }
