@@ -118,13 +118,21 @@ type CommandGitListIgnoredDirRtnData struct {
 }
 
 type CommandGitListWorktreesData struct {
-	Cwd string `json:"cwd"`
+	Cwd    string `json:"cwd"`
+	Status bool   `json:"status,omitempty"` // also read each checkout's status (costs ~2 git calls per checkout)
 }
 
 type GitWorktree struct {
 	Path   string `json:"path"`
 	Branch string `json:"branch,omitempty"` // empty when detached
 	IsMain bool   `json:"ismain,omitempty"`
+	// set only when Status was asked for
+	Head    string `json:"head,omitempty"`    // short sha; "" in an unborn repository
+	Changed int    `json:"changed,omitempty"` // entries in `git status --porcelain`, untracked included
+	Ahead   int    `json:"ahead,omitempty"`   // commits on this checkout's HEAD not on the main checkout's branch
+	Behind  int    `json:"behind,omitempty"`
+	HasBase bool   `json:"hasbase,omitempty"` // ahead/behind were computed (false for main, or when main is detached)
+	Error   string `json:"error,omitempty"`   // this checkout's status read failed; the row says so
 }
 
 // Worktrees is main first and empty when cwd is not a repository.

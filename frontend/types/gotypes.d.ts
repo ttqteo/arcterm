@@ -1282,6 +1282,7 @@ declare global {
     // wshrpc.CommandGitListWorktreesData
     type CommandGitListWorktreesData = {
         cwd: string;
+        status?: boolean;
     };
 
     // wshrpc.CommandGitListWorktreesRtnData
@@ -2231,6 +2232,12 @@ declare global {
         path: string;
         branch?: string;
         ismain?: boolean;
+        head?: string;
+        changed?: number;
+        ahead?: number;
+        behind?: number;
+        hasbase?: boolean;
+        error?: string;
     };
 
     // wshrpc.GraphLink

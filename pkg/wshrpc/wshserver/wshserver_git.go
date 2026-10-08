@@ -73,9 +73,15 @@ func (ws *WshServer) GitListWorktreesCommand(ctx context.Context, data wshrpc.Co
 	if err != nil {
 		return nil, err
 	}
+	if data.Status {
+		wts = gitinfo.WorktreeStatuses(ctx, wts)
+	}
 	out := make([]wshrpc.GitWorktree, 0, len(wts))
 	for _, wt := range wts {
-		out = append(out, wshrpc.GitWorktree{Path: wt.Path, Branch: wt.Branch, IsMain: wt.IsMain})
+		out = append(out, wshrpc.GitWorktree{
+			Path: wt.Path, Branch: wt.Branch, IsMain: wt.IsMain,
+			Head: wt.Head, Changed: wt.Changed, Ahead: wt.Ahead, Behind: wt.Behind, HasBase: wt.HasBase, Error: wt.Error,
+		})
 	}
 	return &wshrpc.CommandGitListWorktreesRtnData{Worktrees: out}, nil
 }

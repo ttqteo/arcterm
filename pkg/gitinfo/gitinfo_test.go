@@ -613,6 +613,121 @@ func TestListWorktreesSkipsAWorktreeWhoseDirectoryIsGone(t *testing.T) {
 	}
 }
 
+func TestWorktreeStatuses(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "core.autocrlf", "false")
+	writeFile(t, dir, "a.txt", "one\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "init")
+
+	// feat: one commit ahead of main, then one tracked edit and one untracked file
+	feat := filepath.Join(t.TempDir(), "feat")
+	git(t, dir, "worktree", "add", "-b", "feat", feat)
+	writeFile(t, feat, "f.txt", "f\n")
+	git(t, feat, "add", ".")
+	git(t, feat, "commit", "-m", "feat work")
+	writeFile(t, feat, "a.txt", "one\ntwo\n")
+	writeFile(t, feat, "new.txt", "new\n")
+
+	detached := filepath.Join(t.TempDir(), "detached")
+	git(t, dir, "worktree", "add", "--detach", detached)
+
+	// git still lists a checkout whose directory exists, but cannot read one whose gitdir is gone
+	broken := filepath.Join(t.TempDir(), "broken")
+	git(t, dir, "worktree", "add", "--detach", broken)
+	writeFile(t, broken, ".git", "gitdir: "+filepath.Join(t.TempDir(), "missing")+"\n")
+
+	// main moves on by one commit, so feat is one behind
+	writeFile(t, dir, "m.txt", "m\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "main work")
+
+	wts, err := ListWorktrees(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 4 {
+		t.Fatalf("got %+v, want main and three linked worktrees", wts)
+	}
+	got := WorktreeStatuses(context.Background(), wts)
+	if len(got) != 4 {
+		t.Fatalf("got %d checkouts, want 4", len(got))
+	}
+	byPath := func(p string) Worktree {
+		t.Helper()
+		for _, wt := range got {
+			if sameDir(t, wt.Path, p) {
+				return wt
+			}
+		}
+		t.Fatalf("no checkout at %s in %+v", p, got)
+		return Worktree{}
+	}
+
+	m := got[0]
+	if !m.IsMain || m.Head == "" || m.Changed != 0 || m.HasBase || m.Error != "" {
+		t.Fatalf("main = %+v, want a clean main with a head and no base", m)
+	}
+	f := byPath(feat)
+	if f.Head == "" || f.Changed != 2 || f.Ahead != 1 || f.Behind != 1 || !f.HasBase || f.Error != "" {
+		t.Fatalf("feat = %+v, want head, 2 changed, 1 ahead, 1 behind, with a base", f)
+	}
+	d := byPath(detached)
+	if d.Head == "" || d.Changed != 0 || d.Ahead != 0 || d.Behind != 1 || !d.HasBase || d.Error != "" {
+		t.Fatalf("detached = %+v, want head, clean, 1 behind, with a base", d)
+	}
+	b := byPath(broken)
+	if b.Error == "" {
+		t.Fatalf("broken = %+v, want an Error", b)
+	}
+
+	// with main detached there is no branch to measure against
+	git(t, dir, "checkout", "-q", "--detach")
+	wts, err = ListWorktrees(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wt := range WorktreeStatuses(context.Background(), wts) {
+		if wt.HasBase || wt.Ahead != 0 || wt.Behind != 0 {
+			t.Fatalf("%+v: want no base while main is detached", wt)
+		}
+		if wt.Error == "" && wt.Head == "" {
+			t.Fatalf("%+v: want a head", wt)
+		}
+	}
+}
+
+func TestWorktreeStatusesCountsARenameOnce(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	writeFile(t, dir, "a.txt", "one\ntwo\nthree\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "init")
+	git(t, dir, "mv", "a.txt", "b.txt")
+	wts, err := ListWorktrees(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := WorktreeStatuses(context.Background(), wts)
+	if len(got) != 1 || got[0].Changed != 1 || got[0].Error != "" {
+		t.Fatalf("got %+v, want one changed entry for the rename", got)
+	}
+}
+
+func TestWorktreeStatusesUnbornHead(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "a.txt", "a\n")
+	wts, err := ListWorktrees(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := WorktreeStatuses(context.Background(), wts)
+	if len(got) != 1 || got[0].Head != "" || got[0].Changed != 1 || got[0].Error != "" {
+		t.Fatalf("got %+v, want no head, one untracked file and no error", got)
+	}
+}
+
 func TestListWorktreesNotARepo(t *testing.T) {
 	got, err := ListWorktrees(context.Background(), t.TempDir())
 	if err != nil {

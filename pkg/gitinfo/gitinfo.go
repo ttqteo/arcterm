@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -542,6 +543,107 @@ type Worktree struct {
 	Path   string
 	Branch string // short name; empty when detached
 	IsMain bool
+	// filled only by WorktreeStatuses
+	Head    string // short sha; "" in an unborn repository
+	Changed int    // records in `git status --porcelain`, untracked included, a rename counted once
+	Ahead   int    // commits on this checkout's HEAD not on the main checkout's branch
+	Behind  int
+	HasBase bool   // Ahead/Behind were computed: false for main, or when main is detached
+	Error   string // this checkout's status read failed
+}
+
+// maxStatusInFlight bounds how many checkouts WorktreeStatuses reads at once; each costs two or three git
+// processes, and a repo with many engine-run worktrees should not fork dozens of them together.
+const maxStatusInFlight = 4
+
+// WorktreeStatuses fills the status fields of each checkout in wts (as ListWorktrees returns them, main
+// first) and returns them in the same order. A checkout whose read fails reports its own Error; the
+// others are unaffected, so the call itself never fails.
+func WorktreeStatuses(ctx context.Context, wts []Worktree) []Worktree {
+	out := make([]Worktree, len(wts))
+	copy(out, wts)
+	mainBranch := ""
+	if len(out) > 0 && out[0].IsMain {
+		mainBranch = out[0].Branch
+	}
+	sem := make(chan struct{}, maxStatusInFlight)
+	var wg sync.WaitGroup
+	for i := range out {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(wt *Worktree) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := worktreeStatus(ctx, wt, mainBranch); err != nil {
+				wt.Error = err.Error()
+			}
+		}(&out[i])
+	}
+	wg.Wait()
+	return out
+}
+
+// worktreeStatus reads one checkout's head, change count and, for a linked checkout, its divergence from
+// mainBranch ("" skips it). The returned error carries git's own stderr.
+func worktreeStatus(ctx context.Context, wt *Worktree, mainBranch string) error {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	statusArgs := []string{"status", "--porcelain", "-z"}
+	statusZ, err := run(ctx, wt.Path, statusArgs...)
+	if err != nil {
+		return failureErr(statusArgs, err)
+	}
+	wt.Changed = countStatusRecords(statusZ)
+	// -q --verify exits 1 with no output when HEAD is unborn, which is not a failure
+	headArgs := []string{"rev-parse", "--short", "-q", "--verify", "HEAD"}
+	head, err := run(ctx, wt.Path, headArgs...)
+	if err != nil && exitCodeOf(err) != 1 {
+		return failureErr(headArgs, err)
+	}
+	wt.Head = strings.TrimSpace(head)
+	if wt.IsMain || mainBranch == "" || wt.Head == "" {
+		return nil
+	}
+	revArgs := []string{"rev-list", "--left-right", "--count", mainBranch + "...HEAD"}
+	counts, err := run(ctx, wt.Path, revArgs...)
+	if err != nil {
+		return failureErr(revArgs, err)
+	}
+	fields := strings.Fields(counts)
+	if len(fields) != 2 {
+		return fmt.Errorf("git %s: unexpected output %q", strings.Join(revArgs, " "), strings.TrimSpace(counts))
+	}
+	behind, errB := strconv.Atoi(fields[0])
+	ahead, errA := strconv.Atoi(fields[1])
+	if errB != nil || errA != nil {
+		return fmt.Errorf("git %s: unexpected output %q", strings.Join(revArgs, " "), strings.TrimSpace(counts))
+	}
+	wt.Behind, wt.Ahead, wt.HasBase = behind, ahead, true
+	return nil
+}
+
+// failureErr is a failed git read as one line: the command, then git's stderr (or the Go error).
+func failureErr(args []string, err error) error {
+	f := failureOf(args, err)
+	return fmt.Errorf("%s: %s", f.Command, f.Stderr)
+}
+
+// countStatusRecords counts the entries of a `status --porcelain -z` blob. A rename or copy entry carries
+// its source path as an extra NUL-separated field, which is skipped so the rename counts once.
+func countStatusRecords(statusZ string) int {
+	n := 0
+	parts := strings.Split(statusZ, "\x00")
+	for i := 0; i < len(parts); i++ {
+		entry := parts[i]
+		if len(entry) < 3 {
+			continue
+		}
+		n++
+		if entry[0] == 'R' || entry[0] == 'C' {
+			i++
+		}
+	}
+	return n
 }
 
 // ListWorktrees returns every checkout of the repository at cwd, main first, from whichever checkout
