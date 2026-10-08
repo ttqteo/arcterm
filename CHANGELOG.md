@@ -19,6 +19,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Claude sessions are saved again after arcterm is reinstalled or reopened from an agent's terminal (`task install`
+  on a Mac): before, every session started or resumed in that arcterm kept no transcript or title, and vanished
+  from the sidebar and Conversation History once it ended.
 - A run you landed after its final check failed now reads **✓ landed** in the sidebar, on its lead card and in
   Conversation History, instead of "7/7 done" as if it were still waiting.
 - A finished run no longer leaves idle tabs behind: its plan reviewer, its final verifier and its lead close a few

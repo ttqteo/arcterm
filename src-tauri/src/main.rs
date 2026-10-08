@@ -278,6 +278,7 @@ fn install_agent_hooks(app_path: &std::path::Path, child_path: Option<&str>) {
 }
 
 fn main() {
+    let scrubbed_env = shellenv::scrub_inherited_agent_env();
     let path_probe = shellenv::PathProbe::start();
     let context = tauri::generate_context!();
     #[cfg(all(windows, not(debug_assertions)))]
@@ -343,6 +344,12 @@ fn main() {
                 std::env::var_os(paths::DEV_DATA_DIR_ENV),
             );
             applog::init(&paths::data_home_dirs(&data_base).0);
+            if !scrubbed_env.is_empty() {
+                applog::log_line(&format!(
+                    "[tauri] opened from an agent's shell; dropped {} so agents keep their transcripts",
+                    scrubbed_env.join(" ")
+                ));
+            }
             // tell a dev window from the installed app in the taskbar and Alt+Tab; the packaged title stays
             // tauri.conf.json's "arcterm"
             #[cfg(debug_assertions)]
