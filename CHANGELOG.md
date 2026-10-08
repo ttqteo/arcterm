@@ -21,6 +21,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A terminal you have not renamed is named for the command it last ran (`task dev`), or "Terminal 2" before it has
   run one, instead of every terminal in a repo sharing the repo's name. PowerShell, Windows PowerShell 5.1 included,
   now reports its commands to arcterm.
+- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove; + Add account holds both signing in and pasting a token; and the section and its dialogs are in English.
 
 ### Fixed
 
