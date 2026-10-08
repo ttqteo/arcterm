@@ -16,16 +16,19 @@ import { backgroundTasksByIdAtom } from "./subagentsstore";
 // The footer's Servers chip, before the RAM chip: how many servers run inside a git repo and, in the warning tone,
 // how many of those nothing holds. Muted and icon-only with none in a repo, an icon and `?` when the last read failed.
 // A click opens the Servers popover (and closes Consumers, which rises from the same corner). Nothing until there is
-// a reading.
+// a reading, or a failed one.
 export function MachineServersChip({ model }: { model: AgentsViewModel }) {
     const reading = useAtomValue(machineServersReadingAtom);
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
+    // a first read that failed still draws the chip, with its `?`
     const view = useMemo(
         () =>
-            reading.servers == null ? null : buildMachineServers(reading.servers, [...agents, ...terminals], bgTasks),
-        [reading.servers, agents, terminals, bgTasks]
+            reading.servers == null && !reading.failed
+                ? null
+                : buildMachineServers(reading.servers ?? [], [...agents, ...terminals], bgTasks),
+        [reading.servers, reading.failed, agents, terminals, bgTasks]
     );
     if (view == null) {
         return null;
