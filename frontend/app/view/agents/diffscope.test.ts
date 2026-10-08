@@ -8,8 +8,10 @@ import {
     historyKey,
     historyOptsFor,
     originCwd,
+    originKey,
     rangeKey,
     scopeKey,
+    scopeProjectName,
     summaryLine,
     type DiffRange,
     type DiffScope,
@@ -27,6 +29,14 @@ const projectScope: DiffScope = {
 const runScope: DiffScope = {
     repo: { origin: { kind: "run", runId: "r1", cwd: "/repo", baseCommit: "9f2c1de" }, label: "run 9f2c1de" },
     range: { kind: "run", runId: "r1", baseCommit: "9f2c1de" },
+};
+
+const worktreeScope: DiffScope = {
+    repo: {
+        origin: { kind: "worktree", path: "D:\\repo\\.worktrees\\feat", project: "waveterm" },
+        label: "feat",
+    },
+    range: { kind: "working" },
 };
 
 const kinds = (s: DiffScope, ctx = { sessionStartTs: 1719000000, sessionRef: "a3f9c21" }) =>
@@ -259,5 +269,50 @@ describe("compare range form", () => {
     it("names both refs when there is no merge base", () => {
         const input = { branch: "feature", ref: "", mergeBase: "", commit: null, changes: null };
         expect(summaryLine({ ...input, range: mergebase })).toBe("main … feature · 0 files · +0 −0");
+    });
+});
+
+describe("worktree origin", () => {
+    // git hands back forward slashes, the registry backslashes, and NTFS ignores case: one checkout
+    // must be one scope however its path arrived
+    it("keys two spellings of one Windows path alike", () => {
+        expect(originKey({ kind: "worktree", path: "D:\\Repo\\.worktrees\\feat\\", project: "waveterm" })).toBe(
+            originKey({ kind: "worktree", path: "d:/repo/.worktrees/feat", project: "waveterm" })
+        );
+        expect(originKey(worktreeScope.repo.origin)).toBe("worktree:d:/repo/.worktrees/feat");
+    });
+
+    it("answers its directory synchronously and opens on the working tree", () => {
+        expect(originCwd(worktreeScope.repo.origin)).toBe("D:\\repo\\.worktrees\\feat");
+        expect(defaultRangeFor(worktreeScope.repo.origin)).toEqual({ kind: "working" });
+    });
+
+    it("offers what a project offers", () => {
+        expect(availableRanges(worktreeScope, { sessionStartTs: null, sessionRef: "" })).toEqual(
+            availableRanges(projectScope, { sessionStartTs: null, sessionRef: "" })
+        );
+    });
+});
+
+describe("scopeProjectName", () => {
+    const projects = [
+        { name: "waveterm", path: "D:\\repo" },
+        { name: "other", path: "D:\\other" },
+    ];
+
+    // a linked worktree is not registered, so a path match would find nothing and Send no agents
+    it("names a worktree's own project even when its path matches none", () => {
+        expect(scopeProjectName(worktreeScope.repo.origin, projects, "D:/repo/.worktrees/feat")).toBe("waveterm");
+    });
+
+    it("names a project by its origin", () => {
+        expect(scopeProjectName(projectScope.repo.origin, projects, "D:/other")).toBe("waveterm");
+    });
+
+    it("matches a run or an agent to a project by path", () => {
+        expect(scopeProjectName(runScope.repo.origin, projects, "d:/other/")).toBe("other");
+        expect(scopeProjectName(agentScope.repo.origin, projects, "D:\\repo")).toBe("waveterm");
+        expect(scopeProjectName(agentScope.repo.origin, projects, "D:/elsewhere")).toBe("");
+        expect(scopeProjectName(undefined, projects, "")).toBe("");
     });
 });

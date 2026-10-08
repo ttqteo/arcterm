@@ -15,7 +15,7 @@ Các trang liên quan: [Agent](agent.md) (File tab trong rail của agent), [Cod
 | `Ctrl+G` rồi `f` | Chuỗi "go to" |
 | `[` / `]` | Chuyển sang surface trước / sau |
 
-Khi Diff được mở mà chưa có nguồn nào được chọn và chưa agent nào đang được focus, nó lấy agent đầu tiên trong roster; nếu chỉ có project thì bạn chọn nguồn ở ô chọn nguồn. Không có agent nào và cũng không có project nào thì bạn thấy màn "No changes to show" với nút **New agent**.
+Khi Diff được mở mà chưa có nguồn nào được chọn và chưa agent nào đang được focus, nó lấy agent đầu tiên trong roster; nếu chỉ có project thì bạn chọn nguồn ở sidebar worktree bên trái. Không có agent nào và cũng không có project nào thì bạn thấy màn "No changes to show" với nút **New agent**.
 
 Surface này bị gỡ khỏi màn hình mỗi khi bạn chuyển đi, nhưng vị trí cuộn, bộ lọc, commit và file đang chọn được giữ lại. Quay lại là về đúng chỗ cũ.
 
@@ -34,16 +34,21 @@ Lúc đi vào từ một file cụ thể, lần chọn file đó chỉ có tác 
 
 ## Chọn nguồn và range
 
-Hàng trên cùng có tiêu đề **Diff**, ô chọn nguồn, dải range, và một dòng tóm tắt bên phải.
+Bên trái là **sidebar worktree**; hàng trên cùng của phần còn lại có tiêu đề **Diff**, dải range, và một dòng tóm tắt bên phải.
 
-**Ô chọn nguồn** quyết định bạn đang đọc repository của ai. Danh sách có hai nhóm, gõ để lọc:
+**Sidebar worktree** là nơi duy nhất chọn bạn đang đọc repository nào. Nó liệt kê mọi project đã đăng ký, mỗi project là một nhóm thu/mở được; trong nhóm là checkout chính rồi các linked worktree theo thứ tự của `git worktree list`. Nhóm chứa nguồn đang xem tự mở; các nhóm khác mở khi bạn bấm vào header, và bấm lần nữa thì thu lại.
 
-- **Agents**: mọi agent đang chạy, kèm chấm trạng thái. Chọn một agent cũng chuyển focus của cockpit sang agent đó.
-- **Projects**: mọi project đã đăng ký, đọc thẳng từ đường dẫn đã cấu hình; không cần agent nào đang chạy. Worktree của một project hiện là `worktree · <tên project cha>`.
+- **Dòng worktree** hiện nhánh (hoặc `detached <commit>`), số file chưa commit, và `↑`/`↓` số commit đi trước/sau nhánh của checkout chính. Huy hiệu chỉ hiện khi đã đọc được và khác 0. Một worktree đọc lỗi mang dấu cảnh báo; một project đọc lỗi hiện "Couldn't read worktrees" nhưng checkout chính của nó vẫn chọn được. Thư mục không phải repo hiện `not a repository`.
+- **Dòng agent** nằm dưới worktree mà agent đang chạy trong đó. Agent có thư mục làm việc ngoài mọi worktree đã liệt kê, hoặc không xác định được, nằm trong nhóm **Other agents** ở cuối. Chọn một agent cũng chuyển focus của cockpit sang agent đó.
+- **Ô lọc** ở đầu sidebar lọc theo tên project, nhánh, đường dẫn và tên agent, trong mọi project kể cả nhóm đang thu.
 
-Có loại nguồn thứ ba không nằm trong danh sách: **run**. Bạn chỉ vào đó từ chứng cứ của một run (bảng trên), và ô chọn nguồn hiện nhãn `run <8 ký tự đầu của id>`.
+Chọn checkout chính là đọc project đó; chọn một linked worktree là đọc worktree đó với range **Working tree**. `r` đọc lại trạng thái của các nhóm đang mở.
 
-Khi nguồn là một agent, Diff đi theo focus của cockpit: đổi agent được chọn ở nơi khác thì Diff đổi theo. Ghim một project, hoặc đến từ một run, thì focus không kéo Diff đi nữa.
+**Thu sidebar**: nút ở đầu sidebar hoặc `Shift+B` thu nó thành một rail 36 px, trên đó checkout nào có thay đổi chưa commit mang một chấm. Khi bạn chưa tự quyết, sidebar tự thu khi bề rộng surface dưới 1000 px (nên ở cửa sổ mặc định 1000×700 nó mở dưới dạng rail); lựa chọn rõ ràng của bạn thắng và được nhớ qua các lần mở app.
+
+Có loại nguồn không nằm trong sidebar: **run**. Bạn chỉ vào đó từ chứng cứ của một run (bảng trên), và dòng tóm tắt nói về range **This run** của nó.
+
+Khi nguồn là một agent, Diff đi theo focus của cockpit: đổi agent được chọn ở nơi khác thì Diff đổi theo. Ghim một project hay một worktree, hoặc đến từ một run, thì focus không kéo Diff đi nữa.
 
 **Dải range** là khoảng lịch sử cần xem:
 
@@ -237,7 +242,7 @@ Danh sách file và cột diff đọc cùng một dạng, nên không thể mâu
 
 Hai màn hình chiếm cả surface, cố ý khác nhau:
 
-- **"This folder isn't a Git repository"**: một sự thật bình thường về nguồn bạn chọn. Nút **Choose a source** mở lại ô chọn nguồn.
+- **"This folder isn't a Git repository"**: một sự thật bình thường về nguồn bạn chọn. Nút **Choose a source** mở sidebar worktree và đặt con trỏ vào ô lọc.
 - **"Couldn't read this repository"**: một lỗi. Màn hình in lệnh git đã hỏng, mã thoát (hoặc "no exit code" nếu là timeout hay thiếu git), stderr nguyên văn trong khối chọn được, nút chép và nút **Retry**. Không có gì bị đổi nên thử lại là an toàn.
 
 Một repository đọc hỏng được kiểm tra trước, vì đọc hỏng cũng báo "không phải repo"; hiện nó như vắng mặt sẽ che mất nguyên nhân.
@@ -254,11 +259,12 @@ Các phím này có hiệu lực khi Diff đang hiện và bạn không gõ tron
 | `Shift+G` | Bật/tắt graph | Chế độ lịch sử |
 | `Ctrl+G` `g` | Về đầu lịch sử | Chế độ lịch sử |
 | `Shift+H` | Thu/mở cột lịch sử | Luôn luôn |
+| `Shift+B` | Thu/mở sidebar worktree | Luôn luôn |
 | `Shift+N` / `Shift+P` | Thay đổi kế / trước trong diff đang mở | Có diff Monaco |
 | `Shift+D` | Split / Unified | Luôn luôn |
 | `Shift+W` | Hide whitespace | Luôn luôn |
 | `Alt+Z` | Wrap file đang mở (dùng chung với Code) | Chế độ File |
-| `r` | Đọc lại danh sách thay đổi và lịch sử | Luôn luôn |
+| `r` | Đọc lại danh sách thay đổi, lịch sử và sidebar worktree | Luôn luôn |
 | `c` | Lịch sử: mở Compare. Trong Compare: sửa hai ref | Luôn luôn |
 | `Shift+S` | Đảo base và head | Trong Compare |
 | `Tab` | Nhảy giữa hai phía | Trong Compare |
@@ -290,4 +296,4 @@ Quy tắc thực dụng: viết code thì dùng diff của Code, review thì dù
 - **Không có đánh dấu "đã xem"** cho từng file của một nhánh.
 - **Trình diff Monaco đọc hai bản đầy đủ của file** nên một phía quá 2 MB thì không hiện.
 - **Chỉ chạy trên máy cục bộ.** Worker qua SSH hay WSL chạy git ở nơi khác, và các lệnh git của Diff không đăng ký trên đường đó.
-- **Cửa sổ nhỏ thì chật.** App mở ở 1000×700; cột lịch sử tự thu thành rail dưới 1280 px, cột file rộng 300 px, còn lại là diff. Phóng to cửa sổ trước khi review nghiêm túc.
+- **Cửa sổ nhỏ thì chật.** App mở ở 1000×700; sidebar worktree tự thu thành rail dưới 1000 px, cột lịch sử tự thu thành rail dưới 1280 px, cột file rộng 300 px, còn lại là diff. Phóng to cửa sổ trước khi review nghiêm túc.

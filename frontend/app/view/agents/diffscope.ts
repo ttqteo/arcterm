@@ -7,6 +7,7 @@
 // and nothing could set it. Here it is one value, and every question the surface and its three git
 // stores ask about scope is answered by a function in this file.
 
+import { normalizeRepoPath, sameRepoPath } from "@/util/paths";
 import type { CompareForm } from "./diffcontent";
 import type { GitChanges } from "./gitstatus";
 import type { HistoryFilters } from "./historyquery";
@@ -14,9 +15,12 @@ import type { HistoryFilters } from "./historyquery";
 // A project's path comes from the config registry and a run's directory and base commit were captured
 // when the run started, so both answer synchronously. An agent's directory is read from its live
 // transcript and can fail, so an agent origin carries only its id and the loader resolves the rest.
+// A worktree is one checkout of a registered project, picked from the Diff sidebar; `project` names
+// that project, since a linked worktree's own path is not registered.
 export type DiffOrigin =
     | { kind: "agent"; id: string }
     | { kind: "project"; name: string; path: string }
+    | { kind: "worktree"; path: string; project: string }
     | { kind: "run"; runId: string; cwd: string; baseCommit: string };
 
 export interface DiffRepo {
@@ -64,6 +68,8 @@ export function originKey(o: DiffOrigin): string {
             return `agent:${o.id}`;
         case "project":
             return `project:${o.name}`;
+        case "worktree":
+            return `worktree:${normalizeRepoPath(o.path)}`;
         case "run":
             return `run:${o.runId}`;
     }
@@ -98,6 +104,7 @@ export function historyKey(cwd: string, f: HistoryFilters): string {
 export function originCwd(o: DiffOrigin): string | null {
     switch (o.kind) {
         case "project":
+        case "worktree":
             return o.path || null;
         case "run":
             return o.cwd || null;
@@ -111,6 +118,7 @@ export function defaultRangeFor(o: DiffOrigin): DiffRange {
         case "agent":
             return { kind: "session", agentId: o.id };
         case "project":
+        case "worktree":
             return { kind: "working" };
         case "run":
             return { kind: "run", runId: o.runId, baseCommit: o.baseCommit };
@@ -218,6 +226,22 @@ export function summaryLine(i: SummaryInput): string {
             return `${n} uncommitted ${n === 1 ? "file" : "files"} ${where} · ${delta}`;
         }
     }
+}
+
+// The registered project a scope belongs to, for finding the agents that work on it. A run's (or a
+// vanished agent's) repository is matched by path; a worktree's path is not registered, so it says.
+export function scopeProjectName<P extends { name: string; path: string }>(
+    origin: DiffOrigin | undefined,
+    projects: P[],
+    repoKey: string
+): string {
+    if (origin?.kind === "project") {
+        return origin.name;
+    }
+    if (origin?.kind === "worktree") {
+        return origin.project;
+    }
+    return projects.find((p) => sameRepoPath(p.path, repoKey))?.name ?? "";
 }
 
 function shortSha(sha: string): string {

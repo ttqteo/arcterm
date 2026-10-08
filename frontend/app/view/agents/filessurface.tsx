@@ -23,7 +23,7 @@ import { formatAge } from "./agentsviewmodel";
 import { DiffPane } from "./diffpane";
 import type { CompareForm, DiffSelection } from "./diffcontent";
 import { clearDiffPair, loadDiffPair } from "./diffcontentstore";
-import { defaultFocusId, focusFollowAgent, sourceFor, type FilesSource } from "./diffsource";
+import { defaultFocusId, focusFollowAgent } from "./diffsource";
 import {
     filesErrorAtom,
     filesStateAtom,
@@ -32,7 +32,15 @@ import {
     type FilesProject,
     type FilesState,
 } from "./filesstore";
-import { availableRanges, historyOptsFor, rangeKey, scopeKey, summaryLine } from "./diffscope";
+import {
+    availableRanges,
+    defaultRangeFor,
+    historyOptsFor,
+    rangeKey,
+    scopeKey,
+    summaryLine,
+    type DiffOrigin,
+} from "./diffscope";
 import { agentDiffScope, projectDiffScope } from "./agentdiffnav";
 import { setDiffRange } from "./diffscopeatom";
 import { historyCollapsedAtom, resolveCollapsed } from "./difflayout";
@@ -96,9 +104,11 @@ import { GitFailureNotice, GitFailurePanel, NotARepoPanel, SurfaceBanner } from 
 import { HistoryPane } from "./historypane";
 import { RESTORE_DISMISS_MS, countLabel } from "./historyquery";
 import { WORKING_TREE, worktreeCaption } from "./historyrows";
-import { SourcePicker } from "./sourcepicker";
 import { SurfaceEmptyState, SurfaceError } from "./surfacescaffold";
 import { openLauncher } from "./launcherstore";
+import { worktreeLabel } from "./worktreesidebar";
+import { diffSurfaceWidthAtom } from "./worktreesidebarstore";
+import { revealSidebarFilter, WorktreeSidebar } from "./worktreesidebarview";
 
 // What the change poll saw, as one string: Review re-reads the whole patch only when this moves, not on
 // every tick the way the single-file diff does (that one reads a single file).
@@ -144,6 +154,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     // than the window: the surface does not own the whole window, and the rail's whole purpose is to
     // leave the diff pane something to render in.
     const surfaceRef = useRef<HTMLDivElement>(null);
+    // the whole surface, sidebar included: the sidebar's fold is judged by it, so folding never moves it
+    const rootRef = useRef<HTMLDivElement>(null);
     const [surfaceWidth, setSurfaceWidth] = useState(0);
     const collapsed = resolveCollapsed(useAtomValue(historyCollapsedAtom), surfaceWidth);
 
@@ -168,7 +180,6 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const scope = useAtomValue(model.diffScopeAtom);
     const origin = scope?.repo.origin;
     const agent = origin?.kind === "agent" ? agents.find((a) => a.id === origin.id) : undefined;
-    const source: FilesSource | null = sourceFor(scope, focusId);
 
     const pickAgent = (id: string) => {
         const a = agents.find((x) => x.id === id);
@@ -177,6 +188,13 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     };
     const pickProject = (p: FilesProject) => {
         globalStore.set(model.diffScopeAtom, projectDiffScope(p.name, p.path));
+    };
+    const pickWorktree = (project: string, wt: GitWorktree) => {
+        const origin: DiffOrigin = { kind: "worktree", path: wt.path, project };
+        globalStore.set(model.diffScopeAtom, {
+            repo: { origin, label: worktreeLabel(wt) },
+            range: defaultRangeFor(origin),
+        });
     };
 
     // Entering compare is a repo-scoped two-ref read, so it needs a cwd and a branch to start from.
@@ -218,12 +236,18 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
 
     useEffect(() => {
         const el = surfaceRef.current;
-        if (el == null) {
+        const root = rootRef.current;
+        if (el == null || root == null) {
             return;
         }
-        const ro = new ResizeObserver(() => setSurfaceWidth(el.clientWidth));
+        const measure = () => {
+            setSurfaceWidth(el.clientWidth);
+            globalStore.set(diffSurfaceWidthAtom, root.clientWidth);
+        };
+        const ro = new ResizeObserver(measure);
         ro.observe(el);
-        setSurfaceWidth(el.clientWidth);
+        ro.observe(root);
+        measure();
         return () => ro.disconnect();
     }, []);
 
@@ -318,7 +342,9 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                               compareOn ? selectCompareRow(state.cwd!, id) : selectCommit(state.cwd!, id)
                           ),
                       activate:
-                          navFile && state.cwd ? () => getApi().openExternal(joinRepoPath(state.cwd!, navFile)) : undefined,
+                          navFile && state.cwd
+                              ? () => getApi().openExternal(joinRepoPath(state.cwd!, navFile))
+                              : undefined,
                       // Tab needs to know which side a row belongs to, which an id list cannot say.
                       rows: compareOn ? compareRows : undefined,
                   }
@@ -386,297 +412,296 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
 
     return (
         <MotionConfig reducedMotion="user">
-            <div ref={surfaceRef} className="absolute inset-0 flex min-h-0 flex-col">
-                {/* subject bar: which repository, and which range within it */}
-                <div className="flex-none px-[18px] pt-[14px]">
-                    {/* wraps because compare adds two controls to this row: at the shipped 1000x700 the
-                        ref picker's editing form plus Fetch need 901px of an 886px row, and a nowrap flex
-                        pays for that by squeezing the source picker from its 210px to 155px and pushing
-                        Fetch off the window edge. Wrapping costs a second line only at the width that
-                        cannot hold one. */}
-                    <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[8px] pb-[12px]">
-                        <h1 className="flex-none text-[16px] font-bold">Diff</h1>
-                        <div className="w-[210px] rounded-[9px] bg-surface">
-                            <SourcePicker
-                                agents={agents}
-                                projects={projects}
-                                source={source}
-                                currentLabel={scope?.repo.label}
-                                onPickAgent={pickAgent}
-                                onPickProject={pickProject}
-                            />
-                        </div>
-                        {scope ? (
-                            <RangeStrip
-                                options={availableRanges(scope, {
-                                    sessionStartTs: peekSessionStart(agent?.transcriptPath),
-                                    sessionRef: state?.ref ?? "",
-                                })}
-                                active={scope.range}
-                                onPick={(r) =>
-                                    r.kind === "compare"
-                                        ? startCompare()
-                                        : compareOn
-                                          ? (stopCompare(), setDiffRange(r))
-                                          : setDiffRange(r)
-                                }
-                            />
-                        ) : null}
-                        {compareOn ? (
-                            <RefPicker
-                                base={compareRefs?.base ?? ""}
-                                head={compareRefs?.head ?? ""}
-                                branches={compareBranches}
-                                editing={pickerOpen}
-                                onEdit={() => setPickerOpen(true)}
-                                onApply={(b, h) => {
-                                    setPickerOpen(false);
-                                    if (state?.cwd) {
-                                        fireAndForget(() => setCompareRefs(state.cwd!, b, h));
+            <div ref={rootRef} className="absolute inset-0 flex min-h-0">
+                <WorktreeSidebar
+                    agents={agents}
+                    projects={projects}
+                    scope={scope}
+                    focusId={focusId}
+                    filesState={state}
+                    onPickAgent={pickAgent}
+                    onPickProject={pickProject}
+                    onPickWorktree={pickWorktree}
+                />
+                <div ref={surfaceRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    {/* subject bar: which repository, and which range within it */}
+                    <div className="flex-none px-[18px] pt-[14px]">
+                        {/* wraps because compare adds two controls to this row, and beside the worktree
+                        sidebar a narrow window cannot hold the ref picker's editing form plus Fetch: a
+                        nowrap flex would push Fetch off the window edge. Wrapping costs a second line only
+                        at the width that cannot hold one. */}
+                        <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[8px] pb-[12px]">
+                            <h1 className="flex-none text-[16px] font-bold">Diff</h1>
+                            {scope ? (
+                                <RangeStrip
+                                    options={availableRanges(scope, {
+                                        sessionStartTs: peekSessionStart(agent?.transcriptPath),
+                                        sessionRef: state?.ref ?? "",
+                                    })}
+                                    active={scope.range}
+                                    onPick={(r) =>
+                                        r.kind === "compare"
+                                            ? startCompare()
+                                            : compareOn
+                                              ? (stopCompare(), setDiffRange(r))
+                                              : setDiffRange(r)
                                     }
-                                }}
-                                onCancel={() => setPickerOpen(false)}
-                                onSwap={() => state?.cwd && fireAndForget(() => swapCompareRefs(state.cwd!))}
-                            />
-                        ) : null}
-                        {compareOn ? (
-                            <div className="flex items-center gap-[7px]">
-                                <button
-                                    onClick={() => state?.cwd && fireAndForget(() => runFetch(state.cwd!))}
-                                    disabled={fetchState.running}
-                                    title="Update remote-tracking refs"
-                                    className={cn(
-                                        "flex flex-none items-center gap-[6px] rounded-[7px] border border-edge-mid px-[9px] py-[5px] text-[11.5px] font-semibold",
-                                        fetchState.running
-                                            ? "text-ink-faint opacity-50"
-                                            : "text-ink-mid hover:border-edge-strong hover:text-foreground"
-                                    )}
-                                >
-                                    <RefreshCw size={13} className={cn(fetchState.running && "animate-spin")} />
-                                    {fetchState.running ? "Fetching…" : "Fetch"}
-                                </button>
-                                {/* A remote-tracking ref is only as fresh as the last fetch, so the
+                                />
+                            ) : null}
+                            {compareOn ? (
+                                <RefPicker
+                                    base={compareRefs?.base ?? ""}
+                                    head={compareRefs?.head ?? ""}
+                                    branches={compareBranches}
+                                    editing={pickerOpen}
+                                    onEdit={() => setPickerOpen(true)}
+                                    onApply={(b, h) => {
+                                        setPickerOpen(false);
+                                        if (state?.cwd) {
+                                            fireAndForget(() => setCompareRefs(state.cwd!, b, h));
+                                        }
+                                    }}
+                                    onCancel={() => setPickerOpen(false)}
+                                    onSwap={() => state?.cwd && fireAndForget(() => swapCompareRefs(state.cwd!))}
+                                />
+                            ) : null}
+                            {compareOn ? (
+                                <div className="flex items-center gap-[7px]">
+                                    <button
+                                        onClick={() => state?.cwd && fireAndForget(() => runFetch(state.cwd!))}
+                                        disabled={fetchState.running}
+                                        title="Update remote-tracking refs"
+                                        className={cn(
+                                            "flex flex-none items-center gap-[6px] rounded-[7px] border border-edge-mid px-[9px] py-[5px] text-[11.5px] font-semibold",
+                                            fetchState.running
+                                                ? "text-ink-faint opacity-50"
+                                                : "text-ink-mid hover:border-edge-strong hover:text-foreground"
+                                        )}
+                                    >
+                                        <RefreshCw size={13} className={cn(fetchState.running && "animate-spin")} />
+                                        {fetchState.running ? "Fetching…" : "Fetch"}
+                                    </button>
+                                    {/* A remote-tracking ref is only as fresh as the last fetch, so the
                                     clock is part of reading the comparison. Absent until one has
                                     happened — "just now" on an unfetched session would be a lie. */}
-                                {fetchState.at > 0 ? (
-                                    <span className="text-[10.5px] tabular-nums text-muted">
-                                        fetched {formatAge(Date.now() - fetchState.at * 1000)} ago
-                                    </span>
-                                ) : null}
-                            </div>
-                        ) : null}
-                        <div className="flex-1" />
-                        {scope ? (
-                            <span
-                                data-files-range-summary
-                                className="min-w-0 truncate text-[11.5px] tabular-nums text-ink-faint"
-                            >
-                                {summaryLine({
-                                    range: scope.range,
-                                    branch: state?.branch ?? "",
-                                    ref: state?.ref ?? "",
-                                    mergeBase: compareSides?.mergeBase ?? "",
-                                    commit: compareOn
-                                        ? compareSelection === AGGREGATE
-                                            ? null
-                                            : compareSelection
-                                        : selectedCommit === WORKING_TREE
-                                          ? null
-                                          : selectedCommit,
-                                    changes: shownChanges,
-                                })}
-                            </span>
-                        ) : null}
+                                    {fetchState.at > 0 ? (
+                                        <span className="text-[10.5px] tabular-nums text-muted">
+                                            fetched {formatAge(Date.now() - fetchState.at * 1000)} ago
+                                        </span>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                            <div className="flex-1" />
+                            {scope ? (
+                                <span
+                                    data-files-range-summary
+                                    className="min-w-0 truncate text-[11.5px] tabular-nums text-ink-faint"
+                                >
+                                    {summaryLine({
+                                        range: scope.range,
+                                        branch: state?.branch ?? "",
+                                        ref: state?.ref ?? "",
+                                        mergeBase: compareSides?.mergeBase ?? "",
+                                        commit: compareOn
+                                            ? compareSelection === AGGREGATE
+                                                ? null
+                                                : compareSelection
+                                            : selectedCommit === WORKING_TREE
+                                              ? null
+                                              : selectedCommit,
+                                        changes: shownChanges,
+                                    })}
+                                </span>
+                            ) : null}
+                        </div>
                     </div>
-                </div>
 
-                {restoreMsg ? (
-                    <SurfaceBanner
-                        data-restore-notice
-                        tone="neutral"
-                        icon={<RotateCcw size={14} />}
-                        action={{ label: "Start from the top", onClick: startFromTop }}
-                        onDismiss={dismissRestoreNotice}
-                    >
-                        <span className="min-w-0 flex-1 truncate text-ink-hi">{restoreMsg}</span>
-                    </SurfaceBanner>
-                ) : null}
-
-                {fetchState.failure ? (
-                    <GitFailureNotice
-                        failure={fetchState.failure}
-                        onRetry={() => state?.cwd && fireAndForget(() => runFetch(state.cwd!))}
-                        onDismiss={() => state?.cwd && dismissFetchFailure(state.cwd)}
-                    />
-                ) : null}
-
-                {/* the detailed panel below says the same thing with git's own words behind it */}
-                {loadError && historyFailure == null ? <SurfaceError message="Couldn’t read this repository." /> : null}
-
-                {/* a broken read is checked first: it also reports isRepo:false, and showing it as an
-                    absent repository would hide the reason behind a screen that reads like normality */}
-                {historyFailure ? (
-                    <GitFailurePanel failure={historyFailure} onRetry={() => retryHistory()} />
-                ) : state?.isRepo === false && state?.cwd ? (
-                    <NotARepoPanel
-                        path={state.cwd}
-                        // the same click-through the bindings use to open the picker
-                        onChooseSource={() =>
-                            document.querySelector<HTMLElement>("[data-files-source-picker]")?.click()
-                        }
-                    />
-                ) : (
-                    <div className="flex min-h-0 flex-1 border-t border-edge-faint">
-                        <div
-                            className={cn(
-                                "flex flex-none flex-col border-r border-edge-faint",
-                                collapsed ? "w-[44px]" : "w-[460px]"
-                            )}
+                    {restoreMsg ? (
+                        <SurfaceBanner
+                            data-restore-notice
+                            tone="neutral"
+                            icon={<RotateCcw size={14} />}
+                            action={{ label: "Start from the top", onClick: startFromTop }}
+                            onDismiss={dismissRestoreNotice}
                         >
-                            {collapsed ? (
-                                <HistoryRail
-                                    // a compare commit row IS a HistoryRow, so the rail takes it directly
-                                    rows={
-                                        compareOn
-                                            ? (compareRows.filter((r) => r.kind === "commit") as CompareCommitRow[])
-                                            : (historyRows ?? [])
-                                    }
-                                    selected={compareOn ? compareSelection : selectedCommit}
-                                    onSelect={(hash) =>
-                                        state?.cwd &&
-                                        fireAndForget(() =>
+                            <span className="min-w-0 flex-1 truncate text-ink-hi">{restoreMsg}</span>
+                        </SurfaceBanner>
+                    ) : null}
+
+                    {fetchState.failure ? (
+                        <GitFailureNotice
+                            failure={fetchState.failure}
+                            onRetry={() => state?.cwd && fireAndForget(() => runFetch(state.cwd!))}
+                            onDismiss={() => state?.cwd && dismissFetchFailure(state.cwd)}
+                        />
+                    ) : null}
+
+                    {/* the detailed panel below says the same thing with git's own words behind it */}
+                    {loadError && historyFailure == null ? (
+                        <SurfaceError message="Couldn’t read this repository." />
+                    ) : null}
+
+                    {/* a broken read is checked first: it also reports isRepo:false, and showing it as an
+                    absent repository would hide the reason behind a screen that reads like normality */}
+                    {historyFailure ? (
+                        <GitFailurePanel failure={historyFailure} onRetry={() => retryHistory()} />
+                    ) : state?.isRepo === false && state?.cwd ? (
+                        <NotARepoPanel path={state.cwd} onChooseSource={revealSidebarFilter} />
+                    ) : (
+                        <div className="flex min-h-0 flex-1 border-t border-edge-faint">
+                            <div
+                                className={cn(
+                                    "flex flex-none flex-col border-r border-edge-faint",
+                                    collapsed ? "w-[44px]" : "w-[460px]"
+                                )}
+                            >
+                                {collapsed ? (
+                                    <HistoryRail
+                                        // a compare commit row IS a HistoryRow, so the rail takes it directly
+                                        rows={
                                             compareOn
-                                                ? selectCompareRow(state.cwd!, hash)
-                                                : selectCommit(state.cwd!, hash)
-                                        )
-                                    }
-                                    onExpand={() => globalStore.set(historyCollapsedAtom, false)}
-                                />
-                            ) : (
-                                <>
-                                    {compareOn ? (
-                                        <CompareColumn
-                                            rows={compareRows}
-                                            selected={compareSelection}
+                                                ? (compareRows.filter((r) => r.kind === "commit") as CompareCommitRow[])
+                                                : (historyRows ?? [])
+                                        }
+                                        selected={compareOn ? compareSelection : selectedCommit}
+                                        onSelect={(hash) =>
+                                            state?.cwd &&
+                                            fireAndForget(() =>
+                                                compareOn
+                                                    ? selectCompareRow(state.cwd!, hash)
+                                                    : selectCommit(state.cwd!, hash)
+                                            )
+                                        }
+                                        onExpand={() => globalStore.set(historyCollapsedAtom, false)}
+                                    />
+                                ) : (
+                                    <>
+                                        {compareOn ? (
+                                            <CompareColumn
+                                                rows={compareRows}
+                                                selected={compareSelection}
+                                                mergeBase={compareSides?.mergeBase ?? ""}
+                                                mergeBaseTs={compareSides?.mergeBaseTs ?? 0}
+                                                onCollapse={collapseHistory}
+                                                error={compareError}
+                                                loading={compareSides == null && compareError == null}
+                                                onSelect={(id) =>
+                                                    state?.cwd && fireAndForget(() => selectCompareRow(state.cwd!, id))
+                                                }
+                                            />
+                                        ) : (
+                                            <HistoryPane
+                                                rows={historyRows ?? []}
+                                                selected={selectedCommit}
+                                                // a filtered set mostly lacks its own parents, so lane assignment
+                                                // would sprawl to the fold limit and draw edges to commits that
+                                                // are not there
+                                                graphOn={graphOn && !historyFiltered}
+                                                loading={historyRows == null}
+                                                countLabel={countLabel(
+                                                    historyFilters,
+                                                    historyRows?.length ?? 0,
+                                                    historyRows == null
+                                                )}
+                                                filtered={historyFiltered}
+                                                initialScroll={historyScroll}
+                                                hasMore={historyHasMore}
+                                                appendState={historyAppend}
+                                                onSelect={(hash) =>
+                                                    state?.cwd && fireAndForget(() => selectCommit(state.cwd!, hash))
+                                                }
+                                                onScroll={(top) => globalStore.set(historyScrollAtom, top)}
+                                                onLoadMore={() => fireAndForget(() => loadMoreHistory())}
+                                                onCollapse={collapseHistory}
+                                            />
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                            <div className="flex w-[300px] flex-none flex-col border-r border-edge-faint bg-surface">
+                                {compareOn ? (
+                                    compareSelection === AGGREGATE ? (
+                                        <AggregatePane
+                                            base={compareRefs?.base ?? ""}
+                                            head={compareRefs?.head ?? ""}
+                                            form={compareForm}
                                             mergeBase={compareSides?.mergeBase ?? ""}
-                                            mergeBaseTs={compareSides?.mergeBaseTs ?? 0}
-                                            onCollapse={collapseHistory}
-                                            error={compareError}
-                                            loading={compareSides == null && compareError == null}
-                                            onSelect={(id) =>
-                                                state?.cwd && fireAndForget(() => selectCompareRow(state.cwd!, id))
+                                            changes={compareChanges}
+                                            selectedFile={compareFile}
+                                            onSelectFile={(path) => selectCompareFile(path)}
+                                            onSetForm={(f) =>
+                                                state?.cwd && fireAndForget(() => setCompareForm(state.cwd!, f))
                                             }
                                         />
                                     ) : (
-                                        <HistoryPane
-                                            rows={historyRows ?? []}
-                                            selected={selectedCommit}
-                                            // a filtered set mostly lacks its own parents, so lane assignment
-                                            // would sprawl to the fold limit and draw edges to commits that
-                                            // are not there
-                                            graphOn={graphOn && !historyFiltered}
-                                            loading={historyRows == null}
-                                            countLabel={countLabel(
-                                                historyFilters,
-                                                historyRows?.length ?? 0,
-                                                historyRows == null
-                                            )}
-                                            filtered={historyFiltered}
-                                            initialScroll={historyScroll}
-                                            hasMore={historyHasMore}
-                                            appendState={historyAppend}
-                                            onSelect={(hash) =>
-                                                state?.cwd && fireAndForget(() => selectCommit(state.cwd!, hash))
+                                        // a compare commit row *is* a HistoryRow, so the shipped pane takes it directly
+                                        <CommitPane
+                                            row={
+                                                (compareRows.find(
+                                                    (r) => r.kind === "commit" && r.id === compareSelection
+                                                ) as CompareCommitRow | undefined) ?? null
                                             }
-                                            onScroll={(top) => globalStore.set(historyScrollAtom, top)}
-                                            onLoadMore={() => fireAndForget(() => loadMoreHistory())}
-                                            onCollapse={collapseHistory}
+                                            changes={compareChanges}
+                                            selectedFile={compareFile}
+                                            onSelectFile={(path) => selectCompareFile(path)}
                                         />
-                                    )}
-                                </>
-                            )}
-                        </div>
-                        <div className="flex w-[300px] flex-none flex-col border-r border-edge-faint bg-surface">
-                            {compareOn ? (
-                                compareSelection === AGGREGATE ? (
-                                    <AggregatePane
-                                        base={compareRefs?.base ?? ""}
-                                        head={compareRefs?.head ?? ""}
-                                        form={compareForm}
-                                        mergeBase={compareSides?.mergeBase ?? ""}
-                                        changes={compareChanges}
-                                        selectedFile={compareFile}
-                                        onSelectFile={(path) => selectCompareFile(path)}
-                                        onSetForm={(f) =>
-                                            state?.cwd && fireAndForget(() => setCompareForm(state.cwd!, f))
-                                        }
-                                    />
+                                    )
                                 ) : (
-                                    // a compare commit row *is* a HistoryRow, so the shipped pane takes it directly
                                     <CommitPane
-                                        row={
-                                            (compareRows.find(
-                                                (r) => r.kind === "commit" && r.id === compareSelection
-                                            ) as CompareCommitRow | undefined) ?? null
+                                        row={selectedRow}
+                                        caption={
+                                            scope && state
+                                                ? worktreeCaption(scope.range, state.branch, state.head, state.ref)
+                                                : undefined
                                         }
-                                        changes={compareChanges}
-                                        selectedFile={compareFile}
-                                        onSelectFile={(path) => selectCompareFile(path)}
+                                        changes={activeChanges}
+                                        selectedFile={selectedFile}
+                                        onSelectFile={(path) => {
+                                            if (selectedCommit != null) {
+                                                selectCommitFile(selectedCommit, path);
+                                            }
+                                            setReviewScroll((prev) => ({ path, n: (prev?.n ?? 0) + 1 }));
+                                        }}
                                     />
-                                )
-                            ) : (
-                                <CommitPane
-                                    row={selectedRow}
-                                    caption={
-                                        scope && state
-                                            ? worktreeCaption(scope.range, state.branch, state.head, state.ref)
-                                            : undefined
+                                )}
+                            </div>
+                            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                                <DiffPane
+                                    path={shownPath}
+                                    adds={selectedChange?.adds ?? 0}
+                                    dels={selectedChange?.dels ?? 0}
+                                    // "Open in editor" only makes sense for a path that exists in the working tree
+                                    editorCwd={
+                                        !compareOn && selectedCommit === WORKING_TREE ? (state?.cwd ?? null) : null
                                     }
-                                    changes={activeChanges}
-                                    selectedFile={selectedFile}
-                                    onSelectFile={(path) => {
-                                        if (selectedCommit != null) {
-                                            selectCommitFile(selectedCommit, path);
-                                        }
-                                        setReviewScroll((prev) => ({ path, n: (prev?.n ?? 0) + 1 }));
-                                    }}
+                                    // "Open in Code" wants only the repository: the Code surface always shows the
+                                    // working-tree file, and says so itself when the path is gone
+                                    repoCwd={state?.cwd ?? null}
+                                    nothingToCompare={
+                                        compareOn &&
+                                        compareSelection === AGGREGATE &&
+                                        compareChanges != null &&
+                                        compareChanges.files.length === 0
+                                            ? { base: compareRefs?.base ?? "", head: compareRefs?.head ?? "" }
+                                            : null
+                                    }
+                                    model={model}
+                                    review={
+                                        compareOn || selectedCommit == null
+                                            ? null
+                                            : {
+                                                  source: selectedCommit === WORKING_TREE ? "worktree" : selectedCommit,
+                                                  // the file list's own base, so Review shows what the list shows
+                                                  base: state?.ref ?? "",
+                                                  refreshKey: liveTick == null ? "" : liveChangesKey(liveTick),
+                                                  scrollTo: reviewScroll,
+                                              }
+                                    }
                                 />
-                            )}
+                            </div>
                         </div>
-                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                            <DiffPane
-                                path={shownPath}
-                                adds={selectedChange?.adds ?? 0}
-                                dels={selectedChange?.dels ?? 0}
-                                // "Open in editor" only makes sense for a path that exists in the working tree
-                                editorCwd={!compareOn && selectedCommit === WORKING_TREE ? (state?.cwd ?? null) : null}
-                                // "Open in Code" wants only the repository: the Code surface always shows the
-                                // working-tree file, and says so itself when the path is gone
-                                repoCwd={state?.cwd ?? null}
-                                nothingToCompare={
-                                    compareOn &&
-                                    compareSelection === AGGREGATE &&
-                                    compareChanges != null &&
-                                    compareChanges.files.length === 0
-                                        ? { base: compareRefs?.base ?? "", head: compareRefs?.head ?? "" }
-                                        : null
-                                }
-                                model={model}
-                                review={
-                                    compareOn || selectedCommit == null
-                                        ? null
-                                        : {
-                                              source: selectedCommit === WORKING_TREE ? "worktree" : selectedCommit,
-                                              // the file list's own base, so Review shows what the list shows
-                                              base: state?.ref ?? "",
-                                              refreshKey: liveTick == null ? "" : liveChangesKey(liveTick),
-                                              scrollTo: reviewScroll,
-                                          }
-                                }
-                            />
-                        </div>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
         </MotionConfig>
     );

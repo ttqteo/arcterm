@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     cacheRewriteTitle,
+    containingWorktree,
     contextLevel,
     contextNote,
     contextTokens,
@@ -170,5 +171,19 @@ describe("linkedWorktree", () => {
         expect(linkedWorktree("C:/src/arc-api/pkg", [main, wt])).toBeUndefined();
         expect(linkedWorktree("C:/elsewhere", [main, wt])).toBeUndefined();
         expect(linkedWorktree("C:/src/arc-api", [])).toBeUndefined();
+    });
+});
+
+describe("containingWorktree", () => {
+    const main = { path: "C:\\src\\arc-api", ismain: true };
+    const wt = { path: "C:/src/arc-api/.waveterm/worktrees/r-1/t-3" };
+
+    it("is the deepest worktree holding the path, whatever the slashes and case", () => {
+        expect(containingWorktree("c:\\SRC\\arc-api\\.waveterm\\worktrees\\r-1\\t-3\\pkg", [main, wt])).toBe(wt);
+        expect(containingWorktree("C:/src/arc-api/", [wt, main])).toBe(main);
+    });
+
+    it("is undefined outside every worktree, including a sibling sharing a prefix", () => {
+        expect(containingWorktree("C:/src/arc-api2", [main, wt])).toBeUndefined();
     });
 });
