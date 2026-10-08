@@ -80,6 +80,7 @@ declare global {
         provider?: string;
         title?: string;
         step?: string;
+        committed?: boolean;
         transcriptpath?: string;
         ts: number;
         usage?: AgentUsage;

@@ -71,6 +71,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 effortORef: row.effortORef,
                 sessionId: status.sessionid,
                 step: status.step,
+                committed: status.committed,
                 loginEmail: blockLoginEmail(get(WOS.getWaveObjectAtom<Block>(row.termBlockOref))),
             },
             now

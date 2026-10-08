@@ -10,6 +10,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import type { ConsumersSort } from "./consumers";
+import { machineServersOpenAtom } from "./machineserversstore";
 
 export const CONSUMERS_POLL_MS = 5_000;
 
@@ -43,8 +44,9 @@ export async function loadConsumers(
 }
 
 /** An opener's click: opens on its sort, closes when the panel already shows that sort, else switches to it. The
- * panel hangs from `opener`. */
+ * panel hangs from `opener`. It closes the Servers popover, which rises from the same footer. */
 export function toggleConsumers(sort: ConsumersSort, opener: Element | null = null): void {
+    globalStore.set(machineServersOpenAtom, false);
     globalStore.set(consumersOpenerAtom, opener);
     globalStore.set(consumersOpenAtom, (cur) => (cur === sort ? null : sort));
 }

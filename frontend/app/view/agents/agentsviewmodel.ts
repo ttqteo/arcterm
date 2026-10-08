@@ -101,6 +101,7 @@ export interface AgentVM {
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
+    committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
     loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
     running?: boolean; // a plain terminal: its shell is running a command, not waiting at its prompt
 }
@@ -128,6 +129,10 @@ export function sortAgents(agents: AgentVM[]): AgentVM[] {
 /** Pure: number of agents currently asking (drives the sidebar badge). */
 export function askingCount(agents: AgentVM[]): number {
     return agents.filter((a) => a.state === "asking").length;
+}
+
+export function workingCount(agents: AgentVM[]): number {
+    return agents.filter((a) => a.state === "working").length;
 }
 
 // within this many px of the end, a scroll region counts as "stuck to bottom": new lines
@@ -489,6 +494,7 @@ export interface LiveAgentInput {
     runORef?: string; // jarvis:runoref on the tab: "run:<id>"
     effortORef?: string; // session:effort on the tab: "effort:<oid>"
     step?: string; // the status event's step: the "n/m" part an idle turn or a pending AskUserQuestion stopped on
+    committed?: boolean; // the status event's committed: an idle turn that ended on a git commit
     loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
 }
 
@@ -541,6 +547,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     // a permission prompt (waiting) folds to asking too, but only a question can stop on a part
     if ((state === "idle" || input.status === "asking") && input.step) {
         vm.step = input.step;
+    }
+    if (input.status === "idle" && input.committed) {
+        vm.committed = true;
     }
     return vm;
 }

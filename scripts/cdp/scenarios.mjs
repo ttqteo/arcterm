@@ -6722,9 +6722,9 @@ const routePickerFlat = {
             await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode });
         };
         await h.goto("settings");
-        // the two-pane Settings surface renders one section at a time; the route picker lives in Run defaults
+        // the two-pane Settings surface renders one page at a time; the run route picker lives on Agents
         await h.ev(
-            `(() => { const b = document.querySelector('[data-section="run"]'); if (b) b.click(); return true; })()`
+            `(() => { const b = document.querySelector('[data-section="agents"]'); if (b) b.click(); return true; })()`
         );
         await settle(200);
         const pickerPresent = await h.ev(`(() => !!document.querySelector('[data-testid="route-picker"]'))()`);
@@ -20438,6 +20438,757 @@ const consumersPopover = {
     },
 };
 
+// --- machine-servers: the footer's Servers chip and popover (docs/superpowers/specs/2026-10-08-machine-servers-design.md).
+// listalldevservers is mocked the way consumers-popover mocks getconsumers, so the rows, owners and counts are known, and
+// stopdevserver is recorded, never run: nothing on the machine is stopped. Every other command passes through. The roster is
+// two fixture agents (the first ran the uvicorn command in the background, which is what gives its row a Log; the second is
+// somewhere to move focus from) and a real throwaway terminal tab, because the Agent surface docks only a live terminal: a
+// fixture entry for one is written back to the agent above it. Teardown puts the RPC client, the page stubs, the rail key and
+// the roster back, closes the tab and removes the temp dir.
+const MS_MOCK_KEY = "__arcMachineServersMock";
+const MS_AGENT_ID = "fx-machine-servers";
+const MS_AGENT_BLOCK = "fx-blk-machine-servers";
+const MS_AGENT_NAME = "machine servers agent";
+const MS_OTHER_ID = "fx-machine-servers-other";
+const MS_OTHER_BLOCK = "fx-blk-machine-servers-other";
+const MS_TERM_NAME = "machine servers terminal";
+// the background command the agent ran: the uvicorn row's launcher holds it, so the row belongs to the agent and has a Log
+const MS_COMMAND = "uvicorn app.main:app --port 8100 --reload";
+const MS_LOG_LINE = "machine-servers: uvicorn started on 127.0.0.1:8100";
+const MS_PID = { astro: 41001, uvicorn: 41002, vite: 41003, code: 41004, docker: 41005 };
+const MS_NO_OWNER_TIP = "Still running. No agent, terminal or open app holds it.";
+
+// what ListAllDevServers answers: astro is detached in a repo (no owner), uvicorn belongs to the fixture agent, vite to the
+// throwaway terminal, and Code and Docker are apps outside any repo. The titles of the repo groups are fx/website,
+// fx/portal and fx/arcterm: the group holding the no-owner row first, then by name
+function machineServersFixture(ctx, now) {
+    const hour = 3_600_000;
+    const row = (o) => ({ cwd: "", byagent: false, ...o });
+    return [
+        row({
+            pid: MS_PID.astro,
+            createms: now - 72 * hour,
+            ports: [4321],
+            name: "node.exe",
+            cmdline: "node D:/fx/website/node_modules/astro/astro.js dev --port 4321",
+            cwd: "D:/fx/website",
+            repo: "D:/fx/website",
+            owner: { kind: "detached" },
+            launchercmdline: "sh /c/nvm4w/nodejs/pnpm dev --port 4321",
+        }),
+        row({
+            pid: MS_PID.uvicorn,
+            createms: now - 2 * hour,
+            ports: [8100],
+            name: "python.exe",
+            cmdline: MS_COMMAND,
+            cwd: "D:/fx/portal",
+            byagent: true,
+            repo: "D:/fx/portal",
+            owner: { kind: "agent", tabid: MS_AGENT_ID, blockid: MS_AGENT_BLOCK, name: MS_AGENT_NAME, harness: "claude" },
+            launchercmdline: `"C:\\Program Files\\Git\\usr\\bin\\sh.exe" -c "${MS_COMMAND}"`,
+        }),
+        row({
+            pid: MS_PID.vite,
+            createms: now - 45 * 60_000,
+            ports: [5174],
+            name: "node.exe",
+            cmdline: "node D:/fx/arcterm/node_modules/vite/bin/vite.js --port 5174",
+            cwd: "D:/fx/arcterm",
+            repo: "D:/fx/arcterm",
+            owner: { kind: "terminal", tabid: ctx.termTabId, name: MS_TERM_NAME },
+        }),
+        row({
+            pid: MS_PID.code,
+            createms: now - 5 * hour,
+            ports: [58921],
+            name: "Code.exe",
+            cmdline: "Code.exe",
+            owner: { kind: "app", name: "Code.exe" },
+        }),
+        row({
+            pid: MS_PID.docker,
+            createms: now - 30 * hour,
+            ports: [5432],
+            name: "com.docker.backend.exe",
+            cmdline: "com.docker.backend services",
+            owner: { kind: "app", name: "com.docker.backend.exe" },
+        }),
+    ];
+}
+
+// One mock for the whole scenario. `mode` picks listalldevservers' answer: "ok" the fixture without the pids that have
+// gone, "empty" no servers, "fail" an error. stopdevserver is recorded in `stops` (with the number of listings made so
+// far) and ends nothing: the pid is left out of every later listing, since the panel polls every 3s and an answer that held
+// it again would bring a stopped row back. With stopMode "exited" it also refuses as wavesrv does for a process that ended
+// before the click. A reload drops the mock, so install it after the scenario's last reload.
+async function installMachineServersMock(h, servers) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${MS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, mode: "ok", stopMode: "ok", servers: ${JSON.stringify(servers)}, gone: [], stops: [], listed: 0 };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "listalldevservers") {
+                    m.listed++;
+                    if (m.mode === "fail") return Promise.reject(new Error("cannot read the TCP table"));
+                    return Promise.resolve({ servers: m.mode === "empty" ? [] : m.servers.filter((s) => !m.gone.includes(s.pid)) });
+                }
+                if (command === "stopdevserver") {
+                    m.stops.push({ pid: data.pid, createms: data.createms, listed: m.listed, mode: m.stopMode });
+                    m.gone.push(data.pid);
+                    if (m.stopMode === "exited") return Promise.reject(new Error("process " + data.pid + " is not running"));
+                    return Promise.resolve(null);
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${MS_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const setMachineServersMock = (h, patch) =>
+    h.ev(`(() => {
+        const m = window.${MS_MOCK_KEY};
+        if (!m) return false;
+        Object.assign(m, ${JSON.stringify(patch)});
+        return true;
+    })()`);
+
+const removeMachineServersMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${MS_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${MS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const MS_CHIP = `document.querySelector("[data-machine-servers-chip]")`;
+const MS_PANEL = `document.querySelector("[data-machine-servers-panel]")`;
+// the backdrop exists only while the popover is open; the panel stays in the DOM for its exit animation
+const MS_OPEN = `!!document.querySelector("[data-machine-servers-backdrop]") && !!${MS_PANEL}`;
+const MS_CLOSED = `!document.querySelector("[data-machine-servers-backdrop]")`;
+const msRow = (pid) => `document.querySelector('[data-machine-server="${pid}"]')`;
+const msIn = (pid, selector) => `${msRow(pid)}?.querySelector(${JSON.stringify(selector)})`;
+// the chip as a person reads it: its text, its tooltip, the warning part, whether it is muted and whether it has its icon
+const MS_CHIP_FACTS = `(() => {
+    const c = ${MS_CHIP};
+    if (!c) return null;
+    const norm = (t) => (t ?? "").replace(/\\s+/g, " ").trim();
+    const warn = c.querySelector("span.text-warning");
+    return {
+        text: norm(c.textContent),
+        title: c.title,
+        warn: warn ? norm(warn.textContent) : null,
+        muted: c.classList.contains("text-muted"),
+        icon: !!c.querySelector("svg"),
+    };
+})()`;
+// the Agent surface's panes that are on screen: the focused agent's, and a docked terminal's
+const MS_PANES = `[...document.querySelectorAll("[data-agent-terminal]")]
+    .filter((el) => el.getClientRects().length > 0)
+    .map((el) => ({ id: el.dataset.agentTerminal, label: el.getAttribute("aria-label"), dock: el.dataset.terminalDock === "true" }))`;
+const msPanesAre = (...ids) =>
+    `JSON.stringify((${MS_PANES}).map((p) => p.id).sort()) === ${JSON.stringify(JSON.stringify([...ids].sort()))}`;
+
+async function msPressEscape(h) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+}
+
+const machineServers = {
+    name: "machine-servers",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-machine-servers-")) };
+        // a throw past this point still returns ctx, so teardown undoes whatever was already done
+        try {
+            ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`);
+            // the output file the background command writes to, and the transcript in which the agent ran it with
+            // run_in_background and left it running
+            ctx.outFile = join(ctx.cwd, "bg-output.log");
+            ctx.transcript = join(ctx.cwd, "session.jsonl");
+            writeFileSync(ctx.outFile, `${MS_LOG_LINE}\n`);
+            writeFileSync(ctx.transcript, railServersTranscript(ctx.cwd, MS_COMMAND, ctx.outFile));
+
+            // the terminal the vite server belongs to: a real tab in the page's workspace, which starts in ~ so the temp
+            // dir is not locked. It is on ctx as soon as it exists, so teardown closes it whatever fails after
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.termTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, MS_TERM_NAME, false]);
+            const termTab = await waveService(h, "object", "GetObject", [`tab:${ctx.termTabId}`]);
+            const termBlockId = termTab?.blockids?.[0];
+            if (!termBlockId) throw new Error(`the throwaway terminal tab ${ctx.termTabId} has no block`);
+            await h.rpc("setmeta", { oref: `block:${termBlockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+            await h.rpc("controllerresync", { tabid: ctx.termTabId, blockid: termBlockId, forcerestart: true });
+
+            ctx.servers = machineServersFixture(ctx, Date.now());
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: MS_AGENT_ID,
+                            name: MS_AGENT_NAME,
+                            project: "verify-machine-servers",
+                            task: "verify the machine's servers",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 60_000,
+                            blockId: MS_AGENT_BLOCK,
+                            transcriptPath: ctx.transcript,
+                        },
+                        {
+                            id: MS_OTHER_ID,
+                            name: "other agent",
+                            project: "verify-machine-servers",
+                            task: "somewhere to move focus from",
+                            state: "idle",
+                            agent: "claude",
+                            model: "sonnet",
+                            idleSince: Date.now() - 120_000,
+                            blockId: MS_OTHER_BLOCK,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the rail shows the file a Log opens, and the fixture roster is read once at boot, so both need a reload
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${MS_AGENT_ID}"]')`, 15000);
+            if (!ctx.inRoster) throw new Error("the fixture agent never joined the roster");
+            // revealing it loads its transcript's background tasks into backgroundTasksByIdAtom: what gives the uvicorn row its Log
+            await h.rpc("uireveal", { address: `agent:${MS_AGENT_ID}` }, UI_ROUTE);
+            ctx.termInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${ctx.termTabId}"]')`, 15000);
+            ctx.mock = await installMachineServersMock(h, ctx.servers);
+            if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster, the throwaway terminal and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+        const srv = (key) => ctx.servers.find((s) => s.pid === MS_PID[key]);
+        const stops = () => h.ev(`window.${MS_MOCK_KEY}?.stops ?? []`);
+        const listed = () => h.ev(`window.${MS_MOCK_KEY}?.listed ?? 0`);
+        // a popover's backdrop covers the footer, so a real click reaches the chip only while none is open
+        const openFromChip = async () => {
+            const clicked = await railServersMouse(h, MS_CHIP, true);
+            const up = clicked && (await polishWaitFor(h, MS_OPEN, 3000));
+            // the popover scales in for a moment, and a click aimed meanwhile can miss a small button
+            if (up) await polishNap(400);
+            return up;
+        };
+        const waitClosed = () => polishWaitFor(h, MS_CLOSED, 2000);
+        // a real click on the backdrop, outside the popover
+        const clickOutside = async () => {
+            const at = await h.ev(`({ x: 40, y: Math.round(window.innerHeight / 2) })`);
+            await consumersMouseClick(h, at);
+            return waitClosed();
+        };
+        // the row's actions show only on hover, so the mouse goes onto the row first
+        const hover = async (pid) => {
+            const moved = await railServersMouse(h, msRow(pid), false);
+            await polishNap(200);
+            return moved;
+        };
+
+        // the page's two stubs: getApi() reads window.api on each call, and a person's clipboard is not written to
+        const stubbed = await h.ev(`(() => {
+            const api = window.api;
+            if (typeof api?.openExternal !== "function") return false;
+            window.__msOpenExternal = api.openExternal;
+            window.__msOpened = [];
+            api.openExternal = (url) => { window.__msOpened.push(url); };
+            window.__msCopied = [];
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: async (text) => { window.__msCopied.push(text); } },
+            });
+            return true;
+        })()`);
+
+        // 1. the page polled before the mock went in, so the next poll (every 15s while the popover is closed) is the first
+        // to answer from it
+        const chipUp = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "3 · 1 no owner"`, 30000);
+        const chip1 = await h.ev(MS_CHIP_FACTS);
+        await h.shot("cdp-shots/machine-servers-chip.png");
+        const titlePorts = (chip1?.title ?? "").split(" ").filter(Boolean).sort();
+        rec(
+            "1. the chip reads `3 · 1 no owner`, the `1 no owner` part in a warning span, and its tooltip lists :4321 :8100 :5174",
+            chipUp &&
+                chip1.warn != null &&
+                chip1.warn.includes("1 no owner") &&
+                !chip1.muted &&
+                JSON.stringify(titlePorts) === JSON.stringify([":4321", ":5174", ":8100"]),
+            JSON.stringify({ chipUp, stubbed, chip1, hidden: await h.ev("document.hidden") })
+        );
+        if (!chipUp) return steps;
+
+        // 2. the popover opens from the chip: the group holding the no-owner row first, then by name; a row's label
+        // carries the whole command line as its tooltip
+        const opened = await openFromChip();
+        const astro = srv("astro");
+        const panel2 = await h.ev(`(() => {
+            const p = ${MS_PANEL};
+            if (!p) return null;
+            return {
+                groups: [...p.querySelectorAll("[data-machine-servers-group]")].map((g) => g.dataset.machineServersGroup),
+                count: p.querySelector("[data-machine-servers-count]")?.textContent.trim() ?? null,
+                labelTitle: ${msIn(astro.pid, "[data-machine-server-label]")}?.title ?? null,
+                labelText: ${msIn(astro.pid, "[data-machine-server-label]")}?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/machine-servers-popover.png");
+        rec(
+            "2. the chip opens the popover: groups `fx/website` (it holds the no-owner row), `fx/arcterm`, `fx/portal`, and a row's label carries its full command line as its title",
+            opened &&
+                !!panel2 &&
+                JSON.stringify(panel2.groups) === JSON.stringify(["fx/website", "fx/arcterm", "fx/portal"]) &&
+                panel2.count === "5" &&
+                panel2.labelTitle === astro.cmdline &&
+                panel2.labelText !== astro.cmdline,
+            JSON.stringify({ opened, panel2 })
+        );
+        if (!opened) return steps;
+
+        // 3. Other is one line, collapsed; a click shows its two rows
+        const code = srv("code");
+        const docker = srv("docker");
+        const otherBtn = `document.querySelector("[data-machine-servers-other]")`;
+        const otherFacts = () =>
+            h.ev(`(() => {
+                const b = ${otherBtn};
+                if (!b) return null;
+                return {
+                    expanded: b.getAttribute("aria-expanded"),
+                    text: b.textContent.replace(/\\s+/g, " ").trim(),
+                    code: !!${msRow(code.pid)},
+                    docker: !!${msRow(docker.pid)},
+                };
+            })()`);
+        const collapsed = await otherFacts();
+        const otherClick = await railServersMouse(h, otherBtn, true);
+        await polishWaitFor(h, `!!${msRow(code.pid)} && !!${msRow(docker.pid)}`, 2000);
+        const expanded = await otherFacts();
+        await h.shot("cdp-shots/machine-servers-other.png");
+        rec(
+            "3. Other is collapsed to one line, `Other (2) Code, com.docker.backend`; a click shows its two rows",
+            !!collapsed &&
+                collapsed.expanded === "false" &&
+                collapsed.text === "Other (2) Code, com.docker.backend" &&
+                !collapsed.code &&
+                !collapsed.docker &&
+                otherClick &&
+                !!expanded &&
+                expanded.expanded === "true" &&
+                expanded.code &&
+                expanded.docker,
+            JSON.stringify({ collapsed, otherClick, expanded })
+        );
+
+        // 4. each badge kind, on the row that should carry it
+        const uvicorn = srv("uvicorn");
+        const vite = srv("vite");
+        const badge = (pid) => `(() => {
+            const b = ${msIn(pid, "[data-machine-server-badge]")};
+            return b ? { kind: b.dataset.machineServerBadge, text: b.textContent.replace(/\\s+/g, " ").trim(), title: b.getAttribute("title"), tag: b.tagName, warn: b.classList.contains("text-warning") } : null;
+        })()`;
+        const badges = await h.ev(`({
+            astro: ${badge(astro.pid)},
+            uvicorn: ${badge(uvicorn.pid)},
+            vite: ${badge(vite.pid)},
+            code: ${badge(code.pid)},
+            docker: ${badge(docker.pid)},
+            kinds: [...new Set([...document.querySelectorAll("[data-machine-server-badge]")].map((b) => b.dataset.machineServerBadge))].sort(),
+        })`);
+        await h.shot("cdp-shots/machine-servers-badges.png");
+        rec(
+            "4. each badge kind is there: `no owner` (warning, with its tooltip) on astro, `claude · <the fixture agent>` and `terminal · <the terminal>` as buttons, and the app names as plain text",
+            badges.astro?.kind === "noowner" &&
+                badges.astro.text === "no owner" &&
+                badges.astro.title === MS_NO_OWNER_TIP &&
+                badges.astro.warn &&
+                badges.uvicorn?.kind === "agent" &&
+                badges.uvicorn.text === `claude · ${MS_AGENT_NAME}` &&
+                badges.uvicorn.tag === "BUTTON" &&
+                badges.vite?.kind === "terminal" &&
+                badges.vite.text === `terminal · ${MS_TERM_NAME}` &&
+                badges.vite.tag === "BUTTON" &&
+                badges.code?.kind === "app" &&
+                badges.code.text === "Code" &&
+                badges.docker?.kind === "app" &&
+                badges.docker.text === "com.docker.backend" &&
+                JSON.stringify(badges.kinds) === JSON.stringify(["agent", "app", "noowner", "terminal"]),
+            JSON.stringify(badges)
+        );
+
+        // 4b. a port opens http://localhost:<port>: the stub takes the real click
+        const clickedPort = await railServersMouse(h, msIn(uvicorn.pid, '[data-machine-server-port="8100"]'), true);
+        await polishWaitFor(h, "(window.__msOpened ?? []).length > 0", 2000);
+        const opened4b = await h.ev("window.__msOpened ?? null");
+        await h.shot("cdp-shots/machine-servers-port.png");
+        rec(
+            "4b. a click on the uvicorn row's :8100 opens http://localhost:8100, once",
+            clickedPort && JSON.stringify(opened4b) === JSON.stringify(["http://localhost:8100"]),
+            JSON.stringify({ clickedPort, opened4b })
+        );
+
+        // 5. the actions show on hover: move onto the row, then press Copy
+        const hovered = await hover(astro.pid);
+        const actionsOpacity = await h.ev(`getComputedStyle(${msIn(astro.pid, "[data-machine-server-copy]")}?.parentElement ?? document.body).opacity`);
+        await h.shot("cdp-shots/machine-servers-hover.png");
+        const clickedCopy = hovered && (await railServersMouse(h, msIn(astro.pid, "[data-machine-server-copy]"), true));
+        await polishWaitFor(h, "(window.__msCopied ?? []).length > 0", 2000);
+        const copied = await h.ev("window.__msCopied ?? null");
+        rec(
+            "5. hovering the astro row shows its actions, and Copy writes `PID <pid>` and the command line, once",
+            hovered &&
+                Number(actionsOpacity) === 1 &&
+                clickedCopy &&
+                Array.isArray(copied) &&
+                copied.length === 1 &&
+                copied[0] === `PID ${astro.pid}\n${astro.cmdline}`,
+            JSON.stringify({ hovered, actionsOpacity, clickedCopy, copied })
+        );
+
+        // 6. the first click on Stop asks, the second stops: the mock records it, the row leaves and stays gone, and the chip
+        // counts the two that are left with no `no owner`
+        const astroStop = msIn(astro.pid, "[data-dev-server-stop]");
+        await hover(astro.pid);
+        const askedClick = await railServersMouse(h, astroStop, true);
+        const asked = await polishWaitFor(h, `${astroStop}?.textContent.trim() === "Stop?"`, 2000);
+        const stopLabel = await h.ev(`${astroStop}?.getAttribute("aria-label") ?? null`);
+        const stopsWhileAsking = (await stops()).length;
+        await h.shot("cdp-shots/machine-servers-stop-confirm.png");
+        // a slow shot can let the 3s lapse; then it is asked again, which is the same click as above
+        const stillAsking = await h.ev(`${astroStop}?.textContent.trim() === "Stop?"`);
+        const reasked = stillAsking ? false : await railServersMouse(h, astroStop, true);
+        const stopClick = await railServersMouse(h, astroStop, true);
+        const recorded = await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.stops ?? []).length === 1`, 3000);
+        const rowGone = await polishWaitFor(h, `!${msRow(astro.pid)}`, 3000);
+        // the open popover polls every 3s: once a poll has answered, the row would be back if the listing still held it
+        const listedAtStop = await listed();
+        const polled = await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.listed ?? 0) > ${listedAtStop}`, 6000);
+        await polishNap(500);
+        const stays = await h.ev(`!${msRow(astro.pid)}`);
+        const chip6 = await h.ev(MS_CHIP_FACTS);
+        const stopCalls = await stops();
+        await h.shot("cdp-shots/machine-servers-stopped.png");
+        rec(
+            "6. Stop asks `Stop?`, then records a stop for astro's pid and create time; its row leaves and stays gone after the next poll, and the chip reads `2` with no `no owner` and no :4321",
+            askedClick &&
+                asked &&
+                stopLabel === "Confirm stop" &&
+                stopsWhileAsking === 0 &&
+                stopClick &&
+                recorded &&
+                stopCalls.length === 1 &&
+                stopCalls[0].pid === astro.pid &&
+                stopCalls[0].createms === astro.createms &&
+                rowGone &&
+                polled &&
+                stays &&
+                chip6?.text === "2" &&
+                chip6.warn == null &&
+                !chip6.title.includes(":4321"),
+            JSON.stringify({ askedClick, asked, stopLabel, stopsWhileAsking, stillAsking, reasked, stopClick, recorded, stopCalls, rowGone, polled, stays, chip6 })
+        );
+
+        // 7. an app's Stop names the app, and Escape closes the popover without stopping it
+        const codeStop = msIn(code.pid, "[data-dev-server-stop]");
+        await hover(code.pid);
+        const codeClick = await railServersMouse(h, codeStop, true);
+        const codeAsked = await polishWaitFor(h, `${codeStop}?.textContent.trim() === "Stop Code?"`, 2000);
+        await h.shot("cdp-shots/machine-servers-stop-app.png");
+        await msPressEscape(h);
+        const escClosed = await waitClosed();
+        const stopsAfterEsc = await stops();
+        rec(
+            "7. the first click on Code's Stop reads `Stop Code?`; Escape closes the popover and no stop names Code's pid",
+            codeClick &&
+                codeAsked &&
+                escClosed &&
+                stopsAfterEsc.length === 1 &&
+                !stopsAfterEsc.some((s) => s.pid === code.pid),
+            JSON.stringify({ codeClick, codeAsked, escClosed, stopsAfterEsc })
+        );
+
+        // 8. a click on the chip opens it again; a click on the backdrop, the other chip and the chip again close it. While one
+        // popover is open its backdrop covers the footer, so the chip clicks that follow go through the DOM
+        const reopened = await openFromChip();
+        const backdropClosed = reopened && (await clickOutside());
+        const reopened2 = await openFromChip();
+        const ramChip = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+        const consumersUp = await polishWaitFor(h, `${CONSUMERS_SORT} !== null`, 3000);
+        const serversClosed = await waitClosed();
+        await polishNap(300);
+        await h.shot("cdp-shots/machine-servers-consumers.png");
+        await h.ev(`${MS_CHIP}?.click()`);
+        const serversUp = await polishWaitFor(h, MS_OPEN, 3000);
+        const consumersClosed = await polishWaitFor(h, `${CONSUMERS_SORT} === null`, 3000);
+        await h.ev(`${MS_CHIP}?.click()`);
+        const chipClosed = await waitClosed();
+        rec(
+            "8. a click on the backdrop closes it; the RAM chip opens Consumers and closes Servers; the Servers chip opens Servers and closes Consumers; the Servers chip again closes it",
+            reopened && backdropClosed && reopened2 && ramChip && consumersUp && serversClosed && serversUp && consumersClosed && chipClosed,
+            JSON.stringify({ reopened, backdropClosed, reopened2, ramChip, consumersUp, serversClosed, serversUp, consumersClosed, chipClosed })
+        );
+
+        // 9. a badge opens what holds the server. The Agent surface shows the focused agent's pane (data-agent-focused is set
+        // only in a multi-cell grid), so the focus is read from the panes on screen; it starts on the other agent so the
+        // click has something to move
+        let revealed = true;
+        try {
+            await h.rpc("uireveal", { address: `agent:${MS_OTHER_ID}` }, UI_ROUTE);
+        } catch (e) {
+            revealed = String(e?.message ?? e);
+        }
+        const otherShown = await polishWaitFor(h, msPanesAre(MS_OTHER_ID), 8000);
+        const reopened3 = await openFromChip();
+        const agentBadgeClick = await railServersMouse(h, msIn(uvicorn.pid, '[data-machine-server-badge="agent"]'), true);
+        const agentClosed = await waitClosed();
+        const agentShown = await polishWaitFor(h, msPanesAre(MS_AGENT_ID), 8000);
+        const agentPanes = await h.ev(MS_PANES);
+        await h.shot("cdp-shots/machine-servers-agent-badge.png");
+        rec(
+            "9. the uvicorn row's agent badge closes the popover and the Agent surface shows the fixture agent, which was not showing before",
+            revealed === true &&
+                otherShown &&
+                reopened3 &&
+                agentBadgeClick &&
+                agentClosed &&
+                agentShown &&
+                agentPanes.length === 1 &&
+                agentPanes[0].label === MS_AGENT_NAME,
+            JSON.stringify({ revealed, otherShown, reopened3, agentBadgeClick, agentClosed, agentShown, agentPanes })
+        );
+
+        // 9b. the terminal badge opens the terminal's tab. With an agent showing, the surface docks a terminal under it, so
+        // the terminal's pane comes on screen beside the agent's
+        const reopened4 = await openFromChip();
+        const termBadgeClick = await railServersMouse(h, msIn(vite.pid, '[data-machine-server-badge="terminal"]'), true);
+        const termClosed = await waitClosed();
+        const termShown = await polishWaitFor(h, msPanesAre(MS_AGENT_ID, ctx.termTabId), 8000);
+        const termPanes = await h.ev(MS_PANES);
+        await h.shot("cdp-shots/machine-servers-terminal-badge.png");
+        rec(
+            "9b. the vite row's terminal badge closes the popover and the terminal's own pane comes on screen, docked under the agent",
+            ctx.termInRoster === true &&
+                reopened4 &&
+                termBadgeClick &&
+                termClosed &&
+                termShown &&
+                termPanes.some((p) => p.id === ctx.termTabId && p.dock) &&
+                termPanes.some((p) => p.id === MS_AGENT_ID && !p.dock),
+            JSON.stringify({ termInRoster: ctx.termInRoster, reopened4, termBadgeClick, termClosed, termShown, termPanes })
+        );
+
+        // 10. Log on the agent's server opens its background command's output file in that agent's rail, followed live, with a
+        // tab titled by the server's port and label
+        const reopened5 = await openFromChip();
+        const logBtn = msIn(uvicorn.pid, "[data-machine-server-log]");
+        const logUp = await polishWaitFor(h, `!!${logBtn}`, 15000);
+        const rowLabel = await h.ev(`${msIn(uvicorn.pid, "[data-machine-server-label]")}?.textContent.trim() ?? null`);
+        await hover(uvicorn.pid);
+        const logClick = logUp && (await railServersMouse(h, logBtn, true));
+        const logClosed = await waitClosed();
+        const wantPath = JSON.stringify(ctx.outFile.split("\\").join("/").toLowerCase());
+        const fileUp = await polishWaitFor(
+            h,
+            `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantPath}`,
+            8000
+        );
+        const following = await h.ev(
+            `${RAIL_ASIDE}?.querySelector("[data-rail-file] [data-file-live]")?.getAttribute("aria-pressed") ?? null`
+        );
+        const fileTab = await h.ev(`(() => {
+            const t = ${RAIL_ASIDE}?.querySelector('[data-rail-tab="file"]');
+            return t ? { aria: t.getAttribute("aria-label"), text: t.textContent.trim() } : null;
+        })()`);
+        const logText = await polishWaitFor(
+            h,
+            `(${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "").replace(/\\u00a0/g, " ").includes(${JSON.stringify(MS_LOG_LINE)})`,
+            12000
+        );
+        await h.shot("cdp-shots/machine-servers-log.png");
+        const wantTitle = `:8100 ${rowLabel}`;
+        rec(
+            "10. Log closes the popover and the fixture agent's rail shows the output file, followed live, in a tab titled `:8100 <the row's label>`",
+            reopened5 &&
+                logUp &&
+                rowLabel != null &&
+                logClick &&
+                logClosed &&
+                fileUp &&
+                following === "true" &&
+                fileTab?.aria === `File ${wantTitle}` &&
+                fileTab.text === wantTitle &&
+                logText,
+            JSON.stringify({ reopened5, logUp, rowLabel, logClick, logClosed, fileUp, following, fileTab, logText })
+        );
+
+        // 10b. a Stop refused because the process had already exited: the toast says so and the list refreshes without the row
+        await setMachineServersMock(h, { stopMode: "exited" });
+        const reopened6 = await openFromChip();
+        const viteStop = msIn(vite.pid, "[data-dev-server-stop]");
+        await hover(vite.pid);
+        const viteAsk = await railServersMouse(h, viteStop, true);
+        const viteAsked = await polishWaitFor(h, `${viteStop}?.textContent.trim() === "Stop?"`, 2000);
+        const viteStillAsking = await h.ev(`${viteStop}?.textContent.trim() === "Stop?"`);
+        const viteReasked = viteStillAsking ? false : await railServersMouse(h, viteStop, true);
+        const viteClick = await railServersMouse(h, viteStop, true);
+        const refused = await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.stops ?? []).some((s) => s.pid === ${vite.pid})`, 3000);
+        const toast = await polishWaitFor(h, consumersToastExpr("That process already exited"), 4000);
+        const errorToast = await h.ev(consumersToastExpr("Couldn't stop it"));
+        await h.shot("cdp-shots/machine-servers-exited.png");
+        const refusedCall = (await stops()).find((s) => s.pid === vite.pid);
+        // the refresh is single-flight, so one that lands on a poll under way waits for the next, at most 3s later
+        const refreshed = refusedCall != null && (await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.listed ?? 0) > ${refusedCall.listed}`, 8000));
+        const viteGone = await polishWaitFor(h, `!${msRow(vite.pid)}`, 8000);
+        const chip10b = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "1"`, 4000);
+        await setMachineServersMock(h, { stopMode: "ok" });
+        rec(
+            "10b. a Stop refused with `process N is not running` shows the toast `That process already exited`, refreshes the list, and the row leaves",
+            reopened6 &&
+                viteAsk &&
+                viteAsked &&
+                viteClick &&
+                refused &&
+                refusedCall?.mode === "exited" &&
+                refusedCall.createms === vite.createms &&
+                toast &&
+                !errorToast &&
+                refreshed &&
+                viteGone &&
+                chip10b,
+            JSON.stringify({ reopened6, viteAsk, viteAsked, viteStillAsking, viteReasked, viteClick, refused, refusedCall, toast, errorToast, refreshed, viteGone, chip10b })
+        );
+
+        // 11. a failed read: the chip reads `?`, muted, and the open popover keeps the last rows, dimmed, under one line. The
+        // popover is open here and polls every 3s
+        await setMachineServersMock(h, { mode: "fail" });
+        const failedUp = await polishWaitFor(h, `!!document.querySelector("[data-machine-servers-failed]")`, 8000);
+        const chip11 = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "?"`, 4000);
+        const chipFacts11 = await h.ev(MS_CHIP_FACTS);
+        const panel11 = await h.ev(`(() => {
+            const p = ${MS_PANEL};
+            const failed = p?.querySelector("[data-machine-servers-failed]");
+            const list = p?.querySelector("[data-machine-servers-list]");
+            if (!failed || !list) return null;
+            return {
+                line: failed.textContent.trim(),
+                above: !!(failed.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING),
+                dimmed: list.classList.contains("opacity-60"),
+                rows: [...p.querySelectorAll("[data-machine-server]")].map((r) => Number(r.dataset.machineServer)),
+            };
+        })()`);
+        await h.shot("cdp-shots/machine-servers-failed.png");
+        const closed11 = await clickOutside();
+        rec(
+            "11. a failed read turns the chip to a muted `?` and puts `Could not read listening ports` above the last rows, dimmed",
+            failedUp &&
+                chip11 &&
+                chipFacts11?.muted === true &&
+                !!panel11 &&
+                panel11.line === "Could not read listening ports" &&
+                panel11.above &&
+                panel11.dimmed &&
+                JSON.stringify(panel11.rows) === JSON.stringify([uvicorn.pid, code.pid, docker.pid]) &&
+                closed11,
+            JSON.stringify({ failedUp, chip11, chipFacts11, panel11, closed11 })
+        );
+
+        // 12. nothing listening: the chip is its icon alone, muted. A closed popover polls every 15s, so it is opened to read
+        // the next answer at once
+        await setMachineServersMock(h, { mode: "empty" });
+        const reopened7 = await openFromChip();
+        const chip12 = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "" && (${MS_CHIP_FACTS})?.icon === true`, 8000);
+        const chipFacts12 = await h.ev(MS_CHIP_FACTS);
+        const panel12 = await h.ev(`({
+            empty: ${MS_PANEL}?.querySelector("[data-machine-servers-empty]")?.textContent.trim() ?? null,
+            failed: !!${MS_PANEL}?.querySelector("[data-machine-servers-failed]"),
+            count: ${MS_PANEL}?.querySelector("[data-machine-servers-count]")?.textContent.trim() ?? null,
+        })`);
+        await h.shot("cdp-shots/machine-servers-empty.png");
+        const closed12 = await clickOutside();
+        rec(
+            "12. with nothing listening the chip is its icon alone, muted, and the popover says nothing is listening",
+            reopened7 &&
+                chip12 &&
+                chipFacts12?.muted === true &&
+                panel12.empty === "Nothing is listening." &&
+                !panel12.failed &&
+                panel12.count === "0" &&
+                closed12,
+            JSON.stringify({ reopened7, chip12, chipFacts12, panel12, closed12 })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // each is its own step: one failing must not skip the rest
+        const step = async (what, run) => {
+            try {
+                await run();
+            } catch (e) {
+                console.error(`machine-servers teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the RPC client", () => removeMachineServersMock(h));
+        // the clipboard stub is an own property over Navigator's getter; deleting it restores that
+        await step("remove the page stubs", () =>
+            h.ev(`(() => {
+                if (window.__msOpenExternal) window.api.openExternal = window.__msOpenExternal;
+                delete window.__msOpenExternal;
+                delete window.__msOpened;
+                delete window.__msCopied;
+                delete navigator.clipboard;
+                return true;
+            })()`)
+        );
+        await teardownFixtureRun(h, ctx, "machine-servers", {
+            what: "close the throwaway terminal, restore the rail preference and remove the directory",
+            fn: async () => {
+                if (ctx.termTabId) {
+                    await step("close the throwaway terminal tab", () =>
+                        waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.termTabId, false])
+                    );
+                }
+                if (ctx.prevRail !== undefined) {
+                    await step("restore the rail visibility", () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)));
+                }
+                // the rail's file panel can hold the output file's directory for a moment on Windows
+                await step(`remove ${ctx.cwd}`, () => railServersRemove(ctx.cwd));
+            },
+        });
+    },
+};
+
 // --- capacity-warn: the three worker steppers' over-capacity mark, with the capacity mocked to +0
 // (docs/superpowers/specs/2026-10-06-worker-ram-capacity-design.md). At moreworkers 0 any width of 1 or more is
 // over, and the launcher's width defaults to DEFAULT_PARALLELISM, so New run and the launcher need no stepping.
@@ -20839,7 +21590,7 @@ const CA_AGENTS = [
     { id: "fx-ca-working", name: "ca-working-agent", state: "working" },
     { id: "fx-ca-asking", name: "ca-asking-agent", state: "asking" },
 ];
-const CA_SECTION = `document.querySelector('[data-section="claudeaccount"]')`;
+const CA_SECTION = `document.querySelector('[data-section="agents"]')`;
 const caRow = (id) => `document.querySelector('[data-claude-account-row="${id || "default"}"]')`;
 const CA_ROWS = `[...document.querySelectorAll("[data-claude-account-row]")].map((r) => ({
     id: r.dataset.claudeAccountRow,
@@ -20915,10 +21666,27 @@ const caCenter = (expr) => `(() => {
     const b = el.getBoundingClientRect();
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 })()`;
-// the quota line of a row: its text and whether it wears the warning tone
+// the usage line of a row: each window's percent (data-pct, absent without a reading) and whether its bar fill wears
+// the warning tone (bg-warning from 80%), the age after them, and the line's text
 const caQuota = (id) => `(() => {
     const q = document.querySelector('[data-claude-account-quota="${id || "default"}"]');
-    return q ? { text: q.textContent.trim(), warn: q.classList.contains("text-warning"), muted: q.classList.contains("text-muted") } : null;
+    if (!q) return null;
+    const meter = (name) => {
+        const m = q.querySelector('[data-claude-account-meter="' + name + '"]');
+        if (!m) return null;
+        const pct = m.getAttribute("data-pct");
+        return {
+            pct: pct == null ? null : Number(pct),
+            warn: m.querySelector("[data-meter-fill]")?.classList.contains("bg-warning") ?? null,
+            fill: m.querySelector("[data-meter-fill]")?.style.width ?? null,
+        };
+    };
+    return {
+        text: q.textContent.replace(/\\s+/g, " ").trim(),
+        fivehour: meter("5h"),
+        week: meter("week"),
+        seen: q.querySelector("[data-claude-account-seen]")?.textContent.trim() ?? null,
+    };
 })()`;
 // the e-mail line under a row's name, or null when there is none
 const caEmailLine = (id) =>
@@ -21220,11 +21988,13 @@ const settingsClaudeAccount = {
         // --- list: quiet rows ---
         const noInputs = await noRowInputs();
         const loginEmail = ((await h.rpc("claudeaccountlist", null))?.loginemail ?? "").trim().toLowerCase();
+        // the /login tag is the name's sibling inside the row, not a child of the name
         const defName = await h.ev(`(() => {
             const n = document.querySelector('[data-claude-account-name="default"]');
             return {
                 name: [...(n?.childNodes ?? [])].find((c) => c.nodeType === 3)?.textContent.trim() ?? null,
-                tag: n?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+                tag: n?.closest("[data-claude-account-row]")?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+                tagInName: n?.querySelector("[data-claude-account-login-tag]") != null,
             };
         })()`);
         // the identity also learns the /login email from a live quota answer, so with none listed an email-shaped
@@ -21235,18 +22005,24 @@ const settingsClaudeAccount = {
                 : defName.name === "Claude login" || /^\S+@\S+$/.test(defName.name ?? "");
         rec(
             "15. rows hold no inputs: every name is text, and Default is named by its /login email or Claude login with a /login tag",
-            noInputs === true && nameOk && defName.tag === "/login",
+            noInputs === true && nameOk && defName.tag === "/login" && defName.tagInName === false,
             JSON.stringify({ noInputs, loginEmail, defName })
         );
         const qA = await h.ev(caQuota(ctx.idA));
         const qB = await h.ev(caQuota(ctx.idB));
         rec(
-            "16. a row at 90% or more reads in the warning tone: A (97%) does, B (40%) stays muted",
-            qA?.warn === true &&
-                qA.text.startsWith("5h 97% · week 64%") &&
-                qB?.warn === false &&
-                qB.muted === true &&
-                qB.text.startsWith("5h 40% · week 30%"),
+            "16. a usage bar from 80% reads in the warning tone: A's (97%, 64%) does for 5h, B's (40%, 30%) stays normal",
+            qA?.fivehour?.pct === 97 &&
+                qA.fivehour.warn === true &&
+                qA.fivehour.fill === "97%" &&
+                qA.week?.pct === 64 &&
+                qA.week.warn === false &&
+                qB?.fivehour?.pct === 40 &&
+                qB.fivehour.warn === false &&
+                qB.week?.pct === 30 &&
+                qB.week.warn === false &&
+                qB.seen != null &&
+                qB.seen.endsWith(" ago"),
             JSON.stringify({ qA, qB })
         );
         const adds = await h.ev(`[...document.querySelectorAll("[data-claude-account-add]")].map((b) => b.textContent.trim())`);
@@ -21982,7 +22758,7 @@ const notifyToast = {
 
             // --- Settings: the section, and In-app toasts off -----------------------------------------------------------
             await h.goto("settings");
-            await h.ev(`document.querySelector('[data-section="notifications"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="general"]')?.click()`);
             const titles = ["OS notifications", "In-app toasts", "When an agent finishes"];
             const listed = await polishWaitFor(
                 h,
@@ -22252,6 +23028,387 @@ const settingsRadarAudit = {
     },
     async teardown(h, ctx) {
         await h.rpc("setconfig", ctx.prev);
+        await h.goto("cockpit");
+    },
+};
+
+// --- settings-pages: six pages of cards, the key pill on hover, a changed row end to end ----------------
+// docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the six in order;
+// the page's card ids in order; a shot), then one detail step per page that draws something the card ids do not show
+// (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the runtime
+// list and the OpenRouter warning band, the right-aligned versions), then the key pill on Terminal (hidden at rest,
+// visible and titled on hover, pressing it leaves the row's control focused) and its absence on About's build info, then
+// term:fontsize set off its default to see the changed dot, the revert button, the index count and Reset section. The
+// scenario restores term:fontsize in a finally and again in teardown, each retried: the packaged app and a final-verify
+// app share the vault's settings.json, and a write can lose a rename race with the other's.
+const SP_PAGES = [
+    { id: "general", cards: ["startup", "notifications", "vault"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
+    { id: "terminal", cards: ["text", "cursor", "behavior"] },
+    { id: "agents", cards: ["claudeaccount", "runs", "flags"] },
+    { id: "headless", cards: ["runtime", "openrouter", "radar"] },
+    { id: "about", cards: ["versions", "agents"] },
+];
+const SP_FONTSIZE_KEY = "term:fontsize";
+const spPane = (id) => `document.querySelector('[data-settings-section="${id}"]')`;
+const spRow = (id) => `document.querySelector('[data-setting-row="${id}"]')`;
+const spOpen = async (h, id) => {
+    await h.ev(`document.querySelector('button[data-section="${id}"]')?.click()`);
+    return polishWaitFor(h, `${spPane(id)} != null`, 5000);
+};
+// a real pointer over the row's title side, so :hover and the group-hover variants follow
+const spHover = async (h, rowId) => {
+    const at = await h.ev(`(() => {
+        const el = ${spRow(rowId)};
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + 40, y: r.top + r.height / 2 };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(150);
+    return true;
+};
+const spPill = (rowId) => `(() => {
+    const pill = ${spRow(rowId)}?.querySelector("[data-key-pill]");
+    if (!pill) return null;
+    const r = pill.getBoundingClientRect();
+    return {
+        visibility: getComputedStyle(pill).visibility,
+        width: r.width,
+        title: pill.getAttribute("title"),
+        text: pill.textContent.trim(),
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+    };
+})()`;
+// The themed context menu's one floating panel (element/contextmenu.tsx), the same hook settings-claude-account reads.
+const SP_MENU_PANEL = CA_MENU_PANEL;
+// a real left click at the centre of an element
+const spClick = async (h, expr) => {
+    const at = await h.ev(`(() => {
+        const el = ${expr};
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    return true;
+};
+// The option buttons of a font row, each with the first family it is drawn in. A font option is drawn in the face it
+// names, so that family reads as the option's label ("System UI" draws as system-ui). The revert button and the key
+// pill carry an aria-label; an option does not.
+const spFaces = (rowId) => `(() => {
+    const row = ${spRow(rowId)};
+    if (!row) return null;
+    return [...row.querySelectorAll("button:not([aria-label])")].map((b) => ({
+        label: b.textContent.trim(),
+        inline: b.style.fontFamily,
+        family: getComputedStyle(b).fontFamily.split(",")[0].replace(/["']/g, "").trim(),
+    }));
+})()`;
+const spNorm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+const spOwnFaces = (faces) =>
+    faces != null &&
+    faces.length > 1 &&
+    faces.every((f) => f.inline !== "" && spNorm(f.family) === spNorm(f.label)) &&
+    new Set(faces.map((f) => f.family)).size === faces.length;
+// term:fontsize back to what the run found; three tries, since the write can lose a rename race (Access is denied)
+const spRestoreFontSize = async (h, value) => {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: value });
+            return;
+        } catch (e) {
+            last = e;
+            await polishNap(300);
+        }
+    }
+    throw last;
+};
+
+const settingsPages = {
+    name: "settings-pages",
+    surface: "settings",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        return { prevFontSize: settings[SP_FONTSIZE_KEY] ?? null };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        await polishWaitFor(h, `document.querySelector('button[data-section]') != null`, 5000);
+        const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute("data-section"))`);
+        rec(
+            "index: one flat list of six pages in order",
+            JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)),
+            `index=${JSON.stringify(index)}`
+        );
+
+        for (const page of SP_PAGES) {
+            const up = await spOpen(h, page.id);
+            const cards = await h.ev(
+                `[...(${spPane(page.id)}?.querySelectorAll("[data-setting-card]") ?? [])].map((c) => c.getAttribute("data-setting-card"))`
+            );
+            await polishNap(350);
+            await h.shot(`cdp-shots/settings-pages-${page.id}.png`);
+            rec(
+                `${page.id}: the page holds its cards in order`,
+                up && JSON.stringify(cards) === JSON.stringify(page.cards),
+                `cards=${JSON.stringify(cards)}`
+            );
+        }
+
+        // general-select: Startup surface is a select; its menu is the themed one, Last opened first with what it does
+        await spOpen(h, "general");
+        const selectBtn = `${spRow("general.startup")}?.querySelector("button[data-select]")`;
+        await polishWaitFor(h, `${selectBtn} != null`, 5000);
+        const clickedSelect = await spClick(h, selectBtn);
+        const menuUp = await polishWaitFor(h, `${SP_MENU_PANEL} != null`, 3000);
+        const menu = await h.ev(`(() => {
+            const panel = ${SP_MENU_PANEL};
+            if (!panel) return null;
+            return [...panel.children].map((c) =>
+                c.classList.contains("h-px")
+                    ? { separator: true }
+                    : {
+                          label: c.querySelector("span.flex-1")?.textContent.trim() ?? null,
+                          sublabel: c.querySelector("span.ml-auto")?.textContent.trim() ?? null,
+                          checked: c.querySelector("span.rounded-full") != null,
+                      }
+            );
+        })()`);
+        await h.shot("cdp-shots/settings-pages-general-select.png");
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        }
+        const menuGone = await polishWaitFor(h, `${SP_MENU_PANEL} == null`, 3000);
+        rec(
+            "general-select: Last opened (the one you left), a separator, the surfaces, one checked",
+            clickedSelect &&
+                menuUp &&
+                menu != null &&
+                menu[0]?.label === "Last opened" &&
+                menu[0].sublabel === "the one you left" &&
+                menu[1]?.separator === true &&
+                menu.slice(2).every((m) => m.separator !== true && m.label) &&
+                menu.filter((m) => m.checked).length === 1 &&
+                menuGone,
+            `menu=${JSON.stringify(menu)} closed=${menuGone}`
+        );
+
+        // appearance-detail: seven theme chips with one selected; each font option drawn in its own face
+        await spOpen(h, "appearance");
+        await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
+        const chips = await h.ev(`(() => {
+            const bs = [...document.querySelectorAll("[data-theme-presets] button")];
+            return { count: bs.length, selected: bs.filter((b) => b.getAttribute("aria-pressed") === "true").length };
+        })()`);
+        const sansFaces = await h.ev(spFaces("fonts.sans"));
+        const monoFaces = await h.ev(spFaces("fonts.mono"));
+        await h.ev(`${spRow("fonts.sans")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-appearance-detail.png");
+        rec(
+            "appearance-detail: seven theme chips, one selected; Fonts options each in their own face",
+            chips.count === 7 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
+        );
+
+        // terminal-detail: the terminal face is drawn the same way, on the Terminal page
+        await spOpen(h, "terminal");
+        await polishWaitFor(h, `${spRow("fonts.term")} != null`, 5000);
+        const termFaces = await h.ev(spFaces("fonts.term"));
+        await h.ev(`${spRow("fonts.term")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-terminal-detail.png");
+        rec(
+            "terminal-detail: each Terminal font option is drawn in the face it names",
+            spOwnFaces(termFaces),
+            `term=${JSON.stringify(termFaces)}`
+        );
+
+        // agents-detail: the account card leads, one account is active, five runtime tabs, flag rows stay one line
+        await spOpen(h, "agents");
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector("[data-claude-account-row]") != null`, 8000);
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector('[data-setting-row^="newagent.flag."]') != null`, 5000);
+        const agentsDetail = await h.ev(`(() => {
+            const pane = ${spPane("agents")};
+            return {
+                first: pane.querySelector("[data-setting-card]")?.getAttribute("data-setting-card") ?? null,
+                active: pane.querySelectorAll("[data-account-active]").length,
+                tabs: [...pane.querySelectorAll("[data-flag-tabs] [role=tab]")].map((t) => t.textContent.trim()),
+                flagHeights: [...pane.querySelectorAll('[data-setting-row^="newagent.flag."]')].map((r) =>
+                    Math.round(r.getBoundingClientRect().height)
+                ),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-flag-tabs]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-agents-detail.png");
+        rec(
+            "agents-detail: Claude account first, one active account, five runtime tabs, flag rows under 44px",
+            agentsDetail.first === "claudeaccount" &&
+                agentsDetail.active === 1 &&
+                agentsDetail.tabs.length === 5 &&
+                agentsDetail.flagHeights.length > 0 &&
+                agentsDetail.flagHeights.every((px) => px < 44),
+            JSON.stringify(agentsDetail)
+        );
+
+        // headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band while no key is stored
+        await spOpen(h, "headless");
+        // OpenRouter is always listed; the five harnesses follow once ListHarnesses answers (CATALOG_RPC_TIMEOUT_MS, 30 s)
+        await polishWaitFor(h, `document.querySelectorAll("[data-runtime-choice]").length >= 6`, 35_000);
+        // the card draws its band after the secrets probe answers, so read what is stored first
+        const secretNames = (await h.rpc("getsecretsnames", null)) ?? [];
+        const keyStored = secretNames.includes("jarvis_embedapikey");
+        const runtimeSetting = (await h.rpc("getfullconfig", null))?.settings?.["headless:runtime"] ?? "";
+        const bandExpected = !keyStored && (runtimeSetting === "" || runtimeSetting === "openrouter");
+        await polishWaitFor(
+            h,
+            `(document.querySelector('[data-setting-card="openrouter"]')?.textContent.includes("OpenRouter key not set") ?? null) === ${bandExpected}`,
+            5000
+        );
+        const headlessDetail = await h.ev(`(() => {
+            const choices = [...document.querySelectorAll("[data-runtime-choice]")];
+            const card = document.querySelector('[data-setting-card="openrouter"]');
+            const first = card?.firstElementChild ?? null;
+            return {
+                choices: choices.length,
+                checked: choices.filter((c) => c.getAttribute("aria-checked") === "true").length,
+                firstIsWarning: first != null && first.textContent.includes("OpenRouter key not set") && first.querySelector("svg") != null,
+                anyWarning: card != null && card.textContent.includes("OpenRouter key not set"),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-setting-card="openrouter"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-headless-detail.png");
+        rec(
+            "headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band when no key is stored",
+            headlessDetail.choices === 6 &&
+                headlessDetail.checked === 1 &&
+                (bandExpected ? headlessDetail.firstIsWarning : headlessDetail.anyWarning === false),
+            JSON.stringify({ ...headlessDetail, keyStored, runtimeSetting, bandExpected })
+        );
+
+        // about-detail: the version values sit at the right edge of their rows (the row's 16px padding in from it)
+        await spOpen(h, "about");
+        await polishWaitFor(h, `${spRow("about.platform")} != null`, 5000);
+        const versions = await h.ev(`(() => {
+            return ["about.app", "about.server", "about.buildtime", "about.platform"].map((id) => {
+                const row = document.querySelector('[data-setting-row="' + id + '"]');
+                const value = row?.querySelector(".tabular-nums");
+                if (!row || !value) return { id, found: false };
+                const r = row.getBoundingClientRect();
+                const v = value.getBoundingClientRect();
+                return { id, found: true, text: value.textContent.trim(), gap: Math.round(r.right - v.right), leftHalf: v.left < r.left + r.width / 2 };
+            });
+        })()`);
+        await h.shot("cdp-shots/settings-pages-about-detail.png");
+        rec(
+            "about-detail: the four version values are right-aligned within their rows",
+            versions.length === 4 && versions.every((v) => v.found && v.text !== "" && v.leftHalf === false && Math.abs(v.gap - 16) <= 2),
+            JSON.stringify(versions)
+        );
+
+        // key-pill: on Terminal, hover scrollback; About's build info has none
+        await spOpen(h, "terminal");
+        await polishWaitFor(h, `${spRow("terminal.scrollback")} != null`, 5000);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+        await polishNap(150);
+        const atRest = await h.ev(spPill("terminal.scrollback"));
+        const hovered = await spHover(h, "terminal.scrollback");
+        const onHover = await h.ev(spPill("terminal.scrollback"));
+        await h.shot("cdp-shots/settings-pages-key-pill.png");
+        rec(
+            "key-pill: hidden at rest, visible and titled on hover",
+            atRest?.visibility === "hidden" &&
+                hovered &&
+                onHover?.visibility === "visible" &&
+                onHover.width > 0 &&
+                onHover.title === "Copy term:scrollback · synced in settings.json",
+            `rest=${atRest?.visibility} hover=${JSON.stringify(onHover)}`
+        );
+        // press the pill with a real pointer while the row's own control holds focus: the control keeps it
+        const focused = await h.ev(`(() => {
+            const btn = ${spRow("terminal.scrollback")}?.querySelector('button[aria-label^="Increase"]');
+            if (!btn) return false;
+            btn.focus();
+            return document.activeElement === btn;
+        })()`);
+        const pill = await h.ev(spPill("terminal.scrollback"));
+        if (pill != null) {
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: pill.x, y: pill.y, button: "left", clickCount: 1 });
+            }
+        }
+        await polishNap(150);
+        const keptFocus = await h.ev(
+            `document.activeElement?.getAttribute("aria-label") === "Increase scrollback"`
+        );
+        await h.ev(`document.activeElement?.blur()`);
+        rec(
+            "key-pill: pressing it leaves the row's control focused",
+            focused === true && pill != null && keptFocus === true,
+            `focused=${focused} pill=${pill != null} kept=${keptFocus}`
+        );
+        await spOpen(h, "about");
+        const aboutUp = await polishWaitFor(h, `${spRow("about.app")} != null`, 5000);
+        await spHover(h, "about.app");
+        const aboutPill = await h.ev(`${spRow("about.app")}?.querySelector("[data-key-pill]") != null`);
+        rec("key-pill: About's build info rows show none", aboutUp && aboutPill === false, `rendered=${aboutUp} pill=${aboutPill}`);
+
+        // changed: term:fontsize two off its default shows the dot, the revert button, the count and Reset section
+        try {
+            const cfg = await h.rpc("getfullconfig", null);
+            const dflt = cfg?.defaultsettings?.[SP_FONTSIZE_KEY];
+            const base = typeof dflt === "number" ? dflt : 12;
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: base + 2 });
+            await polishNap(600);
+            await spOpen(h, "terminal");
+            await polishWaitFor(h, `${spRow("terminal.fontsize")} != null`, 5000);
+            const changed = await h.ev(`(() => {
+                const row = ${spRow("terminal.fontsize")};
+                const count = document.querySelector('button[data-section="terminal"] [data-section-changed]');
+                return {
+                    dot: row?.querySelector('[title="Changed from the default"]') != null,
+                    revert: row?.querySelector('button[aria-label="Revert to default"]') != null,
+                    count: count == null ? 0 : parseInt(count.textContent, 10),
+                    reset: [...(${spPane("terminal")}?.querySelectorAll("button") ?? [])].some((b) => b.textContent.trim() === "Reset section"),
+                };
+            })()`);
+            await h.shot("cdp-shots/settings-pages-changed.png");
+            rec(
+                "changed: dot, revert button, index count and Reset section",
+                changed.dot && changed.revert && changed.count >= 1 && changed.reset,
+                JSON.stringify(changed)
+            );
+            await h.ev(`${spRow("terminal.fontsize")}?.querySelector('button[aria-label="Revert to default"]')?.click()`);
+            const cleared = await polishWaitFor(
+                h,
+                `${spRow("terminal.fontsize")}?.querySelector('[title="Changed from the default"]') == null`,
+                5000
+            );
+            rec("changed: Revert puts the default back and the mark goes", cleared, `cleared=${cleared}`);
+        } finally {
+            await spRestoreFontSize(h, ctx.prevFontSize);
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await spRestoreFontSize(h, ctx.prevFontSize);
         await h.goto("cockpit");
     },
 };
@@ -22746,7 +23903,7 @@ const agyHarness = {
 
             // 8. Settings' launch-flags editor
             await h.goto("settings");
-            await h.ev(`document.querySelector('[data-section="newagent"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
             await h.ev(
                 `[...document.querySelectorAll('[data-setting-row="newagent.runtime"] button')].find((b) => b.textContent.trim() === "Antigravity")?.click()`
@@ -22763,7 +23920,7 @@ const agyHarness = {
             );
 
             // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
-            await h.ev(`document.querySelector('[data-section="run"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
             const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
             await shot("11-settings-run-route");
@@ -22863,6 +24020,7 @@ export const SCENARIOS = [
     dagLifecycle,
     routePickerFlat,
     settingsRadarAudit,
+    settingsPages,
     jarvisMotion,
     // before brief-inline-tracker, which leaves a briefing fixture on over the seeded data
     briefDesignParity,
@@ -22907,6 +24065,7 @@ export const SCENARIOS = [
     mdComments,
     workerCapacity,
     consumersPopover,
+    machineServers,
     capacityWarn,
     notifyToast,
 ];

@@ -16,6 +16,7 @@ import { useApplyCockpitTheme } from "@/app/view/agents/themestore";
 import { useApplyCockpitFonts } from "@/app/view/agents/fontstore";
 import { CockpitShell } from "@/app/view/agents/cockpitshell";
 import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
+import { MachineServersPanel } from "@/app/view/agents/machineserverspanel";
 import { NowTicker } from "@/app/view/agents/nowticker";
 import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
@@ -150,6 +151,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <HintsFooter model={model} />
             {/* opened from the footer's RAM chip and usage meters, which both hints bars draw: one panel for both */}
             <ConsumersPanel model={model} />
+            {/* the footer's Servers chip opens this; it also owns the one poll that feeds the chip */}
+            <MachineServersPanel model={model} />
             <NewProjectModal model={model} />
             <LauncherModal model={model} />
             <NewInitiativeHost model={model} />

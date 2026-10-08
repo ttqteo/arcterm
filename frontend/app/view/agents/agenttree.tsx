@@ -36,6 +36,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
+import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
@@ -425,6 +426,8 @@ function ParentRow({
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
+    // its last turn committed and you have read it: the row offers to close it (donesuggest.ts)
+    const done = doneSuggestion(agent, unreadCount);
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
     const settling = useSettle(agent.state === "idle");
 
@@ -528,8 +531,24 @@ function ParentRow({
                 </>
             ) : (
                 <>
-                    {/* the count stands in for an idle agent's grey dot; a working one keeps its pulse */}
-                    {mark || (unread && agent.state === "idle") ? null : (
+                    {/* the count stands in for an idle agent's grey dot, and so does the Close a finished one offers;
+                        a working one keeps its pulse */}
+                    {done ? (
+                        // the chip's click is its own: it must not select the row it closes
+                        <button
+                            type="button"
+                            data-agent-done={agent.id}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                confirmCloseSession(agent, model);
+                            }}
+                            title={DONE_TITLE}
+                            className="flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] border border-success/45 px-[5px] py-[1px] text-[10.5px] font-semibold text-success hover:border-success"
+                        >
+                            <Check size={10} strokeWidth={2.4} aria-hidden />
+                            Close
+                        </button>
+                    ) : mark || (unread && agent.state === "idle") ? null : (
                         <StatusDot
                             state={agent.state}
                             pulse={agent.state !== "idle"}

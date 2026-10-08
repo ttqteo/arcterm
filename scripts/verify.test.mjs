@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunnableTests, runPattern, testSharded } from "./verify.mjs";
+import { SHARDS, SHARD_MIN_TESTS, countTopLevelTests, dealShards, failedVitestFiles, failedVitestTests, goSummary, goTestEnv, limiter, needsGoGraph, packageResults, partitionPackages, planVerify, readChanged, readChangedFile, reportFlaky, rerunVitestAlone, rerunnableTests, runPattern, testSharded } from "./verify.mjs";
 
 const MOD = "github.com/wavetermdev/waveterm";
 const graph = [
@@ -155,6 +155,106 @@ describe("rerunning a failure alone", () => {
             ["m/pkg/c", true],
         ]);
         expect(rerunnableTests(results[1].output)).toEqual(["TestB"]);
+    });
+});
+
+// junit builds the part of vitest's JUnit report the parser reads: one testcase per [file, name, verdict], where a
+// verdict of "failure" or "error" gives the case that child and anything else leaves it passing (a skipped case too).
+function junit(cases) {
+    const body = cases.map(([file, name, verdict]) => {
+        const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const child = verdict === "failure" || verdict === "error" ? `\n            <${verdict} message="boom" type="Error">\nError: boom\n            </${verdict}>\n        ` : verdict === "skipped" ? "<skipped/>" : "\n        ";
+        return `        <testcase classname="${esc(file)}" name="${esc(name)}" time="0.001">${child}</testcase>`;
+    });
+    return `<?xml version="1.0" encoding="UTF-8" ?>\n<testsuites name="vitest tests">\n    <testsuite name="x">\n${body.join("\n")}\n    </testsuite>\n</testsuites>\n`;
+}
+
+describe("rerunning failed vitest files alone", () => {
+    const A = "scripts/cdp-shot.test.mjs";
+    const B = "frontend/app/view/agents/gridstore.persist.test.ts";
+    it("names each file with a failed case once, across files", () => {
+        const xml = junit([
+            [A, "exits nonzero with an actionable message when the port is closed", "failure"],
+            [A, "passes", "pass"],
+            [B, "gridstore > starts empty for a profile that never stored a grid", "failure"],
+        ]);
+        expect(failedVitestFiles(xml)).toEqual([A, B]);
+    });
+    it("names a file once when two of its cases failed", () => {
+        const xml = junit([
+            [B, "first", "failure"],
+            [B, "second", "error"],
+            [A, "passes", "pass"],
+        ]);
+        expect(failedVitestFiles(xml)).toEqual([B]);
+    });
+    it("names the failed cases, with the report's escapes undone", () => {
+        const xml = junit([
+            [A, "suite > takes <a> & \"b\"", "failure"],
+            [A, "passes", "pass"],
+        ]);
+        expect(failedVitestTests(xml)).toEqual([{ file: A, name: 'suite > takes <a> & "b"' }]);
+    });
+    it("has nothing to rerun for a report that passed or skipped everything", () => {
+        expect(failedVitestFiles(junit([[A, "a", "pass"], [B, "b", "skipped"]]))).toBeNull();
+        expect(failedVitestFiles(junit([]))).toBeNull();
+    });
+    it("has nothing to rerun for text that is not a report, or no report", () => {
+        expect(failedVitestFiles("RUN v3.0.0\n FAIL scripts/a.test.mjs\n")).toBeNull();
+        expect(failedVitestFiles("")).toBeNull();
+        expect(failedVitestFiles(null)).toBeNull();
+    });
+    it("calls a collection error real, even beside a failed test, since a rerun of the other files would hide it", () => {
+        // vitest reports a file that failed to load as a case named for the file itself
+        const xml = junit([
+            [A, "flaky one", "failure"],
+            [B, B, "failure"],
+        ]);
+        expect(failedVitestFiles(xml)).toBeNull();
+        expect(failedVitestFiles(junit([[B, B, "failure"]]))).toBeNull();
+    });
+    it("reads a self-closing passing case and a failed case after it", () => {
+        const xml = `<testsuite><testcase classname="${A}" name="ok" time="0"/><testcase classname="${A}" name="bad" time="0"><failure message="x"></failure></testcase></testsuite>`;
+        expect(failedVitestTests(xml)).toEqual([{ file: A, name: "bad" }]);
+    });
+
+    const run = (failed, ok) => {
+        const calls = [];
+        const flaky = [];
+        const out = [];
+        const result = rerunVitestAlone(failed, flaky, (files) => (calls.push(files), { ok }), (s) => out.push(s));
+        return { result, calls, flaky, out: out.join("") };
+    };
+    const failed = [
+        { file: A, name: "exits nonzero" },
+        { file: B, name: "starts empty" },
+        { file: B, name: "other" },
+    ];
+    it("records the tests as flaky when the files pass alone, rerunning each file once in one process", () => {
+        const { result, calls, flaky, out } = run(failed, true);
+        expect(result).toBe(true);
+        expect(calls).toEqual([[A, B]]);
+        expect(flaky).toEqual([`${A} > exits nonzero`, `${B} > starts empty`, `${B} > other`]);
+        expect(out).toContain(`verify: rerunning ${A}, ${B} alone`);
+    });
+    it("fails, recording nothing, when the files fail again alone", () => {
+        const { result, calls, flaky } = run(failed, false);
+        expect(result).toBe(false);
+        expect(calls).toEqual([[A, B]]);
+        expect(flaky).toEqual([]);
+    });
+    it("reruns nothing when the failure names no test to rerun", () => {
+        const { result, calls, flaky } = run(null, true);
+        expect(result).toBe(false);
+        expect(calls).toEqual([]);
+        expect(flaky).toEqual([]);
+    });
+    it("hands the flaky tests to reportFlaky as the lines the engine lists", () => {
+        const { flaky } = run(failed, true);
+        const file = join(mkdtempSync(join(tmpdir(), "verify-flaky-")), "flaky.txt");
+        writeFileSync(file, "");
+        reportFlaky(flaky, { ARC_VERIFY_FLAKY: file });
+        expect(readFileSync(file, "utf8")).toBe(`${A} > exits nonzero\n${B} > starts empty\n${B} > other\n`);
     });
 });
 

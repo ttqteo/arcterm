@@ -60,7 +60,7 @@ export function RoutePicker({
     placement?: Placement;
     openRequest?: number;
     title?: string;
-    size?: "default" | "compact";
+    size?: "default" | "compact" | "select";
     disabled?: boolean;
     // an answer that is not a route (Reviewer picks), so it has no RoutePin for value to hold
     extraOption?: { label: string; selected: boolean; onSelect: () => void };
@@ -187,8 +187,15 @@ export function RoutePicker({
                     "flex cursor-pointer items-center gap-1.5 rounded-[6px] border bg-surface text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40",
                     size === "compact"
                         ? "max-w-[200px] px-2 py-[3px] text-[10.5px]"
-                        : "max-w-[300px] px-2.5 py-1 text-[11px]",
-                    open ? "border-accent-700 text-primary" : "border-border text-secondary hover:text-primary"
+                        : size === "select"
+                          ? // the Settings page's Select button (settingsui.tsx): same height, radius, border and type size
+                            "h-7 max-w-[300px] rounded-sm px-2.5 text-[12px] font-medium"
+                          : "max-w-[300px] px-2.5 py-1 text-[11px]",
+                    open
+                        ? "border-accent-700 text-primary"
+                        : size === "select"
+                          ? "border-edge-mid text-primary hover:bg-surface-hover"
+                          : "border-border text-secondary hover:text-primary"
                 )}
             >
                 <span className="min-w-0 truncate">{face}</span>

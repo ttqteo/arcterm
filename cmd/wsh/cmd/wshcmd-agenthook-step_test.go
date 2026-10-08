@@ -49,6 +49,10 @@ func TestStepMarker(t *testing.T) {
 		{"instruction steps", "Step 1: install\nBước 2: chạy", ""},
 		{"zero-padded bare part", "## Phần 05", ""},
 		{"bare part past the cap", "## Part 40", ""},
+		{"a quoted example", `Chỉ khi agent không chờ trả lời một phần (kiểu "Phần 2/4").`, ""},
+		{"a curly-quoted example", "Một câu hỏi như “Phần 1/4 ổn chưa?” cũng tính.", ""},
+		{"a code example", "Bộ đọc bắt `Phần 2/4` và `phần 1 trong 3`.", ""},
+		{"a real part beside a quoted one", `Phần 3/4: lỗi. Lần trước mình viết "Phần 2/4" nhầm.`, "3/4"},
 	}
 	for _, c := range cases {
 		if got := stepMarker(c.text); got != c.want {

@@ -5,35 +5,34 @@ import { describe, expect, it } from "vitest";
 import { RUNTIME_FLAGS } from "./launch";
 import {
     changedCount,
-    countLabel,
     filterSections,
     flagRowId,
-    groupSections,
+    keyPillTitle,
     OPENROUTER_SECRET_NAME,
     RADAR_AUDIT_RUNTIMES,
     radarAuditRoute,
+    resolveSectionId,
     resolveSelection,
     rowKeys,
     rowMatches,
+    sectionRows,
     settingsSections,
     vaultStatusLine,
     type SettingSectionDef,
 } from "./settingsmodel";
 
 const sections = () => settingsSections("claude");
+const rowsOf = (id: string, flagRuntime: Parameters<typeof settingsSections>[0] = "claude") =>
+    sectionRows(settingsSections(flagRuntime).find((s) => s.id === id)!);
 
 describe("vault sync rows", () => {
     it("treats the vault path as machine-local", () => {
-        const row = sections()
-            .find((s) => s.id === "memory")!
-            .rows.find((r) => r.id === "memory.vaultpath")!;
+        const row = rowsOf("general").find((r) => r.id === "memory.vaultpath")!;
         expect(row.scope).toBe("local");
     });
 
     it("offers a sync remote row that stores no setting", () => {
-        const row = sections()
-            .find((s) => s.id === "memory")!
-            .rows.find((r) => r.id === "memory.remote")!;
+        const row = rowsOf("general").find((r) => r.id === "memory.remote")!;
         expect(row.key).toBeUndefined();
         expect(row.config).toBeUndefined();
     });
@@ -41,9 +40,7 @@ describe("vault sync rows", () => {
 
 describe("details rail row", () => {
     it("is a local pref on agent.rail.visible whose copy says the rail is on unless turned off", () => {
-        const row = sections()
-            .find((s) => s.id === "general")!
-            .rows.find((r) => r.id === "general.rail")!;
+        const row = rowsOf("general").find((r) => r.id === "general.rail")!;
         expect(row.key).toBe("agent.rail.visible");
         expect(row.scope).toBe("local");
         expect(row.title).toBe("Show details rail by default");
@@ -80,30 +77,28 @@ describe("vaultStatusLine", () => {
 });
 
 describe("settingsSections", () => {
-    it("gives every row a unique id", () => {
-        const ids = sections().flatMap((s) => s.rows.map((r) => r.id));
-        expect(new Set(ids).size).toBe(ids.length);
-    });
-
     it("lists the flags of the runtime being edited, and only those", () => {
-        const rows = sections().find((s) => s.id === "newagent")!.rows;
-        expect(rows.map((r) => r.id)).toEqual([
+        const flags = settingsSections("claude")
+            .find((s) => s.id === "agents")!
+            .cards.find((c) => c.id === "flags")!.rows;
+        expect(flags.map((r) => r.id)).toEqual([
             "newagent.remember",
             "newagent.runtime",
             ...RUNTIME_FLAGS.claude.map((f) => flagRowId("claude", f.id)),
         ]);
-        const codex = settingsSections("codex").find((s) => s.id === "newagent")!.rows;
+        const codex = rowsOf("agents", "codex");
         expect(codex.some((r) => r.title === "--verbose")).toBe(false);
     });
 
-    it("renders a runtime with an empty flag catalog as a section with no flag rows", () => {
-        const rows = settingsSections("pi").find((s) => s.id === "newagent")!.rows;
-        expect(rows.map((r) => r.id)).toEqual(["newagent.remember", "newagent.runtime"]);
+    it("renders a runtime with an empty flag catalog as a card with no flag rows", () => {
+        const flags = settingsSections("pi")
+            .find((s) => s.id === "agents")!
+            .cards.find((c) => c.id === "flags")!.rows;
+        expect(flags.map((r) => r.id)).toEqual(["newagent.remember", "newagent.runtime"]);
     });
 
     it("offers the OpenRouter key where the OpenRouter models are set", () => {
-        const headless = sections().find((s) => s.id === "headless")!;
-        const key = headless.rows.find((r) => r.id === "headless.apikey")!;
+        const key = rowsOf("headless").find((r) => r.id === "headless.apikey")!;
         expect(key.key).toBe("keychain");
         expect(key.scope).toBe("local");
         expect(key.config).toBeUndefined();
@@ -116,31 +111,33 @@ describe("settingsSections", () => {
 
     it("has no embeddings section", () => {
         expect(sections().some((s) => s.id === "embeddings")).toBe(false);
-        const keys = sections().flatMap((s) => s.rows.map((r) => r.key ?? ""));
+        const keys = sections()
+            .flatMap(sectionRows)
+            .map((r) => r.key ?? "");
         expect(keys.some((k) => k.startsWith("jarvis:embed"))).toBe(false);
     });
 
     it("leaves read-only build info without a provenance scope", () => {
-        const about = sections().find((s) => s.id === "about")!;
-        const info = about.rows.filter((r) => r.id !== "about.updatecheck");
+        const about = rowsOf("about");
+        const info = about.filter((r) => r.id !== "about.updatecheck");
         expect(info.every((r) => r.scope === undefined)).toBe(true);
-        expect(about.rows.find((r) => r.id === "about.updatecheck")!.scope).toBe("synced");
+        expect(about.find((r) => r.id === "about.updatecheck")!.scope).toBe("synced");
     });
 
     it("marks exactly the wconfig-backed rows as config rows", () => {
-        const rows = sections().flatMap((s) => s.rows);
+        const rows = sections().flatMap(sectionRows);
         const config = rows.filter((r) => r.config).flatMap(rowKeys);
         expect(config).toEqual([
-            "term:fontfamily",
             "notify:os",
             "notify:toast",
             "notify:reply",
+            "memory:vaultpath",
+            "term:fontfamily",
             "term:fontsize",
             "term:cursor",
             "term:cursorblink",
             "term:scrollback",
             "term:copyonselect",
-            "memory:vaultpath",
             "headless:runtime",
             "headless:openroutercheapmodel",
             "radar:auditruntime",
@@ -149,23 +146,25 @@ describe("settingsSections", () => {
         ]);
     });
 
-    it("lists the Radar audit route in Headless AI, and no mid model", () => {
+    it("lists the Radar audit route in Background AI, and no mid model", () => {
         const headless = sections().find((s) => s.id === "headless")!;
-        expect(headless.rows.map((r) => r.id)).toEqual([
+        expect(sectionRows(headless).map((r) => r.id)).toEqual([
             "headless.runtime",
             "headless.apikey",
             "headless.cheap",
             "headless.radaraudit",
         ]);
-        expect(headless.rows.find((r) => r.id === "headless.radaraudit")!.title).toBe("Radar audit");
-        const prose = [headless.blurb, ...headless.rows.flatMap((r) => [r.title, r.desc])].join(" ").toLowerCase();
+        expect(sectionRows(headless).find((r) => r.id === "headless.radaraudit")!.title).toBe("Radar audit");
+        const prose = [headless.blurb, ...sectionRows(headless).flatMap((r) => [r.title, r.desc])]
+            .join(" ")
+            .toLowerCase();
         for (const gone of ["mid model", "gatekeeper", "decompose"]) {
             expect(prose).not.toContain(gone);
         }
     });
 
     it("finds the Radar audit row by either of its keys", () => {
-        expect(filterSections(sections(), "radar:auditmodel")[0].rows.map((r) => r.id)).toEqual([
+        expect(sectionRows(filterSections(sections(), "radar:auditmodel")[0]).map((r) => r.id)).toEqual([
             "headless.radaraudit",
         ]);
     });
@@ -194,24 +193,117 @@ describe("radarAuditRoute", () => {
     });
 });
 
-describe("settingsSections run route and groups", () => {
+describe("settings pages", () => {
+    it("has six pages in order", () => {
+        expect(sections().map((s) => s.id)).toEqual([
+            "general",
+            "appearance",
+            "terminal",
+            "agents",
+            "headless",
+            "about",
+        ]);
+        expect(sections().map((s) => s.name)).toEqual([
+            "General",
+            "Appearance",
+            "Terminal",
+            "Agents",
+            "Background AI",
+            "About",
+        ]);
+    });
+
+    it("puts each row in the card the spec names", () => {
+        const cards = Object.fromEntries(
+            sections().flatMap((s) => s.cards.map((c) => [`${s.id}/${c.id}`, c.rows.map((r) => r.id)]))
+        );
+        expect(cards["general/startup"]).toEqual(["general.startup", "general.rail"]);
+        expect(cards["general/notifications"]).toEqual([
+            "notifications.os",
+            "notifications.toast",
+            "notifications.reply",
+        ]);
+        expect(cards["general/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
+        expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
+        expect(cards["appearance/colors"]).toEqual([
+            "appearance.accent",
+            "appearance.success",
+            "appearance.warning",
+            "appearance.error",
+        ]);
+        expect(cards["appearance/fonts"]).toEqual(["fonts.sans", "fonts.mono"]);
+        expect(cards["appearance/jarvis"]).toEqual(["appearance.petoutfit"]);
+        expect(cards["terminal/text"]).toEqual(["fonts.term", "terminal.fontsize"]);
+        expect(cards["terminal/cursor"]).toEqual(["terminal.cursor", "terminal.cursorblink"]);
+        expect(cards["terminal/behavior"]).toEqual(["terminal.scrollback", "terminal.copyonselect"]);
+        expect(cards["agents/claudeaccount"]).toEqual([]);
+        expect(cards["agents/runs"]).toEqual(["run.route"]);
+        expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
+        expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
+        expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
+        expect(cards["headless/radar"]).toEqual(["headless.radaraudit"]);
+        expect(cards["about/versions"]).toEqual(["about.app", "about.server", "about.buildtime", "about.platform"]);
+        expect(cards["about/agents"]).toEqual(["about.harnesses", "about.updatecheck"]);
+    });
+
+    it("keeps every row exactly once", () => {
+        const ids = sections()
+            .flatMap(sectionRows)
+            .map((r) => r.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(ids).toHaveLength(34 + RUNTIME_FLAGS.claude.length);
+    });
+
     it("leaves the backend-authoritative run route off the config path", () => {
         const route = sections()
-            .find((s) => s.id === "run")!
-            .rows.find((r) => r.id === "run.route")!;
+            .flatMap(sectionRows)
+            .find((r) => r.id === "run.route")!;
         expect(route.scope).toBe("synced");
         expect(route.config).toBeUndefined();
     });
+});
 
-    it("lists the Claude account section under Agents with no indexed rows", () => {
-        const section = sections().find((s) => s.id === "claudeaccount")!;
-        expect(section.group).toBe("Agents");
-        expect(section.rows).toEqual([]);
+describe("resolveSectionId", () => {
+    it("sends a retired id to the page that holds its rows", () => {
+        expect(resolveSectionId("fonts")).toBe("appearance");
+        expect(resolveSectionId("notifications")).toBe("general");
+        expect(resolveSectionId("memory")).toBe("general");
+        expect(resolveSectionId("newagent")).toBe("agents");
+        expect(resolveSectionId("run")).toBe("agents");
+        expect(resolveSectionId("claudeaccount")).toBe("agents");
     });
 
-    it("puts every section in a known group", () => {
-        const grouped = groupSections(sections()).flatMap((g) => g.sections);
-        expect(grouped).toHaveLength(sections().length);
+    it("passes a current id through", () => {
+        expect(resolveSectionId("headless")).toBe("headless");
+    });
+});
+
+describe("keyPillTitle", () => {
+    it("says what is copied and where the value lives", () => {
+        expect(keyPillTitle({ id: "a", title: "", desc: "", key: "term:scrollback", scope: "synced" })).toBe(
+            "Copy term:scrollback · synced in settings.json"
+        );
+        expect(keyPillTitle({ id: "b", title: "", desc: "", key: "cockpit.font.sans", scope: "local" })).toBe(
+            "Copy cockpit.font.sans · stored on this machine only"
+        );
+        expect(
+            keyPillTitle({
+                id: "c",
+                title: "",
+                desc: "",
+                key: "radar:auditruntime",
+                morekeys: ["radar:auditmodel"],
+                scope: "synced",
+            })
+        ).toBe("Copy radar:auditruntime · radar:auditmodel · synced in settings.json");
+    });
+
+    it("has no pill for a row that stores no setting", () => {
+        expect(keyPillTitle({ id: "d", title: "", desc: "" })).toBeNull();
+        // build info: a provenance "key" but no scope, like about.app
+        expect(
+            keyPillTitle({ id: "about.app", title: "App version", desc: "This shell.", key: "tauri.conf.json" })
+        ).toBeNull();
     });
 });
 
@@ -239,19 +331,25 @@ describe("filterSections", () => {
         expect(filterSections(all, "")).toBe(all);
     });
 
-    it("drops non-matching rows and then empty sections", () => {
+    it("drops non-matching rows, then empty cards, then empty pages", () => {
         const found = filterSections(sections(), "scrollback");
         expect(found.map((s) => s.id)).toEqual(["terminal"]);
-        expect(found[0].rows.map((r) => r.id)).toEqual(["terminal.scrollback"]);
+        expect(found[0].cards.map((c) => c.id)).toEqual(["behavior"]);
+        expect(sectionRows(found[0]).map((r) => r.id)).toEqual(["terminal.scrollback"]);
     });
 
-    it("reaches rows in sections the query does not name", () => {
+    it("reaches rows in pages the query does not name", () => {
         const found = filterSections(sections(), "caret");
-        expect(found.map((s) => s.id)).toEqual(["terminal"]);
-        expect(found[0].rows.map((r) => r.id)).toEqual(["terminal.cursor", "terminal.cursorblink"]);
+        expect(sectionRows(found[0]).map((r) => r.id)).toEqual(["terminal.cursor", "terminal.cursorblink"]);
     });
 
-    it("returns nothing when no row matches", () => {
+    it("keeps a card whose label matches, rows and all, so a row-less card can be found", () => {
+        const found = filterSections(sections(), "claude account");
+        expect(found.map((s) => s.id)).toEqual(["agents"]);
+        expect(found[0].cards.map((c) => c.id)).toEqual(["claudeaccount"]);
+    });
+
+    it("returns nothing when no row or card matches", () => {
         expect(filterSections(sections(), "zzzz")).toEqual([]);
     });
 });
@@ -275,22 +373,14 @@ describe("changedCount", () => {
         id: "terminal",
         name: "Terminal",
         blurb: "",
-        group: "Agents",
-        rows: [
-            { id: "a", title: "A", desc: "", key: "a" },
-            { id: "b", title: "B", desc: "", key: "b" },
+        cards: [
+            { id: "x", label: "X", rows: [{ id: "a", title: "A", desc: "", key: "a" }] },
+            { id: "y", label: "Y", rows: [{ id: "b", title: "B", desc: "", key: "b" }] },
         ],
     };
 
-    it("counts only this section's changed rows", () => {
-        expect(changedCount(section, new Set(["a", "elsewhere"]))).toBe(1);
+    it("counts this page's changed rows across its cards", () => {
+        expect(changedCount(section, new Set(["a", "b", "elsewhere"]))).toBe(2);
         expect(changedCount(section, new Set())).toBe(0);
-    });
-});
-
-describe("countLabel", () => {
-    it("singularizes one", () => {
-        expect(countLabel(1)).toBe("1 setting");
-        expect(countLabel(4)).toBe("4 settings");
     });
 });
