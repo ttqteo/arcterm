@@ -99,6 +99,8 @@ export class TermWrap {
     heldData: Uint8Array[];
     handleResize_debounced: () => void;
     hasResized: boolean;
+    // set while the pane is hidden, so showing it again rebuilds the WebGL glyph atlas (see handleResize)
+    hiddenSinceShown = false;
     sendDataHandler: (data: string) => void;
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
@@ -635,7 +637,15 @@ export class TermWrap {
             this.connectElem.clientWidth === 0 ||
             this.connectElem.clientHeight === 0
         ) {
+            this.hiddenSinceShown = true;
             return;
+        }
+        // every WebGL terminal shares one glyph atlas, which the visible ones grow and repack while this one is
+        // hidden; shown again, it drew from stale glyph positions and its text came out garbled until a window
+        // focus rebuilt the atlas. Showing a pane (choosing its agent) rebuilds it here.
+        if (this.hiddenSinceShown) {
+            this.hiddenSinceShown = false;
+            this.webglAddon?.clearTextureAtlas();
         }
         const oldRows = this.terminal.rows;
         const oldCols = this.terminal.cols;

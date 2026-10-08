@@ -62,6 +62,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- An agent's terminal you had not opened for a while no longer comes back as garbled characters: showing it again
+  redraws its text.
 - An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot
   stays only on a question still unanswered.
 - Choosing an agent that is asking a question in its terminal now moves typing into that terminal, so the arrow keys
