@@ -30,7 +30,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Changed
 
 - An agent's OS notification names its project first, `[arcterm] Finished: <agent>`, and a finished agent's
-  notification shows the first line of its last answer underneath instead of the project.
+  notification shows the first sentence of its last answer underneath (up to 80 characters) instead of the project.
 - The Jarvis pet falls back to the footer when you drop it, with a small bounce, instead of snapping there; and when
   the footer under it changes height (switching to the Cockpit) it hops up or drops down to the new edge rather than
   jumping.
