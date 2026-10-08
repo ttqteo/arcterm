@@ -62,6 +62,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot
+  stays only on a question still unanswered.
 - Choosing an agent that is asking a question in its terminal now moves typing into that terminal, so the arrow keys
   answer its picker instead of moving through the agent list.
 - The live agents in the sidebar's Active section keep their places when you switch to the Cockpit and back, instead

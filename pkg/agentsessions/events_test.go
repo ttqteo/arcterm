@@ -66,6 +66,28 @@ func TestCommitSubject(t *testing.T) {
 	}
 }
 
+// An ask the user answered (its tool_result came back) or talked past (a new prompt) no longer waits,
+// even when nothing countable happens after it.
+func TestExtractClaudeEventsAnsweredAskIsDone(t *testing.T) {
+	ask := `{"type":"assistant","timestamp":"2026-07-10T12:00:08.000Z","message":{"content":[{"type":"tool_use","id":"t2","name":"AskUserQuestion","input":{"questions":[{"question":"Proceed?"}]}}]}}`
+	reply := `{"type":"assistant","timestamp":"2026-07-10T12:00:20.000Z","message":{"content":[{"type":"text","text":"Done."}]}}`
+	cases := map[string]string{
+		"answered": `{"type":"user","timestamp":"2026-07-10T12:00:15.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"Yes"}]}}`,
+		"prompted": `{"type":"user","timestamp":"2026-07-10T12:00:15.000Z","message":{"content":"never mind, do X"}}`,
+	}
+	for name, answer := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := extractClaudeEvents([]string{ask, answer, reply})
+			if got.Status != "done" {
+				t.Fatalf("status = %q, want done", got.Status)
+			}
+			if last := got.Events[len(got.Events)-1]; last.Type != "finished" || last.Text != "Done." {
+				t.Errorf("last event = %+v, want finished \"Done.\"", last)
+			}
+		})
+	}
+}
+
 func TestExtractClaudeEvents(t *testing.T) {
 	lines := []string{
 		`{"type":"user","timestamp":"2026-07-10T12:00:00.000Z","message":{"content":"Fix the coupon coverage gap"}}`,
