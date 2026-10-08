@@ -137,7 +137,7 @@ func (ws *WshServer) ListAllDevServersCommand(ctx context.Context) (*wshrpc.Comm
 - Modify: `frontend/app/cockpit/cockpit-root.tsx` (mount the panel beside `ConsumersPanel`)
 - Modify: `CHANGELOG.md` (one `Added` line in the top `Unreleased` section; stage only that hunk if other sessions have edits there)
 
-**Acceptance:** the `machine-servers` scenario (Task 3) shows each view and interaction this task builds: the chip's plain, no-owner and failed states (its steps 1 and 7), the open popover with its groups (step 2), Other collapsed and expanded (step 3), every badge kind and the no-owner tooltip (step 4), a row's hover actions and the Stop confirm and stop (step 5), the app Stop confirm and Esc (step 6), the backdrop close and the mutual exclusion with Consumers (step 8). `rail-servers` and `consumers-popover` still pass.
+**Acceptance:** the `machine-servers` scenario (Task 3) shows each view and interaction this task builds: the chip with a no-owner count (its step 1), the open popover with its groups (step 2), Other collapsed and expanded (step 3), every badge kind and the no-owner tooltip (step 4), Copy (step 5), a row's hover actions, the Stop confirm and stop, and the plain count chip with no `no owner` (step 6), the app Stop confirm and Esc (step 7), the backdrop close, the chip again closing it and the mutual exclusion with Consumers (step 8), an agent badge and a terminal badge landing on their tab and closing the panel (step 9), Log opening the agent's File tab live and titled (step 10), the failed chip `?` with the dimmed popover (step 11), and the muted icon-only chip with no repo servers (step 12). `rail-servers` and `consumers-popover` still pass.
 
 **Step 1: store** — `machineserversstore.ts`:
 
@@ -219,7 +219,7 @@ carrying the `confirming` state, the 3 s timer, `STOP_BTN` / the confirm style a
 
 **Step 3: chip** — `machineserverschip.tsx`. Reads `machineServersReadingAtom`, the roster (`model.agentsAtom`, `model.terminalsAtom`) and `backgroundTasksByIdAtom`, builds the view with `buildMachineServers`, and renders a button styled like `WorkerCapacityChip` (`text-[11.5px] font-semibold tabular-nums`, `hover:bg-surface-hover`), with `data-machine-servers-chip`, `aria-haspopup="dialog"`, the lucide `Network` icon, then:
 - no reading yet: nothing (like the RAM chip);
-- `failed` with no servers: the icon and `?`, `text-muted`;
+- `failed` (the last poll failed, whatever an earlier one read): the icon and `?`, `text-muted` (spec decision 11); the popover still shows the last rows, dimmed;
 - `repoCount === 0`: the icon alone, `text-muted`;
 - else `{repoCount}` and, when `noOwnerCount > 0`, ` · {noOwnerCount} no owner` in a `text-warning` span.
 
@@ -253,18 +253,28 @@ A row (`data-machine-server={pid}`), laid out like `DevServerItem`: the success 
 **Changes:**
 - Modify: `scripts/cdp/scenarios.mjs` (hand-formatted, 4-space; never run prettier on it)
 
-**Step 1:** add a scenario modelled on `consumers-popover` (search `CONSUMERS_MOCK_KEY`): install a mock RPC client with `api.setMockRpcClient` that answers `listalldevservers` from a fixture (modes `ok`, `fail`, `empty`) and records `stopdevserver` calls without stopping anything, passing every other command through. Fixture rows (`repo`, `owner`, `launchercmdline` set as in `frontend/app/view/agents/machineservers.test.ts`): `:4321 astro` detached in `D:/fx/website` (no owner), `:8100 uvicorn` owned by an agent, `:5174 vite` owned by a terminal, `Code.exe` and `com.docker.backend.exe` as apps with no repo. Use a fixture roster the way `consumers-popover` does if the agent badge must show a name; otherwise assert the badge falls back to the owner's name.
+**Step 1:** add a scenario modelled on `consumers-popover` (search `CONSUMERS_MOCK_KEY`): install a mock RPC client with `api.setMockRpcClient` that answers `listalldevservers` from a fixture (modes `ok`, `fail`, `empty`, switched from the page) and records `stopdevserver` calls without stopping anything, passing every other command through. Once `stopdevserver` is called for a pid, every later `listalldevservers` answer leaves that pid out: the open panel polls every 3 s, and a mock that answered the same fixture again would bring the stopped row back.
+
+Fixture rows (`repo`, `owner`, `launchercmdline` set as in `frontend/app/view/agents/machineservers.test.ts`): `:4321 astro` detached in `D:/fx/website` (no owner), `:8100 uvicorn` in a repo owned by the fixture agent below (`owner {kind: "agent", tabid, blockid, name, harness: "claude"}`, `launchercmdline` containing its background command), `:5174 vite` in a repo owned by the fixture terminal below (`owner {kind: "terminal", tabid, name}`), `Code.exe` and `com.docker.backend.exe` as apps with no repo.
+
+Arrange, the way `rail-servers` does (`arrangeRailServers`, `railServersTranscript`): a temp dir holding an output file and a transcript in which the agent ran the background command with `run_in_background` and left it running, writing to that file; a fixture roster (`TREE_RAIL_FIXTURE`) with that agent (`transcriptPath` the transcript, `blockId` the owner's) and a second entry for the terminal owner's tab; the rail made visible (`RAIL_VISIBLE_KEY`, previous value kept); reload, then `uireveal` the agent so its background tasks load into `backgroundTasksByIdAtom` (that is what gives the uvicorn row its Log). Stub `window.api.openExternal` and `navigator.clipboard` as `rail-servers` does.
+
+A popover's `fixed inset-0` backdrop covers the footer, so while one is open a real mouse click cannot reach either chip. Steps that click a chip with a popover open do it through the DOM (`el.click()`), and say so in the step text; every other click uses the real mouse (`railServersMouse`), since the row actions show only on hover.
 
 Steps, each with a screenshot and an assertion:
-1. the chip reads `3 · 1 no owner` (`[data-machine-servers-chip]` text);
+1. the chip reads `3 · 1 no owner` (`[data-machine-servers-chip]` text), the `1 no owner` part in a `text-warning` span;
 2. click it: `[data-machine-servers-panel]` is open; group titles in order, `website` group first;
 3. Other is collapsed and lists `Code, com.docker.backend`; click it: its two rows show;
-4. each badge kind is present (`[data-machine-server-badge="noowner"|"agent"|"terminal"|"app"]`), and the no-owner badge carries its tooltip;
-5. hover the astro row: Copy and Stop show; click Stop once: it reads `Stop?`; again: a `stopdevserver` call with astro's pid and createms is recorded and the row is gone;
-6. hover the Code row and click Stop once: it reads `Stop Code?`; press Esc: the panel closes and nothing was stopped;
-7. mode `fail`, reopen: `[data-machine-servers-failed]` shows over the last rows; the chip still shows the last count;
-8. a click on the backdrop closes it; opening Consumers from the RAM chip closes it and vice versa;
-9. teardown restores the RPC client.
+4. each badge kind is present (`[data-machine-server-badge="noowner"|"agent"|"terminal"|"app"]`), the agent badge names the fixture agent (`claude · <its name>`), and the no-owner badge carries its tooltip;
+5. hover the astro row and click Copy: the clipboard stub got `PID <pid>` and the row's command line, once (as `rail-servers` step 5);
+6. click Stop once: it reads `Stop?`; again: a `stopdevserver` call with astro's pid and createms is recorded, the row is gone and stays gone after the next poll (wait past 3 s), and the chip reads `2` with no `no owner` span (the plain count);
+7. hover the Code row and click Stop once: it reads `Stop Code?`; press Esc: the panel closes and no `stopdevserver` call names Code's pid;
+8. reopen from the chip (real mouse); a real click on the backdrop outside the popover closes it; reopen; `el.click()` on the RAM chip: Consumers opens and Servers closes; `el.click()` on the Servers chip: Servers opens and Consumers closes; `el.click()` on the Servers chip again: it closes;
+9. reopen; click the uvicorn row's agent badge: the panel closes and the Agent surface focuses the fixture agent (`data-agent-focused`); reopen; click the vite row's terminal badge: the panel closes and focus moves to the terminal's tab;
+10. reopen; hover the uvicorn row and click Log: the panel closes and the fixture agent's rail shows `[data-rail-file]` on the output file, following live (`[data-file-live]` `aria-pressed="true"`), its tab titled `:8100 <the row's label>` (`portsLabel` then the label);
+11. switch the mock to `fail` and wait for a poll: the chip reads `?` in `text-muted`; open it: `[data-machine-servers-failed]` shows above the last rows, which are dimmed (`opacity-60`); close it;
+12. switch to `empty` and wait for a poll: the chip shows its icon alone, no text, in `text-muted`;
+13. teardown restores the RPC client, the page stubs, the rail key and the roster, and removes the temp dir.
 
 **Step 2:** `node --check scripts/cdp/scenarios.mjs` → no syntax error. Don't start a dev app: the run's Final runs `machine-servers`, `rail-servers` (proving Task 2's Stop refactor left the rail alone) and `consumers-popover` against a dev app of its own.
 
