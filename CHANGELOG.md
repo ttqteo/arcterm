@@ -14,6 +14,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - Antigravity CLI (agy) is back as a harness: live status, questions on the card, launch and resume, consults,
   Conversation History, usage, and plan task workers.
+- The Jarvis pet wears Vietnam's colours: a red flag shirt with the yellow star, or the flag in its hand. Settings →
+  Appearance picks the shirt, the flag or neither; on 30/4, 1/5 and 2/9 it wears the shirt even when that is off.
 - The Jarvis pet's popup answers a worker's question in place: a one-question ask (an escalation too) shows its
   options as buttons, and `1`…`9` sends one, the same answer as the Cockpit's answer bar.
 - `g` `w` opens the Jarvis pet's popup (what's waiting on you) from any surface; `Cmd+G` `w` (`Ctrl+G` `w` on Windows)
@@ -23,6 +25,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - When RAM is short, a heavy command an agent runs (a build, the typecheck, a whole test suite, `npm install`) waits
   on a **Low RAM** card that says how much it needs and how much is free: **Run now**, **Wait for RAM** (it starts
   on its own once there is room) or **Don't run**.
+- The terminal shows images: Sixel and iTerm inline images (`imgcat`, `chafa`, image previews in TUIs) draw in place.
 
 ### Changed
 
@@ -41,14 +44,20 @@ Add one line in the same commit as any change a user would notice, under `Added`
   **Open in Code** button.
 - arcterm reopens on the surface you left it on. Settings → Startup surface has **Last opened** as its new default,
   and a surface picked there now actually opens at launch.
-- The agent rail's **Token usage** and **Details** fold into its status line at the top: click the line (context and
-  spend) to open the session's total tokens with their bar, its project, branch and model, and the breakdown. The spend
-  shows once.
+- The agent rail's **Token usage** and **Details** become one block at its top: the context and spend, the session's
+  total tokens before their bar, then project · branch · model on one line, with Compact and Clear beside a
+  **Breakdown** toggle, the one part that opens and closes. The spend shows once, and the context tokens drop their
+  "ctx" (the tooltip names the context window).
+- A run's goal heading (the Jarvis run sheet and the Agent surface's run panel) no longer grows and shrinks on a click.
+  A goal that is cut off or runs past one paragraph gets a **Show more** link that reveals the rest below the heading,
+  at the same size; a goal that already shows in full has no toggle.
 - The lead and reviewer route pickers list only the harnesses that can lead a run (Claude and Pi). A run no longer
   starts with a lead that cannot lead because your shared route preference names one, such as Antigravity.
 
 ### Fixed
 
+- On macOS a click on an agent's notification opens that agent, as on Windows, instead of only bringing arcterm to the
+  front on whichever agent was showing.
 - A newly launched agent's prompt takes your typing at once, without a click into its terminal.
 - On macOS the `Option` shortcuts work: `Option+Z` word wrap, `Option+T` file tree and `Option+E` editor on Code.
 - On macOS `Cmd`+click peeks a link, and holding `Cmd` underlines what can be peeked. `Ctrl`+click, the Mac's right
@@ -56,6 +65,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The Jarvis pet no longer stays hidden under a **Needs you** toast: it no longer repeats the toast's question in its
   own bubble (it keeps the `?` mark), and while it speaks it walks out from under a toast or a terminal instead of
   standing still there.
+- A subagent's **Model** in the agent rail names the model it runs on again, instead of always showing `—`.
+- Most emoji in the terminal (🚀, ✅, ✨) take the two cells a TUI expects, so a line with one no longer pushes the
+  rest of it, or the cursor, a column out of place.
 
 ## 0.15.4 — 2026-10-07
 

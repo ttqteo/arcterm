@@ -12,6 +12,10 @@ export type PetPose = "walk1" | "walk2" | "stand" | "sit" | "sleep" | "tired" | 
 
 export type PetMark = "gate" | "escalation" | "blocked" | "z" | "drop" | "unread";
 
+// What it wears in Vietnam's colours, chosen in Settings (petoutfit.ts): the flag shirt over a pose, or the flag in
+// its hand behind one.
+export type PetOutfit = "vn-shirt" | "vn-flag";
+
 export const PET_GRID = 16;
 export const PET_CELL_PX = 3;
 export const PET_PX = PET_GRID * PET_CELL_PX;
@@ -26,6 +30,8 @@ export const PET_TOKENS = {
     m: "--color-muted", // the sleep z
     r: "--color-error", // the escalation !
     y: "--color-asking", // the blocked-worker ?
+    R: "--color-flag-red", // the flag shirt
+    Y: "--color-flag-star", // the shirt's star
 } as const satisfies Record<string, `--color-${string}`>;
 
 type PetCode = keyof typeof PET_TOKENS;
@@ -200,6 +206,77 @@ export const MARKS: Record<PetMark, { x: number; y: number; rows: readonly strin
     unread: { x: 1, y: 5, rows: ["bb", "bb"] },
 };
 
+const isBody = (code: string | undefined) => code === "b" || code === "l";
+
+// The shirt's star: a point up, the arms across, two legs.
+const FLAG_STAR = ["..Y..", "..Y..", "YYYYY", ".YYY.", ".Y.Y."];
+
+// The flag shirt over a pose. Below today's face the body is three rows, too short for a star that reads as one, so
+// the face (eyes, and the mouth while speaking) moves up two rows and every body cell below it becomes the shirt,
+// with the star's point centred on its first row. Only recolours: the outline and the sprout stay as they are, so
+// the marks still sit clear of the body and the creature still stands on the ledge.
+function dressInFlag(rows: readonly string[]): string[] {
+    const g = rows.map((row) => [...row]);
+    const face: [number, number][] = [];
+    rows.forEach((row, y) => [...row].forEach((code, x) => code === "k" && face.push([x, y])));
+    for (const [x, y] of face) {
+        g[y][x] = "b";
+    }
+    for (const [x, y] of face) {
+        if (isBody(g[y - 2]?.[x])) {
+            g[y - 2][x] = "k";
+        }
+    }
+    const top = Math.max(...face.map(([, y]) => y - 2)) + 1;
+    for (let y = top; y < PET_GRID; y++) {
+        for (let x = 0; x < PET_GRID; x++) {
+            if (isBody(g[y][x])) {
+                g[y][x] = "R";
+            }
+        }
+    }
+    const shirt = g[top].flatMap((code, x) => (code === "R" ? [x] : []));
+    const x0 = Math.floor((shirt[0] + shirt[shirt.length - 1]) / 2) - Math.floor(FLAG_STAR[0].length / 2);
+    FLAG_STAR.forEach((row, dy) =>
+        [...row].forEach((code, dx) => {
+            if (code === "Y" && g[top + dy]?.[x0 + dx] === "R") {
+                g[top + dy][x0 + dx] = "Y";
+            }
+        })
+    );
+    return g.map((row) => row.join(""));
+}
+
+const DRESSED = {} as Record<PetPose, readonly string[]>;
+for (const pose of Object.keys(POSES) as PetPose[]) {
+    DRESSED[pose] = dressInFlag(POSES[pose]);
+}
+
+/** A pose's grid in an outfit: dressed in the shirt, else the pose itself (the flag is held, not worn). */
+export function outfitRows(pose: PetPose, outfit: PetOutfit | null): readonly string[] {
+    return outfit === "vn-shirt" ? DRESSED[pose] : POSES[pose];
+}
+
+// How many rows the flag rises above the sprite's top: its cloth flies over the head, where the grid has no room for
+// a star that reads as one. The renderer lets the svg overflow upward to draw it.
+export const PET_FLAG_RISE = 4;
+
+// The 9×7 cloth: the full star inside a one-cell red border.
+const FLAG_CLOTH = ["RRRRRRRRR", "RRRRYRRRR", "RRRRYRRRR", "RRYYYYYRR", "RRRYYYRRR", "RRRYRYRRR", "RRRRRRRRR"];
+
+// The flag held at its left: the pole in column 0 from the cloth's top down to the ledge, the cloth beside it. Drawn
+// behind the body and never mirrored, so it stays on the left whichever way the creature walks, clear of the marks
+// stamped at the right; where the body crosses it (the dangling sprout), the body is on top.
+const FLAG_CELLS: PetCell[] = [];
+for (let y = -PET_FLAG_RISE; y < PET_GRID; y++) {
+    FLAG_CELLS.push({ x: 0, y, token: "--color-muted" });
+}
+FLAG_CLOTH.forEach((row, dy) =>
+    [...row].forEach((code, dx) =>
+        FLAG_CELLS.push({ x: 1 + dx, y: dy - PET_FLAG_RISE, token: PET_TOKENS[code as PetCode] })
+    )
+);
+
 export interface PetCell {
     x: number;
     y: number;
@@ -222,15 +299,22 @@ function stamp(rows: readonly string[], x0: number, y0: number, out: PetCell[]):
  *
  * The pose's cells and the marks' cells come back apart because the renderer mirrors only the body when the
  * creature walks left: a `?` drawn inside the mirrored group would read backwards. Marks are a set — naming
- * one twice draws it once — so there is no way to stack them into a tally.
+ * one twice draws it once — so there is no way to stack them into a tally. `back` is drawn under the body and,
+ * like the marks, never mirrored: the flag in hand, whose cloth rises above row 0 (PET_FLAG_RISE).
  */
-export function spriteFor(pose: PetPose, marks: readonly PetMark[]): { body: PetCell[]; overlay: PetCell[] } {
+export function spriteFor(
+    pose: PetPose,
+    marks: readonly PetMark[],
+    outfit: PetOutfit | null = null
+): { back: PetCell[]; body: PetCell[]; overlay: PetCell[] } {
+    // drawn first, under the body: the flag in hand
+    const back = outfit === "vn-flag" ? [...FLAG_CELLS] : [];
     const body: PetCell[] = [];
-    stamp(POSES[pose], 0, 0, body);
+    stamp(outfitRows(pose, outfit), 0, 0, body);
     const overlay: PetCell[] = [];
     for (const mark of new Set(marks)) {
         const { x, y, rows } = MARKS[mark];
         stamp(rows, x, y, overlay);
     }
-    return { body, overlay };
+    return { back, body, overlay };
 }

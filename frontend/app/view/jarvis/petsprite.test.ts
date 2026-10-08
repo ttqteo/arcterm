@@ -5,12 +5,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
     MARKS,
+    outfitRows,
     PET_CELL_PX,
+    PET_FLAG_RISE,
     PET_GRID,
     PET_PX,
     PET_TOKENS,
     POSES,
     spriteFor,
+    type PetCell,
     type PetMark,
     type PetPose,
 } from "./petsprite";
@@ -89,7 +92,7 @@ describe("tokens", () => {
         expect(THEME_BLOCK).toMatch(new RegExp(`(?:^|[\\s;{])${token}\\s*:`, "m"));
     });
 
-    it("maps exactly the eight codes of the spec", () => {
+    it("maps exactly the eight codes of the spec, and the flag's two", () => {
         expect(PET_TOKENS).toEqual({
             b: "--color-accent",
             d: "--color-accent-600",
@@ -99,6 +102,8 @@ describe("tokens", () => {
             m: "--color-muted",
             r: "--color-error",
             y: "--color-asking",
+            R: "--color-flag-red",
+            Y: "--color-flag-star",
         });
     });
 });
@@ -171,5 +176,143 @@ describe("spriteFor", () => {
         // naming a mark twice cannot stack it into a tally.
         expect(spriteFor.length).toBe(2);
         expect(spriteFor("stand", ["blocked", "blocked", "blocked"])).toEqual(spriteFor("stand", ["blocked"]));
+    });
+});
+
+// Drawn cells of a grid by code, as "x,y".
+function cellsOf(rows: readonly string[], codes: string): string[] {
+    const out: string[] = [];
+    rows.forEach((row, y) => {
+        [...row].forEach((code, x) => {
+            if (codes.includes(code)) {
+                out.push(`${x},${y}`);
+            }
+        });
+    });
+    return out;
+}
+
+// the 5×5 star: a point up, the arms across, two legs
+const STAR_CELLS = 12;
+
+describe("the Vietnam flag shirt", () => {
+    const dressed = (pose: PetPose) => outfitRows(pose, "vn-shirt");
+
+    it.each(POSE_NAMES)("keeps the outline of %s: the same cells drawn, only recoloured", (pose) => {
+        expect(drawnCells(dressed(pose))).toEqual(drawnCells(POSES[pose]));
+    });
+
+    // the shirt is five rows tall only if the face sits two rows higher than it does bare
+    it.each(POSE_NAMES)("keeps every eye and mouth cell of %s, two rows higher", (pose) => {
+        const raised = cellsOf(POSES[pose], "k").map((c) => {
+            const [x, y] = c.split(",").map(Number);
+            return `${x},${y - 2}`;
+        });
+        expect(cellsOf(dressed(pose), "k")).toEqual(raised);
+    });
+
+    it.each(POSE_NAMES)("dresses every body cell of %s below its face, and none above", (pose) => {
+        const rows = dressed(pose);
+        const faceRow = Math.max(...cellsOf(rows, "k").map((c) => Number(c.split(",")[1])));
+        rows.forEach((row, y) => {
+            const shirt = cellsOf([row], "RY").length;
+            const bare = cellsOf([row], "bl").length;
+            if (y > faceRow) {
+                expect(bare, `row ${y}`).toBe(0);
+            } else {
+                expect(shirt, `row ${y}`).toBe(0);
+            }
+        });
+    });
+
+    it.each(POSE_NAMES.filter((p) => p !== "speak"))("draws the whole star on %s", (pose) => {
+        expect(cellsOf(dressed(pose), "Y")).toHaveLength(STAR_CELLS);
+    });
+
+    // speaking, the mouth takes a row, so the shirt is four rows and the star loses its legs
+    it("draws the star without its legs while speaking", () => {
+        expect(cellsOf(dressed("speak"), "Y")).toHaveLength(STAR_CELLS - 2);
+    });
+
+    it("centres the star's point on the shirt's first row, standing", () => {
+        const rows = dressed("stand");
+        expect(rows[10]).toBe("..RRRRRYRRRRRR..");
+        expect(rows[12]).toBe("..RRRYYYYYRRRR..");
+        expect(rows[14]).toBe("...RRRYRYRRRR...");
+    });
+
+    it("leaves a pose bare without the shirt, the flag included", () => {
+        for (const pose of POSE_NAMES) {
+            expect(outfitRows(pose, null)).toBe(POSES[pose]);
+            expect(outfitRows(pose, "vn-flag")).toBe(POSES[pose]);
+        }
+    });
+
+    it("fills the shirt with the flag tokens through spriteFor, and leaves the marks alone", () => {
+        const bare = spriteFor("stand", ["blocked"]);
+        const shirt = spriteFor("stand", ["blocked"], "vn-shirt");
+        expect(shirt.overlay).toEqual(bare.overlay);
+        expect(shirt.back).toEqual([]);
+        const tokens = new Set(shirt.body.map((c) => c.token));
+        expect(tokens.has("--color-flag-red")).toBe(true);
+        expect(tokens.has("--color-flag-star")).toBe(true);
+        expect(shirt.body).toHaveLength(bare.body.length);
+    });
+});
+
+describe("the Vietnam flag", () => {
+    const flagOf = (pose: PetPose) => spriteFor(pose, [], "vn-flag").back;
+    const at = (cells: PetCell[], x: number, y: number) => cells.find((c) => c.x === x && c.y === y)?.token;
+
+    // the pole in column 0 from the cloth's top to the ledge, the 9×7 cloth beside it, rising above the sprite
+    it("is a pole planted on the ledge and a 9×7 cloth that rises above the sprite", () => {
+        const flag = flagOf("stand");
+        for (let y = -PET_FLAG_RISE; y < PET_GRID; y++) {
+            expect(at(flag, 0, y), `pole at row ${y}`).toBe("--color-muted");
+        }
+        const cloth = flag.filter((c) => c.x > 0);
+        expect(cloth).toHaveLength(9 * 7);
+        expect(Math.min(...cloth.map((c) => c.y))).toBe(-PET_FLAG_RISE);
+        expect(Math.min(...cloth.map((c) => c.x))).toBe(1);
+        expect(Math.max(...cloth.map((c) => c.x))).toBe(9);
+    });
+
+    // a point up, the arms across, two legs, inside a one-cell red border
+    it("carries the full 5×5 star inside a red border", () => {
+        const flag = flagOf("stand");
+        const star = flag.filter((c) => c.token === "--color-flag-star");
+        expect(star).toHaveLength(12);
+        const xs = star.map((c) => c.x);
+        const ys = star.map((c) => c.y);
+        expect([Math.min(...xs), Math.max(...xs)]).toEqual([3, 7]);
+        expect([Math.min(...ys), Math.max(...ys)]).toEqual([1 - PET_FLAG_RISE, 5 - PET_FLAG_RISE]);
+        for (const c of flag.filter((c) => c.x === 1 || c.x === 9 || c.y === -PET_FLAG_RISE || c.y === 2)) {
+            if (c.x > 0) {
+                expect(c.token, `border at ${c.x},${c.y}`).toBe("--color-flag-red");
+            }
+        }
+    });
+
+    // drawn behind the body, which the renderer mirrors; the flag is not, so it stays on the left both ways
+    it.each(POSE_NAMES)("is the same flag behind %s, and leaves its body and marks alone", (pose) => {
+        expect(flagOf(pose)).toEqual(flagOf("stand"));
+        const bare = spriteFor(pose, ["unread"]);
+        const flagged = spriteFor(pose, ["unread"], "vn-flag");
+        expect(flagged.body).toEqual(bare.body);
+        expect(flagged.overlay).toEqual(bare.overlay);
+    });
+
+    it.each(MARK_NAMES)("never lands under the %s mark", (mark) => {
+        const flag = new Set(flagOf("stand").map((c) => `${c.x},${c.y}`));
+        for (const cell of spriteFor("stand", [mark]).overlay) {
+            expect(flag.has(`${cell.x},${cell.y}`), `${mark} at ${cell.x},${cell.y}`).toBe(false);
+        }
+    });
+
+    it("is not there without it, nor with the shirt", () => {
+        for (const pose of POSE_NAMES) {
+            expect(spriteFor(pose, []).back).toEqual([]);
+            expect(spriteFor(pose, [], "vn-shirt").back).toEqual([]);
+        }
     });
 });

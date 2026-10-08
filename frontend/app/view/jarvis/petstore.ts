@@ -12,7 +12,9 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { atom, type PrimitiveAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import type { PetActState } from "./petacts";
+import { DEFAULT_PET_OUTFIT, type PetOutfitChoice } from "./petoutfit";
 import type { PetEvent, PetWatermark } from "./petvoice";
 
 const HOME_KEY = "wave:pet.home";
@@ -65,6 +67,18 @@ export function setPetHome(fraction: number): void {
         // quota/disabled — the in-memory atom still holds it for this session
     }
 }
+
+// What the pet wears in Vietnam's colours (Settings → Appearance), persisted the way railstore.ts keeps the details
+// rail; getOnInit so the first frame already wears what was chosen. Read through petOutfitChoice, which turns a value
+// that is not one of the choices into the default, and a flag day dresses it whatever this says (petoutfit.ts).
+export const petOutfitChoiceAtom = atomWithStorage<PetOutfitChoice>(
+    "jarvis.pet.outfit",
+    DEFAULT_PET_OUTFIT,
+    undefined,
+    {
+        getOnInit: true,
+    }
+) as PrimitiveAtom<PetOutfitChoice>;
 
 // Persisted, because "push once per event" has to survive a relaunch: an unpersisted watermark would
 // make every launch re-say whatever the last session already said.

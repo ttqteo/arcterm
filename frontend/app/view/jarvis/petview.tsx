@@ -32,12 +32,14 @@ import { PetBubble } from "./petbubble";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
 import { landing, ledgeShift, type LedgeAt } from "./petfall";
 import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner } from "./petledge";
+import { petOutfit, petOutfitChoice } from "./petoutfit";
 import { PetPeek } from "./petpeek";
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
 import {
     petBubbleAtom,
     petEventsAtom,
     petHomeAtom,
+    petOutfitChoiceAtom,
     petPeekOpenAtom,
     petUnreadAtom,
     petWatermarkAtom,
@@ -415,7 +417,9 @@ function PetSprite({
     );
 
     const marks: PetMark[] = frame == null ? [] : unread ? [...frame.step.marks, "unread"] : frame.step.marks;
-    const sprite = frame == null ? null : spriteFor(frame.step.pose, marks);
+    // read per frame, so a flag day dresses it on the first step past midnight
+    const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
+    const sprite = frame == null ? null : spriteFor(frame.step.pose, marks, outfit);
 
     // Dev-only: the CDP harness asserts on this (sprout spec §4, "The DEV contract"). Folded out of production
     // builds — import.meta.env.DEV is statically false there.
@@ -430,7 +434,7 @@ function PetSprite({
             x: frame.step.x,
             ledge: frame.ledge,
             avoid: frame.avoid,
-            tokens: [...new Set([...sprite.body, ...sprite.overlay].map((c) => `var(${c.token})`))],
+            tokens: [...new Set([...sprite.back, ...sprite.body, ...sprite.overlay].map((c) => `var(${c.token})`))],
             force,
         };
     });
@@ -548,9 +552,13 @@ function PetSprite({
                 viewBox={`0 0 ${PET_PX} ${PET_PX}`}
                 shapeRendering="crispEdges"
                 aria-hidden="true"
+                // the flag in hand rises above the sprite's box (PET_FLAG_RISE), so the svg draws past its top
+                overflow="visible"
                 style={{ y: ledgeY }}
                 className="block"
             >
+                {/* under the body and never mirrored, like the marks: the flag stays at its left either way */}
+                {sprite.back.map(cellRect)}
                 {/* only the body turns to face left; marks drawn inside would read backwards */}
                 <g transform={step.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>{sprite.body.map(cellRect)}</g>
                 {sprite.overlay.map(cellRect)}

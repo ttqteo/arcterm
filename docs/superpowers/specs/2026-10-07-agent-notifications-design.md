@@ -34,7 +34,8 @@ the macOS Dock badge is the one native signal (skipped on Windows). Two smaller 
   toast never say the same thing (`cockpit/notificationstore.ts` header).
 - **Nothing fires for an agent you are looking at** (in `viewingIds` with the window focused).
 - **Native path:** `tauri-winrt-notification` on Windows, because its `on_activated` lets a click focus the window and
-  open the target; `tauri-plugin-notification` on macOS, show only (a click just raises the app). Rejected:
+  open the target; `mac-notification-sys` on macOS, waiting on each banner for its click (2026-10-08: the first cut
+  used `tauri-plugin-notification`, whose click only raised the app on whatever agent was showing). Rejected:
   `tauri-plugin-notification` everywhere (no desktop click event, so a click does nothing on Windows) and the WebView2
   `Notification` API (denied by default, attributed to Edge).
 
@@ -88,7 +89,10 @@ Event_Notify ─────────────┘                │
     `Toast::POWERSHELL_APP_ID` in a dev build, where the id is not registered (the toast then reads "Windows
     PowerShell"). `loud` picks the default sound or silence, and calls `request_user_attention(Informational)` on the
     main window. `on_activated` shows and focuses the window and emits `os-notify-activated` with the target.
-  - macOS: `tauri-plugin-notification`, show only; `loud` picks the sound.
+  - macOS: `mac-notification-sys` with `wait_for_click`, on a thread per banner, since `send()` blocks until the banner
+    is clicked or leaves Notification Center; a click focuses the window and emits `os-notify-activated` as on
+    Windows. Past 16 uncleared banners a new one does not wait, and its click only raises the app. A dev build posts
+    as Terminal's bundle id. `loud` picks the sound.
   - Errors are logged as `[tauri]` lines and never surface in the UI.
 - **`agentVMFromInput`**: `waiting` maps to `asking`, so a permission prompt shows amber and counts as a request.
 - **`unreadagents.ts` / `unreadagentsstore`**: the viewing set is empty while the window is not focused, so a turn

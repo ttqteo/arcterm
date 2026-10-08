@@ -242,7 +242,7 @@ func firstPromptOf(line string) string {
 	return ""
 }
 
-// terminalTailLines is how far back lastRecordTerminal looks: past the hook attachments claude appends after a
+// terminalTailLines is how far back subagentTail reads: past the hook attachments claude appends after a
 // child's last message, to the tool_use a final tool_result answers.
 const terminalTailLines = 40
 
@@ -260,13 +260,52 @@ type transcriptBlock struct {
 
 type transcriptMessage struct {
 	Type   string
+	Model  string // the model an assistant turn names
 	Blocks []transcriptBlock
 	Text   string // a message whose content is a bare string
 }
 
+// subagentTail returns the user/assistant messages among the last terminalTailLines records of a subagent's
+// transcript; records of any other type, such as hook attachments, are skipped. An unreadable file has none.
+func subagentTail(path string) []transcriptMessage {
+	tail, err := readTranscriptTail(path, terminalTailLines)
+	if err != nil {
+		return nil
+	}
+	var msgs []transcriptMessage
+	for _, line := range tail {
+		var rec struct {
+			Type    string `json:"type"`
+			Message struct {
+				Model   string          `json:"model"`
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(line), &rec) != nil || (rec.Type != "user" && rec.Type != "assistant") {
+			continue
+		}
+		m := transcriptMessage{Type: rec.Type, Model: rec.Message.Model}
+		if json.Unmarshal(rec.Message.Content, &m.Blocks) != nil {
+			_ = json.Unmarshal(rec.Message.Content, &m.Text) // content is either blocks or a string
+		}
+		msgs = append(msgs, m)
+	}
+	return msgs
+}
+
+// latestModel names the model of the latest assistant turn in msgs. claude's "<synthetic>" turns (an interrupt, an
+// API error) stand in for a model rather than name one, so they are passed over.
+func latestModel(msgs []transcriptMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Type == "assistant" && msgs[i].Model != "" && msgs[i].Model != "<synthetic>" {
+			return msgs[i].Model
+		}
+	}
+	return ""
+}
+
 // lastRecordTerminal reports whether a subagent's transcript says the child has finished, from its last
-// user/assistant message (records of any other type, such as hook attachments, are skipped). A child has
-// finished when that message is:
+// user/assistant message in msgs (subagentTail). A child has finished when that message is:
 //   - an assistant turn with text and no tool_use (end_turn);
 //   - the result of its SubagentHandback (a background child delivered its report);
 //   - the user's interrupt, which stops the child for good.
@@ -274,28 +313,7 @@ type transcriptMessage struct {
 // A pending tool_use or any other tool_result is a live child. On 2026-10-06, 182 of 305 real subagent files
 // ended with a handback and 33 with hook attachments after the text turn; reading only the last record read
 // every one of them as live.
-func lastRecordTerminal(path string) bool {
-	tail, err := readTranscriptTail(path, terminalTailLines)
-	if err != nil {
-		return false
-	}
-	var msgs []transcriptMessage
-	for _, line := range tail {
-		var rec struct {
-			Type    string `json:"type"`
-			Message struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if json.Unmarshal([]byte(line), &rec) != nil || (rec.Type != "user" && rec.Type != "assistant") {
-			continue
-		}
-		m := transcriptMessage{Type: rec.Type}
-		if json.Unmarshal(rec.Message.Content, &m.Blocks) != nil {
-			_ = json.Unmarshal(rec.Message.Content, &m.Text) // content is either blocks or a string
-		}
-		msgs = append(msgs, m)
-	}
+func lastRecordTerminal(msgs []transcriptMessage) bool {
 	if len(msgs) == 0 {
 		return false
 	}
@@ -355,11 +373,13 @@ func listSubagents(parentPath string) ([]wshrpc.SubagentFileInfo, error) {
 		if err != nil || len(head) == 0 {
 			continue
 		}
+		tail := subagentTail(path)
 		info := wshrpc.SubagentFileInfo{
 			AgentId:        strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), "agent-"), ".jsonl"),
 			TranscriptPath: path,
 			FirstPrompt:    firstPromptOf(head[0]),
-			Done:           lastRecordTerminal(path),
+			Done:           lastRecordTerminal(tail),
+			Model:          latestModel(tail),
 		}
 		if st, statErr := os.Stat(path); statErr == nil {
 			info.StartedAtMs = st.ModTime().UnixMilli()

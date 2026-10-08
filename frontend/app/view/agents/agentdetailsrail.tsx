@@ -10,7 +10,16 @@ import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowLeft, ArrowUpRight, ChevronLeft, FileText, LayoutList, LayoutTemplate } from "lucide-react";
+import {
+    ArrowLeft,
+    ArrowUpRight,
+    ChevronLeft,
+    FileText,
+    FolderTree,
+    GitBranch,
+    LayoutList,
+    LayoutTemplate,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
@@ -152,8 +161,40 @@ function ContextRing({ pct, level }: { pct: number; level: "ok" | "warn" | "hot"
     );
 }
 
+// FactsLine is the session's facts on one line, project · branch · model, with no labels: the branch carries its icon
+// and each value's tooltip names it. The project and branch truncate first; the model keeps its width up to 45%, which
+// a session that used several models can reach.
+function FactsLine({ project, branch, model }: { project: string; branch?: string; model: string }) {
+    const dot = <span className="flex-none text-ink-faint">·</span>;
+    return (
+        <div data-rail-facts className="flex min-w-0 items-center gap-[6px] text-[11.5px] font-medium text-secondary">
+            <span title={project ? `Project ${project}` : undefined} className="min-w-0 truncate">
+                {project || "—"}
+            </span>
+            {branch ? (
+                <>
+                    {dot}
+                    <span title={`Branch ${branch}`} className="flex min-w-0 items-center gap-[3px]">
+                        <GitBranch size={11} aria-hidden className="flex-none text-muted" />
+                        <span className="truncate">{branch}</span>
+                    </span>
+                </>
+            ) : null}
+            {model ? (
+                <>
+                    {dot}
+                    <span title={`Model ${model}`} className="max-w-[45%] flex-none truncate">
+                        {model}
+                    </span>
+                </>
+            ) : null}
+        </div>
+    );
+}
+
 // StatusLine is the session block's head row: the context window (ring, percent and the tokens in it) on the left, the
-// session's spend on the right. The context's note is its tooltip, the spend's caption and total tokens its own.
+// session's spend on the right. The tokens carry no "ctx": the tooltip names the context window, with its note. The
+// spend's caption and total tokens are its own tooltip.
 function StatusLine({ ctx, spend }: { ctx?: { pct: number; max?: number }; spend?: { text: string; title: string } }) {
     const level = ctx ? contextLevel(ctx.pct, ctx.max) : "ok";
     const tokens = ctx ? contextTokens(ctx.pct, ctx.max) : undefined;
@@ -162,16 +203,14 @@ function StatusLine({ ctx, spend }: { ctx?: { pct: number; max?: number }; spend
         <span data-rail-status className="flex min-w-0 flex-1 items-center gap-[8px]">
             {ctx ? (
                 <span
-                    title={`Context window ${Math.round(ctx.pct)}%${note ? ` · ${note}` : ""}`}
+                    title={`Context window ${Math.round(ctx.pct)}%${tokens ? ` (${tokens} tokens)` : ""}${note ? ` · ${note}` : ""}`}
                     className="flex min-w-0 items-center gap-[7px]"
                 >
                     <ContextRing pct={ctx.pct} level={level} />
                     <span className={cn("text-[12px] font-semibold tabular-nums", GAUGE_TEXT[level])}>
                         {Math.round(ctx.pct)}%
                     </span>
-                    {tokens ? (
-                        <span className="truncate text-[11px] tabular-nums text-muted">· {tokens} ctx</span>
-                    ) : null}
+                    {tokens ? <span className="truncate text-[11px] tabular-nums text-muted">· {tokens}</span> : null}
                 </span>
             ) : spend == null ? (
                 <span className="text-[12px] font-medium text-muted">Session</span>
@@ -186,10 +225,10 @@ function StatusLine({ ctx, spend }: { ctx?: { pct: number; max?: number }; spend
     );
 }
 
-// Compact and Clear, under the status line: they shrink what every turn re-reads
+// Compact and Clear, on the session block's Breakdown row: they shrink what every turn re-reads
 function ResetActions({ onReset }: { onReset: (cmd: string) => void }) {
     return (
-        <div className="mt-[3px] flex gap-[4px] pl-[17px]">
+        <div className="flex gap-[4px]">
             <button
                 type="button"
                 onClick={() => onReset("/compact\r")}
@@ -589,16 +628,18 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         </>
                     ) : (
                         <>
-                            <DetailLine label="Project">{project || "—"}</DetailLine>
-                            <DetailLine label="Branch" title={branch || undefined}>
-                                <span>{branch || "—"}</span>
-                            </DetailLine>
+                            <FactsLine project={project} branch={branch} model={modelLabel} />
                             {worktree ? (
-                                <DetailLine label="Worktree" title={railState?.cwd ?? undefined} clipStart>
-                                    <span>{worktree}</span>
-                                </DetailLine>
+                                <span
+                                    title={`Worktree ${railState?.cwd ?? worktree}`}
+                                    className="flex min-w-0 items-center gap-[4px] text-[11.5px] font-medium text-secondary"
+                                >
+                                    <FolderTree size={11} aria-hidden className="flex-none text-muted" />
+                                    <span dir="rtl" className="min-w-0 truncate text-left">
+                                        <bdi dir="ltr">{worktree}</bdi>
+                                    </span>
+                                </span>
                             ) : null}
-                            {modelLabel ? <DetailLine label="Model">{modelLabel}</DetailLine> : null}
                         </>
                     )}
                     {tools.length > 0 ? (

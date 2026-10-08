@@ -304,9 +304,6 @@ fn main() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init());
-    // macOS shows notify_os toasts through the plugin; Windows calls WinRT directly (notify.rs)
-    #[cfg(target_os = "macos")]
-    let builder = builder.plugin(tauri_plugin_notification::init());
     builder
         .manage(InitState::default())
         .manage(WavesrvChild(Mutex::new(None)))

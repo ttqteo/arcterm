@@ -4,6 +4,7 @@
 // Pure: join on-disk subagent files (SubagentFileInfo, from GetSubagentsCommand) to the parent's Task
 // spawns (SubagentSpawn) by prompt-match. type + state come from the matched spawn; an unmatched file
 // (spawn not yet in the tailed parent window, or a fallback) stays "working" with a prompt-derived label.
+// The model comes from the file itself (its latest assistant turn), matched or not.
 // No React, no runtime imports. SubagentFileInfo is a generated global type (gotypes.d.ts).
 //
 // Match strategy (Phase 0 spike, 2026-07-09): normalized-exact prompt equality. 582/606 (96%) of real
@@ -51,6 +52,12 @@ export function correlateSubagents(spawns: SubagentSpawn[], files: SubagentFileI
         // shift() consumes the match so parallel same-prompt spawns pair 1:1 with files in order
         const spawn = byPrompt.get(normPrompt(f.firstprompt))?.shift();
         const type = spawn?.subagentType || firstLineLabel(f.firstprompt) || "subagent";
-        return { id: f.agentid, type, state: resolveState(spawn, f.done), transcriptPath: f.transcriptpath };
+        return {
+            id: f.agentid,
+            type,
+            state: resolveState(spawn, f.done),
+            model: f.model || undefined,
+            transcriptPath: f.transcriptpath,
+        };
     });
 }
