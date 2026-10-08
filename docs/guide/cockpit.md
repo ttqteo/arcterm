@@ -331,7 +331,8 @@ Nếu chữ bạn gõ không trùng với thứ nào, palette hiểu đó là m�
 
 arcterm báo khi một agent cần bạn hoặc vừa xong lượt, ở bất kỳ surface nào:
 
-- **Toast** ở góc phải dưới khi arcterm đang ở phía trước. Toast có biểu tượng loại (hỏi / xong), nhãn **Needs you** hoặc **Finished** (với việc chờ quyết định như cổng duyệt hay task bị chặn là **Decision**; với tin do agent gửi bằng `wsh notify` là **Message**), tên agent hoặc mục, project và logo harness. Bấm vào toast để mở thứ nó nói tới; `×` đóng mà không mở. Toast nằm yên khi con trỏ đang ở trên nó; toast thường biến mất sau 6 giây, toast cần bạn sau 15 giây. Không có toast cho agent bạn đang nhìn.
+- **Bong bóng của con vật Jarvis** khi arcterm đang ở phía trước và có việc cần bạn: câu hỏi của agent (dạng `<tên agent>: <câu hỏi>`) hoặc việc chờ quyết định như cổng duyệt hay task bị chặn. Bong bóng đứng 15 giây, và đứng yên khi con trỏ ở trên nó; bấm vào để mở popup và trả lời ngay tại đó. Tin do agent gửi bằng `wsh notify` cũng hiện ở đây.
+- **Toast** ở góc phải dưới khi một agent vừa xong lượt (**Finished**), với tên agent, project và logo harness. Bấm vào toast để mở agent; `×` đóng mà không mở. Toast nằm yên khi con trỏ đang ở trên nó và biến mất sau 6 giây. Ở chế độ Float, con vật bị ẩn nên những việc trên hiện thành toast: **Needs you** và **Decision** đứng 15 giây, **Message** 6 giây. Không có toast hay bong bóng cho agent bạn đang nhìn.
 - **Thông báo hệ điều hành** khi arcterm ở nền, tiêu đề dạng `[<project>] Finished: <agent>` (hoặc `Needs you: <agent>`); bấm vào để mở agent (trên Windows và macOS). Thông báo "xong" kèm câu đầu tiên của câu trả lời cuối của agent (tối đa 80 ký tự).
 - Một loạt sự kiện đến cùng lúc được gộp thành một thông báo tóm tắt.
 

@@ -64,7 +64,7 @@ const KIND_LABEL: Record<PetEvent["kind"], string> = {
     "loose-end": "Still open",
     ledger: "Work state",
     notify: "Notice",
-    ask: "Asking you",
+    ask: "Needs you",
 };
 
 const LEVEL_LABEL: Record<NotifyLevel, string> = {
@@ -75,6 +75,17 @@ const LEVEL_LABEL: Record<NotifyLevel, string> = {
 
 export function eventLabel(event: PetEvent): string {
     return event.kind === "notify" ? LEVEL_LABEL[event.level ?? "info"] : KIND_LABEL[event.kind];
+}
+
+// What the bubble says. A question names its agent, because the bubble stands in for the Needs-you toast, which did.
+export function bubbleText(event: PetEvent): string {
+    const agent = event.kind === "ask" ? event.sources?.[0]?.title : undefined;
+    return agent ? `${agent}: ${event.text}` : event.text;
+}
+
+// How long the bubble stays: a Needs-you one as long as the toast it replaces, anything else a moment.
+export function bubbleMs(event: PetEvent): number {
+    return event.kind === "ask" ? 15_000 : 6_000;
 }
 
 // The last event the creature considered, not merely the last one it said. Both fields are needed: `at`

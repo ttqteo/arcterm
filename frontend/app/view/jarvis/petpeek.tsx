@@ -880,7 +880,7 @@ export function PetPeek({
                                                         </span>
                                                         {condition.readout ? (
                                                             <span
-                                                                title="this condition has no remedy — it is a readout"
+                                                                title="this condition has no remedy, it is a readout"
                                                                 className="mt-px flex-none text-[9.5px] text-muted"
                                                             >
                                                                 no action

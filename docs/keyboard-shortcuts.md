@@ -51,6 +51,7 @@ One dialog starts an agent, a terminal or a run. It opens with focus on the Star
 |---|---|
 | `1`…`9` | Pick that row in the focused column (Start or Project) |
 | `↑` / `↓` | Move in the focused column |
+| `→` / `←` | From the Start column to the Project column, and back |
 | letters | In the Project column, filter projects by name; `Backspace` shortens the filter |
 | `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, each field, Cancel, the launch button, and round again |
 | `Enter` | Launch, from a column or a one-line field; in the task or goal box it starts a new line |
@@ -161,6 +162,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent |
 | `d` | Toggle the agent rail |
 | `f` | Toggle terminal fullscreen |
+| `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `Esc` | Back to Cockpit, or exit fullscreen first; from Conversation History or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |

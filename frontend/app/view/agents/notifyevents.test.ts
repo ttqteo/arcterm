@@ -10,9 +10,11 @@ import {
     notifyEventOf,
     osText,
     parseTarget,
+    petEventOfNeeds,
     routeNotify,
     snapshotOf,
     toastOf,
+    toastSaysAsk,
     type NotifyEvent,
     type RouteCtx,
 } from "./notifyevents";
@@ -130,6 +132,7 @@ describe("parseTarget", () => {
 
 const ctx = (over: Partial<RouteCtx> = {}): RouteCtx => ({
     focused: true,
+    floating: false,
     viewing: new Set(),
     settings: { os: true, toast: true, reply: true },
     ...over,
@@ -145,7 +148,17 @@ const ev = (kind: NotifyEvent["kind"], agentId = "a"): NotifyEvent => ({
 });
 
 describe("routeNotify", () => {
-    it("toasts while focused", () => expect(routeNotify(ev("request"), ctx())).toBe("toast"));
+    // the pet's bubble says it, and you are already looking at the pet's "?": a toast too would say it twice
+    it("leaves a focused request to the pet", () => expect(routeNotify(ev("request"), ctx())).toBe("avatar"));
+    it("leaves a focused decision to the pet", () => expect(routeNotify(ev("attention"), ctx())).toBe("avatar"));
+    it("leaves it to the pet even with in-app toasts off", () =>
+        expect(routeNotify(ev("request"), ctx({ settings: { os: true, toast: false, reply: true } }))).toBe("avatar"));
+    it("toasts a focused finished turn", () => expect(routeNotify(ev("reply"), ctx())).toBe("toast"));
+    // float mode hides the pet, so the toast says what the pet would have
+    it("toasts a request while floating", () =>
+        expect(routeNotify(ev("request"), ctx({ floating: true }))).toBe("toast"));
+    it("toasts a wsh notify while floating", () =>
+        expect(routeNotify(ev("notify"), ctx({ floating: true }))).toBe("toast"));
     it("goes to the OS while backgrounded", () =>
         expect(routeNotify(ev("request"), ctx({ focused: false }))).toBe("os"));
     it("says nothing about the agent in view", () =>
@@ -158,11 +171,47 @@ describe("routeNotify", () => {
             routeNotify(ev("request"), ctx({ focused: false, settings: { os: false, toast: true, reply: true } }))
         ).toBe("none"));
     it("honours notify:toast off", () =>
-        expect(routeNotify(ev("request"), ctx({ settings: { os: true, toast: false, reply: true } }))).toBe("none"));
+        expect(routeNotify(ev("reply"), ctx({ settings: { os: true, toast: false, reply: true } }))).toBe("none"));
     it("honours notify:reply off, focused or not", () => {
         const off = { os: true, toast: true, reply: false };
         expect(routeNotify(ev("reply"), ctx({ settings: off }))).toBe("none");
         expect(routeNotify(ev("reply"), ctx({ focused: false, settings: off }))).toBe("none");
+    });
+});
+
+describe("toastSaysAsk", () => {
+    it("is true only while focused and floating with toasts on, where the toast says the question", () => {
+        expect(toastSaysAsk(ctx({ floating: true }))).toBe(true);
+        expect(toastSaysAsk(ctx())).toBe(false);
+        expect(toastSaysAsk(ctx({ floating: true, focused: false }))).toBe(false);
+        expect(toastSaysAsk(ctx({ floating: true, settings: { os: true, toast: false, reply: true } }))).toBe(false);
+    });
+});
+
+describe("petEventOfNeeds", () => {
+    const decision: NotifyEvent = {
+        kind: "attention",
+        target: { kind: "attention", key: "gate:r1" },
+        label: "Decision",
+        tone: "asking",
+        title: "Review the plan for run r1",
+        body: "lead",
+        loud: true,
+    };
+
+    it("says a decision as a Needs-you utterance keyed by its item", () => {
+        expect(petEventOfNeeds(decision, 1000)).toEqual({
+            id: "needs:gate:r1",
+            at: 1000,
+            kind: "ask",
+            text: "Review the plan for run r1",
+        });
+    });
+
+    // an agent's question already reaches the pet from its agent:ask event, with the retract when it is answered
+    it("leaves an agent's request to the pet's own ask source", () => {
+        expect(petEventOfNeeds(ev("request"), 1000)).toBeNull();
+        expect(petEventOfNeeds(ev("reply"), 1000)).toBeNull();
     });
 });
 

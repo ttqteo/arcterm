@@ -14,6 +14,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - The Agent panel has a Files tab that lists the agent's worktree as a tree. Drag files or folders from it onto a
   terminal to type their paths at the prompt: `@` paths on an agent's terminal, plain paths in a shell.
+- Float: the agent header's Float button (or `Shift+F`) shrinks the window to the focused agent's terminal, which a
+  pin keeps on top of your other apps. Leaving it gives the window its size back, and the next float opens where
+  the last one was.
 
 ### Changed
 
@@ -21,13 +24,32 @@ Add one line in the same commit as any change a user would notice, under `Added`
   uncommitted files and how far it is ahead of or behind the main branch, and the agents working in it. Click one to
   see its changes; it replaces the source picker. In a narrow window the sidebar starts folded to a rail so the diff
   keeps room; `Shift+B` folds or unfolds it, and that choice is kept.
+- In the New dialog, `→` moves from the Agent column to the Project column and `←` moves back; the key legend shows
+  them in place of Tab while a column has focus.
 - The plan-usage meters and the free-RAM chip are back in the app bar, where they are easier to read; clicking either
   opens Consumers below it. The Servers chip and the version stay in the footer.
 - Consumers shows each agent's RAM and its tokens and spend on the same row, with free RAM and the 5-hour quota
   together in its header, instead of making you switch between a RAM and a Tokens view.
+- Plan usage takes colour only as it nears a limit: the app bar meters and Usage's 5-hour and weekly cards stay
+  grey while there is plenty left and turn amber past 60% and red past 85%, and a provider's tab in Usage colours
+  its `5h` or `wk` figure the same way, so you see it without opening that tab.
+- Jarvis's pet looks tired only when a plan quota runs low, the 5-hour or the weekly one, and says so once when a
+  window passes 85% and once when it runs out. A full RAM no longer tires it; it stays a line in the pet's popup,
+  which now says how much free RAM one more worker needs.
+- The pet's lines read without dashes.
+- A question or a decision waiting on you shows in Jarvis's pet bubble instead of a **Needs you** toast, naming the
+  agent that asks. The bubble stays 15 seconds, and as long as the pointer is on it; click it to answer in the pet's
+  popup. In Float, where the pet is hidden, the toast still says it. **Finished** toasts are unchanged.
 
 ### Fixed
 
+- arcterm opens faster with many agents and terminals: an agent or terminal no longer loads its output until you first
+  open it (in the grid or the panel under the agent), instead of all of them loading at once on start.
+- Deleting, creating or renaming a file in Code no longer resets the whole view: the file you were reading, the open
+  folders and the tree's scroll stay where they were.
+- Claude sessions are saved again after arcterm is reinstalled or reopened from an agent's terminal (`task install`
+  on a Mac): before, every session started or resumed in that arcterm kept no transcript or title, and vanished
+  from the sidebar and Conversation History once it ended.
 - A run you landed after its final check failed now reads **✓ landed** in the sidebar, on its lead card and in
   Conversation History, instead of "7/7 done" as if it were still waiting.
 - A finished run no longer leaves idle tabs behind: its plan reviewer, its final verifier and its lead close a few

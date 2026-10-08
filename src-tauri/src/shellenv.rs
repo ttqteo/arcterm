@@ -83,6 +83,36 @@ pub fn merge_path(login: &str, inherited: &str) -> String {
         .join(":")
 }
 
+// What a Claude Code process sets for the commands it runs. An arcterm opened from one of those commands
+// inherits them — `task install` on a Mac ends in `open`, which hands the app its caller's environment — and
+// passes them to every shell and agent it starts. An interactive claude that sees CLAUDE_CODE_CHILD_SESSION
+// takes itself for a nested child and saves no transcript, prompt history or session name: on 2026-10-08
+// every session in an arcterm reinstalled from an agent's shell was gone once it ended.
+const INHERITED_AGENT_VARS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "AI_AGENT",
+];
+
+// Removes those from our own environment so wavesrv and everything it spawns start clean, and returns the
+// names it removed. Call it at the top of main, before any thread starts.
+pub fn scrub_inherited_agent_env() -> Vec<&'static str> {
+    INHERITED_AGENT_VARS
+        .iter()
+        .copied()
+        .filter(|name| std::env::var_os(name).is_some())
+        .inspect(|name| std::env::remove_var(name))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +157,23 @@ mod tests {
     fn drops_duplicates_and_empty_entries() {
         let got = merge_path("/a:/b:/a::/c", "/c:/d:");
         assert_eq!(got, "/a:/b:/c:/d");
+    }
+
+    #[test]
+    fn scrubs_the_markers_a_claude_shell_hands_its_commands() {
+        std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
+        std::env::set_var("CLAUDECODE", "1");
+        std::env::set_var("CLAUDE_CODE_PLUGIN_DIRS", "/x");
+        let removed = scrub_inherited_agent_env();
+        assert!(removed.contains(&"CLAUDE_CODE_CHILD_SESSION"));
+        assert!(removed.contains(&"CLAUDECODE"));
+        assert!(std::env::var_os("CLAUDE_CODE_CHILD_SESSION").is_none());
+        assert!(std::env::var_os("CLAUDECODE").is_none());
+        // arcterm's own, and settings.json hands it to every claude anyway
+        assert_eq!(
+            std::env::var("CLAUDE_CODE_PLUGIN_DIRS").as_deref(),
+            Ok("/x")
+        );
+        assert!(scrub_inherited_agent_env().is_empty());
     }
 }

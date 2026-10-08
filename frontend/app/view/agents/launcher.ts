@@ -181,6 +181,7 @@ export type LauncherKeyAction =
     | { kind: "pick-start"; index: number }
     | { kind: "pick-project"; index: number }
     | { kind: "move"; column: "start" | "project"; delta: 1 | -1 }
+    | { kind: "column"; to: "start" | "project" }
     | { kind: "filter"; next: string }
     | { kind: "launch" }
     | { kind: "dismiss-inner"; what: LauncherInner }
@@ -222,6 +223,13 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     }
     if (k.key === "ArrowDown" || k.key === "ArrowUp") {
         return { kind: "move", column: zone, delta: k.key === "ArrowDown" ? 1 : -1 };
+    }
+    // → is the step from Start to Project, ← the step back; the columns sit side by side, so the arrows read as such
+    if (k.key === "ArrowRight") {
+        return zone === "start" ? { kind: "column", to: "project" } : NONE;
+    }
+    if (k.key === "ArrowLeft") {
+        return zone === "project" ? { kind: "column", to: "start" } : NONE;
     }
     if (zone === "project") {
         if (k.key === "Backspace") {

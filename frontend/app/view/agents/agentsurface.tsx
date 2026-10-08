@@ -24,7 +24,11 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { buildAgentBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed, isEditableTarget } from "@/app/store/keybindings/dispatcher";
 import { useKeybindings } from "@/app/store/keybindings/store";
-import { cn } from "@/util/util";
+import * as WOS from "@/app/store/wos";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { getLastCommandAtom, setLastCommand } from "@/app/view/term/lastcommand";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +56,7 @@ import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
+import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { RunPane } from "./runpane";
 import { SessionPane } from "./sessionpane";
 import {
@@ -159,9 +164,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
 
     // What the terminal stack shows: the grid's cells, or one cell alone (fullscreen; an agent that is not a cell,
     // such as a terminal). When the centre shows something else (a subagent's interior, a session or History, a canvas
-    // or a review, a done worker's transcript) the grid hides, with every pane still mounted, and comes back as it was.
-    // stackHidden is also what hides the whole column (header and all) in the subagent-interior and session/History
-    // cases.
+    // or a review, a done worker's transcript) the grid hides, every mounted pane staying mounted, and comes back as it
+    // was. stackHidden is also what hides the whole column (header and all) in the subagent-interior and
+    // session/History cases.
     const stackHidden = showSub || centerMode !== "terminal";
     const terminalShown = agent != null && !stackHidden && swapped == null && !isEndedWorkerId(agent.id);
     // Until the roster is seeded the saved cells are not pruned, so a cell whose agent has not arrived yet still holds
@@ -181,6 +186,26 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const docked = !fullscreen || dockMax ? dockable : undefined;
     // the cells' tiled look (gaps, borders, bars) is off while the dock covers them
     const tiled = multi && !dockMax;
+    // Which panes are mounted (panemounts.ts): the app's agents and terminals the first time they show, one opened
+    // later at once, and none ever unmounted while its terminal lives. Stored during render (it returns the same value
+    // when nothing changed), so a pane shown in this render mounts in this commit.
+    const [storedMounts, setPaneMounts] = useState(NO_PANES);
+    const paneMounts = nextPaneMounts(storedMounts, {
+        live: mountable.filter((a) => a.blockId != null).map((a) => a.id),
+        shown: [...(dockMax ? [] : cells.map((cell) => cell.id)), ...(docked != null ? [docked.id] : [])],
+        seeded,
+    });
+    if (paneMounts !== storedMounts) {
+        setPaneMounts(paneMounts);
+    }
+    // a terminal whose pane has not mounted is still named by its last command in the tree
+    useEffect(() => {
+        for (const t of terminals) {
+            if (t.blockId != null && !paneMounts.mounted.has(t.id)) {
+                seedTerminalName(t.blockId);
+            }
+        }
+    }, [terminals, paneMounts]);
     const gridRef = useRef<HTMLDivElement>(null);
     const [gridHeight, setGridHeight] = useState(0);
     useEffect(() => {
@@ -568,7 +593,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                     onRemove={() => onRemoveCell(a.id)}
                                                 />
                                             ) : null}
-                                            <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                            {paneMounts.mounted.has(a.id) ? (
+                                                <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                            ) : null}
                                             {/* Drop zones, only while an agent is dragged. Not before the roster is seeded
                                                 (a drop prunes against the roster as it is), and not on a cell the saved
                                                 grid does not hold (a terminal shown alone): a drop is an index into the grid. */}
@@ -605,6 +632,23 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
             </div>
         </MotionConfig>
     );
+}
+
+// The tree names a plain terminal by the command its shell last ran, which its pane reads from the block's runtime info
+// as it loads (termwrap.ts). A terminal whose pane has not mounted reads it here instead: once per block, and kept only
+// where nothing has named the terminal since. Its busy mark is left to the pane, which alone sees the shell's marks.
+const terminalNamesRequested = new Set<string>();
+function seedTerminalName(blockId: string) {
+    if (terminalNamesRequested.has(blockId)) {
+        return;
+    }
+    terminalNamesRequested.add(blockId);
+    fireAndForget(async () => {
+        const rtInfo = await RpcApi.GetRTInfoCommand(TabRpcClient, { oref: WOS.makeORef("block", blockId) });
+        if (globalStore.get(getLastCommandAtom(blockId)) == null) {
+            setLastCommand(blockId, rtInfo?.["shell:lastcmd"]);
+        }
+    });
 }
 
 // History and a session's transcript take the centre column; the terminal stack stays mounted beside them

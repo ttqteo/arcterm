@@ -32,8 +32,13 @@ import {
 import { RuntimeMark } from "./runtimemark";
 import { loadWindowTokens, windowTokensAtom, type WindowTokens } from "./windowtokenstore";
 
-const LEVEL_BAR: Record<"ok" | "warn" | "hot", string> = { ok: "bg-accent", warn: "bg-warning", hot: "bg-error" };
-const LEVEL_TXT: Record<"ok" | "warn" | "hot", string> = { ok: "text-accent", warn: "text-warning", hot: "text-error" };
+// neutral while ok, as on the Usage surface: amber and red are the signal, and the accent stays the New button's
+const LEVEL_BAR: Record<"ok" | "warn" | "hot", string> = { ok: "bg-muted", warn: "bg-warning", hot: "bg-error" };
+const LEVEL_TXT: Record<"ok" | "warn" | "hot", string> = {
+    ok: "text-primary",
+    warn: "text-warning",
+    hot: "text-error",
+};
 
 const WINDOWS = [
     ["fivehour", "5h", "5-hour window", FIVE_HOUR_MS],

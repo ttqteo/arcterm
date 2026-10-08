@@ -20,6 +20,9 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { floatModeAtom } from "@/app/view/agents/floatstore";
+import { toastSaysAsk } from "@/app/view/agents/notifyevents";
+import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { focusedBlockId } from "@/util/focusutil";
 import { useEffect } from "react";
 import { readUntilLanded } from "./petboot";
@@ -33,7 +36,8 @@ import {
     shouldSpeakAsk,
     type AskGateCtx,
 } from "./petjoin";
-import { pushPetEvent, removePetEvent } from "./petstore";
+import { quotaCrossings, quotaEvent, quotaReadings } from "./petquota";
+import { markQuotaSaid, pushPetEvent, quotaSaidSet, removePetEvent } from "./petstore";
 
 const ACTIVITY_BACKLOG = 20;
 
@@ -75,7 +79,25 @@ async function loadVolunteerBacklog(): Promise<boolean> {
     }
 }
 
+// A window crossing 85% or running out is said once per cycle (petquota.ts). The donuts tick with the 1s clock, so
+// this runs every second; it is a filter over a handful of readings and pushes nothing on a quiet tick.
+function useQuotaVoice(model: AgentsViewModel): void {
+    const donuts = usePlanDonuts(model);
+    useEffect(() => {
+        const crossings = quotaCrossings(quotaReadings(donuts), quotaSaidSet());
+        if (crossings.length === 0) {
+            return;
+        }
+        const now = Date.now();
+        for (const c of crossings) {
+            pushPetEvent(quotaEvent(c, now));
+        }
+        markQuotaSaid(crossings.flatMap((c) => [...(c.alsoSaid ?? []), c.key]));
+    }, [donuts]);
+}
+
 export function PetSources({ model }: { model: AgentsViewModel }) {
+    useQuotaVoice(model);
     useEffect(() => {
         // Retried until each lands: both are one-shot, so a read lost to a backend that was not ready at
         // mount would otherwise stay lost for the session. See petboot.ts.
@@ -119,10 +141,15 @@ export function PetSources({ model }: { model: AgentsViewModel }) {
                     focusTabId: globalStore.get(model.focusIdAtom),
                     askTabId: agent?.id,
                     focusedBlockId: focusedBlockId(),
-                    // routeNotify's own test: focused, with toasts on (the setting defaults to on)
-                    toastSays:
-                        globalStore.get(atoms.documentHasFocus) &&
-                        ((globalStore.get(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true),
+                    // routeNotify's own rule: a toast says it only in float mode, focused, with toasts on (the setting
+                    // defaults to on); otherwise the question is the pet's to say
+                    toastSays: toastSaysAsk({
+                        focused: globalStore.get(atoms.documentHasFocus),
+                        floating: globalStore.get(floatModeAtom),
+                        settings: {
+                            toast: (globalStore.get(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true,
+                        },
+                    }),
                 };
                 if (!shouldSpeakAsk(data?.oref, ctx)) {
                     return;

@@ -3,7 +3,7 @@
 //
 // What Jarvis says when a worker width you just picked is more than the machine's free RAM holds: a new run
 // started that wide, or a live run's Adjust saved that wide. Said once, as a warning notice (petvoice.ts), at
-// the moment of the pick; the standing "RAM is full" face is petcondition.ts's ram-full.
+// the moment of the pick; the standing "RAM is tight" line in the peek is petcondition.ts's ram-full.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatGB, overCapacity, type WorkerCapacity } from "../agents/workercapacity";
@@ -22,7 +22,7 @@ export function overCapacitySpeech(cap: WorkerCapacity | null, pick: WorkerPick)
         return null;
     }
     const head = pick.live ? `Raising to ${pick.picked} workers` : `Starting ${pick.picked} workers`;
-    return `${head}, but RAM fits ~${cap.moreworkers} more (${formatGB(cap.availablebytes)} free) — expect swapping.`;
+    return `${head}, but RAM fits ~${cap.moreworkers} more (${formatGB(cap.availablebytes)} free), so expect swapping.`;
 }
 
 export function overCapacityEvent(cap: WorkerCapacity | null, pick: WorkerPick, now: number): PetEvent | null {

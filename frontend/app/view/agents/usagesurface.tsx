@@ -26,7 +26,7 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { motion, MotionConfig } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatReset, moveCursor, usageLevel } from "./agentsviewmodel";
@@ -65,7 +65,7 @@ import {
     countReporting,
     defaultTab,
     railRows,
-    tabMeta,
+    tabMetaParts,
     tabRows,
     worstWindow,
     type AggregateWindow,
@@ -95,16 +95,24 @@ const ALL = "all";
 const CHART_ROW = "grid grid-cols-1 gap-3.5 @6xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]";
 const CARD = "flex min-w-0 flex-col rounded-[14px] border border-border bg-surface-raised px-[18px] py-4";
 
+// A quota window takes colour only when it nears its limit: an ok window stays neutral, so amber and red stand out
+// (green means working in DESIGN.md, not "plenty left"). The app bar's meters use the same rule (usagemeters.tsx).
 const LEVEL_FILL: Record<"ok" | "warn" | "hot", string> = {
-    ok: "bg-success",
+    ok: "bg-muted",
     warn: "bg-warning",
     hot: "bg-error",
 };
 const LEVEL_TEXT: Record<"ok" | "warn" | "hot", string> = {
-    ok: "text-success",
+    ok: "text-primary",
     warn: "text-warning",
     hot: "text-error",
 };
+// a window in a tab's meta stays muted while ok
+function metaTone(pct: number | undefined): string | undefined {
+    const level = pct != null ? usageLevel(pct) : "ok";
+    return level === "ok" ? undefined : LEVEL_TEXT[level];
+}
+
 // Ranked magnitude within one provider is an ORDINAL job, not categorical: one hue, monotone
 // lightness, indexed by rank. Four stops off the existing accent scale — no new colors. Stops are two
 // apart so adjacent ranks stay tellable; --color-accent sits next to --color-accent-300 on the ramp.
@@ -246,7 +254,8 @@ function LimitCard({
 
 // One tab per harness, then All at the right end. `data-usage-harness` is what the CDP scenarios select a scope
 // by. The state pill is never colour alone: it names LIVE or SAVED, and a provider with no quota reading shows
-// its tokens instead (tabMeta).
+// its tokens instead (tabMetaParts). A window in the meta turns amber or red as it nears its limit, so another
+// provider's tab warns without being opened.
 function UsageTab({
     id,
     row,
@@ -290,7 +299,14 @@ function UsageTab({
                 </span>
             ) : null}
             <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">
-                {row != null ? tabMeta(row) : `${fmt(allTokens)} tok`}
+                {row != null
+                    ? tabMetaParts(row).map((p, i) => (
+                          <Fragment key={i}>
+                              {i > 0 ? " · " : null}
+                              <span className={metaTone(p.pct)}>{p.text}</span>
+                          </Fragment>
+                      ))
+                    : `${fmt(allTokens)} tok`}
             </span>
         </button>
     );

@@ -23596,8 +23596,10 @@ const settingsClaudeAccount = {
 
 // notify-toast: NotifySync (view/agents/notifysync.tsx) tells you when an agent needs you or finished. A plain terminal
 // tab is made an agent by publishing agent:status (as agent-uploads does), and each step publishes the next state.
-// Focused, an ask from an agent not in view is an in-app toast whose click opens the agent; an ask from the agent in view
-// is nothing; In-app toasts off silences it. Backgrounded (focus emulation off and a blur event, which is what sets
+// Focused, an ask is never an in-app toast: the pet's bubble says it (notifyevents.ts routeNotify), and this scenario's
+// status-only ask raises no agent:ask, so nothing is said but the pet's "?". A finished turn from an agent not in view is
+// an in-app toast whose click opens the agent; one from the agent in view is nothing; In-app toasts off silences it.
+// Backgrounded (focus emulation off and a blur event, which is what sets
 // atoms.documentHasFocus), an ask goes to notify_os instead, and a finished turn stays unread.
 //
 // What is real: the roster, the routing, the toast stack, the Settings toggle (a real setconfig) and the click's route
@@ -23778,7 +23780,7 @@ const notifyToast = {
         const steps = [];
         const rec = (step, ok, detail) =>
             steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
-        // the toast's title is the agent's name; its eyebrow says Needs you
+        // the toast's title is the agent's name; its eyebrow says Finished
         const asks = ctx.name;
         const publish = async (state) => {
             await publishNotifyStatus(h, ctx, state);
@@ -23788,15 +23790,24 @@ const notifyToast = {
 
         // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
         try {
-            // --- focused, on the Cockpit: an ask is a toast, and its click opens the agent ----------------------------
+            // --- focused, on the Cockpit: an ask is the pet's to say, never a toast ------------------------------------
             await notifyToastGone(h, ctx.name);
             await publish("asking");
-            const toasted = await polishWaitFor(h, notifyToastWith(asks, "asking"), 6000);
-            const clickable = await h.ev(
-                `[...document.querySelectorAll('[data-notification-toast][data-notification-open][data-notification-tone="asking"]')].some((t) => t.textContent.includes(${JSON.stringify(asks)}))`
-            );
+            await polishNap(NOTIFY_QUIET_MS);
+            const askQuiet = !(await h.ev(notifyToastWith(asks)));
             await h.shot("cdp-shots/notify-toast-ask.png");
-            rec("a toast appears when an out-of-view agent starts asking", toasted === true && clickable === true, {
+            rec("no toast when an out-of-view agent starts asking: the pet says it", askQuiet, {
+                toasts: await notifyToasts(h),
+            });
+
+            // --- a finished turn is a toast, and its click opens the agent ----------------------------------------------
+            await publish("working");
+            await publish("idle");
+            const toasted = await polishWaitFor(h, notifyToastWith(asks, "done"), 6000);
+            const clickable = await h.ev(
+                `[...document.querySelectorAll('[data-notification-toast][data-notification-open][data-notification-tone="done"]')].some((t) => t.textContent.includes(${JSON.stringify(asks)}))`
+            );
+            rec("a toast appears when an out-of-view agent finishes a turn", toasted === true && clickable === true, {
                 toasted,
                 clickable,
                 toasts: await notifyToasts(h),
@@ -23819,8 +23830,8 @@ const notifyToast = {
                 surface: stayed,
             });
             await publish("working");
-            await publish("asking");
-            await polishWaitFor(h, notifyToastWith(asks, "asking"), 6000);
+            await publish("idle");
+            await polishWaitFor(h, notifyToastWith(asks, "done"), 6000);
 
             const clicked = await h.ev(`(() => {
                 const t = [...document.querySelectorAll("[data-notification-toast][data-notification-open]")]
@@ -23836,12 +23847,12 @@ const notifyToast = {
                 surface,
             });
 
-            // --- the agent in view asks: nothing ---------------------------------------------------------------------
+            // --- the agent in view finishes: nothing ------------------------------------------------------------------
             // the steps after this one need it focused, so a failed click above does not take them down with it
             const inView = (await shown()) || (await focusNotifyAgent(h, ctx));
             await notifyToastGone(h, asks);
             await publish("working");
-            await publish("asking");
+            await publish("idle");
             await polishNap(NOTIFY_QUIET_MS);
             const quiet = !(await h.ev(notifyToastWith(asks)));
             rec("no toast for the agent in view", inView === true && quiet, { inView, toasts: await notifyToasts(h) });
@@ -23865,7 +23876,7 @@ const notifyToast = {
             const turnedOff = await polishWaitFor(h, `${SWITCH}?.getAttribute("aria-checked") === "false"`, 5000);
             await notifyToastGone(h, ctx.name);
             await publish("working");
-            await publish("asking");
+            await publish("idle");
             await polishNap(NOTIFY_QUIET_MS);
             const silenced = !(await h.ev(notifyToastWith(ctx.name)));
             const toastsOff = await notifyToasts(h);

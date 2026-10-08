@@ -106,15 +106,16 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 Header phía trên terminal là một hàng gọn:
 
 - chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`, hoặc nhãn riêng như `Low RAM`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
-- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **Done · N tok — Close** khi agent trông như đã xong; nút toàn màn hình; nút `×` đóng.
+- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **Done · N tok — Close** khi agent trông như đã xong; nút **Float**; nút toàn màn hình; nút `×` đóng.
 
-Chuột phải vào header: **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Show details** / **Hide details**, **Close agent**.
+Chuột phải vào header: **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Float window** / **Leave float**, **Show details** / **Hide details**, **Close agent**.
 
 Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus về sidebar (khi đó `j`/`k`, `d`, `f`… lại là phím điều khiển). Ngoài ra:
 
 | Việc | Cách làm |
 |---|---|
 | Toàn màn hình terminal | `f` hoặc `F11` (`F11` dùng được cả khi đang gõ trong terminal); `Esc` thoát toàn màn hình |
+| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn, nút ghim trên thanh tiêu đề giữ nó luôn nằm trên các app khác (mặc định tắt). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước |
 | Ngắt lượt đang chạy | **Interrupt turn** trong menu header, hoặc `Esc` trong terminal, hoặc nút **Stop** ở chân rail |
 | Chuyển sang agent kế tiếp | `Ctrl+Tab`, dùng được cả khi con trỏ đang ở trong terminal; gõ phím theo sang terminal của agent mới |
 | Chuyển sang agent kế tiếp **đang hỏi** | `Ctrl+Shift+Tab` (đi tiến, chỉ qua các agent đang hỏi) |
@@ -302,6 +303,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Agent kế tiếp / agent kế tiếp đang hỏi (dùng được cả trong terminal) |
 | `d` | Bật/tắt rail chi tiết |
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
+| `Shift+F` | Bật/tắt Float |
 | `r` | Mở review của agent (Spec/Plan review hoặc Doc review) / về lại terminal |
 | `c` | Hiện canvas của agent / về terminal |
 | `Esc` | Về Cockpit; thoát toàn màn hình trước; từ History hoặc transcript thì về terminal; trong subagent thì về agent cha |

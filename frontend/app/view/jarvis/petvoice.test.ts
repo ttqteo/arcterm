@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventLabel, nextUtterance, type PetEvent, type PetWatermark } from "./petvoice";
+import { bubbleMs, bubbleText, eventLabel, nextUtterance, type PetEvent, type PetWatermark } from "./petvoice";
 
 function ev(id: string, at: number, extra: Partial<PetEvent> = {}): PetEvent {
     return { id, at, kind: "sweep", text: `event ${id}`, ...extra };
@@ -144,7 +144,7 @@ describe("eventLabel — the register in words", () => {
     it("names a kind by its register, never the raw kind", () => {
         expect(eventLabel(ev("a", 1, { kind: "resume" }))).toBe("Where we were");
         expect(eventLabel(ev("a", 1, { kind: "bg-agent-done" }))).toBe("While you were out");
-        expect(eventLabel(ev("a", 1, { kind: "ask" }))).toBe("Asking you");
+        expect(eventLabel(ev("a", 1, { kind: "ask" }))).toBe("Needs you");
     });
 
     it("names a notification by its level", () => {
@@ -152,5 +152,32 @@ describe("eventLabel — the register in words", () => {
         expect(eventLabel(ev("n", 1, { kind: "notify", level: "warn" }))).toBe("Warning");
         expect(eventLabel(ev("n", 1, { kind: "notify", level: "error" }))).toBe("Error");
         expect(eventLabel(ev("n", 1, { kind: "notify" }))).toBe("Notice");
+    });
+});
+
+// The bubble replaces the Needs-you toast for a question, so it says whose question it is and stays as long as
+// the toast did.
+describe("the bubble", () => {
+    const agentSource = { ref: "agent:t1", title: "reviewer", sourceType: "" };
+
+    it("names the agent a question comes from", () => {
+        expect(bubbleText(ev("a", 1, { kind: "ask", text: "Ship it?", sources: [agentSource] }))).toBe(
+            "reviewer: Ship it?"
+        );
+    });
+
+    it("says a question with no known agent as it is", () => {
+        expect(bubbleText(ev("a", 1, { kind: "ask", text: "Ship it?" }))).toBe("Ship it?");
+    });
+
+    it("says anything else as it is, whatever its sources", () => {
+        expect(bubbleText(ev("a", 1, { kind: "notify", text: "A run landed", sources: [agentSource] }))).toBe(
+            "A run landed"
+        );
+    });
+
+    it("holds a Needs-you bubble 15 seconds, like the toast it replaces, and anything else 6", () => {
+        expect(bubbleMs(ev("a", 1, { kind: "ask" }))).toBe(15_000);
+        expect(bubbleMs(ev("a", 1, { kind: "notify" }))).toBe(6_000);
     });
 });

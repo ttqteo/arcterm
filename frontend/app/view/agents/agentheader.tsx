@@ -24,6 +24,7 @@ import {
     Maximize2,
     Minimize2,
     PanelRight,
+    PictureInPicture2,
     Plus,
     Workflow,
     X,
@@ -40,6 +41,7 @@ import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
+import { floatModeAtom, toggleFloat } from "./floatstore";
 import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
@@ -125,6 +127,10 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
 export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const railVisible = useAtomValue(railVisibleAtom);
     const fullscreen = useAtomValue(terminalFullscreenAtom);
+    const floating = useAtomValue(floatModeAtom);
+    const floatTitle = floating
+        ? `Leave float (${formatChordString("Shift:f")})`
+        : `Float: shrink the window to this terminal, to keep on top of other apps (${formatChordString("Shift:f")})`;
     const canvas = useAtomValue(canvasStateAtom(agent.id));
     const lineage = useRunLineage(model, agent);
     const project = agentProject(useAtomValue(model.lineageAtom), useAtomValue(model.agentsAtom), agent);
@@ -239,6 +245,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 label: fullscreen ? "Exit fullscreen" : "Fullscreen terminal",
                 icon: fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />,
                 click: () => globalStore.set(terminalFullscreenAtom, !fullscreen),
+            });
+            items.push({
+                label: floating ? "Leave float" : "Float window",
+                icon: <PictureInPicture2 size={15} />,
+                click: () => fireAndForget(() => toggleFloat(model)),
             });
         }
         items.push({
@@ -449,6 +460,22 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 Close
                             </button>
                         ) : null}
+                        <button
+                            type="button"
+                            data-agent-float
+                            onClick={() => fireAndForget(() => toggleFloat(model))}
+                            title={floatTitle}
+                            aria-label={floating ? "Leave float" : "Float window"}
+                            aria-pressed={floating}
+                            className={cn(
+                                "cursor-pointer rounded-[7px] border px-[9px] py-[6px]",
+                                floating
+                                    ? "border-accent bg-accentbg text-accent"
+                                    : cn(ICON_BTN, "hover:border-edge-strong")
+                            )}
+                        >
+                            <PictureInPicture2 size={16} strokeWidth={1.8} />
+                        </button>
                         <motion.button
                             type="button"
                             onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}

@@ -15,13 +15,7 @@ import { toastsAtom } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import {
-    activeClaudeKeyAtom,
-    claudeIdentityAtom,
-    planDonuts,
-    savedRateLimitsAtom,
-    topProviderUsage,
-} from "@/app/view/agents/ratelimitstore";
+import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
 import { animate, motion, useMotionValue, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
@@ -34,6 +28,7 @@ import { landing, ledgeShift, type LedgeAt } from "./petfall";
 import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner } from "./petledge";
 import { petOutfit, petOutfitChoice } from "./petoutfit";
 import { PetPeek } from "./petpeek";
+import { tightestWindow } from "./petquota";
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
 import {
     petBubbleAtom,
@@ -76,24 +71,9 @@ function count(items: AttentionItem[], kind: string): number {
 
 // Every signal the creature reads.
 function usePetSignals(model: AgentsViewModel): PetSignals {
-    const agents = useAtomValue(model.agentsAtom);
-    const saved = useAtomValue(savedRateLimitsAtom);
-    const activeKey = useAtomValue(activeClaudeKeyAtom);
-    const identity = useAtomValue(claudeIdentityAtom);
-    const now = useAtomValue(model.nowAtom);
     const attention = useAtomValue(attentionAtom);
     const cap = useWorkerCapacity();
-
-    const donuts = planDonuts(agents, saved, activeKey, identity, now);
-    const top = topProviderUsage(donuts);
-    const rateLimit =
-        top != null
-            ? {
-                  provider: top.provider,
-                  pct: top.pct,
-                  resetAt: donuts.find((d) => d.provider === top.provider)?.fivehour.reset,
-              }
-            : undefined;
+    const rateLimit = tightestWindow(usePlanDonuts(model));
 
     return {
         rateLimit,
@@ -104,6 +84,7 @@ function usePetSignals(model: AgentsViewModel): PetSignals {
                       available: cap.availablebytes,
                       perWorker: cap.perworkerbytes,
                       heavy: cap.heavybytes,
+                      reserve: cap.reservebytes,
                   }
                 : undefined,
         attention: {

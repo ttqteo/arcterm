@@ -15,6 +15,7 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
+import { pushPetEvent } from "@/app/view/jarvis/petstore";
 import { fireAndForget } from "@/util/util";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -23,6 +24,7 @@ import { useEffect, useRef } from "react";
 import { centerModeAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { attentionAtom, attentionLoadedAtom } from "./attentionstore";
+import { floatModeAtom } from "./floatstore";
 import { agentGridAtom } from "./gridstore";
 import {
     answerLine,
@@ -32,6 +34,7 @@ import {
     notifyEventOf,
     osText,
     parseTarget,
+    petEventOfNeeds,
     routeNotify,
     snapshotOf,
     toastOf,
@@ -91,6 +94,7 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
     const attention = useAtomValue(attentionAtom);
     const attentionLoaded = useAtomValue(attentionLoadedAtom);
     const focused = useAtomValue(atoms.documentHasFocus);
+    const floating = useAtomValue(floatModeAtom);
     const focusId = useAtomValue(model.focusIdAtom);
     const surface = useAtomValue(model.surfaceAtom);
     const center = useAtomValue(centerModeAtom);
@@ -103,6 +107,7 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
     const ctx = useRef<RouteCtx>(null);
     ctx.current = {
         focused,
+        floating,
         viewing: viewingIds(focused, surface === "agent", center, focusId, grid),
         settings: { os, toast, reply },
     };
@@ -138,6 +143,12 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
             const route = routeNotify(event, ctx.current!);
             if (route === "os" || route === "toast") {
                 buffer.current.push({ route, event });
+            } else if (route === "avatar") {
+                // the pet says a decision in place of its toast; its other avatar events come from its own sources
+                const said = petEventOfNeeds(event, Date.now());
+                if (said != null) {
+                    pushPetEvent(said);
+                }
             }
         }
         if (buffer.current.length > 0 && timer.current == null) {

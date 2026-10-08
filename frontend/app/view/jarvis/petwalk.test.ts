@@ -444,16 +444,16 @@ describe("tired", () => {
         expect(step.marks).toEqual(["drop"]);
     });
 
-    it("rests the same way when the RAM is full", () => {
+    // only the quota wears the tired look: a full RAM is a peek line (petcondition.ts)
+    it("does not rest tired when the RAM is full", () => {
         const step = stepWalker(
             walker({ name: "walk", x: 400, target: 400 }),
             input({ expression: "ram-full" }),
             T0,
             half
         );
-        expect(step.delayMs).toBe(20_000);
-        expect(step.pose).toBe("tired");
-        expect(step.marks).toEqual(["drop"]);
+        expect(step.pose).not.toBe("tired");
+        expect(step.marks).not.toContain("drop");
     });
 
     it("walks in walk poses, without the drop", () => {

@@ -22,16 +22,18 @@ import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
+import { floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
 import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";
 import { WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
 import { makeWaveEnvImpl } from "@/app/waveenv/waveenvimpl";
-import { Provider } from "jotai";
+import { Provider, useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef } from "react";
 import { CockpitAppBar } from "./app-bar";
 import { CommandPalette } from "./command-palette";
+import { FloatBar } from "./float-bar";
 import "./cockpit.scss";
 import { ctrlHeldAtom, nextCtrlHeld } from "./ctrlheld";
 import { ShortcutsCheatSheet } from "./shortcuts-cheatsheet";
@@ -87,6 +89,10 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         return () => setPathLinkModel(null);
     }, [model]);
     useEffect(() => setupUiClient(model), [model]);
+    useEffect(() => setupFloatMode(model), [model]);
+    // in float mode the window is the focused terminal: the float bar stands in for the app bar, the footer and the
+    // creature step out
+    const floating = useAtomValue(floatModeAtom);
     // remember every switch, so the next launch can reopen where this one left off
     useEffect(
         () =>
@@ -144,11 +150,11 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <AttentionPoller />
             <PulseDriver />
             <PetSources model={model} />
-            <CockpitAppBar model={model} />
+            {floating ? <FloatBar model={model} /> : <CockpitAppBar model={model} />}
             <div className="min-h-0 flex-1">
                 <CockpitShell model={model} tabId={tabIdRef.current} />
             </div>
-            <HintsFooter model={model} />
+            {floating ? null : <HintsFooter model={model} />}
             {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
             <ConsumersPanel model={model} />
             {/* the footer's Servers chip opens this; it also owns the one poll that feeds the chip */}
@@ -160,7 +166,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <ShortcutsCheatSheet model={model} />
             {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the
                 creature is the one object in the app that has to survive that */}
-            <PetView model={model} />
+            {floating ? null : <PetView model={model} />}
             <ModalsRenderer />
             <ContextMenuHost />
             <TitleTipHost />

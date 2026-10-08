@@ -15,6 +15,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import type { PetActState } from "./petacts";
 import { DEFAULT_PET_OUTFIT, type PetOutfitChoice } from "./petoutfit";
+import { pruneSaid } from "./petquota";
 import type { PetEvent, PetWatermark } from "./petvoice";
 
 const HOME_KEY = "wave:pet.home";
@@ -88,6 +89,35 @@ export function setPetWatermark(mark: PetWatermark): void {
     globalStore.set(petWatermarkAtom, mark);
     try {
         globalThis.localStorage?.setItem(WATERMARK_KEY, JSON.stringify(mark));
+    } catch {
+        // as above
+    }
+}
+
+// The quota marks already spoken (petquota.ts), persisted for the same reason as the watermark: a reload in the
+// middle of a cycle would otherwise say "running low" again.
+const QUOTA_SAID_KEY = "wave:pet.quota-said";
+const QUOTA_SAID_MAX = 50;
+
+function readQuotaSaid(): string[] {
+    try {
+        const parsed = JSON.parse(globalThis.localStorage?.getItem(QUOTA_SAID_KEY) ?? "[]");
+        return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : [];
+    } catch {
+        return [];
+    }
+}
+
+let quotaSaid: string[] = readQuotaSaid();
+
+export function quotaSaidSet(): ReadonlySet<string> {
+    return new Set(quotaSaid);
+}
+
+export function markQuotaSaid(keys: string[]): void {
+    quotaSaid = pruneSaid([...quotaSaid.filter((k) => !keys.includes(k)), ...keys], QUOTA_SAID_MAX);
+    try {
+        globalThis.localStorage?.setItem(QUOTA_SAID_KEY, JSON.stringify(quotaSaid));
     } catch {
         // as above
     }

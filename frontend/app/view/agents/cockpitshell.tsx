@@ -19,6 +19,7 @@ import { DocReviewDialog } from "./docreviewdialog";
 import { docNotesAtom, pruneNotes } from "./docreviewnotes";
 import { useDocReviewSync } from "./docreviewstore";
 import { FilesSurface } from "./filessurface";
+import { floatModeAtom } from "./floatstore";
 import { initHarnessPreference, loadHarnesses } from "./harnessstore";
 import { setupRosterSeededLatch } from "./liveagents";
 import { NavRail } from "./navrail";
@@ -127,9 +128,10 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useUnreadTracking(model);
     useDockBadge();
     const surface = useAtomValue(model.surfaceAtom);
+    const floating = useAtomValue(floatModeAtom);
     return (
         <div className="flex h-full w-full">
-            <NavRail model={model} />
+            {floating ? null : <NavRail model={model} />}
             <div className="relative min-w-0 flex-1 bg-background">
                 {/* Agent surface stays mounted so its live terminal is never torn down on tab switch
                     (destroy+remount re-fits xterm at a stale size and mangles the TUI). Hidden via

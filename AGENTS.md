@@ -134,8 +134,10 @@ Load-bearing rules:
   the always-mounted shell, not in a surface.
 - **The Agent surface's terminal stack is one CSS grid parent that is always rendered, never conditionally.** It is a
   deliberate exception to DESIGN.md's "grid only for card grids" (a 2x2 of live terminals, not a card grid): don't "fix"
-  it back to flex. Every agent and terminal that has a block keeps its `CockpitFocusPane` mounted under it with a stable
-  `key`; `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
+  it back to flex. Every agent and terminal that has a block keeps its cell wrapper under it with a stable `key`, and its
+  `CockpitFocusPane` once mounted stays mounted until its terminal closes; `panemounts.ts` mounts the app's own agents
+  and terminals the first time they show (so the first load does not replay them all at once), and one opened later at
+  once. `agentgrid.ts` / `gridstore.ts` only decide which panes show and where (inline `gridRow`/`gridColumn`; the rest
   `hidden`), and only agents can be cells. Re-parenting a pane or rendering the stack conditionally remounts the xterm
   and replays the TUI. Panes refit through `term.tsx`'s ResizeObserver, so keep the tracks `minmax(0, 1fr)`, the cells
   `min-w-0 min-h-0`, and nothing animating a cell's size.
