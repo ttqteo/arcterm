@@ -6,6 +6,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     BURN_WARN_TOKENS,
     buildConsumers,
+    holdOrder,
     ramLabel,
     staleLine,
     stopWorkerMessage,
@@ -175,6 +176,51 @@ describe("buildConsumers", () => {
             { label: "Terminals", bytes: 12 * MB },
         ]);
         expect(view.groups).toEqual([]);
+    });
+});
+
+describe("holdOrder", () => {
+    const dag = { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" };
+    const roster = [vm("a"), vm("b"), vm("w1"), vm("c")];
+    // a's RAM is the heaviest, b's tokens are
+    const read = (extra: ConsumerAgent[] = []) =>
+        reading([
+            agent("a", { rambytes: 900 * MB, tokens: [bucket("claude-sonnet-4-6", 10)] }),
+            agent("b", { rambytes: 100 * MB, tokens: [bucket("claude-sonnet-4-6", 5000)] }),
+            agent("w1", { rambytes: 50 * MB, tokens: [bucket("claude-sonnet-4-6", 1)], dag }),
+            ...extra,
+        ]);
+    const order = (v: ReturnType<typeof holdOrder>) => v.view.groups.flatMap((g) => ids(g.rows));
+
+    it("keeps the view's ranking when the panel opens", () => {
+        const opened = holdOrder(buildConsumers(read(), roster, "ram"), null);
+        expect(order(opened)).toEqual(["a", "b", "w1"]);
+        expect(opened.order).toEqual(["a", "b", "w1"]);
+    });
+
+    it("does not move a row when the view switches to tokens", () => {
+        const opened = holdOrder(buildConsumers(read(), roster, "ram"), null);
+        const switched = holdOrder(buildConsumers(read(), roster, "tokens"), opened.order);
+        expect(order(switched)).toEqual(["a", "b", "w1"]);
+        expect(switched.view.groups.map((g) => g.key)).toEqual(["agents", "85548d0b-aaaa"]);
+    });
+
+    it("puts an agent that started since after the held rows, and drops one that ended", () => {
+        const opened = holdOrder(buildConsumers(read(), roster, "ram"), null);
+        const next = holdOrder(
+            buildConsumers(
+                reading([
+                    agent("c", { rambytes: 5 * GB }),
+                    agent("b", { rambytes: 100 * MB }),
+                    agent("w1", { rambytes: 50 * MB, dag }),
+                ]),
+                roster,
+                "ram"
+            ),
+            opened.order
+        );
+        expect(order(next)).toEqual(["b", "c", "w1"]);
+        expect(next.order).toEqual(["b", "c", "w1"]);
     });
 });
 

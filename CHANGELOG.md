@@ -21,6 +21,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Consumers' **RAM** and **Tokens** are now two views, not two sort orders of one list: RAM shows each agent's RAM,
+  free RAM and arcterm's own processes; Tokens shows each agent's tokens and spend of the last 10 minutes and the
+  5-hour quota. Rows are ranked when the panel opens and keep their place while it is open, so switching views or a
+  new reading no longer moves them.
 - The app bar's usage meter turns amber when you are using quota faster than the window passes, not when it passes
   60%: 72% with 20 minutes left stays blue, 50% with 3 hours left turns amber. Its refresh button moved to Usage only;
   switching to the Default Claude account reads its quota at once.

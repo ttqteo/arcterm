@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Consumers panel (spec 2026-10-08-consumers-panel-design.md): every live agent by RAM or by tokens of the last
-// 10 minutes, a run's workers under their run, arcterm's own processes below, and Stop / → Sonnet per row. Opened
-// from the RAM chip (sorted by RAM) and the plan-usage meters (sorted by tokens). consumers.ts decides; this draws.
+// 10 minutes, a run's workers under their run, and Stop / → Sonnet per row. The RAM view shows each row's RAM, free
+// RAM and arcterm's own processes; the Tokens view shows each row's tokens and spend and the 5-hour quota. Opened from
+// the RAM chip (RAM) and the plan-usage meters (Tokens). Rows are ranked when it opens and keep their place while it
+// is open. consumers.ts decides; this draws.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -17,11 +19,12 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import {
     buildConsumers,
+    holdOrder,
     ramLabel,
     staleLine,
     STATE_DOT,
@@ -98,7 +101,7 @@ function toSonnet(row: ConsumerRow): void {
     });
 }
 
-function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
+function Row({ row, model, sort }: { row: ConsumerRow; model: AgentsViewModel; sort: ConsumersSort }) {
     return (
         <div data-consumer-row={row.id} className="flex items-center gap-2 px-3 py-[5px] hover:bg-surface-hover">
             <span
@@ -127,20 +130,26 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
                     {row.model}
                 </span>
             ) : null}
-            <span className="w-[62px] text-right text-[12px] tabular-nums text-secondary">
-                {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
-            </span>
-            <span className="flex w-[104px] items-center justify-end gap-1 text-[12px] tabular-nums text-secondary">
-                {row.burn ? (
-                    <TriangleAlert
-                        data-consumer-burn
-                        size={12}
-                        className="text-warning"
-                        aria-label="Spending fastest"
-                    />
-                ) : null}
-                {row.tokens === undefined ? "—" : `${fmt(row.tokens)} · ${usd(row.spendUsd ?? 0)}`}
-            </span>
+            {sort === "ram" ? (
+                <span data-consumer-ram className="w-[72px] text-right text-[12px] tabular-nums text-secondary">
+                    {row.ramBytes === undefined ? "—" : ramLabel(row.ramBytes)}
+                </span>
+            ) : (
+                <span
+                    data-consumer-tokens
+                    className="flex w-[112px] items-center justify-end gap-1 text-[12px] tabular-nums text-secondary"
+                >
+                    {row.burn ? (
+                        <TriangleAlert
+                            data-consumer-burn
+                            size={12}
+                            className="text-warning"
+                            aria-label="Spending fastest"
+                        />
+                    ) : null}
+                    {row.tokens === undefined ? "—" : `${fmt(row.tokens)} · ${usd(row.spendUsd ?? 0)}`}
+                </span>
+            )}
             {row.canSonnet ? (
                 <button
                     type="button"
@@ -187,7 +196,17 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
     }, [open]);
-    const view = reading.data != null && sort != null ? buildConsumers(reading.data, agents, sort) : null;
+    // the order the panel first drew, held while it is open so switching views or a new reading never moves a row
+    const heldOrder = useRef<string[] | null>(null);
+    if (!open) {
+        heldOrder.current = null;
+    }
+    let view = reading.data != null && sort != null ? buildConsumers(reading.data, agents, sort) : null;
+    if (view != null) {
+        const held = holdOrder(view, heldOrder.current);
+        view = held.view;
+        heldOrder.current = held.order;
+    }
     return (
         <>
             {open ? <div data-consumers-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}
@@ -199,8 +218,11 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">
                         <span data-consumers-header className="flex-1 text-[12px] text-secondary">
-                            {view ? `${formatGB(view.freeBytes)} free of ${formatGB(view.totalBytes)}` : "Reading…"}
-                            {fiveHour != null ? ` · 5h quota ${Math.round(fiveHour)}%` : ""}
+                            {sort === "tokens"
+                                ? `Tokens, last 10 min${fiveHour != null ? ` · 5h quota ${Math.round(fiveHour)}%` : ""}`
+                                : view
+                                  ? `${formatGB(view.freeBytes)} free of ${formatGB(view.totalBytes)}`
+                                  : "Reading…"}
                         </span>
                         <Segmented
                             value={sort ?? "ram"}
@@ -236,25 +258,31 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                         </div>
                                     ) : null}
                                     {g.rows.map((r) => (
-                                        <Row key={r.id} row={r} model={model} />
+                                        <Row key={r.id} row={r} model={model} sort={sort ?? "ram"} />
                                     ))}
                                 </div>
                             ))
                         )}
                     </div>
-                    <div className="border-t border-border px-3 py-1.5">
-                        <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted">arcterm</div>
-                        {(view?.own ?? []).map((o) => (
-                            <div
-                                key={o.label}
-                                data-consumers-own={o.label}
-                                className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
-                            >
-                                <span>{o.label}</span>
-                                <span className="tabular-nums">{o.bytes === undefined ? "—" : ramLabel(o.bytes)}</span>
+                    {sort !== "tokens" ? (
+                        <div className="border-t border-border px-3 py-1.5">
+                            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted">
+                                arcterm
                             </div>
-                        ))}
-                    </div>
+                            {(view?.own ?? []).map((o) => (
+                                <div
+                                    key={o.label}
+                                    data-consumers-own={o.label}
+                                    className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
+                                >
+                                    <span>{o.label}</span>
+                                    <span className="tabular-nums">
+                                        {o.bytes === undefined ? "—" : ramLabel(o.bytes)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
                     <div className="flex justify-end border-t border-border px-3 py-1.5">
                         <button
                             type="button"

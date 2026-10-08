@@ -19459,7 +19459,6 @@ const consumersPopover = {
         const sort = () => h.ev(CONSUMERS_SORT);
         const waitClosed = () => polishWaitFor(h, `${CONSUMERS_SORT} === null`, 2000);
         const calls = () => h.ev(`window.${CONSUMERS_MOCK_KEY}?.calls ?? []`);
-        const rows = () => h.ev(`[...document.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow)`);
         const openFromChip = async () => {
             await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
             return polishWaitFor(h, `${CONSUMERS_SORT} === "ram"`, 3000);
@@ -19497,13 +19496,15 @@ const consumersPopover = {
                 rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
                 header: p.querySelector("[data-consumers-header]")?.textContent ?? "",
                 runLabel: p.textContent.toLowerCase().includes("run 85548d0b"),
+                ramCols: p.querySelectorAll("[data-consumer-ram]").length,
+                tokenCols: p.querySelectorAll("[data-consumer-tokens]").length,
             };
         })()`);
         await h.shot("cdp-shots/consumers-ram.png");
         rec(
-            "3. rows by RAM: the run's worker first under its run, with free RAM and the 5-hour quota in the header",
+            "3. rows by RAM: the run's worker first under its run, free RAM in the header, each row's RAM and no tokens",
             !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
-                ram.header.includes("free of") && ram.header.includes("5h quota 62%"),
+                ram.header.includes("free of") && !ram.header.includes("5h quota") && ram.ramCols === 4 && ram.tokenCols === 0,
             JSON.stringify(ram)
         );
 
@@ -19521,27 +19522,45 @@ const consumersPopover = {
             const pi = ${consumersRowExpr("fx-consumers-pi")};
             return {
                 workerOpus: !!w?.querySelector("[data-consumer-opus]"),
-                workerBurn: !!w?.querySelector("[data-consumer-burn]"),
                 workerSonnet: !!w?.querySelector("[data-consumer-sonnet]"),
-                mineBurn: !!mine?.querySelector("[data-consumer-burn]"),
                 mineSonnet: !!mine?.querySelector("[data-consumer-sonnet]"),
                 piSonnet: !!pi?.querySelector("[data-consumer-sonnet]"),
                 stops: [w, mine, pi].every((r) => !!r?.querySelector("[data-consumer-stop]")),
-                piTokens: pi?.textContent.includes("—") ?? false,
             };
         })()`);
         rec(
-            "5. the Opus worker is marked, burns fastest and offers → Sonnet; every row has Stop; the pi agent's tokens are unread",
-            marks.workerOpus && marks.workerBurn && marks.workerSonnet && !marks.mineBurn && !marks.mineSonnet &&
-                !marks.piSonnet && marks.stops && marks.piTokens,
+            "5. the Opus worker is marked and offers → Sonnet; every row has Stop",
+            marks.workerOpus && marks.workerSonnet && !marks.mineSonnet && !marks.piSonnet && marks.stops,
             JSON.stringify(marks)
         );
 
         await h.ev(`[...document.querySelectorAll("[data-consumers-panel] button")].find((b) => b.textContent.trim() === "Tokens")?.click()`);
         await settle(300);
-        const tokens = { sort: await sort(), first: (await rows())[0] };
+        const tokens = await h.ev(`(() => {
+            const p = document.querySelector("[data-consumers-panel]");
+            const w = ${consumersRowExpr("fx-consumers-worker")};
+            const mine = ${consumersRowExpr("fx-consumers-mine")};
+            const pi = ${consumersRowExpr("fx-consumers-pi")};
+            return {
+                sort: p?.dataset.sort ?? null,
+                first: p?.querySelector("[data-consumer-row]")?.dataset.consumerRow ?? null,
+                header: p?.querySelector("[data-consumers-header]")?.textContent ?? "",
+                ramCols: p?.querySelectorAll("[data-consumer-ram]").length ?? -1,
+                tokenCols: p?.querySelectorAll("[data-consumer-tokens]").length ?? -1,
+                own: p?.querySelectorAll("[data-consumers-own]").length ?? -1,
+                workerBurn: !!w?.querySelector("[data-consumer-burn]"),
+                mineBurn: !!mine?.querySelector("[data-consumer-burn]"),
+                piTokens: pi?.querySelector("[data-consumer-tokens]")?.textContent.includes("—") ?? false,
+            };
+        })()`);
         await h.shot("cdp-shots/consumers-tokens.png");
-        rec("6. the sort toggle ranks by tokens", tokens.sort === "tokens" && tokens.first === "fx-consumers-worker", JSON.stringify(tokens));
+        rec(
+            "6. the Tokens view keeps the rows where they were, shows tokens and spend instead of RAM, the 5-hour quota in the header, no arcterm processes; the Opus worker burns fastest and the pi agent's tokens are unread",
+            tokens.sort === "tokens" && tokens.first === "fx-consumers-worker" && tokens.header.includes("5h quota 62%") &&
+                !tokens.header.includes("free of") && tokens.ramCols === 0 && tokens.tokenCols === 4 && tokens.own === 0 &&
+                tokens.workerBurn && !tokens.mineBurn && tokens.piTokens,
+            JSON.stringify(tokens)
+        );
 
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-sonnet]")?.click()`);
         const sonnetToast = await polishWaitFor(h, consumersToastExpr("arcterm switch", "Sonnet"), 3000);

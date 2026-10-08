@@ -43,7 +43,10 @@ the likely cause; a separate investigation).
    sort toggle. One row per agent: its state dot (the rail's colors), name, project, model, RAM, and tokens
    of the last 10 minutes with their estimated cost. Run workers are grouped under a `Run <short id>` header
    row. Below the agents, arcterm's own: **Interface**, **Server**, **Host**, and **Terminals** (what plain terminal
-   tabs run: their shells, a dev server, a build), read-only. A click on an agent's
+   tabs run: their shells, a dev server, a build), read-only. (Amended 2026-10-08: the toggle switches views, not
+   only the order: RAM shows the RAM column, free RAM and arcterm's own; Tokens shows the tokens column and the
+   5-hour quota, without arcterm's own. Rows are ranked by the opener's measure when the panel opens and keep their
+   place while it is open; an agent that starts since goes after them.) A click on an agent's
    name opens it through the router (`openTarget`, `frontend/app/view/jarvis/openref.ts`).
 
 3. **Warnings.** A Claude agent on Opus shows its model label in the warning tone. The agent with the most

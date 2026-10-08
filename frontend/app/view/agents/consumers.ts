@@ -141,6 +141,25 @@ export function buildConsumers(
     };
 }
 
+/** Keeps the rows where they were while the panel stays open: switching between RAM and Tokens, or a new reading,
+ * does not move a row. `held` is the row ids in the order the panel first drew them (null on open: the view's own
+ * ranking is kept). A row not in `held` (an agent that started since) goes after the held ones of its group, a new
+ * group after the held groups, both in the view's ranking. Returns the view in that order and the order to hold next. */
+export function holdOrder(view: ConsumersView, held: string[] | null): { view: ConsumersView; order: string[] } {
+    const flat = (groups: ConsumerGroup[]) => groups.flatMap((g) => g.rows.map((r) => r.id));
+    if (held == null) {
+        return { view, order: flat(view.groups) };
+    }
+    const at = new Map(held.map((id, i) => [id, i]));
+    // a stable sort keeps the view's ranking among the rows `held` does not know
+    const pos = (id: string) => at.get(id) ?? Infinity;
+    const byHeld = (a: number, b: number) => (a === b ? 0 : a < b ? -1 : 1);
+    const groups = view.groups.map((g) => ({ ...g, rows: [...g.rows].sort((a, b) => byHeld(pos(a.id), pos(b.id))) }));
+    const first = (g: ConsumerGroup) => Math.min(...g.rows.map((r) => pos(r.id)));
+    groups.sort((a, b) => byHeld(first(a), first(b)));
+    return { view: { ...view, groups }, order: flat(groups) };
+}
+
 /** "300 MB" under a gigabyte, "2.5 GB" above. */
 export function ramLabel(bytes: number): string {
     return bytes < 2 ** 30 ? `${Math.round(bytes / 2 ** 20)} MB` : formatGB(bytes);
