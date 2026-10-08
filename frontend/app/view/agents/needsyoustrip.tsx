@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// "Cần bạn": what waits on you in the Cockpit that is not a card. Asks are cards below it; this lists the review
+// "Needs you": what waits on you in the Cockpit that is not a card. Asks are cards below it; this lists the review
 // gates, blocked tasks, runs to acknowledge or land, and escalations that Jarvis's Waiting list used to be the only
 // place to act on. The model is needsyoustripmodel.ts; the button and its call are the Brief's own (attentionact.ts,
 // attentionrun.ts). Hidden when nothing waits.
@@ -87,12 +87,12 @@ export function NeedsYouStrip({
     return (
         <section
             data-cockpit-needs-you
-            aria-label="Cần bạn"
+            aria-label="Needs you"
             className="shrink-0 border-b border-border bg-background px-5 pb-1.5 pt-2"
         >
             <div className="flex items-center gap-2 pb-1">
                 <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-asking" />
-                <span className={cn(REGION_LABEL, "text-asking")}>Cần bạn</span>
+                <span className={cn(REGION_LABEL, "text-asking")}>Needs you</span>
                 <span className="text-[10.5px] font-semibold tabular-nums text-ink-mid">{rows.length}</span>
             </div>
             <div className="flex max-h-[30vh] flex-col overflow-y-auto">

@@ -13,7 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { loadSessionsArchive, type LiveSession } from "./sessionsarchivestore";
 
-export const DELETE_SESSION_LABEL = "Xoá session";
+export const DELETE_SESSION_LABEL = "Delete session";
 
 const TASK_MAX = 80;
 
@@ -34,7 +34,7 @@ function taskLabel(task: string): string {
 }
 
 export function deleteSessionMessage(task: string): string {
-    return `Xoá session '${taskLabel(task)}'? Transcript được chuyển vào ~/.arc/trash và xoá hẳn sau 7 ngày; session sẽ không còn trong claude --resume.`;
+    return `Delete session '${taskLabel(task)}'? Its transcript moves to ~/.arc/trash and is purged after 7 days; the session will no longer be in claude --resume.`;
 }
 
 // Move the session to the trash, then reload the archive so its row goes. The server refuses a session that is still
@@ -48,7 +48,7 @@ export async function deleteSession(session: DeletableSession, onDeleted?: () =>
         await RpcApi.DeleteAgentSessionCommand(TabRpcClient, { transcriptpath: session.transcriptpath });
     } catch (e) {
         pushToast({
-            title: "Không xoá được session",
+            title: "Could not delete the session",
             message: e instanceof Error ? e.message : String(e),
             level: "error",
         });
@@ -65,7 +65,7 @@ export function confirmDeleteSession(session: DeletableSession, onDeleted?: () =
     modalsModel.pushModal("ConfirmModal", {
         title: DELETE_SESSION_LABEL,
         message: deleteSessionMessage(session.task),
-        confirmLabel: "Xoá",
+        confirmLabel: "Delete",
         destructive: true,
         onConfirm: () => fireAndForget(() => deleteSession(session, onDeleted)),
     });

@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A terminal you have not renamed is named for the command it last ran (`task dev`), or "Terminal 2" before it has
   run one, instead of every terminal in a repo sharing the repo's name. PowerShell, Windows PowerShell 5.1 included,
   now reports its commands to arcterm.
+- The labels still in Vietnamese are now in English: the Claude account settings and its sign-in and restart
+  dialogs, the Cockpit's **Needs you** strip, **Delete session**, and the usage refresh's retry time.
 
 ### Fixed
 

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Cockpit's "Cần bạn" strip, as data. An ask is already a card in the Cockpit (a plain agent's, or a run
+// The Cockpit's "Needs you" strip, as data. An ask is already a card in the Cockpit (a plain agent's, or a run
 // card's answer bar), so the strip lists the other things that wait on you: a review gate, a blocked task, a run
 // to acknowledge or land, an escalation. Each row carries what Jarvis's Waiting row does (attentionact.ts picks
 // the one button), so the same item reads the same on both surfaces. Pure; needsyoustrip.tsx draws it.
@@ -13,10 +13,10 @@ import { normProjectPath } from "./channelderive";
 import { parseCardData } from "./jarviscards";
 
 const KIND_LABEL: Record<string, string> = {
-    "dag-gate": "Duyệt task",
-    "dag-blocked": "Task bị chặn",
-    "run-unverified": "Run chờ xác nhận",
-    "run-land-held": "Run chờ land",
+    "dag-gate": "Review task",
+    "dag-blocked": "Blocked task",
+    "run-unverified": "Run to confirm",
+    "run-land-held": "Run to land",
     escalation: "Escalation",
 };
 

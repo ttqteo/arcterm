@@ -1084,7 +1084,7 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     const remove = (a: ClaudeAccountData) =>
         modalsModel.pushModal("ConfirmModal", {
             title: "Remove account",
-            message: `Xoá "${a.label}" khỏi máy này? Token của nó bị xoá theo.${a.id === active ? " Agent mới sẽ chạy trên Default (/login)." : ""}`,
+            message: `Remove "${a.label}" from this machine? Its token is deleted with it.${a.id === active ? " New agents will run on Default (/login)." : ""}`,
             confirmLabel: "Remove",
             destructive: true,
             onConfirm: () =>
@@ -1193,7 +1193,7 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                                     <span data-claude-account-email={id}>
                                         <CommitText
                                             value={account.email ?? ""}
-                                            placeholder="chưa gắn email"
+                                            placeholder="no email set"
                                             width="w-[220px]"
                                             list={EMAIL_LIST_ID}
                                             onCommit={(v) => setEmail(id, v)}
@@ -1203,8 +1203,8 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                             )}
                             <span className="flex-none text-[11px] tabular-nums text-muted">
                                 {quota == null
-                                    ? "chưa dùng"
-                                    : `5h ${quotaPct(quota.fivehourpct)} · tuần ${quotaPct(quota.weekpct)} · đo ${formatAgeShort(now - quota.capturedAt)} trước`}
+                                    ? "not used yet"
+                                    : `5h ${quotaPct(quota.fivehourpct)} · week ${quotaPct(quota.weekpct)} · read ${formatAgeShort(now - quota.capturedAt)} ago`}
                             </span>
                             {account != null ? (
                                 <button
@@ -1230,7 +1230,7 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                     onClick={() => setSigninOpen(true)}
                     className="cursor-pointer rounded border border-edge-mid px-3 py-[6px] text-[12px] font-semibold text-secondary transition-colors hover:border-edge-strong hover:text-primary"
                 >
-                    + Đăng nhập account
+                    + Sign in to account
                 </button>
                 <button
                     type="button"
@@ -1239,21 +1239,21 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                     onClick={() => setPasteOpen((v) => !v)}
                     className="cursor-pointer text-[12px] font-semibold text-muted transition-colors hover:text-primary"
                 >
-                    {pasteOpen ? "▾" : "▸"} Dán token
+                    {pasteOpen ? "▾" : "▸"} Paste token
                 </button>
             </div>
             {pasteOpen ? (
                 <div className="mt-3 flex flex-col gap-2 rounded-[11px] border border-border p-3">
                     <div className="text-[12px] leading-[1.5] text-muted">
-                        Token từ <span className="font-mono">claude setup-token</span> (bắt đầu bằng{" "}
-                        <span className="font-mono">sk-ant-oat</span>). Enter để lưu.
+                        Token from <span className="font-mono">claude setup-token</span> (starts with{" "}
+                        <span className="font-mono">sk-ant-oat</span>). Enter to save.
                     </div>
                     <div className="flex flex-wrap items-center gap-2.5">
                         <input
                             type="text"
                             data-claude-account-paste-label
                             value={pasteLabel}
-                            placeholder="Label (mặc định Account N)"
+                            placeholder="Label (default Account N)"
                             spellCheck={false}
                             onChange={(e) => setPasteLabel(e.target.value)}
                             className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
@@ -1263,7 +1263,7 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                             data-claude-account-paste-email
                             value={pasteEmail}
                             list={EMAIL_LIST_ID}
-                            placeholder="Email (không bắt buộc)"
+                            placeholder="Email (optional)"
                             spellCheck={false}
                             onChange={(e) => setPasteEmail(e.target.value)}
                             className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"

@@ -15,5 +15,5 @@ export function showUsageRefresh(shownProviders: string[], activeAccount: string
 export function retryHint(retryAt: number): string {
     const at = new Date(retryAt);
     const two = (n: number) => String(n).padStart(2, "0");
-    return `thử lại lúc ${two(at.getHours())}:${two(at.getMinutes())}`;
+    return `retry at ${two(at.getHours())}:${two(at.getMinutes())}`;
 }

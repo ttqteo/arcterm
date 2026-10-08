@@ -20265,7 +20265,7 @@ const settingsClaudeAccount = {
         };
         const dismissRestart = async () => {
             if (await h.ev(`!!${CA_RESTART}`)) {
-                await h.ev(caClickButton(CA_RESTART, "Để sau"));
+                await h.ev(caClickButton(CA_RESTART, "Later"));
                 await poll(() => h.ev(`!!${CA_RESTART}`), (v) => !v);
             }
         };
@@ -20311,7 +20311,7 @@ const settingsClaudeAccount = {
                 rowA?.label === "Fixture A" &&
                 rowA.text.includes("97%") &&
                 rowB?.label === "Fixture B" &&
-                rowB.text.includes("chưa dùng"),
+                rowB.text.includes("not used yet"),
             JSON.stringify(r1)
         );
         await h.shot(`cdp-shots/${CA}.png`);
@@ -20346,17 +20346,17 @@ const settingsClaudeAccount = {
             "3. only the idle agent starts checked; working and asking carry their notes",
             byId["fx-ca-idle"]?.checked === true &&
                 byId["fx-ca-working"]?.checked === false &&
-                byId["fx-ca-working"]?.name.includes("đang làm việc") &&
+                byId["fx-ca-working"]?.name.includes("restarts once its turn ends") &&
                 byId["fx-ca-asking"]?.checked === false &&
-                byId["fx-ca-asking"]?.name.includes("đang hỏi"),
+                byId["fx-ca-asking"]?.name.includes("restarting drops the question"),
             JSON.stringify(dialog)
         );
         await h.shot(`cdp-shots/${CA}-restart.png`);
-        await h.ev(caClickButton(CA_RESTART, "Để sau"));
+        await h.ev(caClickButton(CA_RESTART, "Later"));
         const gone = await poll(() => h.ev(`!!${CA_RESTART}`), (v) => !v);
         const stillA = await setting();
         rec(
-            "4. Để sau closes the dialog and leaves A selected",
+            "4. Later closes the dialog and leaves A selected",
             gone === false && stillA === ctx.idA,
             JSON.stringify({ dialogOpen: gone, setting: stillA })
         );
@@ -20480,7 +20480,7 @@ const settingsClaudeAccount = {
             return t ? { present: true, signin: t.textContent.includes("Claude sign-in") } : { present: false };
         })()`);
         rec(
-            "12. + Đăng nhập account opens a live terminal in a helper tab the session sidebar leaves out",
+            "12. + Sign in to account opens a live terminal in a helper tab the session sidebar leaves out",
             term === true && helperTabs.length === 1 && tree.present === true && tree.signin === false,
             JSON.stringify({ term, helperTabs, tree })
         );
@@ -20506,7 +20506,7 @@ const settingsClaudeAccount = {
             20000
         );
         await h.ev(caSetInput("input[data-claude-signin-label]", "Fixture S"));
-        await h.ev(caClickButton(CA_SIGNIN, "Lưu"));
+        await h.ev(caClickButton(CA_SIGNIN, "Save"));
         const savedS = await poll(list, (l) => l.accounts.some((a) => a.label === "Fixture S"));
         const rowS = await poll(rows, (r) => r.some((x) => x.label === "Fixture S"));
         const signinGone = await poll(() => h.ev(`!!${CA_SIGNIN}`), (v) => !v);

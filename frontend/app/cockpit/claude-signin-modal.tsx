@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings → Claude account → "+ Đăng nhập account": a small live terminal running `claude setup-token`.
+// Settings → Claude account → "+ Sign in to account": a small live terminal running `claude setup-token`.
 // The user signs in in the browser as the account to add; the token setup-token prints is read out of the
 // pty output (TokenScanner), stored, and only a label is asked for. The terminal lives in a helper tab
 // marked session:helper (the session sidebar skips it), not in an agent launch, and the tab is closed on
@@ -178,13 +178,14 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
         >
             <div data-claude-signin-modal className="flex min-h-[420px] flex-col px-[22px] pt-[22px] pb-[18px]">
                 <h2 className="text-[16px] font-bold leading-[1.3] tracking-[-0.015em] text-primary">
-                    {phase.kind === "label" ? "Đặt tên account" : "Đăng nhập Claude account"}
+                    {phase.kind === "label" ? "Name this account" : "Sign in to a Claude account"}
                 </h2>
                 {signingIn ? (
                     <>
                         <div className="mt-[7px] text-[13px] leading-[1.55] text-ink-mid">
-                            Trình duyệt sẽ mở: đăng nhập bằng account muốn thêm rồi cho phép. arcterm tự lấy token khi{" "}
-                            <span className="font-mono">claude setup-token</span> in ra — không cần copy.
+                            Your browser will open: sign in with the account to add, then allow access. arcterm picks up
+                            the token when <span className="font-mono">claude setup-token</span> prints it — no need to
+                            copy it.
                         </div>
                         <div
                             data-claude-signin-term
@@ -194,7 +195,7 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                                 <CockpitFocusPane blockId={phase.blockId} tabId={phase.tabId} />
                             ) : (
                                 <div className="m-auto text-[12px] text-muted">
-                                    {phase.kind === "saving" ? "Đang lưu token…" : "Đang mở terminal…"}
+                                    {phase.kind === "saving" ? "Saving token…" : "Opening terminal…"}
                                 </div>
                             )}
                         </div>
@@ -202,7 +203,7 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                 ) : phase.kind === "label" ? (
                     <div className="mt-[7px] flex flex-col gap-2.5">
                         <div className="text-[13px] leading-[1.55] text-ink-mid">
-                            Đã lưu token. Agent mới chạy trên account này khi bạn chọn nó trong Settings.
+                            Token saved. New agents run on this account once you select it in Settings.
                         </div>
                         <input
                             type="text"
@@ -221,14 +222,14 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                             className="w-[280px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[13px] text-primary outline-none focus:border-accent-700"
                         />
                         <div className="text-[12px] leading-[1.55] text-muted">
-                            Email của account này (không bắt buộc): để hiện lượng dùng gần nhất của nó.
+                            This account's email (optional): used to show its latest usage.
                         </div>
                         <input
                             type="text"
                             data-claude-signin-email
                             value={email}
                             list="claude-signin-emails"
-                            placeholder="Email (không bắt buộc)"
+                            placeholder="Email (optional)"
                             spellCheck={false}
                             onChange={(e) => setEmail(e.target.value)}
                             onKeyDown={(e) => {
@@ -250,11 +251,11 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                 <div className="mt-auto flex justify-end gap-2.5 pt-[18px]">
                     {phase.kind === "label" ? (
                         <DialogButton variant="primary" hint="⏎" disabled={busy} onClick={() => void save()}>
-                            Lưu
+                            Save
                         </DialogButton>
                     ) : (
                         <DialogButton variant="secondary" hint="esc" data-claude-signin-cancel onClick={onClose}>
-                            {phase.kind === "error" ? "Đóng" : "Cancel"}
+                            {phase.kind === "error" ? "Close" : "Cancel"}
                         </DialogButton>
                     )}
                 </div>

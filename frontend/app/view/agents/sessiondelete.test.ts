@@ -60,7 +60,7 @@ describe("canDeleteSession", () => {
 describe("deleteSessionMessage", () => {
     it("names the session and says where it goes and for how long", () => {
         expect(deleteSessionMessage("fix the build")).toBe(
-            "Xoá session 'fix the build'? Transcript được chuyển vào ~/.arc/trash và xoá hẳn sau 7 ngày; session sẽ không còn trong claude --resume."
+            "Delete session 'fix the build'? Its transcript moves to ~/.arc/trash and is purged after 7 days; the session will no longer be in claude --resume."
         );
     });
     it("names an untitled session, and keeps a long or multi-line prompt to one line", () => {
