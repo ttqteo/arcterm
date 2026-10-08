@@ -12,14 +12,24 @@ import { sameRepoPath } from "@/util/paths";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { resolveCwd } from "./agentcwdresolve";
+import { resolveSidebarFolded } from "./difflayout";
 import type { FilesProject, FilesState } from "./filesstore";
 import { projectListAtom } from "./projectsstore";
 
-// Folded to the narrow rail. Persisted across launches; the cast is railstore.ts's (jotai otherwise types it as a
+// The person's own fold: null = follow the surface's width, true/false = they said so and a resize must not undo it.
+// Persisted across launches; the width's fold never is. The cast is railstore.ts's (jotai otherwise types it as a
 // promise).
-export const sidebarFoldedAtom = atomWithStorage<boolean>("cockpit.files.sidebar.folded", false, undefined, {
+export const sidebarFoldedAtom = atomWithStorage<boolean | null>("cockpit.files.sidebar.folded", null, undefined, {
     getOnInit: true,
-}) as PrimitiveAtom<boolean>;
+}) as PrimitiveAtom<boolean | null>;
+
+// The Diff surface's whole width, sidebar included, as FilesSurface last measured it; 0 until it has.
+export const diffSurfaceWidthAtom = atom(0) as PrimitiveAtom<number>;
+
+// Whether the sidebar shows as its rail: the explicit choice, else the width's (difflayout.ts).
+export const sidebarShownFoldedAtom = atom((get) =>
+    resolveSidebarFolded(get(sidebarFoldedAtom), get(diffSurfaceWidthAtom))
+);
 
 // Project names whose group is open, for this session only. The view adds the current source's group on a scope change.
 export const sidebarExpandedAtom = atom<Set<string>>(new Set<string>()) as PrimitiveAtom<Set<string>>;

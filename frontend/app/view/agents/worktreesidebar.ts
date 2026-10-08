@@ -83,8 +83,11 @@ function isCurrentCheckout(c: Checkout, current: SidebarInput["current"]): boole
     }
 }
 
-export function sidebarRows(input: SidebarInput): SidebarRow[] {
-    const { current } = input;
+// Every group's checkouts with each agent under the checkout it runs in, and the agents no checkout holds.
+function placeAgents(input: SidebarInput): {
+    groups: { project: FilesProject; checkouts: Checkout[] }[];
+    other: SidebarAgent[];
+} {
     const groups = input.projects.map((p) => ({
         project: p,
         checkouts: checkoutsOf(p, input.worktrees[p.name], input.errors[p.name]),
@@ -96,11 +99,29 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
         const home = cwd ? containingWorktree(cwd, all) : undefined;
         (home?.agents ?? other).push(a);
     }
+    return { groups, other };
+}
+
+function isCurrentAgent(a: SidebarAgent, current: SidebarInput["current"]): boolean {
+    return current.origin?.kind === "agent" && current.origin.id === a.id;
+}
+
+// currentProject names the group holding the current source, which the view expands on a scope change. Expansion
+// itself is only the user's set, so the group holding the current source can still be collapsed.
+export function currentProject(input: SidebarInput): string | undefined {
+    const { current } = input;
+    return placeAgents(input).groups.find((g) =>
+        g.checkouts.some((c) => isCurrentCheckout(c, current) || c.agents.some((a) => isCurrentAgent(a, current)))
+    )?.project.name;
+}
+
+export function sidebarRows(input: SidebarInput): SidebarRow[] {
+    const { current } = input;
+    const { groups, other } = placeAgents(input);
 
     const q = input.query.trim().toLowerCase();
     const hit = (s: string | undefined) => !!s && s.toLowerCase().includes(q);
     const pathHit = (p: string) => normalizeRepoPath(p).includes(normalizeRepoPath(q) || q);
-    const isCurrentAgent = (a: SidebarAgent) => current.origin?.kind === "agent" && current.origin.id === a.id;
 
     const rows: SidebarRow[] = [];
     for (const g of groups) {
@@ -117,8 +138,8 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
         if (shown.length === 0) {
             continue;
         }
-        const holdsCurrent = g.checkouts.some((c) => isCurrentCheckout(c, current) || c.agents.some(isCurrentAgent));
-        const expanded = !!q || input.expanded.has(name) || holdsCurrent;
+        // a query shows every group it matches; that is not the user's expanded set
+        const expanded = !!q || input.expanded.has(name);
         const error = input.errors[name];
         rows.push({ kind: "group", project: name, path: g.project.path, expanded, ...(error ? { error } : {}) });
         if (!expanded) {
@@ -133,7 +154,7 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
                 current: isCurrentCheckout(c, current),
             });
             for (const a of agents) {
-                rows.push({ kind: "agent", agent: a, current: isCurrentAgent(a) });
+                rows.push({ kind: "agent", agent: a, current: isCurrentAgent(a, current) });
             }
         }
     }
@@ -142,7 +163,7 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
     if (others.length > 0) {
         rows.push({ kind: "other-agents" });
         for (const a of others) {
-            rows.push({ kind: "agent", agent: a, current: isCurrentAgent(a) });
+            rows.push({ kind: "agent", agent: a, current: isCurrentAgent(a, current) });
         }
     }
     return rows;

@@ -35,11 +35,13 @@ import type { FilesState } from "./filesstore";
 import { projectListAtom } from "./projectsstore";
 import {
     agentCwdsAtom,
+    diffSurfaceWidthAtom,
     loadProjectWorktrees,
     refreshSidebar,
     resolveAgentCwds,
     sidebarExpandedAtom,
     sidebarFoldedAtom,
+    sidebarShownFoldedAtom,
     withLiveCount,
     worktreeErrorsAtom,
     worktreesByProjectAtom,
@@ -193,14 +195,36 @@ describe("withLiveCount", () => {
 });
 
 describe("sidebarFoldedAtom", () => {
-    it("persists under cockpit.files.sidebar.folded and defaults to open", async () => {
+    it("persists under cockpit.files.sidebar.folded and defaults to following the width", async () => {
         lsMock.clear();
-        expect(globalStore.get(sidebarFoldedAtom)).toBe(false);
+        expect(globalStore.get(sidebarFoldedAtom)).toBe(null);
         globalStore.set(sidebarFoldedAtom, true);
         expect(lsMock.store.get("cockpit.files.sidebar.folded")).toBe("true");
         vi.resetModules();
         const { createStore } = await import("jotai");
         const fresh = await import("./worktreesidebarstore");
         expect(createStore().get(fresh.sidebarFoldedAtom)).toBe(true);
+    });
+});
+
+describe("sidebarShownFoldedAtom", () => {
+    afterEach(() => {
+        globalStore.set(sidebarFoldedAtom, null);
+        globalStore.set(diffSurfaceWidthAtom, 0);
+    });
+
+    it("folds a narrow surface without writing the persisted choice", () => {
+        lsMock.clear();
+        globalStore.set(sidebarFoldedAtom, null);
+        globalStore.set(diffSurfaceWidthAtom, 920);
+        expect(globalStore.get(sidebarShownFoldedAtom)).toBe(true);
+        expect(globalStore.get(sidebarFoldedAtom)).toBe(null);
+        expect(lsMock.store.get("cockpit.files.sidebar.folded")).not.toBe("true");
+    });
+
+    it("keeps an explicit unfold on a narrow surface", () => {
+        globalStore.set(diffSurfaceWidthAtom, 920);
+        globalStore.set(sidebarFoldedAtom, false);
+        expect(globalStore.get(sidebarShownFoldedAtom)).toBe(false);
     });
 });

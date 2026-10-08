@@ -2,7 +2,8 @@
 // teardown(h,ctx) }. arrange/assert/teardown run in Node and drive the browser via h (see attach.mjs).
 // Asserts are RPC-based (backend state) or DOM-based (h.ev); they do not read jotai atoms (globalStore is not exposed on
 // window), with one exception: agent-history step 14 reads listNavAtom, which leaves no DOM trace, by importing the app's own
-// modules from the dev server (see ahResolveModules). steps are { step, ok, detail }.
+// modules from the dev server (see ahResolveModules); diff-worktrees step 6 reads focusIdAtom through the focusId prop the
+// worktree sidebar renders with. steps are { step, ok, detail }.
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -3015,6 +3016,40 @@ const git = (dir, ...args) =>
         },
     });
 
+// the worktree sidebar's persisted fold (worktreesidebarstore.ts): absent = follow the width, else the person's choice
+const SIDEBAR_FOLD_KEY = "cockpit.files.sidebar.folded";
+// A scenario that folds or unfolds the sidebar by hand keeps the value it found and puts it back in teardown.
+const restoreSidebarFold = (h, prev) =>
+    h.ev(
+        prev == null
+            ? `localStorage.removeItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`
+            : `localStorage.setItem(${JSON.stringify(SIDEBAR_FOLD_KEY)}, ${JSON.stringify(prev)})`
+    );
+
+// Picks a Diff surface source the way a person does, in the worktree sidebar: unfold it, open `group` when the row
+// is not shown (a collapsed group hides its checkouts and their agents), then click the row whose
+// data-files-source-option is `name`. False when no such row turns up.
+async function pickFilesSource(h, name, group = name) {
+    const option = JSON.stringify(`[data-files-source-option=${JSON.stringify(name)}]`);
+    const header = JSON.stringify(`[data-worktree-group=${JSON.stringify(group)}]`);
+    return h.ev(`(async () => {
+        const until = async (fn, ms) => {
+            for (let t = 0; t < ms && !fn(); t += 100) await new Promise((r) => setTimeout(r, 100));
+            return fn();
+        };
+        document.querySelector('[data-worktree-sidebar="folded"] [title="Expand worktrees"]')?.click();
+        if (!(await until(() => document.querySelector('[data-worktree-sidebar="open"]'), 3000))) return false;
+        if (!(await until(() => document.querySelector(${option}), 1500))) {
+            const g = await until(() => document.querySelector(${header}), 5000);
+            if (g?.getAttribute("aria-expanded") === "false") g.click();
+        }
+        const row = await until(() => document.querySelector(${option}), 8000);
+        if (!row) return false;
+        row.click();
+        return true;
+    })()`);
+}
+
 const gitHistory = {
     name: "git-history",
     surface: "files",
@@ -3046,20 +3081,16 @@ const gitHistory = {
         await h.rpc("createproject", { name: names.good, path: good });
         await h.rpc("createproject", { name: names.broken, path: broken });
         await h.rpc("createproject", { name: names.notRepo, path: notRepo });
-        return { dirs: [good, broken, notRepo], names };
+        // step 10 folds and unfolds the worktree sidebar by hand
+        const prevSidebarFold = await h.ev(`localStorage.getItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
+        return { dirs: [good, broken, notRepo], names, prevSidebarFold };
     },
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const pick = async (name) => {
-            await h.ev(`document.querySelector('[data-files-source-picker]').click()`);
-            await sleep(150);
-            const ok = await h.ev(
-                `(() => { const b = document.querySelector('[data-files-source-option=${JSON.stringify(name)}]');
-                  if (!b) return false; b.click(); return true; })()`
-            );
-            if (!ok) throw new Error(`source option "${name}" not in the picker`);
+            if (!(await pickFilesSource(h, name))) throw new Error(`source option "${name}" not in the sidebar`);
             await sleep(1200); // change list + history page
         };
         const rowCount = () => h.ev(`document.querySelectorAll('[data-history-row]').length`);
@@ -3185,11 +3216,34 @@ const gitHistory = {
         );
         await h.shot("cdp-shots/git-history-notrepo.png");
 
+        // "Choose a source" hands the person to the sidebar: folded first, so the unfold is the panel's doing
+        await h.ev(`document.querySelector('[data-worktree-sidebar="open"] [title="Collapse worktrees"]')?.click()`);
+        await sleep(300);
+        const foldedFirst = await present('[data-worktree-sidebar="folded"]');
+        const chose = await h.ev(
+            `(() => { const b = [...document.querySelectorAll('[data-not-a-repo] button')].find((e) => e.textContent.trim() === 'Choose a source');
+              if (!b) return false; b.click(); return true; })()`
+        );
+        // the filter mounts with the unfold and takes focus on the next frame
+        let filterFocused = false;
+        for (let waited = 0; waited < 3000 && !filterFocused; waited += 100) {
+            await sleep(100);
+            filterFocused = await h.ev(`document.activeElement?.hasAttribute('data-worktree-filter') ?? false`);
+        }
+        const unfolded = await present('[data-worktree-sidebar="open"]');
+        rec(
+            "10. Choose a source unfolds the worktree sidebar and puts the cursor in its filter",
+            foldedFirst && chose && unfolded && filterFocused,
+            `foldedFirst=${foldedFirst} clicked=${chose} unfolded=${unfolded} filterFocused=${filterFocused}`
+        );
+        await h.shot("cdp-shots/git-history-choose-source.png");
+        await h.ev(`document.activeElement?.blur()`);
+
         await pick(ctx.names.broken);
         const failed = await present("[data-git-failure]");
         const evidence = await text("[data-git-failure]");
         rec(
-            "10. an unreadable repository reads as a failure, with git's own message",
+            "11. an unreadable repository reads as a failure, with git's own message",
             failed && evidence.includes("git log") && evidence.length > 40,
             `failure=${failed} evidence="${evidence.slice(0, 120)}"`
         );
@@ -3198,6 +3252,7 @@ const gitHistory = {
         return steps;
     },
     async teardown(h, ctx) {
+        await restoreSidebarFold(h, ctx.prevSidebarFold);
         for (const name of Object.values(ctx.names)) {
             try {
                 await h.rpc("deleteproject", { name });
@@ -3262,6 +3317,10 @@ func Submit(id string) error {
         // cannot undo (difflayout.ts), and it is module-level, so it outlives the surface for the whole
         // life of the page. An earlier run of this scenario would otherwise be the thing that decides
         // what "at 1000x700" means below, and a reload is the only route back to "follow the width".
+        // The worktree sidebar's fold is the same kind of override, persisted: cleared before the reload, so the
+        // width decides it, and put back in teardown.
+        const prevSidebarFold = await h.ev(`localStorage.getItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
+        await h.ev(`localStorage.removeItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
         try {
             await h.ev("location.reload()");
         } catch {
@@ -3274,7 +3333,7 @@ func Submit(id string) error {
             if (up) break;
             await new Promise((r) => setTimeout(r, 500));
         }
-        return { dir, name };
+        return { dir, name, prevSidebarFold };
     },
     async assert(h, ctx) {
         const steps = [];
@@ -3303,6 +3362,10 @@ func Submit(id string) error {
             return false;
         };
 
+        // Picked at the harness's roomy size, where the width leaves the sidebar open: unfolding it by hand at
+        // 1000x700 would be an explicit choice, which the narrow width then must not undo.
+        if (!(await pickFilesSource(h, ctx.name))) throw new Error(`source option "${ctx.name}" not in the sidebar`);
+
         // the shipped window (src-tauri/tauri.conf.json), which is the whole point of this scenario
         await h.cdp("Emulation.setDeviceMetricsOverride", {
             width: 1000,
@@ -3310,19 +3373,15 @@ func Submit(id string) error {
             deviceScaleFactor: 1,
             mobile: false,
         });
-        await sleep(600);
-
-        await click("[data-files-source-picker]");
-        await sleep(200);
-        await click(`[data-files-source-option=${JSON.stringify(ctx.name)}]`);
         await sleep(1600); // change list + history page
 
         const railWidth = await widthOf("[data-history-rail]");
         const expandedRow = await present("[data-history-row]");
+        const sidebarWidth = await widthOf('[data-worktree-sidebar="folded"]');
         rec(
-            "1. at 1000x700 the commit column folds to a rail",
-            railWidth > 0 && railWidth <= 48 && !expandedRow,
-            `railWidth=${railWidth} expandedRows=${expandedRow}`
+            "1. at 1000x700 the commit column and the worktree sidebar fold to rails",
+            railWidth > 0 && railWidth <= 48 && !expandedRow && sidebarWidth > 0 && sidebarWidth <= 40,
+            `railWidth=${railWidth} expandedRows=${expandedRow} sidebarRailWidth=${sidebarWidth}`
         );
 
         await h.cdp("Input.dispatchKeyEvent", {
@@ -3390,6 +3449,7 @@ func Submit(id string) error {
         await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...esc });
         await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...esc });
         await h.ev(`document.querySelector('[data-history-rail] button[title="Expand history"]')?.click()`);
+        await restoreSidebarFold(h, ctx.prevSidebarFold);
         try {
             await h.rpc("deleteproject", { name: ctx.name });
         } catch {
@@ -3401,6 +3461,381 @@ func Submit(id string) error {
         } catch {
             /* a leftover temp repo is cheaper than a failed teardown */
         }
+    },
+};
+
+// --- diff-worktrees: the Diff surface's worktree sidebar --------------------------------------------
+// A temp repo on main with two linked worktrees beside it: `feature` (one commit ahead, a modified and an untracked
+// file) and `broken` (its .git file names a gitdir that does not exist, so its status read fails). The repo and a plain
+// directory are registered as projects; the fixture roster holds an agent whose transcript says it runs in `feature`
+// and one whose transcript does not exist. Checkouts, agents and the rail are read from the DOM; the focused agent is
+// the one exception, read from the focusId prop the sidebar renders with (FilesSurface hands it focusIdAtom as is).
+const DWT_PROJECT = "verify-wt-repo";
+const DWT_PLAIN = "verify-wt-plain";
+const DWT_AGENT = { id: "fx-wt-agent", name: "wt-agent" };
+const DWT_LOST = { id: "fx-wt-lost", name: "lost-agent" };
+
+const diffWorktrees = {
+    name: "diff-worktrees",
+    surface: "files",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-wt-"));
+        const ctx = { cwd: base, repo: join(base, "repo"), feature: join(base, "feature"), broken: join(base, "broken") };
+        try {
+            ctx.prevFolded = await h.ev(`localStorage.getItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
+            mkdirSync(ctx.repo);
+            git(ctx.repo, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(ctx.repo, "README.md"), "# worktrees\n");
+            git(ctx.repo, "add", ".");
+            git(ctx.repo, "commit", "-q", "-m", "seed the worktree fixture");
+
+            git(ctx.repo, "worktree", "add", "-q", "-b", "feature", ctx.feature);
+            writeFileSync(join(ctx.feature, "feature.txt"), "one\n");
+            git(ctx.feature, "add", ".");
+            git(ctx.feature, "commit", "-q", "-m", "start the feature");
+            writeFileSync(join(ctx.feature, "feature.txt"), "one\ntwo\n");
+            writeFileSync(join(ctx.feature, "notes.txt"), "untracked\n");
+
+            // still listed by the main checkout, but nothing can be read inside it. Removed before the write: git makes
+            // a worktree's .git file hidden on Windows, and opening a hidden file for writing fails with EPERM
+            git(ctx.repo, "worktree", "add", "-q", "-b", "broken", ctx.broken);
+            rmSync(join(ctx.broken, ".git"));
+            writeFileSync(join(ctx.broken, ".git"), `gitdir: ${join(base, "missing", "gitdir")}\n`);
+
+            ctx.plain = mkdtempSync(join(tmpdir(), "verify-wt-plain-"));
+
+            // outside every checkout, so neither transcript is an uncommitted file
+            const transcripts = join(base, "transcripts");
+            mkdirSync(transcripts);
+            const transcriptPath = join(transcripts, "wt-agent.jsonl");
+            writeFileSync(
+                transcriptPath,
+                // the timestamp starts its session after both commits, so the session range has a commit to resolve
+                JSON.stringify({
+                    type: "user",
+                    cwd: ctx.feature,
+                    timestamp: new Date().toISOString(),
+                    message: { role: "user", content: "build the feature" },
+                }) + "\n"
+            );
+
+            await h.rpc("createproject", { name: DWT_PROJECT, path: ctx.repo });
+            ctx.projects = [{ name: DWT_PROJECT, path: ctx.repo }];
+            await h.rpc("createproject", { name: DWT_PLAIN, path: ctx.plain });
+            ctx.projects.push({ name: DWT_PLAIN, path: ctx.plain });
+            await waitForProjectInConfig(h, DWT_PROJECT);
+            await waitForProjectInConfig(h, DWT_PLAIN);
+
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            const agent = (a, transcript, state) => ({
+                id: a.id,
+                name: a.name,
+                project: DWT_PROJECT,
+                task: "work in a worktree",
+                state,
+                agent: "claude",
+                model: "opus",
+                activeMs: 30_000,
+                transcriptPath: transcript,
+                previousInfo: [{ kind: "message", text: "Working." }],
+            });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        agent(DWT_AGENT, transcriptPath, "working"),
+                        agent(DWT_LOST, join(transcripts, "gone.jsonl"), "idle"),
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            try {
+                await h.ev("location.reload()");
+            } catch {
+                /* the evaluate is cut off by the navigation it just started */
+            }
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo, its worktrees, the projects and the fixture roster", ok: false, detail: ctx.arrangeError }];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+        const shot = (n) => h.shot(`cdp-shots/diff-worktrees-${n}.png`);
+        const wait = async (expr, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 200) {
+                if (await h.ev(`!!(${expr})`)) return true;
+                await nap(200);
+            }
+            return !!(await h.ev(`!!(${expr})`));
+        };
+        const press = async (key, code, keyCode, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode: keyCode });
+            }
+            await nap(300);
+        };
+        // git reports a path with either slash; compare lowercased with forward slashes
+        const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        const N = JSON.stringify({ repo: norm(ctx.repo), feature: norm(ctx.feature), broken: norm(ctx.broken), plain: norm(ctx.plain) });
+        // in the page: each sidebar row after a group header, by group, as { group, kind, path, option, text }
+        const SIDEBAR = `(() => {
+            const n = ${N};
+            const norm = (p) => (p || "").replace(/\\\\/g, "/").replace(/\\/+$/, "").toLowerCase();
+            const list = document.querySelector('[data-worktree-sidebar="open"] [data-worktree-group]')?.parentElement?.parentElement;
+            const rows = [];
+            let group = null;
+            for (const el of list ? list.children : []) {
+                const g = el.querySelector?.("[data-worktree-group]");
+                if (g) { group = g.dataset.worktreeGroup; continue; }
+                if (el.hasAttribute("data-worktree-other-agents")) { group = "other"; continue; }
+                const path = el.dataset.worktreeRow != null ? norm(el.dataset.worktreeRow) : null;
+                const which = path == null ? null : Object.keys(n).find((k) => n[k] === path) ?? null;
+                rows.push({
+                    group,
+                    kind: path != null ? "checkout" : "agent",
+                    which,
+                    option: el.dataset.filesSourceOption ?? null,
+                    changed: el.querySelector("[data-worktree-changed]")?.textContent.trim() ?? null,
+                    divergence: el.querySelector("[data-worktree-divergence]")?.textContent.trim() ?? null,
+                    error: el.querySelector("[data-worktree-error]")?.getAttribute("title") ?? null,
+                    text: el.textContent.replace(/\\s+/g, " ").trim(),
+                });
+            }
+            return rows;
+        })()`;
+        const sidebar = () => h.ev(SIDEBAR);
+        const ours = async () => (await sidebar()).filter((r) => r.group === DWT_PROJECT);
+        const rowFor = (which) => `[...document.querySelectorAll("[data-worktree-row]")].find((e) => ${JSON.stringify(ctx[which] && norm(ctx[which]))} === e.dataset.worktreeRow.replace(/\\\\/g, "/").replace(/\\/+$/, "").toLowerCase())`;
+        const groupHeader = (name) => `document.querySelector('[data-worktree-group=${JSON.stringify(name)}]')`;
+        const summary = () => h.ev(`(document.querySelector("[data-files-range-summary]")?.textContent || "").trim()`);
+        // the focusId prop the sidebar renders with: FilesSurface passes focusIdAtom's value straight through
+        const focusId = () =>
+            h.ev(`(() => {
+                const el = document.querySelector("[data-worktree-sidebar]");
+                const key = el && Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+                for (let f = key ? el[key] : null; f; f = f.return) {
+                    const p = f.memoizedProps;
+                    if (p && typeof p === "object" && "focusId" in p && "onPickAgent" in p) return p.focusId ?? null;
+                }
+                return "unreadable";
+            })()`);
+
+        // the sidebar is persisted folded or open; these steps start open, with the project's group expanded
+        await h.ev(`document.querySelector('[data-worktree-sidebar="folded"] [title="Expand worktrees"]')?.click()`);
+        if (!(await wait(groupHeader(DWT_PROJECT), 15000))) {
+            rec("0. the sidebar lists the fixture project", false, JSON.stringify(await sidebar()));
+            return;
+        }
+        await h.ev(`(() => { const g = ${groupHeader(DWT_PROJECT)}; if (g.getAttribute("aria-expanded") === "false") g.click(); })()`);
+
+        // 1. both readable checkouts are rows under the project group
+        const listed1 = await wait(`${rowFor("repo")} && ${rowFor("feature")}`);
+        const rows1 = await ours();
+        await shot("01-checkouts");
+        rec(
+            "1. the project group lists the main checkout and the feature worktree",
+            listed1 && rows1.some((r) => r.which === "repo") && rows1.some((r) => r.which === "feature"),
+            JSON.stringify(rows1.map((r) => `${r.which ?? r.option}:${r.text}`))
+        );
+
+        // 2. the feature row reads its changed count and how far it is ahead
+        const counted2 = await wait(`${rowFor("feature")}?.querySelector("[data-worktree-changed]")?.textContent.trim() === "2"`);
+        const feature2 = (await ours()).find((r) => r.which === "feature");
+        await shot("02-counts");
+        rec(
+            "2. the feature row's data-worktree-changed reads 2 and its data-worktree-divergence holds ↑1",
+            counted2 && feature2?.changed === "2" && (feature2?.divergence ?? "").includes("↑1"),
+            JSON.stringify(feature2)
+        );
+
+        // 3. the broken checkout carries the error glyph
+        const errored3 = await wait(`${rowFor("broken")}?.querySelector("[data-worktree-error]")`);
+        const broken3 = (await ours()).find((r) => r.which === "broken");
+        await shot("03-broken");
+        rec(
+            "3. the broken worktree's row carries data-worktree-error, with git's message as its title",
+            errored3 && (broken3?.error ?? "").length > 0,
+            JSON.stringify(broken3)
+        );
+
+        // 4. wt-agent nests under feature; lost-agent sits under Other agents
+        const placed4 = await wait(
+            `(() => { const r = ${SIDEBAR}; const i = r.findIndex((x) => x.which === "feature");
+              return i >= 0 && r[i + 1]?.option === ${JSON.stringify(DWT_AGENT.name)} &&
+                  r.some((x) => x.group === "other" && x.option === ${JSON.stringify(DWT_LOST.name)}); })()`
+        );
+        const rows4 = await sidebar();
+        await shot("04-agents");
+        rec(
+            "4. wt-agent sits under the feature row, lost-agent under data-worktree-other-agents",
+            placed4 && (await h.ev(`!!document.querySelector("[data-worktree-other-agents]")`)),
+            JSON.stringify(rows4.filter((r) => r.group === DWT_PROJECT || r.group === "other").map((r) => `${r.group}/${r.which ?? r.option}`))
+        );
+
+        // 5. clicking the feature row scopes the surface to that branch; its Uncommitted row lists both files. The
+        // history may settle on the head commit first, so the working tree is picked the way line-review picks it.
+        await h.ev(`${rowFor("feature")}.click()`);
+        await wait(`document.querySelector('[data-history-row="worktree"] button')`, 10000);
+        await h.ev(`document.querySelector('[data-history-row="worktree"] button')?.click()`);
+        const scoped5 = await wait(
+            `(document.querySelector("[data-files-range-summary]")?.textContent || "").includes("feature") &&
+             document.querySelector('[data-changed-file-row="feature.txt"]') && document.querySelector('[data-changed-file-row="notes.txt"]')`,
+            10000
+        );
+        const summary5 = await summary();
+        const files5 = await h.ev(`[...document.querySelectorAll("[data-changed-file-row]")].map((e) => e.dataset.changedFileRow)`);
+        await shot("05-feature");
+        rec(
+            "5. clicking the feature row names feature in data-files-range-summary and lists both uncommitted files",
+            scoped5,
+            JSON.stringify({ summary5, files5 })
+        );
+
+        // 6. clicking wt-agent scopes to the agent and focuses it. As in step 5 the history may settle on a commit, so
+        // its top row is picked to read the session range itself.
+        await h.ev(`document.querySelector('[data-files-source-option=${JSON.stringify(DWT_AGENT.name)}]')?.click()`);
+        await wait(
+            `(document.querySelector("[data-files-range-summary]")?.textContent || "").trim() !== ${JSON.stringify(summary5)}`,
+            10000
+        );
+        await wait(`document.querySelector('[data-history-row="worktree"] button')`, 10000);
+        await h.ev(`document.querySelector('[data-history-row="worktree"] button')?.click()`);
+        const scoped6 = await wait(
+            `(document.querySelector("[data-files-range-summary]")?.textContent || "").trim().startsWith("worktree against ")`,
+            10000
+        );
+        const summary6 = await summary();
+        const focus6 = await focusId();
+        await shot("06-agent");
+        rec(
+            "6. clicking wt-agent changes the range summary to its session and sets focusIdAtom to its id",
+            scoped6 && focus6 === DWT_AGENT.id,
+            JSON.stringify({ summary5, summary6, focus6 })
+        );
+
+        // 7. the group header folds and unfolds the group's rows
+        await h.ev(`${groupHeader(DWT_PROJECT)}.click()`);
+        const hidden7 = await wait(`!${rowFor("repo")} && !${rowFor("feature")} && !${rowFor("broken")}`, 3000);
+        await shot("07-collapsed");
+        await h.ev(`${groupHeader(DWT_PROJECT)}.click()`);
+        const shown7 = await wait(`${rowFor("repo")} && ${rowFor("feature")} && ${rowFor("broken")}`, 5000);
+        rec(
+            "7. clicking the project's data-worktree-group hides its rows, clicking again shows them",
+            hidden7 && shown7,
+            JSON.stringify({ hidden7, shown7 })
+        );
+
+        // 8. the filter leaves only the matching checkout
+        await h.ev(`document.querySelector("[data-worktree-filter]").focus()`);
+        await h.cdp("Input.insertText", { text: "feature" });
+        const filtered8 = await wait(`${rowFor("feature")} && !${rowFor("repo")} && !${rowFor("broken")}`, 5000);
+        const rows8 = await ours();
+        await shot("08-filtered");
+        // cleared as an edit to the field, so no Escape reaches the surface's own Escape (which can leave it)
+        await h.ev(`(() => {
+            const el = document.querySelector("[data-worktree-filter]");
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "");
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        const restored8 = await wait(`${rowFor("repo")} && ${rowFor("feature")} && ${rowFor("broken")}`, 5000);
+        rec(
+            "8. typing feature into data-worktree-filter leaves only the feature checkout row; clearing restores the rest",
+            filtered8 && rows8.filter((r) => r.kind === "checkout").length === 1 && restored8,
+            JSON.stringify({ rows8: rows8.map((r) => r.which ?? r.option), restored8 })
+        );
+        // r below is a surface key: typed into the filter it would be text
+        await h.ev(`document.activeElement?.blur()`);
+        const blurred8 = await h.ev(`!document.activeElement?.hasAttribute("data-worktree-filter")`);
+
+        // 9. a plain directory's group reads not a repository
+        await h.ev(`(() => { const g = ${groupHeader(DWT_PLAIN)}; if (g?.getAttribute("aria-expanded") === "false") g.click(); })()`);
+        const plain9 = await wait(`${rowFor("plain")}?.textContent.includes("not a repository")`);
+        const row9 = (await sidebar()).find((r) => r.group === DWT_PLAIN);
+        await shot("09-plain");
+        rec("9. the plain directory's group shows a not a repository row", plain9, JSON.stringify(row9));
+
+        // 10. a failed load shows on its group, and the next refresh clears it
+        await h.ev(`window.__worktreeSidebarFault = "error"`);
+        await press("r", "KeyR", 82);
+        const failed10 = await wait(
+            `[...document.querySelectorAll("[data-worktree-group-error]")].some((e) => e.textContent.includes("Couldn't read worktrees"))`,
+            5000
+        );
+        const consumed10 = await h.ev(`window.__worktreeSidebarFault === undefined`);
+        await shot("10-group-error");
+        await press("r", "KeyR", 82);
+        const cleared10 = await wait(`!document.querySelector("[data-worktree-group-error]")`, 5000);
+        rec(
+            "10. with __worktreeSidebarFault set, r shows Couldn't read worktrees on a group; r again clears it",
+            blurred8 && failed10 && consumed10 && cleared10,
+            JSON.stringify({ blurred8, failed10, consumed10, cleared10 })
+        );
+
+        // 11. Shift+B folds to the rail, where the changed checkout carries the dot, and unfolds again
+        await press("B", "KeyB", 66, 8);
+        const folded11 = await wait(`document.querySelector('[data-worktree-sidebar="folded"]')`, 3000);
+        const dirty11 = await h.ev(
+            `[...document.querySelectorAll("[data-worktree-rail-item]")].some((e) =>
+                e.dataset.worktreeRailItem.replace(/\\\\/g, "/").replace(/\\/+$/, "").toLowerCase() === ${JSON.stringify(norm(ctx.feature))} &&
+                !!e.querySelector("[data-worktree-dirty]"))`
+        );
+        await shot("11-rail");
+        await press("B", "KeyB", 66, 8);
+        const open11 = await wait(`document.querySelector('[data-worktree-sidebar="open"]')`, 3000);
+        rec(
+            "11. Shift+B folds to the rail, where the feature item carries data-worktree-dirty; Shift+B again restores the sidebar",
+            folded11 && dirty11 && open11,
+            JSON.stringify({ folded11, dirty11, open11 })
+        );
+    },
+    async teardown(h, ctx) {
+        try {
+            await h.ev(`(delete window.__worktreeSidebarFault, true)`);
+        } catch (e) {
+            console.error(`diff-worktrees teardown: clear the DEV hook failed: ${e?.message ?? e}`);
+        }
+        for (const p of ctx.projects ?? []) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            try {
+                await h.rpc("deleteproject", { name: p.name });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(p.path))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            } catch (e) {
+                console.error(`diff-worktrees teardown: remove project ${p.name} failed: ${e?.message ?? e}`);
+            }
+        }
+        // the roster fixture goes, the page reloads onto the live roster with the sidebar's fold as it was, and the
+        // repo with its worktrees goes with the temp dir
+        await teardownFixtureRun(h, ctx, "diff-worktrees", {
+            what: "restore the sidebar's fold",
+            fn: () => restoreSidebarFold(h, ctx.prevFolded),
+        });
+        if (ctx.plain) rmSync(ctx.plain, { recursive: true, force: true });
     },
 };
 
@@ -12171,11 +12606,8 @@ const lineReview = {
         };
 
         // 0. scope the Diff surface to the fixture agent
-        await click(`document.querySelector("[data-files-source-picker]")`);
-        await nap(200);
-        const picked = await click(
-            `[...document.querySelectorAll("button:not([data-files-source-picker])")].find((b) => [...b.querySelectorAll("span")].some((s) => s.textContent === ${JSON.stringify(LR_AGENT.name)}))`
-        );
+        // the agent row sits under the project's checkout once its cwd resolves, Other agents until then
+        const picked = await pickFilesSource(h, LR_AGENT.name, LR_PROJECT);
         const history = await wait(`document.querySelectorAll("[data-history-row]").length >= 3`, 15000);
         if (!picked || !history) {
             rec("0. the Diff surface scoped to the fixture agent lists the working tree and both commits", false, JSON.stringify({ picked, history }));
@@ -12638,9 +13070,7 @@ const lineReview = {
 
         // 19. scoped to the project, two live agents: Send opens a menu of both; picking one sends to it
         await reloadRoster({ live: LR_LIVE });
-        await click(`document.querySelector("[data-files-source-picker]")`);
-        await nap(200);
-        const scoped19 = await click(`document.querySelector('[data-files-source-option=${JSON.stringify(LR_PROJECT)}]')`);
+        const scoped19 = await pickFilesSource(h, LR_PROJECT);
         await nap(500); // the agent scope's history rows stay on screen until the project's load replaces them
         const history19 = await wait(`document.querySelectorAll("[data-history-row]").length >= 3`, 15000);
         const list19 = await toUncommittedReview();
@@ -23990,6 +24420,7 @@ export const SCENARIOS = [
     tuiFullscreen,
     gitHistory,
     diffCompare,
+    diffWorktrees,
     surfaceSmoke,
     codeSearch,
     codeSidebar,

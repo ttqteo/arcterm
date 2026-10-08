@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { DiffScope } from "./diffscope";
-import { defaultFocusId, filterSources, focusFollowAgent, sourceFor, worktreeParent } from "./diffsource";
+import { defaultFocusId, focusFollowAgent } from "./diffsource";
 
 const agents = [
     { id: "a1", name: "jarvis-recall" },
@@ -26,29 +26,6 @@ const worktreeScope: DiffScope = {
     repo: { origin: { kind: "worktree", path: "/repo/.worktrees/feat", project: "waveterm" }, label: "feat" },
     range: { kind: "working" },
 };
-
-describe("what the source picker is pointed at", () => {
-    it("names the scoped project or agent", () => {
-        expect(sourceFor(projectScope, "a1")).toEqual({ kind: "project", name: "waveterm" });
-        expect(sourceFor(agentScope("a2"), "a1")).toEqual({ kind: "agent", id: "a2" });
-    });
-
-    it("names the scoped worktree by its path", () => {
-        expect(sourceFor(worktreeScope, "a1")).toEqual({ kind: "worktree", path: "/repo/.worktrees/feat" });
-    });
-
-    // The picker falls back to the scope's own label for a run, which it can only reach if nothing
-    // claims to be the current source. Answering "the focused agent" here put another worktree's
-    // name over a run's diff.
-    it("claims nothing while a run's diff is on screen", () => {
-        expect(sourceFor(runScope, "a1")).toBeNull();
-    });
-
-    it("points at the focused agent before anything is scoped", () => {
-        expect(sourceFor(null, "a1")).toEqual({ kind: "agent", id: "a1" });
-        expect(sourceFor(null, "")).toBeNull();
-    });
-});
 
 describe("run beats project beats agent", () => {
     it("adopts the focused agent when the surface is unscoped", () => {
@@ -88,34 +65,5 @@ describe("the first agent, so opening the surface is useful", () => {
         expect(defaultFocusId(projectScope, "", agents)).toBeNull();
         expect(defaultFocusId(null, "a2", agents)).toBeNull();
         expect(defaultFocusId(null, "", [])).toBeNull();
-    });
-});
-
-describe("filterSources", () => {
-    const agents = [{ name: "verify-runs" }, { name: "Radar" }];
-    const projects = [{ name: "waveterm" }, { name: "exp-native" }];
-    it("matches either list, case-insensitively", () => {
-        expect(filterSources("RA", agents, projects)).toEqual({ agents: [{ name: "Radar" }], projects: [] });
-        expect(filterSources("nat", agents, projects)).toEqual({ agents: [], projects: [{ name: "exp-native" }] });
-    });
-    it("returns everything for a blank query", () => {
-        expect(filterSources("  ", agents, projects)).toEqual({ agents, projects });
-    });
-});
-
-describe("worktreeParent", () => {
-    const projects = [
-        { name: "waveterm", path: "C:\\Users\\k\\IdeaProjects\\waveterm" },
-        { name: "exp-native", path: "c:/users/k/ideaprojects/waveterm/.worktrees/exp-native" },
-        { name: "waveterm2", path: "C:/Users/k/IdeaProjects/waveterm2" },
-    ];
-    it("finds the project whose path contains this one, across separators and case", () => {
-        expect(worktreeParent(projects[1], projects)).toBe("waveterm");
-    });
-    it("does not treat a sibling that shares a prefix as a parent", () => {
-        expect(worktreeParent(projects[2], projects)).toBeNull();
-    });
-    it("is null for a top-level project", () => {
-        expect(worktreeParent(projects[0], projects)).toBeNull();
     });
 });

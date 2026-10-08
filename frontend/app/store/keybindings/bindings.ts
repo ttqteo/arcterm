@@ -38,6 +38,7 @@ import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/rails
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
+import { refreshSidebar, sidebarFoldedAtom, sidebarShownFoldedAtom } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
     codeCursorAtom,
@@ -1264,6 +1265,15 @@ export function buildFilesBindings(): Binding[] {
             },
         },
         {
+            id: "files:toggle-sidebar",
+            keys: "Shift:b",
+            group: "Diff",
+            label: "Fold / unfold worktrees",
+            when: on,
+            // the fold that shows, flipped and kept as the person's own choice
+            run: () => globalStore.set(sidebarFoldedAtom, !globalStore.get(sidebarShownFoldedAtom)),
+        },
+        {
             // Escape's order on this surface: clear filters, else leave compare, else go home. The
             // three guards are mutually exclusive by construction (this one requires filters active
             // and compare off), which is what keeps assertNoConflicts passing.
@@ -1329,6 +1339,7 @@ export function buildFilesBindings(): Binding[] {
             run: () => {
                 void reloadChanges(globalStore.get(filesStateAtom)?.cwd ?? null);
                 refreshHistory();
+                void refreshSidebar();
             },
         },
         {

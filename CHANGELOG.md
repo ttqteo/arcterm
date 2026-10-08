@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The Diff surface lists every project with its worktrees in a sidebar on the left, each with its branch, its
+  uncommitted files and how far it is ahead of or behind the main branch, and the agents working in it. Click one to
+  see its changes; it replaces the source picker. In a narrow window the sidebar starts folded to a rail so the diff
+  keeps room; `Shift+B` folds or unfolds it, and that choice is kept.
 - The plan-usage meters and the free-RAM chip are back in the app bar, where they are easier to read; clicking either
   opens Consumers below it. The Servers chip and the version stay in the footer.
 - Consumers shows each agent's RAM and its tokens and spend on the same row, with free RAM and the 5-hour quota

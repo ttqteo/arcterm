@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    currentProject,
     NOT_A_REPO_LABEL,
     sidebarRows,
     worktreeLabel,
@@ -99,36 +100,12 @@ describe("sidebarRows groups", () => {
         expect(shape(rows)).toEqual(["group:arcterm", "group:cuscofi"]);
     });
 
-    it("keeps the group holding the current source expanded", () => {
-        const collapsed = { expanded: new Set<string>() };
-        expect(
-            shape(
-                sidebarRows(
-                    input({ ...collapsed, current: { origin: { kind: "project", name: "arcterm", path: arc.path } } })
-                )
-            )
-        ).toEqual(["group:arcterm+", "wt:main*", "wt:wave/bd2ad781", "wt:feature/sidebar", "group:cuscofi"]);
-        expect(
-            shape(
-                sidebarRows(
-                    input({
-                        ...collapsed,
-                        agents: [claude],
-                        agentCwds: { a1: linked.path },
-                        current: { origin: { kind: "agent", id: "a1" } },
-                    })
-                )
-            )
-        ).toEqual([
-            "group:arcterm+",
-            "wt:main",
-            "wt:wave/bd2ad781",
-            "agent:claude*",
-            "wt:feature/sidebar",
-            "group:cuscofi",
-        ]);
+    it("collapses the group holding the current source when the user did", () => {
+        const rows = sidebarRows(
+            input({ expanded: new Set(), current: { origin: { kind: "project", name: "arcterm", path: arc.path } } })
+        );
+        expect(shape(rows)).toEqual(["group:arcterm", "group:cuscofi"]);
     });
-
     it("shows a group whose load listed no worktrees as one pickable not-a-repository row", () => {
         const rows = sidebarRows(input({ worktrees: { cuscofi: [] }, expanded: new Set(["cuscofi"]) }));
         expect(rows.slice(1)).toEqual([
@@ -241,6 +218,7 @@ describe("sidebarRows current", () => {
             sidebarRows(
                 input({
                     worktrees: { cuscofi: [] },
+                    expanded: new Set(["cuscofi"]),
                     current: { origin: { kind: "project", name: "cuscofi", path: cus.path } },
                 })
             )
@@ -317,5 +295,34 @@ describe("sidebarRows filter", () => {
 
     it("leaves nothing when nothing matches", () => {
         expect(sidebarRows(input({ ...base, query: "zzz" }))).toEqual([]);
+    });
+});
+
+describe("currentProject", () => {
+    it("names the group holding the current checkout or agent, expanded or not", () => {
+        const collapsed = { expanded: new Set<string>() };
+        expect(
+            currentProject(
+                input({ ...collapsed, current: { origin: { kind: "project", name: "arcterm", path: arc.path } } })
+            )
+        ).toBe("arcterm");
+        expect(
+            currentProject(
+                input({
+                    ...collapsed,
+                    agents: [claude],
+                    agentCwds: { a1: linked.path },
+                    current: { origin: { kind: "agent", id: "a1" } },
+                })
+            )
+        ).toBe("arcterm");
+        const run = { kind: "run" as const, runId: "r1", cwd: "D:/src/cuscofi", baseCommit: "" };
+        expect(currentProject(input({ current: { origin: run } }))).toBe("cuscofi");
+    });
+
+    it("is undefined for an agent no checkout holds, or no origin", () => {
+        const current = { origin: { kind: "agent" as const, id: "a2" } };
+        expect(currentProject(input({ agents: [pi], agentCwds: { a2: null }, current }))).toBeUndefined();
+        expect(currentProject(input())).toBeUndefined();
     });
 });
