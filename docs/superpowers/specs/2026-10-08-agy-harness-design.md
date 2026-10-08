@@ -264,7 +264,7 @@ already documents ("a broken gate never blocks an agent").
 `runtimeSpecs["agy"] = {Bin: "agy", BaseArgs: ["-p"]}`, with the prompt as `-p`'s value, no PTY (D9), and no
 `--dangerously-skip-permissions`: a consult reads, and headless agy auto-denies commands. Restore the shape from
 `git show 5e1e8c03^:pkg/consult/consult.go` and drop its `UsePty`. agy gets the operator principles injected like every
-non-claude runtime (`wshserver_jarvis.go`). `SupportedRuntimes()` gains agy.
+non-claude runtime (`wshserver_jarvis.go`). `SpecFor` takes the binary from the harness catalog row.
 
 ### 6. Run workers (`pkg/jarvis`, `pkg/orchestrate`, wshserver)
 
@@ -317,10 +317,11 @@ non-claude runtime (`wshserver_jarvis.go`). `SupportedRuntimes()` gains agy.
     this path runs only in wavesrv: wsh never lists sessions. Keep it out of any function `wsh agy-hook` calls.
 - **Frontend projector** `agytranscriptprojection.ts`, with a test beside it, registered in `transcriptregistry.ts`:
   - `USER_INPUT` becomes a user entry with the `USER_REQUEST` text only (the metadata blocks dropped).
-  - `PLANNER_RESPONSE` `thinking` becomes a thinking entry, `content` an assistant text entry, and each `tool_calls[]`
-    a tool entry (name, `toolSummary`/`CommandLine` as its detail).
-  - `GENERIC` after a tool call becomes that tool's result (the `Created At`/`Completed At` header stripped); `status:
-    "ERROR"` marks it failed.
+  - `PLANNER_RESPONSE` `content` becomes an assistant text entry, and each `tool_calls[]` a tool entry (name,
+    `toolSummary`/`CommandLine` as its detail). `thinking` is dropped, as the other projectors drop reasoning:
+    `AgentEntry` has no thinking kind.
+  - `GENERIC` after a tool call becomes that tool's result, a bash detail (the `Created At`/`Completed At` header
+    stripped, CRLF folded); `status: "ERROR"` marks it failed. A result over 64 KiB is cut and ends `… [truncated]`.
   - `extractTitle` is the first `USER_REQUEST`.
   - `agentFromPath` maps `/antigravity-cli/brain/` to agy.
 - **Usage** (`pkg/usagestats`): a scan root for agy's transcripts. Each `PLANNER_RESPONSE` adds its `input_tokens`,
