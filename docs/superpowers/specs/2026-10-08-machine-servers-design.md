@@ -1,6 +1,6 @@
 # Servers on this machine: every listening process, who owns it, and stopping it — design
 
-Status: design settled 2026-10-08; not built.
+Status: built 2026-10-08 (run 48306843). The `machine-servers` CDP scenario was written but has not yet passed a run.
 
 ## Problem
 
