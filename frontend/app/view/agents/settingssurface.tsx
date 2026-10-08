@@ -1112,7 +1112,11 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
         setList((prev) => (prev == null ? prev : { ...prev, active: id }));
         const candidates = restartCandidates(globalStore.get(model.agentsAtom), id);
         if (candidates.length > 0) {
-            modalsModel.pushModal("ClaudeAccountRestartModal", { candidates, account: id });
+            const accountName =
+                id === ""
+                    ? defaultAccountName(identity.loginEmail)
+                    : (list?.accounts.find((a) => a.id === id)?.label ?? id);
+            modalsModel.pushModal("ClaudeAccountRestartModal", { candidates, account: id, accountName });
         }
     };
     const rename = (id: string, label: string) =>
