@@ -41,8 +41,10 @@ func validateParallelism(n int, zeroMeansUnset bool) error {
 // validateRoute is the route half of the profile and run-settings validation, for a worker or a reviewer
 // route; field names it in the error. It resolves the route through the same resolver and harness check
 // CreateRun uses, so a route that could not launch a worker cannot be stored as a default that will later
-// fail to launch one. Reviewers and stage sessions are spawned as workers, so both use the worker operation.
-func validateRoute(field string, route *waveobj.RoutePin, requireInstalled bool) error {
+// fail to launch one. op is the role the route fills: OperationRunWorker for a worker route, OperationLead for
+// a reviewer (a judgment role, so a worker-only harness such as agy is refused). The capability is checked even
+// when requireInstalled is false: a stored default must not name a harness that can never fill the role.
+func validateRoute(field string, op harness.Operation, route *waveobj.RoutePin, requireInstalled bool) error {
 	if route == nil {
 		return nil
 	}
@@ -50,9 +52,11 @@ func validateRoute(field string, route *waveobj.RoutePin, requireInstalled bool)
 		return fmt.Errorf("%s %w", field, err)
 	}
 	if requireInstalled {
-		if _, err := validateHarness(route.Runtime, harness.OperationRunWorker); err != nil {
+		if _, err := validateHarness(route.Runtime, op); err != nil {
 			return fmt.Errorf("%s %w", field, err)
 		}
+	} else if _, err := harness.ValidateCapable(route.Runtime, op); err != nil {
+		return fmt.Errorf("%s %w", field, err)
 	}
 	return nil
 }
@@ -71,7 +75,7 @@ func validateGlobalEngineDefaults(p waveobj.JarvisProfile) error {
 	if err := validateWorkersSetting(p.WorkerRoute, p.ReviewerPicks); err != nil {
 		return err
 	}
-	return validateRoute("reviewerRoute", p.ReviewerRoute, false)
+	return validateRoute("reviewerRoute", harness.OperationLead, p.ReviewerRoute, false)
 }
 
 // validateEngineDefaults validates a profile override's engine sections before any write.
@@ -99,10 +103,10 @@ func validateEngineDefaults(o *waveobj.ProfileOverride) error {
 	if err := validateWorkersSetting(o.WorkerRoute, o.ReviewerPicks != nil && *o.ReviewerPicks); err != nil {
 		return err
 	}
-	if err := validateRoute("workerRoute", o.WorkerRoute, false); err != nil {
+	if err := validateRoute("workerRoute", harness.OperationRunWorker, o.WorkerRoute, false); err != nil {
 		return err
 	}
-	return validateRoute("reviewerRoute", o.ReviewerRoute, false)
+	return validateRoute("reviewerRoute", harness.OperationLead, o.ReviewerRoute, false)
 }
 
 // errDagLinkedDuringSettings marks the one interleave that cannot be avoided: a group appeared between
@@ -130,10 +134,10 @@ func (ws *WshServer) SetRunSettingsCommand(ctx context.Context, data wshrpc.Comm
 	if err := validateWorkersSetting(data.WorkerRoute, data.ReviewerPicks); err != nil {
 		return err
 	}
-	if err := validateRoute("workerRoute", data.WorkerRoute, true); err != nil {
+	if err := validateRoute("workerRoute", harness.OperationRunWorker, data.WorkerRoute, true); err != nil {
 		return err
 	}
-	if err := validateRoute("reviewerRoute", data.ReviewerRoute, true); err != nil {
+	if err := validateRoute("reviewerRoute", harness.OperationLead, data.ReviewerRoute, true); err != nil {
 		return err
 	}
 	settings := jarvis.PendingEngineSettings{

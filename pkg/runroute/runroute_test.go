@@ -9,7 +9,7 @@ import (
 )
 
 func TestResolveRuntimeDefaults(t *testing.T) {
-	for _, runtime := range []string{"claude", "pi"} {
+	for _, runtime := range []string{"claude", "pi", "agy"} {
 		got, err := Resolve(waveobj.RoutePin{Runtime: runtime})
 		if err != nil {
 			t.Fatalf("%s default: %v", runtime, err)
@@ -155,6 +155,30 @@ func TestResolveRejectsBarePiModel(t *testing.T) {
 	for _, model := range []string{"deepseek-v4-pro", "deepseek-v4-flash", "claude-opus-4-8"} {
 		if _, err := Resolve(waveobj.RoutePin{Runtime: "pi", Model: model}); err == nil {
 			t.Errorf("Resolve(pi, %q) succeeded; bare ids are ambiguous across providers", model)
+		}
+	}
+}
+
+func TestResolveModelPinAgySlug(t *testing.T) {
+	cap, err := Resolve(waveobj.RoutePin{Runtime: "agy", Model: "gemini-3.8-flash-high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cap.Model != "gemini-3.8-flash-high" || !slices.Equal(cap.ModelArgs, []string{"--model", "gemini-3.8-flash-high"}) {
+		t.Fatalf("agy slug pin resolved wrong: %+v", cap)
+	}
+	if !IsValid(cap) {
+		t.Fatal("resolved agy capability must be valid")
+	}
+}
+
+func TestModelNamespaceAgyRejectsOtherNamespaces(t *testing.T) {
+	for _, model := range []string{"openai/gpt-5", "Gemini 3", "Gemini-3", "-flash", "has space"} {
+		if modelNamespaceValid("agy", model) {
+			t.Errorf("agy accepted %q", model)
+		}
+		if _, err := Resolve(waveobj.RoutePin{Runtime: "agy", Model: model}); err == nil {
+			t.Errorf("Resolve(agy, %q) succeeded", model)
 		}
 	}
 }

@@ -20,15 +20,16 @@
 
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
-import { harnessPreferenceAtom } from "@/app/view/agents/harnessstore";
+import { harnessPreferenceAtom, harnessesAtom, leadRuntimesAtom } from "@/app/view/agents/harnessstore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { AgentsViewModel } from "../agents/agents";
 import { CapacityWarn } from "../agents/capacitywarn";
 import { channelsAtom, createChannel, primeChannels } from "../agents/channelsstore";
 import { noteRecentProject, projectListAtom, recentProjectsAtom } from "../agents/projectsstore";
+import { leadRouteSeed } from "../agents/route";
 import { RoutePicker } from "../agents/routepicker";
 import {
     channelOverrideAtom,
@@ -126,6 +127,7 @@ function ModelsSection({ orchestrator }: { orchestrator: boolean }) {
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
     const openRequest = useAtomValue(routeOpenRequestAtom);
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     return (
         <div className="flex flex-col gap-2">
             <span className={FIELD_LABEL}>Models</span>
@@ -136,6 +138,7 @@ function ModelsSection({ orchestrator }: { orchestrator: boolean }) {
                     placement="bottom-start"
                     openRequest={openRequest}
                     title="Lead model"
+                    runtimes={leadRuntimes}
                 />
             </ModelRow>
             {orchestrator ? (
@@ -163,6 +166,7 @@ function ModelsSection({ orchestrator }: { orchestrator: boolean }) {
                             title="Reviewers model"
                             canInherit
                             inheritedLabel="Same as lead"
+                            runtimes={leadRuntimes}
                         />
                     </ModelRow>
                 </>
@@ -354,7 +358,10 @@ function NewRunModal({ model, onClose }: { model: AgentsViewModel; onClose: () =
     }, [pickedOid, profiles]);
     // the lead route the picker opens on, same precedence the sheet's composer uses: the project's own
     // saved route, else the harness preference — and never over a route the user has picked by hand
-    const profileRoute = (pickedOid != null ? overrides[pickedOid]?.route : null) ?? pref.route ?? null;
+    const harnesses = useAtomValue(harnessesAtom);
+    const rawRoute = (pickedOid != null ? overrides[pickedOid]?.route : null) ?? pref.route ?? null;
+    // memoized: the seed effect below keys on it, and a fallback route is a fresh object each call
+    const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
     useEffect(() => {
         if (!routeTouched && profileRoute != null) {
             globalStore.set(runRouteAtom, profileRoute);

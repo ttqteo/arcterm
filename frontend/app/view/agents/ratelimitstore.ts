@@ -21,7 +21,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { liveWindowAgents, providerPlanUsage, type AgentVM } from "./agentsviewmodel";
 
 const STORAGE_KEY = "wave:ratelimits";
-const PROVIDER_RANK: Record<string, number> = { claude: 0, codex: 1 };
+const PROVIDER_RANK: Record<string, number> = { claude: 0, codex: 1, opencode: 2, pi: 3, agy: 4 };
 
 export interface SavedSnapshot {
     fivehourpct?: number;

@@ -13,8 +13,11 @@ import (
 // AskTool names the structured question tool a runtime's agent calls. A question asked in plain text
 // never reaches the cockpit, so every prompt that tells an agent to ask names this tool.
 func AskTool(runtime string) string {
-	if runtime == "pi" {
+	switch runtime {
+	case "pi":
 		return "ask_user_question"
+	case "agy":
+		return "ask_question"
 	}
 	return "AskUserQuestion"
 }

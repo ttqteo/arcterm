@@ -671,6 +671,70 @@ func installOpencodePlugin(home, wshExe string) error {
 	return nil
 }
 
+// agyHooksKey is the top-level key arcterm owns in agy's hooks.json; every other key belongs to someone else.
+const agyHooksKey = "arcterm"
+
+// agyPreToolUseTimeout is the PreToolUse hook's timeout in seconds: 60 minutes of waiting on a person plus
+// slack, so `wsh agy-hook` always answers before agy would kill it. agyhook.HookTimeoutSeconds carries the same number.
+const agyPreToolUseTimeout = 3720
+
+// agyHookEntries is the value of the "arcterm" key. PreInvocation and Stop take a flat list of commands; the
+// tool events take {matcher, hooks} groups. Timeouts are seconds.
+func agyHookEntries(wshExe string) map[string]any {
+	command := func(event string, timeout int) map[string]any {
+		return map[string]any{"type": "command", "command": quotePath(wshExe) + " agy-hook " + event, "timeout": timeout}
+	}
+	group := func(event string, timeout int) []any {
+		return []any{map[string]any{"matcher": "*", "hooks": []any{command(event, timeout)}}}
+	}
+	return map[string]any{
+		"PreInvocation": []any{command("PreInvocation", 10)},
+		"PreToolUse":    group("PreToolUse", agyPreToolUseTimeout),
+		"PostToolUse":   group("PostToolUse", 10),
+		"Stop":          []any{command("Stop", 10)},
+	}
+}
+
+// installAgyHooks points agy's global hooks (~/.gemini/config/hooks.json) at `wsh agy-hook <Event>` under the
+// "arcterm" key, keeping every other key. No-op until agy has run (~/.gemini/antigravity-cli exists): arcterm
+// never provisions a harness the person never used. A hooks.json that is not a JSON object is an error and is
+// left untouched. Idempotent: the file is written only when its content changes.
+func installAgyHooks(home, wshExe string) error {
+	if fi, err := os.Stat(filepath.Join(home, ".gemini", "antigravity-cli")); err != nil || !fi.IsDir() {
+		return nil
+	}
+	path := filepath.Join(home, ".gemini", "config", "hooks.json")
+	existing := map[string]any{}
+	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) > 0 {
+		var doc any
+		if err := json.Unmarshal(b, &doc); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+		obj, ok := doc.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s is not a JSON object; leaving it alone", path)
+		}
+		existing = obj
+	}
+	existing[agyHooksKey] = agyHookEntries(wshExe)
+
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(existing); err != nil {
+		return fmt.Errorf("encoding %s: %w", path, err)
+	}
+	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, buf.Bytes()) {
+		return nil
+	}
+	if err := writeFileIfChanged(path, buf.String()); err != nil {
+		return err
+	}
+	fmt.Printf("installed agy (Antigravity) hooks into %s\n", path)
+	return nil
+}
+
 // installPiStatusExtension writes the Wave status extension into pi's global extension directory
 // (~/.pi/agent/extensions/), where pi auto-loads every file. No-op when pi is not installed.
 // Idempotent: rewrites only when the installed copy differs (the wsh path changes when the app
@@ -976,6 +1040,9 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 		fmt.Printf("installed arcterm agent hooks into %s\n", path)
 	}
 	if err := installOpencodePlugin(home, wsh); err != nil {
+		return err
+	}
+	if err := installAgyHooks(home, wsh); err != nil {
 		return err
 	}
 	if err := installPiStatusExtension(home, wsh); err != nil {

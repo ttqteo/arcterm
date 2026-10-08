@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Antigravity CLI (agy) is back as a harness: live status, questions on the card, launch and resume, consults,
+  Conversation History, usage, and plan task workers.
 - The Jarvis pet wears Vietnam's colours: a red flag shirt with the yellow star, or the flag in its hand. Settings →
   Appearance picks the shirt, the flag or neither; on 30/4, 1/5 and 2/9 it wears the shirt even when that is off.
 - The Jarvis pet's popup answers a worker's question in place: a one-question ask (an escalation too) shows its
@@ -49,6 +51,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A run's goal heading (the Jarvis run sheet and the Agent surface's run panel) no longer grows and shrinks on a click.
   A goal that is cut off or runs past one paragraph gets a **Show more** link that reveals the rest below the heading,
   at the same size; a goal that already shows in full has no toggle.
+- The lead and reviewer route pickers list only the harnesses that can lead a run (Claude and Pi). A run no longer
+  starts with a lead that cannot lead because your shared route preference names one, such as Antigravity.
 
 ### Fixed
 

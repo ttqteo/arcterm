@@ -40,7 +40,7 @@ import { createCommitGate } from "./commitgate";
 import { DEFAULT_MONO, DEFAULT_SANS, DEFAULT_TERM_FONT, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
 import { fontMonoAtom, fontSansAtom } from "./fontstore";
 import { harnessPickerItems } from "./harnesspicker";
-import { harnessesAtom, harnessPreferenceAtom, loadHarnesses, setPreferredRoute } from "./harnessstore";
+import { harnessesAtom, harnessPreferenceAtom, leadRuntimesAtom, loadHarnesses, setPreferredRoute } from "./harnessstore";
 import { harnessRowState, rowLabel } from "./harnessupdatemodel";
 import { updateHarness, updateRunsAtom } from "./harnessupdatestore";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
@@ -93,6 +93,7 @@ const FLAG_RUNTIMES: { id: Runtime; name: string }[] = [
     { id: "codex", name: "Codex" },
     { id: "opencode", name: "OpenCode" },
     { id: "pi", name: "Pi" },
+    { id: "agy", name: "Antigravity" },
 ];
 
 const OVERRIDE_ROLES: OverrideRole[] = ["accent", "success", "warning", "error"];
@@ -979,12 +980,14 @@ function NewAgentSection({ runtime, onRuntime }: { runtime: Runtime; onRuntime: 
 
 function RunRouteSection() {
     const preference = useAtomValue(harnessPreferenceAtom);
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     return (
         <div>
             <SettingRow id="run.route">
                 <RoutePicker
                     value={preference.route}
                     canInherit={false}
+                    runtimes={leadRuntimes}
                     onChange={(route) => route && setPreferredRoute(route)}
                 />
             </SettingRow>

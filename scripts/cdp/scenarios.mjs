@@ -20066,6 +20066,583 @@ const settingsRadarAudit = {
     },
 };
 
+// --- agy-harness: Antigravity across the cockpit (docs/superpowers/specs/2026-10-08-agy-harness-design.md, Testing) ---------
+// Nothing needs agy installed. The harness list and the sessions archive are answered in-page (installAgyMock), the roster
+// row comes from the fixture file, the transcript is a temp file in agy's own format under a `.../antigravity-cli/brain/<id>/`
+// path (what picks the agy projector), and the usage chart reads the dev bucket fixture. Steps, one view each:
+//   1 New agent modal offers Antigravity and fills `agy`; 2 the rail row (glyph, color, title, asking); 3 History lists the agy
+//   session and its transcript opens in the compact reader; 4 the consult picker lists it; 5/6/9 the New run window's Workers
+//   picker lists it and its Lead and Reviewers pickers do not (claude and pi are asserted present, or an empty picker would
+//   pass); 7 the daily chart's agy series; 8 Settings' launch-flags editor; 10 the brief profile's Lead route; 11 Settings'
+//   run route. Teardown puts back every file, key, project and mock it touched.
+const AGY_PROJECT = "agy-harness-fx";
+const AGY_ROW_ID = "fx-agy";
+const AGY_ROW_NAME = "agy rail fixture";
+const AGY_SESSION_ID = "agy-fx-conv-1";
+const AGY_TASK = "count the files";
+const AGY_ANSWER = "I saw 3 files in the workspace.";
+const AGY_MODEL = "gemini-3-pro";
+const AGY_MOCK_KEY = "__arcAgyHarnessMock";
+const AGY_USAGE_KEY = "wave:dev-usage-buckets";
+const AGY_ROUTE_MODELS = { claude: ["opus", "sonnet"], pi: ["gpt-5.5"], agy: [AGY_MODEL, "gemini-3-flash"] };
+
+// a catalog row as ListHarnesses answers it: a default route plus one per model (the pickers list model rows only)
+function agyHarnessRow(runtime, label, flags) {
+    return {
+        runtime,
+        label,
+        installed: true,
+        version: "0.0.0",
+        consultcapable: true,
+        runworkercapable: true,
+        leadcapable: flags.leadcapable,
+        routecapabilities: [
+            { runtime, resolvedmodel: AGY_ROUTE_MODELS[runtime][0], default: true },
+            ...AGY_ROUTE_MODELS[runtime].map((model) => ({ runtime, model, resolvedmodel: model, provider: runtime })),
+        ],
+    };
+}
+
+// claude and pi are lead-capable, agy is not: a lead picker that lists nothing would pass "no Antigravity" for no reason
+const agyHarnessFixture = () => [
+    agyHarnessRow("claude", "Claude Code", { leadcapable: true }),
+    agyHarnessRow("pi", "Pi", { leadcapable: true }),
+    agyHarnessRow("agy", "Antigravity", { leadcapable: false }),
+];
+
+// transcript_full.jsonl as agy 1.3.1 writes it (agytranscriptprojection.test.ts): the request wrapped in metadata blocks, one
+// planner step with a tool call, its GENERIC result, then the answer. No thinking row: the projector drops it.
+function agyTranscriptLines() {
+    const L = JSON.stringify;
+    return [
+        L({
+            step_index: 0,
+            source: "USER_EXPLICIT",
+            type: "USER_INPUT",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:03Z",
+            content: `<USER_REQUEST>\n${AGY_TASK}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-10-08T01:07:03+07:00.\n</ADDITIONAL_METADATA>`,
+        }),
+        L({
+            step_index: 1,
+            source: "MODEL",
+            type: "PLANNER_RESPONSE",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:03Z",
+            input_tokens: 11977,
+            cache_read_tokens: 0,
+            output_tokens: 152,
+            tool_calls: [
+                {
+                    name: "run_command",
+                    args: { CommandLine: "ls", Cwd: "/tmp/ws", toolAction: "Running ls", toolSummary: "Run ls" },
+                },
+            ],
+        }),
+        L({
+            step_index: 2,
+            source: "MODEL",
+            type: "GENERIC",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:06Z",
+            content:
+                "Created At: 2026-10-08T01:07:06+07:00\nCompleted At: 2026-10-08T01:07:06+07:00\n\nThe command exited with code 0.\nOutput:\na.txt\nb.txt\nc.txt\n",
+        }),
+        L({
+            step_index: 3,
+            source: "MODEL",
+            type: "PLANNER_RESPONSE",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:06Z",
+            input_tokens: 12218,
+            cache_read_tokens: 0,
+            output_tokens: 10,
+            content: AGY_ANSWER,
+        }),
+    ].join("\n") + "\n";
+}
+
+function agyUsageFixture() {
+    const bucket = (harness, provider, model, day, input, output) => ({
+        harness,
+        provider,
+        model,
+        day: dayAgo(day),
+        input,
+        output,
+        reasoning: 0,
+        cacheread: 0,
+        cachecreate: 0,
+        cachecreate1h: 0,
+        msgs: 2,
+    });
+    return [
+        bucket("claude", "anthropic", "claude-opus-4-8", 1, 1000, 200),
+        bucket("claude", "anthropic", "claude-opus-4-8", 2, 800, 150),
+        // agy counts tokens at $0 with no model, under its own harness id (pkg/usagestats/agy.go)
+        bucket("agy", "agy", "", 1, 600, 120),
+        bucket("agy", "agy", "", 2, 400, 90),
+    ];
+}
+
+// the module url of harnessstore.ts, read the way ahResolveInPage reads the others: out of an importer's transformed source
+async function agyHarnessStoreUrlInPage(storeUrl) {
+    const from = new URL("../view/agents/routepicker.tsx", storeUrl).href;
+    const res = await fetch(from);
+    if (!res.ok) throw new Error(`${from} answered ${res.status}`);
+    const m = (await res.text()).match(/["']([^"'\s]*\/harnessstore\.ts(?:\?[^"'\s]*)?)["']/);
+    if (!m) throw new Error(`${from} does not import harnessstore.ts`);
+    return new URL(m[1], from).href;
+}
+
+// answers getsessionsactivity and listharnesses with the fixtures and delegates every other command to what was there, then has
+// the app load its catalog through the mock. "ok" or why it did not take.
+async function installAgyMock(h, urls, sessions, harnesses) {
+    const storeUrl = await h.ev(`(${agyHarnessStoreUrlInPage.toString()})(${JSON.stringify(urls.store)})`);
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(urls.api)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${AGY_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const sessions = ${JSON.stringify(sessions)};
+        const harnesses = ${JSON.stringify(harnesses)};
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getsessionsactivity") return Promise.resolve({ sessions });
+                if (command === "listharnesses") return Promise.resolve({ harnesses });
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${AGY_MOCK_KEY} = { api, prev };
+        api.setMockRpcClient(mock);
+        const probe = await api.ListHarnessesCommand(window.TabRpcClient);
+        if (!(probe.harnesses ?? []).some((x) => x.runtime === "agy")) return "not-intercepted";
+        const store = await import(${JSON.stringify(storeUrl)});
+        await store.loadHarnesses();
+        return "ok";
+    })()`);
+}
+
+const removeAgyMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${AGY_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${AGY_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// Escape at the focused element, as routePickerFlat sends it
+async function agyEscape(h) {
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+}
+
+// Opens a route picker and reads the harness chips it offers (one per harness with model rows; the strip hides below two). With
+// `scopeTo`, also scopes to that harness and reads its model rows. Closes the picker after.
+async function agyReadPicker(h, triggerExpr, scopeTo) {
+    await h.ev(`${triggerExpr}?.click()`);
+    const open = await polishWaitFor(h, `!!document.querySelector('[data-testid="route-picker-scroll"]')`, 4000);
+    await polishNap(300);
+    const chips = await h.ev(
+        `[...document.querySelectorAll('[data-testid^="route-harness-"]')].map((c) => c.getAttribute("data-testid").slice("route-harness-".length))`
+    );
+    let rows = [];
+    if (scopeTo != null) {
+        await h.ev(`document.querySelector('[data-testid="route-harness-${scopeTo}"]')?.click()`);
+        await polishNap(250);
+        rows = await h.ev(
+            `[...document.querySelectorAll('[data-testid^="route-option-"]')].map((r) => r.getAttribute("data-testid").slice("route-option-".length))`
+        );
+    }
+    return { open, chips, rows };
+}
+
+async function agyClosePicker(h) {
+    await agyEscape(h);
+    await polishWaitFor(h, `!document.querySelector('[data-testid="route-picker-scroll"]')`, 2000);
+}
+
+// the brief profile's Lead route picker: three pickers share one aria-label there, so it is the one in the Lead route row
+const AGY_PROFILE_LEAD_PICKER = `(() => {
+    const dlg = document.querySelector('[data-jarvis-brief-modal="profile"]');
+    const pickers = [...(dlg?.querySelectorAll('[data-testid="route-picker"]') ?? [])];
+    return pickers.find((p) => {
+        let el = p.parentElement;
+        for (let i = 0; i < 6 && el && el !== dlg; i++, el = el.parentElement) {
+            const t = el.textContent || "";
+            if (t.includes("Lead route")) return !t.includes("Worker route");
+        }
+        return false;
+    }) ?? null;
+})()`;
+
+const agyHarness = {
+    name: "agy-harness",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-agy-harness-"));
+        const ctx = {
+            cwd,
+            prevUsage: await h.ev(`localStorage.getItem(${JSON.stringify(AGY_USAGE_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const brain = join(cwd, ".gemini", "antigravity-cli", "brain", AGY_SESSION_ID, ".system_generated", "logs");
+            mkdirSync(brain, { recursive: true });
+            const transcriptPath = join(brain, "transcript_full.jsonl");
+            writeFileSync(transcriptPath, agyTranscriptLines());
+            const now = Date.now();
+            ctx.projectDir = join(cwd, AGY_PROJECT);
+            mkdirSync(ctx.projectDir);
+            const sessions = [
+                {
+                    id: AGY_SESSION_ID,
+                    runtime: "agy",
+                    projectpath: ctx.projectDir,
+                    projectname: AGY_PROJECT,
+                    branch: "main",
+                    model: AGY_MODEL,
+                    tokenstotal: 12_400,
+                    status: "done",
+                    startedts: now - 3_600_000,
+                    durationms: 60_000,
+                    events: [],
+                    task: AGY_TASK,
+                    lastactivets: now - 120_000,
+                    resumecommand: `agy --conversation ${AGY_SESSION_ID}`,
+                    transcriptpath: transcriptPath,
+                },
+            ];
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: AGY_ROW_ID,
+                            name: AGY_ROW_NAME,
+                            project: AGY_PROJECT,
+                            task: "pick the output format",
+                            state: "asking",
+                            agent: "agy",
+                            model: AGY_MODEL,
+                            blockedMs: 90_000,
+                            blockId: "fx-blk-agy",
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            await h.ev(`localStorage.setItem(${JSON.stringify(AGY_USAGE_KEY)}, ${JSON.stringify(JSON.stringify(agyUsageFixture()))})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
+            // the sidebar lists registered projects only, and createproject makes the channel the consult composer needs
+            await h.rpc("createproject", { name: AGY_PROJECT, path: ctx.projectDir });
+            ctx.registered = true;
+            await waitForProjectInConfig(h, AGY_PROJECT);
+            // the roster fixture, the usage fixture and the channel snapshot are read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.modules = await ahResolveModules(h);
+            ctx.mock = ctx.modules.urls
+                ? await installAgyMock(h, ctx.modules.urls, sessions, agyHarnessFixture())
+                : `no-module-url (${ctx.modules.error})`;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (name) => h.shot(`cdp-shots/agy-harness-${name}.png`);
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            rec(
+                "0. the agy roster row, transcript, usage buckets and catalog mock are in place",
+                ctx.arrangeError == null && ctx.mock === "ok",
+                ctx.arrangeError ?? `mock=${ctx.mock}`
+            );
+
+            // 1. New agent modal offers Antigravity, and picking it fills the startup command
+            await h.ev(`[...document.querySelectorAll("button")].find((b) => (b.title || "").startsWith("New agent"))?.click()`);
+            const modalOpen = await polishWaitFor(h, `!!document.querySelector('[role="radiogroup"][aria-label="Runtime"]')`, 4000);
+            const runtimeNames = await h.ev(
+                `[...document.querySelectorAll('[role="radiogroup"][aria-label="Runtime"] [role="radio"]')].map((r) => r.textContent.trim())`
+            );
+            await h.ev(
+                `[...document.querySelectorAll('[role="radiogroup"][aria-label="Runtime"] [role="radio"]')].find((r) => r.textContent.trim() === "Antigravity")?.click()`
+            );
+            await polishNap(300);
+            const modal = await h.ev(`({
+                command: document.getElementById("na-cmd")?.value ?? null,
+                checked: [...document.querySelectorAll('[role="radiogroup"][aria-label="Runtime"] [role="radio"]')]
+                    .find((r) => r.getAttribute("aria-checked") === "true")?.textContent.trim() ?? null,
+            })`);
+            await shot("1-new-agent");
+            rec(
+                "1. new agent modal offers Antigravity",
+                modalOpen && runtimeNames.includes("Antigravity") && modal.command === "agy" && modal.checked === "Antigravity",
+                JSON.stringify({ runtimeNames, ...modal })
+            );
+            await h.ev(
+                `document.querySelector('[role="radiogroup"][aria-label="Runtime"]')?.closest('[role="dialog"]')?.querySelector('[aria-label="Close"]')?.click()`
+            );
+            await polishWaitFor(h, `!document.querySelector('[role="radiogroup"][aria-label="Runtime"]')`, 3000);
+
+            // 2. the injected row on the rail: glyph, color token, title, asking
+            const rowFound = await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${AGY_ROW_ID}"]')`, 8000);
+            const row = await h.ev(`(() => {
+                const el = document.querySelector('[data-agent-row="${AGY_ROW_ID}"]');
+                if (!el) return null;
+                const mark = el.querySelector('span[title="Antigravity"]');
+                const probe = document.createElement("span");
+                probe.style.color = "var(--color-rt-agy)";
+                document.body.appendChild(probe);
+                const want = getComputedStyle(probe).color;
+                probe.remove();
+                return {
+                    glyph: mark?.textContent.trim() ?? null,
+                    hasClass: mark?.classList.contains("text-rt-agy") ?? false,
+                    colorMatches: mark != null && getComputedStyle(mark).color === want && want !== "",
+                    name: el.textContent.includes(${JSON.stringify(AGY_ROW_NAME)}),
+                    asking: [...el.querySelectorAll("span")].some((s) => s.textContent.trim() === "asking"),
+                };
+            })()`);
+            await shot("2-rail-row");
+            rec(
+                "2. rail shows the agy row asking",
+                rowFound && row?.glyph === "◭" && row.hasClass && row.colorMatches && row.name && row.asking,
+                JSON.stringify(row)
+            );
+
+            // 3. Conversation History lists the agy session; opening it reads the transcript in the compact reader
+            let listed = await polishWaitFor(h, `!!document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')`, 8000);
+            if (!listed) {
+                await h.goto("cockpit");
+                await ahNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                listed = await polishWaitFor(h, `!!document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')`, 8000);
+            }
+            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+            const historyListsIt = await ahWait(
+                h,
+                `document.querySelector("[data-agent-history]")?.textContent?.includes(${JSON.stringify(AGY_TASK)})`,
+                6000
+            );
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(500);
+            await h.ev(`document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')?.click()`);
+            const answered = await ahWait(
+                h,
+                `document.querySelector("[data-compact-transcript]")?.textContent?.includes(${JSON.stringify(AGY_ANSWER)})`,
+                8000
+            );
+            await h.ev(`document.querySelector("[data-compact-transcript] [data-fold]")?.click()`);
+            await polishNap(500);
+            const reader = await h.ev(`(() => {
+                const root = document.querySelector("[data-compact-transcript]");
+                const text = root?.textContent ?? "";
+                return {
+                    user: root?.querySelector("[data-compact-user]")?.textContent.includes(${JSON.stringify(AGY_TASK)}) ?? false,
+                    message: root?.querySelector("[data-compact-message]")?.textContent.includes(${JSON.stringify(AGY_ANSWER)}) ?? false,
+                    toolRows: (text.match(/run_command/g) ?? []).length,
+                    toolTarget: text.includes("Run ls"),
+                    metadataLeaked: text.includes("ADDITIONAL_METADATA") || text.includes("USER_REQUEST"),
+                };
+            })()`);
+            await shot("3-history-transcript");
+            rec(
+                "3. history opens the agy transcript",
+                listed && historyListsIt === true && answered === true && reader.user && reader.message &&
+                    reader.toolRows === 1 && reader.toolTarget && !reader.metadataLeaked,
+                JSON.stringify({ listed, historyListsIt, answered, ...reader })
+            );
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(400);
+
+            // 4. the consult picker (the Jarvis pet's composer) lists Antigravity
+            await h.goto("cockpit");
+            await h.ev(`(() => {
+                globalThis.__wavePetStore?.resetPeek();
+                globalThis.__wavePetStore?.setAttention([]);
+                document.querySelector('[aria-label="Jarvis condition"]')?.focus();
+            })()`);
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+            }
+            const CONSULT = `document.querySelector('[data-pet-peek] [data-testid="harness-picker"][data-harness-operation="consult"]')`;
+            const consultFound = await polishWaitFor(h, `!!${CONSULT}`, 8000);
+            await h.ev(`${CONSULT}?.click()`);
+            await polishNap(400);
+            const consult = await h.ev(`(() => {
+                const o = document.querySelector('[data-testid="harness-option-agy"]');
+                return o ? { label: o.textContent.trim(), disabled: o.disabled } : null;
+            })()`);
+            await shot("4-consult-picker");
+            rec(
+                "4. consult picker lists Antigravity",
+                consultFound && consult != null && consult.label.startsWith("Antigravity") && consult.disabled === false,
+                JSON.stringify({ consultFound, consult })
+            );
+            await h.ev(`${CONSULT}?.click()`);
+            await h.ev(`globalThis.__wavePetStore?.resetPeek()`);
+
+            // 5, 6, 9. the New run window's pickers
+            const NEW_RUN_LEAD = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`;
+            const NEW_RUN_REVIEWERS = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Reviewers model"]')`;
+            await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+            const runOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+            await h.ev(`${NEW_RUN_FIELD}?.click()`);
+            await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
+            await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${AGY_PROJECT}"]')?.click()`);
+            await polishNap(300);
+            await h.ev(
+                `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+            );
+            await polishWaitFor(h, `!!${NEW_RUN_WORKERS}`, 3000);
+
+            const workers = await agyReadPicker(h, NEW_RUN_WORKERS, "agy");
+            await shot("5-worker-picker");
+            rec(
+                "5. worker picker lists Antigravity",
+                runOpen && workers.open && workers.chips.includes("agy") && workers.chips.includes("claude") &&
+                    workers.rows.includes(`agy-${AGY_MODEL}`),
+                JSON.stringify(workers)
+            );
+            await agyClosePicker(h);
+
+            const lead = await agyReadPicker(h, NEW_RUN_LEAD, null);
+            await shot("6-lead-picker");
+            rec(
+                "6. lead picker lists no Antigravity",
+                lead.open && lead.chips.includes("claude") && lead.chips.includes("pi") && !lead.chips.includes("agy"),
+                JSON.stringify(lead)
+            );
+            await agyClosePicker(h);
+
+            const reviewers = await agyReadPicker(h, NEW_RUN_REVIEWERS, null);
+            await shot("9-new-run-pickers");
+            rec(
+                "9. new run lead picker lists no Antigravity",
+                reviewers.open && reviewers.chips.includes("claude") && reviewers.chips.includes("pi") &&
+                    !reviewers.chips.includes("agy") && lead.chips.length > 0 && workers.chips.includes("agy"),
+                JSON.stringify({ lead: lead.chips, reviewers: reviewers.chips, workers: workers.chips })
+            );
+            await agyClosePicker(h);
+            await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+            await polishWaitFor(h, `!${NEW_RUN}`, 3000);
+
+            // 7. the usage surface's daily chart draws an agy series
+            await h.goto("usage");
+            const chartUp = await polishWaitFor(h, `document.querySelectorAll(".visx-axis-left .visx-axis-tick").length > 0`, 10000);
+            const chart = await h.ev(`(() => {
+                const probe = document.createElement("span");
+                probe.style.color = "var(--color-rt-agy)";
+                document.body.appendChild(probe);
+                const want = getComputedStyle(probe).color;
+                probe.remove();
+                const svg = [...document.querySelectorAll("svg")].find((s) => s.querySelector(".visx-axis-left"));
+                const bars = svg ? [...svg.querySelectorAll("path[fill='var(--color-rt-agy)']")] : [];
+                return {
+                    agyBars: bars.length,
+                    resolves: want !== "" && want !== "rgba(0, 0, 0, 0)",
+                    token: getComputedStyle(document.documentElement).getPropertyValue("--color-rt-agy").trim(),
+                };
+            })()`);
+            await shot("7-usage-chart");
+            rec(
+                "7. daily chart draws the agy series",
+                chartUp && chart.agyBars > 0 && chart.resolves && /^#[0-9a-f]{6}$/i.test(chart.token),
+                JSON.stringify(chart)
+            );
+
+            // 8. Settings' launch-flags editor
+            await h.goto("settings");
+            await h.ev(`document.querySelector('[data-section="newagent"]')?.click()`);
+            await polishNap(300);
+            await h.ev(
+                `[...document.querySelectorAll('[data-setting-row="newagent.runtime"] button')].find((b) => b.textContent.trim() === "Antigravity")?.click()`
+            );
+            await polishNap(300);
+            const flags = await h.ev(
+                `[...document.querySelectorAll('[data-setting-row^="newagent.flag.agy."] button[role="switch"]')].map((b) => b.getAttribute("aria-label"))`
+            );
+            await shot("8-settings-flags");
+            rec(
+                "8. settings flag editor lists Antigravity flags",
+                ["--dangerously-skip-permissions", "--continue", "--sandbox"].every((f) => flags.includes(f)),
+                JSON.stringify(flags)
+            );
+
+            // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
+            await h.ev(`document.querySelector('[data-section="run"]')?.click()`);
+            await polishNap(300);
+            const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
+            await shot("11-settings-run-route");
+            rec(
+                "11. settings run route lists no Antigravity",
+                runRoute.open && runRoute.chips.includes("claude") && runRoute.chips.includes("pi") && !runRoute.chips.includes("agy"),
+                JSON.stringify(runRoute)
+            );
+            await agyClosePicker(h);
+
+            // 10. the brief profile's Lead route picker
+            await h.goto("jarvis");
+            await h.ev(`document.querySelector('[data-jarvis-brief-profile]')?.click()`);
+            const profileOpen = await polishWaitFor(h, `!!${AGY_PROFILE_LEAD_PICKER}`, 6000);
+            const profile = await agyReadPicker(h, AGY_PROFILE_LEAD_PICKER, null);
+            await shot("10-brief-profile-lead-route");
+            rec(
+                "10. brief profile lead route lists no Antigravity",
+                profileOpen && profile.open && profile.chips.includes("claude") && profile.chips.includes("pi") &&
+                    !profile.chips.includes("agy"),
+                JSON.stringify({ profileOpen, ...profile })
+            );
+            await agyClosePicker(h);
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agy-harness teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the profile modal", () => h.ev(`document.querySelector('[data-jarvis-brief-modal="profile"] [aria-label="Close"]')?.click()`));
+        await step("remove the catalog and sessions mock", () => removeAgyMock(h));
+        if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
+        await step("restore the usage fixture", () => h.ev(restoreStorageKey(AGY_USAGE_KEY, ctx.prevUsage)));
+        await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
+        if (ctx.registered) {
+            await step("delete the fixture project", () => h.rpc("deleteproject", { name: AGY_PROJECT }));
+            // deleteproject leaves the channel createproject made
+            await step("delete the fixture project's channel", async () => {
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.projectDir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("reload onto the live roster and catalog", async () => {
+            if (!(await ahReload(h))) console.error("agy-harness teardown: the page did not come back after the reload");
+        });
+        await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -20117,6 +20694,7 @@ export const SCENARIOS = [
     agentTreeRail,
     agentTreeQuickReturn,
     agentHistory,
+    agyHarness,
     docReview,
     docReviewNotes,
     docReviewCanvas,

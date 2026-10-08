@@ -4,18 +4,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const stopRunWorkerCommand = vi.fn();
 const cancelRunCommand = vi.fn();
 const createRunCommand = vi.fn();
+const getJarvisProfileCommand = vi.fn();
 const pushModal = vi.fn();
 
 vi.mock("@/app/store/global-atoms", async () => {
     const actual = await vi.importActual<typeof import("@/app/store/global-atoms")>("@/app/store/global-atoms");
     const { atom } = await import("jotai");
-    return { ...actual, atoms: { workspaceId: atom("workspace-1") as any } };
+    return { ...actual, atoms: { workspaceId: atom("workspace-1") as any, settingsAtom: atom({}) as any } };
 });
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         StopRunWorkerCommand: (...args: any[]) => stopRunWorkerCommand(...args),
         CancelRunCommand: (...args: any[]) => cancelRunCommand(...args),
         CreateRunCommand: (...args: any[]) => createRunCommand(...args),
+        GetJarvisProfileCommand: (...args: any[]) => getJarvisProfileCommand(...args),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -33,7 +35,9 @@ import {
     resolvedProfileAtom,
     channelOverrideAtom,
     createRun,
+    resolveChannelLaunchRoute,
 } from "./runactions";
+import { harnessesAtom, harnessPreferenceAtom } from "./harnessstore";
 
 function deferred() {
     let resolve!: () => void;
@@ -259,5 +263,28 @@ describe("confirmCancelRun", () => {
 
         props.onConfirm();
         await vi.waitFor(() => expect(cancelRunCommand).toHaveBeenCalledTimes(1));
+    });
+});
+
+describe("resolveChannelLaunchRoute", () => {
+    const h = (runtime: string, leadcapable: boolean) =>
+        ({ runtime, label: runtime, installed: true, leadcapable, routecapabilities: [{ runtime, resolvedmodel: "default" }] }) as HarnessInfo;
+
+    beforeEach(() => {
+        getJarvisProfileCommand.mockReset();
+        getJarvisProfileCommand.mockResolvedValue({ override: {} });
+        globalStore.set(harnessesAtom, [h("agy", false), h("claude", true), h("pi", true)]);
+    });
+
+    it("never launches a run with an agy lead when the shared preference is agy", async () => {
+        globalStore.set(harnessPreferenceAtom, { route: { runtime: "agy" }, persistedRoute: { runtime: "agy" }, saving: false });
+        const pin = await resolveChannelLaunchRoute("channel-1");
+        expect(["claude", "pi"]).toContain(pin.runtime);
+    });
+
+    it("keeps a lead-capable channel override over an agy preference", async () => {
+        globalStore.set(harnessPreferenceAtom, { route: { runtime: "agy" }, persistedRoute: { runtime: "agy" }, saving: false });
+        getJarvisProfileCommand.mockResolvedValue({ override: { route: { runtime: "pi" } } });
+        expect(await resolveChannelLaunchRoute("channel-1")).toEqual({ runtime: "pi" });
     });
 });

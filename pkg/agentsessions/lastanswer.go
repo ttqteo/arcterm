@@ -10,7 +10,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/pisession"
 )
 
-// LastAnswer returns the last thing a claude or pi session said, in full, and its transcript time (UnixMilli).
+// LastAnswer returns the last thing a claude, pi or agy session said, in full, and its transcript time (UnixMilli).
 // A subagent's turns and a turn that only called tools are not answers. Other runtimes, a file that cannot be
 // read, and a session that has not answered yet give "", 0.
 func LastAnswer(path, runtime string) (text string, ts int64) {
@@ -23,6 +23,8 @@ func LastAnswer(path, runtime string) (text string, ts int64) {
 			return "", 0
 		}
 		return piLastAnswer(file)
+	case "agy":
+		return agyLastAnswer(parseAgySteps(readLines(path)))
 	}
 	return "", 0
 }

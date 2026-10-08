@@ -3,7 +3,7 @@
 
 import type { Runtime } from "./launch";
 
-const RUNTIMES: Runtime[] = ["claude", "codex", "opencode", "pi", "terminal"];
+const RUNTIMES: Runtime[] = ["claude", "codex", "opencode", "pi", "agy", "terminal"];
 
 export interface ParsedMentions {
     mentions: string[];

@@ -18,6 +18,7 @@
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { leadRuntimesAtom } from "@/app/view/agents/harnessstore";
 import { RoutePicker } from "@/app/view/agents/routepicker";
 import { MAX_PARALLELISM } from "@/app/view/agents/runconfig";
 import { useDagGroup } from "@/app/view/orchestrate/dagstore";
@@ -145,6 +146,7 @@ function LoadedConfig({
     inline,
     meta,
 }: ConfigProps & { group: TaskGroup | null; groupRead: LinkedGroupRead }) {
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const [open, setOpen] = useState(false);
     const [draft, setDraft] = useState<RunSettingsDraft | null>(null);
     const [baseline, setBaseline] = useState<RunSettingsDraft | null>(null);
@@ -286,6 +288,7 @@ function LoadedConfig({
                         inheritedLabel="Inherit the lead"
                         disabled={busy}
                         onChange={(route) => setDraft({ ...draft, reviewerRoute: route })}
+                        runtimes={leadRuntimes}
                     />
                 </div>
             </div>

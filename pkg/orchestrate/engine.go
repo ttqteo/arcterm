@@ -49,6 +49,13 @@ var validateWorkerHarness = func(runtime string) error {
 	return err
 }
 
+// validateLeadHarness checks a runtime that will judge work: a reviewer or a stage session. agy is a
+// worker, not a lead, so it fails here with the "cannot lead" message. A var so tests can stub it.
+var validateLeadHarness = func(runtime string) error {
+	_, err := harness.ValidateInstalled(runtime, harness.OperationLead)
+	return err
+}
+
 // SetValidateWorkerHarnessForTest stubs harness validation for tests.
 func SetValidateWorkerHarnessForTest(fn func(string) error) func() {
 	old := validateWorkerHarness
@@ -654,8 +661,9 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 		}
 		prompt := taskPrompt(g, task, owner, pin.Runtime, cwd, predecessorHandoff(task, g, runs))
 		// a new session per dispatch: its transcript is named by the id, so liveness and evidence never
-		// read a previous attempt's file as this one's.
-		sessionId := uuid.NewString()
+		// read a previous attempt's file as this one's. "" for a runtime that names its own session (agy):
+		// NoteWorkerSession binds the id from its first status report.
+		sessionId := jarvis.WorkerSessionId(pin.Runtime)
 		spawnStart := time.Now()
 		// the worker block is stamped with its run before the run row exists, so the id is minted here
 		runID := uuid.NewString()

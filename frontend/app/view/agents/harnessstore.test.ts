@@ -16,7 +16,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { globalStore } from "@/app/store/global";
-import { harnessPreferenceAtom, harnessesAtom, harnessesLoadingAtom, initHarnessPreference, loadHarnesses, setPreferredHarness, setPreferredRoute } from "./harnessstore";
+import { harnessPreferenceAtom, harnessesAtom, harnessesLoadingAtom, initHarnessPreference, leadRuntimes, leadRuntimesAtom, loadHarnesses, setPreferredHarness, setPreferredRoute } from "./harnessstore";
 
 describe("harnessstore model catalog freshness", () => {
     beforeEach(() => {
@@ -130,5 +130,19 @@ describe("harnessstore catalog load resilience", () => {
         reject(new Error("EC-TIME: timeout"));
         await pending;
         expect(globalStore.get(harnessesLoadingAtom)).toBe(false);
+    });
+});
+
+describe("leadRuntimes", () => {
+    const h = (runtime: string, leadcapable: boolean, installed = true) => ({ runtime, leadcapable, installed }) as HarnessInfo;
+    const catalog = [h("agy", false), h("claude", true), h("pi", true), h("codex", true, false)];
+
+    it("keeps claude and pi, and drops agy and uninstalled harnesses", () => {
+        expect(leadRuntimes(catalog)).toEqual(["claude", "pi"]);
+    });
+
+    it("derives from the loaded catalog", () => {
+        globalStore.set(harnessesAtom, catalog);
+        expect(globalStore.get(leadRuntimesAtom)).toEqual(["claude", "pi"]);
     });
 });

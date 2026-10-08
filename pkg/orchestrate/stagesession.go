@@ -37,12 +37,12 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	pin := reviewerRoute(owner, g)
 	capability, err := runroute.Resolve(pin)
 	if err == nil {
-		err = validateWorkerHarness(pin.Runtime)
+		err = validateLeadHarness(pin.Runtime)
 	}
 	if err != nil {
 		return "", err
 	}
-	runID, sessionId := uuid.NewString(), uuid.NewString()
+	runID, sessionId := uuid.NewString(), jarvis.WorkerSessionId(pin.Runtime)
 	oref, err := spawnWorker(spawnCtx, capability, owner.WorkspaceId, "", s.Tree, s.Prompt,
 		jarvis.RunWorkerOptions{SessionId: sessionId, RunId: runID, Label: s.Label})
 	if err != nil {

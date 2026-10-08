@@ -27,6 +27,18 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   `collect_transcript.go`, `modes.go`, `prepare.go`, `security.go`, `synth.go`, `validate.go` (each with its
   `_test.go`), or the old `scan.go`, `lifecycle.go` and `types.go` they plugged into.
 
+## (arcterm) agy as a run lead (2026-10-08)
+
+- **Deferred:** Antigravity (`agy`) leading an orchestrator run, or acting as a reviewer or stage session. agy is a
+  task worker only; `harness.OperationLead` refuses it, and the lead, reviewer and run-route pickers do not list it.
+- **What is missing:** a lead needs the handoff `/compact` and re-orientation after compaction. agy has no `/compact`
+  command and no compaction event, so a long lead could not shed context or be re-oriented.
+- **Why:** design decision D2 in `docs/superpowers/specs/2026-10-08-agy-harness-design.md`: a worker needs only
+  liveness, ask delivery and route validation; judgment roles need the rest.
+- **Where to pick it up:** `harness.OperationLead` (`pkg/harness`) to allow the route; `HandoffCompact` in
+  `pkg/orchestrate/wake.go` for the compaction handoff; agy's PreInvocation hook `injectSteps` as the path to
+  re-orient a lead after it compacts.
+
 ## (arcterm) Line comments in the Spec/Plan review dialog (deferred 2026-10-07)
 
 - **Deferred:** commenting on lines of the document in the Spec review / Plan review dialog

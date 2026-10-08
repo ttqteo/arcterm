@@ -17,8 +17,8 @@ const run = (over: Partial<Run>): Run =>
     }) as unknown as Run;
 
 const harnesses: HarnessInfo[] = [
-    { runtime: "claude", label: "Claude Code", installed: true, consultcapable: true, runworkercapable: true },
-    { runtime: "opencode", label: "OpenCode", installed: true, consultcapable: true, runworkercapable: true },
+    { runtime: "claude", label: "Claude Code", installed: true, consultcapable: true, runworkercapable: true, leadcapable: true },
+    { runtime: "opencode", label: "OpenCode", installed: true, consultcapable: true, runworkercapable: true, leadcapable: false },
 ];
 
 const evidence = (over: Partial<RunEvidence>): RunEvidence =>

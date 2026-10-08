@@ -440,7 +440,7 @@ export function formatReset(resetSec: number, now: number): string {
     return `${hours}h ${mins % 60}m`;
 }
 
-const PROVIDER_RANK: Record<string, number> = { claude: 0, codex: 1, opencode: 2 };
+const PROVIDER_RANK: Record<string, number> = { claude: 0, codex: 1, opencode: 2, pi: 3, agy: 4 };
 
 /** Pure: one plan-limit usage row per agent that carries rate data (no per-provider collapse), so
  *  multiple concurrent agents each show a row. Sorted claude-first, then codex, then others in

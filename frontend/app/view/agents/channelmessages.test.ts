@@ -86,6 +86,20 @@ describe("planMessage", () => {
             text: "does this race?",
         });
     });
+    it("dispatches to agy by leading mention", () => {
+        expect(planMessage("@agy fix the flaky test", [])).toEqual({
+            kind: "dispatch",
+            runtime: "agy",
+            text: "fix the flaky test",
+        });
+    });
+    it("consults agy after ask", () => {
+        expect(planMessage("ask @agy does this race?", [])).toEqual({
+            kind: "consult",
+            runtimes: ["agy"],
+            text: "does this race?",
+        });
+    });
     it("dispatches to pi by leading mention", () => {
         expect(planMessage("@pi investigate", [])).toEqual({ kind: "dispatch", runtime: "pi", text: "investigate" });
     });

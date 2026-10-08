@@ -17,7 +17,7 @@ import (
 )
 
 // ModelEntry is one selectable model for a runtime, sourced from the harness itself: enumerated
-// (pi, opencode), derived from the harness's own surface (claude --help aliases, codex config), or
+// (pi, opencode, agy), derived from the harness's own surface (claude --help aliases, codex config), or
 // free-form (accepted everywhere, never listed here). Never a maintained static catalog.
 type ModelEntry struct {
 	Runtime     string
@@ -48,6 +48,8 @@ func enumerateCatalog(ctx context.Context, runtime string) ([]ModelEntry, error)
 		entries, err = enumeratePi(ctx)
 	case "opencode":
 		entries, err = enumerateOpenCode(ctx)
+	case "agy":
+		entries, err = enumerateAgy(ctx)
 	case "claude":
 		entries, err = enumerateClaude(ctx)
 	case "codex":
@@ -81,6 +83,24 @@ func enumeratePi(ctx context.Context) ([]ModelEntry, error) {
 			continue // the context column anchors the table shape; anything else is not a row
 		}
 		entries = append(entries, ModelEntry{Runtime: "pi", Provider: fields[0], Model: fields[0] + "/" + fields[1], ContextHint: fields[2]})
+	}
+	return entries, nil
+}
+
+// enumerateAgy parses `agy models`: a `Fetching available models...` line, then `<slug>\t<label>` rows. Any
+// line that is not a row is skipped, so garbage degrades to free-form-only like pi's.
+func enumerateAgy(ctx context.Context) ([]ModelEntry, error) {
+	out, err := catalogCommand(ctx, "agy", "models")
+	if err != nil {
+		return nil, err
+	}
+	var entries []ModelEntry
+	for _, line := range strings.Split(string(out), "\n") {
+		slug, label, ok := strings.Cut(strings.TrimRight(line, "\r"), "\t")
+		if !ok || strings.TrimSpace(label) == "" || !agySlugRe.MatchString(slug) {
+			continue
+		}
+		entries = append(entries, ModelEntry{Runtime: "agy", Model: slug})
 	}
 	return entries, nil
 }

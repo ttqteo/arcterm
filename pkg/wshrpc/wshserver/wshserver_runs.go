@@ -268,7 +268,7 @@ func spawnRunWorkersWithPrompt(ctx context.Context, channelId, runId, projectNam
 	if routeErr != nil {
 		return routeErr
 	}
-	if _, harnessErr := validateHarness(pin.Runtime, harness.OperationRunWorker); harnessErr != nil {
+	if _, harnessErr := validateHarness(pin.Runtime, harness.OperationLead); harnessErr != nil {
 		return harnessErr
 	}
 	spawned, spawnErr := jarvis.EnsureWorkers(ctx, run, cap, projectName, prompt)
@@ -406,7 +406,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if err != nil {
 		return nil, err
 	}
-	if _, err := validateHarness(cap.Runtime, harness.OperationRunWorker); err != nil {
+	if _, err := validateHarness(cap.Runtime, harness.OperationLead); err != nil {
 		return nil, err
 	}
 	ch, err := wstore.DBMustGet[*waveobj.Channel](ctx, data.ChannelId)
@@ -446,10 +446,10 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if err := validateWorkersSetting(data.WorkerRoute, reviewerPicks); err != nil {
 		return nil, err
 	}
-	if err := validateRoute("workerRoute", data.WorkerRoute, true); err != nil {
+	if err := validateRoute("workerRoute", harness.OperationRunWorker, data.WorkerRoute, true); err != nil {
 		return nil, err
 	}
-	if err := validateRoute("reviewerRoute", data.ReviewerRoute, true); err != nil {
+	if err := validateRoute("reviewerRoute", harness.OperationLead, data.ReviewerRoute, true); err != nil {
 		return nil, err
 	}
 	run := jarvis.NewRun(data.Goal, data.WorkspaceId, ch.ProjectPath, resolved.Principles, mode, playbook, time.Now().UnixMilli())
@@ -618,7 +618,7 @@ func (ws *WshServer) CreateChildRunCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
-	if _, err := validateHarness(pin.Runtime, harness.OperationRunWorker); err != nil {
+	if _, err := validateHarness(pin.Runtime, harness.OperationLead); err != nil {
 		return nil, err
 	}
 	childMode, playbook := childRunPlan(resolved, mode)

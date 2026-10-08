@@ -30,13 +30,14 @@ const BAR_MAX = 30;
 // A cascade across hundreds of columns communicates nothing anyway — it only reads as motion at small n.
 const STAGGER_MAX_COLS = 40;
 // Stable known-harness metadata. Existing design-system tokens, unchanged from the pre-visx chart
-// (claude = accent, codex = success) plus the OpenCode/Pi runtime tokens. Unknown harnesses fall
+// (claude = accent, codex = success) plus the OpenCode/Pi/Antigravity runtime tokens. Unknown harnesses fall
 // back to the muted "other" color below.
 const HARNESS_META: Record<string, { label: string; color: string }> = {
     claude: { label: "Claude", color: "var(--color-accent)" },
     codex: { label: "Codex", color: "var(--color-success)" },
     opencode: { label: "OpenCode", color: "var(--color-rt-opencode)" },
     pi: { label: "Pi", color: "var(--color-rt-pi)" },
+    agy: { label: "Antigravity", color: "var(--color-rt-agy)" },
 };
 const OTHER_COLOR = "var(--color-muted)";
 
