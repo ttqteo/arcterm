@@ -5,6 +5,15 @@
 // its port and owner text, its uptime, which running background task (if any) wrote its log, and how often the rail
 // asks the backend. No React, atoms or RPC; devserversstore.ts polls and agentdetailsrail.tsx renders.
 
+// the JSON shape of the Go devservers.ServerOwner
+export interface DevServerOwner {
+    kind: "agent" | "terminal" | "app" | "detached";
+    blockid?: string;
+    tabid?: string;
+    name?: string;
+    harness?: string;
+}
+
 // the JSON shape of the Go devservers.Server (pkg/devservers)
 export interface DevServerRow {
     pid: number;
@@ -15,6 +24,8 @@ export interface DevServerRow {
     cwd: string;
     byagent: boolean;
     launchercmdline?: string;
+    repo?: string;
+    owner?: DevServerOwner;
 }
 
 const LABEL_MAX = 60;
@@ -126,17 +137,16 @@ function normalizeCommand(cmd: string): string {
         .trim();
 }
 
-// The running background task whose command launched this server, which has an output file to read as its log. Only a
-// server this agent started has one (its launcher command line holds the task's command); structural on the task so
-// it needs no import from transcriptprojection.ts.
-export function matchLogTask<T extends { command?: string; status: string; outputFile?: string }>(
-    row: DevServerRow,
+// The running background task whose command a launcher command line holds: the task that started that process, which
+// has an output file to read as its log. Structural on the task so it needs no import from transcriptprojection.ts.
+export function matchLauncherTask<T extends { command?: string; status: string; outputFile?: string }>(
+    launcherCmdline: string | undefined,
     tasks: T[]
 ): T | undefined {
-    if (!row.byagent || !row.launchercmdline) {
+    if (!launcherCmdline) {
         return undefined;
     }
-    const launcher = normalizeCommand(row.launchercmdline);
+    const launcher = normalizeCommand(launcherCmdline);
     return tasks.find((t) => {
         if (t.status !== "running" || !t.outputFile || !t.command) {
             return false;
@@ -144,6 +154,15 @@ export function matchLogTask<T extends { command?: string; status: string; outpu
         const cmd = normalizeCommand(t.command);
         return cmd !== "" && launcher.includes(cmd);
     });
+}
+
+// The running background task whose command launched this server. Only a server this agent started has one (its
+// launcher command line holds the task's command).
+export function matchLogTask<T extends { command?: string; status: string; outputFile?: string }>(
+    row: DevServerRow,
+    tasks: T[]
+): T | undefined {
+    return row.byagent ? matchLauncherTask(row.launchercmdline, tasks) : undefined;
 }
 
 // how often the rail asks for listening servers: fast while the rail is on screen, slow enough to keep the strip's
