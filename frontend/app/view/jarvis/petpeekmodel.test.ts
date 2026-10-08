@@ -267,7 +267,7 @@ describe("enterHintLabel", () => {
 });
 
 describe("peekConditions — every standing condition, readout marked", () => {
-    const HOT = { provider: "claude", pct: 94, resetAt: 1_800_000_000 };
+    const HOT = { provider: "claude", window: "5h" as const, pct: 94, resetAt: 1_800_000_000 };
 
     // documented in petacts.ts: the countdown is the one row with genuinely nothing to do, and it is
     // honest rather than an omission.

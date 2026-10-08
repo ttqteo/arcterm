@@ -27,6 +27,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Plan usage takes colour only as it nears a limit: the app bar meters and Usage's 5-hour and weekly cards stay
   grey while there is plenty left and turn amber past 60% and red past 85%, and a provider's tab in Usage colours
   its `5h` or `wk` figure the same way, so you see it without opening that tab.
+- Jarvis's pet looks tired only when a plan quota runs low, the 5-hour or the weekly one, and says so once when a
+  window passes 85% and once when it runs out. A full RAM no longer tires it; it stays a line in the pet's popup,
+  which now says how much free RAM one more worker needs.
+- The pet's lines read without dashes.
 
 ### Fixed
 

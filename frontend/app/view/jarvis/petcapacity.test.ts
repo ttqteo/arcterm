@@ -28,13 +28,13 @@ function cap(over: Partial<WorkerCapacity> = {}): WorkerCapacity {
 describe("overCapacitySpeech", () => {
     it("warns a new run that starts more workers than fit", () => {
         expect(overCapacitySpeech(cap(), { picked: 3, extra: 3, live: false })).toBe(
-            "Starting 3 workers, but RAM fits ~1 more (1.2 GB free) — expect swapping."
+            "Starting 3 workers, but RAM fits ~1 more (1.2 GB free), so expect swapping."
         );
     });
 
     it("warns a live run raised past what fits, naming the new width", () => {
         expect(overCapacitySpeech(cap({ moreworkers: 0 }), { picked: 5, extra: 3, live: true })).toBe(
-            "Raising to 5 workers, but RAM fits ~0 more (1.2 GB free) — expect swapping."
+            "Raising to 5 workers, but RAM fits ~0 more (1.2 GB free), so expect swapping."
         );
     });
 
@@ -51,7 +51,7 @@ describe("overCapacityEvent", () => {
             at: 1_000,
             kind: "notify",
             level: "warn",
-            text: "Starting 3 workers, but RAM fits ~1 more (1.2 GB free) — expect swapping.",
+            text: "Starting 3 workers, but RAM fits ~1 more (1.2 GB free), so expect swapping.",
         });
     });
 

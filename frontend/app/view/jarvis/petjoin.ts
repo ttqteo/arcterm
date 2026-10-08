@@ -34,7 +34,7 @@ export function eventFromResume(rtn: CommandGetLatestResumeRtnData | null | unde
         id: `resume:${rtn?.runoref ?? card.taskId}:${at}`,
         at,
         kind: "resume",
-        text: `Where we were — ${summary}`,
+        text: `Where we were: ${summary}`,
     };
 }
 
