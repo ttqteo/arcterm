@@ -131,6 +131,10 @@ export function askingCount(agents: AgentVM[]): number {
     return agents.filter((a) => a.state === "asking").length;
 }
 
+export function workingCount(agents: AgentVM[]): number {
+    return agents.filter((a) => a.state === "working").length;
+}
+
 // within this many px of the end, a scroll region counts as "stuck to bottom": new lines
 // auto-scroll and the jump-to-latest pill hides. Past it, the user is reading history.
 export const STICK_THRESHOLD_PX = 24;

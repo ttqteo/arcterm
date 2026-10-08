@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- From any other surface, the **Agent** item in the left rail shows a pulsing green dot with the number of agents
+  still working, so you can see a run is busy from Code or Diff. Hover it for the count in words.
 - An agent whose last turn ended on a git commit, once you have read that turn, offers to close itself: a **✓ Close**
   chip on its sidebar row and a **Done · 30.7M tok — Close** button in its header, both asking first as Close agent
   does. Agents a run started are left to the run. Claude agents for now.

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
+import { workingCount } from "./agentsviewmodel";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { navRailCollapsed } from "./navrailwidth";
 import { unreadLabel } from "./unreadagents";
@@ -69,6 +70,9 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
         radar: split.radar.length,
     };
+    // Agent also says how many agents are working while you are on another surface, so a run doing its work is
+    // visible from Code or Diff; on Agent itself the rows already show it
+    const working = workingCount(useAtomValue(model.agentsAtom));
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
     useEffect(() => {
         const onResize = () => setNarrow(navRailCollapsed(window.innerWidth));
@@ -78,6 +82,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const renderItem = (key: SurfaceKey, label: string, badge = 0, tool = false) => {
         const Icon = ICON[key];
         const isActive = active === key;
+        const busy = key === "agent" && !isActive ? working : 0;
         return (
             <button
                 key={key}
@@ -85,7 +90,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 onClick={() => setActive(key)}
                 // the label carries the item's name, so a 56px rail needs the accessible name here
                 aria-label={label}
-                title={label}
+                title={busy > 0 ? `${label} — ${busy} working` : label}
                 className={cn(
                     "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent text-muted hover:text-muted-foreground",
                     tool ? "py-[8px]" : "py-[11px]",
@@ -109,6 +114,15 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                             )}
                         >
                             {unreadLabel(badge)}
+                        </span>
+                    ) : null}
+                    {busy > 0 ? (
+                        <span
+                            data-nav-working={key}
+                            className="absolute -bottom-1.5 -right-2.5 flex h-[13px] items-center gap-[2px] rounded-full bg-surface px-[3px] text-[9px] font-bold tabular-nums text-working"
+                        >
+                            <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-working pulse-dot" />
+                            {unreadLabel(busy)}
                         </span>
                     ) : null}
                 </span>

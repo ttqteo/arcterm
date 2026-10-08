@@ -52,6 +52,7 @@ import {
     toggleSelection,
     usageLevel,
     withAsk,
+    workingCount,
     type AgentActionEntry,
     type AgentAskQuestion,
     type AgentEntry,
@@ -138,6 +139,15 @@ describe("askingCount", () => {
     });
     it("is zero when none are asking", () => {
         expect(askingCount([mk("a", "idle"), mk("b", "working")])).toBe(0);
+    });
+});
+
+describe("workingCount", () => {
+    it("counts only working agents", () => {
+        expect(workingCount([mk("a", "working"), mk("b", "asking"), mk("c", "working"), mk("d", "idle")])).toBe(2);
+    });
+    it("is zero when none are working", () => {
+        expect(workingCount([mk("a", "idle"), mk("b", "asking")])).toBe(0);
     });
 });
 
