@@ -13,12 +13,14 @@ const PROVIDER_DOT: Record<string, string> = {
     codex: "bg-provider-codex",
     opencode: "bg-provider-opencode",
     pi: "bg-provider-pi",
+    agy: "bg-provider-agy",
 };
 const PROVIDER_LABEL: Record<string, string> = {
     claude: "Claude",
     codex: "Codex",
     opencode: "OpenCode",
     pi: "Pi",
+    agy: "Antigravity",
 };
 
 export function providerLabel(provider: string): string {

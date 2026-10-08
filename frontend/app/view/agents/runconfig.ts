@@ -35,7 +35,7 @@ export interface ShapeCard {
 // The descriptions say what the machine does, not what the word means, in the design's words (design L1702).
 export const SHAPE_CARDS: ShapeCard[] = [
     { id: "orchestrator", desc: "lead plans, workers fan out" },
-    { id: "quick", desc: "one agent, one goal" },
+    { id: "quick", desc: "one worker, one goal" },
 ];
 
 export function clampParallelism(n: number): number {

@@ -100,7 +100,12 @@ describe("newAgentRamWarning", () => {
     });
     it("warns with the numbers when not even one more fits", () => {
         expect(newAgentRamWarning(cap({ moreworkers: 0 }), "pi")).toBe(
-            "Low on RAM: 1.3 GB free of 8 GB. Another agent (~1.5 GB) may make the machine lag; close one first if it is already slow."
+            "1.3 GB free of 8 GB. Another agent (~1.5 GB) may make the machine lag."
+        );
+    });
+    it("names a Quick run's worker as a worker", () => {
+        expect(newAgentRamWarning(cap({ moreworkers: 0 }), "run", "worker")).toBe(
+            "1.3 GB free of 8 GB. Another worker (~1.5 GB) may make the machine lag."
         );
     });
     it("never warns for a plain terminal", () => {

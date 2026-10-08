@@ -30,6 +30,10 @@ describe("mentionCandidates", () => {
         expect(names).toEqual(["claude", "api-auth"]);
     });
 
+    it("offers agy as a runtime mention", () => {
+        expect(mentionCandidates(["agy"], [])).toContainEqual({ name: "agy", kind: "runtime" });
+    });
+
     it("no longer offers a reserved jarvis handle", () => {
         expect(mentionCandidates([], []).map((c) => c.name)).not.toContain("jarvis");
     });

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ func countManaged(t *testing.T, cfg map[string]any) int {
 }
 
 func TestIsManagedCommand(t *testing.T) {
+	skipUnlessWindows(t)
 	cases := map[string]bool{
 		`"C:\a\bin\wsh-0.14.5-windows.x64.exe" agent-hook`: true,
 		`"C:\a\bin\wsh.exe" ask`:                           true,
@@ -55,6 +57,7 @@ func TestIsManagedCommand(t *testing.T) {
 }
 
 func TestMergeAgentHooksEmpty(t *testing.T) {
+	skipUnlessWindows(t)
 	got := mergeAgentHooks(map[string]any{}, testWsh)
 	if n := countManaged(t, got); n != len(managedHooks) {
 		t.Fatalf("managed entries = %d, want %d", n, len(managedHooks))
@@ -62,6 +65,7 @@ func TestMergeAgentHooksEmpty(t *testing.T) {
 }
 
 func TestMergeAgentHooksIdempotent(t *testing.T) {
+	skipUnlessWindows(t)
 	once := mergeAgentHooks(map[string]any{}, testWsh)
 	twice := mergeAgentHooks(once, testWsh)
 	if n := countManaged(t, twice); n != len(managedHooks) {
@@ -70,6 +74,7 @@ func TestMergeAgentHooksIdempotent(t *testing.T) {
 }
 
 func TestMergeAgentHooksPreservesUnrelated(t *testing.T) {
+	skipUnlessWindows(t)
 	existing := map[string]any{
 		"theme": "dark",
 		"env":   map[string]any{"FOO": "1"},
@@ -111,6 +116,7 @@ func TestMergeAgentHooksPreservesUnrelated(t *testing.T) {
 }
 
 func TestMergeAgentHooksRefreshesStalePath(t *testing.T) {
+	skipUnlessWindows(t)
 	old := mergeAgentHooks(map[string]any{}, `C:\old\bin\wsh-0.14.4-windows.x64.exe`)
 	refreshed := mergeAgentHooks(old, testWsh)
 	if n := countManaged(t, refreshed); n != len(managedHooks) {
@@ -143,6 +149,7 @@ func strings_Contains(s, sub string) bool {
 }
 
 func TestIsManagedStatusLine(t *testing.T) {
+	skipUnlessWindows(t)
 	cases := map[string]bool{
 		`"C:\a\bin\wsh-0.14.5-windows.x64.exe" statusline --inner=YmFzaCB4`: true,
 		`"/usr/local/bin/wsh" statusline --inner=`:                         true,
@@ -159,6 +166,7 @@ func TestIsManagedStatusLine(t *testing.T) {
 }
 
 func TestMergeStatusLineWrapsUnmanaged(t *testing.T) {
+	skipUnlessWindows(t)
 	existing := map[string]any{
 		"statusLine": map[string]any{"type": "command", "command": `bash /c/Users/x/sl.sh`},
 	}
@@ -177,6 +185,7 @@ func TestMergeStatusLineWrapsUnmanaged(t *testing.T) {
 }
 
 func TestMergeStatusLineEmpty(t *testing.T) {
+	skipUnlessWindows(t)
 	got := mergeStatusLine(map[string]any{}, testWsh)
 	sl := got["statusLine"].(map[string]any)
 	cmd := sl["command"].(string)
@@ -189,6 +198,7 @@ func TestMergeStatusLineEmpty(t *testing.T) {
 }
 
 func TestMergeStatusLineIdempotentNoNest(t *testing.T) {
+	skipUnlessWindows(t)
 	existing := map[string]any{
 		"statusLine": map[string]any{"type": "command", "command": `bash /c/Users/x/sl.sh`},
 	}
@@ -201,6 +211,7 @@ func TestMergeStatusLineIdempotentNoNest(t *testing.T) {
 }
 
 func TestMergeStatusLineRefreshesPath(t *testing.T) {
+	skipUnlessWindows(t)
 	existing := map[string]any{
 		"statusLine": map[string]any{"type": "command", "command": `bash /x/sl.sh`},
 	}
@@ -224,6 +235,7 @@ func TestMergeStatusLinePreservesOtherKeys(t *testing.T) {
 }
 
 func TestConfigIsHealthy(t *testing.T) {
+	skipUnlessWindows(t)
 	full := mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir)
 
 	stable := `C:\Users\u\.arc\bin\wsh.exe`
@@ -640,6 +652,7 @@ func TestInstallPiKeybindingsOnlyWhenAbsent(t *testing.T) {
 // removed form has to stay recognized as arcterm's, or the hook it wrote is never identified and so never
 // pruned — it would keep firing a subcommand wsh no longer has.
 func TestRemovedMemoryHooksAreStillRecognized(t *testing.T) {
+	skipUnlessWindows(t)
 	for _, mh := range managedHooks {
 		if strings.HasPrefix(mh.Args, "agent-memory-") {
 			t.Fatalf("memory hook still registered: %+v", mh)
@@ -659,6 +672,7 @@ func TestRemovedMemoryHooksAreStillRecognized(t *testing.T) {
 // SessionEnd left managedHooks entirely when agent-memory-hook was removed, so a merge that only
 // walked the events arcterm manages now would never revisit the stale group sitting under it.
 func TestMergePrunesHooksUnderNoLongerManagedEvents(t *testing.T) {
+	skipUnlessWindows(t)
 	existing := map[string]any{
 		"hooks": map[string]any{
 			"SessionEnd": []any{
@@ -698,6 +712,7 @@ func TestMergeKeepsForeignHooksUnderUnmanagedEvents(t *testing.T) {
 }
 
 func TestCompactionHooksAreManaged(t *testing.T) {
+	skipUnlessWindows(t)
 	for _, want := range []managedHook{
 		{Event: "PreCompact", Args: "agent-hook", Timeout: 10},
 		{Event: "SessionStart", Matcher: "compact", Args: "agent-hook", Timeout: 10},
@@ -834,6 +849,7 @@ func pluginDirsOf(t *testing.T, cfg map[string]any) []string {
 }
 
 func TestMergeClaudePluginDirs_empty(t *testing.T) {
+	skipUnlessWindows(t)
 	got := pluginDirsOf(t, mergeClaudePluginDirs(map[string]any{}, testModDir))
 	if len(got) != 1 || got[0] != testModDir {
 		t.Fatalf("plugin dirs = %v, want [%s]", got, testModDir)
@@ -841,6 +857,7 @@ func TestMergeClaudePluginDirs_empty(t *testing.T) {
 }
 
 func TestMergeClaudePluginDirs_keepsUserEntriesAndOtherEnv(t *testing.T) {
+	skipUnlessWindows(t)
 	user := `C:\mods\a` + string(os.PathListSeparator) + `C:\mods\b`
 	existing := map[string]any{"env": map[string]any{claudePluginDirsVar: user, "FOO": "bar"}}
 	merged := mergeClaudePluginDirs(existing, testModDir)
@@ -858,6 +875,7 @@ func TestMergeClaudePluginDirs_keepsUserEntriesAndOtherEnv(t *testing.T) {
 }
 
 func TestMergeClaudePluginDirs_idempotentAndNeverDuplicated(t *testing.T) {
+	skipUnlessWindows(t)
 	sep := string(os.PathListSeparator)
 	existing := map[string]any{"env": map[string]any{claudePluginDirsVar: testModDir + sep + `C:\mods\a`}}
 	once := mergeClaudePluginDirs(existing, testModDir)
@@ -870,6 +888,7 @@ func TestMergeClaudePluginDirs_idempotentAndNeverDuplicated(t *testing.T) {
 }
 
 func TestConfigIsHealthy_requiresThePluginDirsEntry(t *testing.T) {
+	skipUnlessWindows(t)
 	withoutDirs := mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh)
 	if configIsHealthy(withoutDirs, testWsh, []string{testModDir}, false) {
 		t.Fatal("a config without the mod's plugin dir must not be healthy, or an upgrade never writes it")
@@ -917,6 +936,7 @@ func TestInstallClaudeMod_writesTheModWithTheWshPath(t *testing.T) {
 }
 
 func TestConfigIsHealthy_requiresEveryModsPluginDir(t *testing.T) {
+	skipUnlessWindows(t)
 	viewDir := `C:\Users\u\.arc\claude-view-mod`
 	base := mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh)
 	both := []string{testModDir, viewDir}
@@ -993,6 +1013,7 @@ func TestClaudeSupportsMods(t *testing.T) {
 }
 
 func TestUnwrapStatusLine(t *testing.T) {
+	skipUnlessWindows(t)
 	wrapped := mergeStatusLine(map[string]any{"statusLine": map[string]any{"type": "command", "command": `bash /x/sl.sh`, "padding": 1.0}}, testWsh)
 	sl := unwrapStatusLine(wrapped)["statusLine"].(map[string]any)
 	if sl["command"] != `bash /x/sl.sh` || sl["padding"] != 1.0 || sl["type"] != "command" {
@@ -1014,6 +1035,7 @@ func TestUnwrapStatusLine(t *testing.T) {
 }
 
 func TestConfigIsHealthy_modsSupportedWantsNoWrapper(t *testing.T) {
+	skipUnlessWindows(t)
 	hooks := mergeClaudePluginDirs(mergeAgentHooks(map[string]any{}, testWsh), testModDir)
 	wrapped := mergeStatusLine(hooks, testWsh)
 	if configIsHealthy(wrapped, testWsh, []string{testModDir}, true) {
@@ -1050,6 +1072,7 @@ func managedHookEntries(t *testing.T, cfg map[string]any, event string) map[stri
 }
 
 func TestPerToolReportsRunInTheBackground(t *testing.T) {
+	skipUnlessWindows(t)
 	cfg := mergeAgentHooks(map[string]any{}, testWsh)
 	for _, tc := range []struct {
 		event, key string
@@ -1074,6 +1097,7 @@ func TestPerToolReportsRunInTheBackground(t *testing.T) {
 }
 
 func TestConfigIsHealthy_rewritesAHookWrittenBeforeItRanInTheBackground(t *testing.T) {
+	skipUnlessWindows(t)
 	full := mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir)
 	delete(managedHookEntries(t, full, "PostToolUse")["|agent-hook"], "async")
 	if configIsHealthy(full, testWsh, []string{testModDir}, false) {
@@ -1081,5 +1105,164 @@ func TestConfigIsHealthy_rewritesAHookWrittenBeforeItRanInTheBackground(t *testi
 	}
 	if !configIsHealthy(mergeAgentHooks(full, testWsh), testWsh, []string{testModDir}, false) {
 		t.Fatal("a reinstall should leave the config healthy")
+	}
+}
+
+func agyTestHome(t *testing.T, withCLI bool) string {
+	t.Helper()
+	home := t.TempDir()
+	if withCLI {
+		if err := os.MkdirAll(filepath.Join(home, ".gemini", "antigravity-cli"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home
+}
+
+func agyHooksPath(home string) string {
+	return filepath.Join(home, ".gemini", "config", "hooks.json")
+}
+
+func readAgyHooks(t *testing.T, home string) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile(agyHooksPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("hooks.json is not JSON: %v\n%s", err, b)
+	}
+	return out
+}
+
+func agyWantHooks(wsh string) map[string]any {
+	flat := func(event string) []any {
+		return []any{map[string]any{"type": "command", "command": `"` + wsh + `" agy-hook ` + event, "timeout": float64(10)}}
+	}
+	group := func(event string, timeout float64) []any {
+		return []any{map[string]any{
+			"matcher": "*",
+			"hooks":   []any{map[string]any{"type": "command", "command": `"` + wsh + `" agy-hook ` + event, "timeout": timeout}},
+		}}
+	}
+	return map[string]any{
+		"PreInvocation": flat("PreInvocation"),
+		"Stop":          flat("Stop"),
+		"PostToolUse":   group("PostToolUse", 10),
+		"PreToolUse":    group("PreToolUse", 3720),
+	}
+}
+
+func TestInstallAgyHooksSkipsWithoutAgyData(t *testing.T) {
+	home := agyTestHome(t, false)
+	if err := installAgyHooks(home, "/h/.arc/bin/wsh"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini")); !os.IsNotExist(err) {
+		t.Fatalf("nothing should be created without antigravity-cli, stat err = %v", err)
+	}
+}
+
+func TestInstallAgyHooksFreshInstall(t *testing.T) {
+	home := agyTestHome(t, true)
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	got := readAgyHooks(t, home)
+	want := map[string]any{"arcterm": agyWantHooks(wsh)}
+	if !reflect.DeepEqual(got, want) {
+		gb, _ := json.MarshalIndent(got, "", "  ")
+		wb, _ := json.MarshalIndent(want, "", "  ")
+		t.Fatalf("hooks.json mismatch\n got: %s\nwant: %s", gb, wb)
+	}
+}
+
+func TestInstallAgyHooksKeepsOtherKeysAndReplacesStale(t *testing.T) {
+	home := agyTestHome(t, true)
+	if err := os.MkdirAll(filepath.Dir(agyHooksPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"claude-mem":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"mem","timeout":5}]}]},` +
+		`"arcterm":{"Stop":[{"type":"command","command":"old","timeout":1}],"SessionStart":[{"type":"command","command":"gone"}]}}`
+	if err := os.WriteFile(agyHooksPath(home), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	got := readAgyHooks(t, home)
+	var wantMem map[string]any
+	if err := json.Unmarshal([]byte(`{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"mem","timeout":5}]}]}`), &wantMem); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got["claude-mem"], wantMem) {
+		t.Fatalf("claude-mem changed: %v", got["claude-mem"])
+	}
+	if !reflect.DeepEqual(got["arcterm"], agyWantHooks(wsh)) {
+		t.Fatalf("arcterm key not replaced: %v", got["arcterm"])
+	}
+}
+
+func TestInstallAgyHooksIdempotent(t *testing.T) {
+	home := agyTestHome(t, true)
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(agyHooksPath(home), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := installAgyHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(agyHooksPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(old) {
+		t.Fatalf("second run rewrote the file: mtime %v, want %v", fi.ModTime(), old)
+	}
+	if _, err := os.Stat(agyHooksPath(home) + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temp file left behind, stat err = %v", err)
+	}
+}
+
+func TestInstallAgyHooksRejectsNonObject(t *testing.T) {
+	for _, content := range []string{"not json", "[]", "null", `"s"`} {
+		home := agyTestHome(t, true)
+		if err := os.MkdirAll(filepath.Dir(agyHooksPath(home)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(agyHooksPath(home), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := installAgyHooks(home, "/h/.arc/bin/wsh")
+		if err == nil {
+			t.Fatalf("%q: want an error", content)
+		}
+		if !strings.Contains(err.Error(), "hooks.json") {
+			t.Fatalf("%q: error should name the file, got %v", content, err)
+		}
+		b, _ := os.ReadFile(agyHooksPath(home))
+		if string(b) != content {
+			t.Fatalf("%q: file was modified to %q", content, b)
+		}
+	}
+}
+
+func TestInstallAgyHooksQuotesWshPath(t *testing.T) {
+	for _, wsh := range []string{`/home/a b/.arc/bin/wsh`, `C:\Users\First Last\.arc\bin\wsh.exe`} {
+		home := agyTestHome(t, true)
+		if err := installAgyHooks(home, wsh); err != nil {
+			t.Fatal(err)
+		}
+		got := readAgyHooks(t, home)
+		if !reflect.DeepEqual(got["arcterm"], agyWantHooks(wsh)) {
+			t.Fatalf("%s: commands not quoted intact: %v", wsh, got["arcterm"])
+		}
 	}
 }

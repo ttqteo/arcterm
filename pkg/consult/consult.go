@@ -73,6 +73,7 @@ type RuntimeSpec struct {
 var runtimeSpecs = map[string]RuntimeSpec{
 	"claude":     {Bin: "claude", BaseArgs: []string{"-p", "--output-format", "stream-json", "--verbose"}, PromptViaStdin: true, ParseLine: claudeParseLine},
 	"codex":      {Bin: "codex", BaseArgs: []string{"exec", "--json"}, PromptViaStdin: true, ParseLine: codexParseLine},
+	"agy":        {Bin: "agy", BaseArgs: []string{"-p"}, PromptViaStdin: false},
 	"opencode":   {Bin: "opencode", BaseArgs: []string{"run", "--format", "json"}, PromptViaStdin: false, ParseLine: opencodeParseLine},
 	"pi":         {Bin: "pi", BaseArgs: []string{"--mode", "json", "--no-session", "--no-extensions"}, PromptViaStdin: false, ParseLine: piParseLine},
 	"openrouter": {ApiBackend: &openrouterBackend{}},

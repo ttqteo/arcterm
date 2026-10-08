@@ -13817,30 +13817,11 @@ const setInputExpr = (elExpr, value) => `(() => {
 })()`;
 const flatText = (elExpr) => `(${elExpr}?.textContent ?? '').replace(/\\s+/g, ' ').trim()`;
 
-// the window's header carries the marker, so its dialog scopes every query to it
-const NEW_RUN = `document.querySelector('[data-new-run-window]')?.closest('[role="dialog"]')`;
-const NEW_RUN_FIELD = `${NEW_RUN}?.querySelector('button[aria-haspopup="listbox"]')`;
-const NEW_RUN_LIST = `${NEW_RUN}?.querySelector('[role="listbox"][aria-label="Projects"]')`;
+// the New dialog's root carries the marker; New run opens it at the run door
+const NEW_RUN = `document.querySelector('[data-launcher]')`;
 const NEW_RUN_WORKERS = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Workers model"]')`;
 const NEW_RUN_PROJECT = "verify-new-run-window";
 const RECENT_PROJECTS_KEY = "agent.launch.recentprojects";
-
-// the list's group labels in order, and whether the project is listed under Recent
-const newRunListExpr = (name) => `(() => {
-    const list = ${NEW_RUN_LIST};
-    if (!list) return null;
-    const items = [...list.children].map((el) =>
-        el.tagName === 'SPAN' ? { label: el.textContent.trim() } : { option: el.getAttribute('data-project-option') }
-    );
-    const at = items.findIndex((i) => i.option === ${JSON.stringify(name)});
-    const recentAt = items.findIndex((i) => i.label === 'Recent');
-    const allAt = items.findIndex((i) => i.label === 'All projects');
-    return {
-        labels: items.filter((i) => i.label != null).map((i) => i.label),
-        listed: at >= 0,
-        inRecent: recentAt >= 0 && at > recentAt && (allAt < 0 || at < allAt),
-    };
-})()`;
 
 // a row's first cell is its task id; the needs cell can also read t-N, so only a first child counts
 const NEW_RUN_PLAN = `(() => {
@@ -13926,40 +13907,35 @@ const newRunWindow = {
         rec("1. New run opens the window from the app bar", opened, `dialog=${opened}`);
         if (!opened) return steps;
 
-        await h.ev(`${NEW_RUN_FIELD}?.click()`);
-        await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
-        const listed = await h.ev(newRunListExpr(NEW_RUN_PROJECT));
+        const listed = await h.ev(launcherState);
         await h.shot("cdp-shots/new-run-window-1-picker.png");
         rec(
-            "2. the project picker lists Recent, holding the project, then All projects",
-            listed != null && listed.labels[0] === "Recent" && listed.labels.includes("All projects") && listed.inRecent,
+            "2. New run opens on a run row, with the recent project first in the project column",
+            listed != null && ["quick", "orchestrator"].includes(listed.start) && listed.projects[0] === NEW_RUN_PROJECT,
             JSON.stringify(listed)
         );
 
-        await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, NEW_RUN_PROJECT));
-        await polishNap(300);
-        const searched = await h.ev(newRunListExpr(NEW_RUN_PROJECT));
+        await h.ev(focusColumn("project"));
+        for (const ch of "new-run-w") await launcherPress(h, ch);
+        const searched = await h.ev(launcherState);
         rec(
-            "3. a query drops Recent and shows Matches",
-            searched != null && !searched.labels.includes("Recent") && searched.labels[0] === "Matches" && searched.listed,
+            "3. typing in the project column filters it to the project",
+            searched?.filter?.startsWith("new-run-w") &&
+                searched.projects.includes(NEW_RUN_PROJECT) &&
+                searched.projects.every((p) => p.includes("new-run-w")),
             JSON.stringify(searched)
         );
 
-        await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${NEW_RUN_PROJECT}"]')?.click()`);
-        await polishNap(300);
-        const field = await h.ev(`({ expanded: ${NEW_RUN_FIELD}?.getAttribute('aria-expanded'), text: ${flatText(NEW_RUN_FIELD)} })`);
-        rec(
-            "4. picking the project closes the list on it",
-            field.expanded === "false" && field.text.startsWith(NEW_RUN_PROJECT),
-            JSON.stringify(field)
-        );
+        await launcherPress(h, "1");
+        const picked = await h.ev(launcherState);
+        rec("4. its digit picks the project", picked?.project === NEW_RUN_PROJECT, JSON.stringify(picked));
 
         await h.ev(
-            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
+            `${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`
         );
         await polishNap(200);
         await h.ev(
-            `[...(${NEW_RUN}?.querySelectorAll('[role="group"][aria-label="Start from"] button') ?? [])].find((b) => b.textContent.trim() === 'Plan file')?.click()`
+            `[...(${NEW_RUN}?.querySelectorAll('[role="group"][aria-label="Start from"] button') ?? [])].find((b) => b.textContent.trim() === 'A plan file')?.click()`
         );
         await polishWaitFor(h, `!!${NEW_RUN}?.querySelector('[data-jarvis-plan-path]')`, 3000);
         await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('[data-jarvis-plan-path]')`, MODELS_PLAN));
@@ -13993,12 +13969,27 @@ const newRunWindow = {
             JSON.stringify({ workers: reviewerPicks, ...onPicks })
         );
 
+        await h.ev(`${NEW_RUN_WORKERS}?.click()`);
+        await polishWaitFor(h, `!!document.querySelector('[data-testid="route-option-inherit"]')`, 3000);
+        await polishNap(200);
+        await launcherPress(h, "Escape");
+        const afterEsc = await h.ev(
+            `({ open: !!${NEW_RUN}, menu: !!document.querySelector('[data-testid="route-option-inherit"]') })`
+        );
+        rec(
+            "7. Escape in the Workers menu closes the menu and leaves the dialog open",
+            afterEsc.open && !afterEsc.menu,
+            JSON.stringify(afterEsc)
+        );
+
         const runsBefore = await channelRunCount(h, ctx.channelId);
-        await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Cancel')?.click()`);
+        await h.ev(
+            `[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`
+        );
         const closed = await polishWaitFor(h, `!${NEW_RUN}`, 3000);
         const runsAfter = await channelRunCount(h, ctx.channelId);
         rec(
-            "7. Cancel closes the window and starts no run",
+            "8. Cancel closes the window and starts no run",
             closed && runsAfter === runsBefore,
             JSON.stringify({ closed, runsBefore, runsAfter })
         );
@@ -14018,6 +14009,555 @@ const newRunWindow = {
             what: "delete the project",
             fn: () => (ctx.project ? h.rpc("deleteproject", { name: ctx.project }) : null),
         });
+    },
+};
+
+// --- launcher: the one New dialog for agents and runs (docs/superpowers/specs/2026-10-08-new-launcher-design.md).
+// One step per board of the design canvas, plus the keys, the error line, the Prototype chip and the kept draft.
+const LAUNCHER = NEW_RUN;
+const LAUNCHER_PROJECT = "verify-launcher";
+const LAUNCHER_PROJECT_B = "verify-launcher-b";
+
+// what the dialog shows, read in one evaluate
+const launcherState = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const active = document.activeElement;
+    const primary = [...d.querySelectorAll('button')].find((b) => /^(Launch agent|Open terminal|Start run|Starting…)/.test(flat(b)));
+    return {
+        title: flat(d.querySelector('h2')),
+        start: d.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
+        startRows: [...d.querySelectorAll('[data-start-row]')].map((r) => r.getAttribute('data-start-row')),
+        project: d.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? null,
+        projects: [...d.querySelectorAll('[data-project-row]')].map((r) => r.getAttribute('data-project-row')),
+        focus: active?.getAttribute('data-launcher-column') ?? (active?.id || null),
+        focusPrimary: !!primary && active === primary,
+        filter: d.querySelector('[data-launcher-filter]') ? flat(d.querySelector('[data-launcher-filter]')) : null,
+        restored: !!d.querySelector('[data-launcher-restored]'),
+        task: d.querySelector('#launcher-task')?.value ?? null,
+        goal: d.querySelector('textarea[aria-label="Goal"]')?.value ?? null,
+        primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
+        footer: flat(d.querySelector('[data-launcher-footer]')),
+        footerError: d.querySelector('[data-launcher-footer]')?.getAttribute('data-launcher-footer') === 'error',
+    };
+})()`;
+
+// sets a field the way React reads typing: through its own prototype's value setter, then an input event
+const setFieldExpr = (elExpr, value) => `(() => {
+    const el = ${elExpr};
+    if (!el) return false;
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, ${JSON.stringify(value)});
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+})()`;
+
+// real key events, so a key reaches the dialog the way a person's does
+const LAUNCHER_KEYS = {
+    Tab: { code: "Tab", keyCode: 9 },
+    Escape: { code: "Escape", keyCode: 27 },
+    Enter: { code: "Enter", keyCode: 13 },
+    ArrowUp: { code: "ArrowUp", keyCode: 38 },
+    ArrowDown: { code: "ArrowDown", keyCode: 40 },
+    "-": { code: "Minus", keyCode: 189 },
+};
+// Input.dispatchKeyEvent's modifiers bit for Shift
+const CDP_SHIFT = 8;
+async function launcherPress(h, key, { shift = false } = {}) {
+    const spec =
+        LAUNCHER_KEYS[key] ??
+        (/^[0-9]$/.test(key)
+            ? { code: `Digit${key}`, keyCode: 48 + Number(key) }
+            : { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0) });
+    for (const type of ["rawKeyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", {
+            type,
+            key,
+            code: spec.code,
+            windowsVirtualKeyCode: spec.keyCode,
+            modifiers: shift ? CDP_SHIFT : 0,
+        });
+    }
+    await polishNap(150);
+}
+
+// every block of every tab in the window's workspace: a launched terminal is a new tab with one block, which no
+// DOM shows (terminals start in the background)
+async function launcherBlockIds(h) {
+    const { tabIds } = await caTabIds(h);
+    const ids = [];
+    for (const tabid of tabIds) {
+        const tab = await h.rpc("gettab", tabid);
+        ids.push(...(tab?.blockids ?? []));
+    }
+    return ids;
+}
+
+const OPEN_NEW_AGENT = `[...document.querySelectorAll('button')].find((b) => (b.title ?? '').startsWith('New agent'))?.click()`;
+const focusColumn = (name) => `${LAUNCHER}?.querySelector('[data-launcher-column="${name}"]')?.focus()`;
+
+const launcherScenario = {
+    name: "launcher",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            for (const name of [LAUNCHER_PROJECT, LAUNCHER_PROJECT_B]) {
+                const dir = mkdtempSync(join(tmpdir(), `${name}-`));
+                ctx.dirs.push(dir);
+                await h.rpc("createproject", { name, path: dir });
+                ctx.projects.push(name);
+                await waitForProjectInConfig(h, name);
+            }
+            // recent-first puts verify-launcher on top; put the developer's own list back in teardown
+            ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
+            const recent = [LAUNCHER_PROJECT, LAUNCHER_PROJECT_B, ...JSON.parse(ctx.prevRecent ?? "[]")];
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(RECENT_PROJECTS_KEY)}, ${JSON.stringify(JSON.stringify(recent))})`
+            );
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. two projects were registered and made recent", false, ctx.arrangeError);
+            return steps;
+        }
+        const state = () => h.ev(launcherState);
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("cockpit");
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        let s = await state();
+        await h.shot("cdp-shots/launcher-1-agent.png");
+        rec(
+            "1. New agent opens the dialog titled New agent, focus on Start, an agent row picked, the recent project selected",
+            s != null &&
+                s.title === "New agent" &&
+                s.focus === "start" &&
+                !["quick", "orchestrator"].includes(s.start) &&
+                s.project === LAUNCHER_PROJECT,
+            JSON.stringify(s)
+        );
+        if (s == null) return steps;
+        const digit = (id) => String(s.startRows.indexOf(id) + 1);
+
+        // before any draft exists, so no Clear button of a restored note sits between Start and the primary button
+        await launcherPress(h, "Tab", { shift: true });
+        const back = await state();
+        await launcherPress(h, "Tab");
+        const wrapped = await state();
+        rec(
+            "2. Shift+Tab from the Start column lands on the primary button, and Tab from there wraps back to Start",
+            !s.restored && back?.focusPrimary === true && wrapped?.focus === "start",
+            JSON.stringify({ restored: s.restored, back: back?.focusPrimary, wrapped: wrapped?.focus })
+        );
+
+        await launcherPress(h, "1");
+        await launcherPress(h, "ArrowUp");
+        const up = await state();
+        await launcherPress(h, "ArrowDown");
+        const down = await state();
+        rec(
+            "3. in Start, ArrowUp from the first row picks the last (Orchestrate, titled New run) and ArrowDown wraps back to the first",
+            up?.start === "orchestrator" &&
+                up.title === "New run" &&
+                down?.start === s.startRows[0] &&
+                down.title === "New agent",
+            JSON.stringify({ up: [up?.start, up?.title], down: [down?.start, down?.title] })
+        );
+
+        await h.ev(focusColumn("project"));
+        await launcherPress(h, "ArrowDown");
+        const projDown = await state();
+        await launcherPress(h, "ArrowUp");
+        const projUp = await state();
+        rec(
+            "4. in Project, ArrowDown moves the pick to the next project and ArrowUp puts it back",
+            projDown?.project === LAUNCHER_PROJECT_B && projUp?.project === LAUNCHER_PROJECT,
+            JSON.stringify({ down: projDown?.project, up: projUp?.project })
+        );
+
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, digit("terminal"));
+        s = await state();
+        await h.shot("cdp-shots/launcher-2-terminal.png");
+        rec(
+            "5. Terminal's digit picks it: Open terminal, and no task field",
+            s.start === "terminal" && s.primary?.text.startsWith("Open terminal") && s.task === null,
+            JSON.stringify(s)
+        );
+
+        await launcherPress(h, digit("quick"));
+        s = await state();
+        rec(
+            "6. Quick run's digit picks it: the title turns New run, and with no goal Start run waits on Write the goal",
+            s.start === "quick" && s.title === "New run" && s.primary?.disabled === true && s.footer === "Write the goal",
+            JSON.stringify(s)
+        );
+
+        await launcherPress(h, "Enter");
+        s = await state();
+        rec(
+            "7. Enter on a run that cannot start goes to the goal field and starts nothing",
+            s != null && s.focus === "launcher-goal",
+            JSON.stringify(s)
+        );
+
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('textarea[aria-label="Goal"]')`, "verify launcher: do nothing"));
+        await polishNap(250);
+        s = await state();
+        await h.shot("cdp-shots/launcher-3-quick.png");
+        rec(
+            "8. with a goal, the footer reads Quick run in the project and Start run is live",
+            s.footer === `Quick run in ${LAUNCHER_PROJECT}` && s.primary?.disabled === false,
+            JSON.stringify(s)
+        );
+
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, digit("orchestrator"));
+        await polishNap(300);
+        s = await state();
+        const startFrom = await h.ev(`!!${LAUNCHER}?.querySelector('[role="group"][aria-label="Start from"]')`);
+        await h.shot("cdp-shots/launcher-4-orchestrate.png");
+        rec(
+            "9. Orchestrate's digit picks it, keeps the goal, and shows Start from, Workers at once and the three models",
+            s.start === "orchestrator" &&
+                startFrom &&
+                s.goal === "verify launcher: do nothing" &&
+                s.footer.startsWith("Orchestrator × ") &&
+                s.footer.endsWith(` in ${LAUNCHER_PROJECT}`),
+            JSON.stringify({ ...s, startFrom })
+        );
+
+        await h.ev(
+            `[...(${LAUNCHER}?.querySelectorAll('[role="group"][aria-label="Start from"] button') ?? [])].find((b) => b.textContent.trim() === 'A plan file')?.click()`
+        );
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-jarvis-plan-path]')`, 3000);
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('[data-jarvis-plan-path]')`, MODELS_PLAN));
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-jarvis-plan-preview="ready"]')`, 10000);
+        const plan = await h.ev(NEW_RUN_PLAN);
+        await h.shot("cdp-shots/launcher-5-plan.png");
+        rec(
+            "10. a plan file shows its parsed tasks in the dialog",
+            plan?.rows?.length === 3,
+            JSON.stringify({ plan: MODELS_PLAN, ...plan })
+        );
+
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, "Tab");
+        for (const ch of "r-b") await launcherPress(h, ch);
+        s = await state();
+        await h.shot("cdp-shots/launcher-6-filter.png");
+        rec(
+            "11. Tab moves to the Project column, and typing filters it to the matching project",
+            s.focus === "project" &&
+                s.filter?.startsWith("r-b") &&
+                s.projects.includes(LAUNCHER_PROJECT_B) &&
+                s.projects.every((p) => p.includes("r-b")) &&
+                s.project === LAUNCHER_PROJECT_B,
+            JSON.stringify(s)
+        );
+
+        for (const ch of "zz") await launcherPress(h, ch);
+        s = await state();
+        const noMatch = await h.ev(
+            `(${LAUNCHER}?.querySelector('[data-launcher-nomatch]')?.textContent ?? '').replace(/\\s+/g, ' ').trim()`
+        );
+        await h.shot("cdp-shots/launcher-7-nomatch.png");
+        rec(
+            "12. a filter nothing matches lists no project and says Esc clears it",
+            s.projects.length === 0 && noMatch === "No project matches “r-bzz”. Esc clears the filter.",
+            JSON.stringify({ noMatch, ...s })
+        );
+
+        await launcherPress(h, "Escape");
+        s = await state();
+        rec(
+            "13. Escape clears the filter and leaves the dialog open on the project it picked",
+            s != null && s.filter === null && s.project === LAUNCHER_PROJECT_B,
+            JSON.stringify(s)
+        );
+
+        await h.ev(focusColumn("start"));
+        const agentRow = s.startRows.includes("claude") ? "claude" : s.startRows[0];
+        await launcherPress(h, digit(agentRow));
+        await launcherPress(h, "Tab");
+        await launcherPress(h, "Tab");
+        const tabbedTo = (await state()).focus;
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify launcher: kept draft"));
+        await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.click()`);
+        const hasFlags = await h.ev(`!!${LAUNCHER}?.querySelector('button[aria-expanded]')`);
+        if (hasFlags) await h.ev(`${LAUNCHER}?.querySelector('button[aria-expanded]')?.click()`);
+        await polishNap(400);
+        s = await state();
+        const worktree = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked')`);
+        await h.shot("cdp-shots/launcher-8-agent-options.png");
+        rec(
+            "14. on an agent row, Tab, Tab lands in Task; a task, the worktree switch and the flag menu all take",
+            tabbedTo === "launcher-task" && s.task === "verify launcher: kept draft" && worktree === "true",
+            JSON.stringify({ tabbedTo, worktree, hasFlags, ...s })
+        );
+
+        // focus is still in the Task box: a click opened the menu, and a scripted click moves no focus
+        if (hasFlags) {
+            await launcherPress(h, "Escape");
+            const menu = await h.ev(
+                `({ open: !!${LAUNCHER}, expanded: ${LAUNCHER}?.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded'), focus: document.activeElement?.id || null })`
+            );
+            rec(
+                "15. Escape in the Task box with the flag menu open closes the menu, not the dialog",
+                menu.open && menu.expanded === "false",
+                JSON.stringify(menu)
+            );
+        }
+
+        // a worktree with no branch is refused before anything starts, so the error line shows without a launch
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('input[aria-label="Branch"]')`, ""));
+        await polishNap(200);
+        await h.ev(
+            `[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => /^Launch agent/.test(b.textContent.trim()))?.click()`
+        );
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-9-error.png");
+        rec(
+            "16. Launch agent with the worktree on and no branch puts the error in the footer and starts nothing",
+            s != null && s.footerError && s.footer === "Enter a branch name or turn off the worktree option.",
+            JSON.stringify(s)
+        );
+
+        await launcherPress(h, "Escape");
+        const escClosed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec("17. Escape with nothing open inside closes the dialog", escClosed, `closed=${escClosed}`);
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        s = await state();
+        await h.shot("cdp-shots/launcher-10-restored.png");
+        rec(
+            "18. reopened, it says draft restored and the task is still there",
+            s != null && s.restored && s.task === "verify launcher: kept draft",
+            JSON.stringify(s)
+        );
+
+        await h.ev(`(() => {
+            const backdrop = ${LAUNCHER}?.closest('[role="dialog"]')?.parentElement;
+            backdrop?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            return !!backdrop;
+        })()`);
+        const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec("19. a mousedown outside the dialog closes it", closed, `closed=${closed}`);
+
+        // the Prototype chip rides a canvas's Build this… prefill, which only an agent's design canvas sends; the
+        // dialog's DEV seam sends the same prefill
+        const prototype = join(ctx.dirs[0], "Main.dc.html");
+        const seam = await polishWaitFor(h, `typeof window.__openLauncher === 'function'`, 3000);
+        await h.ev(
+            `window.__openLauncher?.('run', ${JSON.stringify({ projectName: LAUNCHER_PROJECT, goal: "verify launcher: build the canvas", shape: "orchestrator", prototype })})`
+        );
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-prototype]')`, 5000);
+        await polishNap(300);
+        s = await state();
+        const chip = await h.ev(`(${LAUNCHER}?.querySelector('[data-launcher-prototype]')?.textContent ?? '').trim()`);
+        await h.shot("cdp-shots/launcher-11-prototype.png");
+        rec(
+            "20. a canvas's Build this… prefill opens on Orchestrate in its project, with its goal and the Prototype chip",
+            seam &&
+                s?.start === "orchestrator" &&
+                s.project === LAUNCHER_PROJECT &&
+                s.goal === "verify launcher: build the canvas" &&
+                chip.startsWith("Prototype · ") &&
+                chip.includes(prototype),
+            JSON.stringify({ seam, chip, ...s })
+        );
+
+        await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
+        const cancelled = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec("21. Cancel closes the dialog", cancelled, `closed=${cancelled}`);
+
+        // the task kept since step 14 still shows the note; Clear takes it away
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        await h.ev(
+            `[...(${LAUNCHER}?.querySelectorAll('[data-launcher-restored] button') ?? [])].find((b) => b.textContent.trim() === 'Clear')?.click()`
+        );
+        await polishNap(250);
+        s = await state();
+        rec("22. Clear empties the kept task and drops the note", s != null && !s.restored && s.task === "", JSON.stringify(s));
+        if (s == null) return steps;
+
+        // a real launch: a task and the worktree switch go into the draft on an agent row, then Terminal's Enter starts a
+        // terminal in the background (no agent), and the launch must empty both
+        const agentPick = s.startRows.includes("claude") ? "claude" : s.startRows[0];
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, String(s.startRows.indexOf(agentPick) + 1));
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify launcher: launched task"));
+        // React commits the click's update after the evaluated script returns, so the read is a second evaluate
+        await h.ev(`(() => {
+            const sw = ${LAUNCHER}?.querySelector('button[role="switch"]');
+            if (sw && sw.getAttribute('aria-checked') !== 'true') sw.click();
+        })()`);
+        await polishNap(250);
+        const switchOn = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked') ?? null`);
+        const blocksBefore = await launcherBlockIds(h);
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, String(s.startRows.indexOf("terminal") + 1));
+        await launcherPress(h, "Enter");
+        const launchClosed = await polishWaitFor(h, `!${LAUNCHER}`, 5000);
+        let blocksAfter = blocksBefore;
+        for (let waited = 0; waited < 8000 && blocksAfter.length <= blocksBefore.length; waited += 500) {
+            await polishNap(500);
+            blocksAfter = await launcherBlockIds(h);
+        }
+        const added = blocksAfter.filter((b) => !blocksBefore.includes(b));
+        // the new block rides ctx so teardown deletes it, even when a later step throws
+        ctx.terminalBlocks = added;
+        rec(
+            "23. Open terminal with a task and the worktree switch set closes the dialog and opens one terminal block",
+            switchOn === "true" && launchClosed && added.length === 1 && blocksAfter.length === blocksBefore.length + 1,
+            JSON.stringify({ switchOn, launchClosed, before: blocksBefore.length, after: blocksAfter.length, added })
+        );
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        const reopened = await state();
+        if (reopened != null && reopened.startRows.length > 0) {
+            const pick = reopened.startRows.includes(agentPick) ? agentPick : reopened.startRows[0];
+            await h.ev(focusColumn("start"));
+            await launcherPress(h, String(reopened.startRows.indexOf(pick) + 1));
+        }
+        s = await state();
+        const worktreeAfter = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked') ?? null`);
+        await h.shot("cdp-shots/launcher-12-after-launch.png");
+        rec(
+            "24. after the launch, New agent opens with no draft restored, an empty task and the worktree switch off",
+            s != null && !s.restored && s.task === "" && worktreeAfter === "false",
+            JSON.stringify({ worktreeAfter, ...s })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`launcher teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // the terminal step 23 started: its block goes before the reload, so no shell outlives the scenario
+        for (const blockid of ctx.terminalBlocks ?? []) {
+            await step(`delete the launched terminal ${blockid}`, () => h.rpc("deleteblock", { blockid }));
+        }
+        if (ctx.prevRecent !== undefined) {
+            const key = JSON.stringify(RECENT_PROJECTS_KEY);
+            await step("restore the recent projects", () =>
+                h.ev(
+                    ctx.prevRecent === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevRecent)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            await step(`delete ${name}`, () => h.rpc("deleteproject", { name }));
+        }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        // the dialog's draft lives in memory; a reload hands the next scenario a fresh one
+        await step("reload", async () => {
+            await h.ev("location.reload()");
+            await new Promise((r) => setTimeout(r, 2500));
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step("remove a temp dir", () => rmSync(dir, { recursive: true, force: true }));
+        }
+    },
+};
+
+// --- launcher-empty: the New dialog with no registered project (spec "Project column": No projects yet, and Register
+// a project, which opens New project). It needs an empty registry, which the Final's fresh store has; on a dev app
+// with projects, step 0 says so rather than delete them. SCENARIOS lists it before every scenario that registers a
+// project, so the Final runs it first.
+const launcherEmpty = {
+    name: "launcher-empty",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            const projects = Object.keys((await h.rpc("getfullconfig", null))?.projects ?? {});
+            if (projects.length > 0) {
+                ctx.arrangeError = `needs a store with no registered project, as the Final's fresh one; this one has ${projects.length}`;
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. no project is registered", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.goto("cockpit");
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        const empty = await h.ev(`(() => {
+            const d = ${LAUNCHER};
+            if (!d) return null;
+            const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+            return {
+                note: flat(d.querySelector('[data-launcher-empty]')),
+                register: [...d.querySelectorAll('button')].some((b) => flat(b) === 'Register a project'),
+                rows: d.querySelectorAll('[data-project-row]').length,
+                footer: flat(d.querySelector('[data-launcher-footer]')),
+            };
+        })()`);
+        await h.shot("cdp-shots/launcher-empty-1.png");
+        rec(
+            "1. with no project registered the column says No projects yet, offers Register a project, and the footer asks for one",
+            empty != null &&
+                empty.note === "No projects yet. Agents and runs start in a project folder." &&
+                empty.register &&
+                empty.rows === 0 &&
+                empty.footer === "Pick a project",
+            JSON.stringify(empty)
+        );
+
+        await h.ev(
+            `[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Register a project')?.click()`
+        );
+        const swapped = await polishWaitFor(h, `!${LAUNCHER} && !!document.querySelector('[data-new-project-mode]')`, 3000);
+        await h.shot("cdp-shots/launcher-empty-2-register.png");
+        rec("2. Register a project closes the dialog and opens New project", swapped, `swapped=${swapped}`);
+        return steps;
+    },
+    async teardown(h) {
+        // closes New project, or the dialog if step 2 failed
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await polishNap(300);
     },
 };
 
@@ -14255,7 +14795,7 @@ const paletteGoal = {
         const filled = await h.ev(`({
             palette: !!${PALETTE_INPUT},
             goal: ${NEW_RUN}?.querySelector('textarea[aria-label="Goal"]')?.value ?? null,
-            project: ${flatText(NEW_RUN_FIELD)},
+            project: ${NEW_RUN}?.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? '',
             text: ${flatText(NEW_RUN)},
         })`);
         const runsAfter = await channelRunCount(h, ctx.channelId);
@@ -14268,7 +14808,7 @@ const paletteGoal = {
                 filled.palette === false &&
                 filled.goal === goal &&
                 filled.project.startsWith(PALETTE_GOAL_PROJECT) &&
-                filled.text.includes(`orchestrator × `) &&
+                filled.text.includes("Orchestrator × ") &&
                 runsAfter === runsBefore,
             JSON.stringify({ selected: onOrch?.selected, windowOpen, paletteGone, ...filled, runsBefore, runsAfter })
         );
@@ -19134,6 +19674,24 @@ const CAPACITY_PROJECT = "verify-capacity-warn";
 const CAPACITY_PLUS = (root) => `${root}?.querySelector('button[aria-label="More concurrent workers"]')`;
 const pickOrchestrator = (root) =>
     `[...(${root}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`;
+// the New dialog's Workers stepper: the number before "+", and the CapacityWarn on the line under the row with its
+// reason spelled out
+const launcherWarnExpr = `(() => {
+    const plus = ${CAPACITY_PLUS(NEW_RUN)};
+    if (!plus) return null;
+    const num = plus.previousElementSibling;
+    const warn = ${NEW_RUN}?.querySelector('[data-capacity-warn]');
+    return {
+        value: num ? num.textContent.trim() : null,
+        amber: !!num && num.classList.contains("text-warning"),
+        warn: !!warn,
+        title: warn ? warn.title : null,
+        line: warn?.parentElement ? warn.parentElement.textContent.trim() : null,
+    };
+})()`;
+// the New dialog's low-RAM line for an agent row or a Quick run
+const ramWarnText = (root) =>
+    `(${root}?.querySelector('[data-ram-warn]')?.textContent ?? '').replace(/\\s+/g, ' ').trim() || null`;
 
 const capacityWarn = {
     name: "capacity-warn",
@@ -19199,19 +19757,44 @@ const capacityWarn = {
             await h.ev(`document.querySelector('[data-new-run]')?.click()`);
             const opened = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
             if (opened) {
-                await h.ev(pickOrchestrator(NEW_RUN));
+                await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
                 await polishWaitFor(h, `!!${CAPACITY_PLUS(NEW_RUN)}`, 3000);
                 await polishNap(300);
-                newRun = await h.ev(stepperWarnExpr(CAPACITY_PLUS(NEW_RUN)));
+                newRun = await h.ev(launcherWarnExpr);
                 await h.shot("cdp-shots/capacity-warn-new-run.png");
             }
         } catch (e) {
             newRun = { error: String(e?.message ?? e) };
         }
         rec(
-            "2. New run's Workers at once warns: amber number and ⚠ with its tooltip",
-            stepperWarned(newRun),
+            "2. New run's Workers at once warns: amber number, and ⚠ with its reason on the line under it",
+            stepperWarned(newRun) && newRun.line === CAPACITY_WARN_TITLE,
             JSON.stringify(newRun)
+        );
+
+        // CAPACITY_FULL has room for no more worker, so a Quick run's one worker and one more agent both warn
+        let ram = null;
+        try {
+            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="quick"]')?.click()`);
+            await polishNap(300);
+            const quick = await h.ev(ramWarnText(NEW_RUN));
+            await h.shot("cdp-shots/capacity-warn-quick-ram.png");
+            const agentRow = await h.ev(
+                `[...(${NEW_RUN}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.getAttribute('data-start-row')).find((id) => !['terminal', 'quick', 'orchestrator'].includes(id)) ?? null`
+            );
+            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="${agentRow}"]')?.click()`);
+            await polishNap(300);
+            const agent = await h.ev(ramWarnText(NEW_RUN));
+            await h.shot("cdp-shots/capacity-warn-agent-ram.png");
+            ram = { quick, agentRow, agent };
+        } catch (e) {
+            ram = { error: String(e?.message ?? e) };
+        }
+        rec(
+            "3. the New dialog's RAM line warns for a Quick run's worker and for one more agent",
+            ram?.quick === "1 GB free of 8 GB. Another worker (~1.5 GB) may make the machine lag." &&
+                ram?.agent === "1 GB free of 8 GB. Another agent (~1.5 GB) may make the machine lag.",
+            JSON.stringify(ram)
         );
         await h.ev(PEEKS_ESC).catch(() => {});
         await polishNap(300);
@@ -19240,7 +19823,7 @@ const capacityWarn = {
         } catch (e) {
             launcher = { error: String(e?.message ?? e) };
         }
-        rec("3. the Brief launcher's workers stepper warns", stepperWarned(launcher), JSON.stringify(launcher));
+        rec("4. the Brief launcher's workers stepper warns", stepperWarned(launcher), JSON.stringify(launcher));
 
         const ADJUST_PLUS = `[...(${COCKPIT_LEAD_CARD}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === '+' && b.parentElement?.textContent.includes('Worker parallelism'))`;
         let adjust = null;
@@ -19269,7 +19852,7 @@ const capacityWarn = {
             adjust = { error: String(e?.message ?? e) };
         }
         rec(
-            "4. a live run's Adjust → Worker parallelism warns above its running tasks",
+            "5. a live run's Adjust → Worker parallelism warns above its running tasks",
             stepperWarned(adjust),
             JSON.stringify(adjust)
         );
@@ -20475,6 +21058,574 @@ const settingsRadarAudit = {
     },
 };
 
+// --- agy-harness: Antigravity across the cockpit (docs/superpowers/specs/2026-10-08-agy-harness-design.md, Testing) ---------
+// Nothing needs agy installed. The harness list and the sessions archive are answered in-page (installAgyMock), the roster
+// row comes from the fixture file, the transcript is a temp file in agy's own format under a `.../antigravity-cli/brain/<id>/`
+// path (what picks the agy projector), and the usage chart reads the dev bucket fixture. Steps, one view each:
+//   1 New agent modal offers Antigravity and fills `agy`; 2 the rail row (glyph, color, title, asking); 3 History lists the agy
+//   session and its transcript opens in the compact reader; 4 the consult picker lists it; 5/6/9 the New run window's Workers
+//   picker lists it and its Lead and Reviewers pickers do not (claude and pi are asserted present, or an empty picker would
+//   pass); 7 the daily chart's agy series; 8 Settings' launch-flags editor; 10 the brief profile's Lead route; 11 Settings'
+//   run route. Teardown puts back every file, key, project and mock it touched.
+const AGY_PROJECT = "agy-harness-fx";
+const AGY_ROW_ID = "fx-agy";
+const AGY_ROW_NAME = "agy rail fixture";
+const AGY_SESSION_ID = "agy-fx-conv-1";
+const AGY_TASK = "count the files";
+const AGY_ANSWER = "I saw 3 files in the workspace.";
+const AGY_MODEL = "gemini-3-pro";
+const AGY_MOCK_KEY = "__arcAgyHarnessMock";
+const AGY_USAGE_KEY = "wave:dev-usage-buckets";
+const AGY_ROUTE_MODELS = { claude: ["opus", "sonnet"], pi: ["gpt-5.5"], agy: [AGY_MODEL, "gemini-3-flash"] };
+
+// a catalog row as ListHarnesses answers it: a default route plus one per model (the pickers list model rows only)
+function agyHarnessRow(runtime, label, flags) {
+    return {
+        runtime,
+        label,
+        installed: true,
+        version: "0.0.0",
+        consultcapable: true,
+        runworkercapable: true,
+        leadcapable: flags.leadcapable,
+        routecapabilities: [
+            { runtime, resolvedmodel: AGY_ROUTE_MODELS[runtime][0], default: true },
+            ...AGY_ROUTE_MODELS[runtime].map((model) => ({ runtime, model, resolvedmodel: model, provider: runtime })),
+        ],
+    };
+}
+
+// claude and pi are lead-capable, agy is not: a lead picker that lists nothing would pass "no Antigravity" for no reason
+const agyHarnessFixture = () => [
+    agyHarnessRow("claude", "Claude Code", { leadcapable: true }),
+    agyHarnessRow("pi", "Pi", { leadcapable: true }),
+    agyHarnessRow("agy", "Antigravity", { leadcapable: false }),
+];
+
+// transcript_full.jsonl as agy 1.3.1 writes it (agytranscriptprojection.test.ts): the request wrapped in metadata blocks, one
+// planner step with a tool call, its GENERIC result, then the answer. No thinking row: the projector drops it.
+function agyTranscriptLines() {
+    const L = JSON.stringify;
+    return [
+        L({
+            step_index: 0,
+            source: "USER_EXPLICIT",
+            type: "USER_INPUT",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:03Z",
+            content: `<USER_REQUEST>\n${AGY_TASK}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-10-08T01:07:03+07:00.\n</ADDITIONAL_METADATA>`,
+        }),
+        L({
+            step_index: 1,
+            source: "MODEL",
+            type: "PLANNER_RESPONSE",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:03Z",
+            input_tokens: 11977,
+            cache_read_tokens: 0,
+            output_tokens: 152,
+            tool_calls: [
+                {
+                    name: "run_command",
+                    args: { CommandLine: "ls", Cwd: "/tmp/ws", toolAction: "Running ls", toolSummary: "Run ls" },
+                },
+            ],
+        }),
+        L({
+            step_index: 2,
+            source: "MODEL",
+            type: "GENERIC",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:06Z",
+            content:
+                "Created At: 2026-10-08T01:07:06+07:00\nCompleted At: 2026-10-08T01:07:06+07:00\n\nThe command exited with code 0.\nOutput:\na.txt\nb.txt\nc.txt\n",
+        }),
+        L({
+            step_index: 3,
+            source: "MODEL",
+            type: "PLANNER_RESPONSE",
+            status: "DONE",
+            created_at: "2026-10-07T18:07:06Z",
+            input_tokens: 12218,
+            cache_read_tokens: 0,
+            output_tokens: 10,
+            content: AGY_ANSWER,
+        }),
+    ].join("\n") + "\n";
+}
+
+function agyUsageFixture() {
+    const bucket = (harness, provider, model, day, input, output) => ({
+        harness,
+        provider,
+        model,
+        day: dayAgo(day),
+        input,
+        output,
+        reasoning: 0,
+        cacheread: 0,
+        cachecreate: 0,
+        cachecreate1h: 0,
+        msgs: 2,
+    });
+    return [
+        bucket("claude", "anthropic", "claude-opus-4-8", 1, 1000, 200),
+        bucket("claude", "anthropic", "claude-opus-4-8", 2, 800, 150),
+        // agy counts tokens at $0 with no model, under its own harness id (pkg/usagestats/agy.go)
+        bucket("agy", "agy", "", 1, 600, 120),
+        bucket("agy", "agy", "", 2, 400, 90),
+    ];
+}
+
+// the module url of harnessstore.ts, read the way ahResolveInPage reads the others: out of an importer's transformed source
+async function agyHarnessStoreUrlInPage(storeUrl) {
+    const from = new URL("../view/agents/routepicker.tsx", storeUrl).href;
+    const res = await fetch(from);
+    if (!res.ok) throw new Error(`${from} answered ${res.status}`);
+    const m = (await res.text()).match(/["']([^"'\s]*\/harnessstore\.ts(?:\?[^"'\s]*)?)["']/);
+    if (!m) throw new Error(`${from} does not import harnessstore.ts`);
+    return new URL(m[1], from).href;
+}
+
+// answers getsessionsactivity and listharnesses with the fixtures and delegates every other command to what was there, then has
+// the app load its catalog through the mock. "ok" or why it did not take.
+async function installAgyMock(h, urls, sessions, harnesses) {
+    const storeUrl = await h.ev(`(${agyHarnessStoreUrlInPage.toString()})(${JSON.stringify(urls.store)})`);
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(urls.api)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${AGY_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const sessions = ${JSON.stringify(sessions)};
+        const harnesses = ${JSON.stringify(harnesses)};
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getsessionsactivity") return Promise.resolve({ sessions });
+                if (command === "listharnesses") return Promise.resolve({ harnesses });
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${AGY_MOCK_KEY} = { api, prev };
+        api.setMockRpcClient(mock);
+        const probe = await api.ListHarnessesCommand(window.TabRpcClient);
+        if (!(probe.harnesses ?? []).some((x) => x.runtime === "agy")) return "not-intercepted";
+        const store = await import(${JSON.stringify(storeUrl)});
+        await store.loadHarnesses();
+        return "ok";
+    })()`);
+}
+
+const removeAgyMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${AGY_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${AGY_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// Escape at the focused element, as routePickerFlat sends it
+async function agyEscape(h) {
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+}
+
+// Opens a route picker and reads the harness chips it offers (one per harness with model rows; the strip hides below two). With
+// `scopeTo`, also scopes to that harness and reads its model rows. Closes the picker after.
+async function agyReadPicker(h, triggerExpr, scopeTo) {
+    await h.ev(`${triggerExpr}?.click()`);
+    const open = await polishWaitFor(h, `!!document.querySelector('[data-testid="route-picker-scroll"]')`, 4000);
+    await polishNap(300);
+    const chips = await h.ev(
+        `[...document.querySelectorAll('[data-testid^="route-harness-"]')].map((c) => c.getAttribute("data-testid").slice("route-harness-".length))`
+    );
+    let rows = [];
+    if (scopeTo != null) {
+        await h.ev(`document.querySelector('[data-testid="route-harness-${scopeTo}"]')?.click()`);
+        await polishNap(250);
+        rows = await h.ev(
+            `[...document.querySelectorAll('[data-testid^="route-option-"]')].map((r) => r.getAttribute("data-testid").slice("route-option-".length))`
+        );
+    }
+    return { open, chips, rows };
+}
+
+async function agyClosePicker(h) {
+    await agyEscape(h);
+    await polishWaitFor(h, `!document.querySelector('[data-testid="route-picker-scroll"]')`, 2000);
+}
+
+// the brief profile's Lead route picker: three pickers share one aria-label there, so it is the one in the Lead route row
+const AGY_PROFILE_LEAD_PICKER = `(() => {
+    const dlg = document.querySelector('[data-jarvis-brief-modal="profile"]');
+    const pickers = [...(dlg?.querySelectorAll('[data-testid="route-picker"]') ?? [])];
+    return pickers.find((p) => {
+        let el = p.parentElement;
+        for (let i = 0; i < 6 && el && el !== dlg; i++, el = el.parentElement) {
+            const t = el.textContent || "";
+            if (t.includes("Lead route")) return !t.includes("Worker route");
+        }
+        return false;
+    }) ?? null;
+})()`;
+
+const agyHarness = {
+    name: "agy-harness",
+    surface: "agent",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-agy-harness-"));
+        const ctx = {
+            cwd,
+            prevUsage: await h.ev(`localStorage.getItem(${JSON.stringify(AGY_USAGE_KEY)})`),
+            prevCollapsed: await h.ev(`localStorage.getItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`),
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const brain = join(cwd, ".gemini", "antigravity-cli", "brain", AGY_SESSION_ID, ".system_generated", "logs");
+            mkdirSync(brain, { recursive: true });
+            const transcriptPath = join(brain, "transcript_full.jsonl");
+            writeFileSync(transcriptPath, agyTranscriptLines());
+            const now = Date.now();
+            ctx.projectDir = join(cwd, AGY_PROJECT);
+            mkdirSync(ctx.projectDir);
+            const sessions = [
+                {
+                    id: AGY_SESSION_ID,
+                    runtime: "agy",
+                    projectpath: ctx.projectDir,
+                    projectname: AGY_PROJECT,
+                    branch: "main",
+                    model: AGY_MODEL,
+                    tokenstotal: 12_400,
+                    status: "done",
+                    startedts: now - 3_600_000,
+                    durationms: 60_000,
+                    events: [],
+                    task: AGY_TASK,
+                    lastactivets: now - 120_000,
+                    resumecommand: `agy --conversation ${AGY_SESSION_ID}`,
+                    transcriptpath: transcriptPath,
+                },
+            ];
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: AGY_ROW_ID,
+                            name: AGY_ROW_NAME,
+                            project: AGY_PROJECT,
+                            task: "pick the output format",
+                            state: "asking",
+                            agent: "agy",
+                            model: AGY_MODEL,
+                            blockedMs: 90_000,
+                            blockId: "fx-blk-agy",
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            await h.ev(`localStorage.setItem(${JSON.stringify(AGY_USAGE_KEY)}, ${JSON.stringify(JSON.stringify(agyUsageFixture()))})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
+            // the sidebar lists registered projects only, and createproject makes the channel the consult composer needs
+            await h.rpc("createproject", { name: AGY_PROJECT, path: ctx.projectDir });
+            ctx.registered = true;
+            await waitForProjectInConfig(h, AGY_PROJECT);
+            // the roster fixture, the usage fixture and the channel snapshot are read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.modules = await ahResolveModules(h);
+            ctx.mock = ctx.modules.urls
+                ? await installAgyMock(h, ctx.modules.urls, sessions, agyHarnessFixture())
+                : `no-module-url (${ctx.modules.error})`;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (name) => h.shot(`cdp-shots/agy-harness-${name}.png`);
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            rec(
+                "0. the agy roster row, transcript, usage buckets and catalog mock are in place",
+                ctx.arrangeError == null && ctx.mock === "ok",
+                ctx.arrangeError ?? `mock=${ctx.mock}`
+            );
+
+            // 1. the New dialog offers Antigravity, and picking it fills the startup command
+            await h.ev(OPEN_NEW_AGENT);
+            const modalOpen = await polishWaitFor(h, `!!${LAUNCHER}`, 4000);
+            const runtimeNames = await h.ev(
+                `[...(${LAUNCHER}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.textContent.replace(/\\s+/g, ' ').trim())`
+            );
+            await h.ev(`${LAUNCHER}?.querySelector('[data-start-row="agy"]')?.click()`);
+            await polishNap(300);
+            const modal = await h.ev(`({
+                command: ${LAUNCHER}?.querySelector('#launcher-cmd')?.value ?? null,
+                checked: ${LAUNCHER}?.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
+            })`);
+            await shot("1-new-agent");
+            rec(
+                "1. new agent modal offers Antigravity",
+                modalOpen && runtimeNames.some((n) => n.includes("Antigravity")) && modal.command === "agy" && modal.checked === "agy",
+                JSON.stringify({ runtimeNames, ...modal })
+            );
+            await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
+            await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+
+            // 2. the injected row on the rail: glyph, color token, title, asking
+            const rowFound = await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${AGY_ROW_ID}"]')`, 8000);
+            const row = await h.ev(`(() => {
+                const el = document.querySelector('[data-agent-row="${AGY_ROW_ID}"]');
+                if (!el) return null;
+                const mark = el.querySelector('span[title="Antigravity"]');
+                const probe = document.createElement("span");
+                probe.style.color = "var(--color-rt-agy)";
+                document.body.appendChild(probe);
+                const want = getComputedStyle(probe).color;
+                probe.remove();
+                return {
+                    glyph: mark?.textContent.trim() ?? null,
+                    hasClass: mark?.classList.contains("text-rt-agy") ?? false,
+                    colorMatches: mark != null && getComputedStyle(mark).color === want && want !== "",
+                    name: el.textContent.includes(${JSON.stringify(AGY_ROW_NAME)}),
+                    asking: [...el.querySelectorAll("span")].some((s) => s.textContent.trim() === "asking"),
+                };
+            })()`);
+            await shot("2-rail-row");
+            rec(
+                "2. rail shows the agy row asking",
+                rowFound && row?.glyph === "◭" && row.hasClass && row.colorMatches && row.name && row.asking,
+                JSON.stringify(row)
+            );
+
+            // 3. Conversation History lists the agy session; opening it reads the transcript in the compact reader
+            let listed = await polishWaitFor(h, `!!document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')`, 8000);
+            if (!listed) {
+                await h.goto("cockpit");
+                await ahNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                listed = await polishWaitFor(h, `!!document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')`, 8000);
+            }
+            await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+            const historyListsIt = await ahWait(
+                h,
+                `document.querySelector("[data-agent-history]")?.textContent?.includes(${JSON.stringify(AGY_TASK)})`,
+                6000
+            );
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(500);
+            await h.ev(`document.querySelector('[data-agent-session-row="agy:${AGY_SESSION_ID}"]')?.click()`);
+            const answered = await ahWait(
+                h,
+                `document.querySelector("[data-compact-transcript]")?.textContent?.includes(${JSON.stringify(AGY_ANSWER)})`,
+                8000
+            );
+            await h.ev(`document.querySelector("[data-compact-transcript] [data-fold]")?.click()`);
+            await polishNap(500);
+            const reader = await h.ev(`(() => {
+                const root = document.querySelector("[data-compact-transcript]");
+                const text = root?.textContent ?? "";
+                return {
+                    user: root?.querySelector("[data-compact-user]")?.textContent.includes(${JSON.stringify(AGY_TASK)}) ?? false,
+                    message: root?.querySelector("[data-compact-message]")?.textContent.includes(${JSON.stringify(AGY_ANSWER)}) ?? false,
+                    toolRows: (text.match(/run_command/g) ?? []).length,
+                    toolTarget: text.includes("Run ls"),
+                    metadataLeaked: text.includes("ADDITIONAL_METADATA") || text.includes("USER_REQUEST"),
+                };
+            })()`);
+            await shot("3-history-transcript");
+            rec(
+                "3. history opens the agy transcript",
+                listed && historyListsIt === true && answered === true && reader.user && reader.message &&
+                    reader.toolRows === 1 && reader.toolTarget && !reader.metadataLeaked,
+                JSON.stringify({ listed, historyListsIt, answered, ...reader })
+            );
+            await ahKey(h, "Escape", "Escape");
+            await ahNap(400);
+
+            // 4. the consult picker (the Jarvis pet's composer) lists Antigravity
+            await h.goto("cockpit");
+            await h.ev(`(() => {
+                globalThis.__wavePetStore?.resetPeek();
+                globalThis.__wavePetStore?.setAttention([]);
+                document.querySelector('[aria-label="Jarvis condition"]')?.focus();
+            })()`);
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+            }
+            const CONSULT = `document.querySelector('[data-pet-peek] [data-testid="harness-picker"][data-harness-operation="consult"]')`;
+            const consultFound = await polishWaitFor(h, `!!${CONSULT}`, 8000);
+            await h.ev(`${CONSULT}?.click()`);
+            await polishNap(400);
+            const consult = await h.ev(`(() => {
+                const o = document.querySelector('[data-testid="harness-option-agy"]');
+                return o ? { label: o.textContent.trim(), disabled: o.disabled } : null;
+            })()`);
+            await shot("4-consult-picker");
+            rec(
+                "4. consult picker lists Antigravity",
+                consultFound && consult != null && consult.label.startsWith("Antigravity") && consult.disabled === false,
+                JSON.stringify({ consultFound, consult })
+            );
+            await h.ev(`${CONSULT}?.click()`);
+            await h.ev(`globalThis.__wavePetStore?.resetPeek()`);
+
+            // 5, 6, 9. the New run window's pickers
+            const NEW_RUN_LEAD = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`;
+            const NEW_RUN_REVIEWERS = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Reviewers model"]')`;
+            await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+            const runOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+            await h.ev(`${NEW_RUN}?.querySelector('[data-project-row="${AGY_PROJECT}"]')?.click()`);
+            await polishNap(300);
+            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
+            await polishWaitFor(h, `!!${NEW_RUN_WORKERS}`, 3000);
+
+            const workers = await agyReadPicker(h, NEW_RUN_WORKERS, "agy");
+            await shot("5-worker-picker");
+            rec(
+                "5. worker picker lists Antigravity",
+                runOpen && workers.open && workers.chips.includes("agy") && workers.chips.includes("claude") &&
+                    workers.rows.includes(`agy-${AGY_MODEL}`),
+                JSON.stringify(workers)
+            );
+            await agyClosePicker(h);
+
+            const lead = await agyReadPicker(h, NEW_RUN_LEAD, null);
+            await shot("6-lead-picker");
+            rec(
+                "6. lead picker lists no Antigravity",
+                lead.open && lead.chips.includes("claude") && lead.chips.includes("pi") && !lead.chips.includes("agy"),
+                JSON.stringify(lead)
+            );
+            await agyClosePicker(h);
+
+            const reviewers = await agyReadPicker(h, NEW_RUN_REVIEWERS, null);
+            await shot("9-new-run-pickers");
+            rec(
+                "9. new run lead picker lists no Antigravity",
+                reviewers.open && reviewers.chips.includes("claude") && reviewers.chips.includes("pi") &&
+                    !reviewers.chips.includes("agy") && lead.chips.length > 0 && workers.chips.includes("agy"),
+                JSON.stringify({ lead: lead.chips, reviewers: reviewers.chips, workers: workers.chips })
+            );
+            await agyClosePicker(h);
+            await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
+            await polishWaitFor(h, `!${NEW_RUN}`, 3000);
+
+            // 7. the usage surface's daily chart draws an agy series
+            await h.goto("usage");
+            const chartUp = await polishWaitFor(h, `document.querySelectorAll(".visx-axis-left .visx-axis-tick").length > 0`, 10000);
+            const chart = await h.ev(`(() => {
+                const probe = document.createElement("span");
+                probe.style.color = "var(--color-rt-agy)";
+                document.body.appendChild(probe);
+                const want = getComputedStyle(probe).color;
+                probe.remove();
+                const svg = [...document.querySelectorAll("svg")].find((s) => s.querySelector(".visx-axis-left"));
+                const bars = svg ? [...svg.querySelectorAll("path[fill='var(--color-rt-agy)']")] : [];
+                return {
+                    agyBars: bars.length,
+                    resolves: want !== "" && want !== "rgba(0, 0, 0, 0)",
+                    token: getComputedStyle(document.documentElement).getPropertyValue("--color-rt-agy").trim(),
+                };
+            })()`);
+            await shot("7-usage-chart");
+            rec(
+                "7. daily chart draws the agy series",
+                chartUp && chart.agyBars > 0 && chart.resolves && /^#[0-9a-f]{6}$/i.test(chart.token),
+                JSON.stringify(chart)
+            );
+
+            // 8. Settings' launch-flags editor
+            await h.goto("settings");
+            await h.ev(`document.querySelector('[data-section="newagent"]')?.click()`);
+            await polishNap(300);
+            await h.ev(
+                `[...document.querySelectorAll('[data-setting-row="newagent.runtime"] button')].find((b) => b.textContent.trim() === "Antigravity")?.click()`
+            );
+            await polishNap(300);
+            const flags = await h.ev(
+                `[...document.querySelectorAll('[data-setting-row^="newagent.flag.agy."] button[role="switch"]')].map((b) => b.getAttribute("aria-label"))`
+            );
+            await shot("8-settings-flags");
+            rec(
+                "8. settings flag editor lists Antigravity flags",
+                ["--dangerously-skip-permissions", "--continue", "--sandbox"].every((f) => flags.includes(f)),
+                JSON.stringify(flags)
+            );
+
+            // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
+            await h.ev(`document.querySelector('[data-section="run"]')?.click()`);
+            await polishNap(300);
+            const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
+            await shot("11-settings-run-route");
+            rec(
+                "11. settings run route lists no Antigravity",
+                runRoute.open && runRoute.chips.includes("claude") && runRoute.chips.includes("pi") && !runRoute.chips.includes("agy"),
+                JSON.stringify(runRoute)
+            );
+            await agyClosePicker(h);
+
+            // 10. the brief profile's Lead route picker
+            await h.goto("jarvis");
+            await h.ev(`document.querySelector('[data-jarvis-brief-profile]')?.click()`);
+            const profileOpen = await polishWaitFor(h, `!!${AGY_PROFILE_LEAD_PICKER}`, 6000);
+            const profile = await agyReadPicker(h, AGY_PROFILE_LEAD_PICKER, null);
+            await shot("10-brief-profile-lead-route");
+            rec(
+                "10. brief profile lead route lists no Antigravity",
+                profileOpen && profile.open && profile.chips.includes("claude") && profile.chips.includes("pi") &&
+                    !profile.chips.includes("agy"),
+                JSON.stringify({ profileOpen, ...profile })
+            );
+            await agyClosePicker(h);
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`agy-harness teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the profile modal", () => h.ev(`document.querySelector('[data-jarvis-brief-modal="profile"] [aria-label="Close"]')?.click()`));
+        await step("remove the catalog and sessions mock", () => removeAgyMock(h));
+        if (ctx.wroteFixture) await step("remove the fixture roster", () => rmSync(TREE_RAIL_FIXTURE, { force: true }));
+        await step("restore the usage fixture", () => h.ev(restoreStorageKey(AGY_USAGE_KEY, ctx.prevUsage)));
+        await step("restore the tree fold preference", () => h.ev(restoreStorageKey(TREE_COLLAPSED_KEY, ctx.prevCollapsed)));
+        if (ctx.registered) {
+            await step("delete the fixture project", () => h.rpc("deleteproject", { name: AGY_PROJECT }));
+            // deleteproject leaves the channel createproject made
+            await step("delete the fixture project's channel", async () => {
+                const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.projectDir))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("reload onto the live roster and catalog", async () => {
+            if (!(await ahReload(h))) console.error("agy-harness teardown: the page did not come back after the reload");
+        });
+        await step("remove the temp dir", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -20526,6 +21677,7 @@ export const SCENARIOS = [
     agentTreeRail,
     agentTreeQuickReturn,
     agentHistory,
+    agyHarness,
     docReview,
     docReviewNotes,
     docReviewCanvas,
@@ -20540,7 +21692,9 @@ export const SCENARIOS = [
     finalShotsScenario,
     briefInitiativesPolish,
     briefPeeksPolish,
+    launcherEmpty,
     newRunWindow,
+    launcherScenario,
     paletteActions,
     paletteGoal,
     modelPicks,

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -466,7 +467,8 @@ func TestScanProvider_PiDiscoversSessionUnderEncodedDir(t *testing.T) {
 	if s.ProjectPath != `C:\Users\Jane Doe\IdeaProjects\waveterm` {
 		t.Errorf("projectPath = %q, want the header cwd (encoded dir must not be decoded)", s.ProjectPath)
 	}
-	if s.ProjectName != "waveterm" {
+	// the header cwd is a Windows path, which filepath.Base splits only on Windows
+	if runtime.GOOS == "windows" && s.ProjectName != "waveterm" {
 		t.Errorf("projectName = %q, want waveterm", s.ProjectName)
 	}
 	if s.TranscriptPath != path {

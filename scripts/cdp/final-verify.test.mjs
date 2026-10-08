@@ -56,6 +56,16 @@ function alive(pid) {
     }
 }
 
+// a killed process stays signalable until its parent reaps it, so give it a moment to go
+async function gone(pid, ms) {
+    const deadline = Date.now() + ms;
+    while (alive(pid)) {
+        if (Date.now() >= deadline) return false;
+        await new Promise((r) => setTimeout(r, 50));
+    }
+    return true;
+}
+
 describe("pickPort", () => {
     it("skips a port another process holds", async () => {
         const held = await listen(0);
@@ -126,7 +136,7 @@ describe("final-verify.mjs", () => {
         expect(r.code).toBe(EXIT_UNVERIFIED);
         expect(r.last).toMatch(/^dev app did not answer on :\d+$/);
         expect(existsSync(pidFile)).toBe(true);
-        expect(alive(Number(readFileSync(pidFile, "utf8")))).toBe(false);
+        expect(await gone(Number(readFileSync(pidFile, "utf8")), 5000)).toBe(true);
     }, 30_000);
 
     // a dev app is running on the vite port most of the time here: the final one takes another port, and builds

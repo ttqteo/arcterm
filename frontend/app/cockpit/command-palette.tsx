@@ -38,13 +38,13 @@ import {
 } from "@/app/view/code/codestore";
 import { buildBriefIndex, rankBriefRows, type BriefRow } from "@/app/view/jarvis/briefpalette";
 import { workOnInitiative } from "@/app/view/jarvis/initiativeworkaction";
-import { newRunPrefillAtom } from "@/app/view/jarvis/newruncontrol";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
-import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { atom, useAtomValue } from "jotai";
 import {
     ArrowUpRight,
     CircleX,
@@ -406,10 +406,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     }, [bindings, surface, model, themeItems.length]);
 
     const startItems = useMemo<PaletteItem[]>(() => {
-        const opens: Record<StartId, PrimitiveAtom<boolean>> = {
-            run: model.newRunOpenAtom,
-            agent: model.newAgentOpenAtom,
-            initiative: model.newInitiativeOpenAtom,
+        const opens: Record<StartId, () => void> = {
+            run: () => openLauncher(model, "run"),
+            agent: () => openLauncher(model, "agent"),
+            initiative: () => globalStore.set(model.newInitiativeOpenAtom, true),
         };
         return START_DEFS.map((d) => ({
             key: `start:${d.id}`,
@@ -423,7 +423,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             echo: d.echo,
             run: () => {
                 close();
-                globalStore.set(opens[d.id], true);
+                opens[d.id]();
             },
         }));
     }, [bindings, model]);
@@ -681,11 +681,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             });
         };
         const deps: LaunchDeps = {
-            // the window clears the prefill once its project list loads
+            // the dialog fills the prefill in once its project list loads
             open: (goal, shape) => {
-                globalStore.set(newRunPrefillAtom, { projectName, goal, shape });
                 close();
-                globalStore.set(model.newRunOpenAtom, true);
+                openLauncher(model, "run", { projectName, goal, shape });
             },
             // only offered with a project; the user never types "ask @", the transport string is synthesized
             consult: (runtime, goal) =>

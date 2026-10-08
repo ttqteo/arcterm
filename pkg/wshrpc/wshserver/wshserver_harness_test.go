@@ -36,8 +36,8 @@ func TestListHarnessesReturnsCatalogWithoutOpenRouter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListHarnessesCommand: %v", err)
 	}
-	if len(rtn.Harnesses) != 4 {
-		t.Fatalf("len = %d, want 4", len(rtn.Harnesses))
+	if len(rtn.Harnesses) != 5 {
+		t.Fatalf("len = %d, want 5", len(rtn.Harnesses))
 	}
 	for _, info := range rtn.Harnesses {
 		if info.Runtime == "openrouter" {
@@ -46,8 +46,11 @@ func TestListHarnessesReturnsCatalogWithoutOpenRouter(t *testing.T) {
 		if info.Label == "" || !info.ConsultCapable {
 			t.Errorf("info %+v missing label/capabilities", info)
 		}
-		if wantWorker := info.Runtime == "claude" || info.Runtime == "pi"; info.RunWorkerCapable != wantWorker {
+		if wantWorker := info.Runtime == "claude" || info.Runtime == "pi" || info.Runtime == "agy"; info.RunWorkerCapable != wantWorker {
 			t.Errorf("%s RunWorkerCapable = %v, want %v", info.Runtime, info.RunWorkerCapable, wantWorker)
+		}
+		if wantLead := info.Runtime == "claude" || info.Runtime == "pi"; info.LeadCapable != wantLead {
+			t.Errorf("%s LeadCapable = %v, want %v", info.Runtime, info.LeadCapable, wantLead)
 		}
 	}
 }

@@ -45,3 +45,18 @@ export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement 
         }
     };
 }
+
+// Whether an Escape is the shell's to act on. A popover portaled out of the panel (a route picker's menu, with focus
+// in its search box) closes itself on Escape, and the dialog under it must stay. With nothing focused (<body>), or an
+// Escape dispatched on document or window (no element at all, as the CDP scenarios close dialogs), the Escape is the
+// shell's: no popover can own it.
+export function shellOwnsEscape(
+    panel: { contains(node: Node | null): boolean } | null,
+    target: EventTarget | null,
+    body: EventTarget | null
+): boolean {
+    if (panel == null || target == null || target === body || (target as Partial<Node>).nodeType !== 1) {
+        return true;
+    }
+    return panel.contains(target as Node);
+}

@@ -11,7 +11,6 @@ import {
     radarDraftLanding,
     rankProjects,
     resolveChannelTarget,
-    stepPick,
 } from "./newrun";
 
 const ch = (oid: string, projectpath: string): Channel => ({ oid, projectpath }) as Channel;
@@ -189,37 +188,6 @@ describe("rankProjects", () => {
 
     it("has nothing to rank in an empty registry", () => {
         expect(rankProjects([], "wave")).toEqual([]);
-    });
-});
-
-describe("stepPick", () => {
-    const rows = ["a", "b", "c"];
-
-    it("starts at the first row when nothing is picked and the move is forward", () => {
-        expect(stepPick(rows, null, 1)).toBe("a");
-    });
-
-    it("starts at the last row when nothing is picked and the move is backward", () => {
-        expect(stepPick(rows, null, -1)).toBe("c");
-    });
-
-    it("moves forward and backward through the rows", () => {
-        expect(stepPick(rows, "a", 1)).toBe("b");
-        expect(stepPick(rows, "b", -1)).toBe("a");
-    });
-
-    it("wraps at both ends", () => {
-        expect(stepPick(rows, "c", 1)).toBe("a");
-        expect(stepPick(rows, "a", -1)).toBe("c");
-    });
-
-    it("restarts when the filter has removed the current pick", () => {
-        expect(stepPick(rows, "gone", 1)).toBe("a");
-        expect(stepPick(rows, "gone", -1)).toBe("c");
-    });
-
-    it("has nothing to pick when the filter left no rows", () => {
-        expect(stepPick([], "a", 1)).toBeNull();
     });
 });
 

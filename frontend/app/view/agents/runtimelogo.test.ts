@@ -17,6 +17,13 @@ describe("runtimeLogo", () => {
         expect(runtimeLogo("PI")).toBeDefined();
     });
 
+    it("maps agy to the antigravity asset, sized in em like the other inline marks", () => {
+        expect(runtimeLogo("agy")).toBeDefined();
+        const svg = readFileSync(new URL("../../asset/antigravity.svg", import.meta.url), "utf-8");
+        expect(svg).toMatch(/<svg[^>]*width="1em"/);
+        expect(svg).toMatch(/<svg[^>]*height="1em"/);
+    });
+
     it("returns undefined for unknown runtimes", () => {
         expect(runtimeLogo("unknown")).toBeUndefined();
     });

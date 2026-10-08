@@ -99,6 +99,9 @@ func TestRunWorkerSpecForSessionId(t *testing.T) {
 	}{
 		{"claude", consult.CheapModel, []string{"--dangerously-skip-permissions", "--session-id", id, "--model", consult.CheapModel, "do work"}},
 		{"pi", "", []string{"--session-id", id, "do work"}},
+		// agy names its own conversation: it never takes --session-id, even when handed one
+		{"agy", "", []string{"--dangerously-skip-permissions", "-i", "do work"}},
+		{"agy", "gemini-3-pro", []string{"--dangerously-skip-permissions", "--model", "gemini-3-pro", "-i", "do work"}},
 	}
 	for _, tt := range tests {
 		cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: tt.runtime, Model: tt.model})
@@ -505,5 +508,29 @@ func TestStartRunWorkerRefusesATabThatIsGone(t *testing.T) {
 	stubWorkerSpawn(t)
 	if err := StartRunWorker(context.Background(), "tab:"+uuid.NewString()); err == nil {
 		t.Fatal("a worker whose tab is gone cannot be started")
+	}
+}
+
+func TestRunWorkerSpecForAgyBaseArgs(t *testing.T) {
+	cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: "agy", Model: "gemini-3-pro"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, ok := RunWorkerSpecFor(cap, "", "do work")
+	want := []string{"--dangerously-skip-permissions", "--model", "gemini-3-pro"}
+	if !ok || spec.Bin != "agy" || !reflect.DeepEqual(spec.BaseArgs, want) {
+		t.Fatalf("agy spec = %+v, ok=%v, want base args %v", spec, ok, want)
+	}
+}
+
+func TestWorkerSessionId(t *testing.T) {
+	if got := WorkerSessionId("agy"); got != "" {
+		t.Errorf("agy names its own session, got %q", got)
+	}
+	for _, rt := range []string{"claude", "pi"} {
+		a, b := WorkerSessionId(rt), WorkerSessionId(rt)
+		if _, err := uuid.Parse(a); err != nil || a == b {
+			t.Errorf("%s: want two distinct UUIDs, got %q %q", rt, a, b)
+		}
 	}
 }

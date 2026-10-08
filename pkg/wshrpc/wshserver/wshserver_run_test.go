@@ -299,14 +299,15 @@ func stubRunServer(t *testing.T, validRuntime string, spawnErr error, captured .
 	t.Cleanup(func() { sealAsync = oldSeal })
 }
 
-// stubHarnessInstalled makes validRuntime pass both run-worker harness checks, the handlers' and the
+// stubHarnessInstalled makes validRuntime pass the handlers' lead and run-worker harness checks and the
 // engine's, whether or not its CLI is on this machine's PATH; any other runtime is validated for real.
 func stubHarnessInstalled(t *testing.T, validRuntime string) {
 	t.Helper()
 	oldValidate := validateHarness
 	validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
-		if op != harness.OperationRunWorker {
-			t.Fatalf("validated with operation %q, want run-worker", op)
+		// the run's own runtime and its reviewer are leads; worker routes are run workers
+		if op != harness.OperationRunWorker && op != harness.OperationLead {
+			t.Fatalf("validated with operation %q, want run-worker or lead", op)
 		}
 		spec, ok := harness.Lookup(runtime)
 		if !ok || runtime != validRuntime {
@@ -517,7 +518,7 @@ func TestAdvanceRun_LegacyRouteNormalizesOnlyForSpawn(t *testing.T) {
 	var spawnedWith runroute.Capability
 	oldValidate := validateHarness
 	validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
-		if runtime != "claude" || op != harness.OperationRunWorker {
+		if runtime != "claude" || op != harness.OperationLead {
 			t.Fatalf("validateHarness(%q, %q)", runtime, op)
 		}
 		return harness.Spec{}, nil

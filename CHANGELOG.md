@@ -16,6 +16,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   10 minutes, a run's workers under their run, and arcterm's own memory below. **Stop** ends an agent (a worker's task
   is not retried), and an agent on Opus has **→ Sonnet**. The plan-usage meters open it sorted by tokens; **Open
   Usage** at its foot goes to the Usage surface.
+- Antigravity CLI (agy) is back as a harness: live status, questions on the card, launch and resume, consults,
+  Conversation History, usage, and plan task workers.
 - The Jarvis pet wears Vietnam's colours: a red flag shirt with the yellow star, or the flag in its hand. Settings →
   Appearance picks the shirt, the flag or neither; on 30/4, 1/5 and 2/9 it wears the shirt even when that is off.
 - The Jarvis pet's popup answers a worker's question in place: a one-question ask (an escalation too) shows its
@@ -31,8 +33,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **New agent** and **New run** are one dialog. Pick what to start with its number key, Tab to the project column
+  (type to filter it, or press a project's number), then `Cmd+Enter` (`Ctrl+Enter` on Windows). A click outside now
+  closes it, and opening it again brings back what you had typed.
 - An agent's OS notification names its project first, `[arcterm] Finished: <agent>`, and a finished agent's
-  notification shows the first line of its last answer underneath instead of the project.
+  notification shows the first sentence of its last answer underneath (up to 80 characters) instead of the project.
 - The Jarvis pet falls back to the footer when you drop it, with a small bounce, instead of snapping there; and when
   the footer under it changes height (switching to the Cockpit) it hops up or drops down to the new edge rather than
   jumping.
@@ -53,6 +58,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A run's goal heading (the Jarvis run sheet and the Agent surface's run panel) no longer grows and shrinks on a click.
   A goal that is cut off or runs past one paragraph gets a **Show more** link that reveals the rest below the heading,
   at the same size; a goal that already shows in full has no toggle.
+- The lead and reviewer route pickers list only the harnesses that can lead a run (Claude and Pi). A run no longer
+  starts with a lead that cannot lead because your shared route preference names one, such as Antigravity.
 
 ### Fixed
 

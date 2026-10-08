@@ -21,6 +21,7 @@ import { answerAgentAsk } from "./askanswer";
 import { CockpitSurface } from "./cockpitsurface";
 import { devRosterAtom, loadDevMockRoster } from "./devmock";
 import { diffScopeAtom } from "./diffscopeatom";
+import type { LauncherKind } from "./launcher";
 import type { SessionStatusFilter } from "./sessionsarchivestore";
 import { liveAgentsAtom, liveTerminalsAtom } from "./liveagents";
 import type { Lineage } from "./runlineage";
@@ -112,10 +113,10 @@ export class AgentsViewModel implements ViewModel {
     // Date.now() at compute time, so it stays fresh when any bucket/filter dependency changes.
     usageStatsAtom = atom((get) => aggregateBuckets(get(usageBucketsAtom), Date.now(), get(this.usageHarnessFilterAtom)));
 
-    // New Project / New Agent / New run modal + command-palette visibility (gated overlays rendered from the cockpit root).
+    // New Project / the New launcher / New initiative + command-palette visibility (gated overlays rendered from the
+    // cockpit root). launcherAtom holds the door that opened the launcher (agent or run), null while it is closed.
     newProjectOpenAtom = atom(false);
-    newAgentOpenAtom = atom(false);
-    newRunOpenAtom = atom(false);
+    launcherAtom = atom<LauncherKind | null>(null) as PrimitiveAtom<LauncherKind | null>;
     newInitiativeOpenAtom = atom(false);
     paletteOpenAtom = atom(false);
 

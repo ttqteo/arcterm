@@ -207,6 +207,7 @@ func (ws *WshServer) ListHarnessesCommand(ctx context.Context) (*wshrpc.CommandL
 			LatestVersion:     harnessupdate.Latest(r.Spec.Runtime),
 			ConsultCapable:    r.Spec.ConsultCapable,
 			RunWorkerCapable:  r.Spec.RunWorkerCapable,
+			LeadCapable:       r.Spec.LeadCapable,
 			RouteCapabilities: capabilities,
 		}
 	}

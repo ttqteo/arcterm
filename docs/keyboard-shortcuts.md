@@ -32,8 +32,8 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 |---|---|
 | `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar |
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
-| `Mod`+`N` | New agent |
-| `Mod`+`Shift`+`R` | New run |
+| `Mod`+`N` | New agent: opens the New dialog on an agent row |
+| `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`Shift`+`N` | Launch a Pi tab |
 | `Mod`+`G` | Open the `g` leader from inside a text field or the terminal |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |
@@ -41,6 +41,20 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `g` `.` and Settings with `g` `,`.
+
+## The New dialog (New agent, New run)
+
+One dialog starts an agent, a terminal or a run. It opens with focus on the Start column.
+
+| Keys | Action |
+|---|---|
+| `1`…`9` | Pick that row in the focused column (Start or Project) |
+| `↑` / `↓` | Move in the focused column |
+| letters | In the Project column, filter projects by name; `Backspace` shortens the filter |
+| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, each field, Cancel, the launch button, and round again |
+| `Enter` | Launch, from a column or a one-line field; in the task or goal box it starts a new line |
+| `Mod`+`Enter` | Launch, from anywhere in the dialog |
+| `Esc` | Close the open menu or the project filter first, then the dialog. What you typed is kept for the next open |
 
 ## Go-to surface — leader `g` (Navigate posture)
 
@@ -75,7 +89,8 @@ One overlay with scopes: All, Needs you, Go to, Agents, Runs, Sessions, Records,
 | `Backspace` on an empty query | Leave a picker, then drop back to All |
 | `path:123` in Files | Open the file at that line; a bare `:123` on Code moves the open file |
 
-In All, text that names nothing is a goal: Quick and Orchestrate open the New run window with it
+In All, text that names nothing is a goal: Quick and
+Orchestrate open the New dialog on that run row with it
 filled in and the active (else last used) project preselected, so the project is confirmed there
 before anything starts; the Ask rows send it as a one-shot ask in that project. When the
 text names something, Enter opens that, and one "Start as a goal" row below expands into the same

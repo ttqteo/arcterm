@@ -141,6 +141,34 @@ func TestReconcileSkillsWritesRealFilesAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestReconcileSkillsReachesAgyOnlyWhenItsConfigRootExists(t *testing.T) {
+	absent := testPaths(t, "canonical\n", ".codex")
+	seedSkill(t, absent, "graphify")
+	if _, err := reconcileSkills(absent, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(absent.Home, ".gemini")); !os.IsNotExist(err) {
+		t.Fatal("~/.gemini must never be created")
+	}
+
+	present := testPaths(t, "canonical\n", ".gemini/config")
+	seedSkill(t, present, "graphify")
+	actions, err := reconcileSkills(present, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Runtime != "agy" {
+		t.Fatalf("actions = %+v, want one agy write", actions)
+	}
+	dir := filepath.Join(present.Home, ".gemini", "config", "skills", "graphify")
+	if got := readFile(t, filepath.Join(dir, skillFile)); got != "---\nname: graphify\n---\nbody\n" {
+		t.Errorf("agy SKILL.md = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, managedMarkName)); err != nil {
+		t.Errorf("agy skill carries no ownership mark: %v", err)
+	}
+}
+
 func TestReconcileSkillsNeverTouchesAnUnmanagedDirectory(t *testing.T) {
 	p := testPaths(t, "canonical\n", ".codex")
 	seedSkill(t, p, "graphify")

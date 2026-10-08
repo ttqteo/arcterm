@@ -7,6 +7,7 @@ import {
     composeStartupCommand,
     deriveBranch,
     isRuntimeOffered,
+    resumeArgsForAgy,
     resumeArgsForClaude,
     resumeArgsForOpencode,
     resumeArgsForPi,
@@ -26,11 +27,20 @@ describe("runtime helpers", () => {
         expect(runtimeStartupCommand("codex")).toBe("codex");
         expect(runtimeStartupCommand("opencode")).toBe("opencode");
         expect(runtimeStartupCommand("pi")).toBe("pi");
+        expect(runtimeStartupCommand("agy")).toBe("agy");
         expect(runtimeStartupCommand("terminal")).toBe("");
     });
     it("catalogs pi with no launch flags", () => {
         expect(RUNTIME_FLAGS.pi).toEqual([]);
         expect(composeStartupCommand("pi", "pi", { auto: true })).toBe("pi");
+    });
+    it("catalogs agy's launch flags", () => {
+        expect(RUNTIME_FLAGS.agy).toEqual([
+            expect.objectContaining({ id: "skip-permissions", flag: "--dangerously-skip-permissions" }),
+            expect.objectContaining({ id: "continue", flag: "--continue" }),
+            expect.objectContaining({ id: "sandbox", flag: "--sandbox" }),
+        ]);
+        expect(composeStartupCommand("agy", "agy", { sandbox: true, continue: true })).toBe("agy --continue --sandbox");
     });
     it("catalogs opencode's boolean launch flags", () => {
         expect(RUNTIME_FLAGS.opencode.map((f) => f.flag)).toEqual(["--auto", "--pure", "-c"]);
@@ -144,6 +154,25 @@ describe("buildLaunchMeta", () => {
         const m = buildLaunchMeta({ runtime: "opencode", startupCommand: "opencode", task: "refactor auth", cwd: "/x" });
         expect(m).toMatchObject({ cmd: "opencode", "cmd:args": ["refactor auth"], "cmd:shell": false, "cmd:cwd": "/x" });
         expect(m["agent:baseargs"]).toEqual([]);
+    });
+    it("passes the agy task after -i as two args, a task with spaces and quotes staying one arg", () => {
+        const task = `fix "the" bug  in it's file`;
+        const m = buildLaunchMeta({ runtime: "agy", startupCommand: "agy --sandbox", task, cwd: "/x" });
+        expect(m).toMatchObject({
+            cmd: "agy",
+            "cmd:args": ["--sandbox", "-i", task],
+            "cmd:shell": false,
+            "cmd:cwd": "/x",
+        });
+        expect(m["agent:baseargs"]).toEqual(["--sandbox"]);
+    });
+    it("omits -i when an agy launch has no task", () => {
+        const m = buildLaunchMeta({ runtime: "agy", startupCommand: "agy", task: " ", cwd: "/x" });
+        expect(m["cmd:args"]).toEqual([]);
+    });
+    it("keeps claude's task positional (only agy takes -i)", () => {
+        const m = buildLaunchMeta({ runtime: "claude", startupCommand: "claude", task: "go", cwd: "/x" });
+        expect(m["cmd:args"]).toEqual(["go"]);
     });
     it("passes the pi task positionally like claude/codex", () => {
         const m = buildLaunchMeta({ runtime: "pi", startupCommand: "pi", task: "audit auth", cwd: "C:\\repo" });
@@ -275,5 +304,25 @@ describe("isRuntimeOffered", () => {
     });
     it("offers everything while the catalog is empty", () => {
         expect(isRuntimeOffered("codex", [])).toBe(true);
+    });
+});
+
+describe("resumeArgsForAgy", () => {
+    it("puts --conversation first and drops a prior --continue", () => {
+        expect(resumeArgsForAgy("c1", ["--continue", "--dangerously-skip-permissions"])).toEqual([
+            "--conversation",
+            "c1",
+            "--dangerously-skip-permissions",
+        ]);
+    });
+    it("drops a prior --conversation <id> and -c so a repeated resume cannot stack directives", () => {
+        expect(resumeArgsForAgy("c2", ["--conversation", "c1", "-c", "--sandbox"])).toEqual([
+            "--conversation",
+            "c2",
+            "--sandbox",
+        ]);
+    });
+    it("resumes a bare launch", () => {
+        expect(resumeArgsForAgy("c1", [])).toEqual(["--conversation", "c1"]);
     });
 });

@@ -143,7 +143,11 @@ func TestRunsMainCheckoutPathMapsWorktreesOntoTheMainCheckout(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	main := t.TempDir()
+	// resolved: on macOS the temp root /var is a symlink, and git reports the resolved path
+	main, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	git := func(dir string, args ...string) {
 		t.Helper()
 		out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...).CombinedOutput()
@@ -153,7 +157,11 @@ func TestRunsMainCheckoutPathMapsWorktreesOntoTheMainCheckout(t *testing.T) {
 	}
 	git(main, "init", "-q")
 	git(main, "commit", "-q", "--allow-empty", "-m", "init")
-	wt := filepath.Join(t.TempDir(), "wt")
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(outside, "wt")
 	git(main, "worktree", "add", "-q", wt)
 	// a worktree nested inside the main checkout, the way .worktrees/<name> sits
 	nested := filepath.Join(main, ".worktrees", "n")

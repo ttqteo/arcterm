@@ -137,7 +137,7 @@ describe("keybindings store", () => {
 describe("keybinding conflict invariant", () => {
     it("has no two active-in-same-context bindings sharing keys", () => {
         // A stub model is enough: bindings only read atoms at run(), not at build().
-        const model = { ...stubModel(), surfaceAtom: {}, paletteOpenAtom: {}, newAgentOpenAtom: {} };
+        const model = { ...stubModel(), surfaceAtom: {}, paletteOpenAtom: {}, launcherAtom: {} };
         expect(() => assertNoConflicts(buildGlobalBindings(model))).not.toThrow();
     });
 

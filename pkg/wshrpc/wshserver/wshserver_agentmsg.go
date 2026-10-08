@@ -26,8 +26,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
-// the harnesses whose sessions are agents here; a codex or opencode session cannot be messaged.
-var agentHarnesses = map[string]bool{"claude": true, "pi": true}
+// the harnesses whose sessions are agents here; a codex or opencode session cannot be messaged. agy is
+// typed into like pi (a bracketed paste, then Enter, see orchestrate.typeWake); its TUI's submit key has not
+// been confirmed to differ, so the composed input is the same.
+var agentHarnesses = map[string]bool{"claude": true, "pi": true, "agy": true}
 
 // agentTabFacts is what the roster reads about one tab before deciding whether it is a live agent.
 type agentTabFacts struct {
@@ -133,7 +135,7 @@ func agentsState(status string, openAsk bool) string {
 	return wshrpc.AgentsState_Working
 }
 
-// buildAgentRoster is the live claude and pi agent tabs, ordered by tab id.
+// buildAgentRoster is the live claude, pi and agy agent tabs, ordered by tab id.
 // ponytail: a tab whose agent exited back to its shell keeps its last status and still reads as live; a typed
 // send lands in the shell. Use the control stream or a session-end report as the liveness signal if that
 // happens in practice.

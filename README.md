@@ -22,7 +22,7 @@ Running more agents creates more work to supervise: which one needs a decision, 
 - **Keep questions visible.** Agent questions and review requests surface in the cockpit instead of disappearing into terminal scrollback.
 - **Coordinate larger changes.** Run a dependency-aware plan with parallel workers, worktree isolation, task reviews, merges, and verification.
 - **Inspect the result.** Follow a run's timeline and outcomes, then read its Git changes in the same app.
-- **Keep your tools.** arcterm wraps existing coding-agent CLIs; it is not a replacement model or a separate coding harness. Orchestrator leads and workers run on **Claude Code or pi**.
+- **Keep your tools.** arcterm wraps existing coding-agent CLIs; it is not a replacement model or a separate coding harness. Orchestrator leads run on **Claude Code or pi**; plan task workers run on Claude Code, pi or **Antigravity**.
 
 ## App tour
 
@@ -119,7 +119,7 @@ task dev    # build the dev backend and launch Tauri + Vite
 
 Vite serves the frontend on `localhost:5174` with hot reload. The native app starts its own Go backend; you do not need to launch it separately. Dev and packaged builds use separate app stores.
 
-**Before launching:** arcterm installs or refreshes agent integrations on startup. These include Claude Code hooks and, when installed, pi extensions and an OpenCode status plugin. They write to global harness configuration under your home directory. For a dev session that must leave those integrations untouched, set `ARC_DEV_NO_GLOBAL_INSTALL=1` before `task dev`.
+**Before launching:** arcterm installs or refreshes agent integrations on startup. These include Claude Code hooks and, when installed, pi extensions, an OpenCode status plugin and Antigravity (`agy`) hooks. They write to global harness configuration under your home directory. For a dev session that must leave those integrations untouched, set `ARC_DEV_NO_GLOBAL_INSTALL=1` before `task dev`.
 
 Once open, register your repository and use **+ New agent** for an interactive session or **+ Run** in Jarvis for tracked work.
 

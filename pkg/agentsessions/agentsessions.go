@@ -90,7 +90,7 @@ func sessionTitle(raw string) string {
 // SessionInfo is one resumable past agent session.
 type SessionInfo struct {
 	ID            string // runtime resume key
-	Runtime       string // "claude" | "codex" | "opencode" | "pi"
+	Runtime       string // "claude" | "codex" | "opencode" | "pi" | "agy"
 	ProjectPath   string // cwd
 	ProjectName   string // last path segment of cwd
 	Branch        string
@@ -98,7 +98,7 @@ type SessionInfo struct {
 	Model         string // last assistant model seen
 	TokensTotal   int
 	CostUsd       float64
-	LastActiveTs  int64    // file mtime, UnixMilli
+	LastActiveTs  int64    // file mtime, UnixMilli (agy: its summaries row's time when it has one)
 	ResumeCommand string   // runtime resume invocation; empty means not resumable
 	ResumeArgs    []string // exact argv to resume, when a tokenized command would not survive (pi)
 
@@ -675,6 +675,7 @@ type provider struct {
 	skipDir   func(name string) bool // a folder the walk never enters; nil enters every one
 	fused     func(path, stem string, lines []string) (*SessionInfo, sessionEvents)
 	resumeCmd func(s *SessionInfo) string
+	beginScan func() // run once before a scan walks or parses; nil when the provider keeps no per-scan state
 }
 
 func claudeProvider(root string) provider {
@@ -1272,7 +1273,9 @@ func asSession(c candidate, r parsed) *SessionInfo {
 	// value copy: the cache holds the canonical entry; callers may not mutate it
 	s := *r.info
 	s.Runtime = c.p.runtime
-	s.LastActiveTs = c.mtime.UnixMilli()
+	if s.LastActiveTs == 0 { // a provider that knows a better time (agy's summaries row) sets its own
+		s.LastActiveTs = c.mtime.UnixMilli()
+	}
 	s.ResumeCommand = c.p.resumeCmd(&s)
 	s.TranscriptPath = c.path
 	s.Events = r.se.Events
@@ -1296,6 +1299,8 @@ func ExtractSession(path, runtime string) (*SessionInfo, error) {
 		p = opencodeProvider("")
 	case "pi":
 		p = piProvider("")
+	case "agy":
+		p = agyProvider("")
 	default:
 		return nil, fmt.Errorf("agentsessions: unknown runtime %q", runtime)
 	}
@@ -1328,7 +1333,7 @@ func ScanSessions(windowDays, limit int) ([]SessionInfo, error) {
 	return scanProviders(allProviders(), windowDays, limit, os.TempDir()), nil
 }
 
-// allProviders lists the four runtime transcript roots under the home dir.
+// allProviders lists the runtime transcript roots under the home dir.
 func allProviders() []provider {
 	home := wavebase.GetHomeDir()
 	opencodeRoot := filepath.Join(home, ".local", "share", "opencode", "storage")
@@ -1337,6 +1342,7 @@ func allProviders() []provider {
 		codexProvider(filepath.Join(home, ".codex", "sessions")),
 		opencodeProvider(opencodeRoot),
 		piProvider(filepath.Join(home, ".pi", "agent", "sessions")),
+		agyProvider(filepath.Join(home, ".gemini", "antigravity-cli", "brain")),
 	}
 }
 
@@ -1371,6 +1377,16 @@ func TranscriptForSession(root, runtime, cwd, sessionId string) string {
 		pattern = filepath.Join(root, "*", sessionId+".jsonl")
 	case "pi":
 		pattern = filepath.Join(root, "*", "*_"+sessionId+".jsonl")
+	case "agy":
+		// agy names its own conversation folder; an id with a separator in it is not one
+		if filepath.Base(sessionId) != sessionId || sessionId == ".." {
+			return ""
+		}
+		path := agyTranscriptPath(root, sessionId)
+		if _, err := os.Stat(path); err != nil {
+			return ""
+		}
+		return path
 	default:
 		return ""
 	}
@@ -1388,6 +1404,9 @@ func TranscriptForSession(root, runtime, cwd, sessionId string) string {
 func scanProviders(providers []provider, windowDays, limit int, tempDir string) []SessionInfo {
 	var cands []candidate
 	for _, p := range providers {
+		if p.beginScan != nil {
+			p.beginScan()
+		}
 		cands = append(cands, walkCandidates(p, windowDays)...)
 	}
 	sort.Slice(cands, func(i, j int) bool { return cands[i].mtime.After(cands[j].mtime) })

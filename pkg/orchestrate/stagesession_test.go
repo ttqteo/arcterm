@@ -71,6 +71,20 @@ func TestSpawnStageSessionReportsASpawnFailure(t *testing.T) {
 	}
 }
 
+func TestStageSessionRouteLead(t *testing.T) {
+	ctx, dag := seedPendingDag(t)
+	calls := captureSpawns(t)
+	capableLeadHarnessForTest(t)
+	dag.ReviewerRoute = &waveobj.RoutePin{Runtime: "agy"}
+	_, err := spawnStageSession(ctx, ctx, dag, dagOwner(t, ctx, dag), StageSession{Role: "verifier", Tree: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "cannot lead") {
+		t.Fatalf("want the cannot-lead error, got %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("an agy stage session must not spawn, got %d spawns", len(*calls))
+	}
+}
+
 func TestStageSessionLost(t *testing.T) {
 	ctx, dag := seedPendingDag(t)
 	captureSpawns(t)
