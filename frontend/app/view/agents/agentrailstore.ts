@@ -26,7 +26,8 @@ import type { AgentsViewModel } from "./agents";
 import { jumpToAgent } from "./channelsprimitives";
 import { railVisibleAtom } from "./railstore";
 
-// the tab an agent not seen yet opens on: the last one chosen. File is never stored (it is not restored)
+// the tab an agent not seen yet opens on: the last one chosen. Files and File are never stored (a new agent has no
+// file open, and may have no worktree)
 export const railTabDefaultAtom = atomWithStorage<RailTab>("agent.rail.tab", "overview", undefined, {
     getOnInit: true,
 }) as PrimitiveAtom<RailTab>;
@@ -56,9 +57,9 @@ function update(agentId: string, fn: (p: PanelState) => PanelState): void {
     globalStore.set(railPanelsAtom, { ...panels, [agentId]: next });
 }
 
-export function selectRailTab(agentId: string, tab: RailTab): void {
-    update(agentId, (p) => selectTab(p, tab));
-    if (tab !== "file") {
+export function selectRailTab(agentId: string, tab: RailTab, hasTree: boolean): void {
+    update(agentId, (p) => selectTab(p, tab, hasTree));
+    if (tab === "overview") {
         globalStore.set(railTabDefaultAtom, tab);
     }
 }

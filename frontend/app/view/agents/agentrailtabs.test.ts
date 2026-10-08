@@ -17,17 +17,59 @@ import {
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
     selectTab,
+    shownTab,
     visibleTabs,
     wideWidthMax,
+    type RailTab,
 } from "./agentrailtabs";
 
 const a = { abs: "D:/repo/src/a.ts", root: "D:/repo", line: 4 };
 const b = { abs: "D:/repo/src/b.ts", root: "D:/repo" };
 
 describe("panelFor", () => {
-    it("starts an unseen agent on the default tab, never on File", () => {
+    it("starts an unseen agent on the default tab, never on File or Files", () => {
         expect(panelFor({}, "x", "overview").tab).toBe("overview");
         expect(panelFor({}, "x", "file").tab).toBe("overview");
+        expect(panelFor({}, "x", "tree").tab).toBe("overview");
+    });
+
+    it("keeps the panel an agent already has", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        expect(panelFor({ x: p }, "x", "overview")).toBe(p);
+    });
+});
+
+describe("the tabs", () => {
+    it("lists Overview, then Files while there is a worktree, then File while a file is open", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(visibleTabs(p, false)).toEqual(["overview"]);
+        expect(visibleTabs(p, true)).toEqual(["overview", "tree"]);
+        const withFile = openFile(p, a);
+        expect(visibleTabs(withFile, false)).toEqual(["overview", "file"]);
+        expect(visibleTabs(withFile, true)).toEqual(["overview", "tree", "file"]);
+    });
+
+    it("selects Files and remembers the tab it came from", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        expect(p).toMatchObject({ tab: "tree", prevTab: "overview" });
+    });
+
+    it("does not select Files without a worktree", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(selectTab(p, "tree", false)).toBe(p);
+    });
+
+    it("draws Overview for a Files tab that has no worktree to list, and keeps the stored tab", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        expect(shownTab(p, true)).toBe("tree");
+        expect(shownTab(p, false)).toBe("overview");
+        expect(p.tab).toBe("tree");
+        expect(shownTab(openFile(p, a), false)).toBe("file");
+    });
+
+    it("leaves Files for Overview when Files has no worktree", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        expect(selectTab(p, "overview", false)).toMatchObject({ tab: "overview", prevTab: "tree" });
     });
 });
 
@@ -36,7 +78,14 @@ describe("the File tab", () => {
         const p = openFile(panelFor({}, "x", "overview"), a);
         expect(p).toMatchObject({ tab: "file", prevTab: "overview" });
         expect(p.file.current).toEqual(a);
-        expect(visibleTabs(p)).toEqual(["overview", "file"]);
+        expect(visibleTabs(p, false)).toEqual(["overview", "file"]);
+    });
+
+    it("opens a file from Files and closes back to Files", () => {
+        const onTree = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        const opened = openFile(onTree, a);
+        expect(opened).toMatchObject({ tab: "file", prevTab: "tree" });
+        expect(closeFile(opened).tab).toBe("tree");
     });
 
     it("pushes the open file onto Back and clears Forward when another opens", () => {
@@ -60,12 +109,13 @@ describe("the File tab", () => {
         const p = closeFile(openFile(panelFor({}, "x", "overview"), a));
         expect(p.tab).toBe("overview");
         expect(p.file).toEqual({ back: [], current: null, forward: [] });
-        expect(visibleTabs(p)).toEqual(["overview"]);
+        expect(visibleTabs(p, false)).toEqual(["overview"]);
     });
 
     it("does not select File while no file is open", () => {
         const p = panelFor({}, "x", "overview");
-        expect(selectTab(p, "file")).toBe(p);
+        expect(selectTab(p, "file", false)).toBe(p);
+        expect(selectTab(p, "file", true)).toBe(p);
     });
 
     it("names the tab by the title it was opened with, else by the file name", () => {
@@ -104,6 +154,17 @@ describe("nextTab", () => {
         expect(nextTab([...tabs], "overview", "ArrowLeft")).toBe("file");
         expect(nextTab([...tabs], "file", "Home")).toBe("overview");
         expect(nextTab([...tabs], "overview", "End")).toBe("file");
+    });
+
+    it("walks Overview, Files and File, wrapping at both ends", () => {
+        const tabs: RailTab[] = ["overview", "tree", "file"];
+        expect(nextTab(tabs, "overview", "ArrowRight")).toBe("tree");
+        expect(nextTab(tabs, "tree", "ArrowRight")).toBe("file");
+        expect(nextTab(tabs, "file", "ArrowRight")).toBe("overview");
+        expect(nextTab(tabs, "overview", "ArrowLeft")).toBe("file");
+        expect(nextTab(tabs, "file", "ArrowLeft")).toBe("tree");
+        expect(nextTab(tabs, "tree", "Home")).toBe("overview");
+        expect(nextTab(tabs, "tree", "End")).toBe("file");
     });
 });
 

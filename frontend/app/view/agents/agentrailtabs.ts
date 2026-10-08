@@ -8,7 +8,9 @@
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { normalizeRepoPath } from "@/util/paths";
 
-export type RailTab = "overview" | "file";
+// "tree" is the Files tab, the agent's worktree (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md); it is
+// "tree" because "files" already names the Files changed count
+export type RailTab = "overview" | "tree" | "file";
 
 // a file opened into the panel: its absolute path, the directory it was resolved against, and the line to show
 export interface FileRef {
@@ -72,22 +74,36 @@ const AGENT_TREE_PX = 248; // agenttree.tsx's column
 export const EMPTY_HISTORY: FileHistory = { back: [], current: null, forward: [] };
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
-    // File is never a default: an unseen agent has no file open
+    // File and Files are never defaults: an unseen agent has no file open, and Files needs a cwd it may not have
     return (
         panels[agentId] ?? {
-            tab: defaultTab === "file" ? "overview" : defaultTab,
+            tab: defaultTab === "file" || defaultTab === "tree" ? "overview" : defaultTab,
             prevTab: "overview",
             file: EMPTY_HISTORY,
         }
     );
 }
 
-export function visibleTabs(p: PanelState): RailTab[] {
-    return p.file.current != null ? ["overview", "file"] : ["overview"];
+// hasTree: the agent has a cwd to list and is not showing a subagent's interior
+export function visibleTabs(p: PanelState, hasTree: boolean): RailTab[] {
+    const tabs: RailTab[] = ["overview"];
+    if (hasTree) {
+        tabs.push("tree");
+    }
+    if (p.file.current != null) {
+        tabs.push("file");
+    }
+    return tabs;
 }
 
-export function selectTab(p: PanelState, tab: RailTab): PanelState {
-    if (p.tab === tab || !visibleTabs(p).includes(tab)) {
+// the tab a panel draws: Files with no worktree to list (the cwd is not resolved yet, or a subagent's interior is open)
+// falls back to Overview, while the stored tab stays Files for when the worktree is back
+export function shownTab(p: PanelState, hasTree: boolean): RailTab {
+    return p.tab === "tree" && !hasTree ? "overview" : p.tab;
+}
+
+export function selectTab(p: PanelState, tab: RailTab, hasTree: boolean): PanelState {
+    if (p.tab === tab || !visibleTabs(p, hasTree).includes(tab)) {
         return p;
     }
     return { ...p, tab, prevTab: p.tab };

@@ -10,6 +10,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- The Agent panel has a Files tab that lists the agent's worktree as a tree. Drag files or folders from it onto a
+  terminal to type their paths at the prompt: `@` paths on an agent's terminal, plain paths in a shell.
+
 ### Changed
 
 - The Diff surface lists every project with its worktrees in a sidebar on the left, each with its branch, its

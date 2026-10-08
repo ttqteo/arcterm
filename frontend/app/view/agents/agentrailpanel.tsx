@@ -10,6 +10,7 @@ import { useAtomValue } from "jotai";
 import {
     FileDiff,
     FileText,
+    FolderTree,
     GitBranch,
     LayoutList,
     LayoutTemplate,
@@ -27,6 +28,7 @@ import {
     fileTabLabel,
     nextTab,
     RAIL_WIDE_MIN_PX,
+    shownTab,
     visibleTabs,
     wideWidthMax,
     type PanelState,
@@ -39,8 +41,9 @@ const TAB =
 const TAB_ON = "border-primary text-primary";
 const TAB_OFF = "border-transparent text-muted hover:text-secondary";
 
-export function RailTabStrip({ agentId, panel }: { agentId: string; panel: PanelState }) {
-    const tabs = visibleTabs(panel);
+export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; panel: PanelState; hasTree: boolean }) {
+    const tabs = visibleTabs(panel, hasTree);
+    const shown = shownTab(panel, hasTree);
     const ref = useRef<HTMLDivElement>(null);
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") {
@@ -48,16 +51,16 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
         }
         e.preventDefault();
         e.stopPropagation();
-        const next = nextTab(tabs, panel.tab, e.key);
-        selectRailTab(agentId, next);
+        const next = nextTab(tabs, shown, e.key);
+        selectRailTab(agentId, next, hasTree);
         requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>(`[data-rail-tab="${next}"]`)?.focus());
     };
     const tabProps = (tab: RailTab) => ({
         role: "tab" as const,
-        "aria-selected": panel.tab === tab,
-        tabIndex: panel.tab === tab ? 0 : -1,
+        "aria-selected": shown === tab,
+        tabIndex: shown === tab ? 0 : -1,
         "data-rail-tab": tab,
-        onClick: () => selectRailTab(agentId, tab),
+        onClick: () => selectRailTab(agentId, tab, hasTree),
     });
     const file = panel.file.current;
     return (
@@ -74,15 +77,26 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
                 {...tabProps("overview")}
                 aria-label="Overview"
                 title="Overview"
-                className={cn(TAB, panel.tab === "overview" ? TAB_ON : TAB_OFF)}
+                className={cn(TAB, shown === "overview" ? TAB_ON : TAB_OFF)}
             >
                 <LayoutList size={16} strokeWidth={1.8} aria-hidden />
             </button>
+            {hasTree ? (
+                <button
+                    type="button"
+                    {...tabProps("tree")}
+                    aria-label="Files"
+                    title="Files"
+                    className={cn(TAB, shown === "tree" ? TAB_ON : TAB_OFF)}
+                >
+                    <FolderTree size={16} strokeWidth={1.8} aria-hidden />
+                </button>
+            ) : null}
             {file != null ? (
                 <div
                     className={cn(
                         "ml-0.5 flex min-w-0 max-w-[190px] items-center border-b-2",
-                        panel.tab === "file" ? TAB_ON : TAB_OFF
+                        shown === "file" ? TAB_ON : TAB_OFF
                     )}
                 >
                     <button
@@ -94,7 +108,7 @@ export function RailTabStrip({ agentId, panel }: { agentId: string; panel: Panel
                     >
                         <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
                         {/* on Overview's 300px the tab is its icon, so the counts beside it keep their room */}
-                        <span className={cn("min-w-0 truncate text-[11.5px]", panel.tab !== "file" && "hidden")}>
+                        <span className={cn("min-w-0 truncate text-[11.5px]", shown !== "file" && "hidden")}>
                             {fileTabLabel(file)}
                         </span>
                     </button>
