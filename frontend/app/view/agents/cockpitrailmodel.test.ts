@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { meterTitle, providerDot, providerLabel, usageBarVisible, windowUsedTokens } from "./cockpitrailmodel";
+import {
+    formatResetShort,
+    meterTitle,
+    paceLevel,
+    providerDot,
+    providerLabel,
+    usageBarVisible,
+    windowElapsed,
+    windowUsedTokens,
+} from "./cockpitrailmodel";
 import type { WindowTokens } from "./windowtokenstore";
 
 describe("providerLabel", () => {
@@ -69,5 +78,57 @@ describe("meterTitle", () => {
     });
     it("leaves out tokens and reset when unknown", () => {
         expect(meterTitle("Weekly", 38, undefined, undefined, NOW)).toBe("Weekly · 38%");
+    });
+});
+
+describe("windowElapsed", () => {
+    const NOW = 1_700_000_000_000;
+    const FIVE_H = 5 * 60 * 60 * 1000;
+    it("is the share of the window already passed", () => {
+        // 3h left of 5h: 2h passed
+        expect(windowElapsed(NOW / 1000 + 3 * 3600, FIVE_H, NOW)).toBeCloseTo(0.4);
+    });
+    it("is unknown without a reset", () => {
+        expect(windowElapsed(undefined, FIVE_H, NOW)).toBeUndefined();
+    });
+    it("stays inside 0..1 when the reset is past or further out than the window", () => {
+        expect(windowElapsed(NOW / 1000 - 60, FIVE_H, NOW)).toBe(1);
+        expect(windowElapsed(NOW / 1000 + 6 * 3600, FIVE_H, NOW)).toBe(0);
+    });
+});
+
+describe("paceLevel", () => {
+    it("stays ok while use is behind the clock, however high it is", () => {
+        // 72% used with 20m of 5h left
+        expect(paceLevel(72, 280 / 300)).toBe("ok");
+    });
+    it("warns when this rate runs out before the reset", () => {
+        // 50% used with 3h of 5h left: on course for 125%
+        expect(paceLevel(50, 0.4)).toBe("warn");
+    });
+    it("is hot at 1.5x the pace or past 90%", () => {
+        expect(paceLevel(45, 0.2)).toBe("hot");
+        expect(paceLevel(92, 0.99)).toBe("hot");
+    });
+    it("falls back to the plain level early in a window or with no reset", () => {
+        // 5 minutes in, 3% used would read as 180%
+        expect(paceLevel(3, 5 / 300)).toBe("ok");
+        expect(paceLevel(70, 0.1)).toBe("warn");
+        expect(paceLevel(70, undefined)).toBe("warn");
+    });
+});
+
+describe("formatResetShort", () => {
+    const NOW = 1_700_000_000_000;
+    const at = (mins: number) => NOW / 1000 + mins * 60;
+    it("drops the space and the trailing m", () => {
+        expect(formatResetShort(at(115), NOW)).toBe("1h55");
+        expect(formatResetShort(at(180), NOW)).toBe("3h");
+        expect(formatResetShort(at(42), NOW)).toBe("42m");
+        expect(formatResetShort(at(76 * 60), NOW)).toBe("3d4h");
+        expect(formatResetShort(at(72 * 60), NOW)).toBe("3d");
+    });
+    it("says now once the reset has passed", () => {
+        expect(formatResetShort(at(-1), NOW)).toBe("now");
     });
 });

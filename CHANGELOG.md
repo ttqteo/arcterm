@@ -14,9 +14,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
   project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
+- The app bar's usage meter shows how long until the 5-hour window resets (`1h55`), and each bar carries a light
+  tick for how much of its window has passed: a bar short of its tick will last until the reset.
 
 ### Changed
 
+- The app bar's usage meter turns amber when you are using quota faster than the window passes, not when it passes
+  60%: 72% with 20 minutes left stays blue, 50% with 3 hours left turns amber. Its refresh button moved to Usage only;
+  switching to the Default Claude account reads its quota at once.
 - The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
   picked last, and a number key switches between an agent and a run. `Cmd+N` still opens it on an agent and
   `Cmd+Shift+R` on a run (`Ctrl` on Windows).

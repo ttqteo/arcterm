@@ -8,9 +8,10 @@
 // so every reader shows it, labeled "as of" like any saved snapshot. The answer names the /login
 // account it read, and the snapshot is filed under that account, not under "Default".
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { normalizeEmail, noteLoginEmail, recordRateLimit } from "./ratelimitstore";
+import { activeClaudeAccountAtom, normalizeEmail, noteLoginEmail, recordRateLimit } from "./ratelimitstore";
 
 // wavesrv asks the endpoint at most once per five minutes, however many windows poll
 const POLL_MS = 5 * 60 * 1000;
@@ -95,4 +96,11 @@ export function startClaudeQuotaPolling(): void {
     polling = true;
     void readClaudeQuota();
     setInterval(() => void readClaudeQuota(), POLL_MS);
+    // a switch to Default asks at once rather than at the next poll, which is why the app bar needs no refresh
+    // button; a token account has nothing to ask (the endpoint answers for Default only) and shows its saved reading
+    globalStore.sub(activeClaudeAccountAtom, () => {
+        if (globalStore.get(activeClaudeAccountAtom) === "") {
+            void refreshClaudeQuota();
+        }
+    });
 }
