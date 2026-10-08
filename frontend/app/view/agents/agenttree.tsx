@@ -333,14 +333,27 @@ function RunCompleteLabel({ run }: { run: RunInfo }) {
 }
 
 // RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
-function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean; live: number; leadless?: boolean }) {
+// a lead's second line: its workers chip and progress, then `trailing` (the lead's own badges) at its right end
+function RunSubline({
+    run,
+    open,
+    live,
+    leadless,
+    trailing,
+}: {
+    run: RunInfo;
+    open: boolean;
+    live: number;
+    leadless?: boolean;
+    trailing?: React.ReactNode;
+}) {
     if (run.dag == null) {
         // no dag means the lead judged the goal bounded and never submitted a plan, not that a plan is
         // still on its way — so the run's own status is the only truth here. Hardcoding "planning" left
         // a finished bounded run's lead row reading planning for good, the same misreading of an absent
         // dag the engine had in ShouldCloseOrchestratorLead.
         return (
-            <div className="mt-[3px] flex min-w-0 text-[10.5px] tabular-nums">
+            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
@@ -348,6 +361,8 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
                         {runStatusView(run.status ?? "planning", run.land).label}
                     </span>
                 )}
+                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing}
             </div>
         );
     }
@@ -370,6 +385,8 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
                 ) : (
                     <span className="truncate text-muted">{progress}</span>
                 )}
+                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing}
             </div>
             <TaskStripBar run={run} />
         </>
@@ -472,9 +489,8 @@ function ParentRow({
               }
             : undefined;
 
-    // the canvas tag, then the state: words when it wants something, else its dot, tokens and age. They end a
-    // lead's first line, whose second holds its workers chip and progress; any other row's second line, so the
-    // name keeps the first line's full width
+    // the canvas tag, then the state: words when it wants something, else its dot, tokens and age. They end the
+    // row's second line (a lead's after its workers chip and progress), so the name keeps the first line's full width
     const badges = (
         <>
             <CanvasTag model={model} id={agent.id} />
@@ -549,8 +565,7 @@ function ParentRow({
     return (
         <>
             {/* the runtime and name, then its model, a branch other than the default, its subagents, state, tokens
-                and age (a lead keeps its state, tokens and age beside its name, and its second line holds its
-                workers chip and progress) */}
+                and age (a lead's second line: its workers chip and progress, then its state, tokens and age) */}
             <div
                 onClick={select}
                 onDoubleClick={foldRow}
@@ -588,13 +603,12 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
-                        {/* a lead's second line holds its workers chip and progress, which need its full width */}
+                        {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
-                        {lead ? badges : null}
                     </div>
                 )}
                 {lead ? (
-                    <RunSubline run={lead.run} open={lead.open} live={lead.live} />
+                    <RunSubline run={lead.run} open={lead.open} live={lead.live} trailing={badges} />
                 ) : (
                     // under the name: its model, a branch other than the default, its subagents chip and its badges
                     <div className={cn(CONVERSATION_META, "mt-[3px]", UNDER_GLYPH)}>
