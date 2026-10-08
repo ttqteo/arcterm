@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- An agent whose last turn ended on a git commit, once you have read that turn, offers to close itself: a **✓ Close**
+  chip on its sidebar row and a **Done · 30.7M tok — Close** button in its header, both asking first as Close agent
+  does. Agents a run started are left to the run. Claude agents for now.
 - A part named without a total, as a heading that opens a line (`## Phần 2`, `**Phần 1:**`, `Part 3:`), now shows its
   number on the agent's row, the way `Phần 2/4` shows `2/4`. A message whose headings walk through several parts
   shows none.
