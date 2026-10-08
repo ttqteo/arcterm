@@ -12,9 +12,7 @@ import { cn } from "@/util/util";
 import { autoUpdate, offset, shift, useFloating, type Placement } from "@floating-ui/react";
 import { useEffect, useRef, useState } from "react";
 import type { PetCorner } from "./petledge";
-import { eventLabel, type NotifyLevel, type PetEvent } from "./petvoice";
-
-const BUBBLE_MS = 6_000;
+import { bubbleMs, bubbleText, eventLabel, type NotifyLevel, type PetEvent } from "./petvoice";
 
 // speak away from the edge the creature is pinned to, aligned with it
 const PLACEMENT: Record<PetCorner, Placement> = {
@@ -86,13 +84,18 @@ export function PetBubble({
     const dismissRef = useRef(onDismiss);
     dismissRef.current = onDismiss;
     const id = event?.id;
+    const ms = event != null ? bubbleMs(event) : 0;
+    // a bubble under the pointer is being read: it stays, and gets its full time again once the pointer leaves. Kept
+    // by id, so a pointer that never left a bubble (it closed under it) cannot hold the next one open.
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const hovered = id != null && hoveredId === id;
     useEffect(() => {
-        if (id == null) {
+        if (id == null || hovered) {
             return;
         }
-        const t = setTimeout(() => dismissRef.current(), BUBBLE_MS);
+        const t = setTimeout(() => dismissRef.current(), ms);
         return () => clearTimeout(t);
-    }, [id]);
+    }, [id, ms, hovered]);
 
     const { refs, floatingStyles } = useFloating({
         open: event != null,
@@ -121,13 +124,15 @@ export function PetBubble({
                         type="button"
                         data-pet-bubble
                         onClick={onOpen}
+                        onMouseEnter={() => setHoveredId(said.id)}
+                        onMouseLeave={() => setHoveredId(null)}
                         className="flex w-full cursor-pointer flex-col gap-1.5 rounded-[12px] px-3 py-[11px] text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <EventLabel event={said} className="text-[9px]" />
                         {/* clamped: a notification title passes through verbatim and would otherwise stretch
                             the bubble. Inline only, and links as plain text — the bubble is one button. */}
                         <span className="line-clamp-3 text-[12px] leading-[1.45] text-secondary [overflow-wrap:anywhere]">
-                            <InlineMarkdown text={said.text} plainLinks />
+                            <InlineMarkdown text={bubbleText(said)} plainLinks />
                         </span>
                     </button>
                 ) : null}

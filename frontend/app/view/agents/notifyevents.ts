@@ -7,6 +7,7 @@
 // coalesce folds a burst into one summary. NotifySync (notifysync.tsx) wires it up. No React, no store.
 
 import type { ToastEyebrow, ToastNotification } from "@/app/cockpit/notificationstore";
+import type { PetEvent } from "@/app/view/jarvis/petvoice";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
 
 export type NotifyTarget =
@@ -173,14 +174,17 @@ export function parseTarget(raw: unknown): NotifyTarget {
 
 export interface RouteCtx {
     focused: boolean;
+    // float mode (floatstore.ts): the window is one terminal and the pet is not drawn
+    floating: boolean;
     viewing: ReadonlySet<string>;
     settings: { os: boolean; toast: boolean; reply: boolean };
 }
 
 export type NotifyRoute = "os" | "toast" | "avatar" | "none";
 
-/** Pure: where one event goes. A focused `wsh notify` stays the avatar's (petsources.tsx), so the two never say the
- *  same thing in the same corner. */
+/** Pure: where one event goes. While focused, a `wsh notify` and anything that needs you are the avatar's (the pet's
+ *  bubble, petsources.tsx), so the two never say the same thing in the same corner; you are already looking at the
+ *  pet's "?". Float mode does not draw the pet, so there the toast says it. */
 export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
     if (e.kind === "reply" && !ctx.settings.reply) {
         return "none";
@@ -191,10 +195,26 @@ export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
     if (e.target.kind === "agent" && ctx.viewing.has(e.target.agentId)) {
         return "none";
     }
-    if (e.kind === "notify") {
+    const pets = e.kind === "notify" || e.kind === "request" || e.kind === "attention";
+    if (pets && !ctx.floating) {
         return "avatar";
     }
     return ctx.settings.toast ? "toast" : "none";
+}
+
+/** Pure: whether a toast says an agent's question, so the pet's ask source keeps quiet (petjoin.ts shouldSpeakAsk).
+ *  The other half of routeNotify's request rule: only in float mode, focused, with toasts on. */
+export function toastSaysAsk(ctx: { focused: boolean; floating: boolean; settings: { toast: boolean } }): boolean {
+    return ctx.focused && ctx.floating && ctx.settings.toast;
+}
+
+/** Pure: a decision the pet says in place of its toast. An agent's request is not one: it reaches the pet from its own
+ *  agent:ask event, which also retracts it once answered. */
+export function petEventOfNeeds(e: NotifyEvent, nowMs: number): PetEvent | null {
+    if (e.kind !== "attention" || e.target.kind !== "attention") {
+        return null;
+    }
+    return { id: `needs:${e.target.key}`, at: nowMs, kind: "ask", text: e.title };
 }
 
 export const COALESCE_MS = 2000;

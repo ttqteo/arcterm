@@ -31,6 +31,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   window passes 85% and once when it runs out. A full RAM no longer tires it; it stays a line in the pet's popup,
   which now says how much free RAM one more worker needs.
 - The pet's lines read without dashes.
+- A question or a decision waiting on you shows in Jarvis's pet bubble instead of a **Needs you** toast, naming the
+  agent that asks. The bubble stays 15 seconds, and as long as the pointer is on it; click it to answer in the pet's
+  popup. In Float, where the pet is hidden, the toast still says it. **Finished** toasts are unchanged.
 
 ### Fixed
 
