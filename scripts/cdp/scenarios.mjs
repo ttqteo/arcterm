@@ -6026,9 +6026,9 @@ const routePickerFlat = {
             await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode });
         };
         await h.goto("settings");
-        // the two-pane Settings surface renders one section at a time; the route picker lives in Run defaults
+        // the two-pane Settings surface renders one page at a time; the run route picker lives on Agents
         await h.ev(
-            `(() => { const b = document.querySelector('[data-section="run"]'); if (b) b.click(); return true; })()`
+            `(() => { const b = document.querySelector('[data-section="agents"]'); if (b) b.click(); return true; })()`
         );
         await settle(200);
         const pickerPresent = await h.ev(`(() => !!document.querySelector('[data-testid="route-picker"]'))()`);
@@ -20143,7 +20143,7 @@ const CA_AGENTS = [
     { id: "fx-ca-working", name: "ca-working-agent", state: "working" },
     { id: "fx-ca-asking", name: "ca-asking-agent", state: "asking" },
 ];
-const CA_SECTION = `document.querySelector('[data-section="claudeaccount"]')`;
+const CA_SECTION = `document.querySelector('[data-section="agents"]')`;
 const caRow = (id) => `document.querySelector('[data-claude-account-row="${id || "default"}"]')`;
 const CA_ROWS = `[...document.querySelectorAll("[data-claude-account-row]")].map((r) => ({
     id: r.dataset.claudeAccountRow,
@@ -21286,7 +21286,7 @@ const notifyToast = {
 
             // --- Settings: the section, and In-app toasts off -----------------------------------------------------------
             await h.goto("settings");
-            await h.ev(`document.querySelector('[data-section="notifications"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="general"]')?.click()`);
             const titles = ["OS notifications", "In-app toasts", "When an agent finishes"];
             const listed = await polishWaitFor(
                 h,
@@ -21556,6 +21556,181 @@ const settingsRadarAudit = {
     },
     async teardown(h, ctx) {
         await h.rpc("setconfig", ctx.prev);
+        await h.goto("cockpit");
+    },
+};
+
+// --- settings-pages: six pages of cards, the key pill on hover, a changed row end to end ----------------
+// docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the six in order;
+// the page's card ids in order; a shot), then the key pill on Terminal (hidden at rest, visible and titled on hover,
+// pressing it leaves the row's control focused) and its absence on About's build info, then term:fontsize set off its
+// default to see the changed dot, the revert button, the index count and Reset section. The scenario restores
+// term:fontsize in a finally and again in teardown.
+const SP_PAGES = [
+    { id: "general", cards: ["startup", "notifications", "vault"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
+    { id: "terminal", cards: ["text", "cursor", "behavior"] },
+    { id: "agents", cards: ["claudeaccount", "runs", "flags"] },
+    { id: "headless", cards: ["runtime", "openrouter", "radar"] },
+    { id: "about", cards: ["versions", "agents"] },
+];
+const SP_FONTSIZE_KEY = "term:fontsize";
+const spPane = (id) => `document.querySelector('[data-settings-section="${id}"]')`;
+const spRow = (id) => `document.querySelector('[data-setting-row="${id}"]')`;
+const spOpen = async (h, id) => {
+    await h.ev(`document.querySelector('button[data-section="${id}"]')?.click()`);
+    return polishWaitFor(h, `${spPane(id)} != null`, 5000);
+};
+// a real pointer over the row's title side, so :hover and the group-hover variants follow
+const spHover = async (h, rowId) => {
+    const at = await h.ev(`(() => {
+        const el = ${spRow(rowId)};
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + 40, y: r.top + r.height / 2 };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(150);
+    return true;
+};
+const spPill = (rowId) => `(() => {
+    const pill = ${spRow(rowId)}?.querySelector("[data-key-pill]");
+    if (!pill) return null;
+    const r = pill.getBoundingClientRect();
+    return {
+        visibility: getComputedStyle(pill).visibility,
+        width: r.width,
+        title: pill.getAttribute("title"),
+        text: pill.textContent.trim(),
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+    };
+})()`;
+
+const settingsPages = {
+    name: "settings-pages",
+    surface: "settings",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        return { prevFontSize: settings[SP_FONTSIZE_KEY] ?? null };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        await polishWaitFor(h, `document.querySelector('button[data-section]') != null`, 5000);
+        const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute("data-section"))`);
+        rec(
+            "index: one flat list of six pages in order",
+            JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)),
+            `index=${JSON.stringify(index)}`
+        );
+
+        for (const page of SP_PAGES) {
+            const up = await spOpen(h, page.id);
+            const cards = await h.ev(
+                `[...(${spPane(page.id)}?.querySelectorAll("[data-setting-card]") ?? [])].map((c) => c.getAttribute("data-setting-card"))`
+            );
+            await polishNap(350);
+            await h.shot(`cdp-shots/settings-pages-${page.id}.png`);
+            rec(
+                `${page.id}: the page holds its cards in order`,
+                up && JSON.stringify(cards) === JSON.stringify(page.cards),
+                `cards=${JSON.stringify(cards)}`
+            );
+        }
+
+        // key-pill: on Terminal, hover scrollback; About's build info has none
+        await spOpen(h, "terminal");
+        await polishWaitFor(h, `${spRow("terminal.scrollback")} != null`, 5000);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+        await polishNap(150);
+        const atRest = await h.ev(spPill("terminal.scrollback"));
+        const hovered = await spHover(h, "terminal.scrollback");
+        const onHover = await h.ev(spPill("terminal.scrollback"));
+        await h.shot("cdp-shots/settings-pages-key-pill.png");
+        rec(
+            "key-pill: hidden at rest, visible and titled on hover",
+            atRest?.visibility === "hidden" &&
+                hovered &&
+                onHover?.visibility === "visible" &&
+                onHover.width > 0 &&
+                onHover.title === "Copy term:scrollback · synced in settings.json",
+            `rest=${atRest?.visibility} hover=${JSON.stringify(onHover)}`
+        );
+        // press the pill with a real pointer while the row's own control holds focus: the control keeps it
+        const focused = await h.ev(`(() => {
+            const btn = ${spRow("terminal.scrollback")}?.querySelector('button[aria-label^="Increase"]');
+            if (!btn) return false;
+            btn.focus();
+            return document.activeElement === btn;
+        })()`);
+        const pill = await h.ev(spPill("terminal.scrollback"));
+        if (pill != null) {
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: pill.x, y: pill.y, button: "left", clickCount: 1 });
+            }
+        }
+        await polishNap(150);
+        const keptFocus = await h.ev(
+            `document.activeElement?.getAttribute("aria-label") === "Increase scrollback"`
+        );
+        await h.ev(`document.activeElement?.blur()`);
+        rec(
+            "key-pill: pressing it leaves the row's control focused",
+            focused === true && pill != null && keptFocus === true,
+            `focused=${focused} pill=${pill != null} kept=${keptFocus}`
+        );
+        await spOpen(h, "about");
+        const aboutUp = await polishWaitFor(h, `${spRow("about.app")} != null`, 5000);
+        await spHover(h, "about.app");
+        const aboutPill = await h.ev(`${spRow("about.app")}?.querySelector("[data-key-pill]") != null`);
+        rec("key-pill: About's build info rows show none", aboutUp && aboutPill === false, `rendered=${aboutUp} pill=${aboutPill}`);
+
+        // changed: term:fontsize two off its default shows the dot, the revert button, the count and Reset section
+        try {
+            const cfg = await h.rpc("getfullconfig", null);
+            const dflt = cfg?.defaultsettings?.[SP_FONTSIZE_KEY];
+            const base = typeof dflt === "number" ? dflt : 12;
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: base + 2 });
+            await polishNap(600);
+            await spOpen(h, "terminal");
+            await polishWaitFor(h, `${spRow("terminal.fontsize")} != null`, 5000);
+            const changed = await h.ev(`(() => {
+                const row = ${spRow("terminal.fontsize")};
+                const count = document.querySelector('button[data-section="terminal"] [data-section-changed]');
+                return {
+                    dot: row?.querySelector('[title="Changed from the default"]') != null,
+                    revert: row?.querySelector('button[aria-label="Revert to default"]') != null,
+                    count: count == null ? 0 : parseInt(count.textContent, 10),
+                    reset: [...(${spPane("terminal")}?.querySelectorAll("button") ?? [])].some((b) => b.textContent.trim() === "Reset section"),
+                };
+            })()`);
+            await h.shot("cdp-shots/settings-pages-changed.png");
+            rec(
+                "changed: dot, revert button, index count and Reset section",
+                changed.dot && changed.revert && changed.count >= 1 && changed.reset,
+                JSON.stringify(changed)
+            );
+            await h.ev(`${spRow("terminal.fontsize")}?.querySelector('button[aria-label="Revert to default"]')?.click()`);
+            const cleared = await polishWaitFor(
+                h,
+                `${spRow("terminal.fontsize")}?.querySelector('[title="Changed from the default"]') == null`,
+                5000
+            );
+            rec("changed: Revert puts the default back and the mark goes", cleared, `cleared=${cleared}`);
+        } finally {
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: ctx.prevFontSize });
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: ctx.prevFontSize });
         await h.goto("cockpit");
     },
 };
@@ -22050,7 +22225,7 @@ const agyHarness = {
 
             // 8. Settings' launch-flags editor
             await h.goto("settings");
-            await h.ev(`document.querySelector('[data-section="newagent"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
             await h.ev(
                 `[...document.querySelectorAll('[data-setting-row="newagent.runtime"] button')].find((b) => b.textContent.trim() === "Antigravity")?.click()`
@@ -22067,9 +22242,9 @@ const agyHarness = {
             );
 
             // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
-            await h.ev(`document.querySelector('[data-section="run"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
-            const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
+            const runRoute =await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
             await shot("11-settings-run-route");
             rec(
                 "11. settings run route lists no Antigravity",
@@ -22166,6 +22341,7 @@ export const SCENARIOS = [
     dagLifecycle,
     routePickerFlat,
     settingsRadarAudit,
+    settingsPages,
     jarvisMotion,
     // before brief-inline-tracker, which leaves a briefing fixture on over the seeded data
     briefDesignParity,
