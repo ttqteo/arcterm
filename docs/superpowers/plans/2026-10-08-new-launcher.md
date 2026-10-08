@@ -11,7 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-10-08-new-launcher-design.md`
 **Verify:** `node scripts/verify.mjs ./pkg/baseds`
 **Check:** `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`
-**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: launcher, new-run-window, capacity-warn and palette-goal need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs launcher new-run-window capacity-warn palette-goal`
+**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: launcher-empty, launcher, new-run-window, capacity-warn and palette-goal need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs launcher-empty launcher new-run-window capacity-warn palette-goal`
 **Prototype:** ~/code/arcterm/.superpowers/design/new-launcher/project/Main.dc.html
 
 The frontend and the CDP scenarios are the only things that change: no Go type changes, so no `task generate`. The
@@ -35,17 +35,25 @@ The frontend and the CDP scenarios are the only things that change: no Go type c
 - A prefill (palette Orchestrate, "Build this…") that arrives before the project list has loaded must wait for it, not drop its project. Task 3 pins it with `applyLauncherPrefill`.
 - Picking another project must reset a hand-typed worktree branch to that project's checked-out branch, or the agent lands on a branch from the wrong repo. Task 3 pins it with `pickLauncherProject`.
 - Escape inside the route picker's menu (portaled out of the dialog, focus in its search box) must close the menu, not the dialog. Task 4 pins it with `shellOwnsEscape`; Task 5's `new-run-window` step 7 shows it live.
+- An Escape dispatched on `document` or `window` (no element target: most scenarios close dialogs this way) must still close a ModalShell dialog. Task 4's `shellOwnsEscape` owns every target that is not an element, and its test pins it.
+- Escape closes the innermost open thing wherever focus is in the dialog: with the flag menu open and focus in the Task box, the menu closes and the dialog stays. The open state of the flag menu and the branch list lives in the store (Task 3), and `launcherKey` returns `dismiss-inner` in every zone (Task 1); Task 5's `launcher` step 12 shows it.
 - Enter on the Start column while a run is blocked ("Write the goal") must move focus to the goal field and start nothing. Task 5's `launcher` step 4 shows it.
 
 ---
 
 ### Task 1: Launcher model
 **Depends on:** none
-**Files:** `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`
+**Files:** `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`, `frontend/app/view/agents/runconfig.ts`
 
 The pure half of the dialog: which Start rows exist and their digits, which row is selected, the title, primary label
 and footer line for a pick, the project filter, arrow stepping, whether an open shows "draft restored", and what a key
-does where focus is.
+does where focus is. `launcherKey`'s actions are exactly the spec's list (`pick-start`, `pick-project`, `move`,
+`filter`, `launch`, `dismiss-inner`, `close`, `none`); Tab is not one of them, because the dialog's focus trap handles
+it before asking `launcherKey` (as `dagmodal.tsx` does).
+
+The Quick run row's description comes from `SHAPE_CARDS` (spec "Start column"), and the spec draws it as "one worker,
+one goal", the words of the Quick goal's note ("one fresh worker"). `SHAPE_CARDS` says "one agent, one goal" today, so
+this task changes that one string in `runconfig.ts`; the Brief launcher's shape card reads the same words.
 
 **Interfaces:**
 - Consumes: `isRuntimeOffered`, `runtimeLaunchLabel`, `type Runtime` from `./launch`; `SHAPE_CARDS`, `type RunShape` from `./runconfig`.
@@ -61,8 +69,8 @@ does where focus is.
   - `projectAfterFilter(matches: { name: string }[], current: string): string`
   - `selectedProject<T extends { name: string }>(rows: T[], picked: string): T | null`
   - `stepIndex(count: number, current: number, delta: 1 | -1): number`
-  - `interface LauncherDraft { task: string; goal: string; planPath: string; prototype: string }`, `draftShown(kind: LauncherKind, draft: LauncherDraft): boolean`
-  - `type FocusZone = "start" | "project" | "textarea" | "input" | "other"`, `interface LauncherKeyCtx { zone: FocusZone; startCount: number; projectCount: number; filter: string }`, `interface LauncherKeyIn { key: string; shift: boolean; mod: boolean }`, `type LauncherKeyAction`, `launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyAction`
+  - `interface LauncherDraft { task: string; goal: string; planPath: string; prototype: string }`, `draftShown(draft: LauncherDraft): boolean`
+  - `type FocusZone = "start" | "project" | "textarea" | "input" | "other"`, `type LauncherInner = "flags" | "branches" | "filter"`, `interface LauncherKeyCtx { zone: FocusZone; startCount: number; projectCount: number; filter: string; flagMenuOpen: boolean; branchListOpen: boolean }`, `interface LauncherKeyIn { key: string; shift: boolean; mod: boolean }`, `type LauncherKeyAction` (`none`, `pick-start`, `pick-project`, `move` with `column` and `delta`, `filter`, `launch`, `dismiss-inner` with `what: LauncherInner`, `close`), `launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyAction`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -117,7 +125,7 @@ describe("startRows", () => {
     it("gives run rows their names and shape descriptions, agent rows no description", () => {
         const rows = startRows(claudeOnly);
         expect(rows.filter((r) => r.kind === "run").map((r) => r.name)).toEqual(["Quick run", "Orchestrate"]);
-        expect(rows.find((r) => r.id === "quick")?.desc).toBe("one agent, one goal");
+        expect(rows.find((r) => r.id === "quick")?.desc).toBe("one worker, one goal");
         expect(rows.find((r) => r.id === "orchestrator")?.desc).toBe("lead plans, workers fan out");
         expect(rows.find((r) => r.id === "claude")?.desc).toBeNull();
     });
@@ -237,27 +245,30 @@ describe("stepIndex", () => {
 
 describe("draftShown", () => {
     const empty = { task: "", goal: "", planPath: "", prototype: "" };
-    it("an agent pick shows a kept task, not a kept goal", () => {
-        expect(draftShown("agent", { ...empty, task: "fix it" })).toBe(true);
-        expect(draftShown("agent", { ...empty, goal: "fix it" })).toBe(false);
+    it("a kept task, goal, plan path or prototype is a draft, whichever pick opens", () => {
+        expect(draftShown({ ...empty, task: "fix it" })).toBe(true);
+        expect(draftShown({ ...empty, goal: "fix it" })).toBe(true);
+        expect(draftShown({ ...empty, planPath: "/p/plan.md" })).toBe(true);
+        expect(draftShown({ ...empty, prototype: "/c/Main.dc.html" })).toBe(true);
     });
-    it("a run pick shows a kept goal, plan path or prototype, not a kept task", () => {
-        expect(draftShown("run", { ...empty, goal: "fix it" })).toBe(true);
-        expect(draftShown("run", { ...empty, planPath: "/p/plan.md" })).toBe(true);
-        expect(draftShown("run", { ...empty, prototype: "/c/Main.dc.html" })).toBe(true);
-        expect(draftShown("run", { ...empty, task: "fix it" })).toBe(false);
-    });
-    it("whitespace is not a draft", () => {
-        expect(draftShown("agent", { ...empty, task: "  \n" })).toBe(false);
+    it("nothing kept, or only whitespace, is no draft", () => {
+        expect(draftShown(empty)).toBe(false);
+        expect(draftShown({ ...empty, task: "  \n" })).toBe(false);
     });
 });
 
 describe("launcherKey", () => {
-    const at = (zone: LauncherKeyCtx["zone"], filter = ""): LauncherKeyCtx => ({
+    const at = (
+        zone: LauncherKeyCtx["zone"],
+        filter = "",
+        open: { flagMenuOpen?: boolean; branchListOpen?: boolean } = {}
+    ): LauncherKeyCtx => ({
         zone,
         startCount: 4,
         projectCount: 2,
         filter,
+        flagMenuOpen: !!open.flagMenuOpen,
+        branchListOpen: !!open.branchListOpen,
     });
     const key = (k: string, extra: { shift?: boolean; mod?: boolean } = {}) => ({
         key: k,
@@ -278,8 +289,8 @@ describe("launcherKey", () => {
         expect(launcherKey(at("input"), key("3"))).toEqual({ kind: "none" });
     });
     it("arrows move in either column and nowhere else", () => {
-        expect(launcherKey(at("start"), key("ArrowDown"))).toEqual({ kind: "move-start", delta: 1 });
-        expect(launcherKey(at("project"), key("ArrowUp"))).toEqual({ kind: "move-project", delta: -1 });
+        expect(launcherKey(at("start"), key("ArrowDown"))).toEqual({ kind: "move", column: "start", delta: 1 });
+        expect(launcherKey(at("project"), key("ArrowUp"))).toEqual({ kind: "move", column: "project", delta: -1 });
         expect(launcherKey(at("textarea"), key("ArrowDown"))).toEqual({ kind: "none" });
     });
     it("letters filter the Project column, and only there", () => {
@@ -298,16 +309,34 @@ describe("launcherKey", () => {
         expect(launcherKey(at("textarea"), key("Enter"))).toEqual({ kind: "none" });
         expect(launcherKey(at("other"), key("Enter"))).toEqual({ kind: "none" });
     });
-    it("Tab and Shift+Tab walk the dialog from anywhere", () => {
-        expect(launcherKey(at("textarea"), key("Tab"))).toEqual({ kind: "tab", reverse: false });
-        expect(launcherKey(at("start"), key("Tab", { shift: true }))).toEqual({ kind: "tab", reverse: true });
+    it("Tab is no action: the dialog's focus trap takes it before asking", () => {
+        expect(launcherKey(at("textarea"), key("Tab"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("project", "ok"), key("Tab", { shift: true }))).toEqual({ kind: "none" });
     });
-    it("Escape clears a filter first, then leaves the close to the dialog", () => {
-        expect(launcherKey(at("project", "oki"), key("Escape"))).toEqual({ kind: "clear-filter" });
-        expect(launcherKey(at("project"), key("Escape"))).toEqual({ kind: "none" });
-        expect(launcherKey(at("textarea"), key("Escape"))).toEqual({ kind: "none" });
+    it("Escape with the flag menu open closes the menu wherever focus is", () => {
+        // the menu opens from the Command row while focus stays in the Task box
+        expect(launcherKey(at("textarea", "", { flagMenuOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "flags",
+        });
+        expect(launcherKey(at("start", "", { flagMenuOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "flags",
+        });
     });
-    it("leaves modified keys alone: Mod+Enter is the dialog's submit, Ctrl+Tab the next agent", () => {
+    it("Escape closes the innermost open thing: flag menu, branch list, filter, then the dialog", () => {
+        const both = { flagMenuOpen: true, branchListOpen: true };
+        expect(launcherKey(at("input", "", both), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "flags" });
+        expect(launcherKey(at("other", "", { branchListOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "branches",
+        });
+        expect(launcherKey(at("project", "oki"), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "filter" });
+        expect(launcherKey(at("project"), key("Escape"))).toEqual({ kind: "close" });
+        expect(launcherKey(at("textarea"), key("Escape"))).toEqual({ kind: "close" });
+        expect(launcherKey(at("other"), key("Escape"))).toEqual({ kind: "close" });
+    });
+    it("leaves modified keys alone: Mod+Enter is the dialog's submit, Mod+digit and Mod+Tab are not picks", () => {
         expect(launcherKey(at("start"), key("Enter", { mod: true }))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("1", { mod: true }))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("Tab", { mod: true }))).toEqual({ kind: "none" });
@@ -473,14 +502,16 @@ export interface LauncherDraft {
     prototype: string;
 }
 
-// Whether an open says "draft restored": only for text the pick's own fields show, or the header would announce a
-// draft nobody can see.
-export function draftShown(kind: LauncherKind, draft: LauncherDraft): boolean {
-    const fields = kind === "agent" ? [draft.task] : [draft.goal, draft.planPath, draft.prototype];
-    return fields.some((v) => v.trim() !== "");
+// Whether an open says "draft restored" (spec "Open, close and draft"): a close kept a task, a goal, a plan path or a
+// prototype, whichever pick the dialog opens on. Clear empties all four.
+export function draftShown(draft: LauncherDraft): boolean {
+    return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "");
 }
 
 export type FocusZone = "start" | "project" | "textarea" | "input" | "other";
+
+// What an Escape can close before the dialog, innermost first
+export type LauncherInner = "flags" | "branches" | "filter";
 
 export interface LauncherKeyCtx {
     zone: FocusZone;
@@ -488,6 +519,9 @@ export interface LauncherKeyCtx {
     // the visible project rows
     projectCount: number;
     filter: string;
+    // shown on screen, not just set: a branch list with no branches draws nothing
+    flagMenuOpen: boolean;
+    branchListOpen: boolean;
 }
 
 export interface LauncherKeyIn {
@@ -499,29 +533,34 @@ export interface LauncherKeyIn {
 
 export type LauncherKeyAction =
     | { kind: "none" }
-    | { kind: "tab"; reverse: boolean }
     | { kind: "pick-start"; index: number }
     | { kind: "pick-project"; index: number }
-    | { kind: "move-start"; delta: 1 | -1 }
-    | { kind: "move-project"; delta: 1 | -1 }
+    | { kind: "move"; column: "start" | "project"; delta: 1 | -1 }
     | { kind: "filter"; next: string }
-    | { kind: "clear-filter" }
-    | { kind: "launch" };
+    | { kind: "launch" }
+    | { kind: "dismiss-inner"; what: LauncherInner }
+    | { kind: "close" };
 
 const NONE: LauncherKeyAction = { kind: "none" };
 
 // What a key does where focus is (spec "Keyboard"). "none" leaves the key to the browser and to ModalShell, which owns
-// Escape (close) and Mod+Enter (submit).
+// Mod+Enter (submit). Tab never gets here: the dialog's focus trap takes it first.
 export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyAction {
     const { zone } = ctx;
+    // Escape closes the innermost open thing, wherever focus is: the flag menu opens from the Command row while
+    // focus can sit in the Task box
     if (k.key === "Escape") {
-        return zone === "project" && ctx.filter !== "" ? { kind: "clear-filter" } : NONE;
+        if (ctx.flagMenuOpen) {
+            return { kind: "dismiss-inner", what: "flags" };
+        }
+        if (ctx.branchListOpen) {
+            return { kind: "dismiss-inner", what: "branches" };
+        }
+        // the filter clears when focus leaves the Project column, so a filter means focus is there
+        return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };
     }
     if (k.mod) {
         return NONE;
-    }
-    if (k.key === "Tab") {
-        return { kind: "tab", reverse: k.shift };
     }
     if (k.key === "Enter") {
         return zone === "start" || zone === "project" || zone === "input" ? { kind: "launch" } : NONE;
@@ -537,8 +576,7 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         return index < ctx.projectCount ? { kind: "pick-project", index } : NONE;
     }
     if (k.key === "ArrowDown" || k.key === "ArrowUp") {
-        const delta = k.key === "ArrowDown" ? 1 : -1;
-        return zone === "start" ? { kind: "move-start", delta } : { kind: "move-project", delta };
+        return { kind: "move", column: zone, delta: k.key === "ArrowDown" ? 1 : -1 };
     }
     if (zone === "project") {
         if (k.key === "Backspace") {
@@ -552,17 +590,20 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
 }
 ```
 
+In `frontend/app/view/agents/runconfig.ts`, change the Quick card of `SHAPE_CARDS` to
+`{ id: "quick", desc: "one worker, one goal" },`.
+
 - [ ] **Step 4: Run the tests to see them pass**
 
-Run: `npx vitest run frontend/app/view/agents/launcher.test.ts`
+Run: `npx vitest run frontend/app/view/agents/launcher.test.ts frontend/app/view/agents/runconfig.test.ts`
 Expected: PASS, every test.
 
 - [ ] **Step 5: Lint, format, commit**
 
 ```bash
-npx eslint frontend/app/view/agents/launcher.ts frontend/app/view/agents/launcher.test.ts
+npx eslint frontend/app/view/agents/launcher.ts frontend/app/view/agents/launcher.test.ts frontend/app/view/agents/runconfig.ts
 npx prettier --check frontend/app/view/agents/launcher.ts frontend/app/view/agents/launcher.test.ts
-git add frontend/app/view/agents/launcher.ts frontend/app/view/agents/launcher.test.ts
+git add frontend/app/view/agents/launcher.ts frontend/app/view/agents/launcher.test.ts frontend/app/view/agents/runconfig.ts
 git commit -m "feat(launcher): the New launcher's model — Start rows, digits, footer words, filter, key reducer"
 ```
 
@@ -798,7 +839,7 @@ The state a close must keep, and the actions every opener and the dialog use.
 **Interfaces:**
 - Consumes: `draftShown`, `type LauncherKind` from `./launcher` (Task 1); `prefillToLaunch`, `type NewRunPrefill` from `@/app/view/jarvis/newrun`; `planPathAtom`, `setRunShape`, `setStart` from `./runconfigstore`.
 - Produces (Task 4 relies on these exact names):
-  - atoms: `launcherKindAtom: PrimitiveAtom<LauncherKind>`, `launcherRuntimeAtom: PrimitiveAtom<Runtime | null>`, `launcherProjectAtom: PrimitiveAtom<string>`, `launcherTaskAtom`, `launcherGoalAtom`, `launcherPrototypeAtom: PrimitiveAtom<string>`, `launcherCommandAtom: PrimitiveAtom<Partial<Record<Runtime, string>>>`, `launcherWorktreeAtom: PrimitiveAtom<boolean>`, `launcherBranchAtom: PrimitiveAtom<string | null>`, `launcherRestoredAtom: PrimitiveAtom<boolean>`, `launcherBusyAtom: PrimitiveAtom<boolean>`, `launcherPrefillAtom: PrimitiveAtom<NewRunPrefill | null>`
+  - atoms: `launcherKindAtom: PrimitiveAtom<LauncherKind>`, `launcherRuntimeAtom: PrimitiveAtom<Runtime | null>`, `launcherProjectAtom: PrimitiveAtom<string>`, `launcherTaskAtom`, `launcherGoalAtom`, `launcherPrototypeAtom: PrimitiveAtom<string>`, `launcherCommandAtom: PrimitiveAtom<Partial<Record<Runtime, string>>>`, `launcherWorktreeAtom: PrimitiveAtom<boolean>`, `launcherBranchAtom: PrimitiveAtom<string | null>`, `launcherFlagMenuAtom: PrimitiveAtom<boolean>`, `launcherBranchListAtom: PrimitiveAtom<boolean>`, `launcherRestoredAtom: PrimitiveAtom<boolean>`, `launcherBusyAtom: PrimitiveAtom<boolean>`, `launcherPrefillAtom: PrimitiveAtom<NewRunPrefill | null>`
   - `type LauncherModel = { launcherAtom: PrimitiveAtom<LauncherKind | null> }`
   - `openLauncher(model: LauncherModel, door: LauncherKind, prefill?: NewRunPrefill): void`, `closeLauncher(model: LauncherModel): void`
   - `clearLauncherDraft(): void`, `endLauncherDraft(): void`
@@ -826,8 +867,10 @@ import {
     endLauncherDraft,
     endLauncherLaunch,
     launcherBranchAtom,
+    launcherBranchListAtom,
     launcherBusyAtom,
     launcherCommandAtom,
+    launcherFlagMenuAtom,
     launcherGoalAtom,
     launcherKindAtom,
     launcherPrefillAtom,
@@ -876,14 +919,17 @@ describe("openLauncher", () => {
         expect(globalStore.get(launcherKindAtom)).toBe("run");
         expect(globalStore.get(launcherPrefillAtom)).toEqual(prefill);
     });
-    it("says draft restored when the pick's own field kept text", () => {
+    it("says draft restored when a close kept a task, a goal, a plan path or a prototype, at either door", () => {
         globalStore.set(launcherTaskAtom, "fix it");
+        openLauncher(model(), "run");
+        expect(globalStore.get(launcherRestoredAtom)).toBe(true);
+        endLauncherDraft();
+        globalStore.set(planPathAtom, "/p/plan.md");
         openLauncher(model(), "agent");
         expect(globalStore.get(launcherRestoredAtom)).toBe(true);
     });
-    it("does not when the kept text belongs to the other half", () => {
-        globalStore.set(launcherTaskAtom, "fix it");
-        openLauncher(model(), "run");
+    it("does not when nothing was kept", () => {
+        openLauncher(model(), "agent");
         expect(globalStore.get(launcherRestoredAtom)).toBe(false);
     });
     it("does not for a prefill, which replaces the goal", () => {
@@ -903,6 +949,15 @@ describe("closing, clearing and launching", () => {
         expect(globalStore.get(m.launcherAtom)).toBeNull();
         expect(globalStore.get(launcherTaskAtom)).toBe("fix it");
         expect(globalStore.get(launcherWorktreeAtom)).toBe(true);
+    });
+    it("a close shuts the flag menu and the branch list, so the next open shows neither", () => {
+        const m = model();
+        openLauncher(m, "agent");
+        globalStore.set(launcherFlagMenuAtom, true);
+        globalStore.set(launcherBranchListAtom, true);
+        closeLauncher(m);
+        expect(globalStore.get(launcherFlagMenuAtom)).toBe(false);
+        expect(globalStore.get(launcherBranchListAtom)).toBe(false);
     });
     it("Clear empties what a close kept and leaves the pick, the project and the commands", () => {
         globalStore.set(launcherRuntimeAtom, "terminal");
@@ -1028,6 +1083,10 @@ export const launcherCommandAtom = atom<Partial<Record<Runtime, string>>>({}) as
 export const launcherWorktreeAtom = atom(false) as PrimitiveAtom<boolean>;
 // null follows the project's checked-out branch
 export const launcherBranchAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// The agent row's two popovers. They live here, not in the fields' state, so the dialog's one key handler can close
+// the open one on Escape wherever focus is (the flag menu opens while focus sits in the Task box).
+export const launcherFlagMenuAtom = atom(false) as PrimitiveAtom<boolean>;
+export const launcherBranchListAtom = atom(false) as PrimitiveAtom<boolean>;
 // this open showed a draft a close had kept
 export const launcherRestoredAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBusyAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -1050,13 +1109,15 @@ function keptDraft() {
 export function openLauncher(model: LauncherModel, door: LauncherKind, prefill?: NewRunPrefill): void {
     const kind: LauncherKind = prefill != null ? "run" : door;
     globalStore.set(launcherKindAtom, kind);
-    globalStore.set(launcherRestoredAtom, prefill == null && draftShown(kind, keptDraft()));
+    globalStore.set(launcherRestoredAtom, prefill == null && draftShown(keptDraft()));
     globalStore.set(launcherPrefillAtom, prefill ?? null);
     globalStore.set(model.launcherAtom, door);
 }
 
-// Every way out keeps the draft; that is what lets a click outside close the dialog.
+// Every way out keeps the draft; that is what lets a click outside close the dialog. An open popover is not draft.
 export function closeLauncher(model: LauncherModel): void {
+    globalStore.set(launcherFlagMenuAtom, false);
+    globalStore.set(launcherBranchListAtom, false);
     globalStore.set(model.launcherAtom, null);
 }
 
@@ -1139,18 +1200,21 @@ git commit -m "feat(launcher): the New launcher's store — doors, a draft every
 ### Task 4: The New dialog replaces New agent and New run
 **Depends on:** Task 1, Task 2, Task 3
 **Files:** `frontend/app/view/agents/launchermodal.tsx`, `frontend/app/view/agents/launcheragentfields.tsx`, `frontend/app/view/agents/launcherrunfields.tsx`, `frontend/app/view/agents/workercapacity.ts`, `frontend/app/view/agents/workercapacity.test.ts`, `frontend/app/modals/modalfocus.ts`, `frontend/app/modals/modalfocus.test.ts`, `frontend/app/modals/modalshell.tsx`, `frontend/app/view/agents/agents.tsx`, `frontend/app/store/keybindings/dispatcher.ts`, `frontend/app/store/keybindings/dispatcher.test.ts`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/store/keybindings/bindings.test.ts`, `frontend/app/store/keybindings/store.test.ts`, `frontend/app/cockpit/app-bar.tsx`, `frontend/app/cockpit/command-palette.tsx`, `frontend/app/cockpit/actions/project.ts`, `frontend/app/cockpit/cockpit-actions.ts`, `frontend/app/cockpit/cockpit-root.tsx`
-**Files:** `frontend/app/view/agents/canvaspane.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/agentlaunchhero.tsx`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/conversationhistory.tsx`, `frontend/app/view/agents/naflagsstore.ts`, `frontend/app/view/agents/newagentmodal.tsx`, `frontend/app/view/jarvis/newruncontrol.tsx`, `frontend/app/view/jarvis/projectpickerview.tsx`, `frontend/app/view/jarvis/projectpicker.ts`, `frontend/app/view/jarvis/projectpicker.test.ts`, `frontend/app/view/jarvis/newrun.ts`, `frontend/app/view/jarvis/newrun.test.ts`, `CHANGELOG.md`, `docs/keyboard-shortcuts.md`, `docs/orchestrator-guide.md`, `docs/open-issues.md`
+**Files:** `frontend/app/view/agents/runlauncher.tsx`, `frontend/app/view/agents/canvaspane.tsx`, `frontend/app/view/agents/agentheader.tsx`, `frontend/app/view/agents/agentlaunchhero.tsx`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/conversationhistory.tsx`, `frontend/app/view/agents/naflagsstore.ts`, `frontend/app/view/agents/newagentmodal.tsx`, `frontend/app/view/jarvis/newruncontrol.tsx`, `frontend/app/view/jarvis/projectpickerview.tsx`, `frontend/app/view/jarvis/projectpicker.ts`, `frontend/app/view/jarvis/projectpicker.test.ts`, `frontend/app/view/jarvis/newrun.ts`, `frontend/app/view/jarvis/newrun.test.ts`, `CHANGELOG.md`, `docs/keyboard-shortcuts.md`, `docs/orchestrator-guide.md`, `docs/open-issues.md`
 
 Build the dialog from the mockup (`Main.dc.html` and its boards), mount it in place of the two old ones, point every
 opener at `openLauncher`, delete the old dialogs, and update the docs.
 
-**Acceptance:** the unit tests below pass, `task check:ts` exits 0, and Task 5's `launcher` scenario shows each state:
+**Acceptance:** the unit tests below pass, `task check:ts` exits 0, and Task 5's scenarios show each state. `launcher`:
 step 1 (the agent row, Main board), step 2 (Terminal board), step 5 (QuickRun board), step 6 (Orchestrate board),
-step 7 (OrchestratePlan board), step 8 (ProjectFilter board) and steps 10 and 13 (AgentOptions board).
+step 7 (OrchestratePlan board), step 8 (ProjectFilter board), step 9 (no project matches), steps 11 and 15
+(AgentOptions board: options, then the restored draft), step 13 (the launch-error line) and step 17 (the Prototype
+chip). `capacity-warn`: step 2 (the Orchestrate board's RAM line under the stepper) and step 3 (the RAM line of the
+QuickRun and Main boards). `launcher-empty`: step 1 (No projects yet and Register a project).
 
 **Interfaces:**
 - Consumes: everything Task 1 and Task 3 produce; `startLauncherRun` from Task 2.
-- Produces: `LauncherModal({ model }: { model: AgentsViewModel })` from `launchermodal.tsx`; `AgentsViewModel.launcherAtom: PrimitiveAtom<LauncherKind | null>`; DOM hooks Task 5 reads: `[data-launcher]` on the dialog's root, `[data-launcher-column="start" | "project"]` on the two columns, `[data-start-row=<id>]` and `[data-project-row=<name>]` (with `aria-checked`) on rows, `[data-launcher-filter]`, `[data-launcher-restored]`, `[data-launcher-footer]`, `#launcher-task`, `textarea[aria-label="Goal"]`, `[data-jarvis-plan-path]`, `[data-jarvis-plan-preview]`, the `Start from` group, and `shellOwnsEscape(panel, target, body): boolean` in `modalfocus.ts`.
+- Produces: `LauncherModal({ model }: { model: AgentsViewModel })` from `launchermodal.tsx`; `AgentsViewModel.launcherAtom: PrimitiveAtom<LauncherKind | null>`; DOM hooks Task 5 reads: `[data-launcher]` on the dialog's root, `[data-launcher-column="start" | "project"]` on the two columns, `[data-start-row=<id>]` and `[data-project-row=<name>]` (with `aria-checked`) on rows, `[data-launcher-filter]`, `[data-launcher-nomatch]`, `[data-launcher-empty]`, `[data-launcher-restored]`, `[data-launcher-footer="line" | "error"]`, `[data-launcher-prototype]`, `[data-ram-warn]`, `[data-capacity-warn]` on the line under the Workers stepper, `#launcher-task`, `input[aria-label="Branch"]`, `textarea[aria-label="Goal"]`, `[data-jarvis-plan-path]`, `[data-jarvis-plan-preview]`, the `Start from` group with its "A goal" / "A plan file" buttons, the DEV-only `window.__openLauncher(door, prefill?)`, and `shellOwnsEscape(panel, target, body): boolean` in `modalfocus.ts`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1174,9 +1238,10 @@ the numbers" test and add one:
 
 ```ts
 describe("shellOwnsEscape", () => {
-    const inside = {} as Node;
-    const portaled = {} as Node;
-    const body = {} as Node;
+    // elements are nodeType 1; document is 9, and window has no nodeType
+    const inside = { nodeType: 1 } as Node;
+    const portaled = { nodeType: 1 } as Node;
+    const body = { nodeType: 1 } as Node;
     const panel = { contains: (n: Node | null) => n === inside };
     it("owns an Escape from inside the panel", () => {
         expect(shellOwnsEscape(panel, inside, body)).toBe(true);
@@ -1187,6 +1252,10 @@ describe("shellOwnsEscape", () => {
     it("owns an Escape with nothing focused", () => {
         expect(shellOwnsEscape(panel, body, body)).toBe(true);
         expect(shellOwnsEscape(panel, null, body)).toBe(true);
+    });
+    it("owns an Escape dispatched on document or window, which no popover can claim", () => {
+        expect(shellOwnsEscape(panel, { nodeType: 9 } as unknown as EventTarget, body)).toBe(true);
+        expect(shellOwnsEscape(panel, {} as EventTarget, body)).toBe(true);
     });
     it("owns every Escape before the panel exists", () => {
         expect(shellOwnsEscape(null, portaled, body)).toBe(true);
@@ -1277,14 +1346,15 @@ In `frontend/app/modals/modalfocus.ts`, append:
 
 ```ts
 // Whether an Escape is the shell's to act on. A popover portaled out of the panel (a route picker's menu, with focus
-// in its search box) closes itself on Escape, and the dialog under it must stay. With nothing focused (<body>) the
-// Escape is the shell's.
+// in its search box) closes itself on Escape, and the dialog under it must stay. With nothing focused (<body>), or an
+// Escape dispatched on document or window (no element at all, as the CDP scenarios close dialogs), the Escape is the
+// shell's: no popover can own it.
 export function shellOwnsEscape(
     panel: { contains(node: Node | null): boolean } | null,
     target: EventTarget | null,
     body: EventTarget | null
 ): boolean {
-    if (panel == null || target == null || target === body) {
+    if (panel == null || target == null || target === body || (target as Partial<Node>).nodeType !== 1) {
         return true;
     }
     return panel.contains(target as Node);
@@ -1398,7 +1468,8 @@ Create `frontend/app/view/agents/launcheragentfields.tsx`:
 //
 // The New launcher's details for an agent row: the task, the command with its flags, and the worktree. Moved out of
 // the old New agent dialog. The task field is always there (it hid behind "+ Start with a task") so Tab lands in it.
-// An open flag menu or branch list takes the first Escape, so the dialog stays.
+// Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes the
+// open one on Escape wherever focus is, and the dialog stays.
 
 import { composerReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -1409,7 +1480,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
 import {
     RUNTIME_FLAGS,
     runtimeShowsTask,
@@ -1418,7 +1489,14 @@ import {
     worktreeOutcome,
     type Runtime,
 } from "./launch";
-import { launcherBranchAtom, launcherCommandAtom, launcherTaskAtom, launcherWorktreeAtom } from "./launcherstore";
+import {
+    launcherBranchAtom,
+    launcherBranchListAtom,
+    launcherCommandAtom,
+    launcherFlagMenuAtom,
+    launcherTaskAtom,
+    launcherWorktreeAtom,
+} from "./launcherstore";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 
 export const LAUNCHER_LABEL = "text-[10px] font-semibold uppercase tracking-[0.1em] text-muted";
@@ -1491,11 +1569,14 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
     const remember = useAtomValue(naRememberFlagsAtom);
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
-    const [flagMenuOpen, setFlagMenuOpen] = useState(false);
-    const [branchListOpen, setBranchListOpen] = useState(false);
+    const flagMenuOpen = useAtomValue(launcherFlagMenuAtom);
+    const branchListOpen = useAtomValue(launcherBranchListAtom);
+    const setFlagMenuOpen = (open: boolean) => globalStore.set(launcherFlagMenuAtom, open);
+    const setBranchListOpen = (open: boolean) => globalStore.set(launcherBranchListAtom, open);
+    // another runtime has other flags and maybe no worktree: start it with both popovers shut
     useEffect(() => {
-        setFlagMenuOpen(false);
-        setBranchListOpen(false);
+        globalStore.set(launcherFlagMenuAtom, false);
+        globalStore.set(launcherBranchListAtom, false);
     }, [runtime]);
     const startup = commands[runtime] ?? runtimeStartupCommand(runtime);
     const setStartup = (value: string) =>
@@ -1509,12 +1590,6 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
     // the field shows the project's checked-out branch until one is typed or picked
     const effectiveBranch = branchPick ?? currentBranch;
     const branchNames = branches.map((b) => b.name);
-    const escapeCloses = (isOpen: boolean, close: () => void) => (e: KeyboardEvent) => {
-        if (e.key === "Escape" && isOpen) {
-            e.stopPropagation();
-            close();
-        }
-    };
     return (
         <>
             {runtimeShowsTask(runtime) ? (
@@ -1534,7 +1609,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                     />
                 </div>
             ) : null}
-            <div className="flex flex-col gap-2" onKeyDown={escapeCloses(flagMenuOpen, () => setFlagMenuOpen(false))}>
+            <div className="flex flex-col gap-2">
                 <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
                     Command
                 </label>
@@ -1570,7 +1645,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                         <button
                             type="button"
                             aria-expanded={flagMenuOpen}
-                            onClick={() => setFlagMenuOpen((v) => !v)}
+                            onClick={() => setFlagMenuOpen(!flagMenuOpen)}
                             className={cn(
                                 "flex cursor-pointer items-center gap-[5px] rounded-[6px] px-2 py-1 text-[11.5px] font-semibold",
                                 flagMenuOpen
@@ -1637,10 +1712,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                 <span className="text-[11.5px] text-muted">A plain shell in the project folder. No agent, no task.</span>
             ) : null}
             {runtimeSupportsWorktree(runtime) ? (
-                <div
-                    className="flex flex-col gap-[7px]"
-                    onKeyDown={escapeCloses(branchListOpen, () => setBranchListOpen(false))}
-                >
+                <div className="flex flex-col gap-[7px]">
                     <div className="flex min-h-[34px] items-center gap-3">
                         <button
                             type="button"
@@ -1682,7 +1754,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                                         <button
                                             type="button"
                                             aria-label="Show branches"
-                                            onClick={() => setBranchListOpen((v) => !v)}
+                                            onClick={() => setBranchListOpen(!branchListOpen)}
                                             className="cursor-pointer px-[10px] py-[7px] text-muted hover:text-primary"
                                         >
                                             <ChevronDown size={12} />
@@ -1743,9 +1815,14 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
 
 - [ ] **Step 6: The run details**
 
+In `frontend/app/view/agents/runlauncher.tsx`, export `pickTone` and `START_LABEL` (add `export` to each; nothing else
+changes): the dialog's Start from buttons are the Brief launcher's, "A goal" / "A plan file" in `pickTone` (spec
+"Details, per pick").
+
 Create `frontend/app/view/agents/launcherrunfields.tsx`. `PlanTable`, `PlanPane`, `MODEL_TONE`, `PLAN_GRID` and the
 `RoutePicker` props are moved from `newruncontrol.tsx` unchanged, except that the plan input loses `autoFocus` (focus
-opens on the Start column) and the table holds its own scroll (`max-h-[240px]`):
+opens on the Start column) and the table holds its own scroll (`max-h-[240px]`). `CapacityWarn` sits on the line
+under the Start from / Workers at once row with its reason beside it, as the spec and the Orchestrate board place it:
 
 ```tsx
 // Copyright 2026, Command Line Inc.
@@ -1791,15 +1868,14 @@ import {
     stepParallelism,
     workerRouteAtom,
 } from "./runconfigstore";
-import { usePlanPreview, WorkerStepper } from "./runlauncher";
-import { extraWorkers, overCapacity } from "./workercapacity";
+import { pickTone, START_LABEL, usePlanPreview, WorkerStepper } from "./runlauncher";
+import { capacityWarnTitle, extraWorkers, overCapacity } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
 // RoutePicker caps its trigger for the inline rows it usually sits in; a Models column gives it the column
 const FULL_WIDTH_PICKER =
     "min-w-0 [&>div]:w-full [&>div>button]:w-full [&>div>button]:max-w-none [&>div>button]:justify-between";
 const PLAN_GRID = "grid grid-cols-[40px_minmax(0,1fr)_44px_96px_112px] gap-x-2.5 px-3";
-const START_LABEL: Record<StartFrom, string> = { goal: "Goal", plan: "Plan file" };
 const MODEL_TONE: Record<PlanModelTone, string> = {
     "plan-live": "text-accent-soft",
     "plan-ignored": "text-ink-faint line-through",
@@ -1809,13 +1885,10 @@ const MODEL_TONE: Record<PlanModelTone, string> = {
 const FIELD =
     "block w-full resize-none rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700";
 
+// the Brief launcher's own Start from buttons, side by side on the Workers row
 function StartToggle({ start }: { start: StartFrom }) {
     return (
-        <div
-            role="group"
-            aria-label="Start from"
-            className="flex flex-none gap-0.5 rounded-[8px] border border-border bg-surface p-0.5"
-        >
+        <div role="group" aria-label="Start from" className="flex flex-none gap-1.5">
             {START_OPTIONS.map((option) => (
                 <button
                     key={option}
@@ -1823,8 +1896,8 @@ function StartToggle({ start }: { start: StartFrom }) {
                     aria-pressed={start === option}
                     onClick={() => setStart(option)}
                     className={cn(
-                        "cursor-pointer rounded-[6px] px-3 py-1 text-[11.5px] font-semibold",
-                        start === option ? "bg-accentbg text-accent-soft" : "text-ink-mid hover:text-secondary"
+                        "cursor-pointer rounded-[7px] border px-3 py-[5px] text-[11.5px] font-semibold",
+                        pickTone(start === option)
                     )}
                 >
                     {START_LABEL[option]}
@@ -1993,7 +2066,7 @@ interface RunFieldsProps {
     projectPath: string;
     goalRef: RefObject<HTMLTextAreaElement>;
     planRef: RefObject<HTMLInputElement>;
-    // a Quick run's low-RAM line; an orchestrator warns on its stepper instead
+    // a Quick run's low-RAM line; an orchestrator warns on the line under its stepper instead
     ramWarning: string | null;
 }
 
@@ -2009,6 +2082,7 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
     const cap = useWorkerCapacity();
     const extra = extraWorkers(parallelism);
     const orchestrator = shape === "orchestrator";
+    const over = overCapacity(cap, extra);
     // a plan start is named by its plan, so it has no goal field
     const planStart = orchestrator && start === "plan";
     return (
@@ -2020,9 +2094,15 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
                     <div className="flex-1" />
                     <span className="text-[12px] text-ink-mid">Workers at once</span>
                     <div className="flex items-center gap-1.5">
-                        <WorkerStepper value={parallelism} onStep={stepParallelism} warn={overCapacity(cap, extra)} />
-                        <CapacityWarn cap={cap} extra={extra} />
+                        <WorkerStepper value={parallelism} onStep={stepParallelism} warn={over} />
                     </div>
+                </div>
+            ) : null}
+            {orchestrator && cap != null && over ? (
+                // the line under the stepper (spec, Orchestrate board): the mark with its reason spelled out
+                <div className="-mt-1.5 flex items-center justify-end gap-1.5 text-[11.5px] text-warning">
+                    <CapacityWarn cap={cap} extra={extra} />
+                    <span>{capacityWarnTitle(cap)}</span>
                 </div>
             ) : null}
             {planStart ? (
@@ -2062,7 +2142,7 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
             )}
             <RunModels orchestrator={orchestrator} />
             {orchestrator && prototype !== "" ? (
-                <div className="flex items-center gap-1.5">
+                <div data-launcher-prototype className="flex items-center gap-1.5">
                     <span title={prototype} className="min-w-0 truncate text-[11px] text-muted">
                         Prototype · {prototype}
                     </span>
@@ -2111,7 +2191,7 @@ import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { resolveChannelTarget, type RunConfig } from "@/app/view/jarvis/newrun";
+import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { homeFromInfo, projectWhere } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
@@ -2125,6 +2205,7 @@ import { harnessPreferenceAtom, harnessesAtom, resolveDefaultRuntime } from "./h
 import {
     composeStartupCommand,
     deriveBranch,
+    RUNTIME_FLAGS,
     runtimeShowsTask,
     runtimeStartupCommand,
     runtimeSupportsWorktree,
@@ -2143,6 +2224,7 @@ import {
     startRows,
     stepIndex,
     type FocusZone,
+    type LauncherKind,
     type StartRow,
     type StartRowId,
 } from "./launcher";
@@ -2157,16 +2239,20 @@ import {
     endLauncherDraft,
     endLauncherLaunch,
     launcherBranchAtom,
+    launcherBranchListAtom,
     launcherBusyAtom,
     launcherCommandAtom,
+    launcherFlagMenuAtom,
     launcherGoalAtom,
     launcherKindAtom,
+    launcherPrefillAtom,
     launcherProjectAtom,
     launcherPrototypeAtom,
     launcherRestoredAtom,
     launcherRuntimeAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
+    openLauncher,
     pickLauncherProject,
 } from "./launcherstore";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
@@ -2280,6 +2366,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const naFlags = useAtomValue(naFlagsAtom);
     const restored = useAtomValue(launcherRestoredAtom);
     const busy = useAtomValue(launcherBusyAtom);
+    const prefill = useAtomValue(launcherPrefillAtom);
+    const flagMenuOpen = useAtomValue(launcherFlagMenuAtom);
+    const branchListOpen = useAtomValue(launcherBranchListAtom);
     const shape = useAtomValue(runShapeAtom);
     const start = useAtomValue(startAtom);
     const planPath = useAtomValue(planPathAtom);
@@ -2344,6 +2433,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             : null
         : newAgentRamWarning(cap, runtime);
     const primaryDisabled = project == null || blocker != null || busy;
+    // what an Escape closes first: a popover only while it is drawn (a branch list with no branches draws nothing)
+    const flagMenuShown = !isRun && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
+    const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
 
     // the first open picks the agent row from the harness preference; later opens keep the last pick
     useEffect(() => {
@@ -2392,11 +2484,21 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     }, [open]);
 
+    // a prefill can also arrive while the dialog is already open, so it is a dependency too
     useEffect(() => {
-        if (open) {
+        if (open && prefill != null) {
             applyLauncherPrefill(rows.map((r) => r.name));
         }
-    }, [open, rows]);
+    }, [open, rows, prefill]);
+
+    // DEV-only seam for the launcher CDP scenario: a canvas's Build this… prefill (the Prototype chip) comes only from
+    // an agent's design canvas, which a scenario cannot stand up. A production build drops the branch.
+    useEffect(() => {
+        if (import.meta.env.DEV) {
+            const w = window as unknown as { __openLauncher?: (door: LauncherKind, prefill?: NewRunPrefill) => void };
+            w.__openLauncher = (door, p) => openLauncher(model, door, p);
+        }
+    }, [model]);
 
     useEffect(() => {
         if (!open || !isRun) {
@@ -2567,34 +2669,42 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (root == null || !root.contains(e.target as Node)) {
             return;
         }
+        const mod = e.metaKey || e.ctrlKey || e.altKey;
+        // Tab walks the dialog's stops and wraps, as the DAG modal's trap does; focus never leaves the dialog
+        if (e.key === "Tab" && !mod) {
+            e.preventDefault();
+            const stops = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE));
+            focusTrapTarget(stops, document.activeElement, e.shiftKey)?.focus();
+            return;
+        }
         const action = launcherKey(
-            { zone: zoneOf(e.target), startCount: startList.length, projectCount: visible.length, filter },
-            { key: e.key, shift: e.shiftKey, mod: e.metaKey || e.ctrlKey || e.altKey }
+            {
+                zone: zoneOf(e.target),
+                startCount: startList.length,
+                projectCount: visible.length,
+                filter,
+                flagMenuOpen: flagMenuShown,
+                branchListOpen: branchListShown,
+            },
+            { key: e.key, shift: e.shiftKey, mod }
         );
         if (action.kind === "none") {
             return;
         }
         e.preventDefault();
         switch (action.kind) {
-            case "tab": {
-                const stops = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE));
-                focusTrapTarget(stops, document.activeElement, action.reverse)?.focus();
-                return;
-            }
             case "pick-start":
                 pickRow(startList[action.index]);
-                return;
-            case "move-start":
-                pickRow(
-                    startList[
-                        stepIndex(startList.length, startList.findIndex((r) => r.id === selectedRow), action.delta)
-                    ]
-                );
                 return;
             case "pick-project":
                 pickProject(visible[action.index].name);
                 return;
-            case "move-project": {
+            case "move": {
+                if (action.column === "start") {
+                    const at = startList.findIndex((r) => r.id === selectedRow);
+                    pickRow(startList[stepIndex(startList.length, at, action.delta)]);
+                    return;
+                }
                 const next = stepIndex(
                     visible.length,
                     visible.findIndex((p) => p.name === project?.name),
@@ -2608,13 +2718,24 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             case "filter":
                 applyFilter(action.next);
                 return;
-            case "clear-filter":
-                // the filter takes this Escape; ModalShell's would close the dialog
-                e.stopPropagation();
-                applyFilter("");
-                return;
             case "launch":
                 launch();
+                return;
+            case "dismiss-inner":
+                // the inner thing takes this Escape; ModalShell's would close the dialog
+                e.stopPropagation();
+                if (action.what === "flags") {
+                    globalStore.set(launcherFlagMenuAtom, false);
+                } else if (action.what === "branches") {
+                    globalStore.set(launcherBranchListAtom, false);
+                } else {
+                    applyFilter("");
+                }
+                return;
+            case "close":
+                // the dialog's own close; ModalShell's listener would only do it again
+                e.stopPropagation();
+                close();
                 return;
         }
     };
@@ -2751,7 +2872,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             ) : null}
                             {candidates.length === 0 ? (
                                 <div className="flex flex-col items-start gap-2.5 px-2 py-1">
-                                    <span className="text-[12.5px] leading-normal text-ink-mid">
+                                    <span data-launcher-empty className="text-[12.5px] leading-normal text-ink-mid">
                                         No projects yet. Agents and runs start in a project folder.
                                     </span>
                                     <button
@@ -2792,7 +2913,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         );
                                     })}
                                     {visible.length === 0 ? (
-                                        <span className="px-2 py-1.5 text-[12px] text-muted">
+                                        <span data-launcher-nomatch className="px-2 py-1.5 text-[12px] text-muted">
                                             No project matches “{filter}”. Esc clears the filter.
                                         </span>
                                     ) : null}
@@ -2819,12 +2940,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     </div>
                     <div className="flex shrink-0 items-center gap-3 border-t border-border px-[18px] py-[13px]">
                         {error != null ? (
-                            <span data-launcher-footer title={error} className="min-w-0 flex-1 truncate text-[12px] text-error">
+                            <span
+                                data-launcher-footer="error"
+                                title={error}
+                                className="min-w-0 flex-1 truncate text-[12px] text-error"
+                            >
                                 {error}
                             </span>
                         ) : (
                             <span
-                                data-launcher-footer
+                                data-launcher-footer="line"
                                 title={projectPath || undefined}
                                 className={cn(
                                     "min-w-0 flex-1 truncate text-[12px]",
@@ -2985,7 +3110,7 @@ Orchestrate open the New dialog on that run row with it filled in".
   the goal, then **Start run** (`⌘⏎`)."
 - Flow 2's control table: **Project** reads "Where the lead works and where lanes merge. Tab to the column and type to
   filter, or press its number."; **Shape → Orchestrator** becomes **Start → Orchestrate** ("A lead plus the engine.");
-  **Start from → A goal** becomes **Start from → Goal**; **Parallelism** becomes **Workers at once**.
+  **Start from → A goal** stays as it is (the dialog keeps those words); **Parallelism** becomes **Workers at once**.
 - "When a width you pick on + Run" → "When a width you pick in New run".
 - "The New run window lists the parsed plan's tasks" → "The New dialog lists the parsed plan's tasks".
 
@@ -3000,7 +3125,7 @@ Orchestrate open the New dialog on that run row with it filled in".
 ```bash
 npx vitest run frontend/app/view/agents frontend/app/modals frontend/app/store/keybindings frontend/app/view/jarvis
 NODE_OPTIONS=--max-old-space-size=4096 task check:ts
-npx eslint frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcheragentfields.tsx frontend/app/view/agents/launcherrunfields.tsx frontend/app/view/agents/workercapacity.ts frontend/app/modals/modalfocus.ts frontend/app/modals/modalshell.tsx frontend/app/view/agents/agents.tsx frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/bindings.ts frontend/app/cockpit/app-bar.tsx frontend/app/cockpit/command-palette.tsx frontend/app/cockpit/actions/project.ts frontend/app/cockpit/cockpit-actions.ts frontend/app/cockpit/cockpit-root.tsx frontend/app/view/agents/canvaspane.tsx frontend/app/view/agents/agentheader.tsx frontend/app/view/agents/agentlaunchhero.tsx frontend/app/view/agents/filessurface.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/view/agents/conversationhistory.tsx frontend/app/view/jarvis/projectpicker.ts frontend/app/view/jarvis/newrun.ts
+npx eslint frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcheragentfields.tsx frontend/app/view/agents/launcherrunfields.tsx frontend/app/view/agents/runlauncher.tsx frontend/app/view/agents/workercapacity.ts frontend/app/modals/modalfocus.ts frontend/app/modals/modalshell.tsx frontend/app/view/agents/agents.tsx frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/bindings.ts frontend/app/cockpit/app-bar.tsx frontend/app/cockpit/command-palette.tsx frontend/app/cockpit/actions/project.ts frontend/app/cockpit/cockpit-actions.ts frontend/app/cockpit/cockpit-root.tsx frontend/app/view/agents/canvaspane.tsx frontend/app/view/agents/agentheader.tsx frontend/app/view/agents/agentlaunchhero.tsx frontend/app/view/agents/filessurface.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/view/agents/conversationhistory.tsx frontend/app/view/jarvis/projectpicker.ts frontend/app/view/jarvis/newrun.ts
 npx prettier --check frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcheragentfields.tsx frontend/app/view/agents/launcherrunfields.tsx frontend/app/modals/modalfocus.ts
 ```
 
@@ -3014,7 +3139,7 @@ Stage only this task's paths: the checkout may hold someone's unrelated work in 
 already staged by the `git rm` in Step 8.
 
 ```bash
-git add frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcheragentfields.tsx frontend/app/view/agents/launcherrunfields.tsx frontend/app/view/agents/workercapacity.ts frontend/app/view/agents/workercapacity.test.ts frontend/app/modals/modalfocus.ts frontend/app/modals/modalfocus.test.ts frontend/app/modals/modalshell.tsx frontend/app/view/agents/agents.tsx frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/dispatcher.test.ts frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/bindings.test.ts frontend/app/store/keybindings/store.test.ts frontend/app/cockpit/app-bar.tsx frontend/app/cockpit/command-palette.tsx frontend/app/cockpit/actions/project.ts frontend/app/cockpit/cockpit-actions.ts frontend/app/cockpit/cockpit-root.tsx frontend/app/view/agents/canvaspane.tsx frontend/app/view/agents/agentheader.tsx frontend/app/view/agents/agentlaunchhero.tsx frontend/app/view/agents/filessurface.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/view/agents/conversationhistory.tsx frontend/app/view/agents/naflagsstore.ts frontend/app/view/jarvis/projectpicker.ts frontend/app/view/jarvis/projectpicker.test.ts frontend/app/view/jarvis/newrun.ts frontend/app/view/jarvis/newrun.test.ts CHANGELOG.md docs/keyboard-shortcuts.md docs/orchestrator-guide.md docs/open-issues.md
+git add frontend/app/view/agents/launchermodal.tsx frontend/app/view/agents/launcheragentfields.tsx frontend/app/view/agents/launcherrunfields.tsx frontend/app/view/agents/runlauncher.tsx frontend/app/view/agents/workercapacity.ts frontend/app/view/agents/workercapacity.test.ts frontend/app/modals/modalfocus.ts frontend/app/modals/modalfocus.test.ts frontend/app/modals/modalshell.tsx frontend/app/view/agents/agents.tsx frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/dispatcher.test.ts frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/bindings.test.ts frontend/app/store/keybindings/store.test.ts frontend/app/cockpit/app-bar.tsx frontend/app/cockpit/command-palette.tsx frontend/app/cockpit/actions/project.ts frontend/app/cockpit/cockpit-actions.ts frontend/app/cockpit/cockpit-root.tsx frontend/app/view/agents/canvaspane.tsx frontend/app/view/agents/agentheader.tsx frontend/app/view/agents/agentlaunchhero.tsx frontend/app/view/agents/filessurface.tsx frontend/app/view/agents/cockpitsurface.tsx frontend/app/view/agents/conversationhistory.tsx frontend/app/view/agents/naflagsstore.ts frontend/app/view/jarvis/projectpicker.ts frontend/app/view/jarvis/projectpicker.test.ts frontend/app/view/jarvis/newrun.ts frontend/app/view/jarvis/newrun.test.ts CHANGELOG.md docs/keyboard-shortcuts.md docs/orchestrator-guide.md docs/open-issues.md
 git commit -m "feat(launcher): one New dialog for agents and runs — number keys, Tab between columns, outside click keeps the draft"
 ```
 
@@ -3024,13 +3149,15 @@ git commit -m "feat(launcher): one New dialog for agents and runs — number key
 **Depends on:** Task 4
 **Files:** `scripts/cdp/scenarios.mjs`
 
-Add the `launcher` scenario (one step per mockup board, plus the keyboard and draft behaviour), and move
-`new-run-window`, `capacity-warn` and `palette-goal` onto the new dialog's hooks. CDP needs WebView2, so on a Mac this
+Add the `launcher` scenario (one step per mockup board, plus the keys, the no-match filter, the launch-error line, the
+Prototype chip, and the draft kept through Esc, the backdrop and Cancel) and the `launcher-empty` scenario (no project
+registered), move `new-run-window`, `capacity-warn` and `palette-goal` onto the new dialog's hooks, and have
+`capacity-warn` show the dialog's RAM line and the line under its Workers stepper. CDP needs WebView2, so on a Mac this
 task is written and syntax-checked, and the Final runs it on Windows.
 
 **Interfaces:**
-- Consumes: the DOM hooks Task 4 produces (listed in its Interfaces).
-- Produces: the scenario named `launcher` in `SCENARIOS`.
+- Consumes: the DOM hooks Task 4 produces (listed in its Interfaces), including the DEV-only `window.__openLauncher`.
+- Produces: the scenarios named `launcher` and `launcher-empty` in `SCENARIOS`, `launcher-empty` listed before `newRunWindow`.
 
 - [ ] **Step 1: Point the shared constants at the launcher**
 
@@ -3044,13 +3171,13 @@ const NEW_RUN = `document.querySelector('[data-launcher]')`;
 
 Keep `NEW_RUN_WORKERS`, `NEW_RUN_PROJECT`, `RECENT_PROJECTS_KEY`, `NEW_RUN_PLAN` and `pickWorkers` as they are.
 
-- [ ] **Step 2: The launcher's helpers and scenario**
+- [ ] **Step 2: The launcher's helpers, the launcher scenario and launcher-empty**
 
 Insert right after the `newRunWindow` object:
 
 ```js
 // --- launcher: the one New dialog for agents and runs (docs/superpowers/specs/2026-10-08-new-launcher-design.md).
-// One step per board of the design canvas, plus the keys and the kept draft.
+// One step per board of the design canvas, plus the keys, the error line, the Prototype chip and the kept draft.
 const LAUNCHER = NEW_RUN;
 const LAUNCHER_PROJECT = "verify-launcher";
 const LAUNCHER_PROJECT_B = "verify-launcher-b";
@@ -3075,6 +3202,7 @@ const launcherState = `(() => {
         goal: d.querySelector('textarea[aria-label="Goal"]')?.value ?? null,
         primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
         footer: flat(d.querySelector('[data-launcher-footer]')),
+        footerError: d.querySelector('[data-launcher-footer]')?.getAttribute('data-launcher-footer') === 'error',
     };
 })()`;
 
@@ -3215,7 +3343,7 @@ const launcherScenario = {
         );
 
         await h.ev(
-            `[...(${LAUNCHER}?.querySelectorAll('[role="group"][aria-label="Start from"] button') ?? [])].find((b) => b.textContent.trim() === 'Plan file')?.click()`
+            `[...(${LAUNCHER}?.querySelectorAll('[role="group"][aria-label="Start from"] button') ?? [])].find((b) => b.textContent.trim() === 'A plan file')?.click()`
         );
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-jarvis-plan-path]')`, 3000);
         await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('[data-jarvis-plan-path]')`, MODELS_PLAN));
@@ -3243,10 +3371,22 @@ const launcherScenario = {
             JSON.stringify(s)
         );
 
+        for (const ch of "zz") await launcherPress(h, ch);
+        s = await state();
+        const noMatch = await h.ev(
+            `(${LAUNCHER}?.querySelector('[data-launcher-nomatch]')?.textContent ?? '').replace(/\\s+/g, ' ').trim()`
+        );
+        await h.shot("cdp-shots/launcher-7-nomatch.png");
+        rec(
+            "9. a filter nothing matches lists no project and says Esc clears it",
+            s.projects.length === 0 && noMatch === "No project matches “r-bzz”. Esc clears the filter.",
+            JSON.stringify({ noMatch, ...s })
+        );
+
         await launcherPress(h, "Escape");
         s = await state();
         rec(
-            "9. Escape clears the filter and leaves the dialog open on the project it picked",
+            "10. Escape clears the filter and leaves the dialog open on the project it picked",
             s != null && s.filter === null && s.project === LAUNCHER_PROJECT_B,
             JSON.stringify(s)
         );
@@ -3264,24 +3404,55 @@ const launcherScenario = {
         await polishNap(400);
         s = await state();
         const worktree = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked')`);
-        await h.shot("cdp-shots/launcher-7-agent-options.png");
+        await h.shot("cdp-shots/launcher-8-agent-options.png");
         rec(
-            "10. on an agent row, Tab, Tab lands in Task; a task, the worktree switch and the flag menu all take",
+            "11. on an agent row, Tab, Tab lands in Task; a task, the worktree switch and the flag menu all take",
             tabbedTo === "launcher-task" && s.task === "verify launcher: kept draft" && worktree === "true",
             JSON.stringify({ tabbedTo, worktree, hasFlags, ...s })
         );
 
+        // focus is still in the Task box: a click opened the menu, and a scripted click moves no focus
         if (hasFlags) {
             await launcherPress(h, "Escape");
             const menu = await h.ev(
-                `({ open: !!${LAUNCHER}, expanded: ${LAUNCHER}?.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded') })`
+                `({ open: !!${LAUNCHER}, expanded: ${LAUNCHER}?.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded'), focus: document.activeElement?.id || null })`
             );
             rec(
-                "11. Escape with the flag menu open closes the menu, not the dialog",
+                "12. Escape in the Task box with the flag menu open closes the menu, not the dialog",
                 menu.open && menu.expanded === "false",
                 JSON.stringify(menu)
             );
         }
+
+        // a worktree with no branch is refused before anything starts, so the error line shows without a launch
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('input[aria-label="Branch"]')`, ""));
+        await polishNap(200);
+        await h.ev(
+            `[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => /^Launch agent/.test(b.textContent.trim()))?.click()`
+        );
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-9-error.png");
+        rec(
+            "13. Launch agent with the worktree on and no branch puts the error in the footer and starts nothing",
+            s != null && s.footerError && s.footer === "Enter a branch name or turn off the worktree option.",
+            JSON.stringify(s)
+        );
+
+        await launcherPress(h, "Escape");
+        const escClosed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec("14. Escape with nothing open inside closes the dialog", escClosed, `closed=${escClosed}`);
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        s = await state();
+        await h.shot("cdp-shots/launcher-10-restored.png");
+        rec(
+            "15. reopened, it says draft restored and the task is still there",
+            s != null && s.restored && s.task === "verify launcher: kept draft",
+            JSON.stringify(s)
+        );
 
         await h.ev(`(() => {
             const backdrop = ${LAUNCHER}?.closest('[role="dialog"]')?.parentElement;
@@ -3289,29 +3460,45 @@ const launcherScenario = {
             return !!backdrop;
         })()`);
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
-        rec("12. a mousedown outside the dialog closes it", closed, `closed=${closed}`);
+        rec("16. a mousedown outside the dialog closes it", closed, `closed=${closed}`);
 
+        // the Prototype chip rides a canvas's Build this… prefill, which only an agent's design canvas sends; the
+        // dialog's DEV seam sends the same prefill
+        const prototype = join(ctx.dirs[0], "Main.dc.html");
+        const seam = await polishWaitFor(h, `typeof window.__openLauncher === 'function'`, 3000);
+        await h.ev(
+            `window.__openLauncher?.('run', ${JSON.stringify({ projectName: LAUNCHER_PROJECT, goal: "verify launcher: build the canvas", shape: "orchestrator", prototype })})`
+        );
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-prototype]')`, 5000);
+        await polishNap(300);
+        s = await state();
+        const chip = await h.ev(`(${LAUNCHER}?.querySelector('[data-launcher-prototype]')?.textContent ?? '').trim()`);
+        await h.shot("cdp-shots/launcher-11-prototype.png");
+        rec(
+            "17. a canvas's Build this… prefill opens on Orchestrate in its project, with its goal and the Prototype chip",
+            seam &&
+                s?.start === "orchestrator" &&
+                s.project === LAUNCHER_PROJECT &&
+                s.goal === "verify launcher: build the canvas" &&
+                chip.startsWith("Prototype · ") &&
+                chip.includes(prototype),
+            JSON.stringify({ seam, chip, ...s })
+        );
+
+        await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
+        const cancelled = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec("18. Cancel closes the dialog", cancelled, `closed=${cancelled}`);
+
+        // the task kept since step 11 still shows the note; Clear takes it away
         await h.ev(OPEN_NEW_AGENT);
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
-        s = await state();
-        await h.shot("cdp-shots/launcher-8-restored.png");
-        rec(
-            "13. reopened, it says draft restored and the task is still there",
-            s != null && s.restored && s.task === "verify launcher: kept draft",
-            JSON.stringify(s)
-        );
-
         await h.ev(
             `[...(${LAUNCHER}?.querySelectorAll('[data-launcher-restored] button') ?? [])].find((b) => b.textContent.trim() === 'Clear')?.click()`
         );
         await polishNap(250);
         s = await state();
-        rec("14. Clear empties the task and drops the note", s != null && !s.restored && s.task === "", JSON.stringify(s));
-
-        await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
-        const cancelled = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
-        rec("15. Cancel closes the dialog", cancelled, `closed=${cancelled}`);
+        rec("19. Clear empties the kept task and drops the note", s != null && !s.restored && s.task === "", JSON.stringify(s));
         return steps;
     },
     async teardown(h, ctx) {
@@ -3336,6 +3523,15 @@ const launcherScenario = {
         for (const name of ctx.projects ?? []) {
             await step(`delete ${name}`, () => h.rpc("deleteproject", { name }));
         }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
         // the dialog's draft lives in memory; a reload hands the next scenario a fresh one
         await step("reload", async () => {
             await h.ev("location.reload()");
@@ -3346,9 +3542,77 @@ const launcherScenario = {
         }
     },
 };
+
+// --- launcher-empty: the New dialog with no registered project (spec "Project column": No projects yet, and Register
+// a project, which opens New project). It needs an empty registry, which the Final's fresh store has; on a dev app
+// with projects, step 0 says so rather than delete them. SCENARIOS lists it before every scenario that registers a
+// project, so the Final runs it first.
+const launcherEmpty = {
+    name: "launcher-empty",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            const projects = Object.keys((await h.rpc("getfullconfig", null))?.projects ?? {});
+            if (projects.length > 0) {
+                ctx.arrangeError = `needs a store with no registered project, as the Final's fresh one; this one has ${projects.length}`;
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. no project is registered", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.goto("cockpit");
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        const empty = await h.ev(`(() => {
+            const d = ${LAUNCHER};
+            if (!d) return null;
+            const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+            return {
+                note: flat(d.querySelector('[data-launcher-empty]')),
+                register: [...d.querySelectorAll('button')].some((b) => flat(b) === 'Register a project'),
+                rows: d.querySelectorAll('[data-project-row]').length,
+                footer: flat(d.querySelector('[data-launcher-footer]')),
+            };
+        })()`);
+        await h.shot("cdp-shots/launcher-empty-1.png");
+        rec(
+            "1. with no project registered the column says No projects yet, offers Register a project, and the footer asks for one",
+            empty != null &&
+                empty.note === "No projects yet. Agents and runs start in a project folder." &&
+                empty.register &&
+                empty.rows === 0 &&
+                empty.footer === "Pick a project",
+            JSON.stringify(empty)
+        );
+
+        await h.ev(
+            `[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Register a project')?.click()`
+        );
+        const swapped = await polishWaitFor(h, `!${LAUNCHER} && !!document.querySelector('[data-new-project-mode]')`, 3000);
+        await h.shot("cdp-shots/launcher-empty-2-register.png");
+        rec("2. Register a project closes the dialog and opens New project", swapped, `swapped=${swapped}`);
+        return steps;
+    },
+    async teardown(h) {
+        // closes New project, or the dialog if step 2 failed
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await polishNap(300);
+    },
+};
 ```
 
-Register it in `SCENARIOS` right after `newRunWindow,`: `launcherScenario,`.
+Register `launcherScenario` in `SCENARIOS` right after `newRunWindow,`, and `launcherEmpty` right before
+`newRunWindow,`, so the Final runs `launcher-empty` before any of its scenarios registers a project.
 
 - [ ] **Step 3: Move new-run-window onto the dialog**
 
@@ -3407,9 +3671,75 @@ hint).
 
 - [ ] **Step 4: capacity-warn and palette-goal**
 
+capacity-warn shows the New dialog's two RAM states: the Orchestrate board's line under the Workers stepper, and the
+QuickRun and Main boards' RAM line. Right after `pickOrchestrator`, add:
+
+```js
+// the New dialog's Workers stepper: the number before "+", and the CapacityWarn on the line under the row with its
+// reason spelled out
+const launcherWarnExpr = `(() => {
+    const plus = ${CAPACITY_PLUS(NEW_RUN)};
+    if (!plus) return null;
+    const num = plus.previousElementSibling;
+    const warn = ${NEW_RUN}?.querySelector('[data-capacity-warn]');
+    return {
+        value: num ? num.textContent.trim() : null,
+        amber: !!num && num.classList.contains("text-warning"),
+        warn: !!warn,
+        title: warn ? warn.title : null,
+        line: warn?.parentElement ? warn.parentElement.textContent.trim() : null,
+    };
+})()`;
+// the New dialog's low-RAM line for an agent row or a Quick run
+const ramWarnText = (root) =>
+    `(${root}?.querySelector('[data-ram-warn]')?.textContent ?? '').replace(/\\s+/g, ' ').trim() || null`;
+```
+
 `capacityWarn.assert`, step 2: replace `await h.ev(pickOrchestrator(NEW_RUN));` with
-``await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);``. Keep `pickOrchestrator` for
-the Brief sheet's launcher, which still has shape cards.
+``await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);`` and
+`newRun = await h.ev(stepperWarnExpr(CAPACITY_PLUS(NEW_RUN)));` with `newRun = await h.ev(launcherWarnExpr);`, and
+make its `rec`:
+
+```js
+        rec(
+            "2. New run's Workers at once warns: amber number, and ⚠ with its reason on the line under it",
+            stepperWarned(newRun) && newRun.line === CAPACITY_WARN_TITLE,
+            JSON.stringify(newRun)
+        );
+```
+
+Keep `pickOrchestrator` and `stepperWarnExpr` for the Brief sheet's launcher and Adjust, whose steppers keep the mark
+beside them. Between that `rec` and the `await h.ev(PEEKS_ESC)` after it, add:
+
+```js
+        // CAPACITY_FULL has room for no more worker, so a Quick run's one worker and one more agent both warn
+        let ram = null;
+        try {
+            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="quick"]')?.click()`);
+            await polishNap(300);
+            const quick = await h.ev(ramWarnText(NEW_RUN));
+            await h.shot("cdp-shots/capacity-warn-quick-ram.png");
+            const agentRow = await h.ev(
+                `[...(${NEW_RUN}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.getAttribute('data-start-row')).find((id) => !['terminal', 'quick', 'orchestrator'].includes(id)) ?? null`
+            );
+            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="${agentRow}"]')?.click()`);
+            await polishNap(300);
+            const agent = await h.ev(ramWarnText(NEW_RUN));
+            await h.shot("cdp-shots/capacity-warn-agent-ram.png");
+            ram = { quick, agentRow, agent };
+        } catch (e) {
+            ram = { error: String(e?.message ?? e) };
+        }
+        rec(
+            "3. the New dialog's RAM line warns for a Quick run's worker and for one more agent",
+            ram?.quick === "1 GB free of 8 GB. Another worker (~1.5 GB) may make the machine lag." &&
+                ram?.agent === "1 GB free of 8 GB. Another agent (~1.5 GB) may make the machine lag.",
+            JSON.stringify(ram)
+        );
+```
+
+Renumber the Brief launcher's step to "4. the Brief launcher's workers stepper warns" and Adjust's to "5. a live run's
+Adjust → Worker parallelism warns above its running tasks".
 
 `paletteGoal.assert`, step 4: in the `filled` evaluate, replace `project: ${flatText(NEW_RUN_FIELD)},` with
 ``project: ${NEW_RUN}?.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? '',``,
@@ -3426,4 +3756,5 @@ git commit -m "test(cdp): the launcher scenario, and New run, capacity and palet
 ```
 
 Expected: `node --check` prints nothing; the grep prints nothing. On Windows, `task verify:ui -- launcher new-run-window capacity-warn palette-goal`
-against the dev app passes every step; on a Mac, the Final reports unverified (exit 3).
+against the dev app passes every step, and `launcher-empty` passes on a store with no registered project (the Final's
+fresh one); on a Mac, the Final reports unverified (exit 3).
