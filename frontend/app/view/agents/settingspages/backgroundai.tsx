@@ -9,7 +9,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { harnessPickerItems } from "../harnesspicker";
 import { RoutePicker } from "../routepicker";
 import {
@@ -19,7 +19,54 @@ import {
     RADAR_AUDIT_RUNTIMES,
     radarAuditRoute,
 } from "../settingsmodel";
-import { CommitText, Note, SecretInput, SettingCard, SettingRow, writeConfig } from "../settingsui";
+import {
+    CardWarning,
+    ChoiceRow,
+    CommitText,
+    RowCtx,
+    SecretInput,
+    SettingCard,
+    SettingRow,
+    writeConfig,
+} from "../settingsui";
+
+type RuntimeStatus = "installed" | "not-installed" | "key-stored" | "key-missing";
+
+const STATUS_WORD: Record<RuntimeStatus, string> = {
+    installed: "installed",
+    "not-installed": "not installed",
+    "key-stored": "default · key stored",
+    "key-missing": "default · key missing",
+};
+
+const STATUS_TEXT: Record<RuntimeStatus, string> = {
+    installed: "text-success",
+    "not-installed": "text-muted",
+    "key-stored": "text-success",
+    "key-missing": "text-warning",
+};
+
+const STATUS_DOT: Record<RuntimeStatus, string> = {
+    installed: "bg-success",
+    "not-installed": "bg-ink-faint",
+    "key-stored": "bg-success",
+    "key-missing": "bg-warning",
+};
+
+// The runtime list is a pick-one list that sits straight in its card (each ChoiceRow draws its own divider),
+// so there is no title line to hang the row's hooks on. This wrapper carries data-setting-row and honors the
+// search; it lays out as nothing, so the choices stay the card's direct rows.
+function RuntimeChoices({ rowId, label, children }: { rowId: string; label: string; children: ReactNode }) {
+    const ctx = useContext(RowCtx);
+    if (ctx.visible != null && !ctx.visible.has(rowId)) {
+        return null;
+    }
+    return (
+        <div data-setting-row={rowId} role="radiogroup" aria-label={label} className="contents">
+            {children}
+        </div>
+    );
+}
 
 export function BackgroundAIPage() {
     const runtime = (useAtomValue(getSettingsKeyAtom("headless:runtime")) as string) ?? "";
@@ -36,7 +83,7 @@ export function BackgroundAIPage() {
                 const names = await RpcApi.GetSecretsNamesCommand(TabRpcClient);
                 setHasKey((names ?? []).includes(OPENROUTER_SECRET_NAME));
             } catch (_) {
-                // best-effort probe; the key warning below simply stays "missing" on failure
+                // best-effort probe; the key warning on the OpenRouter card simply stays "missing" on failure
             }
         });
         fireAndForget(async () => {
@@ -83,112 +130,84 @@ export function BackgroundAIPage() {
     const effectiveRuntime = isOpenRouter ? "openrouter" : runtime;
 
     const harnessRows = harnessPickerItems(harnesses, effectiveRuntime, "consult");
-    const options = [
+    const options: {
+        id: string;
+        label: string;
+        mono: string;
+        selectable: boolean;
+        notInstalled: boolean;
+        status: RuntimeStatus;
+    }[] = [
         {
             id: "openrouter",
             label: "OpenRouter",
             mono: "openrouter",
             selectable: true,
-            isDefault: true,
             notInstalled: false,
+            status: hasKey ? "key-stored" : "key-missing",
         },
-        ...harnessRows.map((h) => ({
-            id: h.runtime,
-            label: h.label,
-            mono: h.runtime,
-            selectable: h.selectable,
-            isDefault: false,
-            notInstalled: h.unavailableReason === "not-installed",
-        })),
+        ...harnessRows.map((h) => {
+            const notInstalled = h.unavailableReason === "not-installed";
+            return {
+                id: h.runtime,
+                label: h.label,
+                mono: h.runtime,
+                selectable: h.selectable,
+                notInstalled,
+                status: (notInstalled ? "not-installed" : "installed") as RuntimeStatus,
+            };
+        }),
     ];
 
     return (
         <>
-            <SettingCard id="runtime" label="Runtime">
-                {/* stacked: the runtime list carries an install/key status per option, which does not fit a
-                    right-hand control slot. */}
-                <SettingRow id="headless.runtime" stacked>
-                    <div role="radiogroup" aria-label="headless runtime" className="flex flex-col gap-1.5">
-                        {options.map((o) => {
-                            const on = o.id === effectiveRuntime;
-                            return (
-                                <button
-                                    key={o.id}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={on}
-                                    disabled={!o.selectable}
-                                    onClick={() => writeConfig({ "headless:runtime": o.id })}
-                                    className={cn(
-                                        "flex w-full cursor-pointer items-center gap-2.5 rounded-[11px] border p-[10px] text-left transition-colors",
-                                        on
-                                            ? "border-accent-700 bg-surface-hover"
-                                            : "border-border hover:border-edge-strong",
-                                        !o.selectable && "cursor-not-allowed opacity-55 hover:border-border"
-                                    )}
-                                >
-                                    <span
-                                        className={cn(
-                                            "flex h-4 w-4 flex-none items-center justify-center rounded-full border-2 transition-colors",
-                                            on ? "border-accent" : "border-edge-strong"
-                                        )}
-                                    >
-                                        {on ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
-                                    </span>
-                                    <span
-                                        className={cn(
-                                            "min-w-0 flex-1 truncate text-[13px] font-semibold",
-                                            on ? "text-primary" : "text-secondary"
-                                        )}
-                                    >
-                                        {o.label}
-                                    </span>
-                                    <span className="text-[10.5px] font-normal tracking-[0.02em] text-muted">
-                                        {o.mono}
-                                    </span>
-                                    <span
-                                        className={cn(
-                                            "flex flex-none items-center gap-1.5 text-[11px] font-semibold",
-                                            o.isDefault
-                                                ? hasKey
-                                                    ? "text-accent-soft"
-                                                    : "text-warning-soft"
-                                                : o.notInstalled
-                                                  ? "text-muted"
-                                                  : "text-success-soft"
-                                        )}
-                                    >
-                                        <span
-                                            className={cn(
-                                                "h-1.5 w-1.5 rounded-full",
-                                                o.isDefault
-                                                    ? hasKey
-                                                        ? "bg-accent"
-                                                        : "bg-warning"
-                                                    : o.notInstalled
-                                                      ? "bg-ink-faint"
-                                                      : "bg-success"
-                                            )}
-                                        />
-                                        {o.isDefault
-                                            ? hasKey
-                                                ? "default · key stored"
-                                                : "default · key missing"
-                                            : o.notInstalled
-                                              ? "not installed"
-                                              : "installed"}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </SettingRow>
+            <SettingCard id="runtime" label="Runtime" rowId="headless.runtime">
+                <RuntimeChoices rowId="headless.runtime" label="headless runtime">
+                    {options.map((o) => (
+                        <ChoiceRow
+                            key={o.id}
+                            data-runtime-choice={o.id}
+                            selected={o.id === effectiveRuntime}
+                            dim={o.notInstalled}
+                            disabled={!o.selectable}
+                            onPick={() => writeConfig({ "headless:runtime": o.id })}
+                        >
+                            <span className="min-w-0 truncate text-[13px] font-medium">{o.label}</span>
+                            <span className="flex-none font-mono text-[11px] text-ink-faint">{o.mono}</span>
+                            <span className="flex-1" />
+                            <span
+                                className={cn(
+                                    "flex flex-none items-center gap-1.5 text-[12px] font-medium",
+                                    STATUS_TEXT[o.status]
+                                )}
+                            >
+                                <span className={cn("h-1.5 w-1.5 flex-none rounded-full", STATUS_DOT[o.status])} />
+                                {STATUS_WORD[o.status]}
+                            </span>
+                        </ChoiceRow>
+                    ))}
+                </RuntimeChoices>
             </SettingCard>
-            <SettingCard id="openrouter" label="OpenRouter">
+            <SettingCard
+                id="openrouter"
+                label="OpenRouter"
+                header={
+                    isOpenRouter && !hasKey ? (
+                        <CardWarning>
+                            OpenRouter key not set — background AI features stay off until a key is stored.
+                        </CardWarning>
+                    ) : null
+                }
+                footer={
+                    error != null ? (
+                        <div className="border-t border-edge-mid px-4 py-2.5 text-[12px] leading-[1.5] text-error">
+                            {error}
+                        </div>
+                    ) : null
+                }
+            >
                 <SettingRow id="headless.apikey">
-                    <span className={cn("text-[12px] font-semibold", hasKey ? "text-success-soft" : "text-muted")}>
-                        {hasKey ? "A key is stored." : "No key stored."}
-                    </span>
+                    {hasKey ? <span className="text-[12px] font-semibold text-success">Key stored</span> : null}
                     <SecretInput
                         placeholder={hasKey ? "••••••••  (enter a new key to replace)" : "sk-or-…"}
                         onCommit={saveKey}
@@ -197,16 +216,14 @@ export function BackgroundAIPage() {
                         <button
                             type="button"
                             onClick={clearKey}
-                            className="flex-none cursor-pointer rounded-sm border border-edge-mid px-3 py-[5px] text-[12px] font-semibold text-secondary transition-colors hover:border-error/50 hover:text-error"
+                            className="h-7 flex-none cursor-pointer rounded-sm border border-edge-mid px-3 text-[12px] font-semibold text-secondary transition-colors hover:border-error/50 hover:text-error"
                         >
                             Clear
                         </button>
                     ) : null}
                 </SettingRow>
                 <SettingRow id="headless.cheap">
-                    {!isOpenRouter ? (
-                        <span className="text-[10.5px] tracking-[0.02em] text-muted">openrouter only</span>
-                    ) : null}
+                    {!isOpenRouter ? <span className="text-[11px] text-ink-faint">openrouter only</span> : null}
                     <CommitText
                         value={cheapModel}
                         placeholder="deepseek/deepseek-v4-flash"
@@ -221,6 +238,7 @@ export function BackgroundAIPage() {
                         value={radarAuditRoute(auditRuntime, auditModel)}
                         title="Radar audit route"
                         runtimes={RADAR_AUDIT_RUNTIMES}
+                        size="select"
                         onChange={(route) =>
                             route &&
                             writeConfig({
@@ -231,10 +249,6 @@ export function BackgroundAIPage() {
                     />
                 </SettingRow>
             </SettingCard>
-            {isOpenRouter && !hasKey ? (
-                <Note>OpenRouter key not set — background AI features stay off until a key is stored.</Note>
-            ) : null}
-            {error ? <Note tone="error">{error}</Note> : null}
         </>
     );
 }
