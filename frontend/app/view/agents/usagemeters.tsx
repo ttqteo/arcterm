@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The footer's plan-usage meters, beside the version: each provider's logo, then its 5-hour and weekly windows as two
-// small bars, each with a tick at how much of its window has passed and coloured by pace (paceLevel), and the 5-hour
-// window's countdown. Tokens and the weekly reset are on hover; the button opens the Consumers panel sorted by tokens
-// (consumerspanel.tsx).
+// small bars, each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
+// by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
+// the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
 
 import { Meter } from "@/app/element/meter";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Fragment, useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
+import { usageLevel } from "./agentsviewmodel";
 import {
     formatResetShort,
     meterTitle,
-    paceLevel,
     providerDot,
     usageBarVisible,
     windowElapsed,
@@ -119,7 +119,7 @@ function UsageMeters({
             className="flex h-[22px] shrink-0 cursor-pointer items-center gap-2 rounded px-1.5 hover:bg-surface-hover"
         >
             {items.map((m, i) => {
-                const lvl = paceLevel(m.pct, m.elapsed);
+                const lvl = usageLevel(m.pct);
                 return (
                     <Fragment key={m.key}>
                         {i > 0 ? <span className="h-3 w-px bg-edge-mid" /> : null}

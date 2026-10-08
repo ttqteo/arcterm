@@ -23,6 +23,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- A plan-usage bar's colour follows how much of it is used, amber past 60% and red past 85%, instead of how fast it
+  is going: a fast start no longer turns 27% red. The tick still shows how much of the window has passed.
 - An agent's row in the sidebar keeps its name alone on the first line: its canvas tag, state (asking, Low RAM,
   review), tokens and age moved to the second line beside its model, so a long name is no longer cut short. A run's
   worker rows do the same with their canvas tag and asking label. A lead's row is unchanged.
