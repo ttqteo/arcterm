@@ -47,8 +47,9 @@ General rules for every task:
 ### Task 1: Per-session Claude usage in `pkg/usagestats`
 
 **Depends on:** none
+**Files:** `pkg/usagestats/usagestats.go`, `pkg/usagestats/sessions.go`, `pkg/usagestats/sessions_test.go`, `pkg/usagestats/usagestats_test.go`
 
-**Files:**
+Files in detail:
 - Modify: `pkg/usagestats/usagestats.go` (`Record`, `extractClaude`, `readClaudeLines`, `parseFile`)
 - Create: `pkg/usagestats/sessions.go`
 - Create: `pkg/usagestats/sessions_test.go`
@@ -225,8 +226,8 @@ Implement:
 
 **Step 6: Run the tests to see them pass**
 
-Run: `go test ./pkg/usagestats`
-Expected: PASS (the whole package: the new fields must not change any bucket test).
+Run: `go test ./pkg/usagestats -run 'ScanSessionUsage|ReadClaudeLines|ScanRoots|Bucket|ExtractClaude|Dedupe'`
+Expected: PASS (the new fields must not change any bucket test; Verify runs the whole package at merge).
 
 **Step 7: Commit**
 
@@ -240,8 +241,9 @@ git commit -m "feat(usagestats): fold Claude usage per session with context, col
 ### Task 2: `pkg/usageinsights`: run the analysis and keep its result
 
 **Depends on:** none
+**Files:** `pkg/usageinsights/usageinsights.go`, `pkg/usageinsights/usageinsights_test.go`
 
-**Files:**
+Files in detail:
 - Create: `pkg/usageinsights/usageinsights.go`
 - Create: `pkg/usageinsights/usageinsights_test.go`
 
@@ -264,7 +266,7 @@ Swap the package var `run` in each test and restore it with `t.Cleanup`.
 
 **Step 2: Run them to see them fail**
 
-Run: `go test ./pkg/usageinsights`
+Run: `go test ./pkg/usageinsights -run 'Prompt|Analyze|Load'`
 Expected: FAIL (package does not exist yet).
 
 **Step 3: Implement**
@@ -336,7 +338,7 @@ use the literal `"sonnet"`.
 
 **Step 4: Run the tests to see them pass**
 
-Run: `go test ./pkg/usageinsights`
+Run: `go test ./pkg/usageinsights -run 'Prompt|Analyze|Load'`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -351,8 +353,9 @@ git commit -m "feat(usageinsights): run claude sonnet over a usage digest and ke
 ### Task 3: wshrpc commands and the `usage:insightslang` setting
 
 **Depends on:** Task 1, Task 2
+**Files:** `pkg/wshrpc/wshrpctypes_agents.go`, `pkg/wshrpc/wshserver/wshserver_agents.go`, `pkg/wconfig/settingsconfig.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`, `schema/settings.json`
 
-**Files:**
+Files in detail:
 - Modify: `pkg/wshrpc/wshrpctypes_agents.go` (interface + types)
 - Modify: `pkg/wshrpc/wshserver/wshserver_agents.go` (handlers)
 - Modify: `pkg/wconfig/settingsconfig.go` (setting)
@@ -443,9 +446,8 @@ In `settingsconfig.go`, near the `radar:` fields:
 **Step 4: Generate and check**
 
 Run: `task generate`
-Then: `go build ./cmd/... ./pkg/...` (compile only, no binaries written beyond the go cache) and
-`go test ./pkg/wshrpc/... ./pkg/wconfig/...`
-Expected: both succeed; `frontend/types/gotypes.d.ts` now declares `UsageSession`, `UsageSessionModel`,
+Then: `go build ./cmd/... ./pkg/...` (compile only; with several packages go build writes no binaries)
+Expected: it succeeds; `task generate` also rewrote `schema/settings.json` with `usage:insightslang`; `frontend/types/gotypes.d.ts` now declares `UsageSession`, `UsageSessionModel`,
 `UsageInsights`, and `RpcApi` has the three commands.
 
 **Step 5: Commit**
@@ -462,8 +464,9 @@ git commit -m "feat(wshrpc): session usage, analyze usage and saved insights com
 ### Task 4: Frontend pure models: session rows, the digest, the card state
 
 **Depends on:** Task 3
+**Files:** `frontend/app/view/agents/usagesessions.ts`, `frontend/app/view/agents/usagesessions.test.ts`, `frontend/app/view/agents/usagedigest.ts`, `frontend/app/view/agents/usagedigest.test.ts`, `frontend/app/view/agents/usageinsights.ts`, `frontend/app/view/agents/usageinsights.test.ts`
 
-**Files:**
+Files in detail:
 - Create: `frontend/app/view/agents/usagesessions.ts` + `usagesessions.test.ts`
 - Create: `frontend/app/view/agents/usagedigest.ts` + `usagedigest.test.ts`
 - Create: `frontend/app/view/agents/usageinsights.ts` + `usageinsights.test.ts`
@@ -592,8 +595,9 @@ git commit -m "feat(usage): pure models for per-session rows, the analysis diges
 ### Task 5: Provider tabs replace the rail; compact chart row
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/usagesurface.tsx`, `frontend/app/view/agents/dailychart.tsx`, `frontend/app/view/agents/usagerail.ts`, `frontend/app/view/agents/usagerail.test.ts`, `frontend/app/view/agents/usagestore.ts`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
 
-**Files:**
+Files in detail:
 - Modify: `frontend/app/view/agents/usagesurface.tsx`
 - Modify: `frontend/app/view/agents/dailychart.tsx`
 - Modify: `frontend/app/view/agents/usagerail.ts` + `usagerail.test.ts` (tab order, default tab)
@@ -659,9 +663,11 @@ In `docs/keyboard-shortcuts.md`, add the Usage tab keys.
 
 **Step 6: Check**
 
-Run: `task check:ts` (long timeout) and `npx vitest run frontend/app/view/agents/usagerail.test.ts frontend/app/store/keybindings`
-Expected: typecheck exit 0; tests PASS. Then in the dev app (`task dev` is already running if the person
-runs it; do not build), open Usage and compare with `Main.dc.html`.
+Run: `task check:ts` (long timeout) and `npx vitest run frontend/app/view/agents/usagerail.test.ts frontend/app/store/keybindings/dispatcher.test.ts frontend/app/store/keybindings/matcher.test.ts`
+Expected: typecheck exit 0; tests PASS.
+
+Acceptance: the provider tabs and the compact chart row are shown by the `usage-insights-main` step of
+the `usage-insights` scenario (Task 7) and by the `usage-charts` scenario, both run by Final.
 
 **Step 7: Commit**
 
@@ -675,8 +681,9 @@ git commit -m "feat(usage): provider tabs replace the harness rail; daily, split
 ### Task 6: Insights card and By session table on the Claude tab
 
 **Depends on:** Task 4, Task 5
+**Files:** `frontend/app/view/agents/usageinsightsstore.ts`, `frontend/app/view/agents/usageinsightscard.tsx`, `frontend/app/view/agents/usagesessiontable.tsx`, `frontend/app/view/agents/usagesurface.tsx`, `frontend/app/store/keybindings/bindings.ts`, `docs/keyboard-shortcuts.md`
 
-**Files:**
+Files in detail:
 - Create: `frontend/app/view/agents/usageinsightsstore.ts`
 - Create: `frontend/app/view/agents/usageinsightscard.tsx`
 - Create: `frontend/app/view/agents/usagesessiontable.tsx`
@@ -756,7 +763,11 @@ it: `liveTabId` → `openTarget(model, { kind: "agent", tabId })`; else `showSes
 **Step 6: Check**
 
 Run: `task check:ts` (long timeout) and the Task 4 vitest files.
-Expected: exit 0; PASS. In the dev app, seed the fixture by hand (`localStorage.setItem('wave:dev-usage-insights', …)`) and compare each state with the prototype.
+Expected: exit 0; PASS.
+
+Acceptance: each view and state is shown by a step of the `usage-insights` scenario (Task 7), run by
+Final: `usage-insights-main` (done, By session, `j`/`k`), `-running`, `-never`, `-stale`, `-error`,
+`-held`, `-empty`, `-show-all`.
 
 **Step 7: Commit**
 
@@ -770,8 +781,9 @@ git commit -m "feat(usage): Insights card with Analyze and a By session table on
 ### Task 7: CDP scenarios and changelog
 
 **Depends on:** Task 6
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
-**Files:**
+Files in detail:
 - Modify: `scripts/cdp/scenarios.mjs`
 - Modify: `CHANGELOG.md`
 
@@ -809,12 +821,11 @@ It reads `[data-usage-harness]` (now the tabs) and screenshots the layout. Updat
 assumed the rail (an aria attribute, the "All providers" row text, the rail's width), keeping what it
 checks about the charts and limits.
 
-**Step 3: Run the scenarios against the dev app**
+**Step 3: Check the scenario file**
 
-With the dev app running (`task dev`, started by the person; do not build), run:
-`task verify:ui -- usage-insights usage-charts`
-Expected: PASS for both; look at `cdp-shots/index.html` against the prototype boards. If the dev app is
-not running, say so in the commit message and leave the run to the Final stage.
+Run: `node --check scripts/cdp/scenarios.mjs`
+Expected: no output. The scenarios themselves run in Final (`final-verify.mjs usage-insights
+usage-charts`), which starts its own dev app.
 
 **Step 4: Changelog**
 
