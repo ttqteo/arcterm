@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { knownClaudeEmails, restartCandidates, rowQuota } from "./claudeaccount";
+import {
+    addAccountStep,
+    defaultAccountName,
+    knownClaudeEmails,
+    quotaLine,
+    restartCandidates,
+    rowQuota,
+} from "./claudeaccount";
 
 describe("restartCandidates", () => {
     it("lists resumable claude agents not on the new account; idle pre-checked, working and asking not", () => {
@@ -144,5 +151,61 @@ describe("knownClaudeEmails", () => {
 
     it("is empty when nothing is known", () => {
         expect(knownClaudeEmails({}, { loginEmail: "", accounts: [] })).toEqual([]);
+    });
+});
+
+describe("defaultAccountName", () => {
+    it("names Default by its /login email, else Claude login", () => {
+        expect(defaultAccountName("quang.tt@mozox.com")).toBe("quang.tt@mozox.com");
+        expect(defaultAccountName(undefined)).toBe("Claude login");
+        expect(defaultAccountName("  ")).toBe("Claude login");
+    });
+});
+
+describe("quotaLine", () => {
+    const now = 1_000_000;
+    it("reads 5h, week and age, and warns at 90% or more in either window", () => {
+        expect(quotaLine({ fivehourpct: 54, weekpct: 99, capturedAt: now - 60_000 }, now)).toEqual({
+            text: "5h 54% · week 99% · 1m ago",
+            warn: true,
+        });
+        expect(quotaLine({ fivehourpct: 36.4, weekpct: 58, capturedAt: now - 5_000 }, now)).toEqual({
+            text: "5h 36% · week 58% · <1m ago",
+            warn: false,
+        });
+    });
+    it("says Not used yet without a snapshot, and — for a missing window", () => {
+        expect(quotaLine(null, now)).toEqual({ text: "Not used yet", warn: false });
+        expect(quotaLine({ fivehourpct: undefined, weekpct: 91, capturedAt: now }, now).text).toBe(
+            "5h — · week 91% · <1m ago"
+        );
+    });
+});
+
+describe("addAccountStep", () => {
+    const acct = { id: "a1", label: "Account 2" } as ClaudeAccountData;
+    it("starts on sign-in, opens paste, and goes back", () => {
+        let s = addAccountStep(undefined, { type: "init" });
+        expect(s).toEqual({ kind: "signin" });
+        s = addAccountStep(s, { type: "paste" });
+        expect(s).toEqual({ kind: "paste", busy: false, error: null });
+        expect(addAccountStep(s, { type: "back" })).toEqual({ kind: "signin" });
+    });
+    it("keeps a refused token on the paste screen with its reason, and names an accepted one", () => {
+        let s = addAccountStep({ kind: "paste", busy: false, error: null }, { type: "saving" });
+        expect(s).toEqual({ kind: "paste", busy: true, error: null });
+        s = addAccountStep(s, { type: "refused", message: "token refused (401)" });
+        expect(s).toEqual({ kind: "paste", busy: false, error: "token refused (401)" });
+        expect(addAccountStep(s, { type: "added", account: acct })).toEqual({ kind: "name", account: acct });
+    });
+    it("goes from sign-in to name when the printed token is stored, or to error when storing fails", () => {
+        expect(addAccountStep({ kind: "signin" }, { type: "added", account: acct })).toEqual({
+            kind: "name",
+            account: acct,
+        });
+        expect(addAccountStep({ kind: "signin" }, { type: "failed", message: "boom" })).toEqual({
+            kind: "error",
+            message: "boom",
+        });
     });
 });

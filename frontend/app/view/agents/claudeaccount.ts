@@ -10,7 +10,7 @@
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { formatAgeShort, type AgentState, type AgentVM } from "./agentsviewmodel";
 import { resumeArgsForClaude, sessionIdFromTranscript } from "./launch";
 import {
     FIVE_HOUR_MS,
@@ -75,6 +75,64 @@ export function rowQuota(saved: Record<string, SavedSnapshot>, key: string, now:
         weekpct: windowFromSaved(s.weekpct, s.weekreset, s.capturedAt, WEEK_MS, now).pct,
         capturedAt: s.capturedAt,
     };
+}
+
+// The Default row's name: the /login account's email, else "Claude login".
+export function defaultAccountName(loginEmail: string | undefined): string {
+    const email = loginEmail?.trim();
+    return email ? email : "Claude login";
+}
+
+// A window at or past this is about to run out.
+export const QUOTA_WARN_PCT = 90;
+
+function pctText(pct: number | undefined): string {
+    return pct == null ? "—" : `${Math.round(pct)}%`;
+}
+
+// A row's quota line, and whether either window is at QUOTA_WARN_PCT or more.
+export function quotaLine(q: RowQuota | null, now: number): { text: string; warn: boolean } {
+    if (q == null) {
+        return { text: "Not used yet", warn: false };
+    }
+    return {
+        text: `5h ${pctText(q.fivehourpct)} · week ${pctText(q.weekpct)} · ${formatAgeShort(now - q.capturedAt)} ago`,
+        warn: (q.fivehourpct ?? 0) >= QUOTA_WARN_PCT || (q.weekpct ?? 0) >= QUOTA_WARN_PCT,
+    };
+}
+
+// The Add account dialog's steps: sign-in (the live `claude setup-token`), paste, then naming the account.
+export type AddStep =
+    | { kind: "signin" }
+    | { kind: "paste"; busy: boolean; error: string | null }
+    | { kind: "name"; account: ClaudeAccountData }
+    | { kind: "error"; message: string };
+
+export type AddAction =
+    | { type: "init" }
+    | { type: "paste" }
+    | { type: "back" }
+    | { type: "saving" }
+    | { type: "refused"; message: string }
+    | { type: "added"; account: ClaudeAccountData }
+    | { type: "failed"; message: string };
+
+export function addAccountStep(s: AddStep | undefined, a: AddAction): AddStep {
+    switch (a.type) {
+        case "init":
+        case "back":
+            return { kind: "signin" };
+        case "paste":
+            return { kind: "paste", busy: false, error: null };
+        case "saving":
+            return s?.kind === "paste" ? { ...s, busy: true, error: null } : (s ?? { kind: "signin" });
+        case "refused":
+            return { kind: "paste", busy: false, error: a.message };
+        case "added":
+            return { kind: "name", account: a.account };
+        case "failed":
+            return { kind: "error", message: a.message };
+    }
 }
 
 // The emails to offer when tying a token account to one: the /login account's, and every account whose
