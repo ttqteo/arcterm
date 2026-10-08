@@ -74,6 +74,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A part an agent only quotes as an example, in quotes or code (`kiểu "Phần 2/4"`), no longer shows on its row as
+  the part it stopped on, and no longer keeps a finished agent from offering **Close**.
 - Consumers opens right under (or over) the control you clicked, the usage meters or the free-RAM chip, instead of
   at the window's right edge.
 - An agent's terminal you had not opened for a while no longer comes back as garbled characters: showing it again

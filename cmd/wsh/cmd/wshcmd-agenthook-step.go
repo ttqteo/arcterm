@@ -21,14 +21,19 @@ var stepLineRe = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:\*\*|\(|\[)?\s*(\d
 // phần/part: "Step 1:" and "Bước 1:" open ordinary instruction lists
 var stepBareRe = regexp.MustCompile(`(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?\s*(?:phần|part)\s+(\d{1,2})\s*(?:\*\*|[:.\-–—)]|$)`)
 
+// what a message quotes rather than says: a code block, inline code, a "quoted" or “quoted” phrase. An example such as
+// (kiểu "Phần 2/4") must not read as the part the turn stops on
+var stepQuotedRe = regexp.MustCompile("(?s)```.*?```|`[^`\\n]*`|\"[^\"\\n]*\"|“[^”\\n]*”")
+
 const stepMax = 20
 
 // stepMarker returns the "n/m" step a message stops on, or "" when it names none. A line-opening count wins over
 // one inside a sentence, and the first of each wins, so a message that recaps an earlier part after its heading
 // still reads as the part its heading names. A zero-padded count is a date ("vòng 05/10"), never a step. With no
 // total anywhere, a part heading gives "n" alone, but only when it is the one part the message names: headings for
-// Phần 1, 2 and 3 are a whole document, not a stop on one of them.
+// Phần 1, 2 and 3 are a whole document, not a stop on one of them. What the message quotes is left out first.
 func stepMarker(text string) string {
+	text = stepQuotedRe.ReplaceAllString(text, " ")
 	for _, re := range []*regexp.Regexp{stepLineRe, stepKeywordRe} {
 		for _, m := range re.FindAllStringSubmatch(text, -1) {
 			if strings.HasPrefix(m[1], "0") || strings.HasPrefix(m[2], "0") {
