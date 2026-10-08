@@ -10,6 +10,7 @@
 
 import { formatBuildTime, versionInfoAtom } from "@/app/cockpit/versioninfo";
 import { MOTION } from "@/app/element/motiontokens";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { atoms, getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
@@ -20,13 +21,11 @@ import { DEFAULT_PET_OUTFIT, petOutfitChoice, type PetOutfitChoice } from "@/app
 import { petOutfitChoiceAtom } from "@/app/view/jarvis/petstore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
-import { Folder, Search } from "lucide-react";
+import { Ellipsis, Folder, Search } from "lucide-react";
 import { motion, MotionConfig, useReducedMotion } from "motion/react";
 import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
-import { formatAgeShort } from "./agentsviewmodel";
-import { restartCandidates, rowQuota } from "./claudeaccount";
-import { KnownEmailsDatalist } from "./claudeemails";
+import { defaultAccountName, knownClaudeEmails, quotaLine, restartCandidates, rowQuota } from "./claudeaccount";
 import {
     coerceFontSize,
     coerceScrollback,
@@ -1005,11 +1004,69 @@ const ClaudeSigninModal = lazy(() =>
     import("@/app/cockpit/claude-signin-modal").then((m) => ({ default: m.ClaudeSigninModal }))
 );
 
-// the emails the account rows and the paste form offer (KnownEmailsDatalist)
-const EMAIL_LIST_ID = "claude-known-emails";
-
-function quotaPct(pct: number | undefined): string {
-    return pct == null ? "—" : `${Math.round(pct)}%`;
+// A row's in-place field (rename, or the email to tie the account to): Enter commits, Esc cancels, and a blur
+// commits what was typed, or cancels when there is nothing new. Its clicks and keys never reach the row, so
+// they never select it.
+function RowInlineInput({
+    initial,
+    placeholder,
+    label,
+    attrs,
+    onCommit,
+    onCancel,
+}: {
+    initial: string;
+    placeholder: string;
+    label: string;
+    attrs: Record<string, string>;
+    onCommit: (v: string) => void;
+    onCancel: () => void;
+}) {
+    const ref = useRef<HTMLInputElement>(null);
+    const [draft, setDraft] = useState(initial);
+    const done = useRef(false);
+    useEffect(() => {
+        ref.current?.focus();
+        ref.current?.select();
+    }, []);
+    // the unmount that follows a finish can blur the field once more
+    const finish = (commit: boolean) => {
+        if (done.current) {
+            return;
+        }
+        done.current = true;
+        const next = draft.trim();
+        if (commit && next !== "" && next !== initial) {
+            onCommit(next);
+        } else {
+            onCancel();
+        }
+    };
+    return (
+        <input
+            ref={ref}
+            type="text"
+            {...attrs}
+            value={draft}
+            placeholder={placeholder}
+            aria-label={label}
+            spellCheck={false}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => finish(true)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    finish(true);
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    finish(false);
+                }
+            }}
+            className="w-[220px] max-w-full rounded border border-edge-mid bg-surface-raised px-2.5 py-[4px] text-[12px] font-normal text-primary outline-none focus:border-accent-700"
+        />
+    );
 }
 
 // The account list and the tokens live behind the claudeaccount RPCs, not in settings; only the active
@@ -1023,13 +1080,11 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     const identity = useAtomValue(claudeIdentityAtom);
     const [list, setList] = useState<CommandClaudeAccountListRtnData | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [pasteOpen, setPasteOpen] = useState(false);
-    const [pasteLabel, setPasteLabel] = useState("");
-    const [pasteEmail, setPasteEmail] = useState("");
-    const [pasteError, setPasteError] = useState<string | null>(null);
     const [signinOpen, setSigninOpen] = useState(false);
-    // bumped when a rename is cleared to nothing: remounting the field puts the stored label back
-    const [renameReset, setRenameReset] = useState(0);
+    // the account whose name is an input now, and the one whose "Other email…" input is open
+    const [renaming, setRenaming] = useState<string | null>(null);
+    const [emailing, setEmailing] = useState<string | null>(null);
+    const known = useMemo(() => knownClaudeEmails(saved, identity), [saved, identity]);
 
     const reload = () =>
         fireAndForget(async () => {
@@ -1084,7 +1139,7 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     const remove = (a: ClaudeAccountData) =>
         modalsModel.pushModal("ConfirmModal", {
             title: "Remove account",
-            message: `Xoá "${a.label}" khỏi máy này? Token của nó bị xoá theo.${a.id === active ? " Agent mới sẽ chạy trên Default (/login)." : ""}`,
+            message: `Remove "${a.label}" from this machine? Its token is deleted with it.${a.id === active ? " New agents will run on your /login account." : ""}`,
             confirmLabel: "Remove",
             destructive: true,
             onConfirm: () =>
@@ -1098,23 +1153,36 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                     reload();
                 }),
         });
-    // write-only: the token never comes back. A refused one stays in the field, with the reason under it.
-    const add = async (token: string): Promise<boolean> => {
-        setPasteError(null);
-        try {
-            await RpcApi.ClaudeAccountAddCommand(TabRpcClient, {
-                label: pasteLabel.trim(),
-                token,
-                email: pasteEmail.trim(),
-            });
-        } catch (e) {
-            setPasteError(errorText(e));
-            return false;
-        }
-        setPasteLabel("");
-        setPasteEmail("");
-        reload();
-        return true;
+    const showAccountMenu = (a: ClaudeAccountData, e: React.MouseEvent) => {
+        const current = (a.email ?? "").toLowerCase();
+        // an email typed under "Other email…" that arcterm has not seen still gets its check
+        const emails = current === "" || known.includes(current) ? known : [...known, current].sort();
+        const items: ContextMenuItem[] = [
+            { label: "Rename", click: () => setRenaming(a.id) },
+            {
+                label: "Same account as…",
+                type: "submenu",
+                submenu: [
+                    ...emails.map((email) => ({
+                        label: email,
+                        type: "checkbox" as const,
+                        checked: email.toLowerCase() === current,
+                        click: () => setEmail(a.id, email),
+                    })),
+                    ...(emails.length > 0 ? [{ type: "separator" as const }] : []),
+                    { label: "Other email…", click: () => setEmailing(a.id) },
+                    {
+                        label: "None",
+                        type: "checkbox" as const,
+                        checked: current === "",
+                        click: () => setEmail(a.id, ""),
+                    },
+                ],
+            },
+            { type: "separator" },
+            { label: "Remove", danger: true, click: () => remove(a) },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
     };
 
     const now = Date.now();
@@ -1124,11 +1192,10 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
     ];
     return (
         <div className="py-[15px]">
-            <KnownEmailsDatalist id={EMAIL_LIST_ID} />
             <div role="radiogroup" aria-label="claude account" className="flex flex-col gap-1.5">
                 {rows.map(({ id, account }) => {
                     const on = id === active;
-                    const quota = rowQuota(saved, claudeQuotaKey(id, identity), now);
+                    const quota = quotaLine(rowQuota(saved, claudeQuotaKey(id, identity), now), now);
                     return (
                         <div
                             key={id || "default"}
@@ -1156,129 +1223,93 @@ function ClaudeAccountSection({ model }: { model: AgentsViewModel }) {
                             >
                                 {on ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
                             </span>
-                            {account == null ? (
-                                <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                {account != null && renaming === id ? (
+                                    <RowInlineInput
+                                        initial={account.label}
+                                        placeholder="Account name"
+                                        label="Account name"
+                                        attrs={{ "data-claude-account-rename-input": id }}
+                                        onCommit={(v) => {
+                                            setRenaming(null);
+                                            rename(id, v);
+                                        }}
+                                        onCancel={() => setRenaming(null)}
+                                    />
+                                ) : (
                                     <span
+                                        data-claude-account-name={id || "default"}
                                         className={cn(
                                             "truncate text-[13px] font-semibold",
                                             on ? "text-primary" : "text-secondary"
                                         )}
                                     >
-                                        Default (/login)
+                                        {account == null ? defaultAccountName(identity.loginEmail) : account.label}
+                                        {account == null ? (
+                                            <span
+                                                data-claude-account-login-tag
+                                                className="ml-1.5 rounded border border-edge-mid px-1 align-middle text-[10.5px] font-normal text-muted"
+                                            >
+                                                /login
+                                            </span>
+                                        ) : null}
                                     </span>
-                                    {identity.loginEmail ? (
-                                        <span
-                                            data-claude-account-login-email
-                                            className="truncate text-[11px] text-muted"
-                                        >
-                                            {identity.loginEmail}
-                                        </span>
-                                    ) : null}
-                                </span>
-                            ) : (
-                                // the rename and email fields and Remove sit inside the row; their clicks must not select it
-                                <span
-                                    data-claude-account-rename={id}
-                                    className="flex min-w-0 flex-1 flex-col gap-1"
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => e.stopPropagation()}
-                                >
-                                    <CommitText
-                                        key={renameReset}
-                                        value={account.label}
-                                        placeholder="Account label"
-                                        width="w-[220px]"
-                                        onCommit={(v) => (v === "" ? setRenameReset((n) => n + 1) : rename(id, v))}
+                                )}
+                                {account != null && emailing === id ? (
+                                    <RowInlineInput
+                                        initial=""
+                                        placeholder="name@example.com"
+                                        label="Account email"
+                                        attrs={{ "data-claude-account-email-input": id }}
+                                        onCommit={(v) => {
+                                            setEmailing(null);
+                                            setEmail(id, v);
+                                        }}
+                                        onCancel={() => setEmailing(null)}
                                     />
-                                    <span data-claude-account-email={id}>
-                                        <CommitText
-                                            value={account.email ?? ""}
-                                            placeholder="chưa gắn email"
-                                            width="w-[220px]"
-                                            list={EMAIL_LIST_ID}
-                                            onCommit={(v) => setEmail(id, v)}
-                                        />
+                                ) : account?.email ? (
+                                    <span data-claude-account-email={id} className="truncate text-[11px] text-muted">
+                                        {account.email}
                                     </span>
-                                </span>
-                            )}
-                            <span className="flex-none text-[11px] tabular-nums text-muted">
-                                {quota == null
-                                    ? "chưa dùng"
-                                    : `5h ${quotaPct(quota.fivehourpct)} · tuần ${quotaPct(quota.weekpct)} · đo ${formatAgeShort(now - quota.capturedAt)} trước`}
+                                ) : null}
+                            </span>
+                            <span
+                                data-claude-account-quota={id || "default"}
+                                className={cn(
+                                    "flex-none text-[11px] tabular-nums",
+                                    quota.warn ? "text-warning" : "text-muted"
+                                )}
+                            >
+                                {quota.text}
                             </span>
                             {account != null ? (
                                 <button
                                     type="button"
-                                    data-claude-account-remove={id}
+                                    data-claude-account-menu={id}
+                                    aria-label="Account actions"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        remove(account);
+                                        showAccountMenu(account, e);
                                     }}
-                                    className="flex-none cursor-pointer rounded border border-edge-mid px-2.5 py-[4px] text-[11.5px] font-semibold text-secondary transition-colors hover:border-error/50 hover:text-error"
+                                    className="flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded text-muted transition-colors hover:bg-surface-hover hover:text-primary"
                                 >
-                                    Remove
+                                    <Ellipsis size={14} aria-hidden />
                                 </button>
                             ) : null}
                         </div>
                     );
                 })}
             </div>
-            <div className="mt-3 flex items-center gap-2.5">
+            <div className="mt-3">
                 <button
                     type="button"
-                    data-claude-account-signin
+                    data-claude-account-add
                     onClick={() => setSigninOpen(true)}
                     className="cursor-pointer rounded border border-edge-mid px-3 py-[6px] text-[12px] font-semibold text-secondary transition-colors hover:border-edge-strong hover:text-primary"
                 >
-                    + Đăng nhập account
-                </button>
-                <button
-                    type="button"
-                    data-claude-account-paste
-                    aria-expanded={pasteOpen}
-                    onClick={() => setPasteOpen((v) => !v)}
-                    className="cursor-pointer text-[12px] font-semibold text-muted transition-colors hover:text-primary"
-                >
-                    {pasteOpen ? "▾" : "▸"} Dán token
+                    + Add account
                 </button>
             </div>
-            {pasteOpen ? (
-                <div className="mt-3 flex flex-col gap-2 rounded-[11px] border border-border p-3">
-                    <div className="text-[12px] leading-[1.5] text-muted">
-                        Token từ <span className="font-mono">claude setup-token</span> (bắt đầu bằng{" "}
-                        <span className="font-mono">sk-ant-oat</span>). Enter để lưu.
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                        <input
-                            type="text"
-                            data-claude-account-paste-label
-                            value={pasteLabel}
-                            placeholder="Label (mặc định Account N)"
-                            spellCheck={false}
-                            onChange={(e) => setPasteLabel(e.target.value)}
-                            className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
-                        />
-                        <input
-                            type="text"
-                            data-claude-account-paste-email
-                            value={pasteEmail}
-                            list={EMAIL_LIST_ID}
-                            placeholder="Email (không bắt buộc)"
-                            spellCheck={false}
-                            onChange={(e) => setPasteEmail(e.target.value)}
-                            className="w-[200px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[12px] text-primary outline-none focus:border-accent-700"
-                        />
-                        <span data-claude-account-paste-token>
-                            <SecretInput placeholder="sk-ant-oat01-…" onCommit={add} />
-                        </span>
-                    </div>
-                    {pasteError ? (
-                        <div data-claude-account-error className="text-[12px] text-error">
-                            {pasteError}
-                        </div>
-                    ) : null}
-                </div>
-            ) : null}
             {error ? <Note tone="error">{error}</Note> : null}
             {signinOpen ? (
                 <Suspense fallback={null}>
