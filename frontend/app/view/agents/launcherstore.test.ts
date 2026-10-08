@@ -28,6 +28,7 @@ import {
     launcherWorktreeAtom,
     openLauncher,
     pickLauncherProject,
+    reopenLauncher,
 } from "./launcherstore";
 import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
 
@@ -42,6 +43,22 @@ beforeEach(() => {
     globalStore.set(launcherBusyAtom, false);
     endLauncherDraft();
     resetRunConfig();
+});
+
+describe("reopenLauncher", () => {
+    it("opens on the half the last open left picked", () => {
+        const m = model();
+        globalStore.set(launcherKindAtom, "run");
+        reopenLauncher(m);
+        expect(globalStore.get(m.launcherAtom)).toBe("run");
+        expect(globalStore.get(launcherKindAtom)).toBe("run");
+    });
+    it("says draft restored like any other open", () => {
+        globalStore.set(launcherTaskAtom, "fix it");
+        reopenLauncher(model());
+        expect(globalStore.get(launcherKindAtom)).toBe("agent");
+        expect(globalStore.get(launcherRestoredAtom)).toBe(true);
+    });
 });
 
 describe("openLauncher", () => {

@@ -59,6 +59,11 @@ export function openLauncher(model: LauncherModel, door: LauncherKind, prefill?:
     globalStore.set(model.launcherAtom, door);
 }
 
+// The app bar's one New button: no door of its own, so it opens on whichever half the last open left picked.
+export function reopenLauncher(model: LauncherModel): void {
+    openLauncher(model, globalStore.get(launcherKindAtom));
+}
+
 // Every way out keeps the draft; that is what lets a click outside close the dialog. An open popover is not draft.
 export function closeLauncher(model: LauncherModel): void {
     globalStore.set(launcherFlagMenuAtom, false);

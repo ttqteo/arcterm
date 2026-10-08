@@ -1159,7 +1159,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     // The surface's own keys: the run switcher, the record band, the composer's i/Escape, and
     // the graph peek. The Stage used to register these for a composition that no longer exists.
-    const jarvisBindings = useMemo(() => buildJarvisBindings(), []);
+    const jarvisBindings = useMemo(() => buildJarvisBindings(model), [model]);
     useKeybindings(jarvisBindings);
 
     // Where the graph peek opens: the record the peek's map button named. The Brief has no Stage subject

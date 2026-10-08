@@ -13900,11 +13900,11 @@ const newRunWindow = {
             return steps;
         }
         await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
-        // off the Brief on purpose: the app-bar button has to work where the Brief never loaded the channels
+        // off the Brief on purpose: the dialog has to work where the Brief never loaded the channels
         await h.goto("files");
-        await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+        await h.ev(OPEN_NEW_RUN);
         const opened = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
-        rec("1. New run opens the window from the app bar", opened, `dialog=${opened}`);
+        rec("1. Mod+Shift+R opens the New dialog", opened, `dialog=${opened}`);
         if (!opened) return steps;
 
         const listed = await h.ev(launcherState);
@@ -14093,7 +14093,18 @@ async function launcherBlockIds(h) {
     return ids;
 }
 
-const OPEN_NEW_AGENT = `[...document.querySelectorAll('button')].find((b) => (b.title ?? '').startsWith('New agent'))?.click()`;
+// Mod+N and Mod+Shift+R open the New dialog at the agent and the run door. The app bar's one New button has no door
+// (it reopens on the last pick), so a step that needs a door presses the chord, as the dispatcher sees it
+const modChord = (key, code, shift) => `(() => {
+    const mac = /Mac/.test(navigator.platform);
+    document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: ${JSON.stringify(key)}, code: ${JSON.stringify(code)}, shiftKey: ${shift}, ctrlKey: !mac, metaKey: mac, bubbles: true,
+    }));
+    return true;
+})()`;
+const OPEN_NEW_AGENT = modChord("n", "KeyN", false);
+const OPEN_NEW_RUN = modChord("R", "KeyR", true);
+const NEW_BUTTON = `document.querySelector('[data-launcher-open]')`;
 const focusColumn = (name) => `${LAUNCHER}?.querySelector('[data-launcher-column="${name}"]')?.focus()`;
 
 const launcherScenario = {
@@ -14445,6 +14456,27 @@ const launcherScenario = {
             "24. after the launch, New agent opens with no draft restored, an empty task and the worktree switch off",
             s != null && !s.restored && s.task === "" && worktreeAfter === "false",
             JSON.stringify({ worktreeAfter, ...s })
+        );
+        if (s == null) return steps;
+
+        // the app bar's one New button has no door of its own: it reopens on the last pick, here Quick run
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, String(s.startRows.indexOf("quick") + 1));
+        await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
+        await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        const appBar = await h.ev(`({
+            newButton: (${NEW_BUTTON}?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+            newRunButton: [...document.querySelectorAll('button')].some((b) => /New run/.test(b.textContent ?? '')),
+        })`);
+        await h.ev(`${NEW_BUTTON}?.click()`);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        s = await state();
+        await h.shot("cdp-shots/launcher-13-new-button.png");
+        rec(
+            "25. the app bar has one New button and no New run button, and New reopens on the last pick",
+            appBar.newButton.startsWith("+New") && !appBar.newRunButton && s?.start === "quick" && s.title === "New run",
+            JSON.stringify({ ...appBar, ...s })
         );
         return steps;
     },
@@ -19754,7 +19786,7 @@ const capacityWarn = {
         let newRun = null;
         try {
             await h.goto("cockpit");
-            await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+            await h.ev(OPEN_NEW_RUN);
             const opened = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
             if (opened) {
                 await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
@@ -21484,7 +21516,7 @@ const agyHarness = {
             // 5, 6, 9. the New run window's pickers
             const NEW_RUN_LEAD = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`;
             const NEW_RUN_REVIEWERS = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Reviewers model"]')`;
-            await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+            await h.ev(OPEN_NEW_RUN);
             const runOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
             await h.ev(`${NEW_RUN}?.querySelector('[data-project-row="${AGY_PROJECT}"]')?.click()`);
             await polishNap(300);

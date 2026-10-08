@@ -310,7 +310,7 @@ describe("the Final check viewer over the Jarvis surface", () => {
         const bindings = [
             ...buildGlobalBindings(model),
             ...buildListNavBindings(model),
-            ...buildJarvisBindings(),
+            ...buildJarvisBindings(model),
             ...finalShots,
         ];
         const unbind = initKeybindingDispatcher(model);

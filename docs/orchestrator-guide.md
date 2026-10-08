@@ -120,8 +120,8 @@ superpowers package installed into pi itself (the lead plans with `brainstorming
 
 ## Flow 1: Quick
 
-Open **New run** in the app bar (`⌘⇧R`, or `r` on the Jarvis Brief): the New
-dialog opens on a run row. Press **Quick run**'s number in the Start column, `Tab` to the project and pick it, write
+Press `⌘⇧R` (or `r` on the Jarvis Brief), or **+ New** in the app bar: the New dialog opens on a run row (**+ New**
+opens it on whatever you picked last). Press **Quick run**'s number in the Start column, `Tab` to the project and pick it, write
 the goal, then **Start run** (`⌘⏎`).
 
 ![+ Run with the Quick shape](images/orchestrator-guide/02-quick-modal.png)

@@ -290,7 +290,7 @@ describe("keybinding conflict invariant", () => {
         globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: [], cursorId: undefined, setCursor() {} });
         globalStore.set(graphPeekOpenAtom, false);
         expect(() =>
-            assertNoConflicts([...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings()])
+            assertNoConflicts([...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildJarvisBindings(model)])
         ).not.toThrow();
         globalStore.set(listNavAtom, null);
     });
@@ -304,7 +304,7 @@ describe("keybinding conflict invariant", () => {
             assertNoConflicts([
                 ...buildGlobalBindings(model),
                 ...buildChannelsAskBindings(model, askRef),
-                ...buildJarvisBindings(),
+                ...buildJarvisBindings(model),
             ])
         ).not.toThrow();
     });
@@ -369,7 +369,7 @@ describe("keybinding conflict invariant", () => {
             assertNoConflicts([
                 ...buildGlobalBindings(model),
                 ...buildAgentBindings(model),
-                ...buildJarvisBindings(),
+                ...buildJarvisBindings(model),
                 ...buildFilesBindings(),
             ])
         ).not.toThrow();
@@ -400,7 +400,7 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             ...buildGlobalBindings(model),
             ...buildListNavBindings(model),
             ...buildChannelsAskBindings(model, askRef),
-            ...buildJarvisBindings(),
+            ...buildJarvisBindings(model),
             ...buildCockpitBindings(),
             ...buildAgentBindings(model),
             ...buildFilesBindings(),

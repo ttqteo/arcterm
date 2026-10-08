@@ -8,6 +8,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
+  picked last, and a number key switches between an agent and a run. `Cmd+N` still opens it on an agent and
+  `Cmd+Shift+R` on a run (`Ctrl` on Windows).
+
 ## 0.15.5 — 2026-10-08
 
 ### Added

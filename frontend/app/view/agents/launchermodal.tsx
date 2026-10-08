@@ -7,8 +7,8 @@
 // focused column and Tab walks the dialog without leaving it. Every close keeps the draft (launcherstore), which is
 // what lets a click outside close it.
 //
-// The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The Brief's `r` presses the
-// app bar's [data-new-run] button, which opens it at the run door.
+// The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
+// reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { DialogButton } from "@/app/modals/dialogbutton";

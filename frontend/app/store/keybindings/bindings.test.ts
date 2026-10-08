@@ -321,7 +321,9 @@ describe("list-nav bindings", () => {
 
 describe("jarvis surface bindings", () => {
     const jarvisCtx: KeyContext = { surface: "jarvis", editable: false, modalOpen: false, leader: null };
-    const byId = (id: string) => buildJarvisBindings().find((b) => b.id === id)!;
+    // the cast: without strictNullChecks, null picks atom's read-only overload
+    const launcherModel = { launcherAtom: atom<LauncherKind | null>(null) as PrimitiveAtom<LauncherKind | null> };
+    const byId = (id: string) => buildJarvisBindings(launcherModel).find((b) => b.id === id)!;
 
     // The Brief mounts no Stage, so it registers only the graph shortcut (buildJarvisGraphBindings).
     // Sharing one builder rather than re-declaring the key is what keeps the chord from drifting apart
@@ -359,6 +361,14 @@ describe("jarvis surface bindings", () => {
         expect(byId("jarvis:new-run").when!(jarvisCtx)).toBe(true);
     });
 
+    // the app bar has one New button now, so `r` opens the launcher at the run door itself rather than pressing it
+    it("r opens the New dialog on a run row", () => {
+        globalStore.set(launcherModel.launcherAtom, null);
+        byId("jarvis:new-run").run(jarvisCtx);
+        expect(globalStore.get(launcherModel.launcherAtom)).toBe("run");
+        globalStore.set(launcherModel.launcherAtom, null);
+    });
+
     // the Brief's filter takes / the way the Diff history's does, on its own surface
     it("focuses the Brief filter with /", () => {
         globalStore.set(graphPeekOpenAtom, false);
@@ -369,13 +379,13 @@ describe("jarvis surface bindings", () => {
 
     it("guards every key on the surface, the typing state and modals", () => {
         globalStore.set(graphPeekOpenAtom, false);
-        for (const b of buildJarvisBindings()) {
+        for (const b of buildJarvisBindings(launcherModel)) {
             expect(b.when!({ ...jarvisCtx, surface: "cockpit" })).toBe(false);
             expect(b.when!({ ...jarvisCtx, modalOpen: true })).toBe(false);
         }
         // ...except the composer's own Escape, which exists *because* focus is in a field
         expect(byId("jarvis:blur-composer").when!({ ...jarvisCtx, editable: true })).toBe(true);
-        for (const b of buildJarvisBindings().filter((x) => x.id !== "jarvis:blur-composer")) {
+        for (const b of buildJarvisBindings(launcherModel).filter((x) => x.id !== "jarvis:blur-composer")) {
             expect(b.when!({ ...jarvisCtx, editable: true })).toBe(false);
         }
     });

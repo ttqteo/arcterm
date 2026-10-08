@@ -7,7 +7,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
-import { openLauncher } from "@/app/view/agents/launcherstore";
+import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
@@ -33,7 +33,6 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
-    const newRunKeys = useBindingKeys("new-run");
     const newAgentKeys = useBindingKeys("new-agent");
     return (
         <div
@@ -80,26 +79,17 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 <VersionMismatchPill />
                 <WorkerCapacityChip />
                 <HeaderUsageMeters model={model} />
-                {/* secondary, so New agent stays the one primary action. data-new-run: the Brief's `r` key
-                    presses this (buildJarvisBindings). */}
+                {/* one button, one dialog: it opens on whatever the last open left picked, and the digits switch
+                    between an agent and a run. Cmd+N and Cmd+Shift+R open it on an agent or a run row. */}
                 <button
                     type="button"
-                    data-new-run
+                    data-launcher-open
                     aria-haspopup="dialog"
-                    title={withChord("New run", newRunKeys)}
-                    onClick={() => openLauncher(model, "run")}
-                    className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-edge-mid bg-surface-raised px-[clamp(9px,1.3vw,12px)] py-[6px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-primary hover:border-edge-strong hover:bg-surface-hover"
-                >
-                    <span className="-mt-px text-[15px] leading-none">+</span>New run
-                    <ShortcutHint id="new-run" className={clsx(HINT_FIT, "border-edge-mid text-muted")} />
-                </button>
-                <button
-                    type="button"
-                    title={withChord("New agent", newAgentKeys)}
-                    onClick={() => openLauncher(model, "agent")}
+                    title={withChord("New agent or run", newAgentKeys)}
+                    onClick={() => reopenLauncher(model)}
                     className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[clamp(9px,1.3vw,12px)] py-[7px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-background hover:bg-accenthover"
                 >
-                    <span className="-mt-px text-[15px] leading-none">+</span>New agent
+                    <span className="-mt-px text-[15px] leading-none">+</span>New
                     <ShortcutHint
                         id="new-agent"
                         className={clsx(HINT_FIT, "border-background/30 text-background/75")}

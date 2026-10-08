@@ -35,8 +35,10 @@ An outside click closes it without losing what you typed.
   every way of closing keeps the draft, and reopening restores it, so the reason is gone.
 - **D5. The title follows the pick**: "New agent" for an agent runtime or Terminal, "New run" for a run row. The
   primary button says what happens: Launch agent, Open terminal, Start run.
-- **D6. Two doors, one dialog.** `Mod+N` and every "New agent" control open it on an agent row; `Mod+Shift+R`,
-  "+ New run", the Brief's `r` and every run prefill open it on a run row. The app bar keeps both buttons.
+- **D6. Two doors, one dialog, one button.** `Mod+N` and every "New agent" control open it on an agent row;
+  `Mod+Shift+R`, the Brief's `r` and every run prefill open it on a run row. The app bar has one **+ New** button
+  (2026-10-08, after 0.15.5 shipped New run and New agent side by side): it has no door of its own and reopens on the
+  last pick.
 - **D7. Width 720px** (`w-[min(720px,93vw)]`, `max-h-[86vh]`). The details region scrolls; the columns, header and
   footer do not. The plan preview table fits at this width with its title column truncating.
 - **D8. Runs take no worktree switch and no flags.** The engine creates a run's worktrees and launches its workers;

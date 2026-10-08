@@ -31,7 +31,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
-import { openLauncher } from "@/app/view/agents/launcherstore";
+import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
@@ -575,7 +575,7 @@ export function buildJarvisGraphBindings(): Binding[] {
     ];
 }
 
-export function buildJarvisBindings(): Binding[] {
+export function buildJarvisBindings(model: LauncherModel): Binding[] {
     // the peek is an overlay over the whole Stage: acting behind it would change a surface the user cannot
     // see. Only its own toggle stays live (the peek also closes on Escape, which it owns while open).
     const onStage = (ctx: KeyContext) => onJarvis(ctx) && !globalStore.get(graphPeekOpenAtom);
@@ -642,7 +642,7 @@ export function buildJarvisBindings(): Binding[] {
             group: "Jarvis",
             label: "New run",
             when: onStage,
-            run: () => clickThrough("[data-new-run]"),
+            run: () => openLauncher(model, "run"),
         },
         {
             id: "jarvis:new-initiative",
