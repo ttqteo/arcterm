@@ -2780,6 +2780,17 @@ declare global {
         cwd: string;
         byagent: boolean;
         launchercmdline?: string;
+        repo?: string;
+        owner?: ServerOwner;
+    };
+
+    // devservers.ServerOwner
+    type ServerOwner = {
+        kind: string;
+        blockid?: string;
+        tabid?: string;
+        name?: string;
+        harness?: string;
     };
 
     // wshrpc.SessionActivity

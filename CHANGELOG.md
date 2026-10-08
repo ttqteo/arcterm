@@ -18,6 +18,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   build) and none once it is back at its prompt, so you can tell which terminals are busy.
 - The app bar's usage meter shows how long until the 5-hour window resets (`1h55`), and each bar carries a light
   tick for how much of its window has passed: a bar short of its tick will last until the reset.
+- The footer has a **Servers** chip: how many servers run inside your repos, and how many nothing holds any more.
+  Click it to see every listening process on the machine, grouped by repo, with what each belongs to (an agent, a
+  terminal, an app, or no owner), and open, read the log of, copy or stop it.
 
 ### Changed
 
