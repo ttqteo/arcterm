@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The footer's plan-usage meters, beside the version: each provider's logo, then its 5-hour and weekly windows as two
+// The app bar's plan-usage meters, beside the RAM chip: each provider's logo, then its 5-hour and weekly windows as two
 // small bars, each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
 // by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
 // the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
@@ -40,13 +40,13 @@ const WINDOWS = [
     ["week", "wk", "Weekly", WEEK_MS],
 ] as const;
 
-// The footer is always mounted, so this reads everything itself rather than borrowing a surface's state.
+// The app bar is always mounted, so this reads everything itself rather than borrowing a surface's state.
 // Rate-limit windows are account-scoped, not per-agent: every agent's live reading collapses to one block
 // per provider (last live wins), merged over the saved snapshot so it survives idle — the aggregation the
 // Usage surface uses. Only running agents count as live (liveWindowAgents): an idle one holds the reading
 // frozen at its last turn and would pin the meter to that old value. Claude's windows are the active Claude
 // account's only (planDonuts). The 1s clock rolls a window over the moment it resets.
-/** The plan windows the footer shows: every live agent's reading merged over the saved snapshot (planDonuts). */
+/** The plan windows the app bar shows: every live agent's reading merged over the saved snapshot (planDonuts). */
 export function usePlanDonuts(model: AgentsViewModel): ReturnType<typeof planDonuts> {
     const agents = useAtomValue(model.agentsAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
@@ -56,7 +56,7 @@ export function usePlanDonuts(model: AgentsViewModel): ReturnType<typeof planDon
     return planDonuts(agents, saved, activeKey, identity, now);
 }
 
-export function FooterUsageMeters({ model }: { model: AgentsViewModel }) {
+export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
     const windowTokens = useAtomValue(windowTokensAtom);
     const now = useAtomValue(model.nowAtom);
     const donuts = usePlanDonuts(model);
@@ -116,13 +116,13 @@ function UsageMeters({
             aria-haspopup="dialog"
             onClick={(e) => onOpen(e.currentTarget)}
             title={[...items.map((m) => m.title), "Token use by agent"].join("\n")}
-            className="flex h-[22px] shrink-0 cursor-pointer items-center gap-2 rounded px-1.5 hover:bg-surface-hover"
+            className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
         >
             {items.map((m, i) => {
                 const lvl = usageLevel(m.pct);
                 return (
                     <Fragment key={m.key}>
-                        {i > 0 ? <span className="h-3 w-px bg-edge-mid" /> : null}
+                        {i > 0 ? <span className="h-3.5 w-px bg-edge-mid" /> : null}
                         {m.first ? (
                             <RuntimeMark
                                 runtime={m.provider}
@@ -132,7 +132,7 @@ function UsageMeters({
                         ) : null}
                         <span className="text-[10.5px] text-muted">{m.short}</span>
                         <span className="relative">
-                            <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={5} radius={3} className="w-10" />
+                            <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={5} radius={3} className="w-11" />
                             {m.elapsed != null ? (
                                 <span
                                     data-usage-pace

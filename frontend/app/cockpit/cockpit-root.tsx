@@ -149,7 +149,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <CockpitShell model={model} tabId={tabIdRef.current} />
             </div>
             <HintsFooter model={model} />
-            {/* opened from the footer's RAM chip and usage meters, which both hints bars draw: one panel for both */}
+            {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
             <ConsumersPanel model={model} />
             {/* the footer's Servers chip opens this; it also owns the one poll that feeds the chip */}
             <MachineServersPanel model={model} />

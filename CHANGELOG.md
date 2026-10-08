@@ -8,6 +8,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- The plan-usage meters and the free-RAM chip are back in the app bar, where they are easier to read; clicking either
+  opens Consumers below it. The Servers chip and the version stay in the footer.
+
 ## 0.15.6 — 2026-10-08
 
 ### Added

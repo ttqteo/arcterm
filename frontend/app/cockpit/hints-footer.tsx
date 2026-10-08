@@ -22,7 +22,7 @@ import { visibleHints } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS } from "./footerhints";
 import { FooterStatus } from "./footerstatus";
 
-// dim: focus is in the terminal, so the hints step back; the status at the right end (usage, version) does not
+// dim: focus is in the terminal, so the hints step back; the status at the right end (servers, version) does not
 function FooterBar({ model, children, dim }: { model: AgentsViewModel; children?: React.ReactNode; dim?: boolean }) {
     return (
         <div

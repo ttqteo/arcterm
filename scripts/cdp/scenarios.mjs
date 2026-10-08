@@ -19917,7 +19917,7 @@ const removeCapacityMock = (h) =>
         return "restored";
     })()`);
 
-// The footer's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows the free RAM
+// The app bar's worker-capacity chip: wavesrv answers GetWorkerCapacityCommand and the chip shows the free RAM
 // ("1.3 GB free") with how many workers that holds in its tooltip. It warns on low free RAM, not on +0: step 4
 // mocks +0 with 1 GB free and sees it stay muted, step 5 mocks 0.4 GB free and sees the warning tone.
 const workerCapacity = {
@@ -19946,7 +19946,7 @@ const workerCapacity = {
             if (!chip) await settle(250);
         }
         rec(
-            "2. the footer chip shows the free RAM",
+            "2. the app bar chip shows the free RAM",
             !!chip && /^\d+(\.\d)? GB free$/.test(chip.text.trim()),
             chip ? chip.text : "no chip after 10s"
         );
@@ -20341,23 +20341,23 @@ const consumersPopover = {
         if (meters) await h.ev(`document.querySelector("[data-usage-meters]").click()`);
         const metersSort = meters && (await polishWaitFor(h, `${CONSUMERS_SORT} === "tokens"`, 3000));
         rec("15. the plan-usage meters open it sorted by tokens", meters && metersSort, JSON.stringify({ meters, sort: await sort() }));
-        // the meters live in the footer beside the version, and the panel they open rises from above it
+        // the meters live in the app bar beside the RAM chip, and the panel they open hangs just below it
         await settle(400);
         const metersPlace = await h.ev(`(() => {
             const m = document.querySelector("[data-usage-meters]");
             const p = document.querySelector("[data-consumers-panel]")?.parentElement?.getBoundingClientRect();
-            const bar = m?.closest("[data-pet-ledge]");
+            const bar = m?.closest("[data-app-bar]");
             return {
-                inFooter: !!bar && !!bar.querySelector("[data-app-version]"),
-                panelBottom: p ? Math.round(p.bottom) : null,
-                barTop: bar ? Math.round(bar.getBoundingClientRect().top) : null,
+                inAppBar: !!bar && !!bar.querySelector("[data-worker-capacity]"),
+                panelTop: p ? Math.round(p.top) : null,
+                barBottom: bar ? Math.round(bar.getBoundingClientRect().bottom) : null,
             };
         })()`);
-        await h.shot("cdp-shots/consumers-from-footer.png");
+        await h.shot("cdp-shots/consumers-from-appbar.png");
         rec(
-            "15b. the meters sit in the footer beside the version, and their panel opens upward, just above it",
-            metersPlace.inFooter && metersPlace.panelBottom != null && metersPlace.panelBottom <= metersPlace.barTop
-                && metersPlace.barTop - metersPlace.panelBottom < 24,
+            "15b. the meters sit in the app bar beside the RAM chip, and their panel opens downward, just below it",
+            metersPlace.inAppBar && metersPlace.panelTop != null && metersPlace.panelTop >= metersPlace.barBottom - 8
+                && metersPlace.panelTop - metersPlace.barBottom < 24,
             JSON.stringify(metersPlace)
         );
 

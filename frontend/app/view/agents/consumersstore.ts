@@ -44,7 +44,7 @@ export async function loadConsumers(
 }
 
 /** An opener's click: opens on its sort, closes when the panel already shows that sort, else switches to it. The
- * panel hangs from `opener`. It closes the Servers popover, which rises from the same footer. */
+ * panel hangs from `opener`. It closes the Servers popover, so only one of them is open. */
 export function toggleConsumers(sort: ConsumersSort, opener: Element | null = null): void {
     globalStore.set(machineServersOpenAtom, false);
     globalStore.set(consumersOpenerAtom, opener);

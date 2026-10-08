@@ -176,7 +176,7 @@ function Row({ row, model, sort }: { row: ConsumerRow; model: AgentsViewModel; s
     );
 }
 
-// measured from the opener while open, and again when the window resizes, which moves the footer under it
+// measured from the opener while open, and again when the window resizes, which moves the opener
 function usePanelPlacement(open: boolean, opener: Element | null) {
     const [, setSize] = useState(0);
     useEffect(() => {

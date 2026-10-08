@@ -14,7 +14,7 @@ import type { AgentsViewModel } from "./agents";
 // ones the global HintsFooter shows elsewhere — folded in here so the cockpit surface renders a single
 // bar (the footer suppresses its rest posture on this surface — see hints-footer.tsx).
 // hints: false while the roster loads or is empty, where the keys have nothing to act on; the bar still draws its
-// status (usage, version), which every surface keeps.
+// status (servers, version), which every surface keeps.
 export function HintsBar({
     model,
     hints,
