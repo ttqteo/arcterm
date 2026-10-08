@@ -40,8 +40,8 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
    whose command line can't (System, services, another user's) is left out. One process on several ports is one row.
 
 3. **Grouping.** A row's repo is the nearest directory at or above its cwd that holds `.git` (a directory, or a file
-   for a worktree); lookups are cached by path. Rows with a repo are grouped under it, shown shortened
-   (`SIEM/apps/portal`); groups holding a `no owner` row come first, then by name. Rows with no repo go in
+   for a worktree); lookups are cached by path. Rows with a repo are grouped under it, shown by its last three path
+   segments without the drive (`Workspace/SIEM`; a monorepo is one group, so `apps/portal` and `apps/website` share it); groups holding a `no owner` row come first, then by name. Rows with no repo go in
    **Other**, collapsed by default to one line: `Other (9) Code, Docker, Orca…`.
 
 4. **Rows.** As the rail's: each port (opens `http://localhost:<port>`), the command (full on hover), uptime; then
@@ -61,7 +61,8 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
 
    The frontend resolves `detached` rows: if a running background task of any agent in `backgroundTasksByIdAtom`
    matches the launcher command line, the way the rail's `matchLogTask` matches (`devserversmodel.ts`), the row
-   belongs to that agent. Otherwise it is **no owner**.
+   belongs to that agent. Otherwise a row in a repo is **no owner**, and a row outside any repo reads as its own app:
+   on the 2026-10-08 machine Docker Desktop, OneDrive and `wavesrv` all had launchers that had exited.
 
    Badges: `claude · <agent name>` (click opens it through `openTarget`), `terminal · <tab name>` (click opens it),
    the app's name (no action), and `no owner` in the warning tone, with the tooltip *"Still running. No agent,
@@ -82,8 +83,8 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
      (`memusage.ReadTable`; gopsutil's per-process parent read took 11 s for 441 processes);
    - reads the command line, cwd, name and create time only of the listeners and their ancestors, and **caches them
      by (pid, create time)**: a process already read is not read again, and an entry whose pid has left the snapshot
-     is dropped, so the cache stays at a few hundred entries. In steady state a poll is the TCP table and the
-     snapshot, a few milliseconds;
+     is dropped, so the cache stays at a few hundred entries. In steady state a poll is the TCP table, the
+     snapshot and each chain's create times: 76 ms cold and 39 ms warm for 15 servers on the 2026-10-08 machine;
    - is single-flight: a call that arrives while a read is under way gets that read's result.
 
    Nothing runs between polls: no goroutine, no watcher.
