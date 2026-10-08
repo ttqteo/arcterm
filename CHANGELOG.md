@@ -74,6 +74,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A Markdown quote (`> …`) whose lines are a chat log or an email keeps each line on its own line in the preview,
+  instead of running them together into one paragraph. Lines outside quotes still join as before.
 - A part an agent only quotes as an example, in quotes or code (`kiểu "Phần 2/4"`), no longer shows on its row as
   the part it stopped on, and no longer keeps a finished agent from offering **Close**.
 - Consumers opens right under (or over) the control you clicked, the usage meters or the free-RAM chip, instead of

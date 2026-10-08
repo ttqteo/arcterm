@@ -11,6 +11,7 @@ import {
 } from "@/app/element/markdown-util";
 import { rehypeSrcLines, withSrcLineAttributes } from "@/app/element/rehype-srclines";
 import remarkMermaidToTag from "@/app/element/remark-mermaid-to-tag";
+import remarkQuoteBreaks from "@/app/element/remark-quote-breaks";
 import { boundNumber, cn, useAtomValueSafe } from "@/util/util";
 import clsx from "clsx";
 import { Atom } from "jotai";
@@ -547,6 +548,7 @@ const Markdown = memo(function Markdown({
     const remarkPlugins: any = [
         remarkMermaidToTag,
         remarkGfm,
+        remarkQuoteBreaks,
         [RemarkFlexibleToc, { tocRef: tocRef.current }],
         [createContentBlockPlugin, { blocks: contentBlocksMap }],
     ];
