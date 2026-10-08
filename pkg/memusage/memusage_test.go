@@ -164,3 +164,13 @@ func TestReadTableFindsThisProcess(t *testing.T) {
 		t.Fatal("the process table must list this test")
 	}
 }
+
+func TestTableParent(t *testing.T) {
+	tb := NewTable(map[int32]int32{1: 0, 5: 1})
+	if p, ok := tb.Parent(5); !ok || p != 1 {
+		t.Fatalf("Parent(5) = %d, %v; want 1, true", p, ok)
+	}
+	if _, ok := tb.Parent(9); ok {
+		t.Fatal("Parent(9) found a pid that was not running")
+	}
+}

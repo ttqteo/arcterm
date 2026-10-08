@@ -48,6 +48,12 @@ func (t Table) Has(pid int32) bool {
 	return ok
 }
 
+// Parent is pid's parent; false when pid was not running when the table was read.
+func (t Table) Parent(pid int32) (int32, bool) {
+	p, ok := t.parent[pid]
+	return p, ok
+}
+
 // Pids is every pid in the table, ascending.
 func (t Table) Pids() []int32 {
 	pids := make([]int32, 0, len(t.parent))
