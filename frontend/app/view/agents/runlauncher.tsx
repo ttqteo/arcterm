@@ -58,7 +58,7 @@ export const EYEBROW = "text-[10.5px] font-bold uppercase tracking-[.09em] text-
 
 // One selectable card treatment for both pickers, so the shape and the start read as the same kind of
 // choice. Tokens only — a literal colour here would opt the launcher out of every runtime theme.
-function pickTone(active: boolean): string {
+export function pickTone(active: boolean): string {
     return active
         ? "border-accent/40 bg-accentbg text-accent-soft"
         : "border-border bg-surface-raised text-secondary hover:border-edge-mid";
@@ -115,7 +115,7 @@ export function ShapeCards({ showParallelism }: { showParallelism: boolean }) {
     );
 }
 
-const START_LABEL: Record<StartFrom, string> = { goal: "A goal", plan: "A plan file" };
+export const START_LABEL: Record<StartFrom, string> = { goal: "A goal", plan: "A plan file" };
 
 // Where an orchestrator starts. It sits under the shape because it decides whether a lead runs at all: a plan
 // file hands the engine work you already decomposed, and a lead appears only when something needs judgment.

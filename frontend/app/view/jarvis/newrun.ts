@@ -139,17 +139,3 @@ export function rankProjects(names: string[], query: string): string[] {
         .sort((a, b) => b.score - a.score || a.index - b.index)
         .map((row) => row.name);
 }
-
-// Arrow-key movement over the filtered rows. It wraps, because a list this short has no scrollbar to say
-// an end was reached and a selection that silently stops reads as broken. A `current` the filter has since
-// removed is not a position to step from, so the move restarts at the end the user is heading toward.
-export function stepPick(rows: string[], current: string | null, delta: number): string | null {
-    if (rows.length === 0) {
-        return null;
-    }
-    const at = current == null ? -1 : rows.indexOf(current);
-    if (at < 0) {
-        return delta > 0 ? rows[0] : rows[rows.length - 1];
-    }
-    return rows[(at + delta + rows.length) % rows.length];
-}

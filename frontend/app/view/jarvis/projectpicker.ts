@@ -1,13 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The pure half of the New run window's project picker (ProjectPicker.dc.html variant 1). A registry of
-// many projects cannot be chips, so the field opens a searchable list; the "where" beside each name is what
-// tells two same-named checkouts apart.
-
-import { rankProjects } from "./newrun";
-
-const DEFAULT_RECENT = 3;
+// Where a project sits, for the New launcher's project column: the "where" beside each name is what tells two
+// same-named checkouts apart.
 
 // The home folder from a FileInfoCommand stat of "~". The server expands "~" to stat it but hands the
 // path back re-collapsed (ReplaceHomeDir turns home itself into "~"), so home is rebuilt from the
@@ -62,32 +57,4 @@ export function projectWhere(path: string, home: string): string {
     const full = p.lead + parent.join(p.sep);
     // a bare drive is not a folder until it has its separator back
     return /^[a-z]:$/i.test(full) ? full + p.sep : full;
-}
-
-// Up to `limit` of the projects most recently used (projectsstore's recentProjectsAtom), newest first.
-export function recentNames(names: string[], recent: string[], limit = DEFAULT_RECENT): string[] {
-    return (recent ?? []).filter((n) => names.includes(n)).slice(0, limit);
-}
-
-const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
-
-// A search drops Recent: results are one ranked list, not two that repeat each other. The where is matched
-// as a plain substring, since a fuzzy subsequence over a long path matches nearly anything.
-export function pickerSections(
-    names: string[],
-    recent: string[],
-    query: string,
-    whereOf: (name: string) => string
-): { recent: string[]; rest: string[]; restLabel: "All projects" | "Matches" } {
-    const q = query.trim();
-    if (q === "") {
-        const rest = names.filter((n) => !recent.includes(n)).sort(byName);
-        return { recent, rest, restLabel: "All projects" };
-    }
-    const byNameMatch = rankProjects(names, q);
-    const needle = q.toLowerCase();
-    const byWhere = names
-        .filter((n) => !byNameMatch.includes(n) && whereOf(n).toLowerCase().includes(needle))
-        .sort(byName);
-    return { recent: [], rest: [...byNameMatch, ...byWhere], restLabel: "Matches" };
 }

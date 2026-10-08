@@ -34,7 +34,7 @@ failed review, a failed final stage. You get what the lead cannot or should not 
 
 ### 1. Register the project
 
-+ Run lists projects from `projects.json`, not from anything you have talked about in Jarvis. Open the
+The New dialog lists projects from `projects.json`, not from anything you have talked about in Jarvis. Open the
 project switcher in the app bar → **+ New project**, give it a name and the repo's local path, and
 **Create project**. The command palette's "New project" opens the same modal.
 
@@ -120,8 +120,9 @@ superpowers package installed into pi itself (the lead plans with `brainstorming
 
 ## Flow 1: Quick
 
-Open **+ Run** on the Jarvis Brief (or press `r` there). Pick the project, **Quick**, a route, write the
-goal, **Start run** (`⌘⏎`).
+Open **New run** in the app bar (`⌘⇧R`, or `r` on the Jarvis Brief): the New
+dialog opens on a run row. Press **Quick run**'s number in the Start column, `Tab` to the project and pick it, write
+the goal, then **Start run** (`⌘⏎`).
 
 ![+ Run with the Quick shape](images/orchestrator-guide/02-quick-modal.png)
 
@@ -147,10 +148,10 @@ sealed.
 
 | Control | What it decides |
 |---|---|
-| **Project** | Where the lead works and where lanes merge. Type to filter. |
-| **Shape → Orchestrator** | A lead plus the engine. |
+| **Project** | Where the lead works and where lanes merge. Tab to the column and type to filter, or press its number. |
+| **Start → Orchestrate** | A lead plus the engine. |
 | **Start from → A goal** | "A lead works the goal with you in its terminal, then hands the engine a plan." |
-| **Parallelism** | How many lanes run at once, 1-8, default 3. Lowerable on a live run. |
+| **Workers at once** | How many lanes run at once, 1-8, default 3. Lowerable on a live run. |
 | **Lead model** | The lead's route. It brainstorms, writes the spec and plan, and later judges wakes, so this is the model whose judgment a retry cannot recover. |
 | **Workers model** | The workers setting ([Routes](#4-routes)): Same as lead, Reviewer picks, or a route. Changeable on a live run for tasks not yet dispatched. |
 | **Reviewers model** | The reviewer route: task reviews, the plan review and the final verify. "Same as lead" unless set. |
@@ -163,7 +164,7 @@ spikes only in a heavy job (`tsc` ~3 GB for about a minute), and several workers
 worker counts at its typical size (the mean of its process-tree readings, averaged over the live workers and the
 last 10 finished ones; 1 GB until one has been measured), and one heavy job's extra (the highest peak; 3 GB until
 measured) is held back once: `more = (free − growth room of live workers − (heavy − typical)) ÷ typical`, rounded
-down. When a width you pick on + Run, or on a live run's **Adjust → Worker parallelism**, adds more workers than
+down. When a width you pick in New run, or on a live run's **Adjust → Worker parallelism**, adds more workers than
 that, the number turns amber with a ⚠ whose tooltip says how many fit, and Jarvis says so once. It only warns; the
 run starts as picked. When not one more fits, Jarvis wears its tired look with a sweat drop. The chip turns amber
 with a ⚠ only when free RAM drops below 512 MB, where `wsh memgate` starts holding heavy commands.
@@ -435,7 +436,7 @@ tasks nothing depends on.
 
 ![The backlog plan in the launcher](images/orchestrator-guide/24-plan-dialog-backlog.png)
 
-The New run window lists the parsed plan's tasks with a model column that follows the Workers picker. On
+The New dialog lists the parsed plan's tasks with a model column that follows the Workers picker. On
 Reviewer picks a Model line reads `<model> · plan` and a task without one reads `at review`, under the mix line
 `N set by the plan · M picked at review`. On any other workers setting a task without a Model line reads the
 workers model, a Model line is struck through, and the mix line reads `all on <model>`, plus

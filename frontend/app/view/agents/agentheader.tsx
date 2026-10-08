@@ -36,6 +36,7 @@ import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
 import { StatusDot } from "./statusdot";
+import { openLauncher } from "./launcherstore";
 
 const STATE_COLOR: Record<AgentVM["state"], string> = {
     asking: "var(--color-warning)",
@@ -180,7 +181,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         items.push({
             label: "New agent…",
             icon: <Plus size={15} />,
-            click: () => globalStore.set(model.newAgentOpenAtom, true),
+            click: () => openLauncher(model, "agent"),
         });
         if (s.cells > 1) {
             items.push({

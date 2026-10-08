@@ -7,7 +7,7 @@
 // scale, keeps the fade.
 
 import { modalBackdrop, modalPanel, sheetPanel } from "@/app/element/motiontokens";
-import { takeModalFocus } from "@/app/modals/modalfocus";
+import { shellOwnsEscape, takeModalFocus } from "@/app/modals/modalfocus";
 import { isTopModal, registerModal } from "@/app/modals/modalstack";
 import { cn } from "@/util/util";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
@@ -93,6 +93,10 @@ export function ModalShell({
                 return;
             }
             if (e.key === "Escape") {
+                // a popover portaled out of the panel closes itself; the dialog under it stays
+                if (!shellOwnsEscape(panelRef.current, e.target, document.body)) {
+                    return;
+                }
                 onClose();
             } else if (onSubmit && e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();

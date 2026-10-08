@@ -240,7 +240,7 @@ already documents ("a broken gate never blocks an agent").
   status's `sessionid` from its caller in `agentstatusstore.ts`.
 - `pkg/blockcontroller/agentrestore.go`: `agentResumeFlags["agy"] = "--conversation"`, so a hand-launched agy tab is
   tracked live and restored at boot.
-- Everywhere the runtime list is enumerated gains agy: `newagentmodal.tsx` `RUNTIMES`, `settingssurface.tsx`
+- Everywhere the runtime list is enumerated gains agy: `launcher.ts` `AGENT_ROWS` (the New dialog), `settingssurface.tsx`
   `FLAG_RUNTIMES`, `channelmessages.ts` (`@agy`), `runtimemeta.ts` (label Antigravity, glyph `◭`, `text-rt-agy`),
   `runtimelogo.ts`, `cockpitrailmodel.ts`, `dailychart.tsx`, the `PROVIDER_RANK` maps (`agentsviewmodel.ts`,
   `ratelimitstore.ts`), and `frontend/app/cockpit/cockpit-actions.ts` if it lists runtimes.
@@ -402,7 +402,7 @@ pin the catalog's synced harness count update.
   - `runtimemeta`, the lead-runtime filter, the run route resolution skipping a non-lead preference,
     `agentresumestore` keyed by `sessionid`.
 - **CDP:** a new scenario `agy-harness` (`scripts/cdp/scenarios.mjs`), run by Final. Each step covers one view:
-  - the New Agent modal offers Antigravity and fills `agy`;
+  - the New dialog offers Antigravity and fills `agy`;
   - an injected agy roster row on the rail with its glyph, title and `asking` state;
   - an agy session in Conversation History, opened in the compact transcript reader with user, assistant and tool
     rows;

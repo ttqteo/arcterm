@@ -1,8 +1,8 @@
 # New launcher: one dialog for agents and runs — design
 
 Date: 2026-10-08. Status: approved design, not yet planned.
-Mockup: `.superpowers/design/new-launcher/project/Main.dc.html` (gitignored; interactive) plus seven state boards
-beside it (QuickRun, Orchestrate, OrchestratePlan, ProjectFilter, AgentOptions, Terminal, NoProjects).
+Mockup: `.superpowers/design/new-launcher/project/Main.dc.html` (gitignored; interactive) plus six state boards
+beside it (QuickRun, Orchestrate, OrchestratePlan, ProjectFilter, AgentOptions, Terminal).
 
 Supersedes, for this dialog only: decision D3 of `2026-06-26-launcher-polish-design.md` (no outside-click dismissal),
 the New Agent row of the `dismissOnBackdrop` table in `2026-07-03-shared-modals-motion-design.md`, and the New run
@@ -139,7 +139,7 @@ propagation so ModalShell's window listener does not also close the dialog.
 ## Open, close and draft
 
 **Open state.** `AgentsViewModel.newAgentOpenAtom` and `newRunOpenAtom` become one `launcherAtom` holding the door
-that opened it, `"agent" | "run" | null`. Every opener calls `openLauncher(door, prefill?)`; `dispatcher.ts` reads the
+that opened it, `"agent" | "run" | null`. Every opener calls `openLauncher(model, door, prefill?)`; `dispatcher.ts` reads the
 one atom for `modalOpen`. `newRunPrefillAtom` moves into the launcher store as `launcherPrefillAtom`, same
 `NewRunPrefill` shape.
 
@@ -171,11 +171,12 @@ left by a close. Clear empties those and turns the worktree switch off.
 ## Code shape
 
 New, under `frontend/app/view/agents/`:
-- `launcher.ts` + `launcher.test.ts` — pure: the Start rows from the harness list and their numbers; the door's pick;
+- `launcher.ts` + `launcher.test.ts` — pure: the Start rows from the harness list and their numbers;
   title, primary label and footer line for a pick; the project filter; `launcherKey(ctx, key)`, which maps a key in
   a given focus position to an action (`pick-start`, `pick-project`, `move`, `filter`, `launch`, `dismiss-inner`,
   `close`, `none`); whether "draft restored" shows.
-- `launcherstore.ts` + `launcherstore.test.ts` — the atoms above; `openLauncher`, `closeLauncher`,
+- `launcherstore.ts` + `launcherstore.test.ts` — the atoms above; `openLauncher` (which does the door's pick),
+  `closeLauncher`,
   `clearLauncherDraft`, `endLauncherDraft`.
 - `launchermodal.tsx` — the ModalShell, header, the two columns and the footer, `data-launcher` on the dialog's root.
 - `launcheragentfields.tsx` — the agent details, moved out of `newagentmodal.tsx`, and the branch reading as a hook.
@@ -199,9 +200,9 @@ moved); `projectpickerview.tsx`. `projectpicker.ts` keeps what the project colum
 ## Testing
 
 - **Unit (vitest):** `launcher.test.ts` covers numbering with Claude-only and all-five harness lists, every row of
-  the key table including digits past the end and filter edits, door picks from each kind of current pick, footer
+  the key table including digits past the end and filter edits, footer
   lines and blockers per pick, and the filter's selection rule. `launcherstore.test.ts` covers opening with each door
-  and with a prefill, that every close keeps the draft, that a launch clears it, and Clear.
+  from each kind of current pick and with a prefill, that every close keeps the draft, that a launch clears it, and Clear.
 - **CDP:** a new `launcher` scenario in `scripts/cdp/scenarios.mjs`: open with the app bar's New agent button (the
   `Mod+N` binding itself is unit-tested in `bindings.test.ts`); assert focus is on the Start column; press a digit and assert the pick and title; Tab, type a filter and assert the rows; Tab into Task and type;
   Esc, reopen, assert "draft restored" and the text; mousedown on the backdrop and assert it closed. Screenshots of

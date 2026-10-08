@@ -19,9 +19,8 @@ import { NowTicker } from "@/app/view/agents/nowticker";
 import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
-import { NewAgentModal } from "@/app/view/agents/newagentmodal";
+import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
-import { NewRunModalHost } from "@/app/view/jarvis/newruncontrol";
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
 import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";
@@ -149,8 +148,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             </div>
             <HintsFooter model={model} />
             <NewProjectModal model={model} />
-            <NewAgentModal model={model} />
-            <NewRunModalHost model={model} />
+            <LauncherModal model={model} />
             <NewInitiativeHost model={model} />
             <CommandPalette model={model} />
             <ShortcutsCheatSheet model={model} />

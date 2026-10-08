@@ -31,6 +31,7 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
@@ -280,7 +281,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // yields to an open modal: unguarded it stacked New Agent on top of whatever was already
             // open (the search palette) and pulled focus out of it
             when: (ctx) => !ctx.modalOpen,
-            run: () => globalStore.set(model.newAgentOpenAtom, true),
+            run: () => openLauncher(model, "agent"),
         },
         {
             // Not Mod+R: on Windows that is Ctrl+R, the shell's reverse search in a focused terminal.
@@ -289,7 +290,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             group: "Global",
             label: "New run",
             when: (ctx) => !ctx.modalOpen,
-            run: () => globalStore.set(model.newRunOpenAtom, true),
+            run: () => openLauncher(model, "run"),
         },
         {
             id: "launch:pi",

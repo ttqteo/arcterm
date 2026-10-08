@@ -8,8 +8,6 @@
 import { Segmented } from "@/app/element/segmented";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { getApi } from "@/app/store/global";
-import { globalStore } from "@/app/store/jotaiStore";
-import { newRunPrefillAtom } from "@/app/view/jarvis/newruncontrol";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -17,6 +15,7 @@ import { SquareDashed, X } from "lucide-react";
 import { useEffect, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
+import { openLauncher } from "./launcherstore";
 import { addMark, removeMark, setMarkNote, type Box, type Mark } from "./canvasmarks";
 import {
     ALL_TAB,
@@ -58,15 +57,14 @@ const LABEL_OFFSET = 22;
 const MARK_CHIP =
     "h-[20px] w-[20px] rounded-full bg-accent text-center text-[11px] font-bold tabular-nums leading-[20px] text-background";
 
-// New run opens as an orchestrator run on the agent's project, with this canvas as the run's prototype
+// the New dialog opens on Orchestrate in the agent's project, with this canvas as the run's prototype
 function openBuildRun(model: AgentsViewModel, agent: AgentVM, s: CanvasState): void {
-    globalStore.set(newRunPrefillAtom, {
+    openLauncher(model, "run", {
         projectName: projectOf(agent),
         goal: buildGoal(s.dir, shownBoards(s)),
         shape: "orchestrator",
         prototype: prototypePath(s.dir, shownBoards(s)),
     });
-    globalStore.set(model.newRunOpenAtom, true);
 }
 
 export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {

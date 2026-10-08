@@ -9,7 +9,6 @@
 
 import { cardVariants, MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
-import { globalStore } from "@/app/store/jotaiStore";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
@@ -55,6 +54,7 @@ import {
     type Status,
 } from "./sessionsruns";
 import { SurfaceEmptyState, SurfaceError } from "./surfacescaffold";
+import { openLauncher } from "./launcherstore";
 
 const FILTERS: { key: SessionStatusFilter; label: string }[] = [
     { key: "all", label: "All" },
@@ -329,7 +329,7 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                         body="Sessions appear here as agents run. Start one to begin."
                                         action={{
                                             label: "New agent",
-                                            onClick: () => globalStore.set(model.newAgentOpenAtom, true),
+                                            onClick: () => openLauncher(model, "agent"),
                                         }}
                                     />
                                 </div>

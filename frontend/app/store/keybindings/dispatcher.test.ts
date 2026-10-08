@@ -5,6 +5,7 @@ import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import type { LauncherKind } from "@/app/view/agents/launcher";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
@@ -129,8 +130,7 @@ describe("deriveKeyContext", () => {
         return {
             surfaceAtom: atom<SurfaceKey>(surface),
             paletteOpenAtom: atom(false),
-            newAgentOpenAtom: atom(false),
-            newRunOpenAtom: atom(false),
+            launcherAtom: atom<LauncherKind | null>(null),
             newInitiativeOpenAtom: atom(false),
             newProjectOpenAtom: atom(false),
         } as unknown as AgentsViewModel;
@@ -167,13 +167,13 @@ describe("deriveKeyContext", () => {
         unbind();
     });
 
-    // the New run window opens from the app bar over any surface; uncounted, the Brief's bare-letter keys
-    // stayed live behind it
-    it("counts the New run window as a modal", () => {
+    // the launcher opens from the app bar over any surface; uncounted, the Brief's bare-letter keys stayed live
+    // behind it
+    it("counts the launcher as a modal", () => {
         const model = stubModel("jarvis");
         const unbind = initKeybindingDispatcher(model);
         expect(deriveKeyContext().modalOpen).toBe(false);
-        globalStore.set(model.newRunOpenAtom, true);
+        globalStore.set(model.launcherAtom, "run");
         expect(deriveKeyContext().modalOpen).toBe(true);
         unbind();
     });
@@ -233,8 +233,7 @@ describe("the Uploads lightbox over the Agent surface", () => {
         const model = {
             surfaceAtom: atom<SurfaceKey>("agent"),
             paletteOpenAtom: atom(false),
-            newAgentOpenAtom: atom(false),
-            newRunOpenAtom: atom(false),
+            launcherAtom: atom<LauncherKind | null>(null),
             newInitiativeOpenAtom: atom(false),
             newProjectOpenAtom: atom(false),
             focusIdAtom: atom<string | undefined>(undefined),
@@ -301,8 +300,7 @@ describe("the Final check viewer over the Jarvis surface", () => {
         const model = {
             surfaceAtom: atom<SurfaceKey>("jarvis"),
             paletteOpenAtom: atom(false),
-            newAgentOpenAtom: atom(false),
-            newRunOpenAtom: atom(false),
+            launcherAtom: atom<LauncherKind | null>(null),
             newInitiativeOpenAtom: atom(false),
             newProjectOpenAtom: atom(false),
             focusIdAtom: atom<string | undefined>(undefined),
@@ -369,8 +367,7 @@ describe("a Vietnamese input method rewriting keys outside a field", () => {
         const model = {
             surfaceAtom: atom<SurfaceKey>("agent"),
             paletteOpenAtom: atom(false),
-            newAgentOpenAtom: atom(false),
-            newRunOpenAtom: atom(false),
+            launcherAtom: atom<LauncherKind | null>(null),
             newInitiativeOpenAtom: atom(false),
             newProjectOpenAtom: atom(false),
         } as unknown as AgentsViewModel;

@@ -8,7 +8,6 @@
 // so the agent picks up its prior session in its original cwd.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
-import { globalStore } from "@/app/store/jotaiStore";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
@@ -20,6 +19,7 @@ import type { Runtime } from "./launch";
 import { loadRecentSessions, recentSessionsAtom } from "./recentsessionsstore";
 import { newAgentRamWarning } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
+import { openLauncher } from "./launcherstore";
 
 export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
     const sessions = useAtomValue(recentSessionsAtom);
@@ -29,9 +29,9 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
         fireAndForget(loadRecentSessions);
     }, []);
 
-    // Open the New Agent modal (same atom as the app-bar "+New agent" and Cmd+N) so the user picks
+    // Open the New launcher on its agent door (as the app-bar "+New agent" and Cmd+N do) so the user picks
     // project/runtime/task — rather than launching a bare `claude` in an empty cwd.
-    const launchFresh = () => globalStore.set(model.newAgentOpenAtom, true);
+    const launchFresh = () => openLauncher(model, "agent");
 
     const resume = (s: SessionInfo) => {
         const piResume =

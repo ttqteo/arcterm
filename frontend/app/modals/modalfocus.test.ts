@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { focusTrapTarget, takeModalFocus } from "./modalfocus";
+import { focusTrapTarget, shellOwnsEscape, takeModalFocus } from "./modalfocus";
 
 function fakePanel(contains: boolean) {
     return { focus: vi.fn(), contains: vi.fn(() => contains) } as unknown as HTMLElement;
@@ -82,5 +82,30 @@ describe("takeModalFocus", () => {
 
     it("is a no-op when the panel ref is not attached yet", () => {
         expect(() => takeModalFocus(null, fakeNode(true))()).not.toThrow();
+    });
+});
+
+describe("shellOwnsEscape", () => {
+    // elements are nodeType 1; document is 9, and window has no nodeType
+    const inside = { nodeType: 1 } as Node;
+    const portaled = { nodeType: 1 } as Node;
+    const body = { nodeType: 1 } as Node;
+    const panel = { contains: (n: Node | null) => n === inside };
+    it("owns an Escape from inside the panel", () => {
+        expect(shellOwnsEscape(panel, inside, body)).toBe(true);
+    });
+    it("leaves an Escape from a popover portaled out of the panel to that popover", () => {
+        expect(shellOwnsEscape(panel, portaled, body)).toBe(false);
+    });
+    it("owns an Escape with nothing focused", () => {
+        expect(shellOwnsEscape(panel, body, body)).toBe(true);
+        expect(shellOwnsEscape(panel, null, body)).toBe(true);
+    });
+    it("owns an Escape dispatched on document or window, which no popover can claim", () => {
+        expect(shellOwnsEscape(panel, { nodeType: 9 } as unknown as EventTarget, body)).toBe(true);
+        expect(shellOwnsEscape(panel, {} as EventTarget, body)).toBe(true);
+    });
+    it("owns every Escape before the panel exists", () => {
+        expect(shellOwnsEscape(null, portaled, body)).toBe(true);
     });
 });

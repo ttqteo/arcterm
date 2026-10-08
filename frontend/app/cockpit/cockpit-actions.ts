@@ -12,6 +12,7 @@ import type { PendingLaunch } from "@/app/view/agents/agentsviewmodel";
 import { resolveCwd } from "@/app/view/agents/agentcwdresolve";
 import { buildLaunchMeta, runtimeCreatesAgentPanel, runtimeStartupCommand, type Runtime } from "@/app/view/agents/launch";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 
 export interface LaunchAgentOpts {
     runtime: Runtime;
@@ -153,7 +154,7 @@ export async function launchPiTab(model: AgentsViewModel): Promise<void> {
         cwd = Object.values(projects).find((p) => p.path)?.path ?? null;
     }
     if (!cwd) {
-        globalStore.set(model.newAgentOpenAtom, true);
+        openLauncher(model, "agent");
         return;
     }
     const projectName = cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
