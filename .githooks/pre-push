@@ -1,0 +1,66 @@
+#!/bin/sh
+# pre-push: refuse a push whose commits add this machine's home path or git email.
+#
+# Opt in once per clone, on each machine: git config core.hooksPath .githooks
+# The file holds nothing personal: the patterns come from the machine it runs on ($HOME's folder
+# name, in /Users/<name>, C:\Users\<name>, /home/<name> and C--Users-<name>- form, and
+# `git config user.email`), plus one extended regex per line in
+# ${XDG_CONFIG_HOME:-$HOME/.config}/git/leak-patterns, outside the repo (# starts a comment).
+# Matching ignores case. It reads the lines each pushed commit adds and its message; merges are skipped.
+# Push anyway: git push --no-verify
+
+remote="$1"
+
+escape() { printf '%s' "$1" | sed 's#[][\.*^$+?(){}|]#\\&#g'; }
+lower() { printf '%s' "$1" | tr 'A-Z' 'a-z'; }
+
+pats=""
+add() {
+    if [ -n "$1" ]; then pats="${pats:+$pats|}($1)"; fi
+}
+
+user=$(basename "$HOME")
+if [ -n "$user" ] && [ "$user" != / ]; then
+    add "(users|home)(/|\\\\|-)+$(lower "$(escape "$user")")([^a-z0-9._]|\$)"
+fi
+add "$(lower "$(escape "$(git config user.email)")")"
+extra="${XDG_CONFIG_HOME:-$HOME/.config}/git/leak-patterns"
+if [ -f "$extra" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=$(printf '%s' "$line" | tr -d '\r')
+        case "$line" in '' | '#'*) continue ;; esac
+        add "$(lower "$line")"
+    done <"$extra"
+fi
+[ -n "$pats" ] || exit 0
+
+status=0
+while read -r lref loid rref roid; do
+    case "$loid" in *[!0]*) ;; *) continue ;; esac # deleting a branch
+    range="$loid --not --remotes=$remote"
+    case "$roid" in *[!0]*) git cat-file -e "$roid^{commit}" 2>/dev/null && range="$roid..$loid" ;; esac
+    if ! out=$(git log --no-merges -p -U0 --no-color --no-ext-diff --format='%x01%h %s%n%B' $range |
+        LEAK="$pats" awk '
+            function report(where, text) {
+                if (length(text) > 160) text = substr(text, 1, 157) "..."
+                printf "  %s\n    %s: %s\n", commit, where, text
+                n++
+            }
+            BEGIN { pat = ENVIRON["LEAK"] }
+            /^\001/ { commit = substr($0, 2); inmsg = 1; next }
+            /^diff --git / { inmsg = 0; next }
+            inmsg { if (tolower($0) ~ pat) report("message", $0); next }
+            /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); next }
+            /^\+/ { if (tolower(substr($0, 2)) ~ pat) report(file, substr($0, 2)) }
+            END { exit n > 0 }
+        '); then
+        printf '%s\n%s\n' "pre-push: $rref: these commits add your home path or email:" "$out" >&2
+        status=1
+    fi
+done
+
+if [ "$status" -ne 0 ]; then
+    echo "Patterns: \$HOME's folder name, git user.email, and $extra." >&2
+    echo "Rewrite those commits before pushing, or push anyway with: git push --no-verify" >&2
+fi
+exit "$status"
