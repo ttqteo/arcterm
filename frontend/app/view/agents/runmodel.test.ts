@@ -174,6 +174,13 @@ describe("runComplete", () => {
         expect(runComplete(info("executing"))).toBe(false);
         expect(runComplete(info("finalizing"))).toBe(false);
     });
+    // a human can land a run whose final stage failed: the dag stays blocked, but the run is over and in its base
+    it("is complete once a run landed past a failed final stage, its dag still blocked", () => {
+        expect(runComplete(info("done", { state: "landed" }, "blocked"))).toBe(true);
+        expect(finishedRunLabel(info("done", { state: "landed" }, "blocked"))).toBe("landed");
+        expect(runComplete(info("done", undefined, "blocked"))).toBe(false);
+        expect(runComplete(info("done", { state: "held" }, "blocked"))).toBe(false);
+    });
     it("is not complete when cancelled or still running", () => {
         expect(runComplete(info("done", undefined, "cancelled"))).toBe(false);
         expect(runComplete(info("cancelled"))).toBe(false);

@@ -15,6 +15,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The plan-usage meters and the free-RAM chip are back in the app bar, where they are easier to read; clicking either
   opens Consumers below it. The Servers chip and the version stay in the footer.
 
+### Fixed
+
+- A run you landed after its final check failed now reads **✓ landed** in the sidebar, on its lead card and in
+  Conversation History, instead of "7/7 done" as if it were still waiting.
+
 ## 0.15.6 — 2026-10-08
 
 ### Added
