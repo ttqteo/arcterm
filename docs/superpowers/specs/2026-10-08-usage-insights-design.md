@@ -27,45 +27,55 @@ conversation about the result (opening an agent tab seeded with it).
 
 ### 1. Per-session usage: `pkg/usagestats`
 
-- `Record` gains `Session` (the parent session id) and `Sub` (true for a record from a
-  `<session>/subagents/*.jsonl` file, which is attached to its parent). Parsing and `parseCache` are
-  unchanged, so a repeat scan still re-reads only files written since the last one.
-- `ScanSessions(windowDays) []SessionUsage` folds Claude records per session:
-  - `ID`, `Title` (the transcript's last `ai-title`, else the first user prompt, 80 chars),
-    `Project` (the transcript directory, shortened; every `.waveterm-worktrees-*` directory folds to
-    "engine run"), `Models`;
-  - token classes (input, output, reasoning, cache read, cache write, cache write 1h) for the whole
-    session, and the same classes for its subagents alone;
-  - `Turns`, `AvgCtx`, `MaxCtx`, where a turn's context is input + cache read + cache write;
-  - `ColdResumes`, `ColdTokens`: main-session turns that come more than 60 minutes after the
-    session's previous turn and write more than 50k tokens of cache;
-  - `FirstTs`, `LastTs`.
-- Dedupe stays `message.id:requestId`. Print-mode records stay excluded, which also keeps the
-  analysis call below out of the numbers it analyses.
-- Spend is not computed in Go. The frontend prices token classes with `usagepricing.ts`, as it does
-  for buckets, so there is one price table.
+- `Record` gains `Session` (the parent session id: the transcript's file stem, or for a
+  `<session>/subagents/*.jsonl` file the `<session>` directory above it), `Sub` (true for a subagent
+  file's records), `Cwd` (the assistant line's `cwd`) and `Title`. `parseFile` sets them for Claude files,
+  so `parseCache` keeps them and a repeat scan still re-reads only the files written since the last one.
+- `Title` is the file's last `ai-title` record (Claude Code's running name for the session). The Claude
+  line filter keeps lines carrying `"ai-title"` beside the usage lines for this. There is no first-prompt
+  fallback: that needs the full transcript the usage filter skips. A session without one shows
+  "Untitled" and its id.
+- `ScanSessionUsage(windowDays) []SessionUsage` walks the Claude root only, keeps the records inside the
+  window, dedupes them as `ScanUsage` does, drops `<synthetic>`, and folds them per `Session`:
+  - `ID`, `Title`, `Project`: the last segment of the main records' `Cwd`, except that a cwd under a
+    `.waveterm-worktrees` directory is "engine run";
+  - `Models`: one entry per (model, sub) with the token classes (input, output, cache read, cache
+    write, cache write 1h), so the frontend prices each with its own model's rate;
+  - `Turns` and `SubTurns` (records), and over the main-session turns only `AvgCtx` and `MaxCtx`,
+    where a turn's context is input + cache read + cache write;
+  - `ColdResumes`, `ColdTokens`: main-session turns more than 60 minutes after the session's previous
+    turn that write more than 50k tokens of cache;
+  - `FirstTs`, `LastTs` (Unix ms).
+- Print-mode records stay excluded, which also keeps the analysis call below out of the numbers it
+  analyses.
+- Spend is not computed in Go. Prices live only in `usagepricing.ts` (Opus 5.5 reads cache at a
+  different rate from older Opus, so a second table would drift), and the frontend prices per model as
+  it does for buckets.
 
-### 2. RPCs
+### 2. RPCs and the analysis
 
-- `GetSessionUsageCommand {windowDays}` → `{sessions: SessionUsage[]}`.
-- `AnalyzeUsageCommand {windowDays}` → `{markdown, analyzedts, windowdays, model}`.
-  - wavesrv builds a digest (`pkg/usagestats/digest.go`, pure): totals per token class, per model
-    and per effort; the heaviest 5-hour windows; the context-size distribution (<100k, 100–200k,
-    200–400k, 400–700k, >700k) with each band's share of turns and spend; and the 25 most expensive
-    sessions with the fields above. It holds numbers, titles and project names only, never
-    conversation text, and stays around 3–5k tokens. Spend in the digest uses a Go copy of the list
-    prices for the relative weights only, labelled as such.
-  - It runs `consult.Run` with `consult.HeadlessSpecForTier(consult.TierMid)` (Sonnet on the
-    claude runtime), a 90 s timeout, and a fixed prompt: where the quota goes, which tabs cost most
-    and why, the habits that waste it, what to change. It answers in `usage:insightslang` (empty
-    means English).
-  - One analysis at a time: a second call while one runs returns "already analysing".
+- `GetSessionUsageCommand {windowdays}` → `{sessions: UsageSession[]}`.
+- **The digest is built in the frontend** (`usagedigest.ts`, pure), because spend needs the one price
+  table: totals per token class (tokens and spend), spend per model, tokens and spend per day, the
+  share of spend in sessions whose average context is under 100k, 100–200k, 200–400k and above 400k,
+  cold resumes and their spend at the 1-hour write rate, subagent share, and the 25 most expensive
+  sessions with every field above, spend and share of the window. Numbers, titles and project names
+  only, never conversation text; about 3–5k tokens.
+- `AnalyzeUsageCommand {windowdays, digest}` → `UsageInsights {markdown, analyzedts, windowdays, model}`,
+  in a new `pkg/usageinsights`:
+  - It runs `consult.Run` with `consult.SpecForTier("claude", consult.TierMid)`: `claude -p --model
+    sonnet`. Not the headless runtime, which defaults to openrouter: the person asked Claude to read
+    their Claude usage. A 120 s timeout and a fixed prompt around the digest: where the quota goes,
+    which tabs cost most and why, the habits that waste it, what to change, as short markdown sections
+    ending with a numbered "what to change" list. It answers in `usage:insightslang` (empty means
+    English).
+  - One analysis at a time: a second call while one runs returns an "already analysing" error.
   - It does not check quota itself: `pkg/quotagate` is only designed so far
     (`2026-10-07-quota-guard-design.md`). The button checks it instead (section 3). Once quotagate
     ships, the RPC also refuses while `quotagate.Held("claude")`.
-  - On success it writes `insights/usage.json` in the data dir, so the last result survives a
-    restart; `GetUsageInsightsCommand` reads it back. An empty or truncated reply is an error and does
-    not overwrite the file. A failed write is logged and the result is still returned.
+  - On success it writes `insights/usage.json` under the data dir, so the last result survives a
+    restart; `GetUsageInsightsCommand` reads it back (an empty result when none). An empty reply is an
+    error and does not overwrite the file. A failed write is logged and the result is still returned.
 - `usage:insightslang` is a new `wconfig` setting. Run `task generate` after adding the types.
 
 ### 3. UI: provider tabs, two new sections, a compact chart row
@@ -140,20 +150,22 @@ mockup is approved before the UI is built.
 ## Testing
 
 - **Go, `pkg/usagestats`:** session attribution, including subagent files → parent; average and peak
-  context; the cold-resume rule at its edges (59 min no, 61 min with >50k cache write yes, 61 min with
-  a small write no); dedupe; title from `ai-title`, then the first prompt; engine-run worktrees fold
+  context over main turns; the cold-resume rule at its edges (59 min no, 61 min with >50k cache write
+  yes, 61 min with a small write no); dedupe; title from the last `ai-title`; engine-run worktrees fold
   to one project. Over one fixture corpus, the session totals sum to the same tokens per class as
-  `ScanUsage`'s buckets, so the By session table and the KPI row cannot disagree.
-- **Go, digest:** deterministic output, capped at 25 sessions, no conversation text; the prompt handed
-  to `consult` is checked with a scripted runner; a concurrent call returns without calling it; an
-  empty reply does not overwrite the saved result.
-- **Vitest:** `usagesessions.ts` (pricing through `usagepricing`, chip thresholds, sort, the 25-row
-  cut) and `usageinsights.ts` (the card's states, including held at 95%).
-- **CDP:** a `usage-insights` scenario in `scripts/cdp/scenarios.mjs` injects sessions and a saved
-  result, opens Usage on the Claude tab, and screenshots the provider tabs, the By session table, the
-  compact chart row, and the Insights card done and empty. The existing `usage-charts` scenario selects
-  scopes through the rail's `data-usage-harness` buttons; the tabs keep that attribute so it keeps
-  working, and its shots change to the new layout.
+  `ScanUsage`'s Claude buckets, so the By session table and the KPI row cannot disagree.
+- **Go, `pkg/usageinsights`:** the prompt carries the digest and the language; a scripted runner stands
+  in for `consult.Run`; a concurrent call returns "already analysing" without calling it; an empty reply
+  is an error and does not overwrite the saved result; save and load round-trip.
+- **Vitest:** `usagesessions.ts` (pricing through `spendOf`, chip thresholds, sort, the 25-row cut, the
+  live join), `usagedigest.ts` (deterministic, capped at 25 sessions, the context bands) and
+  `usageinsights.ts` (the card's states, including held at 95%).
+- **CDP:** a `usage-insights` scenario in `scripts/cdp/scenarios.mjs` seeds a dev-only fixture (sessions,
+  a saved result, and the analyse outcome), opens Usage on the Claude tab, and screenshots the provider
+  tabs, the By session table, the compact chart row, and the Insights card done, running, never
+  analysed, stale, error and held. The existing `usage-charts` scenario selects scopes through the
+  rail's `data-usage-harness` buttons; the tabs keep that attribute so it keeps working, and its shots
+  change to the new layout.
 
 ## Docs
 
