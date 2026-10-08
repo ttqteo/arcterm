@@ -23,7 +23,7 @@ export function WorkerCapacityChip() {
             data-worker-capacity
             aria-haspopup="dialog"
             title={capacityTitle(cap)}
-            onClick={() => toggleConsumers("ram")}
+            onClick={(e) => toggleConsumers("ram", e.currentTarget)}
             className={cn(
                 "flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[11.5px] font-semibold tabular-nums hover:bg-surface-hover",
                 low ? "text-warning" : "text-muted"

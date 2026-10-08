@@ -19,12 +19,14 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import {
     buildConsumers,
     holdOrder,
+    PANEL_WIDTH,
+    panelPlacement,
     ramLabel,
     staleLine,
     STATE_DOT,
@@ -33,7 +35,7 @@ import {
     type ConsumerRow,
     type ConsumersSort,
 } from "./consumers";
-import { consumersOpenAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
+import { consumersOpenAtom, consumersOpenerAtom, consumersReadingAtom, useConsumersPoll } from "./consumersstore";
 import { usePlanDonuts } from "./usagemeters";
 import { fmt, usd } from "./usagestats";
 import { formatGB } from "./workercapacity";
@@ -174,12 +176,28 @@ function Row({ row, model, sort }: { row: ConsumerRow; model: AgentsViewModel; s
     );
 }
 
+// measured from the opener while open, and again when the window resizes, which moves the footer under it
+function usePanelPlacement(open: boolean, opener: Element | null) {
+    const [, setSize] = useState(0);
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const onResize = () => setSize((n) => n + 1);
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, [open]);
+    const rect = opener?.isConnected ? opener.getBoundingClientRect() : null;
+    return panelPlacement(rect, { width: window.innerWidth, height: window.innerHeight });
+}
+
 export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
     const sort = useAtomValue(consumersOpenAtom);
     const open = sort != null;
     const reading = useAtomValue(consumersReadingAtom);
     const agents = useAtomValue(model.agentsAtom);
     const fiveHour = usePlanDonuts(model).find((d) => d.provider === "claude")?.fivehour.pct;
+    const placement = usePanelPlacement(open, useAtomValue(consumersOpenerAtom));
     useConsumersPoll(open);
     useEffect(() => {
         if (!open) {
@@ -212,9 +230,10 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
             {open ? <div data-consumers-backdrop className="fixed inset-0 z-50" onClick={close} /> : null}
             <PopoverReveal
                 open={open}
-                origin="bottom right"
-                // its openers (RAM chip, usage meters) sit at the footer's right end, so it rises from just above it
-                className="fixed bottom-[42px] right-4 z-[60] w-[520px] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
+                origin={placement.origin}
+                // it hangs from the control that opened it (the RAM chip, the usage meters), wherever that sits
+                style={{ right: placement.right, top: placement.top, bottom: placement.bottom, width: PANEL_WIDTH }}
+                className="fixed z-[60] overflow-hidden rounded-lg border border-edge-strong bg-surface-raised shadow-popover"
             >
                 <div data-consumers-panel data-sort={sort ?? ""} role="dialog" aria-label="Consumers">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -282,6 +301,16 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                                     </span>
                                 </div>
                             ))}
+                            <div
+                                data-consumers-app-total
+                                title="Everything arcterm runs: the rows above and every agent"
+                                className="mt-[3px] flex items-center justify-between border-t border-border pt-[4px] text-[12px] font-semibold text-primary"
+                            >
+                                <span>Total, with agents</span>
+                                <span className="tabular-nums">
+                                    {view?.appBytes === undefined ? "—" : ramLabel(view.appBytes)}
+                                </span>
+                            </div>
                         </div>
                     ) : null}
                     <div className="flex justify-end border-t border-border px-3 py-1.5">

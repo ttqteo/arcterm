@@ -12,6 +12,16 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- From any other surface, the **Agent** item in the left rail shows a pulsing green dot with the number of agents
+  still working, so you can see a run is busy from Code or Diff. Hover it for the count in words.
+- An agent whose last turn ended on a git commit, once you have read that turn, offers to close itself: a **✓ Close**
+  chip on its sidebar row and a **Done · 30.7M tok — Close** button in its header, both asking first as Close agent
+  does. Agents a run started are left to the run. Claude agents for now.
+- A part named without a total, as a heading that opens a line (`## Phần 2`, `**Phần 1:**`, `Part 3:`), now shows its
+  number on the agent's row, the way `Phần 2/4` shows `2/4`. A message whose headings walk through several parts
+  shows none.
+- Consumers' RAM view ends its arcterm section with **Total, with agents**: everything arcterm runs, its own
+  processes and every agent, in one figure.
 - A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
   project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
 - A terminal in the sidebar's Terminals section shows a pulsing dot while a command runs in it (a dev server, a
@@ -24,9 +34,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- A plan-usage bar's colour follows how much of it is used, amber past 60% and red past 85%, instead of how fast it
+  is going: a fast start no longer turns 27% red. The tick still shows how much of the window has passed.
 - An agent's row in the sidebar keeps its name alone on the first line: its canvas tag, state (asking, Low RAM,
-  review), tokens and age moved to the second line beside its model, so a long name is no longer cut short. A run's
-  worker rows do the same with their canvas tag and asking label. A lead's row is unchanged.
+  review), tokens and age moved to the second line beside its model, so a long name is no longer cut short. A lead's
+  row ends its workers line with them, and a run's worker rows do the same with their canvas tag and asking label.
 - The plan-usage meters and the free-RAM chip moved from the app bar to the footer, beside the version, on every
   surface, which leaves the app bar more room for search and **New**. Each provider's meters start with its logo,
   and clicking the meters or the chip opens Consumers upward from the footer.
@@ -65,6 +77,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A part an agent only quotes as an example, in quotes or code (`kiểu "Phần 2/4"`), no longer shows on its row as
+  the part it stopped on, and no longer keeps a finished agent from offering **Close**.
+- Consumers opens right under (or over) the control you clicked, the usage meters or the free-RAM chip, instead of
+  at the window's right edge.
+- An agent's terminal you had not opened for a while no longer comes back as garbled characters: showing it again
+  redraws its text.
+- An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot
+  stays only on a question still unanswered.
 - Choosing an agent that is asking a question in its terminal now moves typing into that terminal, so the arrow keys
   answer its picker instead of moving through the agent list.
 - The live agents in the sidebar's Active section keep their places when you switch to the Cockpit and back, instead

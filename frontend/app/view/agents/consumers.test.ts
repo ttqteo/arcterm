@@ -4,9 +4,11 @@
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
-    BURN_WARN_TOKENS,
     buildConsumers,
+    BURN_WARN_TOKENS,
     holdOrder,
+    PANEL_WIDTH,
+    panelPlacement,
     ramLabel,
     staleLine,
     stopWorkerMessage,
@@ -177,6 +179,23 @@ describe("buildConsumers", () => {
         ]);
         expect(view.groups).toEqual([]);
     });
+
+    it("totals the whole app: its own processes and every agent, read or not in the roster", () => {
+        const view = buildConsumers(
+            reading([agent("a", { rambytes: 300 * MB }), agent("ghost", { rambytes: 100 * MB }), agent("b")], {
+                interfacebytes: 1 * GB,
+                serverbytes: 121 * MB,
+                terminalsbytes: 12 * MB,
+            }),
+            [vm("a"), vm("b")],
+            "ram"
+        );
+        expect(view.appBytes).toBe(1 * GB + 121 * MB + 12 * MB + 300 * MB + 100 * MB);
+    });
+
+    it("leaves the total absent until something is read", () => {
+        expect(buildConsumers(reading([agent("a")]), [vm("a")], "ram").appBytes).toBeUndefined();
+    });
 });
 
 describe("holdOrder", () => {
@@ -221,6 +240,35 @@ describe("holdOrder", () => {
         );
         expect(order(next)).toEqual(["b", "c", "w1"]);
         expect(next.order).toEqual(["b", "c", "w1"]);
+    });
+});
+
+describe("panelPlacement", () => {
+    const view = { width: 1600, height: 900 };
+
+    it("rises from a footer opener, its right edge on the opener's", () => {
+        expect(panelPlacement({ top: 880, bottom: 896, right: 1400 }, view)).toEqual({
+            right: 200,
+            bottom: 26,
+            origin: "bottom right",
+        });
+    });
+
+    it("drops from an app bar opener", () => {
+        expect(panelPlacement({ top: 8, bottom: 32, right: 1100 }, view)).toEqual({
+            right: 500,
+            top: 38,
+            origin: "top right",
+        });
+    });
+
+    it("stays inside the window at either edge", () => {
+        expect(panelPlacement({ top: 880, bottom: 896, right: 1598 }, view).right).toBe(8);
+        expect(panelPlacement({ top: 880, bottom: 896, right: 100 }, view).right).toBe(1600 - PANEL_WIDTH - 8);
+    });
+
+    it("keeps the footer's right end when nothing opened it", () => {
+        expect(panelPlacement(null, view)).toEqual({ right: 16, bottom: 42, origin: "bottom right" });
     });
 });
 
