@@ -20219,10 +20219,27 @@ const caCenter = (expr) => `(() => {
     const b = el.getBoundingClientRect();
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 })()`;
-// the quota line of a row: its text and whether it wears the warning tone
+// the usage line of a row: each window's percent (data-pct, absent without a reading) and whether its bar fill wears
+// the warning tone (bg-warning from 80%), the age after them, and the line's text
 const caQuota = (id) => `(() => {
     const q = document.querySelector('[data-claude-account-quota="${id || "default"}"]');
-    return q ? { text: q.textContent.trim(), warn: q.classList.contains("text-warning"), muted: q.classList.contains("text-muted") } : null;
+    if (!q) return null;
+    const meter = (name) => {
+        const m = q.querySelector('[data-claude-account-meter="' + name + '"]');
+        if (!m) return null;
+        const pct = m.getAttribute("data-pct");
+        return {
+            pct: pct == null ? null : Number(pct),
+            warn: m.querySelector("[data-meter-fill]")?.classList.contains("bg-warning") ?? null,
+            fill: m.querySelector("[data-meter-fill]")?.style.width ?? null,
+        };
+    };
+    return {
+        text: q.textContent.replace(/\\s+/g, " ").trim(),
+        fivehour: meter("5h"),
+        week: meter("week"),
+        seen: q.querySelector("[data-claude-account-seen]")?.textContent.trim() ?? null,
+    };
 })()`;
 // the e-mail line under a row's name, or null when there is none
 const caEmailLine = (id) =>
@@ -20524,11 +20541,13 @@ const settingsClaudeAccount = {
         // --- list: quiet rows ---
         const noInputs = await noRowInputs();
         const loginEmail = ((await h.rpc("claudeaccountlist", null))?.loginemail ?? "").trim().toLowerCase();
+        // the /login tag is the name's sibling inside the row, not a child of the name
         const defName = await h.ev(`(() => {
             const n = document.querySelector('[data-claude-account-name="default"]');
             return {
                 name: [...(n?.childNodes ?? [])].find((c) => c.nodeType === 3)?.textContent.trim() ?? null,
-                tag: n?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+                tag: n?.closest("[data-claude-account-row]")?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+                tagInName: n?.querySelector("[data-claude-account-login-tag]") != null,
             };
         })()`);
         // the identity also learns the /login email from a live quota answer, so with none listed an email-shaped
@@ -20539,18 +20558,24 @@ const settingsClaudeAccount = {
                 : defName.name === "Claude login" || /^\S+@\S+$/.test(defName.name ?? "");
         rec(
             "15. rows hold no inputs: every name is text, and Default is named by its /login email or Claude login with a /login tag",
-            noInputs === true && nameOk && defName.tag === "/login",
+            noInputs === true && nameOk && defName.tag === "/login" && defName.tagInName === false,
             JSON.stringify({ noInputs, loginEmail, defName })
         );
         const qA = await h.ev(caQuota(ctx.idA));
         const qB = await h.ev(caQuota(ctx.idB));
         rec(
-            "16. a row at 90% or more reads in the warning tone: A (97%) does, B (40%) stays muted",
-            qA?.warn === true &&
-                qA.text.startsWith("5h 97% · week 64%") &&
-                qB?.warn === false &&
-                qB.muted === true &&
-                qB.text.startsWith("5h 40% · week 30%"),
+            "16. a usage bar from 80% reads in the warning tone: A's (97%, 64%) does for 5h, B's (40%, 30%) stays normal",
+            qA?.fivehour?.pct === 97 &&
+                qA.fivehour.warn === true &&
+                qA.fivehour.fill === "97%" &&
+                qA.week?.pct === 64 &&
+                qA.week.warn === false &&
+                qB?.fivehour?.pct === 40 &&
+                qB.fivehour.warn === false &&
+                qB.week?.pct === 30 &&
+                qB.week.warn === false &&
+                qB.seen != null &&
+                qB.seen.endsWith(" ago"),
             JSON.stringify({ qA, qB })
         );
         const adds = await h.ev(`[...document.querySelectorAll("[data-claude-account-add]")].map((b) => b.textContent.trim())`);
@@ -21562,10 +21587,13 @@ const settingsRadarAudit = {
 
 // --- settings-pages: six pages of cards, the key pill on hover, a changed row end to end ----------------
 // docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the six in order;
-// the page's card ids in order; a shot), then the key pill on Terminal (hidden at rest, visible and titled on hover,
-// pressing it leaves the row's control focused) and its absence on About's build info, then term:fontsize set off its
-// default to see the changed dot, the revert button, the index count and Reset section. The scenario restores
-// term:fontsize in a finally and again in teardown.
+// the page's card ids in order; a shot), then one detail step per page that draws something the card ids do not show
+// (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the runtime
+// list and the OpenRouter warning band, the right-aligned versions), then the key pill on Terminal (hidden at rest,
+// visible and titled on hover, pressing it leaves the row's control focused) and its absence on About's build info, then
+// term:fontsize set off its default to see the changed dot, the revert button, the index count and Reset section. The
+// scenario restores term:fontsize in a finally and again in teardown, each retried: the packaged app and a final-verify
+// app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
     { id: "general", cards: ["startup", "notifications", "vault"] },
     { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
@@ -21609,6 +21637,56 @@ const spPill = (rowId) => `(() => {
         y: r.top + r.height / 2,
     };
 })()`;
+// The themed context menu's one floating panel (element/contextmenu.tsx), the same hook settings-claude-account reads.
+const SP_MENU_PANEL = CA_MENU_PANEL;
+// a real left click at the centre of an element
+const spClick = async (h, expr) => {
+    const at = await h.ev(`(() => {
+        const el = ${expr};
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    return true;
+};
+// The option buttons of a font row, each with the first family it is drawn in. A font option is drawn in the face it
+// names, so that family reads as the option's label ("System UI" draws as system-ui). The revert button and the key
+// pill carry an aria-label; an option does not.
+const spFaces = (rowId) => `(() => {
+    const row = ${spRow(rowId)};
+    if (!row) return null;
+    return [...row.querySelectorAll("button:not([aria-label])")].map((b) => ({
+        label: b.textContent.trim(),
+        inline: b.style.fontFamily,
+        family: getComputedStyle(b).fontFamily.split(",")[0].replace(/["']/g, "").trim(),
+    }));
+})()`;
+const spNorm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+const spOwnFaces = (faces) =>
+    faces != null &&
+    faces.length > 1 &&
+    faces.every((f) => f.inline !== "" && spNorm(f.family) === spNorm(f.label)) &&
+    new Set(faces.map((f) => f.family)).size === faces.length;
+// term:fontsize back to what the run found; three tries, since the write can lose a rename race (Access is denied)
+const spRestoreFontSize = async (h, value) => {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: value });
+            return;
+        } catch (e) {
+            last = e;
+            await polishNap(300);
+        }
+    }
+    throw last;
+};
 
 const settingsPages = {
     name: "settings-pages",
@@ -21644,6 +21722,159 @@ const settingsPages = {
                 `cards=${JSON.stringify(cards)}`
             );
         }
+
+        // general-select: Startup surface is a select; its menu is the themed one, Last opened first with what it does
+        await spOpen(h, "general");
+        const selectBtn = `${spRow("general.startup")}?.querySelector("button[data-select]")`;
+        await polishWaitFor(h, `${selectBtn} != null`, 5000);
+        const clickedSelect = await spClick(h, selectBtn);
+        const menuUp = await polishWaitFor(h, `${SP_MENU_PANEL} != null`, 3000);
+        const menu = await h.ev(`(() => {
+            const panel = ${SP_MENU_PANEL};
+            if (!panel) return null;
+            return [...panel.children].map((c) =>
+                c.classList.contains("h-px")
+                    ? { separator: true }
+                    : {
+                          label: c.querySelector("span.flex-1")?.textContent.trim() ?? null,
+                          sublabel: c.querySelector("span.ml-auto")?.textContent.trim() ?? null,
+                          checked: c.querySelector("span.rounded-full") != null,
+                      }
+            );
+        })()`);
+        await h.shot("cdp-shots/settings-pages-general-select.png");
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        }
+        const menuGone = await polishWaitFor(h, `${SP_MENU_PANEL} == null`, 3000);
+        rec(
+            "general-select: Last opened (the one you left), a separator, the surfaces, one checked",
+            clickedSelect &&
+                menuUp &&
+                menu != null &&
+                menu[0]?.label === "Last opened" &&
+                menu[0].sublabel === "the one you left" &&
+                menu[1]?.separator === true &&
+                menu.slice(2).every((m) => m.separator !== true && m.label) &&
+                menu.filter((m) => m.checked).length === 1 &&
+                menuGone,
+            `menu=${JSON.stringify(menu)} closed=${menuGone}`
+        );
+
+        // appearance-detail: seven theme chips with one selected; each font option drawn in its own face
+        await spOpen(h, "appearance");
+        await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
+        const chips = await h.ev(`(() => {
+            const bs = [...document.querySelectorAll("[data-theme-presets] button")];
+            return { count: bs.length, selected: bs.filter((b) => b.getAttribute("aria-pressed") === "true").length };
+        })()`);
+        const sansFaces = await h.ev(spFaces("fonts.sans"));
+        const monoFaces = await h.ev(spFaces("fonts.mono"));
+        await h.ev(`${spRow("fonts.sans")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-appearance-detail.png");
+        rec(
+            "appearance-detail: seven theme chips, one selected; Fonts options each in their own face",
+            chips.count === 7 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
+        );
+
+        // terminal-detail: the terminal face is drawn the same way, on the Terminal page
+        await spOpen(h, "terminal");
+        await polishWaitFor(h, `${spRow("fonts.term")} != null`, 5000);
+        const termFaces = await h.ev(spFaces("fonts.term"));
+        await h.ev(`${spRow("fonts.term")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-terminal-detail.png");
+        rec(
+            "terminal-detail: each Terminal font option is drawn in the face it names",
+            spOwnFaces(termFaces),
+            `term=${JSON.stringify(termFaces)}`
+        );
+
+        // agents-detail: the account card leads, one account is active, five runtime tabs, flag rows stay one line
+        await spOpen(h, "agents");
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector("[data-claude-account-row]") != null`, 8000);
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector('[data-setting-row^="newagent.flag."]') != null`, 5000);
+        const agentsDetail = await h.ev(`(() => {
+            const pane = ${spPane("agents")};
+            return {
+                first: pane.querySelector("[data-setting-card]")?.getAttribute("data-setting-card") ?? null,
+                active: pane.querySelectorAll("[data-account-active]").length,
+                tabs: [...pane.querySelectorAll("[data-flag-tabs] [role=tab]")].map((t) => t.textContent.trim()),
+                flagHeights: [...pane.querySelectorAll('[data-setting-row^="newagent.flag."]')].map((r) =>
+                    Math.round(r.getBoundingClientRect().height)
+                ),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-flag-tabs]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-agents-detail.png");
+        rec(
+            "agents-detail: Claude account first, one active account, five runtime tabs, flag rows under 44px",
+            agentsDetail.first === "claudeaccount" &&
+                agentsDetail.active === 1 &&
+                agentsDetail.tabs.length === 5 &&
+                agentsDetail.flagHeights.length > 0 &&
+                agentsDetail.flagHeights.every((px) => px < 44),
+            JSON.stringify(agentsDetail)
+        );
+
+        // headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band while no key is stored
+        await spOpen(h, "headless");
+        // OpenRouter is always listed; the five harnesses follow once ListHarnesses answers (CATALOG_RPC_TIMEOUT_MS, 30 s)
+        await polishWaitFor(h, `document.querySelectorAll("[data-runtime-choice]").length >= 6`, 35_000);
+        // the card draws its band after the secrets probe answers, so read what is stored first
+        const secretNames = (await h.rpc("getsecretsnames", null)) ?? [];
+        const keyStored = secretNames.includes("jarvis_embedapikey");
+        const runtimeSetting = (await h.rpc("getfullconfig", null))?.settings?.["headless:runtime"] ?? "";
+        const bandExpected = !keyStored && (runtimeSetting === "" || runtimeSetting === "openrouter");
+        await polishWaitFor(
+            h,
+            `(document.querySelector('[data-setting-card="openrouter"]')?.textContent.includes("OpenRouter key not set") ?? null) === ${bandExpected}`,
+            5000
+        );
+        const headlessDetail = await h.ev(`(() => {
+            const choices = [...document.querySelectorAll("[data-runtime-choice]")];
+            const card = document.querySelector('[data-setting-card="openrouter"]');
+            const first = card?.firstElementChild ?? null;
+            return {
+                choices: choices.length,
+                checked: choices.filter((c) => c.getAttribute("aria-checked") === "true").length,
+                firstIsWarning: first != null && first.textContent.includes("OpenRouter key not set") && first.querySelector("svg") != null,
+                anyWarning: card != null && card.textContent.includes("OpenRouter key not set"),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-setting-card="openrouter"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-headless-detail.png");
+        rec(
+            "headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band when no key is stored",
+            headlessDetail.choices === 6 &&
+                headlessDetail.checked === 1 &&
+                (bandExpected ? headlessDetail.firstIsWarning : headlessDetail.anyWarning === false),
+            JSON.stringify({ ...headlessDetail, keyStored, runtimeSetting, bandExpected })
+        );
+
+        // about-detail: the version values sit at the right edge of their rows (the row's 16px padding in from it)
+        await spOpen(h, "about");
+        await polishWaitFor(h, `${spRow("about.platform")} != null`, 5000);
+        const versions = await h.ev(`(() => {
+            return ["about.app", "about.server", "about.buildtime", "about.platform"].map((id) => {
+                const row = document.querySelector('[data-setting-row="' + id + '"]');
+                const value = row?.querySelector(".tabular-nums");
+                if (!row || !value) return { id, found: false };
+                const r = row.getBoundingClientRect();
+                const v = value.getBoundingClientRect();
+                return { id, found: true, text: value.textContent.trim(), gap: Math.round(r.right - v.right), leftHalf: v.left < r.left + r.width / 2 };
+            });
+        })()`);
+        await h.shot("cdp-shots/settings-pages-about-detail.png");
+        rec(
+            "about-detail: the four version values are right-aligned within their rows",
+            versions.length === 4 && versions.every((v) => v.found && v.text !== "" && v.leftHalf === false && Math.abs(v.gap - 16) <= 2),
+            JSON.stringify(versions)
+        );
 
         // key-pill: on Terminal, hover scrollback; About's build info has none
         await spOpen(h, "terminal");
@@ -21725,12 +21956,12 @@ const settingsPages = {
             );
             rec("changed: Revert puts the default back and the mark goes", cleared, `cleared=${cleared}`);
         } finally {
-            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: ctx.prevFontSize });
+            await spRestoreFontSize(h, ctx.prevFontSize);
         }
         return steps;
     },
     async teardown(h, ctx) {
-        await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: ctx.prevFontSize });
+        await spRestoreFontSize(h, ctx.prevFontSize);
         await h.goto("cockpit");
     },
 };
@@ -22244,7 +22475,7 @@ const agyHarness = {
             // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
             await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
-            const runRoute =await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
+            const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
             await shot("11-settings-run-route");
             rec(
                 "11. settings run route lists no Antigravity",

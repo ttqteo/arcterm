@@ -293,10 +293,6 @@ export function Note({ tone = "warning", children }: { tone?: "warning" | "error
     );
 }
 
-export function Value({ children, warn }: { children: ReactNode; warn?: boolean }) {
-    return <span className={cn("text-[12.5px]", warn ? "text-warning" : "text-secondary")}>{children}</span>;
-}
-
 export function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
     return (
         <button
