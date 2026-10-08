@@ -28,9 +28,7 @@
 
 **Depends on:** none
 
-**Files:**
-- Modify: `frontend/app/view/agents/claudeaccount.ts`
-- Test: `frontend/app/view/agents/claudeaccount.test.ts`
+**Files:** `frontend/app/view/agents/claudeaccount.ts`, `frontend/app/view/agents/claudeaccount.test.ts`
 
 - [ ] **Step 1: Write the failing tests** (append to `claudeaccount.test.ts`; import the new names alongside the existing imports)
 
@@ -177,8 +175,7 @@ git commit -m "feat(claude-account): pure row name, quota line and Add dialog st
 
 **Depends on:** Task 1
 
-**Files:**
-- Modify: `frontend/app/view/agents/settingssurface.tsx` (`ClaudeAccountSection`, around lines 1003–1290)
+**Files:** `frontend/app/view/agents/settingssurface.tsx`
 
 - [ ] **Step 1: Strip the old row editing and the paste form.** Remove from `ClaudeAccountSection`: the `pasteOpen` / `pasteLabel` / `pasteEmail` / `pasteError` state, `add`, the paste disclosure button and its form, both `CommitText` fields inside the rows, the `Remove` button, `KnownEmailsDatalist` and `EMAIL_LIST_ID`, and `quotaPct` if nothing else uses it. Keep `reload`, `select`, `rename`, `setEmail`, `remove`, the restart-dialog push, and the lazy `ClaudeSigninModal`.
 
@@ -244,8 +241,7 @@ git commit -m "feat(claude-account): a quiet account list with a per-row menu an
 
 **Depends on:** Task 1
 
-**Files:**
-- Modify: `frontend/app/cockpit/claude-signin-modal.tsx`
+**Files:** `frontend/app/cockpit/claude-signin-modal.tsx`
 
 - [ ] **Step 1: Drive the dialog by `addAccountStep`.** Replace the `Phase` union's top level with `const [step, dispatch] = useReducer(addAccountStep, undefined, () => addAccountStep(undefined, { type: "init" }))`. Keep the terminal's own sub-state (`starting` / `running {tabId, blockId}` / `saving`) as local state used only while `step.kind === "signin"`.
 
@@ -273,15 +269,13 @@ git commit -m "feat(claude-account): one Add account dialog for sign-in and past
 
 ### Task 4: The restart dialog in English
 
-**Depends on:** none
+**Depends on:** Task 2
 
-**Files:**
-- Modify: `frontend/app/view/agents/claudeaccountrestart.tsx`
-- Modify: `frontend/app/view/agents/settingssurface.tsx` only where it pushes the modal (pass the account's display name)
+**Files:** `frontend/app/view/agents/claudeaccountrestart.tsx`, `frontend/app/view/agents/settingssurface.tsx`
 
 - [ ] **Step 1: Copy.** `NOTE.working` → `working — resume after this turn`; `NOTE.asking` → `asking — resuming drops the question`; the done note `đã restart` → `resumed`; the not-applied error → `arcterm has not switched to this account yet (is its token still valid?). No agent was resumed.`; body → `These agents still run on the previous account. Resuming continues each one's session on the new one.`; footer note → `Open terminals keep the previous account until they are reopened.`; buttons `Later` and `Resume selected`.
 
-- [ ] **Step 2: Title with the account's name.** Add an `accountName: string` prop; the title is `` `Resume agents on ${accountName}?` ``. In `settingssurface.tsx`'s `select`, pass `accountName`: `defaultAccountName(identity.loginEmail)` for `""`, else the account's label from `list`. (If Task 2 is merged first, this is a one-line change in its `select`.)
+- [ ] **Step 2: Title with the account's name.** Add an `accountName: string` prop; the title is `` `Resume agents on ${accountName}?` ``. In `settingssurface.tsx`'s `select`, pass `accountName`: `defaultAccountName(identity.loginEmail)` for `""`, else the account's label from `list`. (Task 2 has already reworked this file: this is a one-line change in its `select`.)
 
 - [ ] **Step 3: Check and commit**
 
@@ -296,9 +290,7 @@ git commit -m "feat(claude-account): the restart dialog in English, named for th
 
 **Depends on:** Task 2, Task 3, Task 4
 
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (the `settings-claude-account` scenario, from `const CA = "settings-claude-account";`, around line 20089)
-- Modify: `CHANGELOG.md`
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/view/agents/settingssurface.tsx`
 
 - [ ] **Step 1: Update the scenario's readers.** `CA_ROWS`'s `label` reads the row's name text, not an input: use the first child text of the row's name element (add `data-claude-account-name` on that element in Task 2's markup if it is missing — a one-attribute change to `settingssurface.tsx` is allowed here). The paste steps (6, 7) now go through `+ Add account` → `Have a token already? Paste it` → `[data-claude-signin-token]` → Save, and a refused token reads `[data-claude-signin-paste-error]`; on success the dialog shows the Name step, and the scenario presses Done. Renaming (8) opens the row's `⋯` menu (`[data-claude-account-menu="<id>"]`), clicks `Rename` in the context menu, sets `[data-claude-account-rename-input]` and presses Enter. Remove (9) goes through the same menu's `Remove`. Sign-in (12–14) opens through `[data-claude-account-add]`. The restart-dialog steps (2–4) click `Later` instead of `Để sau` and read the English notes.
 
