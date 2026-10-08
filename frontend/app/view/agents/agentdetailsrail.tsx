@@ -61,6 +61,7 @@ import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { ServersSection } from "./railservers";
 import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
+import { RailTreePane } from "./railtreepane";
 import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
 import { NeedsYouSection, RunSection, TaskSection, useRunAsks } from "./runrailsections";
@@ -863,8 +864,15 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             body={
                 shown === "file" && fileRef != null ? (
                     <FileTab model={model} agent={agent} file={panel.file} />
-                ) : shown === "tree" ? (
-                    <div className="min-h-0 flex-1" />
+                ) : shown === "tree" && railState?.cwd != null ? (
+                    // keyed by agent and cwd: the pane's reload bookkeeping (railtreepane.tsx) belongs to one of each
+                    <RailTreePane
+                        key={`${agent.id}:${railState.cwd}`}
+                        model={model}
+                        agentId={agent.id}
+                        cwd={railState.cwd}
+                        agentState={agent.state}
+                    />
                 ) : undefined
             }
             edge={shown !== "overview" ? <RailResizeGrip width={wide.width} max={wide.max} /> : undefined}
