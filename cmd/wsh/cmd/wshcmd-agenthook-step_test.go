@@ -39,6 +39,16 @@ func TestStepMarker(t *testing.T) {
 		{"bracketed count", "[1/4] Khung sidebar", "1/4"},
 		{"zero-padded date", "Chạy lại vòng 05/10, phần còn lại giữ nguyên.", ""},
 		{"zero-padded heading date", "## 05/10 — kết quả", ""},
+		{"bare part heading", "## Phần 2 — dữ liệu\n\nỔn chưa?", "2"},
+		{"bare bold part", "**Phần 1:** khung sidebar\n\nBạn thấy sao?", "1"},
+		{"bare part line", "Part 3: the API\n\nLooks right?", "3"},
+		{"bare part with a total elsewhere", "## Phần 2\n\nĐây là phần 2 trong 4.", "2/4"},
+		{"bare part in prose", "Xem lại phần 2 ở trên nhé.", ""},
+		{"every part of a document", "## Phần 1\nkhung\n## Phần 2\ndữ liệu\n## Phần 3\nlỗi", ""},
+		{"one part named twice", "## Phần 2\n\nPhần 2: chốt lại", "2"},
+		{"instruction steps", "Step 1: install\nBước 2: chạy", ""},
+		{"zero-padded bare part", "## Phần 05", ""},
+		{"bare part past the cap", "## Part 40", ""},
 	}
 	for _, c := range cases {
 		if got := stepMarker(c.text); got != c.want {

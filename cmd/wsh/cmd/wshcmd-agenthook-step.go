@@ -17,11 +17,17 @@ var stepKeywordRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:phần|part|bước
 // a bare count that opens a line, as a heading or a bold lead does: "## 1/3 — …", "**2/3**", "(1/3)", "[1/3]", "1/3:"
 var stepLineRe = regexp.MustCompile(`(?m)^\s*(?:#{1,6}\s*)?(?:\*\*|\(|\[)?\s*(\d{1,2})\s*/\s*(\d{1,2})\s*(?:\*\*|\)|\]|[:.\-–—]|$)`)
 
+// a part with no total, only as the heading a line opens with: "## Phần 2 — …", "**Phần 1:**", "Part 3:". Only
+// phần/part: "Step 1:" and "Bước 1:" open ordinary instruction lists
+var stepBareRe = regexp.MustCompile(`(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?\s*(?:phần|part)\s+(\d{1,2})\s*(?:\*\*|[:.\-–—)]|$)`)
+
 const stepMax = 20
 
 // stepMarker returns the "n/m" step a message stops on, or "" when it names none. A line-opening count wins over
 // one inside a sentence, and the first of each wins, so a message that recaps an earlier part after its heading
-// still reads as the part its heading names. A zero-padded count is a date ("vòng 05/10"), never a step.
+// still reads as the part its heading names. A zero-padded count is a date ("vòng 05/10"), never a step. With no
+// total anywhere, a part heading gives "n" alone, but only when it is the one part the message names: headings for
+// Phần 1, 2 and 3 are a whole document, not a stop on one of them.
 func stepMarker(text string) string {
 	for _, re := range []*regexp.Regexp{stepLineRe, stepKeywordRe} {
 		for _, m := range re.FindAllStringSubmatch(text, -1) {
@@ -35,7 +41,25 @@ func stepMarker(text string) string {
 			}
 		}
 	}
-	return ""
+	return bareStep(text)
+}
+
+// bareStep returns the one part a message's headings name with no total, or "" when they name none or several.
+func bareStep(text string) string {
+	part := ""
+	for _, m := range stepBareRe.FindAllStringSubmatch(text, -1) {
+		if strings.HasPrefix(m[1], "0") {
+			continue
+		}
+		if n, _ := strconv.Atoi(m[1]); n < 1 || n > stepMax {
+			continue
+		}
+		if part != "" && part != m[1] {
+			return ""
+		}
+		part = m[1]
+	}
+	return part
 }
 
 // askText returns the headers and questions of an AskUserQuestion input, where a design walked through in parts

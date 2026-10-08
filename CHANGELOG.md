@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- A part named without a total, as a heading that opens a line (`## Phần 2`, `**Phần 1:**`, `Part 3:`), now shows its
+  number on the agent's row, the way `Phần 2/4` shows `2/4`. A message whose headings walk through several parts
+  shows none.
 - Consumers' RAM view ends its arcterm section with **Total, with agents**: everything arcterm runs, its own
   processes and every agent, in one figure.
 - A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
