@@ -20273,7 +20273,6 @@ const settingsClaudeAccount = {
                 [`claude:${b.id}`]: snapshot(40, 30),
                 "claude:fixture@example.com": snapshot(55, 41),
             };
-            await h.ev(`localStorage.setItem(${JSON.stringify(CA_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`);
 
             ctx.base = mkdtempSync(join(tmpdir(), "verify-claude-account-"));
             for (const ag of CA_AGENTS) {
@@ -20284,7 +20283,38 @@ const settingsClaudeAccount = {
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(caRoster(ctx), null, 2));
             ctx.wroteFixture = true;
-            await caReload(h);
+
+            // The seed is read back after the reload: ratelimitstore.ts holds the snapshots in an atom read once at
+            // module load, and persistSaved writes that whole atom back to localStorage, so a write the page was
+            // still making (the boot-time live quota read, the identity refresh after claudeaccountadd) can replace
+            // the seed with the atom's older contents between the setItem and the reload. Once a reload has loaded
+            // the seed into the atom, a later write keeps it. claude:default is not required to survive: the page
+            // moves it to the /login email's key.
+            const seedPct = {
+                [`claude:${a.id}`]: 97,
+                [`claude:${b.id}`]: 40,
+                "claude:fixture@example.com": 55,
+            };
+            let missing = Object.keys(seedPct);
+            for (let attempt = 0; attempt < 3 && missing.length > 0; attempt++) {
+                await h.ev(
+                    `localStorage.setItem(${JSON.stringify(CA_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`
+                );
+                await caReload(h);
+                const held = await h.ev(`(() => {
+                    try {
+                        return JSON.parse(localStorage.getItem(${JSON.stringify(CA_RATE_KEY)}) || "{}");
+                    } catch {
+                        return {};
+                    }
+                })()`);
+                missing = Object.entries(seedPct)
+                    .filter(([key, pct]) => held?.[key]?.fivehourpct !== pct)
+                    .map(([key]) => key);
+            }
+            if (missing.length > 0) {
+                ctx.arrangeError = `the quota snapshots did not survive 3 seed + reload tries; missing from ${CA_RATE_KEY}: ${missing.join(", ")}`;
+            }
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -20382,8 +20412,11 @@ const settingsClaudeAccount = {
                 20000
             );
         };
-        // the 5-hour tile of the Usage surface's Claude detail, then back to the section
+        // the 5-hour tile of the Usage surface's Claude detail, then back to the section. Default's saved snapshot
+        // follows the /login email (adoptDefaultSnapshot moves claude:default to claude:<email> once it is known), so
+        // defaultPct is read from that key, and from claude:default only while no /login email is listed.
         const claudePlan = async () => {
+            const loginEmail = ((await h.rpc("claudeaccountlist", null))?.loginemail ?? "").trim().toLowerCase();
             await h.goto("usage");
             await poll(
                 () => h.ev(`!!document.querySelector('[data-usage-harness="claude"], [data-usage-detail="claude"]')`),
@@ -20407,7 +20440,8 @@ const settingsClaudeAccount = {
             })()`);
             await h.ev(`document.querySelector('[data-usage-harness="all"]')?.click()`);
             await openSection();
-            return { value, defaultPct: saved?.["claude:default"]?.fivehourpct ?? null };
+            const defaultKey = loginEmail !== "" ? `claude:${loginEmail}` : "claude:default";
+            return { value, defaultPct: saved?.[defaultKey]?.fivehourpct ?? null };
         };
 
         await openSection();
