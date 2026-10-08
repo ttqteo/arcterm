@@ -297,7 +297,7 @@ git commit -m "feat(claude-account): the restart dialog in English, named for th
 
 **Depends on:** Task 2, Task 3, Task 4
 
-**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/view/agents/claudeemails.tsx` (deleted)
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/view/agents/claudeemails.tsx`
 
 The scenario is `settings-claude-account` (`const CA`, around `scripts/cdp/scenarios.mjs:20072`). Its arrange seeds Fixture A (97% / 64%) and Fixture B (no snapshot) and three roster agents; its steps are numbered 1–14 today. Keep that numbering for the steps that stay, and add 15–22 below. The `⋯` menu is the DOM context menu (`frontend/app/element/contextmenu.tsx`, rendered by `ContextMenuHost`): its rows carry no `data-*` hooks, so find a row by its text inside the open menu panel, click it, and open the `Same account as…` submenu by hovering its row with a real `Input.dispatchMouseEvent` `mouseMoved` at the row's centre (React's `onMouseEnter`), not a synthetic event.
 
