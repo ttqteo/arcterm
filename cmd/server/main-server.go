@@ -111,7 +111,8 @@ func startConfigWatcher() error {
 	return nil
 }
 
-// sweeps stale channel-composer attachment temp dirs and canvas feedback pictures. First iteration runs
+// sweeps stale channel-composer attachment temp dirs, canvas feedback pictures, final-stage screenshots and the
+// output of terminals idle for a month. First iteration runs
 // immediately (startup sweep of files left by prior sessions), then periodically for very long-running sessions.
 func tempAttachmentCleanupLoop() {
 	defer func() {
@@ -121,6 +122,7 @@ func tempAttachmentCleanupLoop() {
 		wshserver.SweepTempAttachments()
 		wshserver.SweepCanvasFeedback()
 		orchestrate.SweepFinalShots(time.Now())
+		blockcontroller.SweepIdleTerminalOutput()
 		time.Sleep(TempAttachmentSweepInterval)
 	}
 }

@@ -467,6 +467,29 @@ func HandleTruncateBlockFile(blockId string) error {
 
 }
 
+// A session tab is kept for good and so was its terminal output, up to 2 MB each: 426 MB across 342 terminals,
+// 264 MB of it not written to for over a month. The tab and the agent's transcript outlive the output.
+const TermOutputRetention = 30 * 24 * time.Hour
+
+// SweepIdleTerminalOutput deletes the stored output of terminals that have printed nothing for
+// TermOutputRetention and are not running. Such a terminal opens empty, as a new one does.
+func SweepIdleTerminalOutput() {
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+	defer cancelFn()
+	running := func(blockId string) bool {
+		status := GetBlockControllerRuntimeStatus(blockId)
+		return status != nil && status.ShellProcStatus == Status_Running
+	}
+	cutoff := time.Now().Add(-TermOutputRetention)
+	cleared, err := filestore.WFS.DeleteIdleFiles(ctx, wavebase.BlockFile_Term, []string{wavebase.BlockFile_Cache}, cutoff, running)
+	if err != nil {
+		log.Printf("SweepIdleTerminalOutput: %v\n", err)
+	}
+	if cleared > 0 {
+		log.Printf("SweepIdleTerminalOutput: cleared the output of %d idle terminals\n", cleared)
+	}
+}
+
 func debugLog(ctx context.Context, fmtStr string, args ...interface{}) {
 	blocklogger.Infof(ctx, "[conndebug] "+fmtStr, args...)
 	log.Printf(fmtStr, args...)

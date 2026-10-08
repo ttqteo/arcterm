@@ -148,6 +148,48 @@ func (s *FileStore) DeleteZone(ctx context.Context, zoneId string) error {
 	return nil
 }
 
+// DeleteIdleFiles deletes the name file, and the others files beside it, in every zone where the name file was
+// last written before the cutoff and keep does not claim the zone. It returns how many zones it cleared.
+func (s *FileStore) DeleteIdleFiles(ctx context.Context, name string, others []string, cutoff time.Time, keep func(zoneId string) bool) (int, error) {
+	zoneIds, err := dbGetIdleZones(ctx, name, cutoff.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("error listing idle files: %w", err)
+	}
+	cleared := 0
+	for _, zoneId := range zoneIds {
+		if keep(zoneId) {
+			continue
+		}
+		deleted := false
+		err := withLock(s, zoneId, name, func(entry *CacheEntry) error {
+			// the stored time lags a write that is still in the cache, so the entry decides
+			file, err := entry.loadFileForRead(ctx)
+			if err != nil || file.ModTs >= cutoff.UnixMilli() {
+				return nil
+			}
+			if err := dbDeleteFile(ctx, zoneId, name); err != nil {
+				return err
+			}
+			entry.clear()
+			deleted = true
+			return nil
+		})
+		if err != nil {
+			return cleared, fmt.Errorf("error deleting file: %w", err)
+		}
+		if !deleted {
+			continue
+		}
+		for _, other := range others {
+			if err := s.DeleteFile(ctx, zoneId, other); err != nil {
+				return cleared, err
+			}
+		}
+		cleared++
+	}
+	return cleared, nil
+}
+
 // if file doesn't exsit, returns fs.ErrNotExist
 func (s *FileStore) Stat(ctx context.Context, zoneId string, name string) (*WaveFile, error) {
 	return withLockRtn(s, zoneId, name, func(entry *CacheEntry) (*WaveFile, error) {

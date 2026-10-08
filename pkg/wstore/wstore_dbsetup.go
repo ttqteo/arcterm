@@ -23,6 +23,10 @@ const WStoreDBName = "waveterm.db"
 
 type TxWrap = txwrap.TxWrap
 
+// WalSizeLimitBytes is what the write-ahead log file is cut back to once it has been checkpointed. A
+// checkpoint runs every 4 MB of log, so this leaves room for a few of them to be held up by a reader.
+const WalSizeLimitBytes = 16 << 20
+
 var globalDB *sqlx.DB
 
 // ReadDBMaxConns bounds the read-only pool. Reads are short SELECTs on a desktop-scale DB, so a
@@ -70,6 +74,13 @@ func MakeDB(ctx context.Context) (*sqlx.DB, error) {
 		return nil, err
 	}
 	rtn.DB.SetMaxOpenConns(1)
+	// sqlite reuses a restarted log but never shrinks it, so without a limit the file stays as large as the
+	// biggest transaction ever written: 171 MB on a store whose live log was 4 MB. The limit is per
+	// connection, and this pool keeps its one connection for the life of the process.
+	if _, err := rtn.ExecContext(ctx, fmt.Sprintf("PRAGMA journal_size_limit = %d", WalSizeLimitBytes)); err != nil {
+		rtn.Close()
+		return nil, fmt.Errorf("limiting the write-ahead log: %w", err)
+	}
 	return rtn, nil
 }
 

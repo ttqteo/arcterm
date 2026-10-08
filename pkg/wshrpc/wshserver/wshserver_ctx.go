@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"slices"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -31,26 +32,32 @@ func ownerRunForBlock(ctx context.Context, blockOrefStr string) (*waveobj.Run, s
 		return nil, "", false
 	}
 	tabOrefStr := "tab:" + tabORef.OID
-	channels, err := wstore.GetChannels(ctx)
+	// the store narrows to the rows that mention the tab without decoding any: every effort update and
+	// ask resolves its block here, and decoding every run each time was a quarter of what wavesrv allocated
+	runs, err := wstore.GetRunCandidatesByWorker(ctx, tabOrefStr)
 	if err != nil {
 		return nil, "", false
 	}
-	for _, ch := range channels {
-		runs, rerr := wstore.GetChannelRuns(ctx, ch.OID)
-		if rerr != nil {
+	for _, run := range runs {
+		if !runHasWorker(run, tabOrefStr) {
 			continue
 		}
-		for _, run := range runs {
-			for _, p := range run.Phases {
-				for _, w := range p.WorkerOrefs {
-					if w == tabOrefStr {
-						return run, ch.OID, true
-					}
-				}
-			}
+		// a run whose channel is gone owns nothing
+		if ch, cerr := wstore.DBGet[*waveobj.Channel](ctx, run.ChannelOID); cerr != nil || ch == nil {
+			continue
 		}
+		return run, run.ChannelOID, true
 	}
 	return nil, "", false
+}
+
+func runHasWorker(run *waveobj.Run, workerORef string) bool {
+	for _, p := range run.Phases {
+		if slices.Contains(p.WorkerOrefs, workerORef) {
+			return true
+		}
+	}
+	return false
 }
 
 // JarvisCtxCommand resolves the run context owning the caller's block: block -> tab (ParentORef) ->

@@ -15,6 +15,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
   picked last, and a number key switches between an agent and a run. `Cmd+N` still opens it on an agent and
   `Cmd+Shift+R` on a run (`Ctrl` on Windows).
+- arcterm uses less disk and memory over time: a terminal idle for 30 days gives up its stored output (its tab and
+  transcript stay), the database's write-ahead log is cut back after each checkpoint, and finding which run an agent
+  belongs to no longer reads every run.
 
 ## 0.15.5 — 2026-10-08
 

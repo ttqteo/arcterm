@@ -82,6 +82,38 @@ func TestJarvisCtxResolvesALeadToItsOwnRunBesideAnotherRunOfTheSameProject(t *te
 	}
 }
 
+// the store finds candidate runs by text, so an older run that only quotes the tab must not be taken for
+// its owner.
+func TestJarvisCtxSkipsARunThatOnlyQuotesTheTab(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "ctx-test4", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tabOref := "tab:" + uuid.NewString()
+	quoting := jarvis.NewRun("look at "+tabOref, "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	owner := jarvis.NewRun("owner goal", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 2)
+	owner.Phases[0].WorkerOrefs = []string{tabOref}
+	for _, run := range []waveobj.Run{quoting, owner} {
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	block := &waveobj.Block{OID: uuid.NewString(), ParentORef: tabOref}
+	if err := wstore.DBInsert(ctx, block); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := &WshServer{}
+	rtn, err := ws.JarvisCtxCommand(ctx, wshrpc.CommandJarvisCtxData{BlockORef: "block:" + block.OID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rtn.RunId != owner.ID || rtn.ChannelId != ch.OID {
+		t.Fatalf("resolved to run %q in %q, want the owner %q in %q", rtn.RunId, rtn.ChannelId, owner.ID, ch.OID)
+	}
+}
+
 func TestJarvisCtxEmptyForUnrelatedBlock(t *testing.T) {
 	ctx := context.Background()
 	ch, err := wstore.CreateChannel(ctx, "ctx-test2", t.TempDir())

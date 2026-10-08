@@ -36,6 +36,15 @@ func dbDeleteFile(ctx context.Context, zoneId string, name string) error {
 	})
 }
 
+func dbGetIdleZones(ctx context.Context, name string, beforeTs int64) ([]string, error) {
+	return WithTxRtn(ctx, func(tx *TxWrap) ([]string, error) {
+		var zoneIds []string
+		query := "SELECT zoneid FROM db_wave_file WHERE name = ? AND modts < ?"
+		tx.Select(&zoneIds, query, name, beforeTs)
+		return zoneIds, nil
+	})
+}
+
 func dbGetZoneFileNames(ctx context.Context, zoneId string) ([]string, error) {
 	return WithTxRtn(ctx, func(tx *TxWrap) ([]string, error) {
 		var files []string
