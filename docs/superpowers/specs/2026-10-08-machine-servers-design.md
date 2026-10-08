@@ -1,6 +1,6 @@
 # Servers on this machine: every listening process, who owns it, and stopping it — design
 
-Status: design settled 2026-10-08; not built.
+Status: built 2026-10-08 (run 48306843). The `machine-servers` CDP scenario was written but has not yet passed a run.
 
 ## Problem
 
@@ -49,10 +49,13 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
    twice (`Stop?`), stopping the process tree through the existing `StopDevServerCommand`. On an `app` row the
    confirm names the app (`Stop VS Code?`), since it stops the app.
 
-5. **Ownership: Go walks the chain, the frontend matches background tasks.** `devservers.Owner(chain, agents,
-   terminals)` is pure. Walking up a listener's parents it returns the first that applies:
-   - `agent` + block id: an ancestor is a live agent's process (`agentobserve.EnumerateAgents`);
-   - `terminal` + block id: an ancestor is a terminal block's shell (`blockcontroller.GetBlockControllerPid`);
+5. **Ownership: Go walks the chain, the frontend matches background tasks.** `devservers.OwnerOf(pid, procs, alive,
+   holders)` is pure: `procs` is what was read of the listener and its ancestors, `alive` whether a pid is in the
+   snapshot, and `holders` maps each arcterm block's shell pid (agent or terminal, from the roster and
+   `blockcontroller.GetBlockControllerPid`) to its owner. Walking up a listener's parents it returns the first that
+   applies:
+   - `agent` + block id: an ancestor is an agent block's shell;
+   - `terminal` + block id: an ancestor is a terminal block's shell;
    - `app` + name: the chain reaches a session root (explorer, services, wininit; launchd on a Mac) intact, and the
      name is the exe of the highest ancestor below that root;
    - `detached` + `launchercmdline`: the chain breaks first, either at a parent that no longer exists or at one
@@ -78,7 +81,7 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
    fields plus `repo`, `owner {kind, blockid, name}` and `launchercmdline`. It sits in `wshrpctypes_devservers.go`
    beside `ListDevServersCommand`; `task generate` writes the bindings.
 
-8. **Reading cheaply.** `devservers.ListAll(ctx)`:
+8. **Reading cheaply.** `devservers.ListAll(ctx, holders)`:
    - reads the TCP table once (`net.Connections`), and the pid → parent table from one toolhelp snapshot
      (`memusage.ReadTable`; gopsutil's per-process parent read took 11 s for 441 processes);
    - reads the command line, cwd, name and create time only of the listeners and their ancestors, and **caches them
@@ -108,7 +111,7 @@ match depends on that: without it the dead `:4310` task of the previous session 
 
 ## Testing
 
-- **Go, `pkg/devservers`:** `Owner` over fake chains: agent, terminal, app, a missing parent, a reused pid (parent
+- **Go, `pkg/devservers`:** `OwnerOf` over fake chains: agent, terminal, app, a missing parent, a reused pid (parent
   newer than child), the launcher being the highest live ancestor; the repo lookup with `.git` as directory and as
   file, and no repo; unreadable processes left out; the cache reading a (pid, create time) once and dropping pids
   that left the snapshot; single-flight sharing one read.
@@ -120,4 +123,3 @@ match depends on that: without it the dead `:4310` task of the previous session 
   `consumers-popover` mocks its RPCs, then shoots the chip (plain, with `no owner`, the error state) and the popover
   (groups, Other collapsed and expanded, each badge kind, a row's hover actions, the Stop confirm) and drives Esc, a
   click outside and the chip again. It runs on Windows; a Mac Final guards it as AGENTS.md says.
-- **By hand, after the land:** the popover against `Get-NetTCPConnection -State Listen` on the person's machine.

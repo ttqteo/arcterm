@@ -13,6 +13,8 @@ import (
 // DevServerCommands lists and stops the processes listening in an agent's project (the agent rail's Servers).
 type DevServerCommands interface {
 	ListDevServersCommand(ctx context.Context, data CommandListDevServersData) (*CommandListDevServersRtnData, error)
+	// ListAllDevServersCommand is every listening process on the machine with its repo and owner (the footer's Servers)
+	ListAllDevServersCommand(ctx context.Context) (*CommandListDevServersRtnData, error)
 	StopDevServerCommand(ctx context.Context, data CommandStopDevServerData) error
 }
 

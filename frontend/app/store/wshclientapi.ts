@@ -732,6 +732,12 @@ export class RpcApiType {
         return client.wshRpcCall("landrun", data, opts);
     }
 
+    // command "listalldevservers" [call]
+    ListAllDevServersCommand(client: WshClient, opts?: RpcOpts): Promise<CommandListDevServersRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listalldevservers", null, opts);
+        return client.wshRpcCall("listalldevservers", null, opts);
+    }
+
     // command "listbranches" [call]
     ListBranchesCommand(client: WshClient, data: CommandListBranchesData, opts?: RpcOpts): Promise<CommandListBranchesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "listbranches", data, opts);

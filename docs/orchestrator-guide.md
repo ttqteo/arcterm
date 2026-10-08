@@ -330,7 +330,9 @@ that every task must edit is what sets a plan's width, so keep that edit out of 
   (`Verify reported flaky: <test> (failed, then passed on a rerun, in the Verify after merging t-2)`), so a race
   that passes on a rerun reaches you instead of a clean pass. A merge's report is also appended to its tasks'
   kept Verify output. A failed Verify's file is not read. The engine knows nothing else about the command:
-  this repo's `scripts/verify.mjs` reruns a failed Go test alone once and reports it as `<package> <test>`.
+  this repo's `scripts/verify.mjs` reruns a failed Go test alone once and reports it as `<package> <test>`, and
+  reruns the files of failed vitest tests alone once and reports each as `<file> > <test>`; a vitest file that failed to
+  load (a collection error) is never rerun, and fails the Verify.
 - **Check** is a fast whole-project static check. Each worker runs it itself instead of Verify, and the final
   stage runs it once on the merged result. The engine also runs it once at submit, in a detached tree at the
   commit the lanes start from; if it fails there, the lead is woken, every worker is told those failures are
