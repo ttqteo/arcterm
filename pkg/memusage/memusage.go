@@ -35,17 +35,9 @@ func NewTable(parent map[int32]int32) Table {
 // ReadTable lists every process once. On darwin each gopsutil Children() call lists them all again, so a poll
 // that measures several trees reads the list here, once, and walks the index.
 func ReadTable() (Table, error) {
-	procs, err := process.Processes()
+	parent, err := readParents()
 	if err != nil {
 		return Table{}, err
-	}
-	parent := make(map[int32]int32, len(procs))
-	for _, p := range procs {
-		ppid, err := p.Ppid()
-		if err != nil {
-			continue // exited mid-read
-		}
-		parent[p.Pid] = ppid
 	}
 	return NewTable(parent), nil
 }

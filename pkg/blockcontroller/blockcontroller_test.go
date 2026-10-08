@@ -111,6 +111,36 @@ func TestAgentShouldCloseOnExit(t *testing.T) {
 	}
 }
 
+// a restart replaces the block's controller before the old process's close-on-exit fires: that exit must not
+// delete the block the resumed agent now runs in (a Resume after a Claude account switch closed the agent)
+func TestStoppedOnPurpose(t *testing.T) {
+	const blockId = "stopped-on-purpose"
+	exited := &ShellController{BlockId: blockId}
+	setReg := func(c Controller) {
+		registryLock.Lock()
+		defer registryLock.Unlock()
+		if c == nil {
+			delete(controllerRegistry, blockId)
+		} else {
+			controllerRegistry[blockId] = c
+		}
+	}
+	defer setReg(nil)
+
+	setReg(exited)
+	if stoppedOnPurpose(blockId, exited) {
+		t.Error("the agent's own exit (its controller still the block's) must close it")
+	}
+	setReg(&ShellController{BlockId: blockId})
+	if !stoppedOnPurpose(blockId, exited) {
+		t.Error("a restart's replaced controller must keep the block")
+	}
+	setReg(nil)
+	if !stoppedOnPurpose(blockId, exited) {
+		t.Error("a destroyed controller (restart in progress, or the block closing) must keep the block")
+	}
+}
+
 // a launch that never produced a process (CreateProcess refusing an over-long command line, a bad cwd) must
 // end like an exit: otherwise the controller reads "init" forever and a worker's run never learns it died
 func TestFailedStartEndsLikeAnExit(t *testing.T) {

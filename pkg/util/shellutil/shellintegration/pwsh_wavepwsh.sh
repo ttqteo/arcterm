@@ -12,6 +12,28 @@ Remove-Item Env:WAVETERM_SWAPTOKEN
 # Load Wave completions
 wsh completion powershell | Out-String | Invoke-Expression
 
+# Report each command line as PSReadLine accepts it (OSC 16162 C), on Windows PowerShell 5.1 as well as 7: the
+# cockpit names a plain terminal for what it last ran. The history handler sees the whole line before it runs; the
+# handler already set (PSReadLine's sensitive-line filter by default) still decides whether it is saved.
+# The host may load PSReadLine only once this script has run, so load it here.
+if (-not (Get-Module PSReadLine)) {
+    Import-Module PSReadLine -ErrorAction SilentlyContinue
+}
+if (-not ($env:TMUX -or $env:STY) -and (Get-Module PSReadLine)) {
+    $Global:_waveterm_si_historyhandler = (Get-PSReadLineOption).AddToHistoryHandler
+    Set-PSReadLineOption -AddToHistoryHandler {
+        param([string]$line)
+        try {
+            $cmd64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($line))
+            [Console]::Write([char]27 + ']16162;C;{"cmd64":"' + $cmd64 + '"}' + [char]7)
+        } catch {}
+        if ($Global:_waveterm_si_historyhandler) {
+            return $Global:_waveterm_si_historyhandler.Invoke($line)
+        }
+        return $true
+    }
+}
+
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     return  # skip OSC setup entirely
 }

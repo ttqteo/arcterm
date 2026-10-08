@@ -16,6 +16,7 @@ import {
 } from "@/app/view/agents/session-models/agentstatusstore";
 import { sessionSidebarViewModelAtom } from "@/app/view/agents/session-models/sessionsidebarmodel";
 import { flattenVisualOrder } from "@/app/view/agents/session-models/sessionviewmodel";
+import { getLastCommandAtom } from "@/app/view/term/lastcommand";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import { agentVMFromInput, askingCount, deriveTerminalVMs, isAskStale, withAsk, type AgentEntry, type AgentVM } from "./agentsviewmodel";
 import { getAgentAskAtom } from "./agentaskstore";
@@ -91,7 +92,8 @@ export const liveTerminalsAtom: Atom<AgentVM[]> = atom((get) => {
     return deriveTerminalVMs(
         flattenVisualOrder(vm),
         (oref) => !!get(getAgentStatusAtom(oref))?.state,
-        (cwd) => registeredProjectFor(cwd, projects)
+        (cwd) => registeredProjectFor(cwd, projects),
+        (blockId) => get(getLastCommandAtom(blockId))
     );
 });
 

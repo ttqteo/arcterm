@@ -6,6 +6,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getOverrideConfigAtom, globalStore, WOS } from "@/store/global";
 import { base64ToString, fireAndForget } from "@/util/util";
 import debug from "debug";
+import { setLastCommand } from "./lastcommand";
 import type { TermWrap } from "./termwrap";
 
 const dlog = debug("wave:termwrap");
@@ -37,7 +38,7 @@ type Osc16162Command =
 
 function handleShellIntegrationCommandStart(
     termWrap: TermWrap,
-    _blockId: string,
+    blockId: string,
     cmd: { command: "C"; data: { cmd64?: string } },
     rtInfo: ObjRTInfo // this is passed by reference and modified inside of this function
 ): void {
@@ -51,6 +52,7 @@ function handleShellIntegrationCommandStart(
             try {
                 const decodedCmd = base64ToString(cmd.data.cmd64);
                 rtInfo["shell:lastcmd"] = decodedCmd;
+                setLastCommand(blockId, decodedCmd);
             } catch (e) {
                 console.error("Error decoding cmd64:", e);
                 rtInfo["shell:lastcmd"] = null;

@@ -35,6 +35,7 @@ import { Terminal } from "@xterm/xterm";
 import debug from "debug";
 import * as jotai from "jotai";
 import { debounce } from "throttle-debounce";
+import { setLastCommand } from "./lastcommand";
 import {
     handleOsc16162Command,
     handleOsc52Command,
@@ -435,6 +436,7 @@ export class TermWrap {
                 oref: WOS.makeORef("block", this.blockId),
             });
             let shellState: ShellIntegrationStatus = null;
+            setLastCommand(this.blockId, rtInfo?.["shell:lastcmd"]);
 
             if (rtInfo && rtInfo["shell:integration"]) {
                 shellState = rtInfo["shell:state"] as ShellIntegrationStatus;

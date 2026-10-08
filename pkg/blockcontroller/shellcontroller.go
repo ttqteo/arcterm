@@ -551,7 +551,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		}
 		bc.writeMutedMessageToTerminal("[" + msg + "]")
 		go clearAgentLive(bc.BlockId, liveToken)
-		go checkCloseOnExit(bc.BlockId, exitCode)
+		go checkCloseOnExit(bc.BlockId, exitCode, bc)
 		go emitAgentIdleOnExit(bc.BlockId)
 		if hook := exitHook(); hook != nil {
 			go hook(bc.BlockId, exitCode)
@@ -622,7 +622,14 @@ func agentShouldCloseOnExit(blockMeta waveobj.MetaMapType, tabMeta waveobj.MetaM
 	return closeOnExit && exitCode == 0
 }
 
-func checkCloseOnExit(blockId string, exitCode int) {
+// stoppedOnPurpose reports whether the controller whose process exited is no longer the block's: a restart replaced
+// it (a Resume after a Claude account switch, Enter on an exited terminal) or the block's close removed it. Either way
+// the exit is not the agent ending, so the block stays.
+func stoppedOnPurpose(blockId string, exited Controller) bool {
+	return getController(blockId) != exited
+}
+
+func checkCloseOnExit(blockId string, exitCode int, exited Controller) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
 	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
@@ -645,6 +652,9 @@ func checkCloseOnExit(blockId string, exitCode int) {
 		delayMs = 0
 	}
 	time.Sleep(time.Duration(delayMs) * time.Millisecond)
+	if stoppedOnPurpose(blockId, exited) {
+		return
+	}
 	rpcClient := wshclient.GetBareRpcClient()
 	err = wshclient.DeleteBlockCommand(rpcClient, wshrpc.CommandDeleteBlockData{BlockId: blockId}, nil)
 	if err != nil {

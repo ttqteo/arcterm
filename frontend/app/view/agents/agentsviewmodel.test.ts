@@ -45,6 +45,7 @@ import {
     streamableTranscriptAgents,
     summarizeActions,
     taskProgress,
+    terminalName,
     toggleSelection,
     usageLevel,
     withAsk,
@@ -1045,11 +1046,12 @@ describe("deriveTerminalVMs", () => {
         agent?: string;
         projectLabel?: string;
         cwd?: string;
+        customLabel?: string;
     };
     const none = () => false;
 
     it("maps a plain terminal session (term block, no agent status) to a terminal VM", () => {
-        const rows: Row[] = [{ tabId: "t1", label: "SIEM", termBlockOref: "block:b1" }];
+        const rows: Row[] = [{ tabId: "t1", label: "SIEM", termBlockOref: "block:b1", customLabel: "SIEM" }];
         const out = deriveTerminalVMs(rows, none);
         expect(out).toHaveLength(1);
         expect(out[0]).toMatchObject({
@@ -1106,6 +1108,36 @@ describe("deriveTerminalVMs", () => {
         ];
         const out = deriveTerminalVMs(rows, none, () => "");
         expect(out.map((t) => t.project)).toEqual([undefined, undefined]);
+    });
+
+    it("names two shells of one project by what they last ran, else by their place", () => {
+        const rows: Row[] = [
+            { tabId: "t1", label: "arcterm", termBlockOref: "block:b1", projectLabel: "arcterm" },
+            { tabId: "agent", label: "loom", termBlockOref: "block:ba" },
+            { tabId: "t2", label: "arcterm", termBlockOref: "block:b2", projectLabel: "arcterm" },
+            { tabId: "t3", label: "arcterm", termBlockOref: "block:b3", customLabel: "logs" },
+        ];
+        const cmds: Record<string, string> = { b1: "task dev" };
+        const out = deriveTerminalVMs(
+            rows,
+            (oref) => oref === "block:ba",
+            () => "",
+            (id) => cmds[id]
+        );
+        expect(out.map((t) => t.name)).toEqual(["task dev", "Terminal 2", "logs"]);
+    });
+});
+
+describe("terminalName", () => {
+    it("prefers the rename, then the last command, then the ordinal", () => {
+        expect(terminalName("logs", "task dev", 1)).toBe("logs");
+        expect(terminalName("  ", "task dev", 1)).toBe("task dev");
+        expect(terminalName(undefined, undefined, 3)).toBe("Terminal 3");
+        expect(terminalName(undefined, "  \n ", 2)).toBe("Terminal 2");
+    });
+
+    it("takes a multi-line command's first non-empty line, its whitespace collapsed", () => {
+        expect(terminalName(undefined, "\n  go test   ./pkg/x \\\n  -run Foo", 1)).toBe("go test ./pkg/x \\");
     });
 });
 

@@ -551,6 +551,26 @@ export interface TerminalRowInput {
     agent?: string; // session:agent runtime, set at launch for agent tabs (never for terminals)
     projectLabel?: string; // session:project, stamped at launch (launchAgent writes it for a terminal too)
     cwd?: string; // the session terminal's cwd: the registered project it sits in names its project first
+    customLabel?: string; // session:label, the user's rename
+}
+
+/** Pure: a terminal's name. A rename wins; otherwise the first line of the command it last ran, which tells two shells
+ *  in one repo apart where the launch-time project label they share cannot; with neither, its place among the
+ *  terminals ("Terminal 2"). */
+export function terminalName(
+    customLabel: string | undefined,
+    lastCommand: string | undefined,
+    ordinal: number
+): string {
+    const custom = customLabel?.trim();
+    if (custom) {
+        return custom;
+    }
+    const line = (lastCommand ?? "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .find((l) => l.length > 0);
+    return line ? line.replace(/\s+/g, " ") : `Terminal ${ordinal}`;
 }
 
 /** Pure: the plain-terminal sessions — rows that own a term block but never emitted an agent status
@@ -563,7 +583,9 @@ export function deriveTerminalVMs(
     rows: TerminalRowInput[],
     hasAgentStatus: (termBlockOref: string) => boolean,
     // the registry's project for a cwd; the launch-time label covers a terminal outside every registered project
-    registeredProject: (cwd: string) => string = () => ""
+    registeredProject: (cwd: string) => string = () => "",
+    // the command the terminal's block last ran, as its shell reported it
+    lastCommand: (blockId: string) => string | undefined = () => undefined
 ): AgentVM[] {
     const out: AgentVM[] = [];
     for (const row of rows) {
@@ -574,14 +596,15 @@ export function deriveTerminalVMs(
             continue;
         }
         const project = registeredProject(row.cwd ?? "") || row.projectLabel?.trim() || undefined;
+        const blockId = row.termBlockOref.split(":")[1];
         out.push({
             id: row.tabId,
-            name: row.label,
+            name: terminalName(row.customLabel, lastCommand(blockId), out.length + 1),
             task: "",
             state: "idle",
             kind: "terminal",
             agent: "terminal", // selects the "Terminal" pill in the header (runtimeMeta)
-            blockId: row.termBlockOref.split(":")[1],
+            blockId,
             ...(project != null ? { project } : {}),
         });
     }

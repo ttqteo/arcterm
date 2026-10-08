@@ -18,6 +18,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - arcterm uses less disk and memory over time: a terminal idle for 30 days gives up its stored output (its tab and
   transcript stay), the database's write-ahead log is cut back after each checkpoint, and finding which run an agent
   belongs to no longer reads every run.
+- A terminal you have not renamed is named for the command it last ran (`task dev`), or "Terminal 2" before it has
+  run one, instead of every terminal in a repo sharing the repo's name. PowerShell, Windows PowerShell 5.1 included,
+  now reports its commands to arcterm.
+
+### Fixed
+
+- On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,
+  longer than the panel waits between readings, and now takes a fraction of one.
+- Resuming agents after switching Claude account resumes them instead of closing them.
 
 ## 0.15.5 — 2026-10-08
 
