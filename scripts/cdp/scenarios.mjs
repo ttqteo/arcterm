@@ -10808,7 +10808,7 @@ const docReviewMode = {
             JSON.stringify({ footer13, footerGone13 })
         );
 
-        // 13d. Focus and rail: the review takes focus and hides the rail; the terminal gets both back
+        // 13d. Focus and rail: the review takes focus and keeps the rail; the terminal gets focus back
         const RAIL = `document.querySelector('aside[aria-label="Agent details"]')`;
         await drmKey(h, "r");
         await nap(300);
@@ -10841,8 +10841,8 @@ const docReviewMode = {
         await drmKey(h, "r");
         await docReviewWait(h, `!!${DRM_PANE}`, 3000);
         rec(
-            "13d. entering review moves focus into the pane and hides the details rail; r back to the terminal moves focus there and shows the rail",
-            in13.focus && !in13.rail && !out13.pane && out13.focus && out13.rail,
+            "13d. entering review moves focus into the pane and keeps the details rail; r back to the terminal moves focus there",
+            in13.focus && in13.rail && !out13.pane && out13.focus && out13.rail,
             JSON.stringify({ railWas, in13, out13 })
         );
 
@@ -16259,7 +16259,7 @@ const agentRailSections = {
             JSON.stringify({ paneUp, ...shown })
         );
         await h.shot("cdp-shots/agent-rail-sections-canvas.png");
-        // the rail hides in canvas mode; the header swap brings the terminal, and the rail, back
+        // the rail stays in canvas mode; the header swap brings the terminal back
         await clickCanvasSwap(h, "Terminal");
         await polishWaitFor(h, `!!${railStat("uploads")}`, 4000);
 

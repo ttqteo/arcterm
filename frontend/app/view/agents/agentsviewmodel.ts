@@ -99,7 +99,7 @@ export interface AgentVM {
     runId?: string; // the run this agent works for, when a run spawned it: a lead's own run, a worker's child run
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
-    step?: string; // idle: the "n/m" part its last message stopped on ("1/3"), until you reply
+    step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
 }
 
@@ -486,7 +486,7 @@ export interface LiveAgentInput {
     sessionId?: string; // pi control-channel session id (agentstatus --session-id)
     runORef?: string; // jarvis:runoref on the tab: "run:<id>"
     effortORef?: string; // session:effort on the tab: "effort:<oid>"
-    step?: string; // the status event's step: the "n/m" part an idle turn stopped on
+    step?: string; // the status event's step: the "n/m" part an idle turn or a pending AskUserQuestion stopped on
     loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
 }
 
@@ -536,7 +536,8 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     } else if (input.ts != null) {
         vm.idleSince = input.ts;
     }
-    if (state === "idle" && input.step) {
+    // a permission prompt (waiting) folds to asking too, but only a question can stop on a part
+    if ((state === "idle" || input.status === "asking") && input.step) {
         vm.step = input.step;
     }
     return vm;

@@ -20,7 +20,7 @@ describe("showUsageRefresh", () => {
 
 describe("retryHint", () => {
     it("names the local time of day, zero-padded", () => {
-        expect(retryHint(new Date(2026, 9, 7, 9, 5).getTime())).toBe("thử lại lúc 09:05");
-        expect(retryHint(new Date(2026, 9, 7, 23, 41, 59).getTime())).toBe("thử lại lúc 23:41");
+        expect(retryHint(new Date(2026, 9, 7, 9, 5).getTime())).toBe("retry at 09:05");
+        expect(retryHint(new Date(2026, 9, 7, 23, 41, 59).getTime())).toBe("retry at 23:41");
     });
 });

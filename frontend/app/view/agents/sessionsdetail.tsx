@@ -135,7 +135,7 @@ function PrimaryButton({ model, session, strong }: { model: AgentsViewModel; ses
     );
 }
 
-// Xoá session: an ended Claude session's transcript goes to ~/.arc/trash (sessiondelete.ts). Nothing when it cannot be
+// Delete session: an ended Claude session's transcript goes to ~/.arc/trash (sessiondelete.ts). Nothing when it cannot be
 function DeleteSessionButton({ session, onDeleted }: { session: LiveSession; onDeleted?: () => void }) {
     if (!canDeleteSession(session)) {
         return null;

@@ -3,7 +3,13 @@
 
 package cmd
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+)
 
 func TestStepMarker(t *testing.T) {
 	cases := []struct {
@@ -25,6 +31,14 @@ func TestStepMarker(t *testing.T) {
 		{"total too large", "Step 1/50", ""},
 		{"a single part", "Part 1/1", ""},
 		{"steps plural", "steps 1/3 are done", ""},
+		{"phần trong", "Đây là phần 1 trong 3 của thiết kế.", "1/3"},
+		{"phần trong số", "Phần 2 trong số 4: dữ liệu", "2/4"},
+		{"round of", "Review round 1 of 2 is done.", "1/2"},
+		{"out of", "Part 2 out of 3 — the API", "2/3"},
+		{"câu hỏi", "Câu hỏi 2/5: bạn dùng Postgres hay SQLite?", "2/5"},
+		{"bracketed count", "[1/4] Khung sidebar", "1/4"},
+		{"zero-padded date", "Chạy lại vòng 05/10, phần còn lại giữ nguyên.", ""},
+		{"zero-padded heading date", "## 05/10 — kết quả", ""},
 	}
 	for _, c := range cases {
 		if got := stepMarker(c.text); got != c.want {
@@ -48,5 +62,44 @@ func TestLastAssistantText(t *testing.T) {
 	}
 	if got := lastAssistantText([]string{prompt, part1, prompt, tool, toolResult}); got != "" {
 		t.Errorf("a turn that ended on tools carried the last turn's text = %q", got)
+	}
+}
+
+func TestReadLastStepAsk(t *testing.T) {
+	prompt := `{"type":"user","message":{"content":"design the sidebar"}}`
+	design := `{"type":"assistant","message":{"content":[{"type":"text","text":"Phần 2/4: ba panel, mỗi panel một nguồn."}]}}`
+	plain := `{"type":"assistant","message":{"content":[{"type":"text","text":"Đây là khung sidebar."}]}}`
+	ask := func(q string) string {
+		return `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"AskUserQuestion","input":{"questions":[{"header":"Khung","question":"` + q + `"}]}}]}}`
+	}
+	cases := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"the ask names it", []string{prompt, plain, ask("Phần 1/4 (khung sidebar) ổn chưa?")}, "1/4"},
+		{"the message before the ask names it", []string{prompt, design, ask("Ổn chưa?")}, "2/4"},
+		{"an ask before a later message is not the stop", []string{prompt, ask("Phần 1/4 ổn chưa?"), plain}, ""},
+		{"an earlier turn's ask", []string{prompt, ask("Phần 1/4 ổn chưa?"), prompt, plain}, ""},
+	}
+	dir := t.TempDir()
+	for i, c := range cases {
+		path := filepath.Join(dir, strconv.Itoa(i)+".jsonl")
+		if err := os.WriteFile(path, []byte(strings.Join(c.lines, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := readLastStep(path); got != c.want {
+			t.Errorf("%s: readLastStep = %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	input := []byte(`{"questions":[{"header":"Chốt","question":"Phần 4/4 ổn chưa?"}]}`)
+	if got := askStep(input, ""); got != "4/4" {
+		t.Errorf("askStep from the input = %q, want 4/4", got)
+	}
+	path := filepath.Join(dir, "fallback.jsonl")
+	_ = os.WriteFile(path, []byte(prompt+"\n"+design+"\n"), 0o644)
+	if got := askStep([]byte(`{"questions":[{"header":"OK","question":"Ổn chưa?"}]}`), path); got != "2/4" {
+		t.Errorf("askStep falls back to the transcript = %q, want 2/4", got)
 	}
 }

@@ -341,6 +341,24 @@ export class TermWrap {
                 focus: () => this.terminal.focus(),
             }),
         });
+        // the WebGL renderer keeps its glyphs in a GPU texture that can be lost with no context-loss event (Chromium
+        // after sleep, or a GPU stall while the machine is short of RAM): backgrounds still draw and most text goes
+        // missing. Rebuilding the atlas when the window comes back or the terminal takes focus redraws the text.
+        const refreshGlyphs = () => {
+            if (document.visibilityState === "visible") {
+                this.webglAddon?.clearTextureAtlas();
+            }
+        };
+        window.addEventListener("focus", refreshGlyphs);
+        document.addEventListener("visibilitychange", refreshGlyphs);
+        this.terminal.textarea?.addEventListener("focus", refreshGlyphs);
+        this.toDispose.push({
+            dispose: () => {
+                window.removeEventListener("focus", refreshGlyphs);
+                document.removeEventListener("visibilitychange", refreshGlyphs);
+                this.terminal.textarea?.removeEventListener("focus", refreshGlyphs);
+            },
+        });
     }
 
     getZoneId(): string {

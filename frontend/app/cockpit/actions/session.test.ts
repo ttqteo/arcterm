@@ -57,7 +57,7 @@ describe("session actions", () => {
         expect(action("session:delete").applies(thing(mk({ live: true, liveId: "tab-1" }), agent))).toBe(false);
         expect(action("session:delete").applies(thing(mk({ runtime: "pi" })))).toBe(false);
         expect(action("session:delete").applies(thing(mk({ transcriptpath: "" })))).toBe(false);
-        expect(action("session:delete").label).toBe("Xoá session");
+        expect(action("session:delete").label).toBe("Delete session");
         expect(action("session:delete").destructive).toBe(true);
     });
     it("open session always applies", () => {

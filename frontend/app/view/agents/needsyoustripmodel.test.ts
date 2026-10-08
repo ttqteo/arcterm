@@ -104,7 +104,7 @@ describe("buildNeedsYouRows — project scope", () => {
 describe("buildNeedsYouRows — the row", () => {
     it("carries the kind label, source, text and age stamp", () => {
         const [row] = buildNeedsYouRows({ ...base, attention: [item({ kind: "dag-gate", why: "2 of 5 done" })] });
-        expect(row.kindLabel).toBe("Duyệt task");
+        expect(row.kindLabel).toBe("Review task");
         expect(row.source).toBe("ship it");
         expect(row.text).toBe("approve t-1");
         expect(row.why).toBe("2 of 5 done");
@@ -114,10 +114,10 @@ describe("buildNeedsYouRows — the row", () => {
 
     it("labels each kind and marks a blocked task as the one in error", () => {
         const labels = (kind: string) => buildNeedsYouRows({ ...base, attention: [item({ kind })] })[0];
-        expect(labels("dag-blocked").kindLabel).toBe("Task bị chặn");
+        expect(labels("dag-blocked").kindLabel).toBe("Blocked task");
         expect(labels("dag-blocked").tone).toBe("error");
-        expect(labels("run-unverified").kindLabel).toBe("Run chờ xác nhận");
-        expect(labels("run-land-held").kindLabel).toBe("Run chờ land");
+        expect(labels("run-unverified").kindLabel).toBe("Run to confirm");
+        expect(labels("run-land-held").kindLabel).toBe("Run to land");
         expect(labels("escalation").kindLabel).toBe("Escalation");
         expect(labels("escalation").tone).toBe("asking");
     });

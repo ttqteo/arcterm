@@ -9,7 +9,16 @@ const PREFIX = "sk-ant-oat01-";
 const MIN_TAIL = 8;
 const KEEP = 8192;
 const TOKEN_RE = /sk-ant-oat01-[A-Za-z0-9_-]*/g;
-const TOKEN_LINE = /^[A-Za-z0-9_-]+$/;
+// setup-token prints the token with a margin, so a wrapped row may start (and end) with spaces
+const TOKEN_LINE = /^\s*[A-Za-z0-9_-]+\s*$/;
+const PARTIAL_TOKEN_LINE = /^\s*[A-Za-z0-9_-]*$/;
+// ConPTY reaches the next printed row with a cursor move rather than a newline, and writes spaces as
+// cursor-forward: read a move to another row as a line break and a move along the row as a space, so the
+// text after the token is never glued onto it
+// eslint-disable-next-line no-control-regex
+const ROW_MOVE_RE = /\x1b\[[0-9;]*[HfABEFd]/g;
+// eslint-disable-next-line no-control-regex
+const COL_MOVE_RE = /\x1b\[[0-9;]*[CDG`]/g;
 // CSI (colors, cursor moves), OSC (titles, links) and the two-byte charset/save escapes
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[78=>]/g;
@@ -33,7 +42,12 @@ export class TokenScanner {
             return null;
         }
         this.buf = (this.buf + chunk).slice(-KEEP);
-        const text = this.buf.replace(ANSI_RE, "").replace(PARTIAL_ANSI_RE, "").replace(/\r/g, "");
+        const text = this.buf
+            .replace(ROW_MOVE_RE, "\n")
+            .replace(COL_MOVE_RE, " ")
+            .replace(ANSI_RE, "")
+            .replace(PARTIAL_ANSI_RE, "")
+            .replace(/\r/g, "");
         const token = findToken(text.split("\n"));
         if (token != null) {
             this.done = true;
@@ -49,7 +63,7 @@ function findToken(lines: string[]): string | null {
         let m: RegExpExecArray | null;
         while ((m = TOKEN_RE.exec(lines[i])) != null) {
             let token = m[0];
-            if (m.index + token.length === lines[i].length) {
+            if (m.index + token.length === lines[i].trimEnd().length) {
                 if (i === lines.length - 1) {
                     // the token is the last thing printed: more of it may still come
                     return null;
@@ -57,9 +71,9 @@ function findToken(lines: string[]): string | null {
                 // the token reaches the end of its line: join each following line that is all token characters
                 let j = i + 1;
                 for (; j < lines.length - 1 && TOKEN_LINE.test(lines[j]); j++) {
-                    token += lines[j];
+                    token += lines[j].trim();
                 }
-                if (j === lines.length - 1 && /^[A-Za-z0-9_-]*$/.test(lines[j])) {
+                if (j === lines.length - 1 && PARTIAL_TOKEN_LINE.test(lines[j])) {
                     // the line still being printed may yet turn out to be the token's continuation
                     return null;
                 }

@@ -10,8 +10,18 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
+  project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
+- The app bar's usage meter shows how long until the 5-hour window resets (`1h55`), and each bar carries a light
+  tick for how much of its window has passed: a bar short of its tick will last until the reset.
+
 ### Changed
 
+- The app bar's usage meter turns amber when you are using quota faster than the window passes, not when it passes
+  60%: 72% with 20 minutes left stays blue, 50% with 3 hours left turns amber. Its refresh button moved to Usage only;
+  switching to the Default Claude account reads its quota at once.
 - The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
   picked last, and a number key switches between an agent and a run. `Cmd+N` still opens it on an agent and
   `Cmd+Shift+R` on a run (`Ctrl` on Windows).
@@ -21,13 +31,30 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A terminal you have not renamed is named for the command it last ran (`task dev`), or "Terminal 2" before it has
   run one, instead of every terminal in a repo sharing the repo's name. PowerShell, Windows PowerShell 5.1 included,
   now reports its commands to arcterm.
-- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove; + Add account holds both signing in and pasting a token; and the section and its dialogs are in English.
+- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning
+  colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove, and + Add account holds both signing
+  in and pasting a token.
+- The labels still in Vietnamese are now in English: the Claude account settings and its sign-in and restart
+  dialogs, the Cockpit's **Needs you** strip, **Delete session**, and the usage refresh's retry time.
+- Switching an agent between Terminal and Canvas (or Review) no longer reshapes the screen: the details rail stays,
+  so the header's controls stay put, and the canvas and review toolbars match the header, with underlined board
+  tabs and header-sized buttons.
 
 ### Fixed
 
 - On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,
   longer than the panel waits between readings, and now takes a fraction of one.
 - Resuming agents after switching Claude account resumes them instead of closing them.
+- Adding a Claude account with **+ Sign in to account** on Windows no longer stores a cut-off token: the dialog's
+  terminal wraps the token, and arcterm kept only its first line, so every claude on that account failed with
+  "401 OAuth access token is invalid". An account added this way before the fix needs to be added again. Adding an
+  account, signed in or pasted, now asks Claude whether it accepts the token and refuses one it rejects. A pasted
+  token copied across a line wrap, or with some text around it, is cleaned up before it is checked.
+- A terminal whose text went missing after the machine slept or stalled, leaving only colored backgrounds and a few
+  stray letters, redraws its text when the window comes back or you click into it.
+- A Claude agent walking you through a design in parts shows its **1/4** badge while it asks "Part 1/4 look right?"
+  with a question, not only when it stops on a plain message. It also reads "part 1 out of 3", "phần 1 trong 3",
+  "round 1 of 2", "question 2/5" and "[1/4]", and no longer mistakes a date like "05/10" for a part.
 
 ## 0.15.5 — 2026-10-08
 

@@ -3,7 +3,7 @@
 //
 // The refresh button of the Plan usage strip and the Usage surface: asks the usage endpoint now, past the
 // poll's spacing. While it runs the icon spins and the button is disabled; a 429 backoff it cannot break
-// is said for a few seconds as "thử lại lúc HH:MM". The visibility rule is in usagerefresh.ts.
+// is said for a few seconds as "retry at HH:MM". The visibility rule is in usagerefresh.ts.
 
 import { cn } from "@/util/util";
 import { RefreshCw } from "lucide-react";

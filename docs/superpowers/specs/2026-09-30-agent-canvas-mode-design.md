@@ -26,7 +26,7 @@ elements inside the iframe, and persisting a canvas across an Arc restart.
 | 1 | Address `canvas:<topic>[/<board>]`, parsed in `address.ts`, landed by `openref.ts`, reachable as `wsh ui reveal canvas:<topic>`. | One router; reveal already carries the caller's block id. |
 | 2 | `wsh ui reveal` also sends the caller's working directory (`callercwd`). The canvas directory is `<callercwd>/.superpowers/design/<topic>`. | design-local writes the canvas relative to the agent's cwd; the frontend has no other reliable way to find it on disk. |
 | 3 | Per-agent canvas state is a jotai atom family keyed by agent id, in memory only. After an Arc restart the agent re-runs reveal. | Chosen by the user: session-only. |
-| 4 | Canvas mode swaps the terminal for the canvas; it doesn't dock. The rail hides; the tree and the header stay, so another agent is one click away; the xterm stays mounted and hidden. | Mockup; the xterm must never remount. The tree first hid too, which made every trip to another agent a round trip through the terminal. |
+| 4 | Canvas mode swaps the terminal for the canvas; it doesn't dock. The tree, the header and the details rail stay, so another agent is one click away; the xterm stays mounted and hidden. | Mockup; the xterm must never remount. The tree first hid too, which made every trip to another agent a round trip through the terminal. The rail hid until 2026-10-08: the pane widened on every swap and the header's controls jumped right, which read as a different screen. |
 | 5 | Each board has its own tab showing it alone, and with two or more boards an All tab draws every board at its canvas.json frame (x, y, w, h). Either way the boards on screen are scaled to fit the pane width, never above 100%, and the toolbar shows the scale. A canvas opens on its first board. | Chosen by the user. All alone read as one design split by a tab header that did not separate anything; one board at a time alone left sibling variants out of sight. |
 | 6 | wavesrv serves the boards (2026-10-04; it replaced probing 8766 upward for a python server the agent started). `CanvasServeCommand(<project>/.superpowers/design)` registers the folder and returns `/canvas/<token>` on wavesrv's web listener; the pane fetches through `@tauri-apps/plugin-http`. | No agent has to start a server, no fixed port can clash, and nothing outlives Arc. The route takes no auth key, because an iframe cannot send one: the token, an HMAC of the folder under a per-process secret, stands in for it. |
 | 7 | Updates come from polling the served files' `Last-Modified` every 3 s, for the focused agent only, while the Agent surface is mounted. | Decided in the goal; one agent is on screen at a time. |
@@ -144,7 +144,7 @@ mounted and the focused agent has a canvas, every 3 s (`CANVAS_POLL_MS`):
 ## UI
 
 **AgentSurface.** `canvasMode = state?.mode === "canvas"`. The tree renders when `!fullscreen`, the
-details rail when `!fullscreen && !canvasMode`. The terminal stack keeps rendering, with the focused pane
+details rail when `!fullscreen`, canvas mode or not. The terminal stack keeps rendering, with the focused pane
 `hidden` in canvas mode, and `CanvasPane` renders below the header in its place. The terminal
 wrapper is never unmounted.
 
@@ -161,9 +161,11 @@ its canvas, or, when that canvas is the one showing, goes back to the terminal. 
 
 **CanvasPane** (`canvaspane.tsx`, thin; logic in the models):
 
-- Toolbar: topic, board tabs (`Segmented`, `role=tablist`, title "Previous and next board ([ and
-  ])"), spacer, "updated Ns ago · NN%", the Mark toggle, and, while not marking, Open in browser
-  (`openExternal(boardUrl)`) and Build this….
+- Toolbar (`swapbar.tsx`, shared with the Doc review's): the header's second line, at its background,
+  padding and button size. Topic, board tabs (`SwapTabs`, underlined like the details rail's, `role=tablist`,
+  title "Previous and next board ([ and ])"), spacer, "updated Ns ago · NN%", the Mark toggle, and, while
+  not marking, Open in browser (`openExternal(boardUrl)`) and Build this…, the one primary button. The
+  header's Terminal | Canvas stays the only segmented control on screen.
 - Boards: `canvasLayout(shownBoards(s))` places one frame per shown board, each an `<iframe src={boardUrl}
   key={reloadKey}>` at the board's natural size scaled by the layout's scale, with
   `sandbox="allow-scripts allow-same-origin"` (its own origin, never Arc's), and a label above it
