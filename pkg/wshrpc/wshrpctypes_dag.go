@@ -83,7 +83,7 @@ type CommandDagActionData struct {
 	ChannelId  string `json:"channelid"`
 	RunId      string `json:"runid"`
 	TaskId     string `json:"taskid"`
-	Action     string `json:"action"`               // approve | sendback | retry | skip | escalate | cancel | forward | takeover | relaunch-lead | review-pass | review-fail | planreview-pass | planreview-fail | planreview-accept | final-pass | final-fail | amend | tell | final-end-unverified | final-end-failed | setmodel | leadmodels
+	Action     string `json:"action"`               // approve | sendback | retry | skip | stop | escalate | cancel | forward | takeover | relaunch-lead | review-pass | review-fail | planreview-pass | planreview-fail | planreview-accept | final-pass | final-fail | amend | tell | final-end-unverified | final-end-failed | setmodel | leadmodels
 	Model      string `json:"model,omitempty"`      // escalate, setmodel target model (exact id); required
 	Runtime    string `json:"runtime,omitempty"`    // escalate, setmodel target runtime; empty = task's current runtime
 	Notes      string `json:"notes,omitempty"`      // forward: what the lead checked; review, planreview: summary or findings; final: summary or defects; final-end-*: the human's reason; planreview-accept: the human's reason; amend: the note; tell: the text; sendback: guidance

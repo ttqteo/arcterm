@@ -109,12 +109,15 @@ func applyAction(ctx context.Context, dagID, taskID, action string, target waveo
 			return err
 		}
 	}
-	return withDagMutation(dagID, func() error {
+	if err := withDagMutation(dagID, func() error {
 		if err := prep.checkUnmoved(ctx, dagID, taskID); err != nil {
 			return err
 		}
 		return applyActionLocked(ctx, dagID, taskID, action, target)
-	})
+	}); err != nil {
+		return err
+	}
+	return prep.closeWorkerTab(ctx, taskID)
 }
 
 // taskPrep is the slow half of a skip, retry or escalate: stopping the task's worker and rewinding its lane. It is
@@ -127,6 +130,8 @@ type taskPrep struct {
 	stop *waveobj.Run
 	// takes the task's commits off its lane, after the stop so the worker cannot commit behind it
 	rewind func(context.Context) error
+	// stop only: close the stopped worker's tab, once the task is recorded
+	closeTab bool
 }
 
 func (p *taskPrep) run(ctx context.Context) error {
@@ -157,11 +162,23 @@ func (p *taskPrep) checkUnmoved(ctx context.Context, dagID, taskID string) error
 	return nil
 }
 
-// prepareActionLocked validates a skip, retry or escalate, cancels the run of the worker it will stop and returns
+// closeWorkerTab closes a stopped worker's tab, the one runTabID names, in its run's workspace. It runs after the
+// task is recorded Failed, so a tab that will not close leaves no task a tick would relaunch, only an error saying so.
+func (p *taskPrep) closeWorkerTab(ctx context.Context, taskID string) error {
+	if p == nil || !p.closeTab || p.stop == nil {
+		return nil
+	}
+	if _, err := closeLeadTab(ctx, p.stop); err != nil {
+		return fmt.Errorf("task %q is stopped, but its worker's tab did not close: %w", taskID, err)
+	}
+	return nil
+}
+
+// prepareActionLocked validates a skip, retry, escalate or stop, cancels the run of the worker it will stop and returns
 // the work left to do outside the lock. Nil for an action that stops and rewinds nothing; applyActionLocked
 // rejects what this leaves unjudged.
 func prepareActionLocked(ctx context.Context, dagID, taskID, action string, target waveobj.RoutePin) (*taskPrep, error) {
-	if action != "skip" && action != "retry" && action != "escalate" {
+	if action != "skip" && action != "retry" && action != "escalate" && action != "stop" {
 		return nil, nil
 	}
 	g, err := wstore.GetDag(ctx, dagID)
@@ -188,6 +205,12 @@ func prepareActionLocked(ctx context.Context, dagID, taskID, action string, targ
 			return prep, nil
 		}
 		prep.rewind = func(ctx context.Context) error { return dropSkippedAttempt(ctx, g, taskID) }
+	case "stop":
+		// only a task with a live worker has something to stop; a reviewing task's worker already finished
+		if !taskActive(task.State) {
+			return nil, fmt.Errorf("task %q cannot be stopped from state %q: only a running or stalled task has a worker", taskID, task.State)
+		}
+		prep.closeTab = true
 	case "retry":
 		// a reviewing task is refused, and a failed review's worker already finished
 		if reviewState(task.State) {
@@ -335,6 +358,16 @@ func applyActionLocked(ctx context.Context, dagID, taskID, action string, target
 		}
 		applyEscalation(task, target)
 		RecomputeDagStatus(g)
+	case "stop":
+		task := taskByID(g, taskID)
+		if task == nil {
+			return fmt.Errorf("no task %q", taskID)
+		}
+		// Failed, not Cancelled: a cancelled task cancels its whole dag (RecomputeDagStatus). The run is
+		// dropped so DeriveTaskStates cannot map its cancellation back onto the task.
+		task.State = TaskState_Failed
+		task.LastFailureKind = FailureKindStopped
+		task.RunID = ""
 	default:
 		return fmt.Errorf("unknown dag action %q", action)
 	}

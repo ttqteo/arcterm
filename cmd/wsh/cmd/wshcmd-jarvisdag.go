@@ -475,6 +475,7 @@ var dagDoneLines = map[string]string{
 	"retry":             "task {task} re-queued; a fresh worker starts when a slot is free",
 	"escalate":          "task {task} re-queued on the chosen model; a fresh worker starts when a slot is free",
 	"skip":              "task {task} skipped; it will not run",
+	"stop":              "task {task} stopped; its worker's tab is closed and nothing retries it until you retry, escalate or skip it",
 	"cancel":            "dag cancelled; its workers stop and their worktrees are cleaned up",
 	"retry-cleanup":     "task {task}'s worktree cleanup retried; `wsh jarvis dag status` shows whether it cleared",
 	"forward":           "task {task} forwarded; it waits on the human in the cockpit",
@@ -1105,7 +1106,7 @@ func leadTree() string {
 
 func init() {
 	jarvisDagCmd.AddCommand(dagSubmitCmd, dagStatusCmd, dagMergeCmd, dagAsksCmd, dagAnswerCmd, dagForwardCmd, dagRulesCmd, dagReportCmd, dagReviewCmd, dagPlanReviewCmd, dagFinalCmd, dagAmendCmd, dagTellCmd)
-	jarvisDagCmd.AddCommand(dagAction("approve"), dagSendbackCmd, dagAction("retry"), dagAction("skip"), dagEscalateCmd, dagAction("cancel"), dagActionWithin("retry-cleanup", 60_000))
+	jarvisDagCmd.AddCommand(dagAction("approve"), dagSendbackCmd, dagAction("retry"), dagAction("skip"), dagActionWithin("stop", 60_000), dagEscalateCmd, dagAction("cancel"), dagActionWithin("retry-cleanup", 60_000))
 	for _, c := range jarvisDagCmd.Commands() {
 		c.Flags().String("runid", "", "run id")
 		c.Flags().String("channel", "", "channel id")
