@@ -223,6 +223,13 @@ describe("launcherKey", () => {
         expect(launcherKey(at("project"), key("ArrowUp"))).toEqual({ kind: "move", column: "project", delta: -1 });
         expect(launcherKey(at("textarea"), key("ArrowDown"))).toEqual({ kind: "none" });
     });
+    it("→ goes from Start to Project and ← comes back; neither leaves the pair", () => {
+        expect(launcherKey(at("start"), key("ArrowRight"))).toEqual({ kind: "column", to: "project" });
+        expect(launcherKey(at("project", "ok"), key("ArrowLeft"))).toEqual({ kind: "column", to: "start" });
+        expect(launcherKey(at("start"), key("ArrowLeft"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("project"), key("ArrowRight"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("input"), key("ArrowLeft"))).toEqual({ kind: "none" });
+    });
     it("letters filter the Project column, and only there", () => {
         expect(launcherKey(at("project", "ok"), key("i"))).toEqual({ kind: "filter", next: "oki" });
         expect(launcherKey(at("project"), key("-"))).toEqual({ kind: "filter", next: "-" });

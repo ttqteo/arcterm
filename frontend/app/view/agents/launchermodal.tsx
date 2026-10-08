@@ -4,8 +4,8 @@
 // The New launcher: one dialog that starts an agent, a terminal or a run
 // (docs/superpowers/specs/2026-10-08-new-launcher-design.md). It replaced the New agent dialog and the New run window.
 // The Start column picks what, the Project column where, the details below fill in the rest. Digits pick in the
-// focused column and Tab walks the dialog without leaving it. Every close keeps the draft (launcherstore), which is
-// what lets a click outside close it.
+// focused column, → and ← step between the two columns, and Tab walks the dialog without leaving it. Every close keeps
+// the draft (launcherstore), which is what lets a click outside close it.
 //
 // The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
@@ -549,6 +549,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 }
                 return;
             }
+            case "column":
+                (action.to === "project" ? projectRef : startRef).current?.focus();
+                return;
             case "filter":
                 applyFilter(action.next);
                 return;
@@ -650,8 +653,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <span className="flex items-center gap-[5px]">
                                 <kbd className={KEY_LEGEND}>1–9</kbd>pick
                             </span>
+                            {projectFocused ? (
+                                <span className="flex items-center gap-[5px]">
+                                    <kbd className={KEY_LEGEND}>←</kbd>back
+                                </span>
+                            ) : null}
                             <span className="flex items-center gap-[5px]">
-                                <kbd className={KEY_LEGEND}>⇥</kbd>next
+                                <kbd className={KEY_LEGEND}>{startFocused ? "→" : "⇥"}</kbd>next
                             </span>
                         </span>
                         <button
