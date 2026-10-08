@@ -17,7 +17,7 @@ on Windows the process Claude Code spawns to start a background command exits wh
 
 ## Goals
 
-- A chip in the app bar counts the servers running inside a git repo and flags the ones nothing owns.
+- A chip in the footer counts the servers running inside a git repo and flags the ones nothing owns.
 - Clicking it opens a popover listing **every** listening process the person's account can read, grouped by repo,
   each with a badge naming what it belongs to: an agent, a terminal, another app, or nothing.
 - From a row: open a port in the browser, read its log (when an agent's background task started it), copy it, stop it.
@@ -28,11 +28,13 @@ a RAM column; notifications pushed when a new unowned server appears; stopping u
 
 ## Decisions
 
-1. **A chip and a popover.** `MachineServersChip` sits in the app bar beside the RAM chip (`workercapacitychip.tsx`):
-   a lucide icon and the count of servers inside a git repo (`4`). When any of them has no owner (decision 5) it reads
+1. **A chip and a popover.** `MachineServersChip` sits in the footer's status group (`footerstatus.tsx`), before the
+   RAM chip (`workercapacitychip.tsx`), which moved there from the app bar on 2026-10-08: a lucide icon and the count
+   of servers inside a git repo (`4`). When any of them has no owner (decision 5) it reads
    `4 · 1 no owner`, the second part in the warning tone. With none in a repo it shows the icon alone, muted. Hover:
    a tooltip listing the repo servers' ports. Click: `MachineServersPanel`, a popover built like `ConsumersPanel`
-   (`PopoverReveal`, DESIGN.md tokens only); `Esc`, a click outside or the chip again closes it.
+   (`PopoverReveal`, rising from just above the footer's right end, DESIGN.md tokens only); `Esc`, a click outside
+   or the chip again closes it. Opening it closes Consumers, and opening Consumers closes it.
 
 2. **Scope: everything the account can read.** Every TCP listener whose process's command line can be read. One
    whose command line can't (System, services, another user's) is left out. One process on several ports is one row.
