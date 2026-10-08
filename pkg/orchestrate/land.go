@@ -84,6 +84,13 @@ func LandRun(ctx context.Context, channelID, runID string, force bool) (*waveobj
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLandHeld, nil, map[string]any{"reason": land.Reason})
 	case LandState_Landed:
 		appendRunEvent(ctx, channelID, runID, waveobj.RunEventKindLanded, nil, map[string]any{"commit": land.Commit, "title": landTitle(run, g)})
+		// the land runs after the lead's `complete`, whose close check saw a run not yet landed: a run landed past
+		// a failed final stage keeps its dag blocked, so no later tick would look at its lead again
+		if fresh, err := wstore.GetRun(ctx, channelID, runID); err == nil {
+			if _, err := MaybeCloseOrchestratorLead(ctx, fresh, g); err != nil {
+				log.Printf("run %s landed; closing its lead's tab: %v", runID, err)
+			}
+		}
 	}
 	return land, nil
 }

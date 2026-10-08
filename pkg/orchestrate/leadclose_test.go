@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
@@ -171,6 +172,45 @@ func TestMaybeCloseOrchestratorLeadKeepsATabWhoseLeadIsStillRunning(t *testing.T
 	}
 	if ok || len(*sent) != 0 {
 		t.Fatalf("a mid-turn lead's tab must survive: closed=%v broadcasts=%d", ok, len(*sent))
+	}
+}
+
+// stubTurnEndedAt fakes when a session last reported its turn over, 0 meaning it has not.
+func stubTurnEndedAt(t *testing.T, ts int64) {
+	t.Helper()
+	old := workerTurnEndedAt
+	t.Cleanup(func() { workerTurnEndedAt = old })
+	workerTurnEndedAt = func(context.Context, *waveobj.Run) int64 { return ts }
+}
+
+// A claude lead never exits on its own: it sits at its prompt once its turn ends, so waiting for its exit left every
+// finished lead's tab behind (run 9bd1b7ec's lead sat idle for hours). A turn reported over past the grace is the
+// proof its `complete` returned, which is all the liveness guard protects.
+func TestMaybeCloseOrchestratorLeadClosesALeadIdleAtItsPromptPastTheGrace(t *testing.T) {
+	stubBlockShellStatus(t, blockcontroller.Status_Running)
+	stubTurnEndedAt(t, time.Now().Add(-TurnEndedGrace-time.Minute).UnixMilli())
+	sent := stubLeadTabDelete(t, nil)
+	owner, g := deadLeadFixture(t)
+	owner.Status = jarvis.RunStatus_Done
+
+	ok, err := MaybeCloseOrchestratorLead(context.Background(), owner, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || len(*sent) != 1 {
+		t.Fatalf("a lead idle past the grace must be closed: closed=%v broadcasts=%d", ok, len(*sent))
+	}
+}
+
+func TestMaybeCloseOrchestratorLeadKeepsALeadJustIdle(t *testing.T) {
+	stubBlockShellStatus(t, blockcontroller.Status_Running)
+	stubTurnEndedAt(t, time.Now().Add(-time.Minute).UnixMilli())
+	sent := stubLeadTabDelete(t, nil)
+	owner, g := deadLeadFixture(t)
+	owner.Status = jarvis.RunStatus_Done
+
+	if ok, err := MaybeCloseOrchestratorLead(context.Background(), owner, g); err != nil || ok || len(*sent) != 0 {
+		t.Fatalf("a lead idle under the grace keeps its tab: closed=%v err=%v broadcasts=%d", ok, err, len(*sent))
 	}
 }
 

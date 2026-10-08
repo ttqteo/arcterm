@@ -1333,6 +1333,26 @@ func TestShouldCloseOrchestratorLead(t *testing.T) {
 			want: false,
 		},
 		{
+			// a human landed the run past its failed final stage: the dag stays blocked on that failure, but
+			// nothing is left for the lead to triage (run 9bd1b7ec kept its idle lead tab for hours)
+			name: "done run landed past a blocked dag closes",
+			run:  waveobj.Run{Mode: jarvis.RunMode_Orchestrator, Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: LandState_Landed}},
+			dag:  waveobj.TaskGroup{Status: DagStatus_Blocked, Final: &waveobj.FinalStage{State: FinalState_Failed}, Tasks: []waveobj.TaskNode{{ID: "t-1", State: TaskState_Done}}},
+			want: true,
+		},
+		{
+			name: "done run with a held land keeps the lead on a blocked dag",
+			run:  waveobj.Run{Mode: jarvis.RunMode_Orchestrator, Status: jarvis.RunStatus_Done, Land: &waveobj.RunLand{State: LandState_Held}},
+			dag:  waveobj.TaskGroup{Status: DagStatus_Blocked, Final: &waveobj.FinalStage{State: FinalState_Failed}, Tasks: []waveobj.TaskNode{{ID: "t-1", State: TaskState_Done}}},
+			want: false,
+		},
+		{
+			name: "done run not landed keeps the lead on a blocked dag",
+			run:  waveobj.Run{Mode: jarvis.RunMode_Orchestrator, Status: jarvis.RunStatus_Done},
+			dag:  waveobj.TaskGroup{Status: DagStatus_Blocked, Final: &waveobj.FinalStage{State: FinalState_Failed}, Tasks: []waveobj.TaskNode{{ID: "t-1", State: TaskState_Done}}},
+			want: false,
+		},
+		{
 			name: "cancelled orchestrator + dag cancelled closes",
 			run:  waveobj.Run{Mode: jarvis.RunMode_Orchestrator, Status: jarvis.RunStatus_Cancelled},
 			dag:  waveobj.TaskGroup{Status: "cancelled", Tasks: []waveobj.TaskNode{{ID: "t-0", State: TaskState_Cancelled}}},

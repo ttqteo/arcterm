@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A run you landed after its final check failed now reads **✓ landed** in the sidebar, on its lead card and in
   Conversation History, instead of "7/7 done" as if it were still waiting.
+- A finished run no longer leaves idle tabs behind: its plan reviewer, its final verifier and its lead close a few
+  minutes after their turn ends, and the run's folder under `.waveterm/worktrees` goes with them.
 
 ## 0.15.6 — 2026-10-08
 

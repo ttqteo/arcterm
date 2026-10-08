@@ -55,11 +55,21 @@ func MaybeCloseOrchestratorLead(ctx context.Context, run *waveobj.Run, dag *wave
 	// deleting the tab under a lead that is still running takes its terminal with it: the lead's own
 	// `wsh jarvis complete` returns into a dead block, so it never sees the result and the human never
 	// gets the report (run 5d361309). A terminal run says the work is done, not that the turn is over —
-	// only the process says that. The lead's exit closes what this skips, via CloseOrchestratorLeadOnExit.
-	if leadProcessAlive(runTabID(run)) {
+	// only the process says that. The lead's exit closes what this skips, via CloseOrchestratorLeadOnExit. A claude
+	// lead never exits on its own, though: it sits at its prompt, and a turn it reported over past the grace is
+	// just as sure that its `complete` returned.
+	if !sessionTurnOver(ctx, run, time.Now().UnixMilli()) {
+		// its dag is terminal, so no tick of its own looks at it again: the watchdog does once its turn is over
+		queueFinishedSession(run.ChannelOID, run.ID)
 		return false, nil
 	}
 	return closeLeadTab(ctx, run)
+}
+
+// sessionTurnOver reports a run's session that can no longer be cut off mid-turn: its process is gone, or it has
+// sat at its prompt past TurnEndedGrace since reporting its turn over.
+func sessionTurnOver(ctx context.Context, run *waveobj.Run, now int64) bool {
+	return !leadProcessAlive(runTabID(run)) || turnEndedPast(ctx, run, now)
 }
 
 // CloseOrchestratorLeadOnExit closes a terminal orchestrator run's lead tab from the lead's own exit
@@ -90,6 +100,11 @@ func closeLeadTab(ctx context.Context, run *waveobj.Run) (bool, error) {
 	return true, nil
 }
 
+// landedRun reports a done run whose branch is merged into its base.
+func landedRun(run *waveobj.Run) bool {
+	return run.Status == jarvis.RunStatus_Done && run.Land != nil && run.Land.State == LandState_Landed
+}
+
 // ShouldCloseOrchestratorLead reports whether an orchestrator lead's tab can be
 // auto-closed. The lead's lifecycle is owned by Run/DAG, not by the shell exit:
 // it must stay (even idle) while DAG children are still active, and only be
@@ -112,8 +127,10 @@ func ShouldCloseOrchestratorLead(run *waveobj.Run, dag *waveobj.TaskGroup) bool 
 	}
 	// dag must be terminal — no active tasks. done/cancelled are the only
 	// terminal dag statuses; blocked/awaiting-review still need the lead to
-	// triage the gate, so keep it.
-	if dag.Status != DagStatus_Done && dag.Status != DagStatus_Cancelled {
+	// triage the gate, so keep it — unless a human already landed the run past
+	// that gate (a failed final stage): the dag stays blocked on the failure, but
+	// the work is in its base and nothing is left to triage.
+	if dag.Status != DagStatus_Done && dag.Status != DagStatus_Cancelled && !landedRun(run) {
 		return false
 	}
 	return allTasksTerminal(dag)

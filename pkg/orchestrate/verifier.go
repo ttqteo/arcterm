@@ -172,6 +172,9 @@ func RecordFinalVerdict(ctx context.Context, dagID, verifierRunID, verdict, text
 		if _, held := heldFinalVerdict(dagID, f, false); held {
 			return fmt.Errorf("run %s already gave its verdict; it waits for the final stage's commands", verifierRunID)
 		}
+		// its session ends with this verdict, but its process stays at the prompt: the watchdog closes it
+		channelID := g.ChannelId
+		afterCommit = append(afterCommit, func() { queueFinishedSession(channelID, verifierRunID) })
 		if verdict == ReviewVerdict_Pass {
 			channelID, runID := g.ChannelId, g.RunID
 			afterCommit = append(afterCommit, func() {

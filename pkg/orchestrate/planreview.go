@@ -239,6 +239,9 @@ func RecordPlanReviewVerdict(ctx context.Context, dagID, reviewerRunID, verdict,
 			return err
 		}
 		pr.Findings = text
+		// its session ends with this verdict, but its process stays at the prompt: the watchdog closes it
+		channelID := g.ChannelId
+		*afterCommit = append(*afterCommit, func() { queueFinishedSession(channelID, reviewerRunID) })
 		round, last := pr.Round, pr.Round >= MaxPlanReviewRounds
 		detail := map[string]any{"round": round, "findings": text}
 		if len(picks) > 0 {

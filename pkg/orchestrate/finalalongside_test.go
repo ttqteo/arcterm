@@ -110,6 +110,9 @@ func TestTheVerifierStartsWhileCheckAndVerifyRun(t *testing.T) {
 	if err := RecordFinalVerdict(f.ctx, f.dagID, verifierID, ReviewVerdict_Pass, "does what the spec asks", ""); err != nil {
 		t.Fatal(err)
 	}
+	if !queuedSession(verifierID) {
+		t.Fatal("the verifier's session ends with its verdict but its process does not: it must be queued")
+	}
 	if g := f.dag(t); g.Final.State != FinalState_Passed || g.Status != DagStatus_Done {
 		t.Fatalf("the verdict ends the stage, got %s / %s", g.Final.State, g.Status)
 	}
