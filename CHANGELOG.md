@@ -23,6 +23,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   now reports its commands to arcterm.
 - The labels still in Vietnamese are now in English: the Claude account settings and its sign-in and restart
   dialogs, the Cockpit's **Needs you** strip, **Delete session**, and the usage refresh's retry time.
+- Switching an agent between Terminal and Canvas (or Review) no longer reshapes the screen: the details rail stays,
+  so the header's controls stay put, and the canvas and review toolbars match the header, with underlined board
+  tabs and header-sized buttons.
 
 ### Fixed
 

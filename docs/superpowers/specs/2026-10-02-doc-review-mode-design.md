@@ -134,7 +134,8 @@ Terminal/Review, Changes/PDF, Whole file, click a sentence to comment), `Narrow.
 states). The folder is gitignored, so a worktree reads it by that absolute path. Where this section
 and the mockup disagree on a look, the mockup wins; this spec owns behaviour and wiring.
 
-The agent tree and the agent header stay; the details rail hides, as in canvas mode. The header gains
+The agent tree, the agent header and the details rail stay, as in canvas mode (the rail hid until 2026-10-08).
+The toolbar is `swapbar.tsx`'s, shared with the canvas, and its Changes | PDF are underlined tabs. The header gains
 a `Terminal | Review` segmented control (`element/segmented.tsx`, `role="group"`) while a `Doc review`
 ask is open; the Review option carries an amber dot while the terminal is showing. It replaces the
 header's amber review button for this kind of ask. The area the xterm occupies becomes:

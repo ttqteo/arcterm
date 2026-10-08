@@ -5,7 +5,6 @@
 // Thin: what it shows comes from canvasmodel/canvasmarks, and what it knows comes from the agent's canvas state,
 // which useCanvasPoller keeps current.
 
-import { Segmented } from "@/app/element/segmented";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { getApi } from "@/app/store/global";
 import { formatChordString } from "@/util/keysym";
@@ -43,12 +42,7 @@ import {
     updateCanvas,
     type CanvasState,
 } from "./canvasstore";
-
-// the app bar's secondary and primary buttons
-export const CANVAS_BTN =
-    "flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-edge-mid bg-surface-raised px-[12px] py-[6px] text-[12.5px] font-semibold text-primary hover:border-edge-strong hover:bg-surface-hover";
-export const CANVAS_PRIMARY_BTN =
-    "flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[12px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
+import { SWAP_BAR, SWAP_BTN, SWAP_BTN_ON, SWAP_LABEL, SWAP_PRIMARY_BTN, SwapTabs } from "./swapbar";
 
 // room above a board's frame for its label; the scroll pane's top padding
 const CANVAS_TOP_PAD = 36;
@@ -97,11 +91,10 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
 
     return (
         <div data-canvas-pane className="flex min-h-0 flex-1 flex-col">
-            <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint bg-surface px-[22px] py-[8px]">
-                <span className="text-[12px] font-semibold text-secondary">{s.topic}</span>
+            <div className={SWAP_BAR}>
+                <span className={SWAP_LABEL}>{s.topic}</span>
                 {s.boards.length > 0 ? (
-                    <Segmented
-                        role="tablist"
+                    <SwapTabs
                         ariaLabel="Boards"
                         title={`Previous and next board (${formatChordString("[")} and ${formatChordString("]")})`}
                         value={currentTab(s)}
@@ -120,14 +113,9 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                     aria-pressed={marking}
                     disabled={pane !== "board"}
                     onClick={() => setMarking(agent.id, !s.marking)}
-                    className={cn(
-                        "flex cursor-pointer items-center gap-[6px] rounded-[8px] border px-[11px] py-[6px] text-[12.5px] font-semibold disabled:cursor-default disabled:opacity-50",
-                        marking
-                            ? "border-accent bg-accentbg text-accent"
-                            : "border-edge-mid bg-surface-raised text-primary hover:border-edge-strong"
-                    )}
+                    className={cn(SWAP_BTN, marking && SWAP_BTN_ON)}
                 >
-                    <SquareDashed size={15} strokeWidth={1.8} aria-hidden />
+                    <SquareDashed size={14} strokeWidth={1.8} aria-hidden />
                     Mark
                 </button>
                 {!marking ? (
@@ -136,13 +124,17 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                             <button
                                 type="button"
                                 onClick={() => getApi().openExternal(boardUrl(s.base!, s.topic, board.name))}
-                                className={CANVAS_BTN}
+                                className={SWAP_BTN}
                             >
                                 Open in browser
                             </button>
                         ) : null}
                         {s.boards.length > 0 ? (
-                            <button type="button" onClick={() => openBuildRun(model, agent, s)} className={CANVAS_BTN}>
+                            <button
+                                type="button"
+                                onClick={() => openBuildRun(model, agent, s)}
+                                className={SWAP_PRIMARY_BTN}
+                            >
                                 Build this…
                             </button>
                         ) : null}
@@ -384,7 +376,7 @@ function MarkTray({ agent, marks }: { agent: AgentVM; marks: Mark[] }) {
             </div>
             <div className="flex flex-none flex-col items-end gap-[6px]">
                 <div data-canvas-tray-actions className="flex items-center gap-[10px]">
-                    <button type="button" onClick={() => clearMarks(agentId)} className={CANVAS_BTN}>
+                    <button type="button" onClick={() => clearMarks(agentId)} className={SWAP_BTN}>
                         Clear
                     </button>
                     <button
@@ -394,8 +386,9 @@ function MarkTray({ agent, marks }: { agent: AgentVM; marks: Mark[] }) {
                         disabled={noMarks || sending}
                         onClick={() => void send()}
                         className={cn(
-                            CANVAS_PRIMARY_BTN,
-                            noMarks && "bg-surface-hover text-muted hover:bg-surface-hover disabled:opacity-100"
+                            SWAP_PRIMARY_BTN,
+                            noMarks &&
+                                "border-edge-mid bg-surface-hover text-muted hover:bg-surface-hover disabled:opacity-100"
                         )}
                     >
                         {sending ? "Sending…" : `Send to ${agent.name}`}
@@ -443,7 +436,7 @@ function Removed({ agent, topic }: { agent: AgentVM; topic: string }) {
                 Its folder under .superpowers/design is gone, usually because the feature shipped. The swap control
                 disappears once you go back to the terminal.
             </span>
-            <button type="button" onClick={() => detachCanvas(agent.id)} className={cn("mt-[4px]", CANVAS_BTN)}>
+            <button type="button" onClick={() => detachCanvas(agent.id)} className={cn("mt-[4px]", SWAP_BTN)}>
                 Back to terminal
             </button>
         </EdgeState>

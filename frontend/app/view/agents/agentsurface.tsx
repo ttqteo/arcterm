@@ -579,12 +579,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                     {centerMode !== "terminal" ? <AgentCenterPane model={model} mode={centerMode} /> : null}
                 </div>
                 {/* a plain terminal has no details of its own: no rail, the tree's Terminals section reaches the others.
-                    Nor does a maximized dock, which is a terminal on screen alone. */}
-                {!fullscreen &&
-                centerMode === "terminal" &&
-                swapped == null &&
-                agent.kind !== "terminal" &&
-                !dockMax ? (
+                    Nor does a maximized dock, which is a terminal on screen alone. A canvas or a review in the
+                    terminal's place keeps it, so swapping never moves the header's controls. */}
+                {!fullscreen && centerMode === "terminal" && agent.kind !== "terminal" && !dockMax ? (
                     <AgentDetailsRail model={model} agent={agent} />
                 ) : null}
             </div>

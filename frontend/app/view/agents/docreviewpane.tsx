@@ -7,7 +7,6 @@
 // from docreviewload.ts, and the state from docreviewstore.ts.
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
-import { Segmented } from "@/app/element/segmented";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { openLink } from "@/app/store/global";
@@ -65,6 +64,7 @@ import {
 } from "./proseanchor";
 import { diffProse, type SectionChange, type SentenceChange } from "./prosediff";
 import { DELETED, INSERTED, ProseTokens, type OpToken } from "./prosetokens";
+import { SWAP_BAR, SWAP_BTN, SWAP_BTN_ON, SWAP_LABEL, SwapTabs } from "./swapbar";
 
 // a doc review is always the ask's only question
 const QI = 0;
@@ -265,36 +265,29 @@ function Toolbar(p: {
     const { file, dir } = splitPath(state.path);
     const onChanges = state.doc !== "latex" || state.tab === "changes";
     return (
-        <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint bg-surface px-[22px] py-[8px]">
+        <div className={SWAP_BAR}>
             <FileText size={15} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />
-            <span className="text-[12px] font-semibold text-secondary">{file}</span>
+            <span className={cn(SWAP_LABEL, "flex-none")}>{file}</span>
             {!p.narrow ? <span className="min-w-0 truncate text-[10.5px] text-muted">{dir}</span> : null}
             {state.doc === "latex" ? (
-                <div className="ml-[6px]">
-                    <Segmented
-                        role="tablist"
-                        ariaLabel="Review view"
-                        title={`Previous and next tab (${formatChordString("[")} and ${formatChordString("]")})`}
-                        value={state.tab}
-                        options={[
-                            { key: "changes", label: "Changes" },
-                            { key: "pdf", label: "PDF" },
-                        ]}
-                        onChange={(tab) => setDocReviewTab(p.agentId, tab)}
-                    />
-                </div>
+                <SwapTabs
+                    className="ml-[6px]"
+                    ariaLabel="Review view"
+                    title={`Previous and next tab (${formatChordString("[")} and ${formatChordString("]")})`}
+                    value={state.tab}
+                    options={[
+                        { key: "changes", label: "Changes" },
+                        { key: "pdf", label: "PDF" },
+                    ]}
+                    onChange={(tab) => setDocReviewTab(p.agentId, tab)}
+                />
             ) : null}
             {onChanges ? (
                 <button
                     type="button"
                     aria-pressed={state.wholeFile}
                     onClick={() => toggleWholeFile(p.agentId)}
-                    className={cn(
-                        "flex flex-none cursor-pointer items-center gap-[6px] rounded-[8px] border px-[11px] py-[5px] text-[12.5px] font-semibold",
-                        state.wholeFile
-                            ? "border-accent bg-accentbg text-accent"
-                            : "border-edge-mid bg-surface-raised text-primary hover:border-edge-strong"
-                    )}
+                    className={cn(SWAP_BTN, state.wholeFile && SWAP_BTN_ON)}
                 >
                     Whole file
                 </button>
