@@ -10,8 +10,9 @@ import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
+import { setPlatform } from "@/util/platformutil";
 import { atom } from "jotai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     buildAgentBindings,
     buildFinalShotsBindings,
@@ -342,7 +343,9 @@ describe("the Final check viewer over the Jarvis surface", () => {
 });
 
 describe("a Vietnamese input method rewriting keys outside a field", () => {
+    beforeEach(() => setPlatform("win32"));
     afterEach(() => {
+        setPlatform("darwin");
         globalStore.set(bindingsAtom, []);
         vi.unstubAllGlobals();
     });
@@ -372,12 +375,13 @@ describe("a Vietnamese input method rewriting keys outside a field", () => {
             newProjectOpenAtom: atom(false),
         } as unknown as AgentsViewModel;
         const unbind = initKeybindingDispatcher(model);
-        const send = (type: "keydown" | "keypress", key: string) =>
+        // ctrl: Ctrl+G, the go-to leader's chord on Windows (setPlatform below)
+        const send = (type: "keydown" | "keypress", key: string, ctrl = false) =>
             listeners[type]({
                 type,
                 key,
                 code: "",
-                ctrlKey: false,
+                ctrlKey: ctrl,
                 shiftKey: false,
                 altKey: false,
                 metaKey: false,
@@ -405,9 +409,9 @@ describe("a Vietnamese input method rewriting keys outside a field", () => {
         unbind();
     });
 
-    it("keeps a pending g through the Backspace the input method sends", () => {
+    it("keeps a pending leader through the Backspace the input method sends", () => {
         const { ran, send, unbind } = setup();
-        send("keydown", "g");
+        send("keydown", "g", true);
         send("keydown", "Backspace");
         send("keydown", "j");
         expect(ran).toEqual(["jarvis"]);

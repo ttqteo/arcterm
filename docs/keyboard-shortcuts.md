@@ -19,8 +19,9 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   - A Vietnamese input method left on Telex (EVKey, Unikey) does not get in Navigate's way: a letter it rewrites there
     ("đ" for `dd`, "ư" for `w`, "á" for `a` `s`) acts as the key pressed. One that moves a tone back onto an earlier
     vowel (free tone placement) sends more than one letter, and only the last counts.
-- **Leader (`g`, "go").** Press `g` (while not typing), then a letter, to teleport. A hint bar
-  appears at the bottom of the screen showing the available next keys.
+- **Leader (`Mod`+`G`, "go").** Press `Mod`+`G`, then a letter, to teleport. It works the same everywhere,
+  inside the terminal too; a bare `g` is never a leader. A hint bar appears at the bottom of the screen showing
+  the available next keys.
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
   that will work in your current context.
 - **Cheat sheet.** Press `?` (while not typing) to open a searchable modal of every shortcut.
@@ -35,12 +36,12 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`Shift`+`N` | Launch a Pi tab |
-| `Mod`+`G` | Open the `g` leader from inside a text field or the terminal |
+| `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |
 | `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
-(`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `g` `.` and Settings with `g` `,`.
+(`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `Mod`+`G` `.` and Settings with `Mod`+`G` `,`.
 
 ## The New dialog (New agent, New run)
 
@@ -56,22 +57,22 @@ One dialog starts an agent, a terminal or a run. It opens with focus on the Star
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or the project filter first, then the dialog. What you typed is kept for the next open |
 
-## Go-to surface — leader `g` (Navigate posture)
+## Go-to surface — leader `Mod`+`G`
 
 | Keys | Surface |
 |---|---|
-| `g` `c` | Cockpit (home) |
-| `g` `a` | Agent |
-| `g` `j` | Jarvis — channels, records, recall |
-| `g` `r` | Radar |
-| `g` `s` | Conversation History (in the Agent surface) |
-| `g` `f` | Files |
-| `g` `u` | Usage |
-| `g` `b` | Code — browse source |
-| `g` `.` | Setup — instructions and skills |
-| `g` `,` | Settings |
-| `g` `p` | Search |
-| `g` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
+| `Mod`+`G` `c` | Cockpit (home) |
+| `Mod`+`G` `a` | Agent |
+| `Mod`+`G` `j` | Jarvis — channels, records, recall |
+| `Mod`+`G` `r` | Radar |
+| `Mod`+`G` `s` | Conversation History (in the Agent surface) |
+| `Mod`+`G` `f` | Files |
+| `Mod`+`G` `u` | Usage |
+| `Mod`+`G` `b` | Code — browse source |
+| `Mod`+`G` `.` | Setup — instructions and skills |
+| `Mod`+`G` `,` | Settings |
+| `Mod`+`G` `p` | Search |
+| `Mod`+`G` `w` | What's waiting — the avatar popup (Jarvis peek), on any surface |
 
 ## Search (`Mod`+`P`)
 
@@ -109,7 +110,7 @@ cancelled now, in All and in Commands, so it never starts a run named "cancel".
 
 ## The avatar popup (what's waiting)
 
-Click the creature on the footer, or press `g` `w`, to open it.
+Click the creature on the footer, or press `Mod`+`G` `w`, to open it.
 
 | Keys | Action |
 |---|---|
@@ -170,7 +171,7 @@ A link inside an item view does a full open, even with `Mod` held.
 
 ### Agent: Conversation History
 
-Opened with `g` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
+Opened with `Mod`+`G` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
 that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
 `Mod`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
 `Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. `Ctrl`+`Tab` still cycles agents and brings the
@@ -263,7 +264,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `Enter` | Open the file under the cursor |
 | `/` | Filter history (`Esc` clears) |
 | `Shift`+`G` | Toggle the history graph |
-| `g` `g` | Top of history |
+| `Mod`+`G` `g` | Top of history |
 | `Shift`+`H` | Collapse / expand history |
 | `Shift`+`N` / `Shift`+`P` | Next / previous change in the open diff |
 | `Shift`+`D` | Split / unified |

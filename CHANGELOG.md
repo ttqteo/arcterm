@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Go to… opens only with `Ctrl`+`G` (`Cmd`+`G` on a Mac), the same on every surface and inside the terminal: a bare
+  `g` no longer opens it, and every go-to key is now `Ctrl`+`G` then a letter (`Ctrl`+`G` `a` for Agent).
 - Consumers' **RAM** and **Tokens** are now two views, not two sort orders of one list: RAM shows each agent's RAM,
   free RAM and arcterm's own processes; Tokens shows each agent's tokens and spend of the last 10 minutes and the
   5-hour quota. Rows are ranked when the panel opens and keep their place while it is open, so switching views or a

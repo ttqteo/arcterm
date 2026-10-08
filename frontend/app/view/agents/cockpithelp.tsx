@@ -25,7 +25,7 @@ export function HintsBar({ onOpenHelp }: { onOpenHelp: () => void }) {
         ["b", "background"],
         ["n", "next ask"],
         ["[ ]", "switch surface"],
-        ["g", "go"],
+        [formatChordString("Mod:g"), "go"],
         [formatChordString("Mod:p"), "palette"],
         [formatChordString("Mod:n"), "new"],
     ];

@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Always-on keyboard hints footer. Three postures, all in one bar:
-//  - leader active (e.g. after `g`): show the continuation list (the former WhichKeyBar).
+//  - leader active (e.g. after Ctrl+G): show the continuation list (the former WhichKeyBar).
 //  - otherwise: show visibleHints(ctx) — surface hints at rest, and only editable-surviving chords
 //    (dimmed) when focus is in the terminal. In-terminal falls out of the filter, not a special case.
 // Mounted in layout flow (reserves ~28px), so it never overlays content.
 
 import { deriveKeyContext } from "@/app/store/keybindings/dispatcher";
 import { activeLeaderAtom } from "@/app/store/keybindings/leaderatom";
+import { leaderChord } from "@/app/store/keybindings/matcher";
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import { watchFocusedAgent, whenVersionAtom } from "@/app/store/keybindings/whenstate";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -81,7 +82,7 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
             .map((b) => ({ next: b.keys.split(" ")[1], label: b.label }));
         return (
             <FooterBar>
-                <span className="shrink-0 font-mono text-[11px] text-accent-soft">{leader} →</span>
+                <span className="shrink-0 font-mono text-[11px] text-accent-soft">{formatChordString(leaderChord(leader))} →</span>
                 <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                     {items.map((it) => (
                         <Chip key={it.next} glyph={it.next} label={it.label} />

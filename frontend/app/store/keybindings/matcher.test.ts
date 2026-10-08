@@ -3,7 +3,7 @@
 
 import { setPlatform } from "@/util/platformutil";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LEADER_ALIASES, matchBinding } from "./matcher";
+import { displayKeys, LEADER_ALIASES, leaderChord, matchBinding } from "./matcher";
 import type { Binding, KeyContext } from "./types";
 
 // Build a minimal WaveKeyboardEvent literal (keyutil reads these fields directly).
@@ -48,13 +48,9 @@ describe("matchBinding", () => {
         expect(matchBinding(ev("j"), navCtx, [b])).toEqual({ kind: "run", binding: b });
     });
 
-    it("enters leader mode when a leader prefix is pressed (navigate posture)", () => {
+    it("a bare leader letter never enters leader mode, at rest or while editable", () => {
         const b = bind({ id: "go-agent", keys: "g a", when: (c) => !c.editable && !c.modalOpen });
-        expect(matchBinding(ev("g"), navCtx, [b])).toEqual({ kind: "enterLeader", leader: "g" });
-    });
-
-    it("does not enter leader mode when editable", () => {
-        const b = bind({ id: "go-agent", keys: "g a", when: (c) => !c.editable && !c.modalOpen });
+        expect(matchBinding(ev("g"), navCtx, [b])).toEqual({ kind: "none" });
         expect(matchBinding(ev("g"), editCtx, [b])).toEqual({ kind: "none" });
     });
 
@@ -145,14 +141,22 @@ describe("matchBinding — leader reachable from a focused text field", () => {
         });
     });
 
-    it("a bare g still enters leader mode at rest", () => {
+    it("a bare g does not enter leader mode — Mod+G is the one door", () => {
         const b = bind({ id: "go-agent", keys: "g a", when: leaderAware });
-        expect(matchBinding(ev("g"), navCtx, [b])).toEqual({ kind: "enterLeader", leader: "g" });
+        expect(matchBinding(ev("g"), navCtx, [b])).toEqual({ kind: "none" });
+        expect(matchBinding(ev("g"), editCtx, [b])).toEqual({ kind: "none" });
     });
 
-    it("a bare g still does NOT enter leader mode while editable — it must reach the agent", () => {
-        const b = bind({ id: "go-agent", keys: "g a", when: leaderAware });
-        expect(matchBinding(ev("g"), editCtx, [b])).toEqual({ kind: "none" });
+    it("a bare g reaches a single bound to it", () => {
+        const seq = bind({ id: "go-agent", keys: "g a", when: leaderAware });
+        const single = bind({ id: "grid", keys: "g", when: leaderAware });
+        expect(matchBinding(ev("g"), navCtx, [seq, single])).toEqual({ kind: "run", binding: single });
+    });
+
+    it("displays a leader sequence as the chord that opens it", () => {
+        expect(displayKeys("g c")).toBe("Mod:g c");
+        expect(displayKeys("Ctrl:Tab")).toBe("Ctrl:Tab");
+        expect(leaderChord("g")).toBe("Mod:g");
     });
 });
 

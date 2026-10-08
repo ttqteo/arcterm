@@ -5,6 +5,7 @@
 // owns selection. One column, no preview pane — what a preview earned (an asking agent's question) is
 // that row's second line, and the footer spells out what Enter does.
 
+import { displayKeys } from "@/app/store/keybindings/matcher";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { formatChord } from "@/util/keysym";
 import { cn } from "@/util/util";
@@ -166,7 +167,7 @@ function RichRow({ it, idx, active, onHover, onFire }: RowProps) {
 function Chord({ keys }: { keys: string }) {
     return (
         <span className="flex shrink-0 gap-[3px]">
-            {formatChord(keys).map((k, i) => (
+            {formatChord(displayKeys(keys)).map((k, i) => (
                 <span
                     key={i}
                     className="rounded-[5px] border border-edge-mid px-1.5 py-px font-mono text-[10.5px] text-muted"

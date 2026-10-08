@@ -12,11 +12,28 @@ function hasModifier(e: WaveKeyboardEvent): boolean {
     return !!(e.control || e.alt || e.meta || e.cmd || e.option);
 }
 
-// A modifier chord that opens a leader while a text field (or the terminal's hidden textarea) holds
-// focus. The bare prefix cannot do this — it has to reach the agent — so the leader gets a second
-// door. Checked against this map directly, NOT against the when-filtered sequence set, which is empty
-// inside the TUI: deriving the door from that set would make it depend on what it exists to open.
+// The one door into a leader: a modifier chord, the same in every posture, so a leader works the same
+// from a list and from inside the terminal. A bare prefix letter never opens one: it is text in a field
+// and a plain key elsewhere. Checked against this map directly, NOT against the when-filtered sequence
+// set, which is empty inside the TUI: deriving the door from that set would make it depend on what it
+// exists to open.
 export const LEADER_ALIASES: Record<string, string> = { "Mod:g": "g" };
+
+// A sequence as the user presses it: its leader shown as the chord that opens it ("g c" -> "Mod:g c").
+// Bindings keep the leader letter in `keys` (the matcher keys leader mode on it); every place that shows
+// a key to the user goes through this.
+export function displayKeys(keys: string): string {
+    if (!isSequenceKeys(keys)) {
+        return keys;
+    }
+    const [lead, ...rest] = keys.split(" ");
+    return [leaderChord(lead), ...rest].join(" ");
+}
+
+// The chord that opens a leader ("g" -> "Mod:g"); the letter itself for a leader no chord opens.
+export function leaderChord(leader: string): string {
+    return Object.keys(LEADER_ALIASES).find((c) => LEADER_ALIASES[c] === leader) ?? leader;
+}
 
 // Pure. No DOM, no atoms. `ctx.leader` carries the active leader prefix (or null).
 export function matchBinding(waveEvent: WaveKeyboardEvent, ctx: KeyContext, bindings: Binding[]): MatchResult {
@@ -63,17 +80,9 @@ export function matchBinding(waveEvent: WaveKeyboardEvent, ctx: KeyContext, bind
             return { kind: "enterLeader", leader };
         }
     }
-    // Exact single/chord matches take priority over entering a leader by bare prefix.
     for (const b of singles) {
         if (keyutil.checkKeyPressed(waveEvent, b.keys)) {
             return { kind: "run", binding: b };
-        }
-    }
-    // Leader entry by bare prefix — only where a sequence binding is actually active.
-    const prefixes = new Set(sequences.map((b) => b.keys.split(" ")[0]));
-    for (const p of prefixes) {
-        if (keyutil.checkKeyPressed(waveEvent, p)) {
-            return { kind: "enterLeader", leader: p };
         }
     }
     return { kind: "none" };

@@ -19,8 +19,7 @@ export interface FooterHint {
 
 // Appended to every surface; each filtered by its binding's live when(ctx).
 export const GLOBAL_HINTS: FooterHint[] = [
-    { ids: ["go:cockpit"], glyph: "g", label: "go" }, // bare g-leader; drops in the terminal
-    { ids: ["leader:enter"], keys: "Mod:g", label: "go" }, // the same tree, reachable in the terminal
+    { ids: ["leader:enter"], keys: "Mod:g", label: "go" }, // the go-to leader, from anywhere including the terminal
     { ids: ["surface:back-home"], glyph: "esc", label: "home" }, // deep surfaces only (via its when)
     {
         ids: ["list:peek", "cockpit:peek"],

@@ -243,15 +243,12 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             id: "leader:enter",
             keys: "Mod:g",
             group: "Navigation",
-            label: "Go to… (works inside the agent terminal)",
+            label: "Go to… (works inside the agent terminal too)",
             paletteHidden: true, // a palette row for a key the palette itself would swallow
-            // Gated on `editable` for PRESENTATION only, and it costs nothing: the matcher opens the
-            // leader from this chord in every posture regardless of any `when`. At rest the bare-`g`
-            // chip already says "go", so an unguarded chord would render a second identical chip; this
-            // way the footer advertises whichever door is the one that works right now. The Shift+?
-            // cheat sheet lists every registered binding without consulting `when`, so the chord stays
-            // discoverable at rest.
-            when: (ctx) => ctx.editable && !ctx.modalOpen,
+            // The only way into the go-to leader: a bare `g` opens nothing (matcher.ts), so the footer
+            // advertises this chord in every posture. The `when` is presentation only; the matcher opens
+            // the leader from this chord regardless.
+            when: (ctx) => !ctx.modalOpen,
             run: () => false, // never consume — the matcher already handled it
         },
         {

@@ -5,6 +5,7 @@
 // Opens on `?` (navigate posture) or via the command palette "Keyboard shortcuts" entry.
 
 import { ModalShell } from "@/app/modals/modalshell";
+import { displayKeys } from "@/app/store/keybindings/matcher";
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -17,7 +18,7 @@ import { useMemo, useState } from "react";
 export const cheatsheetOpenAtom = atom(false);
 
 function keyChips(keys: string) {
-    return formatChord(keys); // "Ctrl:Shift:Tab" -> ["ctrl","shift","tab"]; "g p" -> ["g","p"]
+    return formatChord(displayKeys(keys)); // "Ctrl:Shift:Tab" -> ["ctrl","shift","tab"]; "g p" -> ["ctrl+g","p"]
 }
 
 export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
