@@ -38,7 +38,7 @@ conversation about the result (opening an agent tab seeded with it).
 - `ScanSessionUsage(windowDays) []SessionUsage` walks the Claude root only, keeps the records inside the
   window, dedupes them as `ScanUsage` does, drops `<synthetic>`, and folds them per `Session`:
   - `ID`, `Title`, `Project`: the last segment of the main records' `Cwd`, except that a cwd under a
-    `.waveterm-worktrees` directory is "engine run";
+    `.waveterm/worktrees` directory (an engine run's worktree, `pkg/orchestrate/worktree.go`) is "engine run";
   - `Models`: one entry per (model, sub) with the token classes (input, output, cache read, cache
     write, cache write 1h), so the frontend prices each with its own model's rate;
   - `Turns` and `SubTurns` (records), and over the main-session turns only `AvgCtx` and `MaxCtx`,
