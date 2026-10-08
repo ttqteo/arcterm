@@ -17781,8 +17781,8 @@ const agentRailTabs = {
         const w1 = await h.ev(railTabsWidth);
         await h.shot("cdp-shots/agent-rail-tabs-overview.png");
         rec(
-            "1. Overview is the only tab, selected, 300px wide, and Files changed lists a.txt",
-            JSON.stringify(tabs1) === JSON.stringify(["Overview*"]) && Math.abs(w1 - 300) <= 2 && listed,
+            "1. Overview and Files are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
+            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files"]) && Math.abs(w1 - 300) <= 2 && listed,
             JSON.stringify({ tabs1, w1, listed })
         );
 
@@ -17813,7 +17813,7 @@ const agentRailTabs = {
         await h.shot("cdp-shots/agent-rail-tabs-file.png");
         rec(
             "2. a.txt in the Cockpit card's tool row opens the Agent surface with a.txt on the File tab, at the wide width",
-            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
+            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
             JSON.stringify({ clicked2, editor2, surface2, tabs2, w2, wide })
         );
 
@@ -17844,6 +17844,8 @@ const agentRailTabs = {
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="file"]') && ${RAIL_TABS_ASIDE}.querySelector('[data-rail-tab="overview"]').click()`);
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-tab="overview"]')?.focus()`);
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
+        const tabs5a = await h.ev(railTabLabels);
+        await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5 = await h.ev(railTabLabels);
         const surface5a = await h.activeSurfaceLabel();
         await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("[data-rail-file] button") ?? [])].find((b) => b.textContent.includes("Open in Code"))?.focus()`);
@@ -17851,10 +17853,11 @@ const agentRailTabs = {
         const tabs5b = await h.ev(railTabLabels);
         const surface5b = await h.activeSurfaceLabel();
         rec(
-            "5. → in the tab strip selects File without leaving the agent, and Esc in the File tab closes the file, not the surface",
-            JSON.stringify(tabs5) === JSON.stringify(["Overview", "File a.txt*"]) && surface5a === "Agent" &&
-                JSON.stringify(tabs5b) === JSON.stringify(["Overview*"]) && surface5b === "Agent",
-            JSON.stringify({ tabs5, surface5a, tabs5b, surface5b })
+            "5. → in the tab strip selects Files, then File, without leaving the agent, and Esc in the File tab closes the file back to Files, not the surface",
+            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "File a.txt"]) &&
+                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "File a.txt*"]) && surface5a === "Agent" &&
+                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files*"]) && surface5b === "Agent",
+            JSON.stringify({ tabs5a, tabs5, surface5a, tabs5b, surface5b })
         );
 
         // 6. the grip: drag left widens, keys reach both ends
@@ -17894,9 +17897,9 @@ const agentRailTabs = {
         await railTabsNap(700);
         const tabs7 = await h.ev(railTabLabels);
         rec(
-            "7. collapsed, the strip shows Overview and the open file; the file's icon opens the panel on File",
-            Math.abs(w7 - 44) <= 2 && strip7.includes("Overview") && strip7.some((l) => l === "File a.txt") &&
-                JSON.stringify(tabs7) === JSON.stringify(["Overview", "File a.txt*"]),
+            "7. collapsed, the strip shows Overview, Files and the open file; the file's icon opens the panel on File",
+            Math.abs(w7 - 44) <= 2 && strip7.includes("Overview") && strip7.includes("Files") && strip7.some((l) => l === "File a.txt") &&
+                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "File a.txt*"]),
             JSON.stringify({ w7, strip7, tabs7 })
         );
 

@@ -44,7 +44,7 @@ import {
     type BgTaskLabel,
 } from "./agentrailsections";
 import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
-import { fileTabLabel, panelFor, RAIL_OVERVIEW_PX } from "./agentrailtabs";
+import { fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -436,6 +436,9 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const panels = useAtomValue(railPanelsAtom);
     const defaultTab = useAtomValue(railTabDefaultAtom);
     const panel = panelFor(panels, agent.id, defaultTab);
+    // the Files tab lists the agent's worktree: it needs a resolved cwd, and a subagent's interior has no worktree of its own
+    const hasTree = railState?.cwd != null && sub == null;
+    const shown = shownTab(panel, hasTree);
     const wide = useWideWidth();
     const fileRef = panel.file.current;
     const railVisible = useAtomValue(railVisibleAtom);
@@ -547,7 +550,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
 
     // a strip count, or the spend, opens its section on Overview: open it, then bring it into view once it has rendered
     const openSection = (id: AgentRailSectionId) => {
-        selectRailTab(agent.id, "overview");
+        selectRailTab(agent.id, "overview", hasTree);
         showRail();
         globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
         requestAnimationFrame(() => {
@@ -841,10 +844,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             openAtom={railVisibleAtom}
             ariaLabel="Agent details"
             sections={sections}
-            width={panel.tab === "overview" ? RAIL_OVERVIEW_PX : wide.width}
+            width={shown === "overview" ? RAIL_OVERVIEW_PX : wide.width}
             tabs={
                 <>
-                    <RailTabStrip agentId={agent.id} panel={panel} />
+                    <RailTabStrip agentId={agent.id} panel={panel} hasTree={hasTree} />
                     <RailStats
                         stats={planRailStats(railInput)}
                         canAttach={agent.blockId != null}
@@ -858,21 +861,36 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 </>
             }
             body={
-                panel.tab === "file" && fileRef != null ? (
+                shown === "file" && fileRef != null ? (
                     <FileTab model={model} agent={agent} file={panel.file} />
+                ) : shown === "tree" ? (
+                    <div className="min-h-0 flex-1" />
                 ) : undefined
             }
-            edge={panel.tab !== "overview" ? <RailResizeGrip width={wide.width} max={wide.max} /> : undefined}
+            edge={shown !== "overview" ? <RailResizeGrip width={wide.width} max={wide.max} /> : undefined}
             stripTabs={[
                 {
                     key: "overview",
                     icon: <LayoutList size={17} strokeWidth={1.8} aria-hidden />,
                     ariaLabel: "Overview",
                     onClick: () => {
-                        selectRailTab(agent.id, "overview");
+                        selectRailTab(agent.id, "overview", hasTree);
                         showRail();
                     },
                 },
+                ...(hasTree
+                    ? [
+                          {
+                              key: "tree",
+                              icon: <FolderTree size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Files",
+                              onClick: () => {
+                                  selectRailTab(agent.id, "tree", hasTree);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
                 ...(fileRef != null
                     ? [
                           {
@@ -880,7 +898,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <FileText size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: `File ${fileTabLabel(fileRef)}`,
                               onClick: () => {
-                                  selectRailTab(agent.id, "file");
+                                  selectRailTab(agent.id, "file", hasTree);
                                   showRail();
                               },
                           },
