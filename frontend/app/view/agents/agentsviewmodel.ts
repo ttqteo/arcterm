@@ -709,6 +709,12 @@ export function cycleId(ids: string[], current: string | undefined, delta: numbe
     return ids[(idx + delta + ids.length) % ids.length];
 }
 
+/** Pure: is the agent asking a question its terminal answers (Claude Code's picker, driven by ↑/↓, Enter and digits)?
+ *  A held command's card (`wsh memgate`) is answered on the card above the terminal instead. */
+export function asksInTerminal(agent: Pick<AgentVM, "state" | "ask"> | undefined): boolean {
+    return agent?.state === "asking" && !agent.ask?.hold;
+}
+
 /** Pure: one AgentAnswerItem per question. A non-empty trimmed text wins over the selection and
  *  emits { text }; otherwise emits { selectedindexes } (ascending). */
 export function buildAskAnswers(

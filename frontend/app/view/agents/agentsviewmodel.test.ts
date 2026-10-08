@@ -5,6 +5,7 @@ import {
     answerHint,
     applyAgentOrder,
     askingCount,
+    asksInTerminal,
     askingLabel,
     askSentKey,
     buildAskAnswers,
@@ -1372,5 +1373,17 @@ describe("askingLabel", () => {
 
     it("falls back to held when the card has no header", () => {
         expect(askingLabel(asking({ hold: true, questions: [] }))).toBe("held");
+    });
+});
+
+describe("asksInTerminal", () => {
+    it("is an asking agent whose question its terminal answers", () => {
+        expect(asksInTerminal({ state: "asking", ask: { questions: [] } as any })).toBe(true);
+        expect(asksInTerminal({ state: "asking", ask: undefined })).toBe(true);
+    });
+    it("is not a held command, answered on its card, nor an agent that is not asking", () => {
+        expect(asksInTerminal({ state: "asking", ask: { questions: [], hold: true } as any })).toBe(false);
+        expect(asksInTerminal({ state: "working", ask: undefined })).toBe(false);
+        expect(asksInTerminal(undefined)).toBe(false);
     });
 });

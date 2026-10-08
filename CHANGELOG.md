@@ -56,6 +56,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Choosing an agent that is asking a question in its terminal now moves typing into that terminal, so the arrow keys
+  answer its picker instead of moving through the agent list.
 - The live agents in the sidebar's Active section keep their places when you switch to the Cockpit and back, instead
   of the ones that had gone idle dropping to the bottom.
 - On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,

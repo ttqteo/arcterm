@@ -191,6 +191,11 @@ Moving between agents with the keyboard follows one rule: if the agent already h
 otherwise the agent replaces the focused cell and the others stay put. So stepping through more agents than there are
 cells keeps changing which of them show.
 
+An agent asking a question in its terminal (Claude Code's picker) takes the keyboard: choose it by any route, or have
+the chosen agent start asking, and typing moves into its terminal, so `↑` / `↓`, `Enter` and the digits answer the
+picker instead of moving through the list. `Shift`+`Esc` goes back to the list. A held command (Low RAM) is answered on
+its card above the terminal and does not take the keyboard.
+
 | Keys | Action |
 |---|---|
 | `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |

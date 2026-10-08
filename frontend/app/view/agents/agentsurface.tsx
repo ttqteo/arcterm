@@ -36,7 +36,7 @@ import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
 import { ConversationHistory } from "./conversationhistory";
-import { projectOf } from "./agentsviewmodel";
+import { asksInTerminal, projectOf } from "./agentsviewmodel";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
@@ -340,6 +340,22 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         const term = wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${agent.id}"] .xterm-helper-textarea`);
         (term?.checkVisibility() ? term : wrap)?.focus({ preventScroll: true });
     }, [typingFollows, agent?.id]);
+
+    // An asking agent's picker takes ↑/↓, Enter and digits, the same keys the tree moves with, and the agent comes first:
+    // choosing one by any route (a click, the arrows, j/k, Ctrl+Tab), or the chosen agent starting to ask, hands the
+    // keyboard to its terminal. Not out of a field, another terminal or a dialog (focusClaimed), and not while something
+    // shows in the terminal's place; Shift+Esc goes back to the tree, and this does not pull focus again until another
+    // agent is chosen or this one asks again.
+    const asking = asksInTerminal(agent);
+    useEffect(() => {
+        if (!asking || agent == null || surface !== "agent" || centerMode !== "terminal" || showSub || swapped != null) {
+            return;
+        }
+        if (focusClaimed()) {
+            return;
+        }
+        focusTerminalOf(agent.id);
+    }, [agent?.id, asking]);
 
     // the surface stays mounted, so the effects above never run on a switch back to it, and arriving left
     // focus on <body>: typing reached the agent only after a click. Arriving hands focus to the review when it
