@@ -9,6 +9,9 @@
 // picker and the historical filter are one piece of state rather than two that can disagree; that atom
 // re-aggregates model.usageStatsAtom, so the pane is simply the surface scoped to one harness.
 // Loads on mount + a 60s refresh for the current window; a 1s tick keeps reset countdowns current.
+// On the Claude tab two more sections sit between the two zones and the charts: INSIGHTS (an Analyze button that has
+// Claude read a numbers-only digest, usageinsights.ts) and BY SESSION (one row per Claude tab, usagesessions.ts). They
+// load per window, not on the 60s tick: a session scan reads every transcript line by line.
 
 import { Meter, StackedMeter } from "@/app/element/meter";
 import { useDidBecomeTrue } from "@/app/element/motionhooks";
@@ -19,10 +22,12 @@ import { buildUsageBindings } from "@/app/store/keybindings/bindings";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
+import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { MotionConfig, motion } from "motion/react";
+import { motion, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatReset, moveCursor, usageLevel } from "./agentsviewmodel";
 import { providerDot, providerLabel } from "./cockpitrailmodel";
@@ -36,7 +41,24 @@ import {
     savedRateLimitsAtom,
     type DonutWindow,
 } from "./ratelimitstore";
+import { sessionKey } from "./sessionsruns";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
+import { buildUsageDigest } from "./usagedigest";
+import { insightsCard, insightsHeld } from "./usageinsights";
+import { UsageInsightsCard } from "./usageinsightscard";
+import {
+    analyzeUsage,
+    devHeldPct,
+    insightsErrorAtom,
+    insightsRunningAtom,
+    loadSavedInsights,
+    loadSessionUsage,
+    savedInsightsAtom,
+    sessionShowAllAtom,
+    sessionUsageAtom,
+    sessionUsageLoadedAtom,
+    usageSessionCursorAtom,
+} from "./usageinsightsstore";
 import { kpiGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
 import {
     buildUsageRail,
@@ -51,11 +73,14 @@ import {
 } from "./usagerail";
 import { showUsageRefresh } from "./usagerefresh";
 import { UsageRefreshButton } from "./usagerefreshbutton";
+import { buildSessionRows, liveSessionTabs, visibleSessionRows, type SessionRow } from "./usagesessions";
+import { UsageSessionTable } from "./usagesessiontable";
 import type { ClassUsage, ProviderUsage, UsageStats } from "./usagestats";
-import { CLASS_FILL, fmt, foldModels, usd } from "./usagestats";
+import { aggregateBuckets, CLASS_FILL, fmt, foldModels, usd } from "./usagestats";
 import {
     allUsageStatsAtom,
     loadUsage,
+    usageBucketsAtom,
     usageErrorAtom,
     usageLoadedAtom,
     usageMetricAtom,
@@ -474,6 +499,22 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         return () => clearInterval(refresh);
     }, [usageWindow]);
 
+    // The By session table and the saved analysis load with the window but not on the 60s tick above: a session
+    // scan reads every transcript line by line.
+    const windowDays = usageWindow === "7d" ? 7 : 0;
+    useEffect(() => {
+        void loadSessionUsage(windowDays);
+        void loadSavedInsights();
+    }, [windowDays]);
+    const sessions = useAtomValue(sessionUsageAtom);
+    const sessionsLoaded = useAtomValue(sessionUsageLoadedAtom);
+    const buckets = useAtomValue(usageBucketsAtom);
+    const savedInsights = useAtomValue(savedInsightsAtom);
+    const insightsRunning = useAtomValue(insightsRunningAtom);
+    const insightsError = useAtomValue(insightsErrorAtom);
+    const [showAllSessions, setShowAllSessions] = useAtom(sessionShowAllAtom);
+    const [sessionCursor, setSessionCursor] = useAtom(usageSessionCursorAtom);
+
     const harnesses = useAtomValue(harnessesAtom);
     const catalogOrder = useMemo(() => harnesses.map((h) => h.runtime), [harnesses]);
     const donuts = planDonuts(agents, saved, activeKey, identity, now);
@@ -516,10 +557,82 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
 
     // the ids in the order the strip draws them; none when the strip is hidden for a lone provider
     const tabIds = useMemo(() => (solo != null ? [] : [...tabRows(rows).map((r) => r.harness), ALL]), [solo, rows]);
-    const listNav = useMemo<ListNavController>(
-        () => ({ surface: "usage", navigableIds: tabIds, cursorId: sel, setCursor: pickTab }),
-        [tabIds, sel, pickTab]
+
+    // Claude's sessions: rows for the By session table, the Insights card's state, and whether Analyze is held.
+    // All of it is for the Claude tab only; elsewhere the lists stay empty and nothing is published to the list nav.
+    const claude = scope === "claude";
+    const windowLabel = usageWindow === "7d" ? "last 7 days" : "all time";
+    const sessionRows = useMemo(
+        () => (claude ? buildSessionRows(sessions, liveSessionTabs(agents)) : []),
+        [claude, sessions, agents]
     );
+    const visibleRows = useMemo(() => visibleSessionRows(sessionRows, showAllSessions), [sessionRows, showAllSessions]);
+    const insights = insightsCard({
+        sessionCount: sessionRows.length,
+        saved: savedInsights,
+        running: insightsRunning,
+        error: insightsError,
+        windowDays,
+        now,
+    });
+    // Claude's 5-hour and weekly windows, as Live limits reads them. A dev fixture can stand in for the 5-hour one.
+    const claudeDonut = donuts.find((d) => d.provider === "claude");
+    const heldPct = devHeldPct();
+    const heldWindows: DonutWindow[] = [
+        heldPct != null ? { ...claudeDonut?.fivehour, pct: heldPct } : (claudeDonut?.fivehour ?? {}),
+        claudeDonut?.week ?? {},
+    ];
+    const held = insightsHeld(heldWindows, now);
+
+    // The digest is built when Analyze runs, not on every render. It does nothing off the Claude tab, with no
+    // sessions to read, or while an analysis runs or is held. The `a` key reaches it through a ref, since the
+    // bindings below are built once.
+    const analyze = () => {
+        if (!claude || sessionRows.length === 0 || insightsRunning || held != null) {
+            return;
+        }
+        const digest = buildUsageDigest({
+            windowLabel,
+            stats: aggregateBuckets(buckets, Date.now(), "claude"),
+            rows: sessionRows,
+        });
+        void analyzeUsage(windowDays, digest);
+    };
+    const analyzeRef = useRef(analyze);
+    analyzeRef.current = analyze;
+
+    // A row opens the way every other route to a session does: a live tab through the router, an ended one as its
+    // transcript in the Agent surface.
+    const openSession = useCallback(
+        (row: SessionRow) => {
+            setSessionCursor(row.id);
+            if (row.liveTabId != null) {
+                void openTarget(model, { kind: "agent", tabId: row.liveTabId });
+            } else {
+                showSession(model, sessionKey({ runtime: "claude", id: row.id }));
+            }
+        },
+        [model, setSessionCursor]
+    );
+
+    // j / k / Enter drive the By session table on the Claude tab; the tabs are ← / →.
+    const listNav = useMemo<ListNavController | null>(() => {
+        if (!claude || visibleRows.length === 0) {
+            return null;
+        }
+        return {
+            surface: "usage",
+            navigableIds: visibleRows.map((r) => r.id),
+            cursorId: sessionCursor,
+            setCursor: (id) => setSessionCursor(id),
+            activate: () => {
+                const row = visibleRows.find((r) => r.id === sessionCursor);
+                if (row != null) {
+                    openSession(row);
+                }
+            },
+        };
+    }, [claude, visibleRows, sessionCursor, setSessionCursor, openSession]);
     useSurfaceListNav(listNav);
 
     // ← / → switch tabs. The bindings are built once; the handlers read the live ids and selection from a ref.
@@ -533,7 +646,11 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                 pick(next);
             }
         };
-        return buildUsageBindings({ prevTab: () => step(-1), nextTab: () => step(1) });
+        return buildUsageBindings({
+            prevTab: () => step(-1),
+            nextTab: () => step(1),
+            analyze: () => analyzeRef.current(),
+        });
     }, []);
     useKeybindings(usageBindings);
 
@@ -566,7 +683,6 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const hasHistory = stats.providers.length > 0 || stats.totals.tokensWindow > 0;
     const revealHistory = useDidBecomeTrue(hasHistory);
     const chartHarnesses = all ? rows.map((r) => r.harness) : [scope];
-    const windowLabel = usageWindow === "7d" ? "last 7 days" : "all time";
 
     const estimateSub = (coveragePct: number | null) =>
         coveragePct == null ? "no priced tokens" : `${Math.round(coveragePct)}% of tokens priced`;
@@ -739,6 +855,55 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                             )}
                         </section>
                     </div>
+
+                    {/* Claude only: it alone has the quota window and the cache classes that make these flags
+                        mean something */}
+                    {claude ? (
+                        sessionsLoaded ? (
+                            <>
+                                <UsageInsightsCard
+                                    card={insights}
+                                    held={held}
+                                    sessionCount={sessionRows.length}
+                                    windowDays={windowDays}
+                                    now={now}
+                                    onAnalyze={analyze}
+                                />
+                                {sessionRows.length > 0 ? (
+                                    <UsageSessionTable
+                                        rows={sessionRows}
+                                        visible={visibleRows}
+                                        loaded
+                                        windowName={windowDays === 0 ? "all time" : `${windowDays} days`}
+                                        showAll={showAllSessions}
+                                        onToggleAll={() => setShowAllSessions(!showAllSessions)}
+                                        cursorId={sessionCursor}
+                                        onOpen={openSession}
+                                    />
+                                ) : null}
+                            </>
+                        ) : (
+                            <>
+                                <section className="mb-[22px] min-w-0">
+                                    <SectionRule label="Insights" />
+                                    <div className={cn(CARD, "gap-2.5")}>
+                                        <SkeletonLine className="h-3 w-[32%]" />
+                                        <SkeletonLine className="h-2.5 w-[88%]" />
+                                    </div>
+                                </section>
+                                <UsageSessionTable
+                                    rows={[]}
+                                    visible={[]}
+                                    loaded={false}
+                                    windowName=""
+                                    showAll={false}
+                                    onToggleAll={() => {}}
+                                    cursorId={undefined}
+                                    onOpen={() => {}}
+                                />
+                            </>
+                        )
+                    ) : null}
 
                     {!usageLoaded ? (
                         <BreakdownSkeleton />

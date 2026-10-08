@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Usage shows Claude usage per tab (context size, cold resumes, subagent share) and an Analyze button that has Claude
+  explain where your quota goes and what to change; providers are tabs across the top and the charts sit in one
+  compact row.
 - A part named without a total, as a heading that opens a line (`## Phần 2`, `**Phần 1:**`, `Part 3:`), now shows its
   number on the agent's row, the way `Phần 2/4` shows `2/4`. A message whose headings walk through several parts
   shows none.

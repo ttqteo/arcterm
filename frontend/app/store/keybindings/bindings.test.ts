@@ -702,7 +702,8 @@ describe("new agent chord", () => {
 describe("usage surface bindings", () => {
     const prevTab = vi.fn();
     const nextTab = vi.fn();
-    const bindings = () => buildUsageBindings({ prevTab, nextTab });
+    const analyze = vi.fn();
+    const bindings = () => buildUsageBindings({ prevTab, nextTab, analyze });
     const find = (id: string) => {
         const b = bindings().find((x) => x.id === id);
         if (b == null) {
@@ -715,12 +716,14 @@ describe("usage surface bindings", () => {
     beforeEach(() => {
         prevTab.mockClear();
         nextTab.mockClear();
+        analyze.mockClear();
     });
 
-    it("binds the arrows to the provider tabs and nothing else", () => {
+    it("binds the arrows to the provider tabs, `a` to Analyze, and nothing else", () => {
         expect(bindings().map((b) => [b.id, b.keys])).toEqual([
             ["usage:prev-tab", "ArrowLeft"],
             ["usage:next-tab", "ArrowRight"],
+            ["usage:analyze", "a"],
         ]);
     });
 
@@ -732,12 +735,14 @@ describe("usage surface bindings", () => {
     it("runs the handlers", () => {
         find("usage:prev-tab").run(usage);
         find("usage:next-tab").run(usage);
+        find("usage:analyze").run(usage);
         expect(prevTab).toHaveBeenCalledTimes(1);
         expect(nextTab).toHaveBeenCalledTimes(1);
+        expect(analyze).toHaveBeenCalledTimes(1);
     });
 
     it("is live only on the Usage surface, outside a field and a modal", () => {
-        for (const id of ["usage:prev-tab", "usage:next-tab"]) {
+        for (const id of ["usage:prev-tab", "usage:next-tab", "usage:analyze"]) {
             const b = find(id);
             expect(b.when?.(usage)).toBe(true);
             expect(b.when?.(ctx("agent"))).toBe(false);

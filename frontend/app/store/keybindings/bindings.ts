@@ -780,13 +780,15 @@ export function buildCockpitBindings(): Binding[] {
     ];
 }
 
-// Usage surface: the arrows switch provider tabs. `[` `]` stay the global surface switch, and the arrows are bound
-// elsewhere only on the agent and code surfaces, so they are free here. The tab strip lives in UsageSurface, which
-// owns the ids and the selection, so these only call back into it (Task 6 adds `a` for Analyze).
+// Usage surface: the arrows switch provider tabs and `a` runs Analyze on the Claude tab. `[` `]` stay the global
+// surface switch, and the arrows are bound elsewhere only on the agent and code surfaces, so they are free here. j / k /
+// Enter on the By session table come from the list nav (UsageSurface publishes its cursor). The strip, the selection
+// and the Insights state live in UsageSurface, so these only call back into it; `analyze` decides for itself whether
+// it applies (the Claude tab, sessions to read, not already running or held).
 export function buildUsageBindings(handlers: {
     prevTab: () => void;
     nextTab: () => void;
-    analyze?: () => void;
+    analyze: () => void;
 }): Binding[] {
     const on = (ctx: KeyContext) => ctx.surface === "usage" && !ctx.editable && !ctx.modalOpen;
     return [
@@ -807,6 +809,15 @@ export function buildUsageBindings(handlers: {
             when: on,
             paletteHidden: true,
             run: handlers.nextTab,
+        },
+        {
+            id: "usage:analyze",
+            keys: "a",
+            group: "Usage",
+            label: "Analyze Claude usage (Claude tab)",
+            when: on,
+            paletteHidden: true,
+            run: handlers.analyze,
         },
     ];
 }

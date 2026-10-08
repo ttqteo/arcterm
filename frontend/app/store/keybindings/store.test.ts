@@ -289,7 +289,7 @@ describe("keybinding conflict invariant", () => {
                     ...buildListNavBindings(model),
                     ...buildAgentBindings(model),
                     ...buildCodeBindings(),
-                    ...buildUsageBindings({ prevTab() {}, nextTab() {} }),
+                    ...buildUsageBindings({ prevTab() {}, nextTab() {}, analyze() {} }),
                 ])
             ).not.toThrow();
         } finally {
