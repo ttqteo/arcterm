@@ -6,7 +6,7 @@ import {
     defaultTab,
     harnessTotals,
     railRows,
-    tabMeta,
+    tabMetaParts,
     tabRows,
     worstWindow,
 } from "./usagerail";
@@ -150,7 +150,7 @@ describe("tabRows / defaultTab", () => {
     });
 });
 
-describe("tabMeta", () => {
+describe("tabMetaParts", () => {
     const daily = [
         day("2026-09-01", {
             claude: { tokens: 1000, spendUsd: 12 },
@@ -158,8 +158,12 @@ describe("tabMeta", () => {
             pi: { tokens: 18_000_000, spendUsd: 1 },
         }),
     ];
+    const partsOf = (harness: string, donuts: ReturnType<typeof mergeRateLimitWindows>) =>
+        tabMetaParts(railRows(buildUsageRail([], daily, donuts, [])).find((r) => r.harness === harness)!);
     const metaOf = (harness: string, donuts: ReturnType<typeof mergeRateLimitWindows>): string =>
-        tabMeta(railRows(buildUsageRail([], daily, donuts, [])).find((r) => r.harness === harness)!);
+        partsOf(harness, donuts)
+            .map((p) => p.text)
+            .join(" · ");
 
     it("shows both windows for a provider that reports them", () => {
         const donuts = mergeRateLimitWindows(
@@ -168,6 +172,17 @@ describe("tabMeta", () => {
             now
         );
         expect(metaOf("claude", donuts)).toBe("5h 41% · wk 72%");
+    });
+
+    // the tab colours a window by its own pct, so each window keeps it unrounded; the token fallback has none
+    it("carries each window's pct, and none on the token fallback", () => {
+        const donuts = mergeRateLimitWindows(
+            [{ provider: "claude", usage: { fivehourpct: 91.6, weekpct: 72 } }],
+            {},
+            now
+        );
+        expect(partsOf("claude", donuts).map((p) => p.pct)).toEqual([91.6, 72]);
+        expect(partsOf("pi", [])).toEqual([{ text: "18M tok" }]);
     });
 
     it("shows only the window a provider reports", () => {

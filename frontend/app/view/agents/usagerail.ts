@@ -133,14 +133,22 @@ export function defaultTab(rows: UsageRailRow[]): string {
     return tabRows(rows)[0]?.harness ?? "all";
 }
 
-// A tab's meta: the quota windows the provider reports ("5h 41% · wk 72%"; Codex has only the week), else what
+export interface TabMetaPart {
+    text: string;
+    pct?: number; // set on a quota window, so the tab can colour one nearing its limit
+}
+
+// A tab's meta: the quota windows the provider reports ("5h 41%", "wk 72%"; Codex has only the week), else what
 // the window spent in tokens. A provider with a reading but neither window filled in falls back to tokens too.
-export function tabMeta(row: UsageRailRow): string {
-    const windows = [
-        row.state !== "none" && row.fivehour.pct != null ? `5h ${Math.round(row.fivehour.pct)}%` : null,
-        row.state !== "none" && row.week.pct != null ? `wk ${Math.round(row.week.pct)}%` : null,
-    ].filter((w): w is string => w != null);
-    return windows.length > 0 ? windows.join(" · ") : `${fmt(row.tokens)} tok`;
+export function tabMetaParts(row: UsageRailRow): TabMetaPart[] {
+    const windows: TabMetaPart[] = [];
+    if (row.state !== "none" && row.fivehour.pct != null) {
+        windows.push({ text: `5h ${Math.round(row.fivehour.pct)}%`, pct: row.fivehour.pct });
+    }
+    if (row.state !== "none" && row.week.pct != null) {
+        windows.push({ text: `wk ${Math.round(row.week.pct)}%`, pct: row.week.pct });
+    }
+    return windows.length > 0 ? windows : [{ text: `${fmt(row.tokens)} tok` }];
 }
 
 export function countReporting(groups: UsageRailGroup[]): number {

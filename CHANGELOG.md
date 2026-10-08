@@ -24,6 +24,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   opens Consumers below it. The Servers chip and the version stay in the footer.
 - Consumers shows each agent's RAM and its tokens and spend on the same row, with free RAM and the 5-hour quota
   together in its header, instead of making you switch between a RAM and a Tokens view.
+- Plan usage takes colour only as it nears a limit: the app bar meters and Usage's 5-hour and weekly cards stay
+  grey while there is plenty left and turn amber past 60% and red past 85%, and a provider's tab in Usage colours
+  its `5h` or `wk` figure the same way, so you see it without opening that tab.
 
 ### Fixed
 
