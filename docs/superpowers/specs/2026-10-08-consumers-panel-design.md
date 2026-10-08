@@ -19,7 +19,8 @@ agents by how fast they are spending now, and no control acts on the one that is
 ## Goals
 
 - Click the RAM chip: a panel lists every agent arcterm runs, heaviest first, with its RAM, its model and
-  its tokens of the last 10 minutes; arcterm's own processes (interface, server, host) are listed below.
+  its tokens of the last 10 minutes; arcterm's own processes (interface, server, host) are listed below, with
+  what its plain terminal tabs run.
 - Click the plan-usage meters: the same panel, ranked by tokens.
 - From a row: **Stop** the agent (a run worker included), or switch a Claude agent on Opus **→ Sonnet**.
 - Hovering the RAM chip keeps today's tooltip.
@@ -41,7 +42,8 @@ the likely cause; a separate investigation).
 2. **Rows.** Header: free RAM of total (`1.3 GB free of 8 GB`), the plan's 5-hour use, and a **RAM | Tokens**
    sort toggle. One row per agent: its state dot (the rail's colors), name, project, model, RAM, and tokens
    of the last 10 minutes with their estimated cost. Run workers are grouped under a `Run <short id>` header
-   row. Below the agents, arcterm's own: **Interface**, **Server**, **Host**, read-only. A click on an agent's
+   row. Below the agents, arcterm's own: **Interface**, **Server**, **Host**, and **Terminals** (what plain terminal
+   tabs run: their shells, a dev server, a build), read-only. A click on an agent's
    name opens it through the router (`openTarget`, `frontend/app/view/jarvis/openref.ts`).
 
 3. **Warnings.** A Claude agent on Opus shows its model label in the warning tone. The agent with the most
@@ -52,10 +54,11 @@ the likely cause; a separate investigation).
    10-minute windows past 500K (this Mac's transcripts, 2026-10-08); without them the median is 64K and 0.6% pass
    500K. The estimated cost still prices every class.
 
-4. **One RPC: `GetConsumersCommand`.** It takes no arguments and returns the machine's total and free RAM,
-   one entry per live agent block (block id, RAM bytes, and the window's tokens split by model and by class:
-   input, output, cache read, cache write), and arcterm's own processes (interface, server, host bytes). A
-   value that could not be read is absent, never zero. The panel polls it every 5 s while it is open and
+4. **Two RPCs: `GetConsumersCommand` reads, `AgentsSetModelCommand` switches.** `GetConsumersCommand` takes no
+   arguments and returns the machine's total and free RAM, one entry per live agent block (block id, RAM bytes,
+   and the window's tokens split by model and by class: input, output, cache read, cache write), arcterm's own
+   processes (interface, server, host bytes) and the terminals' bytes. A value that could not be read is absent,
+   never zero. `AgentsSetModelCommand` is → Sonnet's (decision 9). The panel polls it every 5 s while it is open and
    never while it is closed. The 5-hour quota comes from the usage the agents already report
    (`AgentUsage.FiveHourPct`), not from this RPC.
 
@@ -71,6 +74,9 @@ the likely cause; a separate investigation).
      monitor show, and it counts compressed memory that RSS misses. A probe on 2026-10-08 read it for the
      user's own processes without privileges. Elsewhere, gopsutil's RSS (the working set on Windows).
    - *Server* is `wavesrv` itself; *host* is its parent (the Tauri host spawns it).
+   - *Terminals* is `wavesrv`'s tree minus `wavesrv` itself and every agent's tree: the shells of plain terminal
+     tabs and what they run. Zero when there is none; absent when none of it could be read. macOS counts it under
+     arcterm, so without it the panel could not account for that RAM.
    - *Interface.* On darwin the WebKit WebContent, GPU and Networking processes are XPC services, not the
      host's children; they are the processes whose responsible pid
      (`responsibility_get_pid_responsible_for_pid`, the call Activity Monitor groups by) is the host, minus
@@ -105,9 +111,12 @@ the likely cause; a separate investigation).
    run."* A task in any other state is refused with the engine's reason, shown in a toast.
 
 9. **→ Sonnet sends `/model sonnet` into the session.** Shown only on a Claude agent whose model is Opus;
-   pi agents have Stop only. It goes through the existing prompt path into the session, whose Claude mod
-   runs a leading-slash line as a slash command (`deliver` in `claude/arc-mod/hooks/control-core.ts`), so the
-   agent keeps its progress. No confirm; a toast says it was sent, and the model label changes with the
+   pi agents have Stop only. It calls `AgentsSetModelCommand` (tab, model), which hands `/model <model>` to the
+   existing prompt path into the session, whose Claude mod runs a leading-slash line as a slash command
+   (`deliver` in `claude/arc-mod/hooks/control-core.ts`), so the agent keeps its progress. The command refuses,
+   sending nothing, an agent that is not Claude, a model that is not one word, and an agent with a question open
+   and no control stream (typed into its terminal, the command would answer the question, as `AgentsSendCommand`
+   guards). No confirm; a toast says it was sent, and the model label changes with the
    agent's next status. Whether `/model` applies inside a running turn is verified in the plan's first task;
    if it only applies from the next turn, the toast says "from the next turn". Re-running a worker's task on
    Sonnet (the existing `escalate`) is not part of this work either way; if the check finds the switch waits for
@@ -125,14 +134,15 @@ the likely cause; a separate investigation).
 ## Testing
 
 - **Go, `pkg/memusage`:** table tests over a fake process table: a tree's sum; one walk serving every
-  agent; Interface by responsible pid, excluding agent and server trees; a missing footprint or
-  responsible-pid call leaving the value absent. The token reader: appended records counted, records past
+  agent; Interface by responsible pid, excluding agent and server trees; Terminals as the server's tree minus
+  `wavesrv` and the agents' trees; a missing footprint or responsible-pid call leaving the value absent. The token reader: appended records counted, records past
   the window dropped, a truncated file re-read, a forgotten path's reader dropped.
 - **Go, `pkg/orchestrate`:** `stop` on a running or stalled task makes it Failed with the failure kind
   `stopped-by-human` and closes its worker's tab; the dag is not Cancelled; the next tick does not relaunch it;
   a stopped task can still be skipped; reviewing, done, pending and skipped tasks are refused.
 - **Vitest, `consumers.test.ts`:** the join with the roster; both sorts; grouping under runs; the Opus and
-  burn warnings; Stop on every agent row and → Sonnet only on Claude-on-Opus; absent values staying absent.
+  burn warnings; Stop on every agent row and → Sonnet only on Claude-on-Opus; the worker confirm naming its
+  task, not its tab; the Terminals row; absent values staying absent.
 - **CDP:** a `consumers-popover` scenario in `scripts/cdp/scenarios.mjs` opens the panel over fixture data and
   drives every control (both openers, the sort, Stop on a worker and on an agent, → Sonnet, a name, Open Usage,
   Esc, a click outside, the opener again), with the loading, empty and stale states; `worker-capacity` still
