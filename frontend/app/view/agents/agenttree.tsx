@@ -518,7 +518,19 @@ function ParentRow({
                                 <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
                             </button>
                         ) : asking ? (
-                            <span className="flex-none text-[10.5px] font-semibold text-warning">asking</span>
+                            <>
+                                <span className="flex-none text-[10.5px] font-semibold text-warning">asking</span>
+                                {/* a question that names its part ("Phần 1/4 ổn chưa?") shows the part beside it */}
+                                {agent.step ? (
+                                    <span
+                                        data-agent-step={agent.step}
+                                        aria-label={`asking about part ${agent.step}`}
+                                        className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
+                                    >
+                                        {agent.step}
+                                    </span>
+                                ) : null}
+                            </>
                         ) : (
                             <>
                                 {/* the count stands in for an idle agent's grey dot; a working one keeps its pulse */}

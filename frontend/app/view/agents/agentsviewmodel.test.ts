@@ -298,10 +298,11 @@ describe("agentVMFromInput", () => {
         expect(agentVMFromInput({ id: "t", name: "a", status: "working", ts: 1000 }, 2000).atPrompt).toBeUndefined();
     });
 
-    it("keeps the step an idle turn stopped on, and drops it once the agent works or asks again", () => {
+    it("keeps the step an idle turn or a question stopped on, and drops it once the agent works or hits a prompt", () => {
         expect(agentVMFromInput({ id: "t", name: "a", status: "idle", step: "1/3" }, 2000).step).toBe("1/3");
         expect(agentVMFromInput({ id: "t", name: "a", status: "working", step: "1/3" }, 2000).step).toBeUndefined();
-        expect(agentVMFromInput({ id: "t", name: "a", status: "asking", step: "1/3" }, 2000).step).toBeUndefined();
+        expect(agentVMFromInput({ id: "t", name: "a", status: "asking", step: "1/3" }, 2000).step).toBe("1/3");
+        expect(agentVMFromInput({ id: "t", name: "a", status: "waiting", step: "1/3" }, 2000).step).toBeUndefined();
         expect(agentVMFromInput({ id: "t", name: "a", status: "idle" }, 2000).step).toBeUndefined();
     });
 });

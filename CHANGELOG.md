@@ -32,6 +32,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,
   longer than the panel waits between readings, and now takes a fraction of one.
 - Resuming agents after switching Claude account resumes them instead of closing them.
+- A Claude agent walking you through a design in parts shows its **1/4** badge while it asks "Part 1/4 look right?"
+  with a question, not only when it stops on a plain message. It also reads "part 1 out of 3", "phần 1 trong 3",
+  "round 1 of 2", "question 2/5" and "[1/4]", and no longer mistakes a date like "05/10" for a part.
 
 ## 0.15.5 — 2026-10-08
 

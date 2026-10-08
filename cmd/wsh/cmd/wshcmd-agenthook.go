@@ -610,9 +610,12 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 	// a turn that stops on part 1/3 of something waits on a reply, and the cockpit row shows the step until it gets
-	// one. Every idle event carries it: the step is transient, so an idle_prompt without it would clear it
+	// one. Every idle event carries it: the step is transient, so an idle_prompt without it would clear it. A turn that
+	// asks "Phần 1/4 ổn chưa?" through AskUserQuestion waits the same way, so the ask carries it too
 	if em.State == baseds.AgentState_Idle && agentHookShadow == "" && transcriptPath != "" {
 		data.Step = readLastStep(transcriptPath)
+	} else if em.State == baseds.AgentState_Asking && agentHookShadow == "" {
+		data.Step = askStep(ev.ToolInput, transcriptPath)
 	}
 	_ = publishAgentStatusData(oref, data, 1)
 	if address, cwd, ok := canvasRevealFor(ev); ok {
