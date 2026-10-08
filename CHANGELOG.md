@@ -21,6 +21,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- An agent's row in the sidebar keeps its name alone on the first line: its canvas tag, state (asking, Low RAM,
+  review), tokens and age moved to the second line beside its model, so a long name is no longer cut short. A run's
+  worker rows do the same with their canvas tag and asking label. A lead's row is unchanged.
 - The plan-usage meters and the free-RAM chip moved from the app bar to the footer, beside the version, on every
   surface, which leaves the app bar more room for search and **New**. Each provider's meters start with its logo,
   and clicking the meters or the chip opens Consumers upward from the footer.

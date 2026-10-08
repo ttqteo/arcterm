@@ -472,12 +472,85 @@ function ParentRow({
               }
             : undefined;
 
+    // the canvas tag, then the state: words when it wants something, else its dot, tokens and age. They end a
+    // lead's first line, whose second holds its workers chip and progress; any other row's second line, so the
+    // name keeps the first line's full width
+    const badges = (
+        <>
+            <CanvasTag model={model} id={agent.id} />
+            {/* a row names its state in words only when it wants something; otherwise the dot says
+                working or idle, and a count says how many finished turns you have not read, or the
+                part a turn stopped on waiting for your reply */}
+            {review ? (
+                // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
+                // focuses its agent in review mode itself, so the click must not reach the row either way
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        openReview(model, agent.id);
+                    }}
+                    title={`Open the ${review.kind} review`}
+                    className="flex flex-none cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] text-[10.5px] font-semibold text-warning hover:border-warning"
+                >
+                    review
+                    <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
+                </button>
+            ) : asking ? (
+                <>
+                    <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
+                    {/* a question that names its part ("Phần 1/4 ổn chưa?") shows the part beside it */}
+                    {agent.step ? (
+                        <span
+                            data-agent-step={agent.step}
+                            aria-label={`asking about part ${agent.step}`}
+                            className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
+                        >
+                            {agent.step}
+                        </span>
+                    ) : null}
+                </>
+            ) : (
+                <>
+                    {/* the count stands in for an idle agent's grey dot; a working one keeps its pulse */}
+                    {mark || (unread && agent.state === "idle") ? null : (
+                        <StatusDot
+                            state={agent.state}
+                            pulse={agent.state !== "idle"}
+                            className="!h-[6px] !w-[6px] flex-none"
+                        />
+                    )}
+                    {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
+                    <span className={AGE_COL}>{formatAgeShort(displayAgeMs(agent, now))}</span>
+                    {step ? (
+                        <span
+                            data-agent-step={step}
+                            aria-label={`stopped on part ${step}, waiting on your reply`}
+                            className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
+                        >
+                            {step}
+                        </span>
+                    ) : unread ? (
+                        <span
+                            data-agent-unread={unreadCount}
+                            aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
+                            className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
+                        >
+                            {unreadLabel(unreadCount)}
+                        </span>
+                    ) : null}
+                </>
+            )}
+        </>
+    );
+
     // The animating motion.div wrapper lives in AgentTree (direct AnimatePresence child, required for
     // popLayout to pop an exiting row out of flow). This is just the row body + subagent reveal.
     return (
         <>
-            {/* the runtime, name, state, tokens and age, then its model, a branch other than the default and its
-                subagents (a lead's: its workers chip and progress) */}
+            {/* the runtime and name, then its model, a branch other than the default, its subagents, state, tokens
+                and age (a lead keeps its state, tokens and age beside its name, and its second line holds its
+                workers chip and progress) */}
             <div
                 onClick={select}
                 onDoubleClick={foldRow}
@@ -517,76 +590,13 @@ function ParentRow({
                         </span>
                         {/* a lead's second line holds its workers chip and progress, which need its full width */}
                         {lead ? subsChip : null}
-                        <CanvasTag model={model} id={agent.id} />
-                        {/* a row names its state in words only when it wants something; otherwise the dot says
-                            working or idle, and a count says how many finished turns you have not read, or the
-                            part a turn stopped on waiting for your reply */}
-                        {review ? (
-                            // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
-                            // focuses its agent in review mode itself, so the click must not reach the row either way
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    openReview(model, agent.id);
-                                }}
-                                title={`Open the ${review.kind} review`}
-                                className="flex flex-none cursor-pointer items-center gap-1 rounded-[5px] border border-warning/45 bg-askingbg px-[6px] py-[1px] text-[10.5px] font-semibold text-warning hover:border-warning"
-                            >
-                                review
-                                <ArrowUpRight size={10} strokeWidth={2.2} aria-hidden />
-                            </button>
-                        ) : asking ? (
-                            <>
-                                <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
-                                {/* a question that names its part ("Phần 1/4 ổn chưa?") shows the part beside it */}
-                                {agent.step ? (
-                                    <span
-                                        data-agent-step={agent.step}
-                                        aria-label={`asking about part ${agent.step}`}
-                                        className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
-                                    >
-                                        {agent.step}
-                                    </span>
-                                ) : null}
-                            </>
-                        ) : (
-                            <>
-                                {/* the count stands in for an idle agent's grey dot; a working one keeps its pulse */}
-                                {mark || (unread && agent.state === "idle") ? null : (
-                                    <StatusDot
-                                        state={agent.state}
-                                        pulse={agent.state !== "idle"}
-                                        className="!h-[6px] !w-[6px] flex-none"
-                                    />
-                                )}
-                                {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
-                                <span className={AGE_COL}>{formatAgeShort(displayAgeMs(agent, now))}</span>
-                                {step ? (
-                                    <span
-                                        data-agent-step={step}
-                                        aria-label={`stopped on part ${step}, waiting on your reply`}
-                                        className="flex h-[15px] flex-none items-center justify-center rounded-full border border-warning/45 bg-askingbg px-[5px] text-[9.5px] font-bold tabular-nums text-warning"
-                                    >
-                                        {step}
-                                    </span>
-                                ) : unread ? (
-                                    <span
-                                        data-agent-unread={unreadCount}
-                                        aria-label={`${unreadCount} finished ${unreadCount === 1 ? "turn" : "turns"} not read yet`}
-                                        className="flex h-[15px] min-w-[15px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9.5px] font-bold tabular-nums text-background"
-                                    >
-                                        {unreadLabel(unreadCount)}
-                                    </span>
-                                ) : null}
-                            </>
-                        )}
+                        {lead ? badges : null}
                     </div>
                 )}
                 {lead ? (
                     <RunSubline run={lead.run} open={lead.open} live={lead.live} />
-                ) : agent.model || shownBranch || subsChip ? (
-                    // under the name: its model, a branch other than the default, and its subagents chip
+                ) : (
+                    // under the name: its model, a branch other than the default, its subagents chip and its badges
                     <div className={cn(CONVERSATION_META, "mt-[3px]", UNDER_GLYPH)}>
                         {agent.model ? <span className="flex-none whitespace-nowrap">{agent.model}</span> : null}
                         {agent.model && shownBranch ? (
@@ -597,8 +607,9 @@ function ParentRow({
                         {shownBranch ? <BranchLabel branch={shownBranch} /> : null}
                         <span className="flex-1" />
                         {subsChip}
+                        {badges}
                     </div>
-                ) : null}
+                )}
             </div>
             {/* subagent reveal: the children block expands/collapses via composerReveal (height+opacity).
                 It is not a layout node itself, so its height animation and the row-list reflow don't fight. */}
@@ -809,19 +820,21 @@ function WorkerRow({
                     <span className={cn("truncate text-[10.5px] tabular-nums", asksYou ? "text-warning" : "text-muted")}>
                         {sub}
                     </span>
+                    {/* its canvas tag and who its ask waits on end the second line, so the title keeps the first */}
+                    <span className="flex-1" />
+                    {agent != null ? <CanvasTag model={model} id={agent.id} /> : null}
+                    {ask?.owner === "lead" ? (
+                        <span className="flex flex-none items-center gap-[3px] whitespace-nowrap text-[10.5px] font-medium text-muted">
+                            <ArrowRight size={10} aria-hidden />
+                            lead
+                        </span>
+                    ) : asksYou ? (
+                        <span className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-warning">
+                            {agent?.ask?.hold ? askingLabel(agent) : "asking"}
+                        </span>
+                    ) : null}
                 </div>
             </div>
-            {agent != null ? <CanvasTag model={model} id={agent.id} /> : null}
-            {ask?.owner === "lead" ? (
-                <span className="flex items-center gap-[3px] whitespace-nowrap text-[10.5px] font-medium text-muted">
-                    <ArrowRight size={10} aria-hidden />
-                    lead
-                </span>
-            ) : asksYou ? (
-                <span className="whitespace-nowrap text-[10.5px] font-semibold text-warning">
-                    {agent?.ask?.hold ? askingLabel(agent) : "asking"}
-                </span>
-            ) : null}
         </div>
     );
 }
