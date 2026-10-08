@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings → Claude account → "+ Sign in to account": a small live terminal running `claude setup-token`.
-// The user signs in in the browser as the account to add; the token setup-token prints is read out of the
-// pty output (TokenScanner), stored, and only a label is asked for. The terminal lives in a helper tab
-// marked session:helper (the session sidebar skips it), not in an agent launch, and the tab is closed on
-// every exit path — its `term` block file holds the token. It sits shell-side because it embeds
+// Settings → Claude account → "+ Add account": one dialog for both ways in. It opens on sign-in, a small live
+// terminal running `claude setup-token`: the user signs in in the browser as the account to add, and the token
+// setup-token prints is read out of the pty output (TokenScanner) and stored. "Have a token already? Paste it"
+// swaps the terminal for a token field. Both paths end on the same Name step. The steps are the pure
+// addAccountStep (view/agents/claudeaccount.ts). The terminal lives in a helper tab marked session:helper (the
+// session sidebar skips it), not in an agent launch, and the tab is closed on every exit path — leaving sign-in
+// included — because its `term` block file holds the token. It sits shell-side because it embeds
 // CockpitFocusPane, which view/agents must not import; the Settings section loads it with a lazy import().
 
 import { CockpitFocusPane } from "@/app/cockpit/focus-pane";
@@ -18,17 +20,15 @@ import * as WOS from "@/app/store/wos";
 import { getFileSubject } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { KnownEmailsDatalist } from "@/app/view/agents/claudeemails";
+import { addAccountStep, knownClaudeEmails, type AddAction, type AddStep } from "@/app/view/agents/claudeaccount";
+import { claudeIdentityAtom, savedRateLimitsAtom } from "@/app/view/agents/ratelimitstore";
 import { setupTokenCommand, TokenScanner } from "@/app/view/agents/setuptokenscan";
 import { base64ToString, fireAndForget } from "@/util/util";
-import { useEffect, useRef, useState } from "react";
+import { useAtomValue } from "jotai";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
-type Phase =
-    | { kind: "starting" }
-    | { kind: "running"; tabId: string; blockId: string }
-    | { kind: "saving" }
-    | { kind: "label"; account: ClaudeAccountData }
-    | { kind: "error"; message: string };
+// the sign-in terminal's own state, used only while the step is sign-in
+type Term = { kind: "starting" } | { kind: "running"; tabId: string; blockId: string } | { kind: "saving" };
 
 function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
@@ -42,22 +42,40 @@ function devOverride(): string | null {
     }
 }
 
+const FIELD_CLASS =
+    "rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[13px] text-primary outline-none focus:border-accent-700";
+
 export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
-    const [phase, setPhase] = useState<Phase>({ kind: "starting" });
+    const [step, dispatch] = useReducer<AddStep, undefined, [AddAction]>(addAccountStep, undefined, () =>
+        addAccountStep(undefined, { type: "init" })
+    );
+    const [term, setTerm] = useState<Term>({ kind: "starting" });
+    // bumped on every "Back to sign-in": a fresh attempt is a fresh helper tab
+    const [signinAttempt, setSigninAttempt] = useState(0);
+    const [token, setToken] = useState("");
     const [label, setLabel] = useState("");
-    const [email, setEmail] = useState("");
-    const [labelError, setLabelError] = useState<string | null>(null);
+    const [sameEmail, setSameEmail] = useState("");
+    const [nameError, setNameError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const saved = useAtomValue(savedRateLimitsAtom);
+    const identity = useAtomValue(claudeIdentityAtom);
+    const emails = useMemo(() => knownClaudeEmails(saved, identity), [saved, identity]);
     const onAddedRef = useRef(onAdded);
     onAddedRef.current = onAdded;
 
+    // The sign-in terminal runs while the step is sign-in and is torn down when the step leaves it (paste,
+    // an added account, an error) or the dialog unmounts. Its dependency is the attempt number while on
+    // sign-in and -1 off it, so leaving closes the helper tab and coming back (a new attempt) opens a fresh one.
     useEffect(() => {
+        if (step.kind !== "signin") {
+            return;
+        }
         let closed = false;
         let wsId: string | null = null;
         let tabId: string | null = null;
         let subject: SubjectWithRef<WSFileEventData> | null = null;
-        // every exit ends here (token found, Cancel, Escape, unmount, a failed setup): closing the helper tab
-        // destroys the block, which kills the command and deletes its term file
+        // every exit ends here (token found, Cancel, Escape, unmount, Paste, a failed setup): closing the helper
+        // tab destroys the block, which kills the command and deletes its term file
         const teardown = () => {
             closed = true;
             subject?.release();
@@ -69,23 +87,23 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                 fireAndForget(() => WorkspaceService.CloseTab(ws, id));
             }
         };
-        const onToken = async (token: string) => {
+        const onToken = async (found: string) => {
             teardown();
-            setPhase({ kind: "saving" });
+            setTerm({ kind: "saving" });
             try {
-                const account = await RpcApi.ClaudeAccountAddCommand(TabRpcClient, { label: "", token });
+                const account = await RpcApi.ClaudeAccountAddCommand(TabRpcClient, { label: "", token: found });
                 setLabel(account.label);
-                setPhase({ kind: "label", account });
+                dispatch({ type: "added", account });
                 onAddedRef.current();
             } catch (e) {
-                setPhase({ kind: "error", message: errorText(e) });
+                dispatch({ type: "failed", message: errorText(e) });
             }
         };
 
         fireAndForget(async () => {
             wsId = globalStore.get(atoms.workspace)?.oid ?? null;
             if (wsId == null) {
-                setPhase({ kind: "error", message: "no active workspace" });
+                dispatch({ type: "failed", message: "no active workspace" });
                 return;
             }
             let started = false;
@@ -119,16 +137,16 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
                     if (msg.fileop !== "append") {
                         return;
                     }
-                    const token = scanner.push(base64ToString(msg.data64) ?? "");
-                    if (token != null) {
-                        fireAndForget(() => onToken(token));
+                    const found = scanner.push(base64ToString(msg.data64) ?? "");
+                    if (found != null) {
+                        fireAndForget(() => onToken(found));
                     }
                 });
                 started = true;
-                setPhase({ kind: "running", tabId, blockId });
+                setTerm({ kind: "running", tabId, blockId });
             } catch (e) {
                 if (!closed) {
-                    setPhase({ kind: "error", message: errorText(e) });
+                    dispatch({ type: "failed", message: errorText(e) });
                 }
             } finally {
                 if (!started) {
@@ -137,29 +155,50 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
             }
         });
         return teardown;
-    }, []);
+    }, [step.kind === "signin" ? signinAttempt : -1]);
 
-    const save = async () => {
-        if (phase.kind !== "label" || busy) {
+    const showPaste = () => dispatch({ type: "paste" });
+    const backToSignin = () => {
+        setToken("");
+        setTerm({ kind: "starting" });
+        setSigninAttempt((n) => n + 1);
+        dispatch({ type: "back" });
+    };
+
+    // write-only: the token never comes back. A refused one stays in the field, with the reason under it.
+    const savePaste = async () => {
+        const pasted = token.trim();
+        if (step.kind !== "paste" || step.busy || pasted === "") {
+            return;
+        }
+        dispatch({ type: "saving" });
+        try {
+            const account = await RpcApi.ClaudeAccountAddCommand(TabRpcClient, { label: "", token: pasted });
+            setToken("");
+            setLabel(account.label);
+            dispatch({ type: "added", account });
+            onAddedRef.current();
+        } catch (e) {
+            dispatch({ type: "refused", message: errorText(e) });
+        }
+    };
+
+    const done = async () => {
+        if (step.kind !== "name" || busy) {
             return;
         }
         const next = label.trim();
-        const nextEmail = email.trim();
-        if ((next === "" || next === phase.account.label) && nextEmail === "") {
-            onClose();
-            return;
-        }
         setBusy(true);
-        setLabelError(null);
+        setNameError(null);
         try {
-            if (next !== "" && next !== phase.account.label) {
-                await RpcApi.ClaudeAccountRenameCommand(TabRpcClient, { id: phase.account.id, label: next });
+            if (next !== "" && next !== step.account.label) {
+                await RpcApi.ClaudeAccountRenameCommand(TabRpcClient, { id: step.account.id, label: next });
             }
-            if (nextEmail !== "") {
-                await RpcApi.ClaudeAccountSetEmailCommand(TabRpcClient, { id: phase.account.id, email: nextEmail });
+            if (sameEmail !== "") {
+                await RpcApi.ClaudeAccountSetEmailCommand(TabRpcClient, { id: step.account.id, email: sameEmail });
             }
         } catch (e) {
-            setLabelError(errorText(e));
+            setNameError(errorText(e));
             setBusy(false);
             return;
         }
@@ -167,95 +206,157 @@ export function ClaudeSigninModal({ onClose, onAdded }: { onClose: () => void; o
         onClose();
     };
 
-    const signingIn = phase.kind === "starting" || phase.kind === "running" || phase.kind === "saving";
+    const onSubmit =
+        step.kind === "name" ? () => void done() : step.kind === "paste" ? () => void savePaste() : undefined;
     return (
         <ModalShell
             open
             onClose={onClose}
-            onSubmit={phase.kind === "label" ? () => void save() : undefined}
+            onSubmit={onSubmit}
             dismissOnBackdrop={false}
             className="w-full max-w-[720px]"
         >
             <div data-claude-signin-modal className="flex min-h-[420px] flex-col px-[22px] pt-[22px] pb-[18px]">
                 <h2 className="text-[16px] font-bold leading-[1.3] tracking-[-0.015em] text-primary">
-                    {phase.kind === "label" ? "Name this account" : "Sign in to a Claude account"}
+                    {step.kind === "name" ? "Name this account" : "Add a Claude account"}
                 </h2>
-                {signingIn ? (
+                {step.kind === "signin" ? (
                     <>
                         <div className="mt-[7px] text-[13px] leading-[1.55] text-ink-mid">
-                            Your browser will open: sign in with the account to add, then allow access. arcterm picks up
-                            the token when <span className="font-mono">claude setup-token</span> prints it — no need to
-                            copy it.
+                            Sign in in the browser as the account to add. arcterm picks up the token itself.
                         </div>
                         <div
                             data-claude-signin-term
                             className="mt-4 flex h-[260px] min-h-0 min-w-0 overflow-hidden rounded-[10px] border border-border bg-background p-1.5"
                         >
-                            {phase.kind === "running" ? (
-                                <CockpitFocusPane blockId={phase.blockId} tabId={phase.tabId} />
+                            {term.kind === "running" ? (
+                                <CockpitFocusPane blockId={term.blockId} tabId={term.tabId} />
                             ) : (
                                 <div className="m-auto text-[12px] text-muted">
-                                    {phase.kind === "saving" ? "Saving token…" : "Opening terminal…"}
+                                    {term.kind === "saving" ? "Saving token…" : "Opening terminal…"}
                                 </div>
                             )}
                         </div>
+                        <div className="mt-2.5">
+                            <button
+                                type="button"
+                                data-claude-signin-paste
+                                disabled={term.kind === "saving"}
+                                onClick={showPaste}
+                                className="cursor-pointer text-[12px] font-semibold text-muted transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                                Have a token already? Paste it
+                            </button>
+                        </div>
                     </>
-                ) : phase.kind === "label" ? (
+                ) : step.kind === "paste" ? (
                     <div className="mt-[7px] flex flex-col gap-2.5">
                         <div className="text-[13px] leading-[1.55] text-ink-mid">
-                            Token saved. New agents run on this account once you select it in Settings.
+                            A token from <span className="font-mono">claude setup-token</span> (starts with{" "}
+                            <span className="font-mono">sk-ant-oat</span>).
                         </div>
-                        <input
-                            type="text"
-                            data-claude-signin-label
-                            autoFocus
-                            value={label}
-                            placeholder={phase.account.label}
-                            spellCheck={false}
-                            onChange={(e) => setLabel(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    void save();
-                                }
-                            }}
-                            className="w-[280px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[13px] text-primary outline-none focus:border-accent-700"
-                        />
-                        <div className="text-[12px] leading-[1.55] text-muted">
-                            This account's email (optional): used to show its latest usage.
+                        <div className="flex items-center gap-2.5">
+                            <input
+                                type="password"
+                                data-claude-signin-token
+                                autoFocus
+                                autoComplete="off"
+                                value={token}
+                                placeholder="sk-ant-oat01-…"
+                                spellCheck={false}
+                                readOnly={step.busy}
+                                onChange={(e) => setToken(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void savePaste();
+                                    }
+                                }}
+                                className={`min-w-0 flex-1 font-mono ${FIELD_CLASS}`}
+                            />
+                            <DialogButton
+                                variant="primary"
+                                data-claude-signin-save
+                                disabled={step.busy || token.trim() === ""}
+                                onClick={() => void savePaste()}
+                            >
+                                Save
+                            </DialogButton>
                         </div>
-                        <input
-                            type="text"
-                            data-claude-signin-email
-                            value={email}
-                            list="claude-signin-emails"
-                            placeholder="Email (optional)"
-                            spellCheck={false}
-                            onChange={(e) => setEmail(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    void save();
-                                }
-                            }}
-                            className="w-[280px] rounded border border-edge-mid bg-surface-raised px-2.5 py-[6px] text-[13px] text-primary outline-none focus:border-accent-700"
-                        />
-                        <KnownEmailsDatalist id="claude-signin-emails" />
-                        {labelError ? <div className="text-[12px] text-error">{labelError}</div> : null}
+                        {step.error ? (
+                            <div data-claude-signin-paste-error className="text-[12px] leading-[1.55] text-error">
+                                {step.error}
+                            </div>
+                        ) : null}
+                        <div>
+                            <button
+                                type="button"
+                                data-claude-signin-back
+                                onClick={backToSignin}
+                                className="cursor-pointer text-[12px] font-semibold text-muted transition-colors hover:text-primary"
+                            >
+                                Back to sign-in
+                            </button>
+                        </div>
+                    </div>
+                ) : step.kind === "name" ? (
+                    <div className="mt-[7px] flex flex-col gap-2.5">
+                        <div className="text-[13px] leading-[1.55] text-ink-mid">
+                            Token saved. Select it in Settings to run new agents on it.
+                        </div>
+                        <label className="flex flex-col gap-1">
+                            <span className="text-[12px] text-muted">Name</span>
+                            <input
+                                type="text"
+                                data-claude-signin-label
+                                autoFocus
+                                value={label}
+                                placeholder={step.account.label}
+                                spellCheck={false}
+                                onChange={(e) => setLabel(e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void done();
+                                    }
+                                }}
+                                className={`w-[280px] ${FIELD_CLASS}`}
+                            />
+                        </label>
+                        {emails.length > 0 ? (
+                            <label className="flex flex-col gap-1">
+                                <span className="text-[12px] text-muted">Same account as</span>
+                                <select
+                                    data-claude-signin-same
+                                    value={sameEmail}
+                                    onChange={(e) => setSameEmail(e.target.value)}
+                                    className={`w-[280px] ${FIELD_CLASS}`}
+                                >
+                                    <option value="">None</option>
+                                    {emails.map((email) => (
+                                        <option key={email} value={email}>
+                                            {email}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        ) : null}
+                        {nameError ? <div className="text-[12px] text-error">{nameError}</div> : null}
                     </div>
                 ) : (
                     <div data-claude-signin-error className="mt-[7px] text-[13px] leading-[1.55] text-error">
-                        {phase.message}
+                        {step.message}
                     </div>
                 )}
                 <div className="mt-auto flex justify-end gap-2.5 pt-[18px]">
-                    {phase.kind === "label" ? (
-                        <DialogButton variant="primary" hint="⏎" disabled={busy} onClick={() => void save()}>
-                            Save
+                    {step.kind === "name" ? (
+                        <DialogButton variant="primary" hint="⏎" disabled={busy} onClick={() => void done()}>
+                            Done
                         </DialogButton>
                     ) : (
                         <DialogButton variant="secondary" hint="esc" data-claude-signin-cancel onClick={onClose}>
-                            {phase.kind === "error" ? "Close" : "Cancel"}
+                            {step.kind === "error" ? "Close" : "Cancel"}
                         </DialogButton>
                     )}
                 </div>

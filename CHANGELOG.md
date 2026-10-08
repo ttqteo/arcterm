@@ -39,6 +39,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A terminal you have not renamed is named for the command it last ran (`task dev`), or "Terminal 2" before it has
   run one, instead of every terminal in a repo sharing the repo's name. PowerShell, Windows PowerShell 5.1 included,
   now reports its commands to arcterm.
+- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning
+  colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove, and + Add account holds both signing
+  in and pasting a token.
 - The labels still in Vietnamese are now in English: the Claude account settings and its sign-in and restart
   dialogs, the Cockpit's **Needs you** strip, **Delete session**, and the usage refresh's retry time.
 - Switching an agent between Terminal and Canvas (or Review) no longer reshapes the screen: the details rail stays,

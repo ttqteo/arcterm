@@ -4,8 +4,9 @@
 // The dialog a Claude account switch opens when running agents are still on the old account
 // (pushModal("ClaudeAccountRestartModal", { candidates })). The switch has already happened; this only
 // offers to resume each agent's session on the new account. "Later" leaves them as they are.
-// `account` is the id switched to ("" = Default); a respawn reads wavesrv's environment, so nothing is
-// restarted until wavesrv reports that account as the one it applied.
+// `account` is the id switched to ("" = Default) and `accountName` its name for the title; a respawn
+// reads wavesrv's environment, so nothing is restarted until wavesrv reports that account as the one
+// it applied.
 
 import { DialogButton } from "@/app/modals/dialogbutton";
 import { ModalShell } from "@/app/modals/modalshell";
@@ -17,16 +18,18 @@ import { useState } from "react";
 import { restartOnAccount, type RestartCandidate } from "./claudeaccount";
 
 const NOTE: Partial<Record<RestartCandidate["state"], string>> = {
-    working: "working — restarts once its turn ends",
-    asking: "asking — restarting drops the question",
+    working: "working — resume after this turn",
+    asking: "asking — resuming drops the question",
 };
 
 export function ClaudeAccountRestartModal({
     candidates,
     account,
+    accountName,
 }: {
     candidates: RestartCandidate[];
     account: string;
+    accountName: string;
 }) {
     const [checked, setChecked] = useState<Record<string, boolean>>(() =>
         Object.fromEntries(candidates.map((c) => [c.tabId, c.checked]))
@@ -48,7 +51,7 @@ export function ClaudeAccountRestartModal({
             const { active } = await RpcApi.ClaudeAccountListCommand(TabRpcClient);
             if (active !== account) {
                 setNotApplied(
-                    "wavesrv has not switched to this account (is its token still there?) — no agent was restarted."
+                    "arcterm has not switched to this account yet (is its token still valid?). No agent was resumed."
                 );
                 setBusy(false);
                 return;
@@ -81,10 +84,11 @@ export function ClaudeAccountRestartModal({
         <ModalShell open onClose={close} align="center" className="w-full max-w-[480px]">
             <div data-claude-restart-dialog className="px-[22px] pt-[22px] pb-[18px]">
                 <h2 className="text-[16px] font-bold leading-[1.3] tracking-[-0.015em] text-primary">
-                    Restart agents on the new account?
+                    {`Resume agents on ${accountName}?`}
                 </h2>
                 <div className="mt-[7px] text-[13px] leading-[1.55] text-ink-mid">
-                    These agents still run on the old account. Restarting resumes each one's session on the new account.
+                    These agents still run on the previous account. Resuming continues each one's session on the new
+                    one.
                 </div>
                 <div className="mt-4 flex flex-col gap-1.5">
                     {candidates.map((c) => {
@@ -110,7 +114,7 @@ export function ClaudeAccountRestartModal({
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate text-[13px] font-semibold text-primary">{c.name}</div>
                                     {isDone ? (
-                                        <div className="mt-0.5 text-[11.5px] text-success-soft">restarted</div>
+                                        <div className="mt-0.5 text-[11.5px] text-success-soft">resumed</div>
                                     ) : note ? (
                                         <div className="mt-0.5 text-[11.5px] text-warning-soft">{note}</div>
                                     ) : null}
@@ -130,7 +134,7 @@ export function ClaudeAccountRestartModal({
                     </div>
                 ) : null}
                 <div className="mt-3 text-[12px] leading-[1.5] text-muted">
-                    Open terminals keep the old account until they are reopened.
+                    Open terminals keep the previous account until they are reopened.
                 </div>
                 <div className="mt-[18px] flex justify-end gap-2.5">
                     <DialogButton variant="secondary" hint="esc" onClick={close}>
@@ -141,7 +145,7 @@ export function ClaudeAccountRestartModal({
                         disabled={busy || pending.length === 0}
                         onClick={() => void restart()}
                     >
-                        Restart selected
+                        Resume selected
                     </DialogButton>
                 </div>
             </div>

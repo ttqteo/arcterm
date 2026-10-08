@@ -1,6 +1,7 @@
 # Claude account switch in Settings — design
 
-Status: design settled 2026-10-07.
+Status: design settled 2026-10-07. The Settings UI below (the list, sign-in, paste and the restart dialog's
+copy) was reworked in English by `2026-10-08-claude-account-ux-design.md`, which supersedes it there.
 
 ## Problem
 

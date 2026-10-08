@@ -20080,12 +20080,22 @@ const harnessUpdate = {
     },
 };
 
-// --- Settings → Claude account (docs/superpowers/specs/2026-10-07-claude-account-switch-design.md) ---------------
-// Two fixture accounts are added through the real RPC (A seeded at 97% under its own rate-limit key, B never used,
-// Default at 12%), and a fixture roster puts three claude agents on Default, so a switch to A offers all three for a
-// restart. Sign-in runs a node one-liner in place of `claude setup-token` (the dev override arc:dev:setuptoken-cmd),
-// never the real command: it would open a browser. The real usage endpoint can replace Default's seeded 12% with the
-// account's live reading (claudequota.ts records a newer one), so the Default reading accepts that reading too.
+// --- Settings → Claude account (docs/superpowers/specs/2026-10-07-claude-account-switch-design.md, ----------------
+// the list, the Add dialog and the restart dialog as docs/superpowers/specs/2026-10-08-claude-account-ux-design.md
+// reworks them) --------------------------------------------------------------------------------------------------
+// Two fixture accounts are added through the real RPC (A seeded at 97% under its own rate-limit key, B at 40%,
+// Default at 12%, and one email, fixture@example.com, that arcterm has "seen" so Same account as has one to offer),
+// and a fixture roster puts three claude agents on Default, so a switch to A offers all three for a restart. Sign-in
+// runs a node one-liner in place of `claude setup-token` (the dev override arc:dev:setuptoken-cmd), never the real
+// command: it would open a browser, so every step that opens the Add dialog sets the override first. The real usage
+// endpoint can replace Default's seeded 12% with the account's live reading (claudequota.ts records a newer one), and
+// Default's key follows the live /login email, so no step asserts Default's quota tone: the warning tone is judged on A
+// (97%) and the normal tone on B (40%).
+// The ⋯ menu is the DOM context menu (element/contextmenu.tsx): its rows carry no data-* hooks, so a row is found by
+// its label inside the open panel, and the Same account as… submenu opens on a real pointer move (React's
+// onMouseEnter follows mouseover, which a synthetic event would not produce). Steps 15–23 were added to the 14 that
+// stood; the numbers are kept, so the run order differs: 17–19 work on B and run before step 10 removes it, and 23
+// needs the fixture roster, which the setup for step 12 removes.
 const CA = "settings-claude-account";
 const CA_SETTING = "claude:activeaccount";
 const CA_RATE_KEY = "wave:ratelimits";
@@ -20100,7 +20110,7 @@ const caRow = (id) => `document.querySelector('[data-claude-account-row="${id ||
 const CA_ROWS = `[...document.querySelectorAll("[data-claude-account-row]")].map((r) => ({
     id: r.dataset.claudeAccountRow,
     checked: r.getAttribute("aria-checked") === "true",
-    label: r.querySelector("[data-claude-account-rename] input")?.value ?? null,
+    label: [...(r.querySelector("[data-claude-account-name]")?.childNodes ?? [])].find((n) => n.nodeType === 3)?.textContent.trim() ?? null,
     text: r.textContent.replace(/\\s+/g, " ").trim(),
 }))`;
 // sets a React-controlled input the way typing does
@@ -20112,13 +20122,14 @@ const caSetInput = (sel, value) => `(() => {
     el.dispatchEvent(new Event("input", { bubbles: true }));
     return true;
 })()`;
-const caEnter = (sel) => `(() => {
+const caKey = (sel, key) => `(() => {
     const el = document.querySelector(${JSON.stringify(sel)});
     if (!el) return false;
     el.focus();
-    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(key)}, code: ${JSON.stringify(key)}, bubbles: true }));
     return true;
 })()`;
+const caEnter = (sel) => caKey(sel, "Enter");
 // clicks the button whose text starts with `label` inside the element `scope` finds
 const caClickButton = (scope, label) => `(() => {
     const root = ${scope};
@@ -20130,8 +20141,54 @@ const caClickButton = (scope, label) => `(() => {
 })()`;
 const CA_CONFIRM = `[...document.querySelectorAll('[role="dialog"]')]
     .find((d) => d.textContent.includes("Remove account"))`;
+// the confirm's message: the element after its title
+const CA_CONFIRM_TEXT = `(() => {
+    const d = ${CA_CONFIRM};
+    return d?.querySelector("h2")?.nextElementSibling?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+})()`;
 const CA_RESTART = `document.querySelector("[data-claude-restart-dialog]")`;
 const CA_SIGNIN = `document.querySelector("[data-claude-signin-modal]")`;
+// a dialog's title and the line under it (the h2 and the element after it)
+const caDialogHead = (scope) => `(() => {
+    const t = ${scope}?.querySelector("h2");
+    if (!t) return null;
+    return { title: t.textContent.trim(), line: t.nextElementSibling?.textContent.replace(/\\s+/g, " ").trim() ?? null };
+})()`;
+// The ⋯ menu panel (the one floating-ui panel with tabindex -1) and a row in it, found by its label; a row is checked
+// when its leading column holds the Check svg.
+const CA_MENU_PANEL = `document.querySelector('[class*="z-[1000]"][tabindex="-1"]')`;
+const caMenuRow = (label) => `(() => {
+    const panel = ${CA_MENU_PANEL};
+    const span = panel && [...panel.querySelectorAll("span.flex-1")].find((s) => s.textContent.trim() === ${JSON.stringify(label)});
+    return span?.parentElement ?? null;
+})()`;
+const caMenuHas = (label) => `!!${caMenuRow(label)}`;
+const caMenuClick = (label) => `(() => {
+    const r = ${caMenuRow(label)};
+    if (!r) return false;
+    r.click();
+    return true;
+})()`;
+const caMenuChecked = (label) => `(() => {
+    const r = ${caMenuRow(label)};
+    return r ? r.querySelector("svg") != null : null;
+})()`;
+// the centre of an element, scrolled into view, for a real pointer
+const caCenter = (expr) => `(() => {
+    const el = ${expr};
+    if (!el) return null;
+    el.scrollIntoView({ block: "nearest" });
+    const b = el.getBoundingClientRect();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+})()`;
+// the quota line of a row: its text and whether it wears the warning tone
+const caQuota = (id) => `(() => {
+    const q = document.querySelector('[data-claude-account-quota="${id || "default"}"]');
+    return q ? { text: q.textContent.trim(), warn: q.classList.contains("text-warning"), muted: q.classList.contains("text-muted") } : null;
+})()`;
+// the e-mail line under a row's name, or null when there is none
+const caEmailLine = (id) =>
+    `document.querySelector('[data-claude-account-email="${id}"]')?.textContent.trim() ?? null`;
 // the stand-in for `claude setup-token`: a token, a line that ends it, then the process stays up like the real one
 const CA_TOKEN_CMD = {
     cmd: "node",
@@ -20224,8 +20281,15 @@ const settingsClaudeAccount = {
                 weekreset: nowSec + 5 * 24 * 3600,
                 capturedAt: minuteAgo,
             });
-            const rate = { "claude:default": snapshot(12, 20), [`claude:${a.id}`]: snapshot(97, 64) };
-            await h.ev(`localStorage.setItem(${JSON.stringify(CA_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`);
+            // B sits under the warning threshold (the normal tone is judged on it, never on Default, whose key follows
+            // the live /login email); fixture@example.com is the one e-mail arcterm has "seen", so knownClaudeEmails
+            // offers it to Same account as
+            const rate = {
+                "claude:default": snapshot(12, 20),
+                [`claude:${a.id}`]: snapshot(97, 64),
+                [`claude:${b.id}`]: snapshot(40, 30),
+                "claude:fixture@example.com": snapshot(55, 41),
+            };
 
             ctx.base = mkdtempSync(join(tmpdir(), "verify-claude-account-"));
             for (const ag of CA_AGENTS) {
@@ -20236,7 +20300,38 @@ const settingsClaudeAccount = {
             mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
             writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(caRoster(ctx), null, 2));
             ctx.wroteFixture = true;
-            await caReload(h);
+
+            // The seed is read back after the reload: ratelimitstore.ts holds the snapshots in an atom read once at
+            // module load, and persistSaved writes that whole atom back to localStorage, so a write the page was
+            // still making (the boot-time live quota read, the identity refresh after claudeaccountadd) can replace
+            // the seed with the atom's older contents between the setItem and the reload. Once a reload has loaded
+            // the seed into the atom, a later write keeps it. claude:default is not required to survive: the page
+            // moves it to the /login email's key.
+            const seedPct = {
+                [`claude:${a.id}`]: 97,
+                [`claude:${b.id}`]: 40,
+                "claude:fixture@example.com": 55,
+            };
+            let missing = Object.keys(seedPct);
+            for (let attempt = 0; attempt < 3 && missing.length > 0; attempt++) {
+                await h.ev(
+                    `localStorage.setItem(${JSON.stringify(CA_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`
+                );
+                await caReload(h);
+                const held = await h.ev(`(() => {
+                    try {
+                        return JSON.parse(localStorage.getItem(${JSON.stringify(CA_RATE_KEY)}) || "{}");
+                    } catch {
+                        return {};
+                    }
+                })()`);
+                missing = Object.entries(seedPct)
+                    .filter(([key, pct]) => held?.[key]?.fivehourpct !== pct)
+                    .map(([key]) => key);
+            }
+            if (missing.length > 0) {
+                ctx.arrangeError = `the quota snapshots did not survive 3 seed + reload tries; missing from ${CA_RATE_KEY}: ${missing.join(", ")}`;
+            }
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -20286,8 +20381,59 @@ const settingsClaudeAccount = {
                 await poll(() => h.ev(`!!${CA_RESTART}`), (v) => !v);
             }
         };
-        // the 5-hour tile of the Usage surface's Claude detail, then back to the section
+        // a real click on `expr`'s element, so the ⋯ menu opens where the button is
+        const clickAt = async (expr) => {
+            const pt = await h.ev(caCenter(expr));
+            if (pt == null) return false;
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+            }
+            return true;
+        };
+        // opens an account's ⋯ menu; true once its panel is up
+        const openMenu = async (id) => {
+            if (!(await clickAt(`document.querySelector('[data-claude-account-menu="${id}"]')`))) return false;
+            return poll(() => h.ev(`!!${CA_MENU_PANEL}`), Boolean);
+        };
+        // hovers the Same account as… row for real, from outside the menu, and waits for its submenu: the last row
+        // of the submenu is None, so that row means the whole submenu is drawn
+        const openSameAs = async () => {
+            const pt = await h.ev(caCenter(caMenuRow("Same account as…")));
+            if (pt == null) return false;
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+            return poll(() => h.ev(caMenuHas("None")), Boolean);
+        };
+        const closeMenu = async () => {
+            if (!(await h.ev(`!!${CA_MENU_PANEL}`))) return;
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+            }
+            await poll(() => h.ev(`!!${CA_MENU_PANEL}`), (v) => !v);
+        };
+        const menuPick = async (id, label) => {
+            if (!(await openMenu(id))) return false;
+            return h.ev(caMenuClick(label));
+        };
+        const noRowInputs = () => h.ev(`document.querySelectorAll('[data-claude-account-row] input').length === 0`);
+        const storedAccount = async (id) => (await list()).accounts.find((a) => a.id === id) ?? null;
+        // opens the Add dialog on the idle stand-in for sign-in and waits for its terminal
+        const openAddDialog = async () => {
+            await h.ev(caSetCmd(CA_IDLE_CMD));
+            await h.ev(`document.querySelector("[data-claude-account-add]")?.click()`);
+            await poll(() => h.ev(`!!${CA_SIGNIN}`), Boolean);
+            return poll(
+                () => h.ev(`!!document.querySelector("[data-claude-signin-modal] [data-claude-signin-term] .xterm")`),
+                Boolean,
+                20000
+            );
+        };
+        // the 5-hour tile of the Usage surface's Claude detail, then back to the section. Default's saved snapshot
+        // follows the /login email (adoptDefaultSnapshot moves claude:default to claude:<email> once it is known), so
+        // defaultPct is read from that key, and from claude:default only while no /login email is listed.
         const claudePlan = async () => {
+            const loginEmail = ((await h.rpc("claudeaccountlist", null))?.loginemail ?? "").trim().toLowerCase();
             await h.goto("usage");
             await poll(
                 () => h.ev(`!!document.querySelector('[data-usage-harness="claude"], [data-usage-detail="claude"]')`),
@@ -20311,27 +20457,73 @@ const settingsClaudeAccount = {
             })()`);
             await h.ev(`document.querySelector('[data-usage-harness="all"]')?.click()`);
             await openSection();
-            return { value, defaultPct: saved?.["claude:default"]?.fivehourpct ?? null };
+            const defaultKey = loginEmail !== "" ? `claude:${loginEmail}` : "claude:default";
+            return { value, defaultPct: saved?.[defaultKey]?.fivehourpct ?? null };
         };
 
         await openSection();
 
         // --- list ---
-        const r1 = await poll(rows, (r) => r.length >= 3 && r.some((x) => x.text.includes("97%")));
+        const r1 = await poll(
+            rows,
+            (r) => r.length >= 3 && r.some((x) => x.text.includes("97%")) && r.some((x) => x.text.includes("40%"))
+        );
         const rowA = r1.find((x) => x.id === ctx.idA);
         const rowB = r1.find((x) => x.id === ctx.idB);
         rec(
-            "1. list: Default, A and B as radios, Default checked, A reads its 97%, B has not been used",
+            "1. list: Default, A and B as radios, Default checked, A reads its 97%, B its 40%",
             r1.length === 3 + ctx.preIds.length &&
                 r1.find((x) => x.id === "default")?.checked === true &&
                 r1.filter((x) => x.checked).length === 1 &&
                 rowA?.label === "Fixture A" &&
                 rowA.text.includes("97%") &&
                 rowB?.label === "Fixture B" &&
-                rowB.text.includes("not used yet"),
+                rowB.text.includes("40%"),
             JSON.stringify(r1)
         );
         await h.shot(`cdp-shots/${CA}.png`);
+
+        // --- list: quiet rows ---
+        const noInputs = await noRowInputs();
+        const loginEmail = ((await h.rpc("claudeaccountlist", null))?.loginemail ?? "").trim().toLowerCase();
+        const defName = await h.ev(`(() => {
+            const n = document.querySelector('[data-claude-account-name="default"]');
+            return {
+                name: [...(n?.childNodes ?? [])].find((c) => c.nodeType === 3)?.textContent.trim() ?? null,
+                tag: n?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+            };
+        })()`);
+        // the identity also learns the /login email from a live quota answer, so with none listed an email-shaped
+        // name is as good as "Claude login"
+        const nameOk =
+            loginEmail !== ""
+                ? defName.name === loginEmail
+                : defName.name === "Claude login" || /^\S+@\S+$/.test(defName.name ?? "");
+        rec(
+            "15. rows hold no inputs: every name is text, and Default is named by its /login email or Claude login with a /login tag",
+            noInputs === true && nameOk && defName.tag === "/login",
+            JSON.stringify({ noInputs, loginEmail, defName })
+        );
+        const qA = await h.ev(caQuota(ctx.idA));
+        const qB = await h.ev(caQuota(ctx.idB));
+        rec(
+            "16. a row at 90% or more reads in the warning tone: A (97%) does, B (40%) stays muted",
+            qA?.warn === true &&
+                qA.text.startsWith("5h 97% · week 64%") &&
+                qB?.warn === false &&
+                qB.muted === true &&
+                qB.text.startsWith("5h 40% · week 30%"),
+            JSON.stringify({ qA, qB })
+        );
+        const adds = await h.ev(`[...document.querySelectorAll("[data-claude-account-add]")].map((b) => b.textContent.trim())`);
+        const oldHooks = await h.ev(
+            `["[data-claude-account-signin]", "[data-claude-account-paste]", "[data-claude-account-paste-token]"].filter((s) => document.querySelector(s))`
+        );
+        rec(
+            "20. one + Add account button, no paste form on the page",
+            adds.length === 1 && adds[0] === "+ Add account" && oldHooks.length === 0,
+            JSON.stringify({ adds, oldHooks })
+        );
 
         // --- restart-dialog ---
         await h.ev(`${caRow(ctx.idA)}?.click()`);
@@ -20351,21 +20543,38 @@ const settingsClaudeAccount = {
             (v) => v != null && v.length > 0
         );
         const byId = Object.fromEntries((dialog ?? []).map((r) => [r.id, r]));
+        const restartHead = await h.ev(caDialogHead(CA_RESTART));
+        const restartCopy = await h.ev(`(() => {
+            const d = ${CA_RESTART};
+            if (!d) return null;
+            const norm = (s) => s.replace(/\\s+/g, " ").trim();
+            return {
+                note: [...d.querySelectorAll("div")].some(
+                    (x) => norm(x.textContent) === "Open terminals keep the previous account until they are reopened."
+                ),
+                resume: [...d.querySelectorAll("button")].some((b) => b.textContent.trim().startsWith("Resume selected")),
+            };
+        })()`);
         rec(
-            "2. selecting A writes the setting, wavesrv applies it, and the restart dialog offers the three agents",
+            "2. selecting A writes the setting, wavesrv applies it, and the restart dialog, titled for A, offers the three agents",
             setA === ctx.idA &&
                 appliedA.active === ctx.idA &&
                 dialog?.length === 3 &&
-                CA_AGENTS.every((a) => byId[a.id]?.name.includes(a.name)),
-            JSON.stringify({ setA, active: appliedA.active, dialog })
+                CA_AGENTS.every((a) => byId[a.id]?.name.includes(a.name)) &&
+                restartHead?.title === "Resume agents on Fixture A?" &&
+                restartHead.line ===
+                    "These agents still run on the previous account. Resuming continues each one's session on the new one." &&
+                restartCopy?.note === true &&
+                restartCopy.resume === true,
+            JSON.stringify({ setA, active: appliedA.active, dialog, restartHead, restartCopy })
         );
         rec(
             "3. only the idle agent starts checked; working and asking carry their notes",
             byId["fx-ca-idle"]?.checked === true &&
                 byId["fx-ca-working"]?.checked === false &&
-                byId["fx-ca-working"]?.name.includes("restarts once its turn ends") &&
+                byId["fx-ca-working"]?.name.includes("working — resume after this turn") &&
                 byId["fx-ca-asking"]?.checked === false &&
-                byId["fx-ca-asking"]?.name.includes("restarting drops the question"),
+                byId["fx-ca-asking"]?.name.includes("asking — resuming drops the question"),
             JSON.stringify(dialog)
         );
         await h.shot(`cdp-shots/${CA}-restart.png`);
@@ -20386,66 +20595,194 @@ const settingsClaudeAccount = {
             JSON.stringify(planA)
         );
 
-        // --- paste-token ---
-        const before = await list();
-        const pasteOpen = await h.ev(
-            `document.querySelector("[data-claude-account-paste]")?.getAttribute("aria-expanded")`
-        );
-        if (pasteOpen !== "true") {
-            await h.ev(`document.querySelector("[data-claude-account-paste]")?.click()`);
+        // --- B's ⋯ menu (B is not the active account, and B is removed by step 10, so these run first) ---
+        const selB = (what) => `[data-claude-account-${what}="${ctx.idB}"]`;
+        const openRenameB = async () => {
+            if (!(await menuPick(ctx.idB, "Rename"))) return false;
+            return poll(() => h.ev(`!!document.querySelector(${JSON.stringify(selB("rename-input"))})`), Boolean);
+        };
+        // Esc, an empty name committed with Enter, and an empty name left by blur each cancel; a blur only fires with
+        // the page believing it has focus
+        const cancelCases = [
+            ["Nope, then Esc", "Nope", (sel) => caKey(sel, "Escape")],
+            ["empty, then Enter", "", (sel) => caEnter(sel)],
+            [
+                "empty, then blur",
+                "",
+                (sel) => `(() => {
+                    const el = document.querySelector(${JSON.stringify(sel)});
+                    el?.blur();
+                    return !!el;
+                })()`,
+            ],
+        ];
+        const cancelled = [];
+        await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+        try {
+            for (const [name, text, finish] of cancelCases) {
+                const opened = await openRenameB();
+                await h.ev(caSetInput(selB("rename-input"), text));
+                await h.ev(finish(selB("rename-input")));
+                const closed = await poll(noRowInputs, Boolean, 3000);
+                await settle(300); // a commit that was not meant to happen would have landed by now
+                const stored = (await storedAccount(ctx.idB))?.label ?? null;
+                const shown = (await h.ev(CA_ROWS)).find((x) => x.id === ctx.idB)?.label ?? null;
+                cancelled.push({ name, opened, closed, stored, shown });
+            }
+        } finally {
+            await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false });
         }
-        await poll(() => h.ev(`!!document.querySelector("[data-claude-account-paste-token] input")`), Boolean);
-        await h.ev(caSetInput("input[data-claude-account-paste-label]", "Fixture C"));
-        await h.ev(caSetInput("[data-claude-account-paste-token] input", "sk-ant-api03-bad"));
-        await h.ev(caEnter("[data-claude-account-paste-token] input"));
+        rec(
+            "19. Rename cancels on Esc and on an empty name",
+            cancelled.length === cancelCases.length &&
+                cancelled.every((c) => c.opened === true && c.closed === true && c.stored === "Fixture B" && c.shown === "Fixture B"),
+            JSON.stringify(cancelled)
+        );
+
+        const menuOpen17 = await openMenu(ctx.idB);
+        const sub17 = await openSameAs();
+        await h.shot(`cdp-shots/${CA}-menu.png`);
+        const offered = await h.ev(caMenuHas("fixture@example.com"));
+        await h.ev(caMenuClick("fixture@example.com"));
+        const stored17 = await poll(() => storedAccount(ctx.idB), (a) => a?.email === "fixture@example.com");
+        const line17 = await poll(() => h.ev(caEmailLine(ctx.idB)), (v) => v === "fixture@example.com");
+        const reopened = (await openMenu(ctx.idB)) && (await openSameAs());
+        const ticked = { email: await h.ev(caMenuChecked("fixture@example.com")), none: await h.ev(caMenuChecked("None")) };
+        await closeMenu();
+        rec(
+            "17. Same account as… sets the email, and it shows under the name",
+            menuOpen17 === true &&
+                sub17 === true &&
+                offered === true &&
+                stored17?.email === "fixture@example.com" &&
+                line17 === "fixture@example.com" &&
+                reopened === true &&
+                ticked.email === true &&
+                ticked.none === false,
+            JSON.stringify({ menuOpen17, sub17, offered, stored: stored17?.email, line17, reopened, ticked })
+        );
+
+        const emailIn = selB("email-input");
+        const menuOpen18 = (await openMenu(ctx.idB)) && (await openSameAs());
+        await h.ev(caMenuClick("Other email…"));
+        const emailInput = await poll(() => h.ev(`!!document.querySelector(${JSON.stringify(emailIn)})`), Boolean);
+        await h.ev(caSetInput(emailIn, "other@example.com"));
+        await h.ev(caEnter(emailIn));
+        const stored18 = await poll(() => storedAccount(ctx.idB), (a) => a?.email === "other@example.com");
+        const line18 = await poll(() => h.ev(caEmailLine(ctx.idB)), (v) => v === "other@example.com");
+        const menuNone = (await openMenu(ctx.idB)) && (await openSameAs());
+        await h.ev(caMenuClick("None"));
+        const cleared = await poll(() => storedAccount(ctx.idB), (a) => (a?.email ?? "") === "");
+        const lineGone = await poll(() => h.ev(caEmailLine(ctx.idB)), (v) => v === null);
+        rec(
+            "18. Other email… takes a typed email, and None clears it",
+            menuOpen18 === true &&
+                emailInput === true &&
+                stored18?.email === "other@example.com" &&
+                line18 === "other@example.com" &&
+                menuNone === true &&
+                (cleared?.email ?? "") === "" &&
+                lineGone === null,
+            JSON.stringify({ menuOpen18, emailInput, stored18: stored18?.email, line18, menuNone, cleared: cleared?.email ?? "", lineGone })
+        );
+
+        // --- paste-token ---
+        // a helper tab left by a run that stops inside the Add dialog is found against this baseline
+        const tabs0 = await caTabIds(h);
+        ctx.workspaceId = tabs0.workspaceId;
+        ctx.tabIds = tabs0.tabIds;
+        const before = await list();
+        const termUp6 = await openAddDialog();
+        await h.ev(`document.querySelector("[data-claude-signin-paste]")?.click()`);
+        await poll(() => h.ev(`!!document.querySelector("input[data-claude-signin-token]")`), Boolean);
+        await h.ev(caSetInput("input[data-claude-signin-token]", "sk-ant-api03-bad"));
+        await h.ev(caEnter("input[data-claude-signin-token]"));
         const badError = await poll(
-            () => h.ev(`document.querySelector("[data-claude-account-error]")?.textContent ?? null`),
+            () => h.ev(`document.querySelector("[data-claude-signin-paste-error]")?.textContent ?? null`),
             (v) => v != null
         );
+        const keptToken = await h.ev(`document.querySelector("input[data-claude-signin-token]")?.value ?? null`);
         const afterBad = await list();
+        await h.shot(`cdp-shots/${CA}-paste.png`);
         rec(
-            "6. a token that is not a setup-token is refused with the reason, and nothing is added",
-            badError != null && afterBad.accounts.length === before.accounts.length,
-            JSON.stringify({ badError, before: before.accounts.length, after: afterBad.accounts.length })
+            "6. a token that is not a setup-token is refused with the reason under the field, which keeps the token, and nothing is added",
+            badError != null &&
+                keptToken === "sk-ant-api03-bad" &&
+                afterBad.accounts.length === before.accounts.length,
+            JSON.stringify({ termUp6, badError, keptToken, before: before.accounts.length, after: afterBad.accounts.length })
         );
-        await h.ev(caSetInput("[data-claude-account-paste-token] input", "sk-ant-oat01-fixtureC"));
-        await h.ev(caEnter("[data-claude-account-paste-token] input"));
-        const r6 = await poll(rows, (r) => r.some((x) => x.label === "Fixture C"));
-        const goodError = await h.ev(`!!document.querySelector("[data-claude-account-error]")`);
-        const idC = (await list()).accounts.find((a) => a.label === "Fixture C")?.id ?? null;
+        await h.ev(caSetInput("input[data-claude-signin-token]", "sk-ant-oat01-fixtureC"));
+        await h.ev(caEnter("input[data-claude-signin-token]"));
+        const nameField = await poll(() => h.ev(`!!document.querySelector("input[data-claude-signin-label]")`), Boolean);
+        const nameHead = await h.ev(caDialogHead(CA_SIGNIN));
+        // --- the Name step offers Same account as ---
+        const same = await h.ev(`(() => {
+            const s = document.querySelector("select[data-claude-signin-same]");
+            if (!s) return null;
+            return { first: s.options[0]?.textContent.trim() ?? null, options: [...s.options].map((o) => o.textContent.trim()) };
+        })()`);
         rec(
-            "7. a setup-token adds a fourth row, Fixture C, with no error",
-            r6.length === 4 + ctx.preIds.length && idC != null && r6.some((x) => x.id === idC && x.label === "Fixture C") && !goodError,
-            JSON.stringify({ rows: r6, error: goodError })
+            "22. the Name step offers Same account as, None first",
+            nameField === true &&
+                same != null &&
+                same.first === "None" &&
+                same.options.includes("fixture@example.com"),
+            JSON.stringify({ nameField, same })
+        );
+        await h.ev(caSetInput("input[data-claude-signin-label]", "Fixture C"));
+        await h.shot(`cdp-shots/${CA}-name.png`);
+        await h.ev(caClickButton(CA_SIGNIN, "Done"));
+        const r6 = await poll(rows, (r) => r.some((x) => x.label === "Fixture C"));
+        const dialogGone7 = await poll(() => h.ev(`!!${CA_SIGNIN}`), (v) => !v);
+        const idC = (await list()).accounts.find((a) => a.label === "Fixture C")?.id ?? null;
+        const rowC = r6.find((x) => x.id === idC);
+        rec(
+            "7. a setup-token reaches the Name step; naming it Fixture C adds a fourth row that has not been used, and the dialog closes",
+            nameHead?.title === "Name this account" &&
+                r6.length === 4 + ctx.preIds.length &&
+                idC != null &&
+                rowC?.label === "Fixture C" &&
+                rowC.text.includes("Not used yet") &&
+                dialogGone7 === false,
+            JSON.stringify({ nameHead, rows: r6, dialogOpen: dialogGone7 })
         );
 
         // --- rename ---
-        const renameSel = `[data-claude-account-rename="${idC}"] input`;
+        await poll(rows, (r) => r.some((x) => x.id === idC));
+        await menuPick(idC, "Rename");
+        const renameSel = `[data-claude-account-rename-input="${idC}"]`;
+        await poll(() => h.ev(`!!document.querySelector(${JSON.stringify(renameSel)})`), Boolean);
         await h.ev(caSetInput(renameSel, "Fixture C2"));
         await h.ev(caEnter(renameSel));
         const renamed = await poll(list, (l) => l.accounts.some((a) => a.id === idC && a.label === "Fixture C2"));
         rec(
-            "8. renaming C inline stores the new label",
+            "8. renaming C from its ⋯ menu stores the new label",
             renamed.accounts.some((a) => a.id === idC && a.label === "Fixture C2"),
             JSON.stringify(renamed.accounts)
         );
 
         // --- remove ---
-        await h.ev(`document.querySelector('[data-claude-account-remove="${idC}"]')?.click()`);
+        await poll(rows, (r) => r.some((x) => x.id === idC && x.label === "Fixture C2"));
+        await menuPick(idC, "Remove");
         const confirmC = await poll(() => h.ev(`!!${CA_CONFIRM}`), Boolean);
+        const confirmTextC = await h.ev(CA_CONFIRM_TEXT);
         await h.ev(caClickButton(CA_CONFIRM, "Remove"));
         const r8 = await poll(rows, (r) => !r.some((x) => x.id === idC));
         rec(
-            "9. Remove asks through a confirm dialog, and confirming removes C",
-            confirmC === true && !r8.some((x) => x.id === idC) && !(await list()).accounts.some((a) => a.id === idC),
-            JSON.stringify({ confirm: confirmC, rows: r8 })
+            "9. Remove asks through a confirm dialog (no /login sentence: C is not active), and confirming removes C",
+            confirmC === true &&
+                confirmTextC === 'Remove "Fixture C2" from this machine? Its token is deleted with it.' &&
+                !r8.some((x) => x.id === idC) &&
+                !(await list()).accounts.some((a) => a.id === idC),
+            JSON.stringify({ confirm: confirmC, confirmTextC, rows: r8 })
         );
         await h.ev(`${caRow(ctx.idB)}?.click()`);
         await poll(setting, (v) => v === ctx.idB);
         await settle(400);
         await dismissRestart();
-        await h.ev(`document.querySelector('[data-claude-account-remove="${ctx.idB}"]')?.click()`);
+        await menuPick(ctx.idB, "Remove");
         const confirmB = await poll(() => h.ev(`!!${CA_CONFIRM}`), Boolean);
+        const confirmTextB = await h.ev(CA_CONFIRM_TEXT);
         await h.ev(caClickButton(CA_CONFIRM, "Remove"));
         const r9 = await poll(
             rows,
@@ -20454,13 +20791,63 @@ const settingsClaudeAccount = {
         const afterB = await poll(list, (l) => l.active === "");
         const settingB = await setting();
         rec(
-            "10. removing the active account B puts Default back, in the radios, the setting and wavesrv",
+            "10. removing the active account B asks with the /login sentence, then puts Default back, in the radios, the setting and wavesrv",
             confirmB === true &&
+                confirmTextB ===
+                    'Remove "Fixture B" from this machine? Its token is deleted with it. New agents will run on your /login account.' &&
                 !r9.some((x) => x.id === ctx.idB) &&
                 r9.find((x) => x.id === "default")?.checked === true &&
                 settingB === "" &&
                 afterB.active === "",
-            JSON.stringify({ rows: r9, setting: settingB, active: afterB.active })
+            JSON.stringify({ confirmTextB, rows: r9, setting: settingB, active: afterB.active })
+        );
+
+        // --- restart dialog: the guard when wavesrv has not applied the account ---
+        // Selecting A offers the three agents; the setting then goes back to Default behind the dialog's back, and
+        // wavesrv applies that as it did for step 10, so a resume would run on the wrong account. The fixture agents
+        // have no real block (restartOnAccount would fail them with "block not found"), so an attempt would show a
+        // per-row error or "resumed"; the guard stops it before either.
+        const readRestartRows = `(() => {
+            const d = ${CA_RESTART};
+            if (!d) return null;
+            return [...d.querySelectorAll("[data-restart-row]")].map((r) => ({
+                id: r.dataset.restartRow,
+                checked: r.querySelector('input[type="checkbox"]')?.checked ?? null,
+                resumed: /\\bresumed\\b/.test(r.textContent),
+                error: r.querySelector("[data-restart-error]")?.textContent.trim() ?? null,
+            }));
+        })()`;
+        await h.ev(`${caRow(ctx.idA)}?.click()`);
+        await poll(setting, (v) => v === ctx.idA);
+        await poll(list, (l) => l.active === ctx.idA);
+        const guardOpen = await poll(() => h.ev(readRestartRows), (v) => v != null && v.length > 0);
+        await h.rpc("setconfig", { [CA_SETTING]: "" });
+        await poll(setting, (v) => v === "");
+        const guardApplied = await poll(list, (l) => l.active === "");
+        await h.ev(caClickButton(CA_RESTART, "Resume selected"));
+        const guardErrors = await poll(
+            () => h.ev(`[...document.querySelectorAll("[data-restart-error]")].map((e) => e.textContent.trim())`),
+            (v) => v.length > 0
+        );
+        const guardRows = await h.ev(readRestartRows);
+        const guardStillOpen = await h.ev(`!!${CA_RESTART}`);
+        await h.ev(caClickButton(CA_RESTART, "Later"));
+        const guardClosed = await poll(() => h.ev(`!!${CA_RESTART}`), (v) => !v);
+        const guardSetting = await setting();
+        rec(
+            "23. Resume selected refuses when wavesrv has not applied the account: the error says so, and no agent is resumed",
+            guardOpen?.length === 3 &&
+                guardApplied.active === "" &&
+                guardErrors.length === 1 &&
+                guardErrors[0] ===
+                    "arcterm has not switched to this account yet (is its token still valid?). No agent was resumed." &&
+                guardStillOpen === true &&
+                guardRows?.length === 3 &&
+                guardRows.every((r) => r.resumed === false && r.error === null) &&
+                guardRows.find((r) => r.id === "fx-ca-idle")?.checked === true &&
+                guardClosed === false &&
+                guardSetting === "",
+            JSON.stringify({ guardOpen, active: guardApplied.active, guardErrors, guardRows, guardClosed, guardSetting })
         );
 
         // --- usage-follows-account (Default) ---
@@ -20484,22 +20871,22 @@ const settingsClaudeAccount = {
         ctx.tabIds = tabs.tabIds;
         const sameTabs = async () => JSON.stringify((await caTabIds(h)).tabIds) === JSON.stringify(ctx.tabIds);
         const accountsBefore = (await list()).accounts.map((a) => a.id).sort();
-        await h.ev(caSetCmd(CA_IDLE_CMD));
-        await h.ev(`document.querySelector("[data-claude-account-signin]")?.click()`);
-        const term = await poll(
-            () => h.ev(`!!document.querySelector("[data-claude-signin-modal] [data-claude-signin-term] .xterm")`),
-            Boolean,
-            20000
-        );
+        const term = await openAddDialog();
         const helperTabs = (await caTabIds(h)).tabIds.filter((id) => !ctx.tabIds.includes(id));
         const tree = await h.ev(`(() => {
             const t = document.querySelector("[data-agent-tree]");
             return t ? { present: true, signin: t.textContent.includes("Claude sign-in") } : { present: false };
         })()`);
+        const signinHead = await h.ev(caDialogHead(CA_SIGNIN));
         rec(
-            "12. + Sign in to account opens a live terminal in a helper tab the session sidebar leaves out",
-            term === true && helperTabs.length === 1 && tree.present === true && tree.signin === false,
-            JSON.stringify({ term, helperTabs, tree })
+            "12. + Add account opens a live terminal in a helper tab the session sidebar leaves out",
+            term === true &&
+                helperTabs.length === 1 &&
+                tree.present === true &&
+                tree.signin === false &&
+                signinHead?.title === "Add a Claude account" &&
+                signinHead.line === "Sign in in the browser as the account to add. arcterm picks up the token itself.",
+            JSON.stringify({ term, helperTabs, tree, signinHead })
         );
         await h.shot(`cdp-shots/${CA}-signin.png`);
         await h.ev(`document.querySelector("[data-claude-signin-cancel]")?.click()`);
@@ -20514,16 +20901,44 @@ const settingsClaudeAccount = {
             JSON.stringify({ modalOpen: modalGone, tabsBack, accountsBefore, accountsCancel })
         );
 
+        // --- signin-back ---
+        const term21 = await openAddDialog();
+        const helper1 = (await caTabIds(h)).tabIds.filter((id) => !ctx.tabIds.includes(id));
+        await h.ev(`document.querySelector("[data-claude-signin-paste]")?.click()`);
+        await poll(() => h.ev(`!!document.querySelector("input[data-claude-signin-token]")`), Boolean);
+        const closedOnPaste = await poll(sameTabs, Boolean);
+        await h.ev(`document.querySelector("[data-claude-signin-back]")?.click()`);
+        const term21b = await poll(
+            () => h.ev(`!!document.querySelector("[data-claude-signin-modal] [data-claude-signin-term] .xterm")`),
+            Boolean,
+            20000
+        );
+        const helper2 = (await caTabIds(h)).tabIds.filter((id) => !ctx.tabIds.includes(id));
+        await h.ev(`document.querySelector("[data-claude-signin-cancel]")?.click()`);
+        await poll(() => h.ev(`!!${CA_SIGNIN}`), (v) => !v);
+        const tabsBack21 = await poll(sameTabs, Boolean);
+        rec(
+            "21. Back to sign-in closes the old helper tab and starts a fresh one",
+            term21 === true &&
+                helper1.length === 1 &&
+                closedOnPaste === true &&
+                term21b === true &&
+                helper2.length === 1 &&
+                helper2[0] !== helper1[0] &&
+                tabsBack21 === true,
+            JSON.stringify({ term21, helper1, closedOnPaste, term21b, helper2, tabsBack21 })
+        );
+
         // --- signin-token ---
         await h.ev(caSetCmd(CA_TOKEN_CMD));
-        await h.ev(`document.querySelector("[data-claude-account-signin]")?.click()`);
+        await h.ev(`document.querySelector("[data-claude-account-add]")?.click()`);
         const labelField = await poll(
             () => h.ev(`!!document.querySelector("input[data-claude-signin-label]")`),
             Boolean,
             20000
         );
         await h.ev(caSetInput("input[data-claude-signin-label]", "Fixture S"));
-        await h.ev(caClickButton(CA_SIGNIN, "Save"));
+        await h.ev(caClickButton(CA_SIGNIN, "Done"));
         const savedS = await poll(list, (l) => l.accounts.some((a) => a.label === "Fixture S"));
         const rowS = await poll(rows, (r) => r.some((x) => x.label === "Fixture S"));
         const signinGone = await poll(() => h.ev(`!!${CA_SIGNIN}`), (v) => !v);
