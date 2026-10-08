@@ -422,12 +422,22 @@ async function loadIndex(p: CodeProject): Promise<void> {
 }
 
 export async function refreshIndex(): Promise<void> {
+    if (globalStore.get(codeProjectAtom) == null) {
+        return;
+    }
+    globalStore.set(codeIndexAtom, null);
+    await refetchIndex();
+}
+
+// After a create, rename or delete: the same refetch, but the tree on screen stays until the new one lands. Blanking
+// it dropped the body to its skeleton, and the surface's mount effect read the empty index as a project never loaded
+// and selected it again, which closed the open file and collapsed every folder: the whole view seemed to reload.
+async function refetchIndex(): Promise<void> {
     const p = globalStore.get(codeProjectAtom);
     if (p == null) {
         return;
     }
     indexCache.delete(p.path);
-    globalStore.set(codeIndexAtom, null);
     globalStore.set(codeIndexErrorAtom, null);
     // the open ignored directories are listed again, through listIgnoredDirs, once the index lands
     globalStore.set(codeIgnoredListedAtom, new Map());
@@ -607,7 +617,7 @@ function errorText(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }
 
-// Every mutation is RPC -> refreshIndex(), and refreshIndex reloads status too (see loadIndex).
+// Every mutation is RPC -> refetchIndex(), which reloads status too (see loadIndex).
 // Nothing optimistically patches the tree: splicing a path into a cached array and hoping git
 // agrees is exactly the drift the single-row-list rule exists to prevent. The index is refreshed
 // even when the RPC failed, so the tree shows what is actually there rather than what we intended.
@@ -631,7 +641,7 @@ export async function createEntry(dir: string, name: string, isDir: boolean): Pr
         ok = false;
         globalStore.set(codeMutateErrorAtom, `Could not create ${rel}: ${errorText(e)}`);
     }
-    await refreshIndex();
+    await refetchIndex();
     if (!ok) {
         return;
     }
@@ -671,7 +681,7 @@ export async function renamePath(rel: string, newName: string): Promise<void> {
     if (ok) {
         carryRename(project, rel, next);
     }
-    await refreshIndex();
+    await refetchIndex();
 }
 
 function carryRename(project: CodeProject, rel: string, next: string): void {
@@ -719,7 +729,7 @@ export async function deletePath(rel: string, isDir: boolean): Promise<void> {
         globalStore.set(codeFileAtom, { kind: "none" });
         globalStore.set(codeCursorAtom, null);
     }
-    await refreshIndex();
+    await refetchIndex();
 }
 
 function underOrEqual(path: string, dir: string): boolean {

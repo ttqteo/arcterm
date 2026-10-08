@@ -21,6 +21,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Deleting, creating or renaming a file in Code no longer resets the whole view: the file you were reading, the open
+  folders and the tree's scroll stay where they were.
 - Claude sessions are saved again after arcterm is reinstalled or reopened from an agent's terminal (`task install`
   on a Mac): before, every session started or resumed in that arcterm kept no transcript or title, and vanished
   from the sidebar and Conversation History once it ended.

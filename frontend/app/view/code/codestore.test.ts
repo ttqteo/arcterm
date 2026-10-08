@@ -2,8 +2,33 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
-import { canRestoreProject, codeBodyPhase, registeredProjects } from "./codestore";
+import { globalStore } from "@/app/store/jotaiStore";
+import { describe, expect, it, vi } from "vitest";
+import {
+    canRestoreProject,
+    codeBodyPhase,
+    codeIndexAtom,
+    codeProjectAtom,
+    createEntry,
+    deletePath,
+    registeredProjects,
+    renamePath,
+} from "./codestore";
+
+// the tree's mutations go to wavesrv; here the repo is a list of paths the next ls-files answers with
+const repo = vi.hoisted(() => ({ files: [] as string[] }));
+vi.mock("@/app/store/wshclientapi", () => ({
+    RpcApi: {
+        FileDeleteCommand: async () => {},
+        FileCreateCommand: async () => {},
+        FileMoveCommand: async () => {},
+        GitListFilesCommand: async () => ({ files: repo.files, isrepo: true }),
+        GitChangesCommand: async () => ({ statusz: "", numstat: "" }),
+        GitListWorktreesCommand: async () => ({ worktrees: [] }),
+        FileReadCommand: async () => ({ data64: "" }),
+        FileInfoCommand: async () => ({ size: 0, modtime: 0 }),
+    },
+}));
 
 const registry = {
     alpha: { path: "C:\\repos\\alpha" },
@@ -72,5 +97,33 @@ describe("codeBodyPhase", () => {
         expect(codeBodyPhase({ ...base, registry: {} })).toBe("ready");
         expect(codeBodyPhase({ ...base, registry: {}, index: null })).toBe("loading");
         expect(codeBodyPhase({ ...base, registry: undefined })).toBe("ready");
+    });
+});
+
+describe("a create, rename or delete in the tree", () => {
+    const alpha = { name: "alpha", path: "/repos/alpha" };
+    // Every value the index takes while the mutation runs. A null one is the bug: the body drops to its skeleton,
+    // and the surface's mount effect reads the empty index as a project never loaded and selects it again, which
+    // closes the open file and collapses every folder.
+    const indexValuesDuring = async (mutate: () => Promise<void>) => {
+        globalStore.set(codeProjectAtom, alpha);
+        globalStore.set(codeIndexAtom, { paths: ["a.ts", "b.ts"], ignored: [], isRepo: true, truncated: false });
+        const seen: (string[] | null)[] = [];
+        const unsub = globalStore.sub(codeIndexAtom, () => seen.push(globalStore.get(codeIndexAtom)?.paths ?? null));
+        try {
+            await mutate();
+        } finally {
+            unsub();
+        }
+        return seen;
+    };
+
+    it("keeps the listing on screen until the new one lands", async () => {
+        repo.files = ["b.ts"];
+        expect(await indexValuesDuring(() => deletePath("a.ts", false))).toEqual([["b.ts"]]);
+        repo.files = ["a.ts", "b.ts", "c.ts"];
+        expect(await indexValuesDuring(() => createEntry("", "c.ts", false))).toEqual([["a.ts", "b.ts", "c.ts"]]);
+        repo.files = ["a2.ts", "b.ts"];
+        expect(await indexValuesDuring(() => renamePath("a.ts", "a2.ts"))).toEqual([["a2.ts", "b.ts"]]);
     });
 });
