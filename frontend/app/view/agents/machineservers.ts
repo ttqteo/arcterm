@@ -88,6 +88,14 @@ function resolveRow(s: DevServerRow, agents: MachineAgent[], bgTasks: Record<str
                     return { ...base, badge: agentBadge(agentId), log: { agentId, task } };
                 }
             }
+            // "no owner" flags a stray server in a repo; outside one, an app whose launcher exited reads as itself
+            if (!s.repo) {
+                return {
+                    ...base,
+                    badge: { kind: "app", text: exeName(s.name) },
+                    stopConfirm: `Stop ${exeName(s.name)}?`,
+                };
+            }
             return { ...base, badge: NO_OWNER };
     }
 }

@@ -8,17 +8,18 @@
 // exit animation can play; a `{open ? <PopoverReveal/> : null}` caller defeats AnimatePresence.
 
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { popoverReveal } from "./motiontokens";
 
 interface PopoverRevealProps {
     open: boolean;
     origin: string; // CSS transform-origin, e.g. "top right" / "bottom left"
     className?: string; // caller's positioning + styling classes for the panel
+    style?: CSSProperties; // positioning measured at runtime (an anchor's rect), beside the classes
     children: ReactNode;
 }
 
-export function PopoverReveal({ open, origin, className, children }: PopoverRevealProps) {
+export function PopoverReveal({ open, origin, className, style, children }: PopoverRevealProps) {
     return (
         <MotionConfig reducedMotion="user">
             <AnimatePresence>
@@ -28,7 +29,7 @@ export function PopoverReveal({ open, origin, className, children }: PopoverReve
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        style={{ transformOrigin: origin }}
+                        style={{ ...style, transformOrigin: origin }}
                         className={className}
                     >
                         {children}

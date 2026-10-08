@@ -1,7 +1,8 @@
 // Verify for this repo's engine plans. At each merge the engine sets ARC_VERIFY_CHANGED to a file listing the
 // paths the merge changed; this tests only what those paths can break. Unset (the final stage, or a human), it
-// runs everything the patterns name. A failed Go test that passes when rerun alone is flaky: the run passes, and
-// the test is appended to the file ARC_VERIFY_FLAKY names, so the engine reports it instead of a clean pass.
+// runs everything the patterns name. A failed Go or vitest test that passes when rerun alone is flaky: the run
+// passes, and the test is appended to the file ARC_VERIFY_FLAKY names, so the engine reports it instead of a clean
+// pass.
 //
 // usage: node scripts/verify.mjs <go package pattern>...
 
@@ -174,15 +175,21 @@ export function goTestEnv(env, platform, arch) {
     return { ...env, CGO_ENABLED: "1", CC: `zig cc -target ${target}` };
 }
 
-function run(cmd, args, env = process.env) {
+// runStatus runs cmd with its output streamed and returns its exit status; a command that could not start ends Verify.
+function runStatus(cmd, args, env = process.env) {
     console.log(`verify: ${cmd} ${args.join(" ")}`);
     const r = spawnSync(cmd, args, { stdio: "inherit", env });
     if (r.error) {
         console.error(`verify: could not run ${cmd}: ${r.error.message}`);
         process.exit(1);
     }
-    if (r.status !== 0) {
-        process.exit(r.status ?? 1);
+    return r.status ?? 1;
+}
+
+function run(cmd, args, env = process.env) {
+    const status = runStatus(cmd, args, env);
+    if (status !== 0) {
+        process.exit(status);
     }
 }
 
@@ -271,6 +278,70 @@ async function rerunAlone(pkg, names, flaky, rerun, write) {
         return false;
     }
     flaky.push(...names.map((n) => `${pkg} ${n}`));
+    return true;
+}
+
+const XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const XML_ENTITY = /&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi;
+const TESTCASE = /<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g;
+
+function unescapeXml(s) {
+    return s.replace(XML_ENTITY, (m, e) => {
+        if (e[0] !== "#") {
+            return XML_ENTITIES[e.toLowerCase()];
+        }
+        const code = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    });
+}
+
+function xmlAttr(attrs, name) {
+    const m = attrs.match(new RegExp(`\\s${name}="([^"]*)"`));
+    return m ? unescapeXml(m[1]) : null;
+}
+
+// failedVitestTests reads vitest's JUnit report for the test cases that failed, each { file, name }, or returns
+// null when rerunning them alone cannot settle the failure: the report is missing or not XML, it names no failed
+// case (a crash, or a failure outside any test), or a failed case is a whole file's (vitest reports a collection
+// error as a case named for its file), so a rerun of the other files would hide it.
+export function failedVitestTests(xml) {
+    if (typeof xml !== "string") {
+        return null;
+    }
+    const failed = [];
+    for (const m of xml.matchAll(TESTCASE)) {
+        if (!/<(failure|error)\b/.test(m[2] ?? "")) {
+            continue;
+        }
+        const file = xmlAttr(m[1], "classname");
+        const name = xmlAttr(m[1], "name");
+        if (!file || !name || name === file) {
+            return null;
+        }
+        failed.push({ file, name });
+    }
+    return failed.length > 0 ? failed : null;
+}
+
+// failedVitestFiles is the test files of failedVitestTests, each once, or null when the failure is not one to rerun.
+export function failedVitestFiles(xml) {
+    const failed = failedVitestTests(xml);
+    return failed ? [...new Set(failed.map((t) => t.file))] : null;
+}
+
+// rerunVitestAlone is rerunAlone for vitest: it reruns the files of the failed tests once, in one process. Passing
+// alone, the tests timed out or collided with another file's on a loaded machine, so they are reported as flaky
+// rather than failing the merge; failing again, the failure is real. rerun takes the files and returns { ok }.
+export function rerunVitestAlone(failed, flaky, rerun, write) {
+    if (failed == null) {
+        return false;
+    }
+    const files = [...new Set(failed.map((t) => t.file))];
+    write(`verify: rerunning ${files.join(", ")} alone\n`);
+    if (!rerun(files).ok) {
+        return false;
+    }
+    flaky.push(...failed.map((t) => `${t.file} > ${t.name}`));
     return true;
 }
 
@@ -410,6 +481,31 @@ function capture(cmd, args, opts) {
 
 const VITEST = ["node_modules/vitest/vitest.mjs", "run"];
 const TSC = ["--stack-size=4000", "node_modules/typescript/lib/tsc.js", "--noEmit"];
+// vitest.config.ts has vitest write this JUnit report at the repo root
+const VITEST_REPORT = "test-results.xml";
+
+// runVitest runs vitest with args, its output streamed. A failed run is judged by the JUnit report: the failed test
+// files are rerun once, and passing alone they are reported as flaky, not as a failure.
+function runVitest(args) {
+    // a report left by an earlier run must not name the failures of this one
+    rmSync(VITEST_REPORT, { force: true });
+    const status = runStatus("node", args);
+    if (status === 0) {
+        return;
+    }
+    // read before the rerun overwrites it
+    let xml = null;
+    try {
+        xml = readFileSync(VITEST_REPORT, "utf8");
+    } catch {}
+    const flaky = [];
+    const rerun = (files) => ({ ok: runStatus("node", [...VITEST, ...files]) === 0 });
+    if (!rerunVitestAlone(failedVitestTests(xml), flaky, rerun, (s) => process.stdout.write(s))) {
+        process.exit(status);
+    }
+    console.log(`verify: flaky, failed and then passed when rerun alone: ${flaky.join(", ")}`);
+    reportFlaky(flaky, process.env);
+}
 
 async function main(patterns) {
     if (patterns.length === 0) {
@@ -420,7 +516,7 @@ async function main(patterns) {
     const changed = listFile ? readChangedFile(listFile) : null;
     if (!changed) {
         await goTest(patterns);
-        run("node", VITEST);
+        runVitest(VITEST);
         return;
     }
     const modulePath = readFileSync("go.mod", "utf8").match(/^module\s+(\S+)/m)[1];
@@ -440,15 +536,15 @@ async function main(patterns) {
         run("node", TSC);
     }
     if (plan.vitest === "all") {
-        run("node", VITEST);
+        runVitest(VITEST);
     } else if (Array.isArray(plan.vitest)) {
         // vitest related takes source files and runs the tests that import them; a deleted file is in no import
         // graph, so the tests that imported it are found only by running everything
         const present = plan.vitest.filter((p) => existsSync(p));
         if (present.length < plan.vitest.length) {
-            run("node", VITEST);
+            runVitest(VITEST);
         } else {
-            run("node", ["node_modules/vitest/vitest.mjs", "related", "--run", ...present]);
+            runVitest(["node_modules/vitest/vitest.mjs", "related", "--run", ...present]);
         }
     }
 }

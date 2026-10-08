@@ -36,6 +36,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
+import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
@@ -333,14 +334,27 @@ function RunCompleteLabel({ run }: { run: RunInfo }) {
 }
 
 // RunSubline is a run row's second line: a chip folding its workers away, and how far the plan is.
-function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean; live: number; leadless?: boolean }) {
+// a lead's second line: its workers chip and progress, then `trailing` (the lead's own badges) at its right end
+function RunSubline({
+    run,
+    open,
+    live,
+    leadless,
+    trailing,
+}: {
+    run: RunInfo;
+    open: boolean;
+    live: number;
+    leadless?: boolean;
+    trailing?: React.ReactNode;
+}) {
     if (run.dag == null) {
         // no dag means the lead judged the goal bounded and never submitted a plan, not that a plan is
         // still on its way — so the run's own status is the only truth here. Hardcoding "planning" left
         // a finished bounded run's lead row reading planning for good, the same misreading of an absent
         // dag the engine had in ShouldCloseOrchestratorLead.
         return (
-            <div className="mt-[3px] flex min-w-0 text-[10.5px] tabular-nums">
+            <div className="mt-[3px] flex min-w-0 items-center gap-[6px] text-[10.5px] tabular-nums">
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
@@ -348,6 +362,8 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
                         {runStatusView(run.status ?? "planning", run.land).label}
                     </span>
                 )}
+                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing}
             </div>
         );
     }
@@ -370,6 +386,8 @@ function RunSubline({ run, open, live, leadless }: { run: RunInfo; open: boolean
                 ) : (
                     <span className="truncate text-muted">{progress}</span>
                 )}
+                {trailing != null ? <span className="flex-1" /> : null}
+                {trailing}
             </div>
             <TaskStripBar run={run} />
         </>
@@ -408,6 +426,8 @@ function ParentRow({
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
+    // its last turn committed and you have read it: the row offers to close it (donesuggest.ts)
+    const done = doneSuggestion(agent, unreadCount);
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
     const settling = useSettle(agent.state === "idle");
 
@@ -472,9 +492,8 @@ function ParentRow({
               }
             : undefined;
 
-    // the canvas tag, then the state: words when it wants something, else its dot, tokens and age. They end a
-    // lead's first line, whose second holds its workers chip and progress; any other row's second line, so the
-    // name keeps the first line's full width
+    // the canvas tag, then the state: words when it wants something, else its dot, tokens and age. They end the
+    // row's second line (a lead's after its workers chip and progress), so the name keeps the first line's full width
     const badges = (
         <>
             <CanvasTag model={model} id={agent.id} />
@@ -512,8 +531,24 @@ function ParentRow({
                 </>
             ) : (
                 <>
-                    {/* the count stands in for an idle agent's grey dot; a working one keeps its pulse */}
-                    {mark || (unread && agent.state === "idle") ? null : (
+                    {/* the count stands in for an idle agent's grey dot, and so does the Close a finished one offers;
+                        a working one keeps its pulse */}
+                    {done ? (
+                        // the chip's click is its own: it must not select the row it closes
+                        <button
+                            type="button"
+                            data-agent-done={agent.id}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                confirmCloseSession(agent, model);
+                            }}
+                            title={DONE_TITLE}
+                            className="flex flex-none cursor-pointer items-center gap-[3px] rounded-[5px] border border-success/45 px-[5px] py-[1px] text-[10.5px] font-semibold text-success hover:border-success"
+                        >
+                            <Check size={10} strokeWidth={2.4} aria-hidden />
+                            Close
+                        </button>
+                    ) : mark || (unread && agent.state === "idle") ? null : (
                         <StatusDot
                             state={agent.state}
                             pulse={agent.state !== "idle"}
@@ -549,8 +584,7 @@ function ParentRow({
     return (
         <>
             {/* the runtime and name, then its model, a branch other than the default, its subagents, state, tokens
-                and age (a lead keeps its state, tokens and age beside its name, and its second line holds its
-                workers chip and progress) */}
+                and age (a lead's second line: its workers chip and progress, then its state, tokens and age) */}
             <div
                 onClick={select}
                 onDoubleClick={foldRow}
@@ -588,13 +622,12 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
-                        {/* a lead's second line holds its workers chip and progress, which need its full width */}
+                        {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
-                        {lead ? badges : null}
                     </div>
                 )}
                 {lead ? (
-                    <RunSubline run={lead.run} open={lead.open} live={lead.live} />
+                    <RunSubline run={lead.run} open={lead.open} live={lead.live} trailing={badges} />
                 ) : (
                     // under the name: its model, a branch other than the default, its subagents chip and its badges
                     <div className={cn(CONVERSATION_META, "mt-[3px]", UNDER_GLYPH)}>

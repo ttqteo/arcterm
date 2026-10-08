@@ -32,14 +32,16 @@ type Listener struct {
 
 // Server is one listening process the rail lists. One PID on several ports is one Server.
 type Server struct {
-	Pid             int32  `json:"pid"`
-	CreateMs        int64  `json:"createms"`
-	Ports           []int  `json:"ports"`
-	Name            string `json:"name"`
-	Cmdline         string `json:"cmdline"`
-	Cwd             string `json:"cwd"`
-	ByAgent         bool   `json:"byagent"`
-	LauncherCmdline string `json:"launchercmdline,omitempty"`
+	Pid             int32        `json:"pid"`
+	CreateMs        int64        `json:"createms"`
+	Ports           []int        `json:"ports"`
+	Name            string       `json:"name"`
+	Cmdline         string       `json:"cmdline"`
+	Cwd             string       `json:"cwd"`
+	ByAgent         bool         `json:"byagent"`
+	LauncherCmdline string       `json:"launchercmdline,omitempty"`
+	Repo            string       `json:"repo,omitempty"`  // ListAll: the git repo holding Cwd
+	Owner           *ServerOwner `json:"owner,omitempty"` // ListAll: what holds the process
 }
 
 // Select picks the servers that belong to an agent: a listener whose cwd is inside root, or one that descends from

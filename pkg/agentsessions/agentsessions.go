@@ -273,6 +273,9 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 	cmdByID := map[string]string{}
 	var firstTs, lastTs int64
 	var firstUser, lastAssistant string
+	// openAsk is the AskUserQuestion still waiting on the user: its tool_result or a new prompt closes it.
+	var openAsk string
+	askOpen := false
 	for _, rec := range recs {
 		if ts := parseTs(rec.Timestamp); ts > 0 {
 			if firstTs == 0 {
@@ -304,6 +307,7 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 					}
 					if b.Name == "AskUserQuestion" {
 						raw = append(raw, SessionEvent{Type: "asked", Ts: ts, Text: askText(b)})
+						openAsk, askOpen = b.ID, true
 					} else if b.Name == "Bash" && commitRe.MatchString(cmd) {
 						raw = append(raw, SessionEvent{Type: "committed", Ts: ts, Text: commitSubject(cmd)})
 					}
@@ -312,6 +316,7 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 		case "user":
 			var str string
 			if json.Unmarshal(rec.Message.Content, &str) == nil {
+				askOpen = false
 				if firstUser == "" {
 					firstUser = sessionTitle(str) // same unwrapping as the session title
 				}
@@ -322,8 +327,14 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 				continue
 			}
 			for _, b := range blocks {
-				if b.Type == "text" && firstUser == "" {
-					firstUser = sessionTitle(b.Text)
+				if b.Type == "text" {
+					askOpen = false
+					if firstUser == "" {
+						firstUser = sessionTitle(b.Text)
+					}
+				}
+				if b.Type == "tool_result" && b.ToolUseID == openAsk {
+					askOpen = false
 				}
 				if b.Type == "tool_result" && b.IsError && b.ToolUseID != "" {
 					cmd := cmdByID[b.ToolUseID]
@@ -343,7 +354,7 @@ func claudeEventsFrom(recs []claudeLine) sessionEvents {
 	if lastAssistant != "" {
 		finishedText = clipText(lastAssistant)
 	}
-	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText)
+	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText, askOpen)
 }
 
 type codexLine struct {
@@ -531,7 +542,7 @@ func extractCodexEvents(lines []string) sessionEvents {
 	if lastAssistant != "" {
 		finishedText = clipText(lastAssistant)
 	}
-	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText)
+	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText, false)
 }
 
 // stringContent returns trimmed text when message.content is a plain string (a human prompt).
@@ -615,11 +626,11 @@ func commitSubject(cmd string) string {
 	return "committed"
 }
 
-// assembleEvents sorts the raw events, derives status from the last real event, prepends a synthetic
+// assembleEvents sorts the raw events, derives status from askOpen (an ask the user has not answered), prepends a synthetic
 // "started" and (only for done sessions) appends a synthetic "finished", and computes duration.
 // a tool error does not fail a session: agents recover from nearly all of them, and a transcript scan
 // found the rest were almost all the user rejecting a call or a known client-side timeout.
-func assembleEvents(raw []SessionEvent, firstTs, lastTs int64, startedText, finishedText string) sessionEvents {
+func assembleEvents(raw []SessionEvent, firstTs, lastTs int64, startedText, finishedText string, askOpen bool) sessionEvents {
 	var real []SessionEvent
 	for _, e := range raw {
 		if e.Ts > 0 {
@@ -629,10 +640,8 @@ func assembleEvents(raw []SessionEvent, firstTs, lastTs int64, startedText, fini
 	sort.SliceStable(real, func(i, j int) bool { return real[i].Ts < real[j].Ts })
 
 	status := "done"
-	if n := len(real); n > 0 {
-		if real[n-1].Type == "asked" {
-			status = "waiting"
-		}
+	if askOpen {
+		status = "waiting"
 	}
 
 	var events []SessionEvent
@@ -972,7 +981,7 @@ func extractOpencodeEvents(data *opencodeSessionData) sessionEvents {
 	if lastAssistant != "" {
 		finishedText = lastAssistant
 	}
-	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText)
+	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText, false)
 }
 
 // piProvider scans Pi's native session storage. root is …/pi/agent/sessions; walkCandidates walks its

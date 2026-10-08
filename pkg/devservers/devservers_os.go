@@ -11,21 +11,16 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 
 	"github.com/wavetermdev/waveterm/pkg/agentobserve"
+	"github.com/wavetermdev/waveterm/pkg/memusage"
 )
 
 // List returns the servers listening in the project at cwd, and those started by the agent in block blockId. An
 // empty cwd falls back to the agent process's cwd. A process the OS won't describe (another user's, say) is read as
 // far as it allows: one whose cwd can't be read just isn't in the project.
 func List(ctx context.Context, cwd, blockId string) ([]Server, error) {
-	conns, err := net.ConnectionsWithContext(ctx, "tcp")
+	listeners, err := readListeners(ctx)
 	if err != nil {
 		return nil, err
-	}
-	var listeners []Listener
-	for _, c := range conns {
-		if c.Status == "LISTEN" && c.Pid > 0 {
-			listeners = append(listeners, Listener{Pid: c.Pid, Port: c.Laddr.Port})
-		}
 	}
 	if len(listeners) == 0 {
 		return []Server{}, nil
@@ -53,6 +48,49 @@ func List(ctx context.Context, cwd, blockId string) ([]Server, error) {
 		return nil, err
 	}
 	return Select(root, agentPid, procs, listeners), nil
+}
+
+// readListeners is every listening TCP socket with a known pid.
+func readListeners(ctx context.Context) ([]Listener, error) {
+	conns, err := net.ConnectionsWithContext(ctx, "tcp")
+	if err != nil {
+		return nil, err
+	}
+	var listeners []Listener
+	for _, c := range conns {
+		if c.Status == "LISTEN" && c.Pid > 0 {
+			listeners = append(listeners, Listener{Pid: c.Pid, Port: c.Laddr.Port})
+		}
+	}
+	return listeners, nil
+}
+
+// machine is ListAll's reader; it keeps its cache between polls
+var machine = &machineLister{
+	listeners: readListeners,
+	table:     memusage.ReadTable,
+	createMs: func(ctx context.Context, pid int32) (int64, bool) {
+		ct, err := (&process.Process{Pid: pid}).CreateTimeWithContext(ctx)
+		return ct, err == nil
+	},
+	detail: func(ctx context.Context, pid int32) (Proc, bool) {
+		p := &process.Process{Pid: pid}
+		name, err := p.NameWithContext(ctx)
+		if err != nil {
+			return Proc{}, false
+		}
+		out := Proc{Pid: pid, Name: name}
+		out.Cmdline, _ = p.CmdlineWithContext(ctx)
+		out.Cwd, _ = p.CwdWithContext(ctx)
+		return out, true
+	},
+	repos: newRepoFinder(),
+}
+
+// ListAll is every listening process the account can read, with its repo and owner. holders maps arcterm blocks'
+// shell pids to their blocks.
+func ListAll(ctx context.Context, holders map[int32]ServerOwner) ([]Server, error) {
+	return machine.list(ctx, holders)
 }
 
 // readProcs reads every listener's process and its ancestors, up to maxAncestorHops above each. A process is read

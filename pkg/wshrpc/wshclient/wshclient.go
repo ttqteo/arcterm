@@ -726,6 +726,12 @@ func LandRunCommand(w *wshutil.WshRpc, data wshrpc.CommandLandRunData, opts *wsh
 	return resp, err
 }
 
+// command "listalldevservers", wshserver.ListAllDevServersCommand
+func ListAllDevServersCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandListDevServersRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandListDevServersRtnData](w, "listalldevservers", nil, opts)
+	return resp, err
+}
+
 // command "listbranches", wshserver.ListBranchesCommand
 func ListBranchesCommand(w *wshutil.WshRpc, data wshrpc.CommandListBranchesData, opts *wshrpc.RpcOpts) (wshrpc.CommandListBranchesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[wshrpc.CommandListBranchesRtnData](w, "listbranches", data, opts)

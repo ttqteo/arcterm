@@ -60,6 +60,13 @@ export interface ConsumersView {
     totalBytes: number;
     groups: ConsumerGroup[];
     own: OwnUsage[];
+    appBytes?: number; // the whole app: its own processes and every agent; absent while nothing is read
+}
+
+// what the reading counted, or undefined when it counted nothing
+function sumRead(values: (number | undefined)[]): number | undefined {
+    const read = values.filter((v): v is number => v !== undefined);
+    return read.length === 0 ? undefined : read.reduce((a, b) => a + b, 0);
 }
 
 function weight(r: ConsumerRow, sort: ConsumersSort): number | undefined {
@@ -128,16 +135,20 @@ export function buildConsumers(
         g.rows.sort(byWeight(sort));
     }
     ordered.sort((a, b) => byWeight(sort)(a.rows[0], b.rows[0]));
+    const own: OwnUsage[] = [
+        { label: "Interface", bytes: data.interfacebytes },
+        { label: "Server", bytes: data.serverbytes },
+        { label: "Host", bytes: data.hostbytes },
+        { label: "Terminals", bytes: data.terminalsbytes },
+    ];
     return {
         freeBytes: data.availablebytes,
         totalBytes: data.totalbytes,
         groups: ordered,
-        own: [
-            { label: "Interface", bytes: data.interfacebytes },
-            { label: "Server", bytes: data.serverbytes },
-            { label: "Host", bytes: data.hostbytes },
-            { label: "Terminals", bytes: data.terminalsbytes },
-        ],
+        own,
+        // Own leaves the agents out (Terminals is wavesrv's tree minus them), so they are added back, one the roster
+        // has not seen yet included: it is still RAM the app holds
+        appBytes: sumRead([...own.map((o) => o.bytes), ...(data.agents ?? []).map((c) => c.rambytes)]),
     };
 }
 
@@ -161,6 +172,37 @@ export function holdOrder(view: ConsumersView, held: string[] | null): { view: C
 }
 
 /** "300 MB" under a gigabyte, "2.5 GB" above. */
+export interface Box {
+    top: number;
+    bottom: number;
+    right: number;
+}
+
+export interface Placement {
+    right: number;
+    top?: number;
+    bottom?: number;
+    origin: "top right" | "bottom right";
+}
+
+export const PANEL_WIDTH = 520;
+const PANEL_GAP = 6; // between the opener and the panel
+const PANEL_MARGIN = 8; // the nearest it comes to the window's edge
+
+/** Where the panel hangs: its right edge on its opener's right edge, above an opener in the window's lower half (the
+ * footer) and below one in the upper half, kept inside the window. No opener (opened from code) keeps the footer's
+ * right end. */
+export function panelPlacement(opener: Box | null, view: { width: number; height: number }): Placement {
+    if (opener == null) {
+        return { right: 16, bottom: 42, origin: "bottom right" };
+    }
+    const widest = Math.max(PANEL_MARGIN, view.width - PANEL_WIDTH - PANEL_MARGIN);
+    const right = Math.min(Math.max(view.width - opener.right, PANEL_MARGIN), widest);
+    return opener.top > view.height / 2
+        ? { right, bottom: view.height - opener.top + PANEL_GAP, origin: "bottom right" }
+        : { right, top: opener.bottom + PANEL_GAP, origin: "top right" };
+}
+
 export function ramLabel(bytes: number): string {
     return bytes < 2 ** 30 ? `${Math.round(bytes / 2 ** 20)} MB` : formatGB(bytes);
 }

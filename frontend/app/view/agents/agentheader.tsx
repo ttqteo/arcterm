@@ -16,19 +16,32 @@ import { openOrPeek } from "@/app/view/jarvis/openref";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronLeft, CircleStop, Columns2, Maximize2, Minimize2, PanelRight, Plus, Workflow, X } from "lucide-react";
+import {
+    Check,
+    ChevronLeft,
+    CircleStop,
+    Columns2,
+    Maximize2,
+    Minimize2,
+    PanelRight,
+    Plus,
+    Workflow,
+    X,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect } from "react";
 import { confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
-import { askingLabel, askSentKey, projectOf, type AgentVM } from "./agentsviewmodel";
+import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
+import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
+import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
@@ -36,6 +49,7 @@ import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
 import { StatusDot } from "./statusdot";
+import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
 
 const STATE_COLOR: Record<AgentVM["state"], string> = {
@@ -208,6 +222,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // Close the whole session (a tab, per launchAgent) — shared with the double-Ctrl+C handler. The
     // header also fronts background terminals, so the noun follows what is actually focused.
     const closeTerminal = () => confirmCloseSession(agent, model);
+    // its last turn committed and you have read it: the header offers Close with the session's token total, the
+    // figure its sidebar row shows (donesuggest.ts)
+    const done = doneSuggestion(agent, useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0);
+    const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";
 
     // Right-click the header for the same controls as the button row (plus the details toggle).
@@ -410,6 +428,27 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 ) : null}
                 {blockId != null ? (
                     <>
+                        {done ? (
+                            <button
+                                type="button"
+                                data-agent-header-done
+                                onClick={closeTerminal}
+                                title={DONE_TITLE}
+                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success"
+                            >
+                                <Check size={14} strokeWidth={2.2} aria-hidden />
+                                Done
+                                {sessionTokens ? (
+                                    <span className="font-normal tabular-nums text-muted">
+                                        · {formatTokens(sessionTokens)} tok
+                                    </span>
+                                ) : null}
+                                <span aria-hidden className="font-normal text-muted">
+                                    —
+                                </span>
+                                Close
+                            </button>
+                        ) : null}
                         <motion.button
                             type="button"
                             onClick={() => globalStore.set(terminalFullscreenAtom, !fullscreen)}

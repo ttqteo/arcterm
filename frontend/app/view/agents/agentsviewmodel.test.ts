@@ -52,6 +52,7 @@ import {
     toggleSelection,
     usageLevel,
     withAsk,
+    workingCount,
     type AgentActionEntry,
     type AgentAskQuestion,
     type AgentEntry,
@@ -141,6 +142,15 @@ describe("askingCount", () => {
     });
 });
 
+describe("workingCount", () => {
+    it("counts only working agents", () => {
+        expect(workingCount([mk("a", "working"), mk("b", "asking"), mk("c", "working"), mk("d", "idle")])).toBe(2);
+    });
+    it("is zero when none are working", () => {
+        expect(workingCount([mk("a", "idle"), mk("b", "asking")])).toBe(0);
+    });
+});
+
 describe("groupAgents", () => {
     it("splits into asking/working/idle, each sorted", () => {
         const s = groupAgents([
@@ -211,6 +221,14 @@ describe("agentVMFromInput", () => {
         const vm = agentVMFromInput({ id: "tab-9", name: "x", status: "idle", effortORef: "effort:e1" }, NOW);
         expect(vm.effortId).toBe("e1");
         expect(agentVMFromInput({ id: "tab-9", name: "x", status: "idle" }, NOW).effortId).toBeUndefined();
+    });
+
+    it("carries a committed turn only while idle", () => {
+        expect(agentVMFromInput({ id: "t", name: "x", status: "idle", committed: true }, NOW).committed).toBe(true);
+        expect(
+            agentVMFromInput({ id: "t", name: "x", status: "working", committed: true }, NOW).committed
+        ).toBeUndefined();
+        expect(agentVMFromInput({ id: "t", name: "x", status: "idle" }, NOW).committed).toBeUndefined();
     });
 
     it("carries the /login email the agent's session started on, only when it has one", () => {

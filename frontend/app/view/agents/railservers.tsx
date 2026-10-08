@@ -28,27 +28,29 @@ import type { BackgroundTask } from "./transcriptprojection";
 // how long a first click on Stop waits for the second
 const STOP_CONFIRM_MS = 3000;
 
-const ACTION_BTN =
+export const ACTION_BTN =
     "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] px-[3px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 // Stop is destructive, so it reads red before it is ever clicked
 const STOP_BTN =
     "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] px-[3px] text-error hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-// One listening process: its ports (each opens in the browser), what it runs and for how long, then its PID and who
-// started it. Log, Copy and Stop appear on the second line while the row is hovered or focused; Stop asks twice.
-function DevServerItem({
-    row,
-    now,
-    logTask,
-    onOpenLog,
+// Stop asks twice: the first click turns it into `confirmLabel` for STOP_CONFIRM_MS, the second runs `onStop`.
+// `onConfirmingChange` lets a row keep its actions visible while it waits.
+export function ServerStopButton({
+    confirmLabel,
+    onStop,
+    onConfirmingChange,
 }: {
-    row: DevServerRow;
-    now: number;
-    logTask: BackgroundTask | undefined;
-    onOpenLog: (task: BackgroundTask, title: string) => void;
+    confirmLabel: string;
+    onStop: () => void;
+    onConfirmingChange?: (confirming: boolean) => void;
 }) {
-    const [confirming, setConfirming] = useState(false);
+    const [confirming, setConfirmingState] = useState(false);
     const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const setConfirming = (c: boolean) => {
+        setConfirmingState(c);
+        onConfirmingChange?.(c);
+    };
     useEffect(
         () => () => {
             if (confirmTimer.current != null) {
@@ -67,8 +69,40 @@ function DevServerItem({
             clearTimeout(confirmTimer.current);
         }
         setConfirming(false);
-        fireAndForget(() => stopDevServer(row));
+        onStop();
     };
+    return (
+        <button
+            type="button"
+            data-dev-server-stop
+            title={confirming ? "Click again to stop it" : "Stop it and what it started"}
+            aria-label={confirming ? "Confirm stop" : "Stop"}
+            onClick={stop}
+            className={
+                confirming
+                    ? "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] border border-error/30 px-[6px] text-[10.5px] font-semibold text-error hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    : STOP_BTN
+            }
+        >
+            {confirming ? confirmLabel : <Square size={12} aria-hidden />}
+        </button>
+    );
+}
+
+// One listening process: its ports (each opens in the browser), what it runs and for how long, then its PID and who
+// started it. Log, Copy and Stop appear on the second line while the row is hovered or focused; Stop asks twice.
+function DevServerItem({
+    row,
+    now,
+    logTask,
+    onOpenLog,
+}: {
+    row: DevServerRow;
+    now: number;
+    logTask: BackgroundTask | undefined;
+    onOpenLog: (task: BackgroundTask, title: string) => void;
+}) {
+    const [confirming, setConfirming] = useState(false);
     return (
         <div
             data-dev-server={row.pid}
@@ -129,20 +163,11 @@ function DevServerItem({
                         >
                             <Copy size={12} aria-hidden />
                         </button>
-                        <button
-                            type="button"
-                            data-dev-server-stop
-                            title={confirming ? "Click again to stop it" : "Stop it and what it started"}
-                            aria-label={confirming ? "Confirm stop" : "Stop"}
-                            onClick={stop}
-                            className={
-                                confirming
-                                    ? "flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded-[5px] border border-error/30 px-[6px] text-[10.5px] font-semibold text-error hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                    : STOP_BTN
-                            }
-                        >
-                            {confirming ? "Stop?" : <Square size={12} aria-hidden />}
-                        </button>
+                        <ServerStopButton
+                            confirmLabel="Stop?"
+                            onStop={() => fireAndForget(() => stopDevServer(row))}
+                            onConfirmingChange={setConfirming}
+                        />
                     </span>
                 </div>
             </div>

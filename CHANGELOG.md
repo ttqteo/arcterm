@@ -12,20 +12,35 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- From any other surface, the **Agent** item in the left rail shows a pulsing green dot with the number of agents
+  still working, so you can see a run is busy from Code or Diff. Hover it for the count in words.
+- An agent whose last turn ended on a git commit, once you have read that turn, offers to close itself: a **✓ Close**
+  chip on its sidebar row and a **Done · 30.7M tok — Close** button in its header, both asking first as Close agent
+  does. Agents a run started are left to the run. Claude agents for now.
+- A part named without a total, as a heading that opens a line (`## Phần 2`, `**Phần 1:**`, `Part 3:`), now shows its
+  number on the agent's row, the way `Phần 2/4` shows `2/4`. A message whose headings walk through several parts
+  shows none.
+- Consumers' RAM view ends its arcterm section with **Total, with agents**: everything arcterm runs, its own
+  processes and every agent, in one figure.
 - A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
   project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
 - A terminal in the sidebar's Terminals section shows a pulsing dot while a command runs in it (a dev server, a
   build) and none once it is back at its prompt, so you can tell which terminals are busy.
 - The app bar's usage meter shows how long until the 5-hour window resets (`1h55`), and each bar carries a light
   tick for how much of its window has passed: a bar short of its tick will last until the reset.
+- The footer has a **Servers** chip: how many servers run inside your repos, and how many nothing holds any more.
+  Click it to see every listening process on the machine, grouped by repo, with what each belongs to (an agent, a
+  terminal, an app, or no owner), and open, read the log of, copy or stop it.
 
 ### Changed
 
 - Settings is six pages instead of eleven, laid out as cards: each setting is a title and one line of description, its
   config key appears when you hover it (click to copy), and Startup surface is a dropdown.
+- A plan-usage bar's colour follows how much of it is used, amber past 60% and red past 85%, instead of how fast it
+  is going: a fast start no longer turns 27% red. The tick still shows how much of the window has passed.
 - An agent's row in the sidebar keeps its name alone on the first line: its canvas tag, state (asking, Low RAM,
-  review), tokens and age moved to the second line beside its model, so a long name is no longer cut short. A run's
-  worker rows do the same with their canvas tag and asking label. A lead's row is unchanged.
+  review), tokens and age moved to the second line beside its model, so a long name is no longer cut short. A lead's
+  row ends its workers line with them, and a run's worker rows do the same with their canvas tag and asking label.
 - The plan-usage meters and the free-RAM chip moved from the app bar to the footer, beside the version, on every
   surface, which leaves the app bar more room for search and **New**. Each provider's meters start with its logo,
   and clicking the meters or the chip opens Consumers upward from the footer.
@@ -61,11 +76,27 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Switching an agent between Terminal and Canvas (or Review) no longer reshapes the screen: the details rail stays,
   so the header's controls stay put, and the canvas and review toolbars match the header, with underlined board
   tabs and header-sized buttons.
+- In the details rail's Servers section the Stop button is red before you click it, and a server's log opens in a
+  tab named by its port and command (`:8100 uvicorn app.main:app`) instead of the output file's id; a background
+  task's log is named by the task.
 
 ### Fixed
 
+- A Markdown quote (`> …`) whose lines are a chat log or an email keeps each line on its own line in the preview,
+  instead of running them together into one paragraph. Lines outside quotes still join as before.
+- A part an agent only quotes as an example, in quotes or code (`kiểu "Phần 2/4"`), no longer shows on its row as
+  the part it stopped on, and no longer keeps a finished agent from offering **Close**.
+- An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot
+  stays only on a question still unanswered.
+- Consumers opens right under (or over) the control you clicked, the usage meters or the free-RAM chip, instead of
+  at the window's right edge.
+- An agent's terminal you had not opened for a while no longer comes back as garbled characters: showing it again
+  redraws its text.
 - Choosing an agent that is asking a question in its terminal now moves typing into that terminal, so the arrow keys
   answer its picker instead of moving through the agent list.
+- Background tasks a resumed Claude session had left unfinished no longer show **running** forever: the "didn't
+  finish before the previous session ended" notice now marks them stopped, so a server's Log button opens the
+  command that is actually running.
 - The live agents in the sidebar's Active section keep their places when you switch to the Cockpit and back, instead
   of the ones that had gone idle dropping to the bottom.
 - On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,

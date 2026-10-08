@@ -365,5 +365,5 @@ func agyEventsFrom(steps []agyStep, title string) sessionEvents {
 	if answer, _ := agyLastAnswer(steps); answer != "" {
 		finishedText = clipText(answer)
 	}
-	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText)
+	return assembleEvents(raw, firstTs, lastTs, startedText, finishedText, false)
 }

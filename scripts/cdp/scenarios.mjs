@@ -19742,6 +19742,757 @@ const consumersPopover = {
     },
 };
 
+// --- machine-servers: the footer's Servers chip and popover (docs/superpowers/specs/2026-10-08-machine-servers-design.md).
+// listalldevservers is mocked the way consumers-popover mocks getconsumers, so the rows, owners and counts are known, and
+// stopdevserver is recorded, never run: nothing on the machine is stopped. Every other command passes through. The roster is
+// two fixture agents (the first ran the uvicorn command in the background, which is what gives its row a Log; the second is
+// somewhere to move focus from) and a real throwaway terminal tab, because the Agent surface docks only a live terminal: a
+// fixture entry for one is written back to the agent above it. Teardown puts the RPC client, the page stubs, the rail key and
+// the roster back, closes the tab and removes the temp dir.
+const MS_MOCK_KEY = "__arcMachineServersMock";
+const MS_AGENT_ID = "fx-machine-servers";
+const MS_AGENT_BLOCK = "fx-blk-machine-servers";
+const MS_AGENT_NAME = "machine servers agent";
+const MS_OTHER_ID = "fx-machine-servers-other";
+const MS_OTHER_BLOCK = "fx-blk-machine-servers-other";
+const MS_TERM_NAME = "machine servers terminal";
+// the background command the agent ran: the uvicorn row's launcher holds it, so the row belongs to the agent and has a Log
+const MS_COMMAND = "uvicorn app.main:app --port 8100 --reload";
+const MS_LOG_LINE = "machine-servers: uvicorn started on 127.0.0.1:8100";
+const MS_PID = { astro: 41001, uvicorn: 41002, vite: 41003, code: 41004, docker: 41005 };
+const MS_NO_OWNER_TIP = "Still running. No agent, terminal or open app holds it.";
+
+// what ListAllDevServers answers: astro is detached in a repo (no owner), uvicorn belongs to the fixture agent, vite to the
+// throwaway terminal, and Code and Docker are apps outside any repo. The titles of the repo groups are fx/website,
+// fx/portal and fx/arcterm: the group holding the no-owner row first, then by name
+function machineServersFixture(ctx, now) {
+    const hour = 3_600_000;
+    const row = (o) => ({ cwd: "", byagent: false, ...o });
+    return [
+        row({
+            pid: MS_PID.astro,
+            createms: now - 72 * hour,
+            ports: [4321],
+            name: "node.exe",
+            cmdline: "node D:/fx/website/node_modules/astro/astro.js dev --port 4321",
+            cwd: "D:/fx/website",
+            repo: "D:/fx/website",
+            owner: { kind: "detached" },
+            launchercmdline: "sh /c/nvm4w/nodejs/pnpm dev --port 4321",
+        }),
+        row({
+            pid: MS_PID.uvicorn,
+            createms: now - 2 * hour,
+            ports: [8100],
+            name: "python.exe",
+            cmdline: MS_COMMAND,
+            cwd: "D:/fx/portal",
+            byagent: true,
+            repo: "D:/fx/portal",
+            owner: { kind: "agent", tabid: MS_AGENT_ID, blockid: MS_AGENT_BLOCK, name: MS_AGENT_NAME, harness: "claude" },
+            launchercmdline: `"C:\\Program Files\\Git\\usr\\bin\\sh.exe" -c "${MS_COMMAND}"`,
+        }),
+        row({
+            pid: MS_PID.vite,
+            createms: now - 45 * 60_000,
+            ports: [5174],
+            name: "node.exe",
+            cmdline: "node D:/fx/arcterm/node_modules/vite/bin/vite.js --port 5174",
+            cwd: "D:/fx/arcterm",
+            repo: "D:/fx/arcterm",
+            owner: { kind: "terminal", tabid: ctx.termTabId, name: MS_TERM_NAME },
+        }),
+        row({
+            pid: MS_PID.code,
+            createms: now - 5 * hour,
+            ports: [58921],
+            name: "Code.exe",
+            cmdline: "Code.exe",
+            owner: { kind: "app", name: "Code.exe" },
+        }),
+        row({
+            pid: MS_PID.docker,
+            createms: now - 30 * hour,
+            ports: [5432],
+            name: "com.docker.backend.exe",
+            cmdline: "com.docker.backend services",
+            owner: { kind: "app", name: "com.docker.backend.exe" },
+        }),
+    ];
+}
+
+// One mock for the whole scenario. `mode` picks listalldevservers' answer: "ok" the fixture without the pids that have
+// gone, "empty" no servers, "fail" an error. stopdevserver is recorded in `stops` (with the number of listings made so
+// far) and ends nothing: the pid is left out of every later listing, since the panel polls every 3s and an answer that held
+// it again would bring a stopped row back. With stopMode "exited" it also refuses as wavesrv does for a process that ended
+// before the click. A reload drops the mock, so install it after the scenario's last reload.
+async function installMachineServersMock(h, servers) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${MS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, mode: "ok", stopMode: "ok", servers: ${JSON.stringify(servers)}, gone: [], stops: [], listed: 0 };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "listalldevservers") {
+                    m.listed++;
+                    if (m.mode === "fail") return Promise.reject(new Error("cannot read the TCP table"));
+                    return Promise.resolve({ servers: m.mode === "empty" ? [] : m.servers.filter((s) => !m.gone.includes(s.pid)) });
+                }
+                if (command === "stopdevserver") {
+                    m.stops.push({ pid: data.pid, createms: data.createms, listed: m.listed, mode: m.stopMode });
+                    m.gone.push(data.pid);
+                    if (m.stopMode === "exited") return Promise.reject(new Error("process " + data.pid + " is not running"));
+                    return Promise.resolve(null);
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${MS_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const setMachineServersMock = (h, patch) =>
+    h.ev(`(() => {
+        const m = window.${MS_MOCK_KEY};
+        if (!m) return false;
+        Object.assign(m, ${JSON.stringify(patch)});
+        return true;
+    })()`);
+
+const removeMachineServersMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${MS_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${MS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const MS_CHIP = `document.querySelector("[data-machine-servers-chip]")`;
+const MS_PANEL = `document.querySelector("[data-machine-servers-panel]")`;
+// the backdrop exists only while the popover is open; the panel stays in the DOM for its exit animation
+const MS_OPEN = `!!document.querySelector("[data-machine-servers-backdrop]") && !!${MS_PANEL}`;
+const MS_CLOSED = `!document.querySelector("[data-machine-servers-backdrop]")`;
+const msRow = (pid) => `document.querySelector('[data-machine-server="${pid}"]')`;
+const msIn = (pid, selector) => `${msRow(pid)}?.querySelector(${JSON.stringify(selector)})`;
+// the chip as a person reads it: its text, its tooltip, the warning part, whether it is muted and whether it has its icon
+const MS_CHIP_FACTS = `(() => {
+    const c = ${MS_CHIP};
+    if (!c) return null;
+    const norm = (t) => (t ?? "").replace(/\\s+/g, " ").trim();
+    const warn = c.querySelector("span.text-warning");
+    return {
+        text: norm(c.textContent),
+        title: c.title,
+        warn: warn ? norm(warn.textContent) : null,
+        muted: c.classList.contains("text-muted"),
+        icon: !!c.querySelector("svg"),
+    };
+})()`;
+// the Agent surface's panes that are on screen: the focused agent's, and a docked terminal's
+const MS_PANES = `[...document.querySelectorAll("[data-agent-terminal]")]
+    .filter((el) => el.getClientRects().length > 0)
+    .map((el) => ({ id: el.dataset.agentTerminal, label: el.getAttribute("aria-label"), dock: el.dataset.terminalDock === "true" }))`;
+const msPanesAre = (...ids) =>
+    `JSON.stringify((${MS_PANES}).map((p) => p.id).sort()) === ${JSON.stringify(JSON.stringify([...ids].sort()))}`;
+
+async function msPressEscape(h) {
+    for (const type of ["keyDown", "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    }
+}
+
+const machineServers = {
+    name: "machine-servers",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-machine-servers-")) };
+        // a throw past this point still returns ctx, so teardown undoes whatever was already done
+        try {
+            ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`);
+            // the output file the background command writes to, and the transcript in which the agent ran it with
+            // run_in_background and left it running
+            ctx.outFile = join(ctx.cwd, "bg-output.log");
+            ctx.transcript = join(ctx.cwd, "session.jsonl");
+            writeFileSync(ctx.outFile, `${MS_LOG_LINE}\n`);
+            writeFileSync(ctx.transcript, railServersTranscript(ctx.cwd, MS_COMMAND, ctx.outFile));
+
+            // the terminal the vite server belongs to: a real tab in the page's workspace, which starts in ~ so the temp
+            // dir is not locked. It is on ctx as soon as it exists, so teardown closes it whatever fails after
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.termTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, MS_TERM_NAME, false]);
+            const termTab = await waveService(h, "object", "GetObject", [`tab:${ctx.termTabId}`]);
+            const termBlockId = termTab?.blockids?.[0];
+            if (!termBlockId) throw new Error(`the throwaway terminal tab ${ctx.termTabId} has no block`);
+            await h.rpc("setmeta", { oref: `block:${termBlockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+            await h.rpc("controllerresync", { tabid: ctx.termTabId, blockid: termBlockId, forcerestart: true });
+
+            ctx.servers = machineServersFixture(ctx, Date.now());
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: MS_AGENT_ID,
+                            name: MS_AGENT_NAME,
+                            project: "verify-machine-servers",
+                            task: "verify the machine's servers",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: Date.now() - 60_000,
+                            blockId: MS_AGENT_BLOCK,
+                            transcriptPath: ctx.transcript,
+                        },
+                        {
+                            id: MS_OTHER_ID,
+                            name: "other agent",
+                            project: "verify-machine-servers",
+                            task: "somewhere to move focus from",
+                            state: "idle",
+                            agent: "claude",
+                            model: "sonnet",
+                            idleSince: Date.now() - 120_000,
+                            blockId: MS_OTHER_BLOCK,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the rail shows the file a Log opens, and the fixture roster is read once at boot, so both need a reload
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${MS_AGENT_ID}"]')`, 15000);
+            if (!ctx.inRoster) throw new Error("the fixture agent never joined the roster");
+            // revealing it loads its transcript's background tasks into backgroundTasksByIdAtom: what gives the uvicorn row its Log
+            await h.rpc("uireveal", { address: `agent:${MS_AGENT_ID}` }, UI_ROUTE);
+            ctx.termInRoster = await polishWaitFor(h, `!!document.querySelector('[data-agent-terminal="${ctx.termTabId}"]')`, 15000);
+            ctx.mock = await installMachineServersMock(h, ctx.servers);
+            if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster, the throwaway terminal and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+        const srv = (key) => ctx.servers.find((s) => s.pid === MS_PID[key]);
+        const stops = () => h.ev(`window.${MS_MOCK_KEY}?.stops ?? []`);
+        const listed = () => h.ev(`window.${MS_MOCK_KEY}?.listed ?? 0`);
+        // a popover's backdrop covers the footer, so a real click reaches the chip only while none is open
+        const openFromChip = async () => {
+            const clicked = await railServersMouse(h, MS_CHIP, true);
+            const up = clicked && (await polishWaitFor(h, MS_OPEN, 3000));
+            // the popover scales in for a moment, and a click aimed meanwhile can miss a small button
+            if (up) await polishNap(400);
+            return up;
+        };
+        const waitClosed = () => polishWaitFor(h, MS_CLOSED, 2000);
+        // a real click on the backdrop, outside the popover
+        const clickOutside = async () => {
+            const at = await h.ev(`({ x: 40, y: Math.round(window.innerHeight / 2) })`);
+            await consumersMouseClick(h, at);
+            return waitClosed();
+        };
+        // the row's actions show only on hover, so the mouse goes onto the row first
+        const hover = async (pid) => {
+            const moved = await railServersMouse(h, msRow(pid), false);
+            await polishNap(200);
+            return moved;
+        };
+
+        // the page's two stubs: getApi() reads window.api on each call, and a person's clipboard is not written to
+        const stubbed = await h.ev(`(() => {
+            const api = window.api;
+            if (typeof api?.openExternal !== "function") return false;
+            window.__msOpenExternal = api.openExternal;
+            window.__msOpened = [];
+            api.openExternal = (url) => { window.__msOpened.push(url); };
+            window.__msCopied = [];
+            Object.defineProperty(navigator, "clipboard", {
+                configurable: true,
+                value: { writeText: async (text) => { window.__msCopied.push(text); } },
+            });
+            return true;
+        })()`);
+
+        // 1. the page polled before the mock went in, so the next poll (every 15s while the popover is closed) is the first
+        // to answer from it
+        const chipUp = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "3 · 1 no owner"`, 30000);
+        const chip1 = await h.ev(MS_CHIP_FACTS);
+        await h.shot("cdp-shots/machine-servers-chip.png");
+        const titlePorts = (chip1?.title ?? "").split(" ").filter(Boolean).sort();
+        rec(
+            "1. the chip reads `3 · 1 no owner`, the `1 no owner` part in a warning span, and its tooltip lists :4321 :8100 :5174",
+            chipUp &&
+                chip1.warn != null &&
+                chip1.warn.includes("1 no owner") &&
+                !chip1.muted &&
+                JSON.stringify(titlePorts) === JSON.stringify([":4321", ":5174", ":8100"]),
+            JSON.stringify({ chipUp, stubbed, chip1, hidden: await h.ev("document.hidden") })
+        );
+        if (!chipUp) return steps;
+
+        // 2. the popover opens from the chip: the group holding the no-owner row first, then by name; a row's label
+        // carries the whole command line as its tooltip
+        const opened = await openFromChip();
+        const astro = srv("astro");
+        const panel2 = await h.ev(`(() => {
+            const p = ${MS_PANEL};
+            if (!p) return null;
+            return {
+                groups: [...p.querySelectorAll("[data-machine-servers-group]")].map((g) => g.dataset.machineServersGroup),
+                count: p.querySelector("[data-machine-servers-count]")?.textContent.trim() ?? null,
+                labelTitle: ${msIn(astro.pid, "[data-machine-server-label]")}?.title ?? null,
+                labelText: ${msIn(astro.pid, "[data-machine-server-label]")}?.textContent.trim() ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/machine-servers-popover.png");
+        rec(
+            "2. the chip opens the popover: groups `fx/website` (it holds the no-owner row), `fx/arcterm`, `fx/portal`, and a row's label carries its full command line as its title",
+            opened &&
+                !!panel2 &&
+                JSON.stringify(panel2.groups) === JSON.stringify(["fx/website", "fx/arcterm", "fx/portal"]) &&
+                panel2.count === "5" &&
+                panel2.labelTitle === astro.cmdline &&
+                panel2.labelText !== astro.cmdline,
+            JSON.stringify({ opened, panel2 })
+        );
+        if (!opened) return steps;
+
+        // 3. Other is one line, collapsed; a click shows its two rows
+        const code = srv("code");
+        const docker = srv("docker");
+        const otherBtn = `document.querySelector("[data-machine-servers-other]")`;
+        const otherFacts = () =>
+            h.ev(`(() => {
+                const b = ${otherBtn};
+                if (!b) return null;
+                return {
+                    expanded: b.getAttribute("aria-expanded"),
+                    text: b.textContent.replace(/\\s+/g, " ").trim(),
+                    code: !!${msRow(code.pid)},
+                    docker: !!${msRow(docker.pid)},
+                };
+            })()`);
+        const collapsed = await otherFacts();
+        const otherClick = await railServersMouse(h, otherBtn, true);
+        await polishWaitFor(h, `!!${msRow(code.pid)} && !!${msRow(docker.pid)}`, 2000);
+        const expanded = await otherFacts();
+        await h.shot("cdp-shots/machine-servers-other.png");
+        rec(
+            "3. Other is collapsed to one line, `Other (2) Code, com.docker.backend`; a click shows its two rows",
+            !!collapsed &&
+                collapsed.expanded === "false" &&
+                collapsed.text === "Other (2) Code, com.docker.backend" &&
+                !collapsed.code &&
+                !collapsed.docker &&
+                otherClick &&
+                !!expanded &&
+                expanded.expanded === "true" &&
+                expanded.code &&
+                expanded.docker,
+            JSON.stringify({ collapsed, otherClick, expanded })
+        );
+
+        // 4. each badge kind, on the row that should carry it
+        const uvicorn = srv("uvicorn");
+        const vite = srv("vite");
+        const badge = (pid) => `(() => {
+            const b = ${msIn(pid, "[data-machine-server-badge]")};
+            return b ? { kind: b.dataset.machineServerBadge, text: b.textContent.replace(/\\s+/g, " ").trim(), title: b.getAttribute("title"), tag: b.tagName, warn: b.classList.contains("text-warning") } : null;
+        })()`;
+        const badges = await h.ev(`({
+            astro: ${badge(astro.pid)},
+            uvicorn: ${badge(uvicorn.pid)},
+            vite: ${badge(vite.pid)},
+            code: ${badge(code.pid)},
+            docker: ${badge(docker.pid)},
+            kinds: [...new Set([...document.querySelectorAll("[data-machine-server-badge]")].map((b) => b.dataset.machineServerBadge))].sort(),
+        })`);
+        await h.shot("cdp-shots/machine-servers-badges.png");
+        rec(
+            "4. each badge kind is there: `no owner` (warning, with its tooltip) on astro, `claude · <the fixture agent>` and `terminal · <the terminal>` as buttons, and the app names as plain text",
+            badges.astro?.kind === "noowner" &&
+                badges.astro.text === "no owner" &&
+                badges.astro.title === MS_NO_OWNER_TIP &&
+                badges.astro.warn &&
+                badges.uvicorn?.kind === "agent" &&
+                badges.uvicorn.text === `claude · ${MS_AGENT_NAME}` &&
+                badges.uvicorn.tag === "BUTTON" &&
+                badges.vite?.kind === "terminal" &&
+                badges.vite.text === `terminal · ${MS_TERM_NAME}` &&
+                badges.vite.tag === "BUTTON" &&
+                badges.code?.kind === "app" &&
+                badges.code.text === "Code" &&
+                badges.docker?.kind === "app" &&
+                badges.docker.text === "com.docker.backend" &&
+                JSON.stringify(badges.kinds) === JSON.stringify(["agent", "app", "noowner", "terminal"]),
+            JSON.stringify(badges)
+        );
+
+        // 4b. a port opens http://localhost:<port>: the stub takes the real click
+        const clickedPort = await railServersMouse(h, msIn(uvicorn.pid, '[data-machine-server-port="8100"]'), true);
+        await polishWaitFor(h, "(window.__msOpened ?? []).length > 0", 2000);
+        const opened4b = await h.ev("window.__msOpened ?? null");
+        await h.shot("cdp-shots/machine-servers-port.png");
+        rec(
+            "4b. a click on the uvicorn row's :8100 opens http://localhost:8100, once",
+            clickedPort && JSON.stringify(opened4b) === JSON.stringify(["http://localhost:8100"]),
+            JSON.stringify({ clickedPort, opened4b })
+        );
+
+        // 5. the actions show on hover: move onto the row, then press Copy
+        const hovered = await hover(astro.pid);
+        const actionsOpacity = await h.ev(`getComputedStyle(${msIn(astro.pid, "[data-machine-server-copy]")}?.parentElement ?? document.body).opacity`);
+        await h.shot("cdp-shots/machine-servers-hover.png");
+        const clickedCopy = hovered && (await railServersMouse(h, msIn(astro.pid, "[data-machine-server-copy]"), true));
+        await polishWaitFor(h, "(window.__msCopied ?? []).length > 0", 2000);
+        const copied = await h.ev("window.__msCopied ?? null");
+        rec(
+            "5. hovering the astro row shows its actions, and Copy writes `PID <pid>` and the command line, once",
+            hovered &&
+                Number(actionsOpacity) === 1 &&
+                clickedCopy &&
+                Array.isArray(copied) &&
+                copied.length === 1 &&
+                copied[0] === `PID ${astro.pid}\n${astro.cmdline}`,
+            JSON.stringify({ hovered, actionsOpacity, clickedCopy, copied })
+        );
+
+        // 6. the first click on Stop asks, the second stops: the mock records it, the row leaves and stays gone, and the chip
+        // counts the two that are left with no `no owner`
+        const astroStop = msIn(astro.pid, "[data-dev-server-stop]");
+        await hover(astro.pid);
+        const askedClick = await railServersMouse(h, astroStop, true);
+        const asked = await polishWaitFor(h, `${astroStop}?.textContent.trim() === "Stop?"`, 2000);
+        const stopLabel = await h.ev(`${astroStop}?.getAttribute("aria-label") ?? null`);
+        const stopsWhileAsking = (await stops()).length;
+        await h.shot("cdp-shots/machine-servers-stop-confirm.png");
+        // a slow shot can let the 3s lapse; then it is asked again, which is the same click as above
+        const stillAsking = await h.ev(`${astroStop}?.textContent.trim() === "Stop?"`);
+        const reasked = stillAsking ? false : await railServersMouse(h, astroStop, true);
+        const stopClick = await railServersMouse(h, astroStop, true);
+        const recorded = await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.stops ?? []).length === 1`, 3000);
+        const rowGone = await polishWaitFor(h, `!${msRow(astro.pid)}`, 3000);
+        // the open popover polls every 3s: once a poll has answered, the row would be back if the listing still held it
+        const listedAtStop = await listed();
+        const polled = await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.listed ?? 0) > ${listedAtStop}`, 6000);
+        await polishNap(500);
+        const stays = await h.ev(`!${msRow(astro.pid)}`);
+        const chip6 = await h.ev(MS_CHIP_FACTS);
+        const stopCalls = await stops();
+        await h.shot("cdp-shots/machine-servers-stopped.png");
+        rec(
+            "6. Stop asks `Stop?`, then records a stop for astro's pid and create time; its row leaves and stays gone after the next poll, and the chip reads `2` with no `no owner` and no :4321",
+            askedClick &&
+                asked &&
+                stopLabel === "Confirm stop" &&
+                stopsWhileAsking === 0 &&
+                stopClick &&
+                recorded &&
+                stopCalls.length === 1 &&
+                stopCalls[0].pid === astro.pid &&
+                stopCalls[0].createms === astro.createms &&
+                rowGone &&
+                polled &&
+                stays &&
+                chip6?.text === "2" &&
+                chip6.warn == null &&
+                !chip6.title.includes(":4321"),
+            JSON.stringify({ askedClick, asked, stopLabel, stopsWhileAsking, stillAsking, reasked, stopClick, recorded, stopCalls, rowGone, polled, stays, chip6 })
+        );
+
+        // 7. an app's Stop names the app, and Escape closes the popover without stopping it
+        const codeStop = msIn(code.pid, "[data-dev-server-stop]");
+        await hover(code.pid);
+        const codeClick = await railServersMouse(h, codeStop, true);
+        const codeAsked = await polishWaitFor(h, `${codeStop}?.textContent.trim() === "Stop Code?"`, 2000);
+        await h.shot("cdp-shots/machine-servers-stop-app.png");
+        await msPressEscape(h);
+        const escClosed = await waitClosed();
+        const stopsAfterEsc = await stops();
+        rec(
+            "7. the first click on Code's Stop reads `Stop Code?`; Escape closes the popover and no stop names Code's pid",
+            codeClick &&
+                codeAsked &&
+                escClosed &&
+                stopsAfterEsc.length === 1 &&
+                !stopsAfterEsc.some((s) => s.pid === code.pid),
+            JSON.stringify({ codeClick, codeAsked, escClosed, stopsAfterEsc })
+        );
+
+        // 8. a click on the chip opens it again; a click on the backdrop, the other chip and the chip again close it. While one
+        // popover is open its backdrop covers the footer, so the chip clicks that follow go through the DOM
+        const reopened = await openFromChip();
+        const backdropClosed = reopened && (await clickOutside());
+        const reopened2 = await openFromChip();
+        const ramChip = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+        const consumersUp = await polishWaitFor(h, `${CONSUMERS_SORT} !== null`, 3000);
+        const serversClosed = await waitClosed();
+        await polishNap(300);
+        await h.shot("cdp-shots/machine-servers-consumers.png");
+        await h.ev(`${MS_CHIP}?.click()`);
+        const serversUp = await polishWaitFor(h, MS_OPEN, 3000);
+        const consumersClosed = await polishWaitFor(h, `${CONSUMERS_SORT} === null`, 3000);
+        await h.ev(`${MS_CHIP}?.click()`);
+        const chipClosed = await waitClosed();
+        rec(
+            "8. a click on the backdrop closes it; the RAM chip opens Consumers and closes Servers; the Servers chip opens Servers and closes Consumers; the Servers chip again closes it",
+            reopened && backdropClosed && reopened2 && ramChip && consumersUp && serversClosed && serversUp && consumersClosed && chipClosed,
+            JSON.stringify({ reopened, backdropClosed, reopened2, ramChip, consumersUp, serversClosed, serversUp, consumersClosed, chipClosed })
+        );
+
+        // 9. a badge opens what holds the server. The Agent surface shows the focused agent's pane (data-agent-focused is set
+        // only in a multi-cell grid), so the focus is read from the panes on screen; it starts on the other agent so the
+        // click has something to move
+        let revealed = true;
+        try {
+            await h.rpc("uireveal", { address: `agent:${MS_OTHER_ID}` }, UI_ROUTE);
+        } catch (e) {
+            revealed = String(e?.message ?? e);
+        }
+        const otherShown = await polishWaitFor(h, msPanesAre(MS_OTHER_ID), 8000);
+        const reopened3 = await openFromChip();
+        const agentBadgeClick = await railServersMouse(h, msIn(uvicorn.pid, '[data-machine-server-badge="agent"]'), true);
+        const agentClosed = await waitClosed();
+        const agentShown = await polishWaitFor(h, msPanesAre(MS_AGENT_ID), 8000);
+        const agentPanes = await h.ev(MS_PANES);
+        await h.shot("cdp-shots/machine-servers-agent-badge.png");
+        rec(
+            "9. the uvicorn row's agent badge closes the popover and the Agent surface shows the fixture agent, which was not showing before",
+            revealed === true &&
+                otherShown &&
+                reopened3 &&
+                agentBadgeClick &&
+                agentClosed &&
+                agentShown &&
+                agentPanes.length === 1 &&
+                agentPanes[0].label === MS_AGENT_NAME,
+            JSON.stringify({ revealed, otherShown, reopened3, agentBadgeClick, agentClosed, agentShown, agentPanes })
+        );
+
+        // 9b. the terminal badge opens the terminal's tab. With an agent showing, the surface docks a terminal under it, so
+        // the terminal's pane comes on screen beside the agent's
+        const reopened4 = await openFromChip();
+        const termBadgeClick = await railServersMouse(h, msIn(vite.pid, '[data-machine-server-badge="terminal"]'), true);
+        const termClosed = await waitClosed();
+        const termShown = await polishWaitFor(h, msPanesAre(MS_AGENT_ID, ctx.termTabId), 8000);
+        const termPanes = await h.ev(MS_PANES);
+        await h.shot("cdp-shots/machine-servers-terminal-badge.png");
+        rec(
+            "9b. the vite row's terminal badge closes the popover and the terminal's own pane comes on screen, docked under the agent",
+            ctx.termInRoster === true &&
+                reopened4 &&
+                termBadgeClick &&
+                termClosed &&
+                termShown &&
+                termPanes.some((p) => p.id === ctx.termTabId && p.dock) &&
+                termPanes.some((p) => p.id === MS_AGENT_ID && !p.dock),
+            JSON.stringify({ termInRoster: ctx.termInRoster, reopened4, termBadgeClick, termClosed, termShown, termPanes })
+        );
+
+        // 10. Log on the agent's server opens its background command's output file in that agent's rail, followed live, with a
+        // tab titled by the server's port and label
+        const reopened5 = await openFromChip();
+        const logBtn = msIn(uvicorn.pid, "[data-machine-server-log]");
+        const logUp = await polishWaitFor(h, `!!${logBtn}`, 15000);
+        const rowLabel = await h.ev(`${msIn(uvicorn.pid, "[data-machine-server-label]")}?.textContent.trim() ?? null`);
+        await hover(uvicorn.pid);
+        const logClick = logUp && (await railServersMouse(h, logBtn, true));
+        const logClosed = await waitClosed();
+        const wantPath = JSON.stringify(ctx.outFile.split("\\").join("/").toLowerCase());
+        const fileUp = await polishWaitFor(
+            h,
+            `((${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.dataset.railFile ?? "").split("\\\\").join("/").toLowerCase()) === ${wantPath}`,
+            8000
+        );
+        const following = await h.ev(
+            `${RAIL_ASIDE}?.querySelector("[data-rail-file] [data-file-live]")?.getAttribute("aria-pressed") ?? null`
+        );
+        const fileTab = await h.ev(`(() => {
+            const t = ${RAIL_ASIDE}?.querySelector('[data-rail-tab="file"]');
+            return t ? { aria: t.getAttribute("aria-label"), text: t.textContent.trim() } : null;
+        })()`);
+        const logText = await polishWaitFor(
+            h,
+            `(${RAIL_ASIDE}?.querySelector("[data-rail-file]")?.innerText ?? "").replace(/\\u00a0/g, " ").includes(${JSON.stringify(MS_LOG_LINE)})`,
+            12000
+        );
+        await h.shot("cdp-shots/machine-servers-log.png");
+        const wantTitle = `:8100 ${rowLabel}`;
+        rec(
+            "10. Log closes the popover and the fixture agent's rail shows the output file, followed live, in a tab titled `:8100 <the row's label>`",
+            reopened5 &&
+                logUp &&
+                rowLabel != null &&
+                logClick &&
+                logClosed &&
+                fileUp &&
+                following === "true" &&
+                fileTab?.aria === `File ${wantTitle}` &&
+                fileTab.text === wantTitle &&
+                logText,
+            JSON.stringify({ reopened5, logUp, rowLabel, logClick, logClosed, fileUp, following, fileTab, logText })
+        );
+
+        // 10b. a Stop refused because the process had already exited: the toast says so and the list refreshes without the row
+        await setMachineServersMock(h, { stopMode: "exited" });
+        const reopened6 = await openFromChip();
+        const viteStop = msIn(vite.pid, "[data-dev-server-stop]");
+        await hover(vite.pid);
+        const viteAsk = await railServersMouse(h, viteStop, true);
+        const viteAsked = await polishWaitFor(h, `${viteStop}?.textContent.trim() === "Stop?"`, 2000);
+        const viteStillAsking = await h.ev(`${viteStop}?.textContent.trim() === "Stop?"`);
+        const viteReasked = viteStillAsking ? false : await railServersMouse(h, viteStop, true);
+        const viteClick = await railServersMouse(h, viteStop, true);
+        const refused = await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.stops ?? []).some((s) => s.pid === ${vite.pid})`, 3000);
+        const toast = await polishWaitFor(h, consumersToastExpr("That process already exited"), 4000);
+        const errorToast = await h.ev(consumersToastExpr("Couldn't stop it"));
+        await h.shot("cdp-shots/machine-servers-exited.png");
+        const refusedCall = (await stops()).find((s) => s.pid === vite.pid);
+        // the refresh is single-flight, so one that lands on a poll under way waits for the next, at most 3s later
+        const refreshed = refusedCall != null && (await polishWaitFor(h, `(window.${MS_MOCK_KEY}?.listed ?? 0) > ${refusedCall.listed}`, 8000));
+        const viteGone = await polishWaitFor(h, `!${msRow(vite.pid)}`, 8000);
+        const chip10b = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "1"`, 4000);
+        await setMachineServersMock(h, { stopMode: "ok" });
+        rec(
+            "10b. a Stop refused with `process N is not running` shows the toast `That process already exited`, refreshes the list, and the row leaves",
+            reopened6 &&
+                viteAsk &&
+                viteAsked &&
+                viteClick &&
+                refused &&
+                refusedCall?.mode === "exited" &&
+                refusedCall.createms === vite.createms &&
+                toast &&
+                !errorToast &&
+                refreshed &&
+                viteGone &&
+                chip10b,
+            JSON.stringify({ reopened6, viteAsk, viteAsked, viteStillAsking, viteReasked, viteClick, refused, refusedCall, toast, errorToast, refreshed, viteGone, chip10b })
+        );
+
+        // 11. a failed read: the chip reads `?`, muted, and the open popover keeps the last rows, dimmed, under one line. The
+        // popover is open here and polls every 3s
+        await setMachineServersMock(h, { mode: "fail" });
+        const failedUp = await polishWaitFor(h, `!!document.querySelector("[data-machine-servers-failed]")`, 8000);
+        const chip11 = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "?"`, 4000);
+        const chipFacts11 = await h.ev(MS_CHIP_FACTS);
+        const panel11 = await h.ev(`(() => {
+            const p = ${MS_PANEL};
+            const failed = p?.querySelector("[data-machine-servers-failed]");
+            const list = p?.querySelector("[data-machine-servers-list]");
+            if (!failed || !list) return null;
+            return {
+                line: failed.textContent.trim(),
+                above: !!(failed.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING),
+                dimmed: list.classList.contains("opacity-60"),
+                rows: [...p.querySelectorAll("[data-machine-server]")].map((r) => Number(r.dataset.machineServer)),
+            };
+        })()`);
+        await h.shot("cdp-shots/machine-servers-failed.png");
+        const closed11 = await clickOutside();
+        rec(
+            "11. a failed read turns the chip to a muted `?` and puts `Could not read listening ports` above the last rows, dimmed",
+            failedUp &&
+                chip11 &&
+                chipFacts11?.muted === true &&
+                !!panel11 &&
+                panel11.line === "Could not read listening ports" &&
+                panel11.above &&
+                panel11.dimmed &&
+                JSON.stringify(panel11.rows) === JSON.stringify([uvicorn.pid, code.pid, docker.pid]) &&
+                closed11,
+            JSON.stringify({ failedUp, chip11, chipFacts11, panel11, closed11 })
+        );
+
+        // 12. nothing listening: the chip is its icon alone, muted. A closed popover polls every 15s, so it is opened to read
+        // the next answer at once
+        await setMachineServersMock(h, { mode: "empty" });
+        const reopened7 = await openFromChip();
+        const chip12 = await polishWaitFor(h, `(${MS_CHIP_FACTS})?.text === "" && (${MS_CHIP_FACTS})?.icon === true`, 8000);
+        const chipFacts12 = await h.ev(MS_CHIP_FACTS);
+        const panel12 = await h.ev(`({
+            empty: ${MS_PANEL}?.querySelector("[data-machine-servers-empty]")?.textContent.trim() ?? null,
+            failed: !!${MS_PANEL}?.querySelector("[data-machine-servers-failed]"),
+            count: ${MS_PANEL}?.querySelector("[data-machine-servers-count]")?.textContent.trim() ?? null,
+        })`);
+        await h.shot("cdp-shots/machine-servers-empty.png");
+        const closed12 = await clickOutside();
+        rec(
+            "12. with nothing listening the chip is its icon alone, muted, and the popover says nothing is listening",
+            reopened7 &&
+                chip12 &&
+                chipFacts12?.muted === true &&
+                panel12.empty === "Nothing is listening." &&
+                !panel12.failed &&
+                panel12.count === "0" &&
+                closed12,
+            JSON.stringify({ reopened7, chip12, chipFacts12, panel12, closed12 })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // each is its own step: one failing must not skip the rest
+        const step = async (what, run) => {
+            try {
+                await run();
+            } catch (e) {
+                console.error(`machine-servers teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the RPC client", () => removeMachineServersMock(h));
+        // the clipboard stub is an own property over Navigator's getter; deleting it restores that
+        await step("remove the page stubs", () =>
+            h.ev(`(() => {
+                if (window.__msOpenExternal) window.api.openExternal = window.__msOpenExternal;
+                delete window.__msOpenExternal;
+                delete window.__msOpened;
+                delete window.__msCopied;
+                delete navigator.clipboard;
+                return true;
+            })()`)
+        );
+        await teardownFixtureRun(h, ctx, "machine-servers", {
+            what: "close the throwaway terminal, restore the rail preference and remove the directory",
+            fn: async () => {
+                if (ctx.termTabId) {
+                    await step("close the throwaway terminal tab", () =>
+                        waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.termTabId, false])
+                    );
+                }
+                if (ctx.prevRail !== undefined) {
+                    await step("restore the rail visibility", () => h.ev(restoreStorageKey(RAIL_VISIBLE_KEY, ctx.prevRail)));
+                }
+                // the rail's file panel can hold the output file's directory for a moment on Windows
+                await step(`remove ${ctx.cwd}`, () => railServersRemove(ctx.cwd));
+            },
+        });
+    },
+};
+
 // --- capacity-warn: the three worker steppers' over-capacity mark, with the capacity mocked to +0
 // (docs/superpowers/specs/2026-10-06-worker-ram-capacity-design.md). At moreworkers 0 any width of 1 or more is
 // over, and the launcher's width defaults to DEFAULT_PARALLELISM, so New run and the launcher need no stepping.
@@ -22617,6 +23368,7 @@ export const SCENARIOS = [
     mdComments,
     workerCapacity,
     consumersPopover,
+    machineServers,
     capacityWarn,
     notifyToast,
 ];
