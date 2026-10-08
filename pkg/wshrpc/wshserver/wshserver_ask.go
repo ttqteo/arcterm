@@ -58,6 +58,7 @@ func (ws *WshServer) AskCommand(ctx context.Context, data wshrpc.CommandAskData)
 		Questions: data.Questions,
 		Ts:        ts,
 		Prose:     data.Prose,
+		Hold:      data.Hold,
 	})
 	// a dag child raising an ask is a lead event: the child blocks on the question, so the lead must
 	// be able to see it (and answer it via `wsh jarvis dag answer`) — the child sessions are invisible

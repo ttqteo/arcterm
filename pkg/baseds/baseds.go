@@ -118,6 +118,9 @@ type AgentAskData struct {
 	Prose bool `json:"prose,omitempty"`
 	// Note says why the ask is back in front of the human (e.g. a typed answer that never cleared).
 	Note string `json:"note,omitempty"`
+	// Hold marks a held command's card (`wsh memgate`): its question is on arcterm's card, not in the
+	// agent's terminal, so the cockpit offers the answer beside the terminal.
+	Hold bool `json:"hold,omitempty"`
 }
 
 // AgentAnswerItem is one question's answer in a panel-submitted reply. Exactly one of Text or

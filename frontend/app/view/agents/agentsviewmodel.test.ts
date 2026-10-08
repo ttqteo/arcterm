@@ -5,6 +5,7 @@ import {
     answerHint,
     applyAgentOrder,
     askingCount,
+    askingLabel,
     askSentKey,
     buildAskAnswers,
     burstRenderMode,
@@ -367,6 +368,11 @@ describe("withAsk", () => {
             { label: "Yes", description: undefined },
             { label: "No", description: "risky" },
         ]);
+    });
+
+    it("carries a held command's card as hold", () => {
+        const ask: AgentAskData = { oref: "block:abc", askid: "ask-3", ts: NOW, hold: true };
+        expect(withAsk(baseWorking(), ask, NOW).ask?.hold).toBe(true);
     });
 
     it("carries an empty questions array when questions is absent", () => {
@@ -1311,5 +1317,23 @@ describe("formatAgo", () => {
     it("says how long ago past a minute", () => {
         expect(formatAgo(5 * 60_000)).toBe("5m ago");
         expect(formatAgo(3 * 3_600_000)).toBe("3h ago");
+    });
+});
+
+describe("askingLabel", () => {
+    const asking = (ask: AgentVM["ask"]): AgentVM => ({ id: "t", name: "n", task: "", state: "asking", ask });
+
+    it("reads a question the agent asked as asking", () => {
+        expect(askingLabel(asking({ questions: [{ question: "Which one?", header: "Approach" }] }))).toBe("asking");
+    });
+
+    it("reads a held command's card as its header", () => {
+        expect(askingLabel(asking({ hold: true, questions: [{ question: "Run it?", header: "Low RAM" }] }))).toBe(
+            "Low RAM"
+        );
+    });
+
+    it("falls back to held when the card has no header", () => {
+        expect(askingLabel(asking({ hold: true, questions: [] }))).toBe("held");
     });
 });

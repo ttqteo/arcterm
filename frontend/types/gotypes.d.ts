@@ -32,6 +32,7 @@ declare global {
         cleared?: boolean;
         prose?: boolean;
         note?: string;
+        hold?: boolean;
     };
 
     // baseds.AgentAskOption

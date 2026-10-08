@@ -22,6 +22,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The app bar's usage meter turns amber when you are using quota faster than the window passes, not when it passes
   60%: 72% with 20 minutes left stays blue, 50% with 3 hours left turns amber. Its refresh button moved to Usage only;
   switching to the Default Claude account reads its quota at once.
+- An agent whose build or test run is held for low RAM reads **Low RAM** instead of **asking**, and its card (Run now,
+  Wait for RAM, Don't run) sits above its terminal, so you answer it there instead of hunting for it in Jarvis.
 - The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
   picked last, and a number key switches between an agent and a run. `Cmd+N` still opens it on an agent and
   `Cmd+Shift+R` on a run (`Ctrl` on Windows).

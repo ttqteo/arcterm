@@ -14,7 +14,7 @@ import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import { bindingsAtom } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { formatAge } from "@/app/view/agents/agentsviewmodel";
+import { askingLabel, formatAge } from "@/app/view/agents/agentsviewmodel";
 import { answerAgentAsk } from "@/app/view/agents/askanswer";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { sendChannelMessage } from "@/app/view/agents/channelactions";
@@ -439,7 +439,10 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                     title: a.task ? `${a.name} — ${a.task}` : a.name,
                     // the one thing the dropped preview pane earned: what an asking agent wants to know
                     sub: asking ? a.ask?.questions?.[0]?.question : undefined,
-                    status: { label: a.state, tone: asking ? "asking" : a.state === "working" ? "working" : "muted" },
+                    status: {
+                        label: asking ? askingLabel(a) : a.state,
+                        tone: asking ? "asking" : a.state === "working" ? "working" : "muted",
+                    },
                     verb: asking ? "Answer" : "Open",
                     echo: asking ? `Opens ${a.name}’s terminal at its question` : `Opens ${a.name}’s terminal`,
                     run: () => {

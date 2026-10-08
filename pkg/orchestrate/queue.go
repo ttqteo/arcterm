@@ -234,7 +234,7 @@ var publishSessionAskFn = func(oref string, p agentask.PendingAsk) {
 		Event:   wps.Event_AgentAsk,
 		Scopes:  []string{oref},
 		Persist: 1,
-		Data:    baseds.AgentAskData{ORef: oref, AskId: p.AskId, Questions: p.Questions, Ts: p.Ts, Prose: p.Prose, Note: p.Note},
+		Data:    baseds.AgentAskData{ORef: oref, AskId: p.AskId, Questions: p.Questions, Ts: p.Ts, Prose: p.Prose, Note: p.Note, Hold: p.Hold},
 	})
 }
 

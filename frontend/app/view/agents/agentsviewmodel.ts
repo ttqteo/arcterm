@@ -73,6 +73,7 @@ export interface AgentAsk {
     replySuggestions?: string[]; // free-form quick-replies (populated by test-data scenarios; undefined on the live path)
     prose?: boolean; // projected prose question (pi bridge): chips submit as text answers
     note?: string; // why the ask is back in front of the human (e.g. a typed answer that never cleared)
+    hold?: boolean; // a held command's card (`wsh memgate`): answered on the card, not in the agent's terminal
 }
 
 export interface AgentVM {
@@ -908,8 +909,18 @@ export function withAsk(vm: AgentVM, ask: AgentAskData | null, now: number): Age
             oref: ask.oref,
             prose: ask.prose,
             note: ask.note,
+            hold: ask.hold,
         },
     };
+}
+
+/** Pure: the word an asking agent's status reads as. A held command's card (`wsh memgate`'s Low RAM) is not a
+ *  question the agent asked in its terminal, so it reads as its card's header instead of "asking". */
+export function askingLabel(a: Pick<AgentVM, "ask">): string {
+    if (a.ask?.hold) {
+        return a.ask.questions[0]?.header || "held";
+    }
+    return "asking";
 }
 
 export interface ProjectInfo {

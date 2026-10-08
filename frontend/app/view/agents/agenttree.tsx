@@ -69,7 +69,7 @@ import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./
 import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
 import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
-import { askingCount, displayAgeMs, formatAgeShort, formatTokens, type AgentVM } from "./agentsviewmodel";
+import { askingCount, askingLabel, displayAgeMs, formatAgeShort, formatTokens, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
 import { reconcileGrid } from "./agentgrid";
@@ -521,7 +521,7 @@ function ParentRow({
                             </button>
                         ) : asking ? (
                             <>
-                                <span className="flex-none text-[10.5px] font-semibold text-warning">asking</span>
+                                <span className="flex-none text-[10.5px] font-semibold text-warning">{askingLabel(agent)}</span>
                                 {/* a question that names its part ("Phần 1/4 ổn chưa?") shows the part beside it */}
                                 {agent.step ? (
                                     <span
@@ -818,7 +818,9 @@ function WorkerRow({
                     lead
                 </span>
             ) : asksYou ? (
-                <span className="whitespace-nowrap text-[10.5px] font-semibold text-warning">asking</span>
+                <span className="whitespace-nowrap text-[10.5px] font-semibold text-warning">
+                    {agent?.ask?.hold ? askingLabel(agent) : "asking"}
+                </span>
             ) : null}
         </div>
     );

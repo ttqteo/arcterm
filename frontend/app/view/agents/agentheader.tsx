@@ -22,7 +22,7 @@ import { useEffect } from "react";
 import { confirmCloseSession, interruptAgent } from "./agentactions";
 import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
-import { askSentKey, projectOf, type AgentVM } from "./agentsviewmodel";
+import { askingLabel, askSentKey, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
@@ -123,7 +123,8 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // a done task's worker reads as what its task came to, not as an idle session
     const ended = isEndedWorkerId(agent.id);
     const landed = lineage?.kind === "worker" && lineage.task?.merged;
-    const stateText = ended ? (landed ? "landed" : "done") : STATE_LABEL[agent.state];
+    const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
+    const stateText = ended ? (landed ? "landed" : "done") : liveText;
     const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
     // m4: one-shot settle on the state pill when the focused agent reaches idle
     const settling = useSettle(!ended && agent.state === "idle");

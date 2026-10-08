@@ -49,6 +49,7 @@ import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { GridCellBar } from "./gridcellbar";
 import { GridDropOverlay } from "./griddropoverlay";
+import { HeldAskBar } from "./heldaskbar";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
 import { RunPane } from "./runpane";
@@ -466,6 +467,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             <>
                                 <AgentHeader model={model} agent={agent} />
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
+                                <HeldAskBar model={model} agent={agent} />
                             </>
                         )}
                         {/* The grid parent is always rendered: hidden, never unmounted, so no xterm remounts. Tracks
