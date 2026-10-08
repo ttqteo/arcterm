@@ -6026,9 +6026,9 @@ const routePickerFlat = {
             await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode });
         };
         await h.goto("settings");
-        // the two-pane Settings surface renders one section at a time; the route picker lives in Run defaults
+        // the two-pane Settings surface renders one page at a time; the run route picker lives on Agents
         await h.ev(
-            `(() => { const b = document.querySelector('[data-section="run"]'); if (b) b.click(); return true; })()`
+            `(() => { const b = document.querySelector('[data-section="agents"]'); if (b) b.click(); return true; })()`
         );
         await settle(200);
         const pickerPresent = await h.ev(`(() => !!document.querySelector('[data-testid="route-picker"]'))()`);
@@ -20894,7 +20894,7 @@ const CA_AGENTS = [
     { id: "fx-ca-working", name: "ca-working-agent", state: "working" },
     { id: "fx-ca-asking", name: "ca-asking-agent", state: "asking" },
 ];
-const CA_SECTION = `document.querySelector('[data-section="claudeaccount"]')`;
+const CA_SECTION = `document.querySelector('[data-section="agents"]')`;
 const caRow = (id) => `document.querySelector('[data-claude-account-row="${id || "default"}"]')`;
 const CA_ROWS = `[...document.querySelectorAll("[data-claude-account-row]")].map((r) => ({
     id: r.dataset.claudeAccountRow,
@@ -20970,10 +20970,27 @@ const caCenter = (expr) => `(() => {
     const b = el.getBoundingClientRect();
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 })()`;
-// the quota line of a row: its text and whether it wears the warning tone
+// the usage line of a row: each window's percent (data-pct, absent without a reading) and whether its bar fill wears
+// the warning tone (bg-warning from 80%), the age after them, and the line's text
 const caQuota = (id) => `(() => {
     const q = document.querySelector('[data-claude-account-quota="${id || "default"}"]');
-    return q ? { text: q.textContent.trim(), warn: q.classList.contains("text-warning"), muted: q.classList.contains("text-muted") } : null;
+    if (!q) return null;
+    const meter = (name) => {
+        const m = q.querySelector('[data-claude-account-meter="' + name + '"]');
+        if (!m) return null;
+        const pct = m.getAttribute("data-pct");
+        return {
+            pct: pct == null ? null : Number(pct),
+            warn: m.querySelector("[data-meter-fill]")?.classList.contains("bg-warning") ?? null,
+            fill: m.querySelector("[data-meter-fill]")?.style.width ?? null,
+        };
+    };
+    return {
+        text: q.textContent.replace(/\\s+/g, " ").trim(),
+        fivehour: meter("5h"),
+        week: meter("week"),
+        seen: q.querySelector("[data-claude-account-seen]")?.textContent.trim() ?? null,
+    };
 })()`;
 // the e-mail line under a row's name, or null when there is none
 const caEmailLine = (id) =>
@@ -21275,11 +21292,13 @@ const settingsClaudeAccount = {
         // --- list: quiet rows ---
         const noInputs = await noRowInputs();
         const loginEmail = ((await h.rpc("claudeaccountlist", null))?.loginemail ?? "").trim().toLowerCase();
+        // the /login tag is the name's sibling inside the row, not a child of the name
         const defName = await h.ev(`(() => {
             const n = document.querySelector('[data-claude-account-name="default"]');
             return {
                 name: [...(n?.childNodes ?? [])].find((c) => c.nodeType === 3)?.textContent.trim() ?? null,
-                tag: n?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+                tag: n?.closest("[data-claude-account-row]")?.querySelector("[data-claude-account-login-tag]")?.textContent.trim() ?? null,
+                tagInName: n?.querySelector("[data-claude-account-login-tag]") != null,
             };
         })()`);
         // the identity also learns the /login email from a live quota answer, so with none listed an email-shaped
@@ -21290,18 +21309,24 @@ const settingsClaudeAccount = {
                 : defName.name === "Claude login" || /^\S+@\S+$/.test(defName.name ?? "");
         rec(
             "15. rows hold no inputs: every name is text, and Default is named by its /login email or Claude login with a /login tag",
-            noInputs === true && nameOk && defName.tag === "/login",
+            noInputs === true && nameOk && defName.tag === "/login" && defName.tagInName === false,
             JSON.stringify({ noInputs, loginEmail, defName })
         );
         const qA = await h.ev(caQuota(ctx.idA));
         const qB = await h.ev(caQuota(ctx.idB));
         rec(
-            "16. a row at 90% or more reads in the warning tone: A (97%) does, B (40%) stays muted",
-            qA?.warn === true &&
-                qA.text.startsWith("5h 97% · week 64%") &&
-                qB?.warn === false &&
-                qB.muted === true &&
-                qB.text.startsWith("5h 40% · week 30%"),
+            "16. a usage bar from 80% reads in the warning tone: A's (97%, 64%) does for 5h, B's (40%, 30%) stays normal",
+            qA?.fivehour?.pct === 97 &&
+                qA.fivehour.warn === true &&
+                qA.fivehour.fill === "97%" &&
+                qA.week?.pct === 64 &&
+                qA.week.warn === false &&
+                qB?.fivehour?.pct === 40 &&
+                qB.fivehour.warn === false &&
+                qB.week?.pct === 30 &&
+                qB.week.warn === false &&
+                qB.seen != null &&
+                qB.seen.endsWith(" ago"),
             JSON.stringify({ qA, qB })
         );
         const adds = await h.ev(`[...document.querySelectorAll("[data-claude-account-add]")].map((b) => b.textContent.trim())`);
@@ -22037,7 +22062,7 @@ const notifyToast = {
 
             // --- Settings: the section, and In-app toasts off -----------------------------------------------------------
             await h.goto("settings");
-            await h.ev(`document.querySelector('[data-section="notifications"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="general"]')?.click()`);
             const titles = ["OS notifications", "In-app toasts", "When an agent finishes"];
             const listed = await polishWaitFor(
                 h,
@@ -22307,6 +22332,387 @@ const settingsRadarAudit = {
     },
     async teardown(h, ctx) {
         await h.rpc("setconfig", ctx.prev);
+        await h.goto("cockpit");
+    },
+};
+
+// --- settings-pages: six pages of cards, the key pill on hover, a changed row end to end ----------------
+// docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the six in order;
+// the page's card ids in order; a shot), then one detail step per page that draws something the card ids do not show
+// (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the runtime
+// list and the OpenRouter warning band, the right-aligned versions), then the key pill on Terminal (hidden at rest,
+// visible and titled on hover, pressing it leaves the row's control focused) and its absence on About's build info, then
+// term:fontsize set off its default to see the changed dot, the revert button, the index count and Reset section. The
+// scenario restores term:fontsize in a finally and again in teardown, each retried: the packaged app and a final-verify
+// app share the vault's settings.json, and a write can lose a rename race with the other's.
+const SP_PAGES = [
+    { id: "general", cards: ["startup", "notifications", "vault"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
+    { id: "terminal", cards: ["text", "cursor", "behavior"] },
+    { id: "agents", cards: ["claudeaccount", "runs", "flags"] },
+    { id: "headless", cards: ["runtime", "openrouter", "radar"] },
+    { id: "about", cards: ["versions", "agents"] },
+];
+const SP_FONTSIZE_KEY = "term:fontsize";
+const spPane = (id) => `document.querySelector('[data-settings-section="${id}"]')`;
+const spRow = (id) => `document.querySelector('[data-setting-row="${id}"]')`;
+const spOpen = async (h, id) => {
+    await h.ev(`document.querySelector('button[data-section="${id}"]')?.click()`);
+    return polishWaitFor(h, `${spPane(id)} != null`, 5000);
+};
+// a real pointer over the row's title side, so :hover and the group-hover variants follow
+const spHover = async (h, rowId) => {
+    const at = await h.ev(`(() => {
+        const el = ${spRow(rowId)};
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + 40, y: r.top + r.height / 2 };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(150);
+    return true;
+};
+const spPill = (rowId) => `(() => {
+    const pill = ${spRow(rowId)}?.querySelector("[data-key-pill]");
+    if (!pill) return null;
+    const r = pill.getBoundingClientRect();
+    return {
+        visibility: getComputedStyle(pill).visibility,
+        width: r.width,
+        title: pill.getAttribute("title"),
+        text: pill.textContent.trim(),
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+    };
+})()`;
+// The themed context menu's one floating panel (element/contextmenu.tsx), the same hook settings-claude-account reads.
+const SP_MENU_PANEL = CA_MENU_PANEL;
+// a real left click at the centre of an element
+const spClick = async (h, expr) => {
+    const at = await h.ev(`(() => {
+        const el = ${expr};
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
+    return true;
+};
+// The option buttons of a font row, each with the first family it is drawn in. A font option is drawn in the face it
+// names, so that family reads as the option's label ("System UI" draws as system-ui). The revert button and the key
+// pill carry an aria-label; an option does not.
+const spFaces = (rowId) => `(() => {
+    const row = ${spRow(rowId)};
+    if (!row) return null;
+    return [...row.querySelectorAll("button:not([aria-label])")].map((b) => ({
+        label: b.textContent.trim(),
+        inline: b.style.fontFamily,
+        family: getComputedStyle(b).fontFamily.split(",")[0].replace(/["']/g, "").trim(),
+    }));
+})()`;
+const spNorm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+const spOwnFaces = (faces) =>
+    faces != null &&
+    faces.length > 1 &&
+    faces.every((f) => f.inline !== "" && spNorm(f.family) === spNorm(f.label)) &&
+    new Set(faces.map((f) => f.family)).size === faces.length;
+// term:fontsize back to what the run found; three tries, since the write can lose a rename race (Access is denied)
+const spRestoreFontSize = async (h, value) => {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: value });
+            return;
+        } catch (e) {
+            last = e;
+            await polishNap(300);
+        }
+    }
+    throw last;
+};
+
+const settingsPages = {
+    name: "settings-pages",
+    surface: "settings",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        return { prevFontSize: settings[SP_FONTSIZE_KEY] ?? null };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        await polishWaitFor(h, `document.querySelector('button[data-section]') != null`, 5000);
+        const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute("data-section"))`);
+        rec(
+            "index: one flat list of six pages in order",
+            JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)),
+            `index=${JSON.stringify(index)}`
+        );
+
+        for (const page of SP_PAGES) {
+            const up = await spOpen(h, page.id);
+            const cards = await h.ev(
+                `[...(${spPane(page.id)}?.querySelectorAll("[data-setting-card]") ?? [])].map((c) => c.getAttribute("data-setting-card"))`
+            );
+            await polishNap(350);
+            await h.shot(`cdp-shots/settings-pages-${page.id}.png`);
+            rec(
+                `${page.id}: the page holds its cards in order`,
+                up && JSON.stringify(cards) === JSON.stringify(page.cards),
+                `cards=${JSON.stringify(cards)}`
+            );
+        }
+
+        // general-select: Startup surface is a select; its menu is the themed one, Last opened first with what it does
+        await spOpen(h, "general");
+        const selectBtn = `${spRow("general.startup")}?.querySelector("button[data-select]")`;
+        await polishWaitFor(h, `${selectBtn} != null`, 5000);
+        const clickedSelect = await spClick(h, selectBtn);
+        const menuUp = await polishWaitFor(h, `${SP_MENU_PANEL} != null`, 3000);
+        const menu = await h.ev(`(() => {
+            const panel = ${SP_MENU_PANEL};
+            if (!panel) return null;
+            return [...panel.children].map((c) =>
+                c.classList.contains("h-px")
+                    ? { separator: true }
+                    : {
+                          label: c.querySelector("span.flex-1")?.textContent.trim() ?? null,
+                          sublabel: c.querySelector("span.ml-auto")?.textContent.trim() ?? null,
+                          checked: c.querySelector("span.rounded-full") != null,
+                      }
+            );
+        })()`);
+        await h.shot("cdp-shots/settings-pages-general-select.png");
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        }
+        const menuGone = await polishWaitFor(h, `${SP_MENU_PANEL} == null`, 3000);
+        rec(
+            "general-select: Last opened (the one you left), a separator, the surfaces, one checked",
+            clickedSelect &&
+                menuUp &&
+                menu != null &&
+                menu[0]?.label === "Last opened" &&
+                menu[0].sublabel === "the one you left" &&
+                menu[1]?.separator === true &&
+                menu.slice(2).every((m) => m.separator !== true && m.label) &&
+                menu.filter((m) => m.checked).length === 1 &&
+                menuGone,
+            `menu=${JSON.stringify(menu)} closed=${menuGone}`
+        );
+
+        // appearance-detail: seven theme chips with one selected; each font option drawn in its own face
+        await spOpen(h, "appearance");
+        await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
+        const chips = await h.ev(`(() => {
+            const bs = [...document.querySelectorAll("[data-theme-presets] button")];
+            return { count: bs.length, selected: bs.filter((b) => b.getAttribute("aria-pressed") === "true").length };
+        })()`);
+        const sansFaces = await h.ev(spFaces("fonts.sans"));
+        const monoFaces = await h.ev(spFaces("fonts.mono"));
+        await h.ev(`${spRow("fonts.sans")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-appearance-detail.png");
+        rec(
+            "appearance-detail: seven theme chips, one selected; Fonts options each in their own face",
+            chips.count === 7 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
+        );
+
+        // terminal-detail: the terminal face is drawn the same way, on the Terminal page
+        await spOpen(h, "terminal");
+        await polishWaitFor(h, `${spRow("fonts.term")} != null`, 5000);
+        const termFaces = await h.ev(spFaces("fonts.term"));
+        await h.ev(`${spRow("fonts.term")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-terminal-detail.png");
+        rec(
+            "terminal-detail: each Terminal font option is drawn in the face it names",
+            spOwnFaces(termFaces),
+            `term=${JSON.stringify(termFaces)}`
+        );
+
+        // agents-detail: the account card leads, one account is active, five runtime tabs, flag rows stay one line
+        await spOpen(h, "agents");
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector("[data-claude-account-row]") != null`, 8000);
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector('[data-setting-row^="newagent.flag."]') != null`, 5000);
+        const agentsDetail = await h.ev(`(() => {
+            const pane = ${spPane("agents")};
+            return {
+                first: pane.querySelector("[data-setting-card]")?.getAttribute("data-setting-card") ?? null,
+                active: pane.querySelectorAll("[data-account-active]").length,
+                tabs: [...pane.querySelectorAll("[data-flag-tabs] [role=tab]")].map((t) => t.textContent.trim()),
+                flagHeights: [...pane.querySelectorAll('[data-setting-row^="newagent.flag."]')].map((r) =>
+                    Math.round(r.getBoundingClientRect().height)
+                ),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-flag-tabs]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-agents-detail.png");
+        rec(
+            "agents-detail: Claude account first, one active account, five runtime tabs, flag rows under 44px",
+            agentsDetail.first === "claudeaccount" &&
+                agentsDetail.active === 1 &&
+                agentsDetail.tabs.length === 5 &&
+                agentsDetail.flagHeights.length > 0 &&
+                agentsDetail.flagHeights.every((px) => px < 44),
+            JSON.stringify(agentsDetail)
+        );
+
+        // headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band while no key is stored
+        await spOpen(h, "headless");
+        // OpenRouter is always listed; the five harnesses follow once ListHarnesses answers (CATALOG_RPC_TIMEOUT_MS, 30 s)
+        await polishWaitFor(h, `document.querySelectorAll("[data-runtime-choice]").length >= 6`, 35_000);
+        // the card draws its band after the secrets probe answers, so read what is stored first
+        const secretNames = (await h.rpc("getsecretsnames", null)) ?? [];
+        const keyStored = secretNames.includes("jarvis_embedapikey");
+        const runtimeSetting = (await h.rpc("getfullconfig", null))?.settings?.["headless:runtime"] ?? "";
+        const bandExpected = !keyStored && (runtimeSetting === "" || runtimeSetting === "openrouter");
+        await polishWaitFor(
+            h,
+            `(document.querySelector('[data-setting-card="openrouter"]')?.textContent.includes("OpenRouter key not set") ?? null) === ${bandExpected}`,
+            5000
+        );
+        const headlessDetail = await h.ev(`(() => {
+            const choices = [...document.querySelectorAll("[data-runtime-choice]")];
+            const card = document.querySelector('[data-setting-card="openrouter"]');
+            const first = card?.firstElementChild ?? null;
+            return {
+                choices: choices.length,
+                checked: choices.filter((c) => c.getAttribute("aria-checked") === "true").length,
+                firstIsWarning: first != null && first.textContent.includes("OpenRouter key not set") && first.querySelector("svg") != null,
+                anyWarning: card != null && card.textContent.includes("OpenRouter key not set"),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-setting-card="openrouter"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-headless-detail.png");
+        rec(
+            "headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band when no key is stored",
+            headlessDetail.choices === 6 &&
+                headlessDetail.checked === 1 &&
+                (bandExpected ? headlessDetail.firstIsWarning : headlessDetail.anyWarning === false),
+            JSON.stringify({ ...headlessDetail, keyStored, runtimeSetting, bandExpected })
+        );
+
+        // about-detail: the version values sit at the right edge of their rows (the row's 16px padding in from it)
+        await spOpen(h, "about");
+        await polishWaitFor(h, `${spRow("about.platform")} != null`, 5000);
+        const versions = await h.ev(`(() => {
+            return ["about.app", "about.server", "about.buildtime", "about.platform"].map((id) => {
+                const row = document.querySelector('[data-setting-row="' + id + '"]');
+                const value = row?.querySelector(".tabular-nums");
+                if (!row || !value) return { id, found: false };
+                const r = row.getBoundingClientRect();
+                const v = value.getBoundingClientRect();
+                return { id, found: true, text: value.textContent.trim(), gap: Math.round(r.right - v.right), leftHalf: v.left < r.left + r.width / 2 };
+            });
+        })()`);
+        await h.shot("cdp-shots/settings-pages-about-detail.png");
+        rec(
+            "about-detail: the four version values are right-aligned within their rows",
+            versions.length === 4 && versions.every((v) => v.found && v.text !== "" && v.leftHalf === false && Math.abs(v.gap - 16) <= 2),
+            JSON.stringify(versions)
+        );
+
+        // key-pill: on Terminal, hover scrollback; About's build info has none
+        await spOpen(h, "terminal");
+        await polishWaitFor(h, `${spRow("terminal.scrollback")} != null`, 5000);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+        await polishNap(150);
+        const atRest = await h.ev(spPill("terminal.scrollback"));
+        const hovered = await spHover(h, "terminal.scrollback");
+        const onHover = await h.ev(spPill("terminal.scrollback"));
+        await h.shot("cdp-shots/settings-pages-key-pill.png");
+        rec(
+            "key-pill: hidden at rest, visible and titled on hover",
+            atRest?.visibility === "hidden" &&
+                hovered &&
+                onHover?.visibility === "visible" &&
+                onHover.width > 0 &&
+                onHover.title === "Copy term:scrollback · synced in settings.json",
+            `rest=${atRest?.visibility} hover=${JSON.stringify(onHover)}`
+        );
+        // press the pill with a real pointer while the row's own control holds focus: the control keeps it
+        const focused = await h.ev(`(() => {
+            const btn = ${spRow("terminal.scrollback")}?.querySelector('button[aria-label^="Increase"]');
+            if (!btn) return false;
+            btn.focus();
+            return document.activeElement === btn;
+        })()`);
+        const pill = await h.ev(spPill("terminal.scrollback"));
+        if (pill != null) {
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: pill.x, y: pill.y, button: "left", clickCount: 1 });
+            }
+        }
+        await polishNap(150);
+        const keptFocus = await h.ev(
+            `document.activeElement?.getAttribute("aria-label") === "Increase scrollback"`
+        );
+        await h.ev(`document.activeElement?.blur()`);
+        rec(
+            "key-pill: pressing it leaves the row's control focused",
+            focused === true && pill != null && keptFocus === true,
+            `focused=${focused} pill=${pill != null} kept=${keptFocus}`
+        );
+        await spOpen(h, "about");
+        const aboutUp = await polishWaitFor(h, `${spRow("about.app")} != null`, 5000);
+        await spHover(h, "about.app");
+        const aboutPill = await h.ev(`${spRow("about.app")}?.querySelector("[data-key-pill]") != null`);
+        rec("key-pill: About's build info rows show none", aboutUp && aboutPill === false, `rendered=${aboutUp} pill=${aboutPill}`);
+
+        // changed: term:fontsize two off its default shows the dot, the revert button, the count and Reset section
+        try {
+            const cfg = await h.rpc("getfullconfig", null);
+            const dflt = cfg?.defaultsettings?.[SP_FONTSIZE_KEY];
+            const base = typeof dflt === "number" ? dflt : 12;
+            await h.rpc("setconfig", { [SP_FONTSIZE_KEY]: base + 2 });
+            await polishNap(600);
+            await spOpen(h, "terminal");
+            await polishWaitFor(h, `${spRow("terminal.fontsize")} != null`, 5000);
+            const changed = await h.ev(`(() => {
+                const row = ${spRow("terminal.fontsize")};
+                const count = document.querySelector('button[data-section="terminal"] [data-section-changed]');
+                return {
+                    dot: row?.querySelector('[title="Changed from the default"]') != null,
+                    revert: row?.querySelector('button[aria-label="Revert to default"]') != null,
+                    count: count == null ? 0 : parseInt(count.textContent, 10),
+                    reset: [...(${spPane("terminal")}?.querySelectorAll("button") ?? [])].some((b) => b.textContent.trim() === "Reset section"),
+                };
+            })()`);
+            await h.shot("cdp-shots/settings-pages-changed.png");
+            rec(
+                "changed: dot, revert button, index count and Reset section",
+                changed.dot && changed.revert && changed.count >= 1 && changed.reset,
+                JSON.stringify(changed)
+            );
+            await h.ev(`${spRow("terminal.fontsize")}?.querySelector('button[aria-label="Revert to default"]')?.click()`);
+            const cleared = await polishWaitFor(
+                h,
+                `${spRow("terminal.fontsize")}?.querySelector('[title="Changed from the default"]') == null`,
+                5000
+            );
+            rec("changed: Revert puts the default back and the mark goes", cleared, `cleared=${cleared}`);
+        } finally {
+            await spRestoreFontSize(h, ctx.prevFontSize);
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await spRestoreFontSize(h, ctx.prevFontSize);
         await h.goto("cockpit");
     },
 };
@@ -22801,7 +23207,7 @@ const agyHarness = {
 
             // 8. Settings' launch-flags editor
             await h.goto("settings");
-            await h.ev(`document.querySelector('[data-section="newagent"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
             await h.ev(
                 `[...document.querySelectorAll('[data-setting-row="newagent.runtime"] button')].find((b) => b.textContent.trim() === "Antigravity")?.click()`
@@ -22818,7 +23224,7 @@ const agyHarness = {
             );
 
             // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
-            await h.ev(`document.querySelector('[data-section="run"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
             await polishNap(300);
             const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
             await shot("11-settings-run-route");
@@ -22917,6 +23323,7 @@ export const SCENARIOS = [
     dagLifecycle,
     routePickerFlat,
     settingsRadarAudit,
+    settingsPages,
     jarvisMotion,
     // before brief-inline-tracker, which leaves a briefing fixture on over the seeded data
     briefDesignParity,

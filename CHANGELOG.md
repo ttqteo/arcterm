@@ -34,6 +34,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Settings is six pages instead of eleven, laid out as cards: each setting is a title and one line of description, its
+  config key appears when you hover it (click to copy), and Startup surface is a dropdown.
 - A plan-usage bar's colour follows how much of it is used, amber past 60% and red past 85%, instead of how fast it
   is going: a fast start no longer turns 27% red. The tick still shows how much of the window has passed.
 - An agent's row in the sidebar keeps its name alone on the first line: its canvas tag, state (asking, Low RAM,
@@ -66,8 +68,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A terminal you have not renamed is named for the command it last ran (`task dev`), or "Terminal 2" before it has
   run one, instead of every terminal in a repo sharing the repo's name. PowerShell, Windows PowerShell 5.1 included,
   now reports its commands to arcterm.
-- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning
-  colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove, and + Add account holds both signing
+- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (as bars, in the
+  warning colour from 80%) and a ⋯ menu for Rename, Same account as… and Remove, and + Add account holds both signing
   in and pasting a token.
 - The labels still in Vietnamese are now in English: the Claude account settings and its sign-in and restart
   dialogs, the Cockpit's **Needs you** strip, **Delete session**, and the usage refresh's retry time.
