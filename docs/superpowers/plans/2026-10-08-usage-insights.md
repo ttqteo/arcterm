@@ -150,6 +150,9 @@ and `<slug>/<session>/subagents/agent-a.jsonl`, then calls `scanSessionRoot(root
   `D:\work\arcterm\.waveterm-worktrees\abc\t-1` gives `"engine run"`.
 - `TestScanSessionUsageDropsSyntheticAndOutOfWindow`: a `<synthetic>` turn and a turn 30 days old are
   not counted.
+- `TestScanSessionUsageDedupes`: the same assistant line (one `message.id` and `requestId`) written
+  twice in a session file counts once: `Turns == 1` and its `Models` tokens equal one line's, the way
+  `dedupe` in `usagestats.go` collapses records that share an `ID`.
 - `TestScanSessionUsageMatchesScanUsage`: over a corpus of two sessions (one with a subagent), the sum
   of every session's `Models` token classes equals the sum of the claude buckets from
   `scanRoots(root, none, none, none, none, 7)` (pass `filepath.Join(t.TempDir(), "none")` for the other
@@ -578,6 +581,17 @@ Precedence: `no-sessions` > `running` > `error` > `done` / `never`. `stale` is t
 older than `INSIGHTS_STALE_MS` or its `windowdays` differs. Read `DonutWindow` in `ratelimitstore.ts`
 for the window fields and use `formatReset` (`agentsviewmodel.ts`) for the time.
 
+Tests (`usageinsights.test.ts`):
+- precedence: `sessionCount: 0` gives `no-sessions` even while running, with an error, or with a saved
+  result; `running` beats an error and a saved result; an error beats a saved result and carries it as
+  `prev`; a saved result gives `done`; nothing saved (or markdown `""`) gives `never`.
+- stale: a result analysed 23 h ago with the same `windowdays` is not stale; 25 h ago is; one analysed a
+  minute ago with `windowdays` 0 while the surface shows 7 is.
+- held: a window at 95% gives a non-null tooltip naming the percentage and the reset time; 94% (and a
+  window with no `pct`) gives `null`; with two windows, either at 95% holds.
+- `splitInsights`: four `## ` sections give the first three in `main` and the fourth in `side`; one
+  section (and markdown with no `## `) gives everything in `main` and no `side`.
+
 **Step 4: Run all three test files**
 
 Run: `npx vitest run frontend/app/view/agents/usagesessions.test.ts frontend/app/view/agents/usagedigest.test.ts frontend/app/view/agents/usageinsights.test.ts`
@@ -635,12 +649,12 @@ Remove `DetailHeader` and its call; the pane becomes full width (`px-7` stays).
 
 Add `buildUsageBindings(handlers: { prevTab: () => void; nextTab: () => void; analyze?: () => void })`
 in `bindings.ts` (`group: "Usage"`, `when` = Navigate posture on the `usage` surface, no modal, not
-editable; see `buildCockpitBindings` and the `navigate` helper): `usage:prev-tab` on `ArrowLeft` and
-`[`, `usage:next-tab` on `ArrowRight` and `]`. Leave `analyze` unbound for now (Task 6 adds `a`).
-Activate them in `UsageSurface` with `useKeybindings`. Check `dispatcher.test.ts` / `matcher.test.ts`
-and the global bindings for an existing ArrowLeft/ArrowRight on this surface; if one exists, keep only
-`[` / `]` and say so in the commit message. The list nav (`useSurfaceListNav`) keeps cycling the tabs
-in this task; Task 6 moves it to the table.
+editable; see `buildCockpitBindings` and the `navigate` helper): `usage:prev-tab` on `ArrowLeft`,
+`usage:next-tab` on `ArrowRight`, and no other keys. Do not bind `[` / `]`: the global
+`surface:prev` / `surface:next` (`bindings.ts:211,219`) already cycle surfaces with them. The arrows are
+bound only on the agent and code surfaces, so they are free on Usage. Leave `analyze` unbound for now
+(Task 6 adds `a`). Activate them in `UsageSurface` with `useKeybindings`. The list nav
+(`useSurfaceListNav`) keeps cycling the tabs in this task; Task 6 moves it to the table.
 
 **Step 4: Compact chart row**
 
@@ -765,9 +779,11 @@ it: `liveTabId` → `openTarget(model, { kind: "agent", tabId })`; else `showSes
 Run: `task check:ts` (long timeout) and the Task 4 vitest files.
 Expected: exit 0; PASS.
 
-Acceptance: each view and state is shown by a step of the `usage-insights` scenario (Task 7), run by
-Final: `usage-insights-main` (done, By session, `j`/`k`), `-running`, `-never`, `-stale`, `-error`,
-`-held`, `-empty`, `-show-all`.
+Acceptance: each view, state and interaction is shown by a step of the `usage-insights` scenario
+(Task 7), run by Final: `usage-insights-main` (done, By session, the open dot), `-tabs` (left / right),
+`-cursor` (`j` / `k`), `-open-ended` (Enter and a click on an ended row), `-open-live` (a live row),
+`-running`, `-never`, `-stale`, `-error`, `-held`, `-empty`, `-show-all`. Give the open dot
+`data-usage-session-live` so the scenario can find it.
 
 **Step 7: Commit**
 
@@ -794,26 +810,40 @@ Model it on `usage-charts` (around `scripts/cdp/scenarios.mjs:1543-1830`: it see
 `wave:dev-usage-buckets` with Claude-heavy buckets (reuse `buildUsageFixture` or extend it) and
 `wave:dev-usage-insights` with 30 sessions (titles, projects and numbers like the prototype's rows,
 some over each chip threshold, one whose id matches nothing live) and a `saved` result from today
-whose markdown has four `## ` sections. Goto Usage; the Claude tab is the default. Steps, each with a
+whose markdown has four `## ` sections. Seed a live match through the cockpit fixture roster, the way
+`agent-history` does (`TREE_RAIL_FIXTURE`, `ctx.wroteFixture`, removed in teardown): one claude agent
+with a `blockId` whose `transcriptPath` ends in `<id of the second session>.jsonl`, so
+`liveSessionTabs` marks that row. Reload, goto Usage; the Claude tab is the default. Steps, each with a
 shot and assertions:
 
 1. `usage-insights-main`: the tablist has Claude first and All last; `[data-usage-insights="done"]`
    shows the side tile; `[data-usage-session]` count is 25 and the first row has the chips
-   `heavy subagents`; the chart row shows three cards in one row. (Board: Main.)
-2. `usage-insights-running`: set `analyze: "hang"`, press `a`; `[data-usage-insights="running"]`.
+   `heavy subagents`; the live session's row has `[data-usage-session-live]` (the green open dot) and
+   no other row has one; the chart row shows three cards in one row. (Board: Main.)
+2. `usage-insights-tabs`: press `ArrowRight`; the `aria-selected="true"` tab moves to the next one;
+   press `ArrowLeft`; it is back on Claude.
+3. `usage-insights-cursor`: press `j`, note the index of the `bg-surface-selected` row among the
+   `[data-usage-session]` rows; press `j` again, it is one further down; press `k`, it is back.
+4. `usage-insights-open-ended`: put the cursor on an ended row (no live dot) and press `Enter`; the
+   surface is Agent and `[data-agent-session]` (the transcript centre mode) is shown. Go back to Usage,
+   click another ended row; `[data-agent-session]` again.
+5. `usage-insights-open-live`: back on Usage, click the live row; the surface is Agent, the fixture
+   agent is the focused one (its `[data-agent-row]` carries `bg-surface-selected`) and
+   `[data-agent-session]` is not shown.
+6. `usage-insights-running`: goto Usage, set `analyze: "hang"`, press `a`; `[data-usage-insights="running"]`.
    (Board: Main.)
-3. `usage-insights-never`: fixture with no `saved`, reload; `never`, the primary Analyze button.
+7. `usage-insights-never`: fixture with no `saved`, reload; `never`, the primary Analyze button.
    (Board: InsightsStates 1.)
-4. `usage-insights-stale`: `saved.analyzedts` two days back; `done` with the stale line.
+8. `usage-insights-stale`: `saved.analyzedts` two days back; `done` with the stale line.
    (Board: InsightsStates 2.)
-5. `usage-insights-error`: `analyze: "error"`, press `a`; `error` with the previous result below.
+9. `usage-insights-error`: `analyze: "error"`, press `a`; `error` with the previous result below.
    (Board: InsightsStates 3.)
-6. `usage-insights-held`: `heldPct: 96`, no `saved`; the button disabled with the 96% tooltip.
+10. `usage-insights-held`: `heldPct: 96`, no `saved`; the button disabled with the 96% tooltip.
    (Board: InsightsStates 4.)
-7. `usage-insights-empty`: `sessions: []`; `no-sessions`. (Board: InsightsStates 5.)
-8. `usage-insights-show-all`: click "Show all 30"; 30 rows.
+11. `usage-insights-empty`: `sessions: []`; `no-sessions`. (Board: InsightsStates 5.)
+12. `usage-insights-show-all`: click "Show all 30"; 30 rows.
 
-Teardown restores both localStorage keys and reloads.
+Teardown restores both localStorage keys, removes the fixture roster it wrote, and reloads.
 
 **Step 2: Keep `usage-charts` passing**
 
