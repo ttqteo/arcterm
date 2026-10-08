@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The app bar's plan-usage meters: each provider's 5-hour and weekly windows as two small bars. Tokens
-// and resets are on hover; the button opens the Usage surface for the rest.
+// and resets are on hover; the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
 
 import { Meter } from "@/app/element/meter";
 import { cn, fireAndForget } from "@/util/util";

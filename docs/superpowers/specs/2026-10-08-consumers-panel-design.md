@@ -1,6 +1,6 @@
 # Consumers panel: what is eating RAM and tokens, and stopping it — design
 
-Status: design settled 2026-10-08.
+Status: design settled 2026-10-08; shipped 2026-10-08 (run 5e278caf). Not yet run: the `consumers-popover` CDP scenario (it needs Windows) and the check of whether `/model` applies mid-turn (`docs/open-issues.md`).
 
 ## Problem
 
