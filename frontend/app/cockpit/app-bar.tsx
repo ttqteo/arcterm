@@ -6,6 +6,7 @@ import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { ConsumersPanel } from "@/app/view/agents/consumerspanel";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
@@ -75,7 +76,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </button>
             </div>
 
-            <div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-2.5">
+            <div data-tauri-drag-region className="relative flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
                 <WorkerCapacityChip />
                 <HeaderUsageMeters model={model} />
@@ -106,6 +107,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 </button>
 
                 {mac ? null : <WindowControls />}
+                <ConsumersPanel model={model} />
             </div>
         </div>
     );

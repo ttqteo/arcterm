@@ -9,6 +9,9 @@ const (
 	FailureKindGateSendback  = "gate-sendback"
 	FailureKindTestFailed    = "test-failed"
 	FailureKindUnknown       = "unknown"
+	// FailureKindStopped is a task the human stopped from the Consumers panel or `dag stop`: its worker was
+	// stopped and nothing retries it until the human retries, escalates or skips it.
+	FailureKindStopped = "stopped-by-human"
 )
 
 // Dispatch failure kinds. These never come from classifyFailure — the task died before it had a

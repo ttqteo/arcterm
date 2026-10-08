@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The app bar's plan-usage meters: each provider's 5-hour and weekly windows as two small bars. Tokens
-// and resets are on hover; the button opens the Usage surface for the rest.
+// and resets are on hover; the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
 
 import { Meter } from "@/app/element/meter";
-import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Fragment, useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
 import { usageLevel } from "./agentsviewmodel";
 import { meterTitle, providerDot, usageBarVisible, windowUsedTokens } from "./cockpitrailmodel";
+import { toggleConsumers } from "./consumersstore";
 import {
     activeClaudeAccountAtom,
     activeClaudeKeyAtom,
@@ -37,15 +37,21 @@ const WINDOWS = [
 // Usage surface uses. Only running agents count as live (liveWindowAgents): an idle one holds the reading
 // frozen at its last turn and would pin the meter to that old value. Claude's windows are the active Claude
 // account's only (planDonuts). The 1s clock rolls a window over the moment it resets.
-export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
+/** The plan windows the app bar shows: every live agent's reading merged over the saved snapshot (planDonuts). */
+export function usePlanDonuts(model: AgentsViewModel): ReturnType<typeof planDonuts> {
     const agents = useAtomValue(model.agentsAtom);
     const saved = useAtomValue(savedRateLimitsAtom);
     const activeKey = useAtomValue(activeClaudeKeyAtom);
-    const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const identity = useAtomValue(claudeIdentityAtom);
+    const now = useAtomValue(model.nowAtom);
+    return planDonuts(agents, saved, activeKey, identity, now);
+}
+
+export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
+    const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const windowTokens = useAtomValue(windowTokensAtom);
     const now = useAtomValue(model.nowAtom);
-    const donuts = planDonuts(agents, saved, activeKey, identity, now);
+    const donuts = usePlanDonuts(model);
     const claude = donuts.find((d) => d.provider === "claude");
     useEffect(() => {
         if (claude == null) {
@@ -59,7 +65,7 @@ export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
             windowTokens={windowTokens}
             now={now}
             activeAccount={activeAccount}
-            onOpen={() => globalStore.set(model.surfaceAtom, "usage")}
+            onOpen={() => toggleConsumers("tokens")}
         />
     );
 }
@@ -102,8 +108,10 @@ function UsageMeters({
         <div className="flex items-center gap-1.5">
             <button
                 type="button"
+                data-usage-meters
+                aria-haspopup="dialog"
                 onClick={onOpen}
-                title={[...items.map((m) => m.title), "Open Usage"].join("\n")}
+                title={[...items.map((m) => m.title), "Token use by agent"].join("\n")}
                 className="flex h-[30px] cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
             >
                 {items.map((m, i) => {

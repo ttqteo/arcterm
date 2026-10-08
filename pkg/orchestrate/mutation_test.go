@@ -866,3 +866,137 @@ func TestEffectiveTaskRouteModel(t *testing.T) {
 		t.Fatalf("owner model must flow to tasks without a route: %+v", inherited)
 	}
 }
+
+// stubStop scripts what `stop` does outside the store: the worker's stop and its tab's close. It returns the runs
+// stopped and the tabs closed ("<workspace>/<tab>"), in order, and fails the close with closeErr when set.
+func stubStop(t *testing.T, closeErr error) (*[]string, *[]string) {
+	t.Helper()
+	oldStop, oldDelete := stopRunWorkers, deleteLeadTab
+	var stopped, closed []string
+	stopRunWorkers = func(_ context.Context, run *waveobj.Run) error {
+		stopped = append(stopped, run.ID)
+		return nil
+	}
+	deleteLeadTab = func(_ context.Context, workspaceId, tabId string) error {
+		if len(stopped) == 0 {
+			t.Error("the tab closed before its worker was stopped")
+		}
+		closed = append(closed, workspaceId+"/"+tabId)
+		return closeErr
+	}
+	restoreAfterStages(t, func() { stopRunWorkers, deleteLeadTab = oldStop, oldDelete })
+	return &stopped, &closed
+}
+
+func TestStopEndsARunningTaskWithoutARetry(t *testing.T) {
+	ctx, dag, _, child := seedRunningDag(t)
+	stopped, closed := stubStop(t, nil)
+
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	gotChild, _ := wstore.GetRun(ctx, dag.ChannelId, child.ID)
+	if len(*stopped) != 1 || (*stopped)[0] != child.ID || gotChild.Status != jarvis.RunStatus_Cancelled {
+		t.Fatalf("workers stopped %v, run status %q; want %s stopped and cancelled", *stopped, gotChild.Status, child.ID)
+	}
+	// seedRunningDag's worker runs in tab "worker" of workspace "ws-1"
+	if len(*closed) != 1 || (*closed)[0] != "ws-1/worker" {
+		t.Fatalf("tabs closed = %v, want the worker's tab ws-1/worker", *closed)
+	}
+	got, _ := wstore.GetDag(ctx, dag.OID)
+	task := got.Tasks[0]
+	if task.State != TaskState_Failed || task.LastFailureKind != FailureKindStopped || task.RunID != "" {
+		t.Fatalf("stopped task = state %q kind %q run %q, want failed/%s/none", task.State, task.LastFailureKind, task.RunID, FailureKindStopped)
+	}
+	if got.Status == DagStatus_Cancelled {
+		t.Fatal("stopping one task must not cancel the dag")
+	}
+	if err := Schedule(ctx, dag.OID); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := wstore.GetDag(ctx, dag.OID)
+	if again.Tasks[0].State != TaskState_Failed || again.Tasks[0].RunID != "" {
+		t.Fatalf("after a tick = state %q run %q; a stopped task must not be dispatched again", again.Tasks[0].State, again.Tasks[0].RunID)
+	}
+}
+
+func TestStopAlsoStopsAStalledTask(t *testing.T) {
+	ctx, dag, _, _ := seedRunningDag(t)
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.Tasks[0].State = TaskState_Stalled
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, closed := stubStop(t, nil)
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := wstore.GetDag(ctx, dag.OID)
+	if got.Tasks[0].State != TaskState_Failed || len(*closed) != 1 {
+		t.Fatalf("stalled task after stop = %q, tabs closed %v; want failed and its tab closed", got.Tasks[0].State, *closed)
+	}
+}
+
+// the close comes after the task is recorded: a tab that will not close fails the action with its reason, and the
+// task stays stopped rather than running with a cancelled run, which would cancel the whole dag
+func TestStopKeepsTheTaskStoppedWhenItsTabWillNotClose(t *testing.T) {
+	ctx, dag, _, _ := seedRunningDag(t)
+	stubStop(t, errors.New("workspace gone"))
+	err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{})
+	if err == nil || !strings.Contains(err.Error(), "workspace gone") {
+		t.Fatalf("stop with a tab that will not close = %v, want its reason", err)
+	}
+	got, _ := wstore.GetDag(ctx, dag.OID)
+	if got.Tasks[0].State != TaskState_Failed || got.Tasks[0].LastFailureKind != FailureKindStopped || got.Status == DagStatus_Cancelled {
+		t.Fatalf("task %q kind %q dag %q; want the task stopped and the dag not cancelled", got.Tasks[0].State, got.Tasks[0].LastFailureKind, got.Status)
+	}
+}
+
+func TestAStoppedTaskCanBeSkipped(t *testing.T) {
+	ctx, dag, _, _ := seedRunningDag(t)
+	stubStop(t, nil)
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "skip", waveobj.RoutePin{}); err != nil {
+		t.Fatalf("skip after stop: %v", err)
+	}
+	got, _ := wstore.GetDag(ctx, dag.OID)
+	if got.Tasks[0].State != TaskState_Skipped {
+		t.Fatalf("state = %q, want skipped", got.Tasks[0].State)
+	}
+}
+
+func TestStopRefusesATaskWithNoWorker(t *testing.T) {
+	for _, state := range []string{TaskState_Pending, TaskState_Done, TaskState_Skipped, TaskState_Reviewing} {
+		t.Run(state, func(t *testing.T) {
+			ctx, dag, _, child := seedRunningDag(t)
+			if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+				g.Tasks[0].State = state
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			stopped, closed := stubStop(t, nil)
+			err := ApplyAction(ctx, dag.OID, dag.Tasks[0].ID, "stop", waveobj.RoutePin{})
+			if err == nil || !strings.Contains(err.Error(), "cannot be stopped") {
+				t.Fatalf("stop from %s = %v, want a refusal", state, err)
+			}
+			if len(*stopped) != 0 || len(*closed) != 0 {
+				t.Fatalf("a refused stop stopped %v and closed %v", *stopped, *closed)
+			}
+			got, _ := wstore.GetDag(ctx, dag.OID)
+			gotChild, _ := wstore.GetRun(ctx, dag.ChannelId, child.ID)
+			if got.Tasks[0].State != state || gotChild.Status == jarvis.RunStatus_Cancelled {
+				t.Fatalf("a refused stop changed the task (%q) or cancelled its run (%q)", got.Tasks[0].State, gotChild.Status)
+			}
+		})
+	}
+}
+
+func TestTheLeadIsToldToLeaveAStoppedTask(t *testing.T) {
+	if !strings.Contains(jarvis.OrchestrationRules("r1", "", ""), FailureKindStopped) {
+		t.Fatalf("the lead's rules must name %q", FailureKindStopped)
+	}
+}

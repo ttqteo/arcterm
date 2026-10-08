@@ -61,6 +61,12 @@ func AgentsSendCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSendData, opt
 	return resp, err
 }
 
+// command "agentssetmodel", wshserver.AgentsSetModelCommand
+func AgentsSetModelCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSetModelData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentsSetModelRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentsSetModelRtnData](w, "agentssetmodel", data, opts)
+	return resp, err
+}
+
 // command "agentsyncadopt", wshserver.AgentSyncAdoptCommand
 func AgentSyncAdoptCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncAdoptData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncAdoptRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncAdoptRtnData](w, "agentsyncadopt", data, opts)
@@ -507,6 +513,12 @@ func GetChannelsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Comman
 // command "getclaudequota", wshserver.GetClaudeQuotaCommand
 func GetClaudeQuotaCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetClaudeQuotaRtnData](w, "getclaudequota", nil, opts)
+	return resp, err
+}
+
+// command "getconsumers", wshserver.GetConsumersCommand
+func GetConsumersCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetConsumersRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetConsumersRtnData](w, "getconsumers", nil, opts)
 	return resp, err
 }
 

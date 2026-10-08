@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Clicking the app bar's RAM chip opens **Consumers**: every running agent with its RAM, model and tokens of the last
+  10 minutes, a run's workers under their run, and arcterm's own memory below. **Stop** ends an agent (a worker's task
+  is not retried), and an agent on Opus has **→ Sonnet**. The plan-usage meters open it sorted by tokens; **Open
+  Usage** at its foot goes to the Usage surface.
 - Antigravity CLI (agy) is back as a harness: live status, questions on the card, launch and resume, consults,
   Conversation History, usage, and plan task workers.
 - The Jarvis pet wears Vietnam's colours: a red flag shirt with the yellow star, or the flag in its hand. Settings →

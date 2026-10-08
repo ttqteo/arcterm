@@ -19246,6 +19246,415 @@ const workerCapacity = {
     },
 };
 
+// --- consumers-popover: the Consumers panel (docs/superpowers/specs/2026-10-08-consumers-panel-design.md), opened from
+// the RAM chip and the plan-usage meters. The roster is a fixture (an agent you opened, a run worker on Opus, a pi
+// agent, and a real throwaway terminal tab); getconsumers, agentssetmodel and dagaction are mocked, so the order,
+// grouping, warnings and every action are known, and only the throwaway tab is really stopped (step 18). A saved
+// plan window makes the meters draw.
+const CONSUMERS_MOCK_KEY = "__arcConsumersMock";
+const CONSUMERS_RATE_KEY = "wave:ratelimits";
+const CONSUMERS_MINE = "tối ưu RAM";
+// the real throwaway tab arrange opens: step 18 stops it
+const CONSUMERS_LIVE = "consumers throwaway";
+// a real worker's row name is its tab's name (the project), so the worker's confirm and toast come from its task id
+const CONSUMERS_FIXTURE = [
+    { id: "fx-consumers-mine", name: CONSUMERS_MINE, project: "arcterm", task: "", state: "working", agent: "claude", model: "sonnet", blockId: "fx-blk-mine" },
+    { id: "fx-consumers-worker", name: "arcterm", project: "arcterm", task: "", state: "working", agent: "claude", model: "opus", blockId: "fx-blk-worker", runId: "fx-child-run" },
+    { id: "fx-consumers-pi", name: "pi scout", project: "arcterm", task: "", state: "idle", agent: "pi", model: "opus", blockId: "fx-blk-pi" },
+];
+const consumersBucket = (model, output, cacheread = 0) => ({ harness: "claude", provider: "anthropic", model, day: "2026-10-08", input: 0, output, reasoning: 0, cacheread, cachecreate: 0, cachecreate1h: 0, msgs: 1 });
+const CONSUMERS_READING = {
+    totalbytes: 8 * 2 ** 30,
+    availablebytes: 1.3 * 2 ** 30,
+    windowms: 600_000,
+    interfacebytes: 684 * 2 ** 20,
+    serverbytes: 121 * 2 ** 20,
+    hostbytes: 47 * 2 ** 20,
+    agents: [
+        // 80K counted, and 9M cache reads that the count leaves out: no burn
+        { tabid: "fx-consumers-mine", blockid: "fx-blk-mine", rambytes: 300 * 2 ** 20, tokensread: true, tokens: [consumersBucket("claude-sonnet-4-6", 80_000, 9_000_000)] },
+        { tabid: "fx-consumers-worker", blockid: "fx-blk-worker", rambytes: 2.5 * 2 ** 30, tokensread: true, tokens: [consumersBucket("claude-opus-4-8", 1_200_000)], dag: { channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3" } },
+        { tabid: "fx-consumers-pi", blockid: "fx-blk-pi", rambytes: 200 * 2 ** 20, tokensread: false },
+    ],
+};
+const CONSUMERS_STOP_WORKER =
+    "Stop worker t-3 of run 85548d0b? Its task stops and is not retried; tasks after it wait until you Retry or Skip it in the run.";
+const CONSUMERS_STOP_MINE = `End the session for "${CONSUMERS_MINE}"? This stops the agent and can't be undone.`;
+const CONSUMERS_STOP_LIVE = `End the session for "${CONSUMERS_LIVE}"? This stops the agent and can't be undone.`;
+
+// One mock for the whole scenario. `mode` picks getconsumers' answer: "hold" keeps the poll waiting (the loading
+// state) until consumersMode moves on, "reading" answers `reading` (CONSUMERS_READING plus the throwaway tab),
+// "empty" no agents, "fail" an error. agentssetmodel and dagaction answer as the server would and are recorded in
+// `calls`. A reload drops it, so install it after the scenario's last reload.
+async function installConsumersMock(h, reading) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CONSUMERS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, mode: "hold", reading: ${JSON.stringify(reading)}, held: [], calls: [] };
+        const answer = () => {
+            if (m.mode === "hold") return new Promise((resolve) => m.held.push(resolve));
+            if (m.mode === "fail") return Promise.reject(new Error("wavesrv restarting"));
+            return Promise.resolve(m.mode === "empty" ? { ...m.reading, agents: [] } : m.reading);
+        };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "getconsumers") return answer();
+                if (command === "agentssetmodel") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve({ tabid: data.tab, midturn: true, overstream: true });
+                }
+                if (command === "dagaction") {
+                    m.calls.push({ command, data });
+                    return Promise.resolve(null);
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${CONSUMERS_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+// sets getconsumers' answer; leaving "hold" answers the polls that were held with the reading
+const consumersMode = (h, mode) =>
+    h.ev(`(() => {
+        const m = window.${CONSUMERS_MOCK_KEY};
+        if (!m) return false;
+        m.mode = ${JSON.stringify(mode)};
+        if (m.mode !== "hold") for (const resolve of m.held.splice(0)) resolve(m.reading);
+        return true;
+    })()`);
+
+const removeConsumersMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${CONSUMERS_MOCK_KEY};
+        if (!m) return "absent";
+        m.api.setMockRpcClient(m.prev);
+        delete window.${CONSUMERS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// the panel's sort, or null once it is closed (the exit animation keeps it a moment with an empty data-sort)
+const CONSUMERS_SORT = `(document.querySelector("[data-consumers-panel]")?.dataset.sort || null)`;
+const consumersRowExpr = (id) => `document.querySelector('[data-consumer-row="${id}"]')`;
+const consumersDialogExpr = (text) =>
+    `[...document.querySelectorAll('[role="dialog"]')].find((d) => !d.matches("[data-consumers-panel]") && d.textContent.includes(${JSON.stringify(text)}))`;
+const consumersToastExpr = (...parts) =>
+    `[...document.querySelectorAll("[data-notification-toast]")].some((t) => ${JSON.stringify(parts)}.every((p) => t.textContent.includes(p)))`;
+
+// a person's click at a point: CDP's mouse events hit-test, so the panel's backdrop takes a click that lands on the chip
+async function consumersMouseClick(h, pt) {
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: pt.x, y: pt.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+    }
+}
+const consumersCentre = (h, selector) =>
+    h.ev(`(() => {
+        const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+        return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+    })()`);
+
+const consumersPopover = {
+    name: "consumers-popover",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { prevRate: await h.ev(`localStorage.getItem(${JSON.stringify(CONSUMERS_RATE_KEY)})`) };
+        try {
+            // a real terminal tab in the page's workspace stands in for a live agent (step 18 stops it). It is on ctx
+            // as soon as it exists, so teardown closes it whatever fails after
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.liveTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, CONSUMERS_LIVE, false]);
+            const liveTab = await waveService(h, "object", "GetObject", [`tab:${ctx.liveTabId}`]);
+            const liveBlockId = liveTab?.blockids?.[0];
+            if (!liveBlockId) throw new Error(`the throwaway tab ${ctx.liveTabId} has no block`);
+            await h.rpc("setmeta", { oref: `block:${liveBlockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+            await h.rpc("controllerresync", { tabid: ctx.liveTabId, blockid: liveBlockId, forcerestart: true });
+            const liveAgent = { id: ctx.liveTabId, name: CONSUMERS_LIVE, project: "arcterm", task: "", state: "idle", agent: "claude", model: "sonnet", blockId: liveBlockId };
+            ctx.reading = {
+                ...CONSUMERS_READING,
+                agents: [...CONSUMERS_READING.agents, { tabid: ctx.liveTabId, blockid: liveBlockId, rambytes: 100 * 2 ** 20, tokensread: true, tokens: [] }],
+            };
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify([...CONSUMERS_FIXTURE, liveAgent], null, 2));
+            ctx.wroteFixture = true;
+            // a current Default-account window with future resets, so the meters draw and the header shows 62%
+            const nowSec = Math.floor(Date.now() / 1000);
+            const rate = {
+                "claude:default": { fivehourpct: 62, fivehourreset: nowSec + 3 * 3600, weekpct: 41, weekreset: nowSec + 6 * 24 * 3600, capturedAt: Date.now() },
+            };
+            await h.ev(`localStorage.setItem(${JSON.stringify(CONSUMERS_RATE_KEY)}, ${JSON.stringify(JSON.stringify(rate))})`);
+            // the fixture roster and the saved windows are read at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.mock = await installConsumersMock(h, ctx.reading);
+            if (ctx.mock !== "installed") throw new Error(`mock: ${ctx.mock}`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const sort = () => h.ev(CONSUMERS_SORT);
+        const waitClosed = () => polishWaitFor(h, `${CONSUMERS_SORT} === null`, 2000);
+        const calls = () => h.ev(`window.${CONSUMERS_MOCK_KEY}?.calls ?? []`);
+        const rows = () => h.ev(`[...document.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow)`);
+        const openFromChip = async () => {
+            await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+            return polishWaitFor(h, `${CONSUMERS_SORT} === "ram"`, 3000);
+        };
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster, the saved plan window and the mock", false, ctx.arrangeError);
+            return steps;
+        }
+
+        // h.rpc calls TabRpcClient.wshRpcCall straight, past RpcApi's mock, so this reads the live server
+        const live = await h.rpc("getconsumers", null);
+        rec(
+            "1. GetConsumersCommand reads the machine",
+            !!live && live.totalbytes > 0 && Array.isArray(live.agents),
+            JSON.stringify(live).slice(0, 300)
+        );
+
+        // the mock starts in "hold": the first poll waits, so the panel shows its loading lines
+        const chipReady = await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        const opened = chipReady && (await openFromChip());
+        const loading = await h.ev(`!!document.querySelector("[data-consumers-panel] [data-consumers-loading]")`);
+        await h.shot("cdp-shots/consumers-loading.png");
+        rec(
+            "2. the RAM chip opens the panel sorted by RAM, with loading lines until the first reading",
+            opened && loading === true,
+            JSON.stringify({ chipReady, opened, loading })
+        );
+
+        await consumersMode(h, "reading");
+        await polishWaitFor(h, `document.querySelectorAll("[data-consumer-row]").length === 4`, 5000);
+        const ram = await h.ev(`(() => {
+            const p = document.querySelector("[data-consumers-panel]");
+            if (!p) return null;
+            return {
+                rows: [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow),
+                header: p.querySelector("[data-consumers-header]")?.textContent ?? "",
+                runLabel: p.textContent.toLowerCase().includes("run 85548d0b"),
+            };
+        })()`);
+        await h.shot("cdp-shots/consumers-ram.png");
+        rec(
+            "3. rows by RAM: the run's worker first under its run, with free RAM and the 5-hour quota in the header",
+            !!ram && ram.rows[0] === "fx-consumers-worker" && ram.rows.length === 4 && ram.runLabel &&
+                ram.header.includes("free of") && ram.header.includes("5h quota 62%"),
+            JSON.stringify(ram)
+        );
+
+        const own = await h.ev(`[...document.querySelectorAll("[data-consumers-own]")].map((o) => [o.dataset.consumersOwn, o.textContent])`);
+        rec(
+            "4. arcterm's own processes are listed below with their RAM",
+            JSON.stringify(own.slice(0, 3).map((o) => o[0])) === JSON.stringify(["Interface", "Server", "Host"]) &&
+                own[0][1].includes("684 MB") && own[1][1].includes("121 MB") && own[2][1].includes("47 MB"),
+            JSON.stringify(own)
+        );
+
+        const marks = await h.ev(`(() => {
+            const w = ${consumersRowExpr("fx-consumers-worker")};
+            const mine = ${consumersRowExpr("fx-consumers-mine")};
+            const pi = ${consumersRowExpr("fx-consumers-pi")};
+            return {
+                workerOpus: !!w?.querySelector("[data-consumer-opus]"),
+                workerBurn: !!w?.querySelector("[data-consumer-burn]"),
+                workerSonnet: !!w?.querySelector("[data-consumer-sonnet]"),
+                mineBurn: !!mine?.querySelector("[data-consumer-burn]"),
+                mineSonnet: !!mine?.querySelector("[data-consumer-sonnet]"),
+                piSonnet: !!pi?.querySelector("[data-consumer-sonnet]"),
+                stops: [w, mine, pi].every((r) => !!r?.querySelector("[data-consumer-stop]")),
+                piTokens: pi?.textContent.includes("—") ?? false,
+            };
+        })()`);
+        rec(
+            "5. the Opus worker is marked, burns fastest and offers → Sonnet; every row has Stop; the pi agent's tokens are unread",
+            marks.workerOpus && marks.workerBurn && marks.workerSonnet && !marks.mineBurn && !marks.mineSonnet &&
+                !marks.piSonnet && marks.stops && marks.piTokens,
+            JSON.stringify(marks)
+        );
+
+        await h.ev(`[...document.querySelectorAll("[data-consumers-panel] button")].find((b) => b.textContent.trim() === "Tokens")?.click()`);
+        await settle(300);
+        const tokens = { sort: await sort(), first: (await rows())[0] };
+        await h.shot("cdp-shots/consumers-tokens.png");
+        rec("6. the sort toggle ranks by tokens", tokens.sort === "tokens" && tokens.first === "fx-consumers-worker", JSON.stringify(tokens));
+
+        await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-sonnet]")?.click()`);
+        const sonnetToast = await polishWaitFor(h, consumersToastExpr("arcterm switch", "Sonnet"), 3000);
+        const sonnetCall = (await calls()).find((c) => c.command === "agentssetmodel");
+        rec(
+            "7. → Sonnet sends /model sonnet to the worker's tab and a toast says so",
+            sonnetToast && sonnetCall?.data?.tab === "fx-consumers-worker" && sonnetCall?.data?.model === "sonnet",
+            JSON.stringify({ sonnetToast, sonnetCall })
+        );
+
+        await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
+        const workerConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
+        await h.shot("cdp-shots/consumers-stop-worker.png");
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_WORKER)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Stop worker")?.click()`);
+        const stopToast = await polishWaitFor(h, consumersToastExpr("Worker t-3 stopped"), 3000);
+        const stopCall = (await calls()).find((c) => c.command === "dagaction");
+        rec(
+            "8. Stop on a worker asks the run confirm, then sends the stop dag action for its task",
+            workerConfirm && stopToast &&
+                JSON.stringify(stopCall?.data) === JSON.stringify({ channelid: "fx-ch", runid: "85548d0b-fx", taskid: "t-3", action: "stop" }),
+            JSON.stringify({ workerConfirm, stopToast, stopCall })
+        );
+
+        await h.ev(`${consumersRowExpr("fx-consumers-mine")}?.querySelector("[data-consumer-stop]")?.click()`);
+        const mineConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_MINE)}`, 3000);
+        await h.shot("cdp-shots/consumers-stop-agent.png");
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_MINE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Cancel")?.click()`);
+        const cancelled = await polishWaitFor(h, `!${consumersDialogExpr(CONSUMERS_STOP_MINE)} && !!${consumersRowExpr("fx-consumers-mine")}`, 3000);
+        rec(
+            "9. Stop on an agent you opened asks the Close agent confirm; Cancel keeps it",
+            mineConfirm && cancelled,
+            JSON.stringify({ mineConfirm, cancelled })
+        );
+
+        // the next poll fails: within one CONSUMERS_POLL_MS (5 s) the rows stay, dimmed, under the stale line
+        await consumersMode(h, "fail");
+        const staleShown = await polishWaitFor(h, `!!document.querySelector("[data-consumers-stale]")`, 7000);
+        const stale = await h.ev(`({
+            line: document.querySelector("[data-consumers-stale]")?.textContent ?? null,
+            dimmed: document.querySelector("[data-consumers-list]")?.classList.contains("opacity-60") ?? false,
+            rows: document.querySelectorAll("[data-consumer-row]").length,
+        })`);
+        await h.shot("cdp-shots/consumers-stale.png");
+        rec(
+            "10. a failed poll keeps the last reading, dimmed, under \"Couldn't read usage · last at HH:MM\"",
+            staleShown && /^Couldn't read usage · last at \d{2}:\d{2}$/.test(stale.line ?? "") && stale.dimmed && stale.rows === 4,
+            JSON.stringify(stale)
+        );
+        await consumersMode(h, "reading");
+
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        rec("11. Escape closes it", await waitClosed(), String(await sort()));
+
+        const reopened = await openFromChip();
+        const chipAt = await consumersCentre(h, "[data-worker-capacity]");
+        if (chipAt) await consumersMouseClick(h, chipAt);
+        rec("12. a second click on the RAM chip closes it", reopened && !!chipAt && (await waitClosed()), JSON.stringify({ reopened, chipAt }));
+
+        const reopened2 = await openFromChip();
+        const outside = await h.ev(`({ x: 40, y: Math.round(window.innerHeight / 2) })`);
+        await consumersMouseClick(h, outside);
+        rec("13. a click outside the panel closes it", reopened2 && (await waitClosed()), JSON.stringify({ reopened2, outside }));
+
+        await consumersMode(h, "empty");
+        await openFromChip();
+        const empty = await polishWaitFor(h, `!!document.querySelector("[data-consumers-panel] [data-consumers-empty]")`, 7000);
+        await h.shot("cdp-shots/consumers-empty.png");
+        rec(
+            "14. with no agents running the panel says so",
+            empty && (await h.ev(`document.querySelector("[data-consumers-empty]")?.textContent.trim()`)) === "No agents running.",
+            String(empty)
+        );
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await waitClosed();
+        await consumersMode(h, "reading");
+
+        // the saved window makes the meters draw; their absence is a failure, not a skip
+        const meters = await polishWaitFor(h, `!!document.querySelector("[data-usage-meters]")`, 5000);
+        if (meters) await h.ev(`document.querySelector("[data-usage-meters]").click()`);
+        const metersSort = meters && (await polishWaitFor(h, `${CONSUMERS_SORT} === "tokens"`, 3000));
+        rec("15. the plan-usage meters open it sorted by tokens", meters && metersSort, JSON.stringify({ meters, sort: await sort() }));
+
+        await polishWaitFor(h, `!!document.querySelector("[data-consumers-open-usage]")`, 3000);
+        await h.ev(`document.querySelector("[data-consumers-open-usage]")?.click()`);
+        const usageClosed = await waitClosed();
+        const usageSurface = await h.activeSurfaceLabel();
+        rec(
+            "16. Open Usage closes it and lands on the Usage surface",
+            usageClosed && usageSurface === SURFACE_LABEL.usage,
+            JSON.stringify({ usageClosed, usageSurface })
+        );
+
+        await h.goto("cockpit");
+        await openFromChip();
+        await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-mine")}`, 5000);
+        await h.ev(`${consumersRowExpr("fx-consumers-mine")}?.querySelector("[data-consumer-open]")?.click()`);
+        const nameClosed = await waitClosed();
+        await polishWaitFor(h, `${DRM_HEADER_NAME} === ${JSON.stringify(CONSUMERS_MINE)}`, 5000);
+        const landed = { surface: await h.activeSurfaceLabel(), name: await h.ev(DRM_HEADER_NAME) };
+        rec(
+            "17. a click on an agent's name closes the panel and opens that agent",
+            nameClosed && landed.surface === SURFACE_LABEL.agent && landed.name === CONSUMERS_MINE,
+            JSON.stringify({ nameClosed, ...landed })
+        );
+
+        // a live agent: Stop on the throwaway tab's row goes through the real close, and its tab leaves the workspace
+        await h.goto("cockpit");
+        await openFromChip();
+        await polishWaitFor(h, `!!${consumersRowExpr(ctx.liveTabId)}`, 5000);
+        await h.ev(`${consumersRowExpr(ctx.liveTabId)}?.querySelector("[data-consumer-stop]")?.click()`);
+        const liveConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_LIVE)}`, 3000);
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_LIVE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Close agent")?.click()`);
+        const liveTabOpen = async () =>
+            (await h.rpc("workspacelist", null)).some((w) => (w.workspacedata?.tabids ?? []).includes(ctx.liveTabId));
+        let liveGone = false;
+        for (let i = 0; i < 25 && !(liveGone = !(await liveTabOpen())); i++) await settle(200);
+        if (liveGone) ctx.liveTabClosed = true;
+        rec(
+            "18. Stop on a live agent asks the Close agent confirm, and Close agent ends it: its tab leaves the workspace",
+            liveConfirm && liveGone,
+            JSON.stringify({ liveConfirm, liveGone, tab: ctx.liveTabId })
+        );
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        await waitClosed();
+
+        // a real Escape over a confirm closes the confirm alone: the panel stays and the stop is not sent
+        const stopsBefore = (await calls()).filter((c) => c.command === "dagaction").length;
+        const reopened3 = await openFromChip();
+        await polishWaitFor(h, `!!${consumersRowExpr("fx-consumers-worker")}`, 5000);
+        await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
+        const escConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        }
+        const escDialogGone = await polishWaitFor(h, `!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
+        const escState = {
+            panelSort: await sort(),
+            stopsBefore,
+            stopsAfter: (await calls()).filter((c) => c.command === "dagaction").length,
+        };
+        rec(
+            "19. Escape over the stop confirm closes the confirm only: the panel stays open and no second stop is sent",
+            reopened3 && escConfirm && escDialogGone && escState.panelSort === "ram" && escState.stopsAfter === escState.stopsBefore,
+            JSON.stringify({ reopened3, escConfirm, escDialogGone, ...escState })
+        );
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await removeConsumersMock(h);
+        if (ctx.liveTabId && !ctx.liveTabClosed) {
+            await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.liveTabId, false]).catch((e) =>
+                console.error(`consumers-popover teardown: closing the throwaway tab ${ctx.liveTabId}: ${e?.message ?? e}`)
+            );
+        }
+        if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
+        await h.ev(restoreStorageKey(CONSUMERS_RATE_KEY, ctx.prevRate ?? null));
+        if (!(await ahReload(h))) console.error("consumers-popover teardown: the page did not come back after the reload");
+        await h.goto("cockpit");
+    },
+};
+
 // --- capacity-warn: the three worker steppers' over-capacity mark, with the capacity mocked to +0
 // (docs/superpowers/specs/2026-10-06-worker-ram-capacity-design.md). At moreworkers 0 any width of 1 or more is
 // over, and the launcher's width defaults to DEFAULT_PARALLELISM, so New run and the launcher need no stepping.
@@ -21298,6 +21707,7 @@ export const SCENARIOS = [
     agentRailTabs,
     mdComments,
     workerCapacity,
+    consumersPopover,
     capacityWarn,
     notifyToast,
 ];
