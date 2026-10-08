@@ -53,6 +53,9 @@ export async function createTempFileFromBlob(blob: Blob): Promise<string> {
     if (checkUploadFile(blob) != null) {
         throw new Error(`Image too large (>${MAX_UPLOAD_LABEL})`);
     }
+    if (blob.size === 0) {
+        throw new Error("Image is empty");
+    }
 
     // Get file extension from MIME type
     if (!blob.type.startsWith("image/") || !MIME_TO_EXT[blob.type]) {
@@ -131,7 +134,7 @@ export async function extractClipboardData(item: ClipboardItem): Promise<GenClip
     const imageTypes = item.types.filter((type) => type.startsWith("image/"));
     if (imageTypes.length > 0) {
         const blob = await item.getType(imageTypes[0]);
-        return { image: blob };
+        return blob.size > 0 ? { image: blob } : null;
     }
 
     // Mode #2: Try text/plain, text/plain;*, or "text"
@@ -244,7 +247,8 @@ export async function extractDataTransferItems(items: DataTransferItemList): Pro
         const results: GenClipboardItem[] = [];
         for (const item of imageFiles) {
             const blob = item.getAsFile();
-            if (blob) {
+            // WebView2 can hand over an image item with no bytes; pasting its path would point at an empty file
+            if (blob && blob.size > 0) {
                 results.push({ image: blob });
             }
         }
@@ -311,8 +315,12 @@ export async function extractAllClipboardData(e?: ClipboardEvent): Promise<Array
 
     try {
         // First try using ClipboardEvent.clipboardData.items
+        // (an image the event delivered empty is read again from the Clipboard API below)
         if (e?.clipboardData?.items) {
-            return await extractDataTransferItems(e.clipboardData.items);
+            const items = await extractDataTransferItems(e.clipboardData.items);
+            if (items.length > 0) {
+                return items;
+            }
         }
 
         // Fallback: Try Clipboard API

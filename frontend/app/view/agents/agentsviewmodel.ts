@@ -102,6 +102,7 @@ export interface AgentVM {
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
+    running?: boolean; // a plain terminal: its shell is running a command, not waiting at its prompt
 }
 
 const STATE_RANK: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
@@ -587,7 +588,9 @@ export function deriveTerminalVMs(
     // the registry's project for a cwd; the launch-time label covers a terminal outside every registered project
     registeredProject: (cwd: string) => string = () => "",
     // the command the terminal's block last ran, as its shell reported it
-    lastCommand: (blockId: string) => string | undefined = () => undefined
+    lastCommand: (blockId: string) => string | undefined = () => undefined,
+    // whether the terminal's block is running a command rather than sitting at its prompt
+    running: (blockId: string) => boolean = () => false
 ): AgentVM[] {
     const out: AgentVM[] = [];
     for (const row of rows) {
@@ -608,6 +611,7 @@ export function deriveTerminalVMs(
             agent: "terminal", // selects the "Terminal" pill in the header (runtimeMeta)
             blockId,
             ...(project != null ? { project } : {}),
+            ...(running(blockId) ? { running: true } : {}),
         });
     }
     return out;
@@ -622,6 +626,16 @@ export function mergeOrder(prev: string[], ids: string[]): string[] {
     const keptSet = new Set(kept);
     const added = ids.filter((id) => !keptSet.has(id));
     return [...kept, ...added];
+}
+
+/** pure: the stored card order (orderAtom) after a sync, anchored over the whole roster. The Cockpit renders only its
+ *  active agents, but the sidebar's Active section reads this same order, so an agent that goes idle must keep its slot:
+ *  syncing over the active set alone dropped it, and every visit to the Cockpit moved the sidebar's rows. */
+export function syncCardOrder(prev: string[], roster: AgentVM[]): string[] {
+    return mergeOrder(
+        prev,
+        roster.map((a) => a.id)
+    );
 }
 
 /** pure: apply stored card order without hiding agents that appeared before orderAtom updated. */

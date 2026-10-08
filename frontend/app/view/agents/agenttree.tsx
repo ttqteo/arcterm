@@ -16,12 +16,14 @@ import {
     Check,
     ChevronDown,
     ChevronRight,
+    ChevronUp,
     Columns2,
     Copy,
     CopyPlus,
     ExternalLink,
     Folder,
     FolderOpen,
+    GitBranch,
     History as HistoryIcon,
     Pencil,
     Play,
@@ -47,14 +49,18 @@ import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentc
 import {
     activeView,
     ALL_PROJECTS,
+    collidingTitles,
     conversationCount,
     conversationTree,
     endedConversationsByProject,
     liveBranches,
+    notableBranch,
     registeredConversations,
     runsBesideOrigins,
+    runTokens,
     sessionAgeLabel,
     splitActive,
+    startedLabel,
     startOfDay,
     terminalTree,
     type EndedRunRow,
@@ -135,6 +141,15 @@ const conversationPressesAtom = atom<ReadonlyMap<string, number>>(new Map()) as 
 
 function showMoreConversations(project: string): void {
     globalStore.set(conversationPressesAtom, (prev) => new Map(prev).set(project, (prev.get(project) ?? 0) + 1));
+}
+
+// back to the first page in one press: one opens more to look, then wants the list short again
+function showLessConversations(project: string): void {
+    globalStore.set(conversationPressesAtom, (prev) => {
+        const next = new Map(prev);
+        next.delete(project);
+        return next;
+    });
 }
 
 // choosing an agent's row brings its terminal back from a session or History
@@ -374,7 +389,7 @@ function ParentRow({
     tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
 }) {
-    const rt = runtimeMeta(agent.agent);
+    const shownBranch = notableBranch(branch);
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const oref = `block:${agent.blockId}`;
@@ -461,8 +476,8 @@ function ParentRow({
     // popLayout to pop an exiting row out of flow). This is just the row body + subagent reveal.
     return (
         <>
-            {/* two lines, as a Conversations row reads: the name, its state and age, then its runtime, branch and model
-                (a lead's: its workers chip and progress) */}
+            {/* the runtime, name, state, tokens and age, then its model, a branch other than the default and its
+                subagents (a lead's: its workers chip and progress) */}
             <div
                 onClick={select}
                 onDoubleClick={foldRow}
@@ -471,7 +486,7 @@ function ParentRow({
                 data-agent-row={agent.id}
                 {...dragSource(agent, !renaming)}
                 className={cn(
-                    "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                    "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
                     // selection is the one filled row; an asking agent says so in words, not in a tint
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
                     settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
@@ -488,7 +503,9 @@ function ParentRow({
                                 aria-hidden
                                 className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
                             />
-                        ) : null}
+                        ) : (
+                            <RuntimeGlyph runtime={agent.agent} />
+                        )}
                         <span
                             className={cn(
                                 "min-w-0 flex-1 truncate text-[13px]",
@@ -543,9 +560,8 @@ function ParentRow({
                                         className="!h-[6px] !w-[6px] flex-none"
                                     />
                                 )}
-                                <span className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
-                                    {formatAgeShort(displayAgeMs(agent, now))}
-                                </span>
+                                {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
+                                <span className={AGE_COL}>{formatAgeShort(displayAgeMs(agent, now))}</span>
                                 {step ? (
                                     <span
                                         data-agent-step={step}
@@ -569,36 +585,20 @@ function ParentRow({
                 )}
                 {lead ? (
                     <RunSubline run={lead.run} open={lead.open} live={lead.live} />
-                ) : (
-                    <div className={cn(CONVERSATION_META, "mt-[3px]")}>
-                        <span className={cn("flex-none", rt.text)} title={rt.label}>
-                            {rt.glyph}
-                        </span>
-                        {branch ? (
-                            <span className="min-w-0 truncate" title={branch}>
-                                {branch}
+                ) : agent.model || shownBranch || subsChip ? (
+                    // under the name: its model, a branch other than the default, and its subagents chip
+                    <div className={cn(CONVERSATION_META, "mt-[3px]", UNDER_GLYPH)}>
+                        {agent.model ? <span className="flex-none whitespace-nowrap">{agent.model}</span> : null}
+                        {agent.model && shownBranch ? (
+                            <span aria-hidden className="flex-none text-ink-faint">
+                                ·
                             </span>
                         ) : null}
-                        {agent.model ? (
-                            <>
-                                <span aria-hidden className="flex-none text-ink-faint">
-                                    ·
-                                </span>
-                                <span className="flex-none whitespace-nowrap">{agent.model}</span>
-                            </>
-                        ) : null}
-                        {tokens ? (
-                            <>
-                                <span aria-hidden className="flex-none text-ink-faint">
-                                    ·
-                                </span>
-                                <span className="flex-none whitespace-nowrap">{formatTokens(tokens)} tok</span>
-                            </>
-                        ) : null}
+                        {shownBranch ? <BranchLabel branch={shownBranch} /> : null}
                         <span className="flex-1" />
                         {subsChip}
                     </div>
-                )}
+                ) : null}
             </div>
             {/* subagent reveal: the children block expands/collapses via composerReveal (height+opacity).
                 It is not a layout node itself, so its height animation and the row-list reflow don't fight. */}
@@ -940,7 +940,7 @@ function ConversationShell({
             onContextMenu={onContextMenu}
             title={title}
             className={cn(
-                "flex min-w-0 cursor-pointer flex-col gap-[3px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                "flex min-w-0 cursor-pointer flex-col gap-[3px] rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
@@ -949,19 +949,21 @@ function ConversationShell({
     );
 }
 
-// a conversation row's first line: its title, `mark` after it, and how long ago it last moved
+// a conversation row's first line: its title, `mark` after it, its tokens, and how long ago it last moved
 function ConversationHead({
     selected,
     title,
     age,
     icon,
     mark,
+    tokens,
 }: {
     selected: boolean;
     title: string;
     age: string;
     icon?: React.ReactNode;
     mark?: React.ReactNode;
+    tokens?: number;
 }) {
     return (
         <div className="flex min-w-0 items-center gap-[6px]">
@@ -970,7 +972,8 @@ function ConversationHead({
                 {title}
             </span>
             {mark}
-            <span data-agent-session-age className="whitespace-nowrap text-[11px] tabular-nums text-ink-faint">
+            {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
+            <span data-agent-session-age className={AGE_COL}>
                 {age}
             </span>
         </div>
@@ -978,6 +981,30 @@ function ConversationHead({
 }
 
 const CONVERSATION_META = "flex min-w-0 items-center gap-[5px] text-[10.5px] tabular-nums text-muted";
+// a row's tokens and age end its first line as two right-aligned columns, so they line up down the list
+const TOKENS_COL = "min-w-[34px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-muted";
+const AGE_COL = "min-w-[24px] flex-none whitespace-nowrap text-right text-[11px] tabular-nums text-ink-faint";
+// a second line starts under the title, past the runtime glyph and the gap after it
+const UNDER_GLYPH = "pl-[18px]";
+
+// the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up
+function RuntimeGlyph({ runtime }: { runtime: string }) {
+    const rt = runtimeMeta(runtime);
+    return (
+        <span className={cn("min-w-[12px] flex-none text-center text-[12px]", rt.text)} title={rt.label}>
+            {rt.glyph}
+        </span>
+    );
+}
+
+function BranchLabel({ branch }: { branch: string }) {
+    return (
+        <span className="flex min-w-0 items-center gap-[3px]" title={branch}>
+            <GitBranch size={10} aria-hidden className="flex-none" />
+            <span className="truncate">{branch}</span>
+        </span>
+    );
+}
 
 function copyTitleItem(title: string): ContextMenuItem {
     return {
@@ -987,8 +1014,9 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
-// An ended conversation in the Conversations section, read like a History card on two lines: its first prompt and how
-// long ago it last moved, then its runtime, branch and tokens (the folder, or the app bar's filter, names the project).
+// An ended conversation in the Conversations section, on one line: its runtime, first prompt, tokens and how long ago
+// it last moved (the folder, or the app bar's filter, names the project). A second line comes only when it tells the
+// row apart: a branch other than the default, or, when another shown row has the same title, when it started.
 // A click reads its transcript in the centre, where Resume lives. It is not a live row, so it carries no state dot (only
 // a small one when it is waiting for you); the title is the prompt on one line and the row's tooltip holds all of it.
 // Memoized on strings and booleans: the list re-renders with the 1s clock, a row only when its age label or its
@@ -997,15 +1025,17 @@ const ConversationRow = memo(function ConversationRow({
     model,
     row,
     age,
+    started,
     selected,
 }: {
     model: AgentsViewModel;
     row: EndedSessionRow;
     age: string;
+    started?: string; // startedLabel, for a row whose title another shown row shares
     selected: boolean;
 }) {
     const { session } = row;
-    const rt = runtimeMeta(session.runtime);
+    const branch = notableBranch(session.branch);
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [];
         if (session.resumecommand) {
@@ -1041,6 +1071,8 @@ const ConversationRow = memo(function ConversationRow({
                 selected={selected}
                 title={row.title}
                 age={age}
+                tokens={session.tokenstotal}
+                icon={<RuntimeGlyph runtime={session.runtime} />}
                 mark={
                     session.needsAttention ? (
                         <span
@@ -1051,30 +1083,24 @@ const ConversationRow = memo(function ConversationRow({
                     ) : null
                 }
             />
-            <div className={CONVERSATION_META}>
-                <span className={cn("flex-none", rt.text)} title={rt.label}>
-                    {rt.glyph}
-                </span>
-                {session.branch ? (
-                    <span className="min-w-0 truncate" title={session.branch}>
-                        {session.branch}
-                    </span>
-                ) : null}
-                {session.tokenstotal > 0 ? (
-                    <>
+            {branch || started ? (
+                <div className={cn(CONVERSATION_META, UNDER_GLYPH)}>
+                    {branch ? <BranchLabel branch={branch} /> : null}
+                    {branch && started ? (
                         <span aria-hidden className="flex-none text-ink-faint">
                             ·
                         </span>
-                        <span className="flex-none whitespace-nowrap">{formatTokens(session.tokenstotal)} tok</span>
-                    </>
-                ) : null}
-            </div>
+                    ) : null}
+                    {started ? <span className="flex-none whitespace-nowrap">{started}</span> : null}
+                </div>
+            ) : null}
         </ConversationShell>
     );
 });
 
-// An ended orchestrator run in the Conversations section, read like History's run card: its title and age, then a
-// segment per task and how many landed, with its state when that is more than done (cancelled, a task that needs you).
+// An ended orchestrator run in the Conversations section, read like a live lead's row: its title, the tokens of all its
+// sessions and its age, then how many landed, with its state when that is more than done (cancelled, a task that needs
+// you), and a segment per task across the row.
 // A click reads its detail in the centre (the run pane), on the member it opens on.
 const RunConversationRow = memo(function RunConversationRow({
     model,
@@ -1102,20 +1128,10 @@ const RunConversationRow = memo(function RunConversationRow({
                 selected={selected}
                 title={view.title}
                 age={age}
+                tokens={runTokens(row.group)}
                 icon={<Workflow size={12} strokeWidth={1.8} aria-hidden className="flex-none text-ink-mid" />}
             />
-            <div className={CONVERSATION_META}>
-                {view.segs.length > 0 ? (
-                    <span aria-hidden className="flex w-[64px] flex-none gap-[2px]">
-                        {view.segs.map((k, i) => (
-                            <span
-                                key={i}
-                                className="h-[3px] min-w-[2px] flex-1 rounded-[1.5px]"
-                                style={{ backgroundColor: view.complete ? "var(--color-success)" : SEG_COLOR[k] }}
-                            />
-                        ))}
-                    </span>
-                ) : null}
+            <div className={cn(CONVERSATION_META, UNDER_GLYPH)}>
                 {view.complete ? (
                     <span className="flex min-w-0 items-center gap-[4px] text-success">
                         <Check size={11} aria-hidden className="flex-none" />
@@ -1127,24 +1143,56 @@ const RunConversationRow = memo(function RunConversationRow({
                 <span className="flex-1" />
                 {view.head.key !== "done" ? <StatusMark status={view.head} /> : null}
             </div>
+            {/* a segment per task across the whole row, coloured as a live lead's row draws its plan: a landed task green */}
+            {view.segs.length > 0 ? (
+                <div aria-hidden className="mt-[3px] flex h-[3px] gap-[2px]">
+                    {view.segs.map((k, i) => (
+                        <span
+                            key={i}
+                            className="min-w-[2px] flex-1 rounded-[1.5px]"
+                            style={{ backgroundColor: k === "done" ? "var(--color-success)" : SEG_COLOR[k] }}
+                        />
+                    ))}
+                </div>
+            ) : null}
         </ConversationShell>
     );
 });
 
-// One more page of a project's ended conversations, with how many are still hidden
-function ShowMoreConversations({ project, hidden }: { project: string; hidden: number }) {
+const PAGER_BUTTON =
+    "flex cursor-pointer items-center gap-[6px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid outline-none transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent";
+
+// The end of a project's ended conversations: one more page, saying how many are still hidden (the count inside the
+// words, so it never reads as an age in the column above), and once a press opened more, back to the first page
+function ShowMoreConversations({ project, hidden, less }: { project: string; hidden: number; less: boolean }) {
     return (
-        <button
-            type="button"
-            data-agent-sessions-more={project}
-            aria-label={`Show more ${project} conversations`}
-            onClick={() => showMoreConversations(project)}
-            className="flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[5px] text-left text-[11.5px] text-ink-mid transition-colors duration-[140ms] hover:bg-surface-hover hover:text-secondary"
-        >
-            <ChevronDown size={11} aria-hidden className="flex-none" />
-            Show more
-            <span className="ml-auto tabular-nums text-ink-faint">{hidden}</span>
-        </button>
+        <div className="flex items-center gap-[4px]">
+            {hidden > 0 ? (
+                <button
+                    type="button"
+                    data-agent-sessions-more={project}
+                    aria-label={`Show ${hidden} more ${project} conversations`}
+                    onClick={() => showMoreConversations(project)}
+                    className={PAGER_BUTTON}
+                >
+                    <ChevronDown size={11} aria-hidden className="w-[12px] flex-none" />
+                    <span className="tabular-nums">Show {hidden} more</span>
+                </button>
+            ) : null}
+            {less ? (
+                <button
+                    type="button"
+                    data-agent-sessions-less={project}
+                    aria-label={`Show fewer ${project} conversations`}
+                    onClick={() => showLessConversations(project)}
+                    className={cn(PAGER_BUTTON, hidden > 0 && "ml-auto")}
+                >
+                    {hidden > 0 ? null : <ChevronUp size={11} aria-hidden className="w-[12px] flex-none" />}
+                    Show less
+                    {hidden > 0 ? <ChevronUp size={11} aria-hidden className="flex-none" /> : null}
+                </button>
+            ) : null}
+        </div>
     );
 }
 
@@ -1179,7 +1227,7 @@ function SectionHeader({
                 data-agent-section-toggle={section}
                 aria-expanded={open}
                 onClick={() => globalStore.set(collapsedSectionsAtom, toggleFold(collapsed, section))}
-                className="group flex min-w-0 cursor-pointer items-center gap-[6px] rounded-[5px] text-left"
+                className="group flex min-w-0 cursor-pointer items-center gap-[6px] rounded-[5px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
                 <span className={cn(SECTION_LABEL, "group-hover:text-secondary")}>{label}</span>
                 {count > 0 ? <span className="text-[11px] tabular-nums text-ink-faint">{count}</span> : null}
@@ -1357,7 +1405,7 @@ function NewTerminalButton({ model, project, path }: { model: AgentsViewModel; p
 }
 
 // A plain terminal in the Terminals section: its name, filled while it is the focused one or the one docked under the
-// agent. A click focuses it the way an agent's row does, which with an agent on screen docks it there (terminaldock.ts);
+// agent, and a pulsing dot while its shell runs a command. A click focuses it the way an agent's row does, which with an agent on screen docks it there (terminaldock.ts);
 // its menu is the one a focused terminal's rail offers (showTerminalMenu). Not draggable: only agents are grid cells.
 function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {
     const selectedId = useSelectedRowId(model);
@@ -1387,6 +1435,12 @@ function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: Ag
                     {terminal.name}
                 </span>
             )}
+            {/* a command still running (a dev server, a build) pulses like a working agent; at its prompt, no dot */}
+            {terminal.running ? (
+                <span title="Running a command" aria-label="running a command" className="flex flex-none">
+                    <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
+                </span>
+            ) : null}
         </div>
     );
 }
@@ -1513,6 +1567,7 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
         return out;
     }, [shownRuns, runObjs, today]);
     const filtered = filter !== ALL_PROJECTS;
+    const colliding = useMemo(() => collidingTitles(rows), [rows]);
 
     return (
         <div data-agent-conversations>
@@ -1557,7 +1612,7 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                             case "more":
                                 return (
                                     <div key={`more-${r.project}`} className={rowIndent(filtered)}>
-                                        <ShowMoreConversations project={r.project} hidden={r.hidden} />
+                                        <ShowMoreConversations project={r.project} hidden={r.hidden} less={r.less} />
                                     </div>
                                 );
                             case "run": {
@@ -1583,6 +1638,11 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                             model={model}
                                             row={r}
                                             age={sessionAgeLabel(r.lastactivets, now)}
+                                            started={
+                                                colliding.has(r.key) && r.session.startedts > 0
+                                                    ? startedLabel(r.session.startedts, now)
+                                                    : undefined
+                                            }
                                             selected={mode === "session" && sel === r.key}
                                         />
                                     </div>

@@ -8290,7 +8290,7 @@ const ahList = (h) =>
         r.hasAttribute("data-agent-folder")
             ? "folder:" + r.getAttribute("data-agent-folder")
             : r.hasAttribute("data-agent-sessions-more")
-              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.querySelector("span")?.textContent?.trim() ?? "")
+              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.textContent.match(/\d+/)?.[0] ?? "")
               : r.hasAttribute("data-agent-run-conversation")
                 ? "run:" + r.getAttribute("data-agent-run-conversation")
                 : r.getAttribute("data-agent-session-row")
@@ -8522,6 +8522,23 @@ const agentHistory = {
                             ...ahKeys(AH_SEEDS),
                         ]),
                 JSON.stringify({ once: once.length, onceLast: once[once.length - 1], rows: all.length, last: all[all.length - 1] })
+            );
+
+            // Show less folds the folder back to its first page in one press; two Show more presses put it back for what follows
+            const less = `document.querySelector('[data-agent-sessions-less="${AH_PROJECT}"]')`;
+            const lessShown = await h.ev(`!!${less}`);
+            await h.ev(`${less}?.click()`);
+            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_PAGE + 1}`, 4000);
+            const folded1 = await ahList(h);
+            const lessGone = await h.ev(`!${less}`);
+            await h.ev(`${more}?.click()`);
+            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${2 * AH_PAGE + 1}`, 4000);
+            await h.ev(`${more}?.click()`);
+            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length === ${AH_SEEDS + 1}`, 4000);
+            rec(
+                "6a. Show less, offered once a press opened more, folds the folder back to its first page",
+                lessShown === true && lessGone === true && folded1[folded1.length - 1] === `more:${AH_PROJECT}:${AH_SEEDS - AH_PAGE}`,
+                JSON.stringify({ lessShown, lessGone, last: folded1[folded1.length - 1] })
             );
 
             // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once

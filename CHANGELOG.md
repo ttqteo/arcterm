@@ -14,6 +14,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
   project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
+- A terminal in the sidebar's Terminals section shows a pulsing dot while a command runs in it (a dev server, a
+  build) and none once it is back at its prompt, so you can tell which terminals are busy.
 - The app bar's usage meter shows how long until the 5-hour window resets (`1h55`), and each bar carries a light
   tick for how much of its window has passed: a bar short of its tick will last until the reset.
 
@@ -24,6 +26,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   switching to the Default Claude account reads its quota at once.
 - An agent whose build or test run is held for low RAM reads **Low RAM** instead of **asking**, and its card (Run now,
   Wait for RAM, Don't run) sits above its terminal, so you answer it there instead of hunting for it in Jarvis.
+- The sidebar's conversations take one line each: the runtime, the title, its tokens and its age, with a second line
+  only when it tells a row apart (a branch other than `main`, or when it started if another row has the same title).
+  A finished orchestrator run shows the tokens of all its sessions, and its tasks as a bar across the row. **Show
+  more** says how many are left, and **Show less** folds the list back to its first page.
 - The app bar has one **New** button in place of New run and New agent: it opens the New dialog on whatever you
   picked last, and a number key switches between an agent and a run. `Cmd+N` still opens it on an agent and
   `Cmd+Shift+R` on a run (`Ctrl` on Windows).
@@ -41,6 +47,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- The live agents in the sidebar's Active section keep their places when you switch to the Cockpit and back, instead
+  of the ones that had gone idle dropping to the bottom.
 - On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,
   longer than the panel waits between readings, and now takes a fraction of one.
 - Resuming agents after switching Claude account resumes them instead of closing them.

@@ -3,22 +3,26 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    activeAgentIds,
     activeView,
     agentExited,
     ALL_PROJECTS,
+    collidingTitles,
     CONVERSATION_PAGE,
     conversationCount,
     conversationProjects,
-    activeAgentIds,
     conversationTree,
-    runsBesideOrigins,
     endedConversationsByProject,
     liveBranches,
+    notableBranch,
     registeredConversations,
+    runsBesideOrigins,
+    runTokens,
     scanDue,
     sessionAgeLabel,
     sessionTitle,
     splitActive,
+    startedLabel,
     startOfDay,
     terminalTree,
     UNTITLED_SESSION,
@@ -122,6 +126,49 @@ describe("startOfDay", () => {
         expect(new Date(today).getHours()).toBe(0);
         expect(today).toBeLessThanOrEqual(NOW);
         expect(NOW - today).toBeLessThan(DAY + 60 * MIN);
+    });
+});
+
+describe("notableBranch", () => {
+    it("names a branch other than the default", () => {
+        expect(notableBranch("feat/quota-guard")).toBe("feat/quota-guard");
+        expect(notableBranch(" wave/run-1 ")).toBe("wave/run-1");
+    });
+
+    it("is undefined for main, master, a detached HEAD or none", () => {
+        expect(notableBranch("main")).toBeUndefined();
+        expect(notableBranch("master")).toBeUndefined();
+        expect(notableBranch("HEAD")).toBeUndefined();
+        expect(notableBranch("")).toBeUndefined();
+        expect(notableBranch(undefined)).toBeUndefined();
+    });
+});
+
+describe("runTokens", () => {
+    it("adds up the tokens of every session of the run", () => {
+        const group = {
+            sessions: [
+                session("lead", { tokenstotal: 4_000_000 }),
+                session("w1", { tokenstotal: 2_500_000 }),
+                session("w2"),
+            ],
+        } as unknown as Parameters<typeof runTokens>[0];
+        expect(runTokens(group)).toBe(6_500_000);
+    });
+});
+
+describe("startedLabel", () => {
+    it("reads the clock alone for a session started today", () => {
+        const today = new Date(NOW);
+        today.setHours(9, 5, 0, 0);
+        expect(startedLabel(today.getTime(), Math.max(NOW, today.getTime()))).toBe("started 09:05");
+    });
+
+    it("adds the date for one started before today", () => {
+        const earlier = new Date(startOfDay(NOW) - DAY);
+        earlier.setHours(14, 30, 0, 0);
+        const date = earlier.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        expect(startedLabel(earlier.getTime(), NOW)).toBe(`started ${date} 14:30`);
     });
 });
 
@@ -544,7 +591,10 @@ describe("conversationTree", () => {
             ...rowIds(tree(ended, "waveterm")).slice(0, CONVERSATION_PAGE),
             "more:waveterm:4",
         ]);
-        expect(rowIds(tree(ended, "waveterm", open, new Map([["waveterm", 1]])))).toHaveLength(14);
+        const pressed = rowIds(tree(ended, "waveterm", open, new Map([["waveterm", 1]])));
+        // every one of the 14, then Show less alone
+        expect(pressed).toHaveLength(15);
+        expect(pressed.at(-1)).toBe("more:waveterm:0");
     });
 
     it("is empty when nothing has ended, or the scan has not loaded", () => {
@@ -560,7 +610,7 @@ describe("conversationTree", () => {
         expect(ids[0]).toBe("folder:waveterm");
         expect(ids.slice(1, 4)).toEqual(["s1", "s2", "s3"]);
         expect(ids[CONVERSATION_PAGE]).toBe("s10");
-        expect(rows[CONVERSATION_PAGE + 1]).toEqual({ kind: "more", project: "waveterm", hidden: 4 });
+        expect(rows[CONVERSATION_PAGE + 1]).toEqual({ kind: "more", project: "waveterm", hidden: 4, less: false });
         expect(ids.slice(CONVERSATION_PAGE + 2)).toEqual(["folder:zeta", "l1", "l2", "l3"]);
     });
 
@@ -571,18 +621,18 @@ describe("conversationTree", () => {
         expect(exact.some((r) => r.kind === "more")).toBe(false);
     });
 
-    it("shows one page more per press of that project, and drops the more row once nothing is hidden", () => {
+    it("shows one page more per press of that project, and keeps only Show less once nothing is hidden", () => {
         const ended = endedOf([...solos(25), ...solos(12, "zeta", "l")]);
         const inWaveterm = (rows: ConversationTreeRow[]) =>
             rows.filter((r) => r.kind !== "folder" && r.project === "waveterm");
         const once = tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 1]]));
         expect(inWaveterm(once)).toHaveLength(2 * CONVERSATION_PAGE + 1);
-        expect(inWaveterm(once).at(-1)).toEqual({ kind: "more", project: "waveterm", hidden: 5 });
+        expect(inWaveterm(once).at(-1)).toEqual({ kind: "more", project: "waveterm", hidden: 5, less: true });
         // zeta was not pressed, so it still shows one page
-        expect(once.at(-1)).toEqual({ kind: "more", project: "zeta", hidden: 2 });
+        expect(once.at(-1)).toEqual({ kind: "more", project: "zeta", hidden: 2, less: false });
         const twice = tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 2]]));
-        expect(inWaveterm(twice)).toHaveLength(25);
-        expect(inWaveterm(twice).some((r) => r.kind === "more")).toBe(false);
+        expect(inWaveterm(twice)).toHaveLength(26);
+        expect(inWaveterm(twice).at(-1)).toEqual({ kind: "more", project: "waveterm", hidden: 0, less: true });
         // pressing past the end changes nothing
         expect(tree(ended, ALL_PROJECTS, open, new Map([["waveterm", 9]]))).toEqual(twice);
     });
@@ -639,6 +689,38 @@ describe("conversationTree", () => {
         for (const name of ["constructor", "toString", "__proto__", "size"]) {
             expect(tree(ended, name)).toEqual([]);
         }
+    });
+});
+
+describe("collidingTitles", () => {
+    it("marks the shown sessions of a project whose title another of them has", () => {
+        const ended = endedConversationsByProject(
+            [
+                session("a", { task: "Same title", lastactivets: NOW - MIN }),
+                session("b", { task: "Same   title", lastactivets: NOW - 2 * MIN }),
+                session("c", { task: "Other", lastactivets: NOW - 3 * MIN }),
+            ],
+            []
+        );
+        const rows = conversationTree(ended, ALL_PROJECTS, new Set(), new Map());
+        expect([...collidingTitles(rows)].sort()).toEqual(
+            rows
+                .filter((r) => r.kind === "session" && r.title === "Same title")
+                .map((r) => (r as EndedSessionRow).key)
+                .sort()
+        );
+        expect(collidingTitles(rows).size).toBe(2);
+    });
+
+    it("does not mark the same title in two projects", () => {
+        const ended = endedConversationsByProject(
+            [
+                session("a", { task: "Same", projectname: "waveterm" }),
+                session("b", { task: "Same", projectname: "loom", transcriptpath: "/t/loom/b.jsonl" }),
+            ],
+            []
+        );
+        expect(collidingTitles(conversationTree(ended, ALL_PROJECTS, new Set(), new Map())).size).toBe(0);
     });
 });
 

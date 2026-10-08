@@ -6,7 +6,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getOverrideConfigAtom, globalStore, WOS } from "@/store/global";
 import { base64ToString, fireAndForget } from "@/util/util";
 import debug from "debug";
-import { setLastCommand } from "./lastcommand";
+import { setCommandRunning, setLastCommand } from "./lastcommand";
 import type { TermWrap } from "./termwrap";
 
 const dlog = debug("wave:termwrap");
@@ -44,6 +44,7 @@ function handleShellIntegrationCommandStart(
 ): void {
     rtInfo["shell:state"] = "running-command";
     globalStore.set(termWrap.shellIntegrationStatusAtom, "running-command");
+    setCommandRunning(blockId, true);
     if (cmd.data.cmd64) {
         const decodedLen = Math.ceil(cmd.data.cmd64.length * 0.75);
         if (decodedLen > 8192) {
@@ -236,6 +237,7 @@ export function handleOsc16162Command(data: string, blockId: string, loaded: boo
         case "A": {
             rtInfo["shell:state"] = "ready";
             globalStore.set(termWrap.shellIntegrationStatusAtom, "ready");
+            setCommandRunning(blockId, false);
             const marker = terminal.registerMarker(0);
             if (marker) {
                 termWrap.promptMarkers.push(marker);
@@ -286,6 +288,7 @@ export function handleOsc16162Command(data: string, blockId: string, loaded: boo
             break;
         case "R":
             globalStore.set(termWrap.shellIntegrationStatusAtom, null);
+            setCommandRunning(blockId, false);
             if (terminal.buffer.active.type === "alternate") {
                 terminal.write("\x1b[?1049l");
             }

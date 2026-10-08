@@ -23,8 +23,8 @@ import {
     applyAgentOrder,
     streamableTranscriptAgents,
     matchesProjectFilter,
-    mergeOrder,
     partitionBackgrounded,
+    syncCardOrder,
     type AgentVM,
 } from "./agentsviewmodel";
 import {
@@ -142,11 +142,11 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // anchored order (kept ids hold their slot; new ids append) + manual drag reorder. This is what
     // stops a working->asking transition from jumping: the id already holds a slot, so it stays put.
+    // Synced over the whole roster, not the cards shown: the sidebar's Active section reads it too.
     const [order, setOrder] = useModelAtom(model.orderAtom);
     useEffect(() => {
-        const ids = activeAgents.map((a) => a.id);
-        setOrder((prev) => mergeOrder(prev, ids));
-    }, [activeAgents.map((a) => a.id).join(",")]);
+        setOrder((prev) => syncCardOrder(prev, agents));
+    }, [agents.map((a) => a.id).join(",")]);
     const orderedAgents = applyAgentOrder(order, activeAgents);
 
     // cursor + answer selection (lifted onto the model); help/pulse stay ephemeral surface-local

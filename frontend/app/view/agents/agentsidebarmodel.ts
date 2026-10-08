@@ -58,11 +58,13 @@ export interface ConversationFolderRow {
     open: boolean;
 }
 
-// "Show more" at the end of a project's folder, counting its conversations still hidden
+// the pager at the end of a project's folder: "Show more" counting its conversations still hidden, and "Show less" once
+// a press has opened more than the first page
 export interface MoreConversationsRow {
     kind: "more";
     project: string;
     hidden: number;
+    less: boolean;
 }
 
 export type ConversationTreeRow = ConversationFolderRow | ConversationEntry | MoreConversationsRow;
@@ -78,6 +80,46 @@ export function sessionTitle(task: string): string {
 /** Pure: the start of the local day `now` falls in, a clock that moves once a day. */
 export function startOfDay(now: number): number {
     return new Date(now).setHours(0, 0, 0, 0);
+}
+
+// the branches a conversation is on unless it says otherwise, and a detached HEAD: a row naming one would tell rows
+// apart by nothing
+const DEFAULT_BRANCHES = new Set(["main", "master", "HEAD"]);
+
+/** Pure: the branch a row names, undefined for none, a default branch or a detached HEAD. */
+export function notableBranch(branch: string | undefined): string | undefined {
+    const b = branch?.trim();
+    return b && !DEFAULT_BRANCHES.has(b) ? b : undefined;
+}
+
+/** Pure: the keys of the shown session rows whose title another shown session row of the same project also has; those
+ *  rows name when they started, the one thing left to tell them apart at a glance. */
+export function collidingTitles(rows: readonly ConversationTreeRow[]): Set<string> {
+    const byTitle = new Map<string, string[]>();
+    for (const r of rows) {
+        if (r.kind === "session") {
+            const id = JSON.stringify([r.project, r.title]);
+            byTitle.set(id, [...(byTitle.get(id) ?? []), r.key]);
+        }
+    }
+    return new Set([...byTitle.values()].filter((keys) => keys.length > 1).flat());
+}
+
+/** Pure: the tokens an orchestrator run spent, every session of it together. */
+export function runTokens(group: RunSessions): number {
+    return group.sessions.reduce((n, s) => n + (s.tokenstotal || 0), 0);
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+/** Pure: when a session started, in local time: "started 09:12" today, "started Oct 6 09:12" before. */
+export function startedLabel(startedts: number, now: number): string {
+    const d = new Date(startedts);
+    const clock = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    if (startedts >= startOfDay(now)) {
+        return `started ${clock}`;
+    }
+    return `started ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${clock}`;
 }
 
 /** Pure: how long ago a session last moved, as the tree's other rows read ("<1m", "16m", "3h", "3d"). */
@@ -406,8 +448,8 @@ function projectsInScope(ended: ReadonlyMap<string, ConversationEntry[]>, filter
 
 /** Pure: the Conversations section. A folder row per project the filter (the app bar's project switcher: ALL_PROJECTS or
  *  a project's name) keeps, then, unless the folder is collapsed, its ended conversations newest first (equal times in
- *  key order): the first CONVERSATION_PAGE plus one page per "Show more" press on that folder, then a more row
- *  counting what is still hidden. Filtered to a project, the one folder's rows alone: no folder row, so no fold
+ *  key order): the first CONVERSATION_PAGE plus one page per "Show more" press on that folder, then a pager row
+ *  counting what is still hidden and, once a press opened more, offering to fold back to the first page. Filtered to a project, the one folder's rows alone: no folder row, so no fold
  *  applies. */
 export function conversationTree(
     ended: ReadonlyMap<string, ConversationEntry[]>,
@@ -429,8 +471,10 @@ export function conversationTree(
         }
         const shown = list.slice(0, CONVERSATION_PAGE * (1 + Math.max(0, presses.get(project) ?? 0)));
         out.push(...shown);
-        if (shown.length < list.length) {
-            out.push({ kind: "more", project, hidden: list.length - shown.length });
+        const hidden = list.length - shown.length;
+        const less = shown.length > CONVERSATION_PAGE;
+        if (hidden > 0 || less) {
+            out.push({ kind: "more", project, hidden, less });
         }
     }
     return out;

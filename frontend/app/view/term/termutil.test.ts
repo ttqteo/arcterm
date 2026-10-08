@@ -11,7 +11,7 @@ vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { WriteTempFileCommand: moc
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: mocks.client }));
 
 import { MAX_UPLOAD_BYTES, UploadError } from "@/app/view/agents/uploadfile";
-import { createTempFileFromBlob, createTempFileFromFile } from "./termutil";
+import { createTempFileFromBlob, createTempFileFromFile, extractDataTransferItems } from "./termutil";
 
 // the tests run in node, which has no FileReader; this one reads a Blob the way the real one hands bytes back
 class FakeFileReader {
@@ -91,5 +91,22 @@ describe("createTempFileFromBlob", () => {
             "Unsupported or invalid image type: text/plain"
         );
         expect(mocks.write).not.toHaveBeenCalled();
+    });
+});
+
+describe("empty pasted images", () => {
+    it("never writes an image with no bytes", async () => {
+        await expect(createTempFileFromBlob(new Blob([], { type: "image/png" }))).rejects.toThrow("Image is empty");
+        expect(mocks.write).not.toHaveBeenCalled();
+    });
+    it("drops an image item the paste event delivered empty", async () => {
+        const item = (size: number) => ({
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => new File([bytes(size)], "image.png", { type: "image/png" }),
+        });
+        const items = [item(0), item(3)] as unknown as DataTransferItemList;
+        const out = await extractDataTransferItems(items);
+        expect(out.map((d) => d.image?.size)).toEqual([3]);
     });
 });

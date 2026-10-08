@@ -34,6 +34,20 @@ if (-not ($env:TMUX -or $env:STY) -and (Get-Module PSReadLine)) {
     }
 }
 
+# Mark each prompt (OSC 16162 A), on 5.1 as well as 7: the cockpit shows a terminal as running from the command it
+# reported above until its shell is back at a prompt.
+if (-not ($env:TMUX -or $env:STY)) {
+    $Global:_waveterm_si_promptmark_inner = if (Test-Path Function:\prompt) { $function:prompt } else { $null }
+    function Global:prompt {
+        try { [Console]::Write([char]27 + ']16162;A' + [char]7) } catch {}
+        if ($Global:_waveterm_si_promptmark_inner) {
+            & $Global:_waveterm_si_promptmark_inner
+        } else {
+            "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) "
+        }
+    }
+}
+
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     return  # skip OSC setup entirely
 }

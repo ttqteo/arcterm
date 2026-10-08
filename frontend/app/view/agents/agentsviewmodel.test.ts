@@ -45,6 +45,7 @@ import {
     STICK_THRESHOLD_PX,
     streamableTranscriptAgents,
     summarizeActions,
+    syncCardOrder,
     taskProgress,
     terminalName,
     toggleSelection,
@@ -569,6 +570,27 @@ describe("mergeOrder", () => {
     });
     it("is a no-op when the set is unchanged", () => {
         expect(mergeOrder(["a", "b"], ["a", "b"])).toEqual(["a", "b"]);
+    });
+});
+
+describe("syncCardOrder", () => {
+    it("keeps every agent's slot while it goes idle and starts again, so the sidebar's Active rows never move", () => {
+        const first = syncCardOrder([], [mk("a", "working"), mk("b", "working"), mk("c", "idle")]);
+        expect(first).toEqual(["a", "b", "c"]);
+        // by the Cockpit's next visit a has gone idle and c has started working
+        expect(syncCardOrder(first, [mk("a", "idle"), mk("b", "working"), mk("c", "working")])).toEqual([
+            "a",
+            "b",
+            "c",
+        ]);
+    });
+
+    it("appends a new agent and drops one that left the roster", () => {
+        expect(syncCardOrder(["a", "b", "c"], [mk("a", "idle"), mk("c", "asking"), mk("d", "working")])).toEqual([
+            "a",
+            "c",
+            "d",
+        ]);
     });
 });
 
@@ -1132,6 +1154,21 @@ describe("deriveTerminalVMs", () => {
             (id) => cmds[id]
         );
         expect(out.map((t) => t.name)).toEqual(["task dev", "Terminal 2", "logs"]);
+    });
+
+    it("marks only the terminals whose shell is running a command", () => {
+        const rows: Row[] = [
+            { tabId: "t1", label: "a", termBlockOref: "block:b1" },
+            { tabId: "t2", label: "b", termBlockOref: "block:b2" },
+        ];
+        const out = deriveTerminalVMs(
+            rows,
+            none,
+            () => "",
+            () => undefined,
+            (id) => id === "b1"
+        );
+        expect(out.map((t) => t.running)).toEqual([true, undefined]);
     });
 });
 
