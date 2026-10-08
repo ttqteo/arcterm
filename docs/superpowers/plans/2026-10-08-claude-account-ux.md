@@ -21,6 +21,7 @@
 - The token is never shown or returned; the existing RPCs are the only path (`ClaudeAccountAddCommand`, `ClaudeAccountRenameCommand`, `ClaudeAccountSetEmailCommand`, `ClaudeAccountRemoveCommand`, `ClaudeAccountListCommand`).
 - The `⋯` menu goes through `ContextMenuModel.getInstance().showContextMenu(items, e)` (`frontend/app/store/contextmenu.ts`); a submenu is an item with `submenu: [...]`, a check is `checked: true` on a `type: "checkbox"` item.
 - Keep these `data-*` hooks (the CDP scenario reads them): `data-section="claudeaccount"`, `data-claude-account-row`, `data-claude-account-remove` is replaced by the menu (see Task 5), `data-claude-signin-modal`, `data-claude-signin-term`, `data-claude-signin-label`, `data-claude-signin-cancel`, `data-claude-restart-dialog`, `data-restart-row`, `data-restart-error`. New hooks are named in each task.
+- The UI each of Tasks 2–4 builds is shown by the `settings-claude-account` CDP scenario (`scripts/cdp/scenarios.mjs`), which Task 5 updates once all three have landed; each task's **Shown by** line names the scenario steps that show it, and Task 5 must add or keep every step so named. The step numbers are the ones Task 5 lists.
 - Never run prettier on `scripts/*.mjs` (it reindents them). Check only the files you touched with `npx prettier --check <paths>` and `npx eslint <paths>`.
 - Typecheck with `task check:ts` (about 2 minutes; give it a longer timeout).
 
@@ -177,10 +178,10 @@ git commit -m "feat(claude-account): pure row name, quota line and Add dialog st
 
 **Files:** `frontend/app/view/agents/settingssurface.tsx`
 
-- [ ] **Step 1: Strip the old row editing and the paste form.** Remove from `ClaudeAccountSection`: the `pasteOpen` / `pasteLabel` / `pasteEmail` / `pasteError` state, `add`, the paste disclosure button and its form, both `CommitText` fields inside the rows, the `Remove` button, `KnownEmailsDatalist` and `EMAIL_LIST_ID`, and `quotaPct` if nothing else uses it. Keep `reload`, `select`, `rename`, `setEmail`, `remove`, the restart-dialog push, and the lazy `ClaudeSigninModal`.
+- [ ] **Step 1: Strip the old row editing and the paste form.** Remove from `ClaudeAccountSection`: the `pasteOpen` / `pasteLabel` / `pasteEmail` / `pasteError` state, `add`, the paste disclosure button and its form, both `CommitText` fields inside the rows, the `Remove` button, `KnownEmailsDatalist` (its import too) and `EMAIL_LIST_ID`, and `quotaPct` if nothing else uses it. Leave `frontend/app/view/agents/claudeemails.tsx` itself in place: Task 3 still imports it until it lands, and Task 5 deletes it. Keep `reload`, `select`, `rename`, `setEmail`, `remove`, the restart-dialog push, and the lazy `ClaudeSigninModal`.
 
 - [ ] **Step 2: Draw each row.** Inside the radio row (keep `role="radio"`, `aria-checked`, `data-claude-account-row`, click/Enter/Space to `select(id)`):
-  - Name: Default → `defaultAccountName(identity.loginEmail)` followed by a small tag `<span data-claude-account-login-tag className="rounded border border-edge-mid px-1 text-[10.5px] text-muted">/login</span>`; a token account → `account.label`, or, while it is being renamed, an input (see Step 4) with `data-claude-account-rename-input`.
+  - Name: an element with `data-claude-account-name={id || "default"}` whose first text node is the name (the CDP scenario reads the row's name from it). Default → `defaultAccountName(identity.loginEmail)` followed by a small tag `<span data-claude-account-login-tag className="rounded border border-edge-mid px-1 text-[10.5px] text-muted">/login</span>`; a token account → `account.label`, or, while it is being renamed, an input (see Step 4) with `data-claude-account-rename-input`.
   - Under the name, muted 11px: Default → nothing extra (its email is already its name); a token account → `account.email` when set, with `data-claude-account-email={id}`.
   - Right side: `quotaLine(rowQuota(saved, claudeQuotaKey(id, identity), now), now)` in `text-[11px] tabular-nums`, `text-warning` when `warn`, else `text-muted`; give it `data-claude-account-quota={id || "default"}`.
   - Token accounts only, at the far right: a `⋯` icon button (`MoreHorizontal` from `lucide-react`, size 14) with `data-claude-account-menu={id}` and `aria-label="Account actions"`; its click calls `e.stopPropagation()` then `showAccountMenu(account, e)`.
@@ -230,6 +231,8 @@ Check that `ClaudeAccountSetEmailCommand` with `email: ""` clears the email (rea
 Run: `npx eslint frontend/app/view/agents/settingssurface.tsx` and `npx prettier --check frontend/app/view/agents/settingssurface.tsx`, then `task check:ts`.
 Expected: no new errors (prettier: if HEAD was already unclean for this file, check that only your lines are reported).
 
+**Shown by:** `settings-claude-account` steps 1 (names and quota lines), 8 (Rename in place), 9–10 (Remove through the menu, its confirm wording), 15 (no inputs in rows, Default's name and `/login` tag), 16 (warning tone), 17 (Same account as… sets the email), 18 (Other email… and None), 19 (Rename: Esc and empty cancel), 20 (one `+ Add account` button), and the shots of the list and the open `⋯` menu. This task does not edit the scenario; Task 5 does.
+
 - [ ] **Step 8: Commit**
 
 ```bash
@@ -260,6 +263,8 @@ git commit -m "feat(claude-account): a quiet account list with a per-row menu an
 Run: `npx eslint frontend/app/cockpit/claude-signin-modal.tsx`, `npx prettier --check frontend/app/cockpit/claude-signin-modal.tsx`, `task check:ts`.
 Expected: clean.
 
+**Shown by:** `settings-claude-account` steps 6–7 (paste: refused stays with its reason, accepted goes to the Name step), 12 (the sign-in line and title), 13 (Cancel), 14 (the printed token reaches the Name step), 21 (Back to sign-in closes the old helper tab and starts a fresh one), 22 (the Name step's `Same account as` select), and the shots of the paste screen and the Name step. This task does not edit the scenario; Task 5 does.
+
 - [ ] **Step 8: Commit**
 
 ```bash
@@ -273,7 +278,7 @@ git commit -m "feat(claude-account): one Add account dialog for sign-in and past
 
 **Files:** `frontend/app/view/agents/claudeaccountrestart.tsx`, `frontend/app/view/agents/settingssurface.tsx`
 
-- [ ] **Step 1: Copy.** `NOTE.working` → `working — resume after this turn`; `NOTE.asking` → `asking — resuming drops the question`; the done note `đã restart` → `resumed`; the not-applied error → `arcterm has not switched to this account yet (is its token still valid?). No agent was resumed.`; body → `These agents still run on the previous account. Resuming continues each one's session on the new one.`; footer note → `Open terminals keep the previous account until they are reopened.`; buttons `Later` and `Resume selected`.
+- [ ] **Step 1: Copy.** `NOTE.working` → `working — resume after this turn`; `NOTE.asking` → `asking — resuming drops the question`; the done note `đã restart` → `resumed`; the not-applied error → `arcterm has not switched to this account yet (is its token still valid?). No agent was resumed.`; body → `These agents still run on the previous account. Resuming continues each one's session on the new one.`; footer note → `Open terminals keep the previous account until they are reopened.`; buttons `Later` and `Resume selected`. In the file's header comment, `"Để sau" leaves them as they are.` becomes `"Later" leaves them as they are.`; no Vietnamese remains in the file.
 
 - [ ] **Step 2: Title with the account's name.** Add an `accountName: string` prop; the title is `` `Resume agents on ${accountName}?` ``. In `settingssurface.tsx`'s `select`, pass `accountName`: `defaultAccountName(identity.loginEmail)` for `""`, else the account's label from `list`. (Task 2 has already reworked this file: this is a one-line change in its `select`.)
 
@@ -281,35 +286,62 @@ git commit -m "feat(claude-account): one Add account dialog for sign-in and past
 
 Run: `npx eslint frontend/app/view/agents/claudeaccountrestart.tsx` and `task check:ts`.
 
+**Shown by:** `settings-claude-account` steps 2 (title `Resume agents on Fixture A?`, body, footer note, `Resume selected`), 3 (the English notes on working and asking) and 4 (`Later`). This task does not edit the scenario; Task 5 does.
+
 ```bash
 git add frontend/app/view/agents/claudeaccountrestart.tsx frontend/app/view/agents/settingssurface.tsx
 git commit -m "feat(claude-account): the restart dialog in English, named for the account"
 ```
 
-### Task 5: CDP scenario and CHANGELOG
+### Task 5: CDP scenario, the dead email datalist, and CHANGELOG
 
 **Depends on:** Task 2, Task 3, Task 4
 
-**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/view/agents/settingssurface.tsx`
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/view/agents/claudeemails.tsx` (deleted)
 
-- [ ] **Step 1: Update the scenario's readers.** `CA_ROWS`'s `label` reads the row's name text, not an input: use the first child text of the row's name element (add `data-claude-account-name` on that element in Task 2's markup if it is missing — a one-attribute change to `settingssurface.tsx` is allowed here). The paste steps (6, 7) now go through `+ Add account` → `Have a token already? Paste it` → `[data-claude-signin-token]` → Save, and a refused token reads `[data-claude-signin-paste-error]`; on success the dialog shows the Name step, and the scenario presses Done. Renaming (8) opens the row's `⋯` menu (`[data-claude-account-menu="<id>"]`), clicks `Rename` in the context menu, sets `[data-claude-account-rename-input]` and presses Enter. Remove (9) goes through the same menu's `Remove`. Sign-in (12–14) opens through `[data-claude-account-add]`. The restart-dialog steps (2–4) click `Later` instead of `Để sau` and read the English notes.
+The scenario is `settings-claude-account` (`const CA`, around `scripts/cdp/scenarios.mjs:20072`). Its arrange seeds Fixture A (97% / 64%) and Fixture B (no snapshot) and three roster agents; its steps are numbered 1–14 today. Keep that numbering for the steps that stay, and add 15–22 below. The `⋯` menu is the DOM context menu (`frontend/app/element/contextmenu.tsx`, rendered by `ContextMenuHost`): its rows carry no `data-*` hooks, so find a row by its text inside the open menu panel, click it, and open the `Same account as…` submenu by hovering its row with a real `Input.dispatchMouseEvent` `mouseMoved` at the row's centre (React's `onMouseEnter`), not a synthetic event.
 
-- [ ] **Step 2: Add steps for the new UI.**
-  - "15. rows hold no inputs: every name is text, and Default is named by its /login email or Claude login with a /login tag" — assert `document.querySelectorAll('[data-claude-account-row] input').length === 0` and the Default row's text.
-  - "16. a row at 90% or more reads in the warning tone" — Fixture A's quota element (`[data-claude-account-quota="<A id>"]`) has class `text-warning`.
-  - "17. Same account as… sets the email, and it shows under the name" — pick the first known email through the menu, then read `[data-claude-account-email="<id>"]`.
-  - Shoot the list, the open `⋯` menu, the Add dialog's paste screen and its Name step.
+- [ ] **Step 1: Delete the dead datalist.** Tasks 2 and 3 removed every use of `KnownEmailsDatalist`. Run `git grep -n "claudeemails\|KnownEmailsDatalist" frontend`; when it finds nothing, `git rm frontend/app/view/agents/claudeemails.tsx`. If a use remains, report it rather than deleting.
 
-- [ ] **Step 3: Run it** (only if a dev app is already running for you; do not start a build on the user's machine otherwise)
+- [ ] **Step 2: Reword the checks the English copy breaks.** Each of these reads Vietnamese today:
+  - arrange/teardown path near line 20268: `caClickButton(CA_RESTART, "Để sau")` → `"Later"`.
+  - step 1 (near line 20314): `rowB.text.includes("chưa dùng")` → `"Not used yet"`.
+  - step 3 (near lines 20349–20351): the notes `"đang làm việc"` / `"đang hỏi"` → `"working — resume after this turn"` / `"asking — resuming drops the question"`.
+  - step 4 (near line 20355): click `"Later"`, and retitle the step `4. Later closes the dialog and leaves A selected`.
+  - step 12 (near line 20483): retitle it `12. + Add account opens a live terminal in a helper tab the session sidebar leaves out`.
+  - step 14 (near line 20509): the Name step's button is `Done`, not `"Lưu"`.
+  After this step, `grep -nP "[À-ỹ]"` over the `CA` scenario's lines finds nothing.
+
+- [ ] **Step 3: Update the scenario's readers to the new markup.**
+  - `CA_ROWS`'s `label` reads `[data-claude-account-name]`'s first text node (trimmed), not an input's value.
+  - Paste (6, 7): click `[data-claude-account-add]`, wait for `[data-claude-signin-modal]`, click `[data-claude-signin-paste]`, set `[data-claude-signin-token]` and press Enter. Step 6's refused reason reads `[data-claude-signin-paste-error]`, and asserts the token is still in the field. Step 7: after the good token, wait for `input[data-claude-signin-label]` (the Name step), set it to `Fixture C` with `caSetInput`, then click `Done`; then the existing `r6` / `idC` lookups by `"Fixture C"` hold. Add to step 7's check that the dialog is gone after Done.
+  - Rename (8): click `[data-claude-account-menu="<idC>"]`, click `Rename` in the menu, set `[data-claude-account-rename-input]` to `Fixture C2`, press Enter.
+  - Remove (9, 10): open the row's `⋯` menu and click `Remove` instead of `[data-claude-account-remove]`. Step 9 also asserts the confirm reads `Remove "Fixture C2" from this machine? Its token is deleted with it.` with no `/login` sentence (C is not active); step 10 asserts B's confirm ends with ` New agents will run on your /login account.` (B is active then).
+  - Sign-in (12, 14): open through `[data-claude-account-add]` instead of `[data-claude-account-signin]`. Step 12 also asserts the dialog's title `Add a Claude account` and the line `Sign in in the browser as the account to add. arcterm picks up the token itself.`
+  - Restart (2): also assert the title `Resume agents on Fixture A?`, the body `These agents still run on the previous account. Resuming continues each one's session on the new one.`, the footer note `Open terminals keep the previous account until they are reopened.` and a `Resume selected` button.
+
+- [ ] **Step 4: Add steps for the new UI.** In the arrange's `rate` object add a snapshot keyed `claude:fixture@example.com` so `knownClaudeEmails` offers one email.
+  - "15. rows hold no inputs: every name is text, and Default is named by its /login email or Claude login with a /login tag" — `document.querySelectorAll('[data-claude-account-row] input').length === 0`; `[data-claude-account-name="default"]` reads `defaultAccountName` of the live login email (the identity's email, else `Claude login`) and holds `[data-claude-account-login-tag]`.
+  - "16. a row at 90% or more reads in the warning tone" — `[data-claude-account-quota="<A id>"]` has class `text-warning`; Default's (12%) does not.
+  - "17. Same account as… sets the email, and it shows under the name" — on B's menu, hover `Same account as…`, click `fixture@example.com`; `[data-claude-account-email="<B id>"]` reads it and `claudeaccountlist` stores it; reopen the menu and the submenu shows that email checked.
+  - "18. Other email… takes a typed email, and None clears it" — B's menu → `Same account as…` → `Other email…`; set `[data-claude-account-email-input]` to `other@example.com`, Enter; the email line reads it. Then `Same account as…` → `None`; `[data-claude-account-email="<B id>"]` is gone and the stored email is empty.
+  - "19. Rename cancels on Esc and on an empty name" — B's menu → `Rename`; type `Nope`, press Esc: the label stays `Fixture B`. Again: set the input to empty, press Enter (and blur): the label stays `Fixture B`, and the row holds no input after.
+  - "20. one + Add account button, no paste form on the page" — exactly one `[data-claude-account-add]` reading `+ Add account`; no `[data-claude-account-signin]`, `[data-claude-account-paste]` or `[data-claude-account-paste-token]`.
+  - "21. Back to sign-in closes the old helper tab and starts a fresh one" — with `CA_IDLE_CMD`, open `+ Add account`, wait for the terminal, note the helper tab id; click `Have a token already? Paste it`: the helper tab is gone (`caTabIds`); click `[data-claude-signin-back]`: a terminal again, in a new helper tab whose id differs; Cancel, and the tabs are back to `ctx.tabIds`.
+  - "22. the Name step offers Same account as, None first" — on step 7's Name step (before Done), `select[data-claude-signin-same]` exists, its first option is `None`, and it lists `fixture@example.com`. Run steps 15–22 in an order that keeps B for 17–19 before step 10 removes it.
+  - Shoot the list, the open `⋯` menu (with the submenu open), the Add dialog's paste screen and its Name step to `cdp-shots/${CA}-*.png`.
+
+- [ ] **Step 5: Run it** (only if a dev app is already running for you; do not start a build on the user's machine otherwise)
 
 Run: `task verify:ui -- settings-claude-account`
-Expected: every step PASS.
+Expected: every step PASS. Otherwise check the file with `node --check scripts/cdp/scenarios.mjs` and `npx eslint scripts/cdp/scenarios.mjs` (never prettier on it), and say it was not run.
 
-- [ ] **Step 4: CHANGELOG.** Under `## Unreleased` → `### Changed` add: `- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove; + Add account holds both signing in and pasting a token; and the section and its dialogs are in English.`
+- [ ] **Step 6: CHANGELOG.** Under `## Unreleased` → `### Changed` add: `- Settings → Claude account is simpler: each account is one line with its 5-hour and weekly use (in the warning colour at 90% or more) and a ⋯ menu for Rename, Same account as… and Remove; + Add account holds both signing in and pasting a token; and the section and its dialogs are in English.`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/cdp/scenarios.mjs CHANGELOG.md frontend/app/view/agents/settingssurface.tsx
+git add scripts/cdp/scenarios.mjs CHANGELOG.md
 git commit -m "test(cdp): settings-claude-account follows the reworked section"
 ```
+(`git rm` in Step 1 already staged the deletion.)
