@@ -14,11 +14,16 @@ describe("runtimeMeta", () => {
         expect(runtimeMeta("Opencode").id).toBe("opencode");
         expect(runtimeMeta("pi").id).toBe("pi");
         expect(runtimeMeta("PI").label).toBe("Pi");
+        expect(runtimeMeta("agy").id).toBe("agy");
+        expect(runtimeMeta("Agy").label).toBe("Antigravity");
+        expect(runtimeMeta("agy").glyph).toBe("◭");
+        expect(runtimeMeta("agy").text).toBe("text-rt-agy");
     });
 
     it("returns an unknown record for unknown/empty providers instead of claude", () => {
         expect(runtimeMeta(undefined).id).toBe("unknown");
         expect(runtimeMeta("mystery").id).toBe("unknown");
         expect(runtimeMeta("").id).toBe("unknown");
+        expect(runtimeMeta("antigravity").id).toBe("unknown"); // old stored records get no alias
     });
 });

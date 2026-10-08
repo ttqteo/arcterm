@@ -522,3 +522,44 @@ func TestWorkerThatEndedItsTurnOnAQuestionIsNotStalled(t *testing.T) {
 		t.Fatalf("the grace restarts once the question is gone, got %s and wakes %q", task.State, f.sends)
 	}
 }
+
+// writeAgySession writes a transcript where agy puts a conversation: brain/<id>/.system_generated/logs.
+func writeAgySession(t *testing.T, brain, id string, mtime time.Time) string {
+	t.Helper()
+	return writeTranscript(t, filepath.Join(brain, id, ".system_generated", "logs", "transcript_full.jsonl"), mtime)
+}
+
+// An agy worker names its own conversation, so its run has no session id until the first status report binds
+// one. Until then it is tracked with nothing written, not unobservable: only a tracked child reaches the
+// first-token deadline. Every other runtime without an id predates session ids and stays untracked.
+func TestTranscriptForRunAgy(t *testing.T) {
+	brain := t.TempDir()
+	stubSessionsRoot(t, brain)
+	unbound := &waveobj.Run{Runtime: "agy", DagORef: "dag-1", ProjectPath: t.TempDir()}
+	if path, runtime, tracked := transcriptForRun(unbound); path != "" || runtime != "agy" || !tracked {
+		t.Fatalf("unbound agy: want (\"\", agy, true), got (%q, %q, %v)", path, runtime, tracked)
+	}
+	if got, tracked := lastActivityForRun(unbound); !tracked || got != 0 {
+		t.Fatalf("unbound agy activity: want (0, true), got (%d, %v)", got, tracked)
+	}
+	for _, rt := range []string{"claude", "pi", ""} {
+		if _, _, tracked := transcriptForRun(&waveobj.Run{Runtime: rt, DagORef: "dag-1"}); tracked {
+			t.Fatalf("runtime %q with no session id must stay untracked", rt)
+		}
+	}
+
+	bound := &waveobj.Run{Runtime: "agy", DagORef: "dag-1", ProjectPath: t.TempDir(), SessionId: "conv-1"}
+	if path, _, tracked := transcriptForRun(bound); path != "" || !tracked {
+		t.Fatalf("bound but not yet written: want (\"\", true), got (%q, %v)", path, tracked)
+	}
+	mtime := time.Now().Add(-2 * time.Minute)
+	want := writeAgySession(t, brain, "conv-1", mtime)
+	writeAgySession(t, brain, "conv-2", time.Now())
+	path, runtime, tracked := transcriptForRun(bound)
+	if path != want || runtime != "agy" || !tracked {
+		t.Fatalf("bound agy: want (%q, agy, true), got (%q, %q, %v)", want, path, runtime, tracked)
+	}
+	if got, tracked := lastActivityForRun(bound); !tracked || got != mtime.UnixMilli() {
+		t.Fatalf("want the conversation's own mtime %d, got (%d, %v)", mtime.UnixMilli(), got, tracked)
+	}
+}

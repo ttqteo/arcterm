@@ -20,6 +20,7 @@ import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import { planShapeText, planWarnings } from "../orchestrate/dagdigest";
 import { CapacityWarn } from "./capacitywarn";
+import { leadRuntimesAtom } from "./harnessstore";
 import { RoutePicker } from "./routepicker";
 import {
     MAX_PARALLELISM,
@@ -281,6 +282,7 @@ function RoutingSection({ showWorkerRoute }: { showWorkerRoute: boolean }) {
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
     const openRequest = useAtomValue(routeOpenRequestAtom);
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     return (
         <Section label="Routing">
             <div className="flex flex-wrap items-center gap-2">
@@ -290,6 +292,7 @@ function RoutingSection({ showWorkerRoute }: { showWorkerRoute: boolean }) {
                     placement="bottom-start"
                     openRequest={openRequest}
                     title="Lead model"
+                    runtimes={leadRuntimes}
                 />
                 {showWorkerRoute ? (
                     <>
@@ -313,6 +316,7 @@ function RoutingSection({ showWorkerRoute }: { showWorkerRoute: boolean }) {
                             title="Reviewers model"
                             canInherit
                             inheritedLabel="Same as lead"
+                            runtimes={leadRuntimes}
                         />
                     </>
                 ) : null}

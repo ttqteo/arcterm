@@ -83,6 +83,7 @@ import {
 } from "./launcherstore";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
+import { leadRouteSeed } from "./route";
 import { channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
 import { launchBlocker, type RunShape } from "./runconfig";
 import {
@@ -256,7 +257,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // the project's own channel is where its profile lives; null while the channel list is still loading
     const target = isRun && project != null ? resolveChannelTarget(channels, project.name, project.path) : null;
     const pickedOid = target?.kind === "existing" ? target.oid : null;
-    const profileRoute = (pickedOid != null ? overrides[pickedOid]?.route : null) ?? pref.route ?? null;
+    const rawRoute = (pickedOid != null ? overrides[pickedOid]?.route : null) ?? pref.route ?? null;
+    // a lead picker never seeds a runtime that cannot lead; memoized, since the seed effect keys on it and a
+    // fallback route is a fresh object each call
+    const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
     const ramWarning = isRun
         ? shape === "quick"
             ? newAgentRamWarning(cap, "run", "worker")

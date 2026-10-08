@@ -48,7 +48,7 @@ func sentByPerson(isSidechain bool, origin *claudeOrigin) bool {
 	return !isSidechain && (origin == nil || origin.Kind == "human")
 }
 
-// HumanPrompts returns the prompts submitted to a claude or pi session, oldest first, the one it was launched
+// HumanPrompts returns the prompts submitted to a claude, pi or agy session, oldest first, the one it was launched
 // with included. Claude also writes a user record for tool output and for its own notices (a skill body, a
 // slash command, command output, a background task finishing, an interruption, the compaction summary); none
 // of those is a prompt. Neither is another agent's message (wsh agents send), which is typed into the session
@@ -63,6 +63,8 @@ func HumanPrompts(path, runtime string) []HumanPrompt {
 			return nil
 		}
 		return piHumanPrompts(file)
+	case "agy":
+		return agyHumanPrompts(parseAgySteps(readLines(path)))
 	}
 	return nil
 }

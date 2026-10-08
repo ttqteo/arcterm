@@ -532,3 +532,62 @@ func TestScheduleOnceLeavesFreshSpawnRunning(t *testing.T) {
 		t.Fatalf("a just-spawned child must stay running, got %s", g.Tasks[0].State)
 	}
 }
+
+// An agy worker is spawned with no session id and learns one at its first hook. One that is alive but never
+// got that far (onboarding, signed out) writes nothing and binds nothing, so only the first-token deadline
+// can name it: unbound, it stalls once the deadline has passed since spawn, and not before.
+func TestAgyFirstTokenStall(t *testing.T) {
+	allowWorkerHarnessForTest(t)
+	newFakeLead(t)
+	ctx := context.Background()
+	stubSessionsRoot(t, t.TempDir())
+
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+		want string
+	}{
+		{name: "before the deadline", age: FirstTokenDeadline - time.Minute, want: TaskState_Running},
+		{name: "past the deadline", age: FirstTokenDeadline + time.Minute, want: TaskState_Stalled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch, err := wstore.CreateChannel(ctx, "agy-first-token-"+tc.age.String(), t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := jarvis.NewRun("owner", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+			if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+				t.Fatal(err)
+			}
+			g, err := NewTaskGroup(owner.ID, ch.OID, "g", 1, false, []waveobj.TaskNode{{ID: "t-0", Label: "a"}}, 1, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := wstore.AppendDag(ctx, &g); err != nil {
+				t.Fatal(err)
+			}
+			spawnedTs := time.Now().Add(-tc.age).UnixMilli()
+			child := jarvis.NewRun("child", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), spawnedTs)
+			child.Runtime = "agy"
+			child.DagORef = g.OID // no SessionId: agy has not reported one
+			if err := wstore.AppendRun(ctx, ch.OID, child); err != nil {
+				t.Fatal(err)
+			}
+			g.Tasks[0].RunID = child.ID
+			g.Tasks[0].State = TaskState_Running
+			g.Tasks[0].LastActivity = spawnedTs
+			if err := wstore.UpdateDag(ctx, g.OID, func(cur *waveobj.TaskGroup) error {
+				*cur = g
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := ScheduleOnce(ctx, &g); err != nil {
+				t.Fatal(err)
+			}
+			if g.Tasks[0].State != tc.want {
+				t.Fatalf("an unbound agy child silent for %s: want %s, got %s", tc.age, tc.want, g.Tasks[0].State)
+			}
+		})
+	}
+}

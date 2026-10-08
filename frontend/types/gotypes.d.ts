@@ -2201,6 +2201,7 @@ declare global {
         latestversion?: string;
         consultcapable: boolean;
         runworkercapable: boolean;
+        leadcapable: boolean;
         routecapabilities?: RouteCapabilityInfo[];
     };
 

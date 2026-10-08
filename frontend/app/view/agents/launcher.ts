@@ -26,6 +26,7 @@ const AGENT_ROWS: { id: Runtime; name: string }[] = [
     { id: "codex", name: "Codex" },
     { id: "opencode", name: "OpenCode" },
     { id: "pi", name: "Pi" },
+    { id: "agy", name: "Antigravity" },
     { id: "terminal", name: "Terminal" },
 ];
 
@@ -34,7 +35,7 @@ const RUN_ROWS: { id: RunShape; name: string }[] = [
     { id: "orchestrator", name: "Orchestrate" },
 ];
 
-// An uninstalled runtime stays hidden, so the digits follow the visible rows (spec D2). There are at most seven rows,
+// An uninstalled runtime stays hidden, so the digits follow the visible rows (spec D2). There are at most eight rows,
 // so every row has a digit.
 export function startRows(harnesses: { runtime: string; installed?: boolean }[]): StartRow[] {
     const agents: Omit<StartRow, "key">[] = AGENT_ROWS.filter((r) => isRuntimeOffered(r.id, harnesses)).map((r) => ({

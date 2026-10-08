@@ -180,6 +180,29 @@ func TestReviewerRunsOnTheLeadsRouteInTheLaneTree(t *testing.T) {
 	}
 }
 
+// agy is a worker, not a lead: a reviewer judges, so an agy reviewer route fails with the capability's own
+// message and spawns nothing.
+func TestReviewerRouteLead(t *testing.T) {
+	ctx, dag, worker := seedReviewDag(t)
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.ReviewerRoute = &waveobj.RoutePin{Runtime: "agy"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stubReviewTree(t, worker.EndCommit)
+	calls := captureSpawns(t)
+	capableLeadHarnessForTest(t)
+	schedule(t, ctx, dag.OID)
+	task := firstTask(t, ctx, dag.OID)
+	if len(*calls) != 0 {
+		t.Fatalf("an agy reviewer must not spawn, got %d spawns", len(*calls))
+	}
+	if !strings.Contains(task.ReviewNote, "cannot lead") {
+		t.Fatalf("want the cannot-lead message in the review note, got %+v", task)
+	}
+}
+
 func TestReviewWaitsForTheWorkersEvidence(t *testing.T) {
 	ctx, dag, worker := seedReviewDag(t)
 	if err := wstore.UpdateRun(ctx, dag.ChannelId, worker.ID, func(r *waveobj.Run) error {

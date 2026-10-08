@@ -12,19 +12,25 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import * as WOS from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { resumeArgsForClaude, resumeArgsForOpencode, resumeArgsForPi, sessionIdFromTranscript } from "../launch";
+import {
+    resumeArgsForAgy,
+    resumeArgsForClaude,
+    resumeArgsForOpencode,
+    resumeArgsForPi,
+    sessionIdFromTranscript,
+} from "../launch";
 import { naRememberFlagsAtom } from "../naflagsstore";
 
 // oref -> resume key already baked into the block this session, to skip redundant SetMeta writes
 const bakedResumeId = new Map<string, string>();
 
-// Pure: resume-on-reopen is Claude-, opencode-, and Pi-only, gated on the user's "Remember flags" New
+// Pure: resume-on-reopen is Claude-, opencode-, Pi-, and agy-only, gated on the user's "Remember flags" New
 // Agent default. When that setting is off the user wants a clean slate, so the agent relaunches
 // fresh on reopen; when on (the default) reopening reattaches to the live session. codex
 // always restarts fresh.
 export function shouldPersistResume(provider: string | undefined, rememberFlags: boolean): boolean {
     const p = (provider ?? "").toLowerCase();
-    return (p === "claude" || p === "opencode" || p === "pi") && rememberFlags === true;
+    return (p === "claude" || p === "opencode" || p === "pi" || p === "agy") && rememberFlags === true;
 }
 
 // a blocked run's worker stopped (the app restarted, or its process exited): it comes back through the run's
@@ -54,7 +60,8 @@ function sameArgs(a: string[], b: string[]): boolean {
 export async function persistResume(
     oref: string,
     provider: string | undefined,
-    transcriptPath: string | undefined
+    transcriptPath: string | undefined,
+    sessionId?: string
 ): Promise<void> {
     if (!shouldPersistResume(provider, globalStore.get(naRememberFlagsAtom))) {
         return;
@@ -62,7 +69,11 @@ export async function persistResume(
     const block = WOS.getObjectValue<Block>(oref);
     const meta = block?.meta as Record<string, unknown> | undefined;
     const cmd = meta?.["cmd"];
-    if (!meta || meta["controller"] !== "cmd" || (cmd !== "claude" && cmd !== "opencode" && cmd !== "pi")) {
+    if (
+        !meta ||
+        meta["controller"] !== "cmd" ||
+        (cmd !== "claude" && cmd !== "opencode" && cmd !== "pi" && cmd !== "agy")
+    ) {
         return;
     }
     const baseArgs = meta["agent:baseargs"] as string[] | undefined;
@@ -71,7 +82,9 @@ export async function persistResume(
     }
     // pi's resume key is the full transcript path (--session takes a path, never an id), so the dedup
     // cache key is the path too — sessionIdFromTranscript must never run on a pi path.
-    const cacheKey = cmd === "pi" ? transcriptPath : sessionIdFromTranscript(transcriptPath);
+    // agy's is the status's session id: every agy transcript is named transcript_full.jsonl, so its stem is no key.
+    const cacheKey =
+        cmd === "pi" ? transcriptPath : cmd === "agy" ? sessionId : sessionIdFromTranscript(transcriptPath);
     if (!cacheKey || bakedResumeId.get(oref) === cacheKey) {
         return;
     }
@@ -80,7 +93,9 @@ export async function persistResume(
             ? resumeArgsForPi(transcriptPath!, baseArgs)
             : cmd === "opencode"
               ? resumeArgsForOpencode(cacheKey, baseArgs)
-              : resumeArgsForClaude(cacheKey, baseArgs);
+              : cmd === "agy"
+                ? resumeArgsForAgy(cacheKey, baseArgs)
+                : resumeArgsForClaude(cacheKey, baseArgs);
     const curArgs = (meta["cmd:args"] as string[] | undefined) ?? [];
     if (sameArgs(nextArgs, curArgs)) {
         bakedResumeId.set(oref, cacheKey);

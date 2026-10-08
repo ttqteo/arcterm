@@ -10,6 +10,7 @@ describe("providerLabel", () => {
         expect(providerLabel("claude")).toBe("Claude");
         expect(providerLabel("codex")).toBe("Codex");
         expect(providerLabel("opencode")).toBe("OpenCode");
+        expect(providerLabel("agy")).toBe("Antigravity");
         expect(providerLabel("pi")).toBe("Pi");
     });
     it("falls back to the raw provider id when unknown", () => {
@@ -22,6 +23,7 @@ describe("providerDot", () => {
         expect(providerDot("claude")).toBe("bg-provider-claude");
         expect(providerDot("codex")).toBe("bg-provider-codex");
         expect(providerDot("opencode")).toBe("bg-provider-opencode");
+        expect(providerDot("agy")).toBe("bg-provider-agy");
         expect(providerDot("pi")).toBe("bg-provider-pi");
     });
     it("falls back to bg-muted when unknown", () => {

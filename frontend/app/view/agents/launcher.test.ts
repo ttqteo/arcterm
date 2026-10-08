@@ -24,7 +24,7 @@ const claudeOnly = [
     { runtime: "opencode", installed: false },
     { runtime: "pi", installed: false },
 ];
-const allFour = ["claude", "codex", "opencode", "pi"].map((runtime) => ({ runtime, installed: true }));
+const allFive = ["claude", "codex", "opencode", "pi", "agy"].map((runtime) => ({ runtime, installed: true }));
 
 describe("startRows", () => {
     it("numbers the visible rows: Claude Code, Terminal, Quick run, Orchestrate", () => {
@@ -35,21 +35,22 @@ describe("startRows", () => {
             "4 orchestrator",
         ]);
     });
-    it("numbers 1 to 7 with every runtime installed", () => {
-        const rows = startRows(allFour);
+    it("numbers 1 to 8 with every runtime installed", () => {
+        const rows = startRows(allFive);
         expect(rows.map((r) => r.id)).toEqual([
             "claude",
             "codex",
             "opencode",
             "pi",
+            "agy",
             "terminal",
             "quick",
             "orchestrator",
         ]);
-        expect(rows.at(-1)?.key).toBe("7");
+        expect(rows.at(-1)?.key).toBe("8");
     });
     it("offers every runtime while the harness list has not loaded", () => {
-        expect(startRows([])).toHaveLength(7);
+        expect(startRows([])).toHaveLength(8);
     });
     it("gives run rows their names and shape descriptions, agent rows no description", () => {
         const rows = startRows(claudeOnly);

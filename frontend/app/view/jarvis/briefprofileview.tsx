@@ -18,6 +18,7 @@
 
 import { ModalShell } from "@/app/modals/modalshell";
 import { channelsAtom, loadChannels } from "@/app/view/agents/channelsstore";
+import { leadRuntimesAtom } from "@/app/view/agents/harnessstore";
 import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectListAtom, projectsAtom, rowsWithChannel, type ProjectRow } from "@/app/view/agents/projectsstore";
 import { RoutePicker } from "@/app/view/agents/routepicker";
@@ -188,6 +189,7 @@ function DefaultsFields({
     routeRow?: ReactNode;
     setWorkers: (choice: WorkersChoice) => void;
 }) {
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const shape = draft.defaultmode ?? base.defaultmode ?? "quick";
     const width = draft.parallelism ?? base.parallelism ?? null;
     // "" is a stored global meaning branch; an empty project override is refused on save
@@ -275,6 +277,7 @@ function DefaultsFields({
                     canInherit
                     inheritedLabel={reviewers.inheritedLabel}
                     disabled={saving}
+                    runtimes={leadRuntimes}
                     onChange={(route) => (route == null ? drop("reviewerroute") : set({ reviewerroute: route }))}
                 />
             </DefaultRow>
@@ -329,6 +332,7 @@ export function BriefProfileModal({
 }) {
     const channels = useAtomValue(channelsAtom);
     const projects = useAtomValue(projectsAtom);
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const rows = useAtomValue(projectListAtom);
     // memoized: the effects below key on it, and a fresh Map per render would refetch every override
     const channelOptions = useMemo(() => channelOptionsOf(rows), [rows]);
@@ -533,6 +537,7 @@ export function BriefProfileModal({
                     inheritedLabel="Same as global"
                     disabled={saving}
                     onChange={(route) => (route == null ? drop("route") : set({ route }))}
+                    runtimes={leadRuntimes}
                 />
             </DefaultRow>
         ) : null;

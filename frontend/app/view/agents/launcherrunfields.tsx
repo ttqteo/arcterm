@@ -19,6 +19,7 @@ import {
 } from "../jarvis/newrunplan";
 import { planShapeText, planWarnings } from "../orchestrate/dagdigest";
 import { CapacityWarn } from "./capacitywarn";
+import { leadRuntimesAtom } from "./harnessstore";
 import { LAUNCHER_LABEL } from "./launcheragentfields";
 import { launcherGoalAtom, launcherPrototypeAtom } from "./launcherstore";
 import { RoutePicker } from "./routepicker";
@@ -186,6 +187,7 @@ function RunModels({ orchestrator }: { orchestrator: boolean }) {
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
     const reviewerRoute = useAtomValue(reviewerRouteAtom);
     const openRequest = useAtomValue(routeOpenRequestAtom);
+    const leadRuntimes = useAtomValue(leadRuntimesAtom);
     const lead = (
         <RoutePicker
             value={route}
@@ -193,6 +195,7 @@ function RunModels({ orchestrator }: { orchestrator: boolean }) {
             placement="bottom-start"
             openRequest={openRequest}
             title="Lead model"
+            runtimes={leadRuntimes}
         />
     );
     if (!orchestrator) {
@@ -229,6 +232,7 @@ function RunModels({ orchestrator }: { orchestrator: boolean }) {
                     title="Reviewers model"
                     canInherit
                     inheritedLabel="Same as lead"
+                    runtimes={leadRuntimes}
                 />
             </ModelPick>
         </div>

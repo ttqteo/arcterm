@@ -15,7 +15,7 @@ import { sayIfOverCapacity } from "@/app/view/jarvis/petcapacity";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { PendingRunDraft } from "./radarmodel";
-import { normalizeProfileOverrideRoute, normalizeRoute, resolveEffectiveRoute } from "./route";
+import { leadRuntimes, normalizeProfileOverrideRoute, normalizeRoute, resolveEffectiveRoute } from "./route";
 import { harnessesAtom, harnessPreferenceAtom } from "./harnessstore";
 
 // The pending Run draft handed from Radar's "Start investigation" to the Channels Run composer. Ephemeral
@@ -226,10 +226,13 @@ export async function resolveChannelLaunchRoute(channelId: string): Promise<Rout
     const settingsModel = (globalStore.get(getSettingsKeyAtom("harness:preferredmodel")) as string) ?? "";
     const pref = globalStore.get(harnessPreferenceAtom);
     const settings = pref.route ?? normalizeRoute(settingsRuntime, settingsModel);
+    const harnesses = globalStore.get(harnessesAtom);
     const effective = resolveEffectiveRoute({
         settings,
         channel: response.override?.route ?? null,
-        harnesses: globalStore.get(harnessesAtom),
+        harnesses,
+        // a consult preference of Antigravity must not give a run an agy lead, which the server refuses
+        allow: leadRuntimes(harnesses),
     });
     if (effective == null || effective.capability == null) {
         throw new Error("Selected route is unavailable");

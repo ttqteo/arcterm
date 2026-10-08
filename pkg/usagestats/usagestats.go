@@ -387,6 +387,7 @@ const (
 	scanCodex
 	scanOpencode
 	scanPi
+	scanAgy
 )
 
 // scanFile is one transcript to parse, tagged with the parser it needs. cutoff is the authoritative
@@ -522,6 +523,8 @@ func parseFile(f scanFile) []Record {
 			return nil
 		}
 		return extractPi(file, time.Time{})
+	case scanAgy:
+		return extractAgy(readAgyLines(f.path))
 	default:
 		return dedupe(extractClaude(readClaudeLines(f.path)))
 	}
@@ -559,10 +562,10 @@ func cachedFileRecords(f scanFile) []Record {
 	return records
 }
 
-// scanRoots walks the Claude, Codex, OpenCode, and Pi transcript roots, prunes Claude/Codex files by
+// scanRoots walks the Claude, Codex, OpenCode, Pi, and agy transcript roots, prunes Claude/Codex files by
 // modtime to the window (with a 1-day margin), parses + dedups the records, keeps those inside the
 // window, and returns buckets. Missing roots yield nothing.
-func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot string, windowDays int) []Bucket {
+func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot, agyRoot string, windowDays int) []Bucket {
 	var cutoff, since time.Time
 	if windowDays > 0 {
 		cutoff = time.Now().AddDate(0, 0, -windowDays-1)
@@ -571,6 +574,7 @@ func scanRoots(claudeRoot, codexRoot, opencodeRoot, piRoot string, windowDays in
 	files := append(walkClaudeFiles(claudeRoot, cutoff), walkCodexFiles(codexRoot, cutoff)...)
 	files = append(files, walkOpencodeFiles(opencodeRoot, since)...)
 	files = append(files, walkPiFiles(piRoot, since)...)
+	files = append(files, walkAgyFiles(agyRoot, since)...)
 	// a transcript modified inside the window still holds every earlier turn of its session, so the
 	// modtime prune alone let a long-running session pull days from before the window into it
 	var records []Record
@@ -589,7 +593,7 @@ func windowStart(now time.Time, windowDays int) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
 }
 
-// ScanUsage aggregates usage from the user's Claude, Codex, OpenCode, and Pi transcripts within
+// ScanUsage aggregates usage from the user's Claude, Codex, OpenCode, Pi, and agy transcripts within
 // the last windowDays (0 = all-time). It is the only exported entry point.
 func ScanUsage(windowDays int) ([]Bucket, error) {
 	home := wavebase.GetHomeDir()
@@ -598,6 +602,7 @@ func ScanUsage(windowDays int) ([]Bucket, error) {
 		filepath.Join(home, ".codex", "sessions"),
 		filepath.Join(home, ".local", "share", "opencode", "storage", "message"),
 		filepath.Join(home, ".pi", "agent", "sessions"),
+		filepath.Join(home, ".gemini", "antigravity-cli", "brain"),
 		windowDays,
 	), nil
 }
@@ -664,6 +669,11 @@ func subagentRecords(parentPath string) []Record {
 // per-session total that omitted them would under-report any session that fanned out to subagents.
 // Codex rollouts have no subagent dir, so the fallback path returns the parent's records unchanged.
 func transcriptRecords(path string) []Record {
+	// an agy transcript is read through its planner-response filter: its other steps are never
+	// usage and a tool result can run past a megabyte.
+	if isAgyTranscriptPath(path) {
+		return extractAgy(readAgyLines(path))
+	}
 	lines := readLines(path)
 	if len(lines) == 0 {
 		return nil

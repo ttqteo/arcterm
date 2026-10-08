@@ -90,6 +90,30 @@ describe("projectorFor", () => {
         expect(projectorFor(undefined, shadow).project([opencodeLine])).toEqual(MSG);
     });
 
+    it("routes by explicit agent: agy", () => {
+        const agyLine = JSON.stringify({ type: "PLANNER_RESPONSE", status: "DONE", content: "hi" });
+        expect(projectorFor("agy").project([agyLine])).toEqual(MSG);
+        expect(projectorFor("agy").project([claudeLine])).toEqual([]);
+        expect(projectorFor("agy").extractTitle).toBeDefined();
+    });
+
+    it("falls back to the agy projector for a brain path (POSIX)", () => {
+        const agyLine = JSON.stringify({ type: "PLANNER_RESPONSE", status: "DONE", content: "hi" });
+        const p = "/Users/u/.gemini/antigravity-cli/brain/abc/.system_generated/logs/transcript_full.jsonl";
+        expect(projectorFor(undefined, p).project([agyLine])).toEqual(MSG);
+    });
+
+    it("falls back to the agy projector for a brain path (Windows)", () => {
+        const agyLine = JSON.stringify({ type: "PLANNER_RESPONSE", status: "DONE", content: "hi" });
+        const p = "C:\\Users\\u\\.gemini\\antigravity-cli\\brain\\abc\\.system_generated\\logs\\transcript_full.jsonl";
+        expect(projectorFor(undefined, p).project([agyLine])).toEqual(MSG);
+    });
+
+    it("does not route a path merely containing 'antigravity'", () => {
+        const agyLine = JSON.stringify({ type: "PLANNER_RESPONSE", status: "DONE", content: "hi" });
+        expect(projectorFor(undefined, "/home/u/antigravity-notes/x.jsonl").project([agyLine])).toEqual([]);
+    });
+
     it("exposes extractTitle for claude (ai-title) and omits it for codex (deferred)", () => {
         const titleLine = JSON.stringify({ type: "ai-title", aiTitle: "Fix it" });
         expect(projectorFor("claude").extractTitle?.([titleLine])).toBe("Fix it");
