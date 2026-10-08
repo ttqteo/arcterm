@@ -4289,7 +4289,7 @@ dependencies = [
 
 [[package]]
 name = "wave-tauri"
-version = "0.15.5"
+version = "0.15.6"
 dependencies = [
  "chrono",
  "mac-notification-sys",
