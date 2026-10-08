@@ -27,6 +27,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- arcterm opens faster with many agents and terminals: an agent or terminal no longer loads its output until you first
+  open it (in the grid or the panel under the agent), instead of all of them loading at once on start.
 - Deleting, creating or renaming a file in Code no longer resets the whole view: the file you were reading, the open
   folders and the tree's scroll stay where they were.
 - Claude sessions are saved again after arcterm is reinstalled or reopened from an agent's terminal (`task install`
