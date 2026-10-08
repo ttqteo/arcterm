@@ -10,14 +10,14 @@ import { fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Folder } from "lucide-react";
 import { useEffect, useState } from "react";
-import { startupSurfaceAtom, startupSurfaceOptions, vaultPathError, type StartupSurface } from "../cockpitprefsstore";
+import { startupMenuEntries, startupSurfaceAtom, vaultPathError } from "../cockpitprefsstore";
 import { railVisibleAtom } from "../railstore";
 import { vaultStatusLine } from "../settingsmodel";
 import {
     CardFooter,
     CommitText,
     Note,
-    Segmented,
+    Select,
     SettingCard,
     SettingRow,
     startupLabel,
@@ -42,17 +42,21 @@ export function GeneralPage() {
 function StartupRows() {
     const [startup, setStartup] = useAtom(startupSurfaceAtom);
     const [railVisible, setRailVisible] = useAtom(railVisibleAtom);
-    const options = startupSurfaceOptions();
+    const items: ContextMenuItem[] = startupMenuEntries(startup).map((e) =>
+        "divider" in e
+            ? { type: "separator" }
+            : {
+                  label: startupLabel(e.choice),
+                  type: "radio",
+                  checked: e.checked,
+                  sublabel: e.hint,
+                  click: () => setStartup(e.choice),
+              }
+    );
     return (
         <>
-            {/* stacked: the startup choices are a row of seven; as a right-hand group they would push the
-                title off the card on a narrow window. */}
-            <SettingRow id="general.startup" stacked>
-                <Segmented<StartupSurface>
-                    options={options.map((k) => ({ id: k, label: startupLabel(k) }))}
-                    value={startup}
-                    onChange={setStartup}
-                />
+            <SettingRow id="general.startup">
+                <Select value={startup} label={startupLabel(startup)} items={items} ariaLabel="Startup surface" />
             </SettingRow>
             <SettingRow id="general.rail">
                 <Toggle

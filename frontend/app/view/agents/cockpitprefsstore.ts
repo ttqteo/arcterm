@@ -60,6 +60,18 @@ export function startupSurfaceOptions(): StartupSurface[] {
     return ["last", ...SURFACE_ORDER.filter((k) => k !== "agent")];
 }
 
+export type StartupMenuEntry = { choice: StartupSurface; checked: boolean; hint?: string } | { divider: true };
+
+// The Startup surface select's menu: Last opened (what it does as its hint) above a divider, then the surfaces.
+export function startupMenuEntries(current: StartupSurface): StartupMenuEntry[] {
+    const [last, ...surfaces] = startupSurfaceOptions();
+    return [
+        { choice: last, checked: current === last, hint: "the one you left" },
+        { divider: true },
+        ...surfaces.map((k) => ({ choice: k, checked: current === k })),
+    ];
+}
+
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 48;
 

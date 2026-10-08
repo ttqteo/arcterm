@@ -18,7 +18,8 @@ export function TerminalPage() {
     // the terminal face is stored as the full stack string; match it back to a catalog id for the control
     const termFontStack = (useAtomValue(getSettingsKeyAtom("term:fontfamily")) as string) ?? "";
     const termFontId = MONO_FONTS.find((f) => f.stack === termFontStack)?.id ?? DEFAULT_TERM_FONT;
-    const monoOpts = MONO_FONTS.map((f) => ({ id: f.id, label: f.label }));
+    // each option draws in the face it names, so the choice is judged by looking at it
+    const monoOpts = MONO_FONTS.map((f) => ({ id: f.id, label: f.label, fontFamily: f.stack }));
 
     const cursor = cursorRaw === "bar" || cursorRaw === "underline" ? cursorRaw : "block";
 

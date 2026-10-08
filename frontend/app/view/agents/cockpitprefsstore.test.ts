@@ -9,6 +9,7 @@ import {
     coerceStartupSurface,
     coerceTransparency,
     rememberSurface,
+    startupMenuEntries,
     startupSurfaceOptions,
     vaultPathError,
 } from "./cockpitprefsstore";
@@ -23,6 +24,24 @@ describe("startupSurfaceOptions", () => {
     });
     it("offers the last opened surface first", () => {
         expect(startupSurfaceOptions()[0]).toBe("last");
+    });
+});
+
+describe("startupMenuEntries", () => {
+    it("puts Last opened above a divider, then every offered surface, checking the current one", () => {
+        const items = startupMenuEntries("last");
+        expect(items[0]).toEqual({ choice: "last", checked: true, hint: "the one you left" });
+        expect(items[1]).toEqual({ divider: true });
+        expect(items.slice(2).map((i) => ("choice" in i ? i.choice : null))).toEqual(
+            startupSurfaceOptions().filter((k) => k !== "last")
+        );
+        expect(items.filter((i) => "checked" in i && i.checked)).toHaveLength(1);
+    });
+
+    it("checks a picked surface instead", () => {
+        const items = startupMenuEntries("cockpit");
+        expect(items.find((i) => "choice" in i && i.choice === "cockpit")).toMatchObject({ checked: true });
+        expect(items[0]).toMatchObject({ checked: false });
     });
 });
 
