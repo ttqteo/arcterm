@@ -37,6 +37,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   "401 OAuth access token is invalid". An account added this way before the fix needs to be added again. Adding an
   account, signed in or pasted, now asks Claude whether it accepts the token and refuses one it rejects. A pasted
   token copied across a line wrap, or with some text around it, is cleaned up before it is checked.
+- A terminal whose text went missing after the machine slept or stalled, leaving only colored backgrounds and a few
+  stray letters, redraws its text when the window comes back or you click into it.
 - A Claude agent walking you through a design in parts shows its **1/4** badge while it asks "Part 1/4 look right?"
   with a question, not only when it stops on a plain message. It also reads "part 1 out of 3", "phần 1 trong 3",
   "round 1 of 2", "question 2/5" and "[1/4]", and no longer mistakes a date like "05/10" for a part.
