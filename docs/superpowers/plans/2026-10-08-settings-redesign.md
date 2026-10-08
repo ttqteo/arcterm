@@ -36,6 +36,7 @@
 - Row: `px-4 py-3` (compact `py-[9px]`); title `text-[13px] font-medium text-primary`; description `mt-0.5 text-[12px] leading-[1.45] text-muted`; control at the card's right edge.
 - Content column: `max-w-[720px]`, padding `px-10 pt-7 pb-12`, cards `gap-[22px]`. Page title `text-[18px] font-bold tracking-[-0.01em]`, blurb `text-[12.5px] text-muted`.
 - Never hand-edit generated files. Never run prettier on `scripts/*.mjs`. `npx tsc` overflows: typecheck with the Check line (about 2 minutes). Commits carry no Co-Authored-By trailer.
+- Scope inside shared files: Task 1 edits `settingssurface.tsx` only to keep it compiling. In `scripts/cdp/scenarios.mjs`, Tasks 3–6 edit only between their own step's `// --- <id> detail (Task N) ---` fences, plus the existing scenarios their steps name as theirs to fix.
 - If a Storage section (from `docs/superpowers/plans/2026-10-08-storage-cleanup.md`) exists in `settingsSections` when a task starts, it becomes a seventh page placed before About, its rows in one card `storage`, built with the same primitives; do not drop it.
 
 ## Review Focus
@@ -51,7 +52,7 @@
 
 **Depends on:** none
 
-**Files:** Modify `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingssurface.tsx` (only to keep it compiling)
+**Files:** `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingssurface.tsx`
 
 - [ ] **Step 1: Write the failing tests.** In `settingsmodel.test.ts` replace the `groupSections`/`countLabel` imports and tests, and the `"settingsSections run route and groups"` block, with:
 
@@ -248,7 +249,7 @@ In `settingssurface.tsx`, only enough to compile and render as before: `useRowBi
 
 **Depends on:** Task 1
 
-**Files:** Create `frontend/app/view/agents/settingsui.tsx`, `frontend/app/view/agents/settingspages/{general,appearance,terminal,agents,backgroundai,about}.tsx`; modify `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/settingsui.tsx`, `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingspages/appearance.tsx`, `frontend/app/view/agents/settingspages/terminal.tsx`, `frontend/app/view/agents/settingspages/agents.tsx`, `frontend/app/view/agents/settingspages/backgroundai.tsx`, `frontend/app/view/agents/settingspages/about.tsx`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Failing test for the key pill's title.** Add to `settingsmodel.test.ts`:
 
@@ -310,7 +311,7 @@ Run the test again — expected PASS.
 
 - [ ] **Step 5: One file per page.** Move each old section component out of `settingssurface.tsx` into its page file, wrapped in `SettingCard`s by the card membership table (cards in order, each holding its rows' `SettingRow`s), using the `settingsui.tsx` primitives. Keep every control's behavior as it is today; Tasks 3–6 restyle inside their page. The page files export `GeneralPage`, `AppearancePage`, `TerminalPage`, `AgentsPage`, `BackgroundAIPage`, `AboutPage`; `SectionBody` renders them. `fonts.term` moves to `TerminalPage`'s `text` card here. Shared helpers the pages need (`writeConfig`, `FLAG_RUNTIMES`, `startupLabel`) move to `settingsui.tsx`.
 
-- [ ] **Step 6: The `settings-pages` CDP scenario.** Add it to `scripts/cdp/scenarios.mjs` (4-space indent, no prettier), modelled on `settings-radar-audit`: arrange opens Settings (`surface:settings` via the nav button) at 1600×1000; one step per page, each clicking `[data-section="<id>"]`, asserting the page's card ids from `[data-setting-card]` in order, and taking `cdp-shots/settings-pages-<id>.png`. Add the steps `general-select` (placeholder, Task 3 fills it), `appearance-detail`, `terminal-detail`, `agents-detail`, `headless-detail`, `about-detail` (placeholders that pass, each between `// --- <id> detail (Task N) ---` comment fences so the page tasks edit disjoint lines), and `key-pill`: on Terminal, hover `[data-setting-row="terminal.scrollback"]` (CDP `Input.dispatchMouseEvent` mouseMoved over its rect), assert its key pill is visible and titled `Copy term:scrollback · synced in settings.json`, and assert `[data-setting-row="about.app"]` has no pill; shot `settings-pages-key-pill.png`. Move every `[data-section="…"]` click in other scenarios that names a retired id to its new id (`route-picker-flat` and `agy-harness` `run` → `agents`; `harness-update` `about` stays; `settings-claude-account` `claudeaccount` → `agents`; `notify-toast` `notifications` → `general`; `agy-harness` `newagent` → `agents`).
+- [ ] **Step 6: The `settings-pages` CDP scenario.** (Task 2 creates the page files listed above; `settingssurface.tsx` keeps the shell.) Add it to `scripts/cdp/scenarios.mjs` (4-space indent, no prettier), modelled on `settings-radar-audit`: arrange opens Settings (`surface:settings` via the nav button) at 1600×1000; one step per page, each clicking `[data-section="<id>"]`, asserting the page's card ids from `[data-setting-card]` in order, and taking `cdp-shots/settings-pages-<id>.png`. Add the steps `general-select` (placeholder, Task 3 fills it), `appearance-detail`, `terminal-detail`, `agents-detail`, `headless-detail`, `about-detail` (placeholders that pass, each between `// --- <id> detail (Task N) ---` comment fences so the page tasks edit disjoint lines), and `key-pill`: on Terminal, hover `[data-setting-row="terminal.scrollback"]` (CDP `Input.dispatchMouseEvent` mouseMoved over its rect), assert its key pill is visible and titled `Copy term:scrollback · synced in settings.json`, and assert `[data-setting-row="about.app"]` has no pill; shot `settings-pages-key-pill.png`. Move every `[data-section="…"]` click in other scenarios that names a retired id to its new id (`route-picker-flat` and `agy-harness` `run` → `agents`; `harness-update` `about` stays; `settings-claude-account` `claudeaccount` → `agents`; `notify-toast` `notifications` → `general`; `agy-harness` `newagent` → `agents`).
 
 - [ ] **Step 7: Run.** `npx vitest run frontend/app/view/agents/settingsmodel.test.ts`, then the Check line — expected PASS, exit 0.
 
@@ -322,7 +323,7 @@ Run the test again — expected PASS.
 
 **Depends on:** Task 2
 
-**Files:** Modify `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingspages/terminal.tsx`, `frontend/app/view/agents/cockpitprefsstore.ts`, `frontend/app/view/agents/cockpitprefsstore.test.ts`, `scripts/cdp/scenarios.mjs` (only between the `general-select` fences)
+**Files:** `frontend/app/view/agents/settingspages/general.tsx`, `frontend/app/view/agents/settingspages/terminal.tsx`, `frontend/app/view/agents/cockpitprefsstore.ts`, `frontend/app/view/agents/cockpitprefsstore.test.ts`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Failing test for the startup menu.** In `cockpitprefsstore.test.ts`:
 
@@ -384,7 +385,7 @@ Run the test — expected PASS.
 
 **Depends on:** Task 2
 
-**Files:** Modify `frontend/app/view/agents/settingspages/appearance.tsx`, `scripts/cdp/scenarios.mjs` (only between the `appearance-detail` fences)
+**Files:** `frontend/app/view/agents/settingspages/appearance.tsx`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Theme card.** The theme picker becomes a `grid grid-cols-3 gap-1.5 p-3` of chips: 38px buttons, `rounded-sm border px-2.5 text-[12.5px] font-semibold`, a 2×2 grid of 10px swatches (the palette's background, raised surface, accent, success, from `THEMES`) then the name, then `Check` 13px on the selected one; selected `border-edge-strong bg-surface-selected`, others `border-edge-mid bg-surface`. The swatch colors are data, so they go in `style={{ background }}` from the palette (as the current picker does), not in classes. The row's title/description are not drawn above the grid (the card label says Theme); the changed dot and revert sit in the card label's line instead.
 
@@ -404,7 +405,7 @@ Run the test — expected PASS.
 
 **Depends on:** Task 2
 
-**Files:** Modify `frontend/app/view/agents/settingspages/agents.tsx`, `scripts/cdp/scenarios.mjs` (only between the `agents-detail` fences, and inside `settings-claude-account` where a selector no longer matches)
+**Files:** `frontend/app/view/agents/settingspages/agents.tsx`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Claude account card.** Each account is a card row: a `Check` column (the active account), the email `text-[13px] font-semibold`, the method tag (`/login` or `token`, `rounded bg-pill px-1.5 text-[11px] text-ink-mid`), "new agents use this" in `text-[11.5px] text-muted` on the active one; below, 5h and Week meters (a 64×4 `bg-edge-mid` track with a `bg-accent` fill, `bg-warning` from 80%, then the percent `tabular-nums text-secondary`) and the last-seen age, all from the existing `rowQuota`/`quotaLine` data; the ⋯ button opens the existing per-row menu. The active row has `bg-surface-selected`. "+ Add account" is the card's `CardFooter` button and opens the existing Add account dialog. Every existing behavior (switch, rename, remove, restart prompt) stays.
 
@@ -424,7 +425,7 @@ Run the test — expected PASS.
 
 **Depends on:** Task 2
 
-**Files:** Modify `frontend/app/view/agents/settingspages/backgroundai.tsx`, `frontend/app/view/agents/settingspages/about.tsx`, `scripts/cdp/scenarios.mjs` (only between the `headless-detail` and `about-detail` fences, and inside `settings-radar-audit` and `harness-update` where a selector no longer matches)
+**Files:** `frontend/app/view/agents/settingspages/backgroundai.tsx`, `frontend/app/view/agents/settingspages/about.tsx`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Runtime card.** The radio cards become `ChoiceRow`s: name, the command in `font-mono text-[11px] text-ink-faint`, then at the right a 6px dot and a word (`installed` `text-success`/`bg-success`, `not installed` `text-muted`/`bg-ink-faint`, `default · key missing` `text-warning`/`bg-warning`); a runtime that is not installed is `dim` and cannot be picked, as today.
 
@@ -444,7 +445,7 @@ Run the test — expected PASS.
 
 **Depends on:** Task 3, Task 4, Task 5, Task 6
 
-**Files:** Modify `CHANGELOG.md`, `frontend/app/view/agents/settingssurface.tsx`
+**Files:** `CHANGELOG.md`, `frontend/app/view/agents/settingssurface.tsx`
 
 - [ ] **Step 1:** Delete anything in `settingssurface.tsx` no page uses any more (the old `Legend`, `ScopeDot`, `Note`, `countLabel` imports, the group code, unused imports). `settingssurface.tsx` keeps the surface shell, the index and `useRowBindings`.
 - [ ] **Step 2:** Under `## Unreleased` → `Changed` in `CHANGELOG.md`: "Settings is six pages instead of eleven, laid out as cards: each setting is a title and one line of description, its config key appears when you hover it (click to copy), and Startup surface is a dropdown."
