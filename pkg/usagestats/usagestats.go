@@ -40,6 +40,13 @@ type Record struct {
 	CacheCreate     int
 	CacheCreate1h   int // subset of CacheCreate billed at the 1h extended-cache rate
 	ReportedCostUsd *float64
+	// claude only: the session the record bills to (the transcript's stem, or for a subagent file the
+	// session directory above its subagents dir), whether it came from a subagent file, the assistant
+	// line's cwd, and the file's last ai-title ("" when none)
+	Session string
+	Sub     bool
+	Cwd     string
+	Title   string
 }
 
 // Bucket is one (harness, provider, model, local-day) aggregate. The frontend prices and rolls these up.
@@ -71,6 +78,7 @@ func extractClaude(lines []string) []Record {
 			Timestamp  string `json:"timestamp"`
 			RequestID  string `json:"requestId"`
 			Entrypoint string `json:"entrypoint"`
+			Cwd        string `json:"cwd"`
 			Message    struct {
 				ID    string `json:"id"`
 				Model string `json:"model"`
@@ -110,7 +118,7 @@ func extractClaude(lines []string) []Record {
 			ID: id, TS: ts, Harness: "claude", Provider: "anthropic", Model: rec.Message.Model,
 			Input: rec.Message.Usage.InputTokens, Output: rec.Message.Usage.OutputTokens,
 			CacheRead: rec.Message.Usage.CacheReadInputTokens, CacheCreate: rec.Message.Usage.CacheCreationInputTokens,
-			CacheCreate1h: c1h,
+			CacheCreate1h: c1h, Cwd: rec.Cwd,
 		})
 	}
 	return out
@@ -360,10 +368,16 @@ func filterUsageLines(lines []string) []string {
 	return out
 }
 
+// aiTitleMarker is what a Claude ai-title line contains: the session's running name, read for the
+// per-session view.
+var aiTitleMarker = []byte(`"ai-title"`)
+
 // readClaudeLines reads a Claude transcript, keeping only usage-bearing lines (see filterUsageLines)
-// as they stream past, so the rest of the file is never held.
+// and ai-title lines as they stream past, so the rest of the file is never held.
 func readClaudeLines(path string) []string {
-	return scanLines(path, func(line []byte) bool { return bytes.Contains(line, usageMarker) })
+	return scanLines(path, func(line []byte) bool {
+		return bytes.Contains(line, usageMarker) || bytes.Contains(line, aiTitleMarker)
+	})
 }
 
 // inWindow reports whether the file at path was modified at/after cutoff. A zero cutoff
@@ -526,7 +540,14 @@ func parseFile(f scanFile) []Record {
 	case scanAgy:
 		return extractAgy(readAgyLines(f.path))
 	default:
-		return dedupe(extractClaude(readClaudeLines(f.path)))
+		lines := readClaudeLines(f.path)
+		recs := dedupe(extractClaude(lines))
+		session, sub := claudeSessionOf(f.path)
+		title := lastAiTitle(lines)
+		for i := range recs {
+			recs[i].Session, recs[i].Sub, recs[i].Title = session, sub, title
+		}
+		return recs
 	}
 }
 
