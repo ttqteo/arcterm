@@ -108,6 +108,12 @@ export class RpcApiType {
         return client.wshRpcCall("agentsyncsteeringwrite", data, opts);
     }
 
+    // command "analyzeusage" [call]
+    AnalyzeUsageCommand(client: WshClient, data: CommandAnalyzeUsageData, opts?: RpcOpts): Promise<UsageInsights> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "analyzeusage", data, opts);
+        return client.wshRpcCall("analyzeusage", data, opts);
+    }
+
     // command "answeragent" [call]
     AnswerAgentCommand(client: WshClient, data: CommandAnswerAgentData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "answeragent", data, opts);
@@ -594,6 +600,12 @@ export class RpcApiType {
         return client.wshRpcCall("getsessionsactivity", data, opts);
     }
 
+    // command "getsessionusage" [call]
+    GetSessionUsageCommand(client: WshClient, data: CommandGetSessionUsageData, opts?: RpcOpts): Promise<CommandGetSessionUsageRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsessionusage", data, opts);
+        return client.wshRpcCall("getsessionusage", data, opts);
+    }
+
     // command "getsubagents" [call]
     GetSubagentsCommand(client: WshClient, data: CommandGetSubagentsData, opts?: RpcOpts): Promise<CommandGetSubagentsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsubagents", data, opts);
@@ -610,6 +622,12 @@ export class RpcApiType {
     GetTranscriptUsageCommand(client: WshClient, data: CommandGetTranscriptUsageData, opts?: RpcOpts): Promise<CommandGetTranscriptUsageRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gettranscriptusage", data, opts);
         return client.wshRpcCall("gettranscriptusage", data, opts);
+    }
+
+    // command "getusageinsights" [call]
+    GetUsageInsightsCommand(client: WshClient, opts?: RpcOpts): Promise<UsageInsights> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getusageinsights", null, opts);
+        return client.wshRpcCall("getusageinsights", null, opts);
     }
 
     // command "getusagestats" [call]

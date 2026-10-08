@@ -103,6 +103,12 @@ func AgentSyncSteeringWriteCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSy
 	return resp, err
 }
 
+// command "analyzeusage", wshserver.AnalyzeUsageCommand
+func AnalyzeUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandAnalyzeUsageData, opts *wshrpc.RpcOpts) (*wshrpc.UsageInsights, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.UsageInsights](w, "analyzeusage", data, opts)
+	return resp, err
+}
+
 // command "answeragent", wshserver.AnswerAgentCommand
 func AnswerAgentCommand(w *wshutil.WshRpc, data wshrpc.CommandAnswerAgentData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "answeragent", data, opts)
@@ -588,6 +594,12 @@ func GetSessionsActivityCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSession
 	return resp, err
 }
 
+// command "getsessionusage", wshserver.GetSessionUsageCommand
+func GetSessionUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionUsageData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSessionUsageRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSessionUsageRtnData](w, "getsessionusage", data, opts)
+	return resp, err
+}
+
 // command "getsubagents", wshserver.GetSubagentsCommand
 func GetSubagentsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSubagentsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSubagentsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSubagentsRtnData](w, "getsubagents", data, opts)
@@ -603,6 +615,12 @@ func GetTranscriptTokensCommand(w *wshutil.WshRpc, data wshrpc.CommandGetTranscr
 // command "gettranscriptusage", wshserver.GetTranscriptUsageCommand
 func GetTranscriptUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandGetTranscriptUsageData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetTranscriptUsageRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetTranscriptUsageRtnData](w, "gettranscriptusage", data, opts)
+	return resp, err
+}
+
+// command "getusageinsights", wshserver.GetUsageInsightsCommand
+func GetUsageInsightsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.UsageInsights, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.UsageInsights](w, "getusageinsights", nil, opts)
 	return resp, err
 }
 

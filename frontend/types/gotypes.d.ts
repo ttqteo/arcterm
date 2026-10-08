@@ -478,6 +478,12 @@ declare global {
         overstream: boolean;
     };
 
+    // wshrpc.CommandAnalyzeUsageData
+    type CommandAnalyzeUsageData = {
+        windowdays: number;
+        digest: string;
+    };
+
     // wshrpc.CommandAnswerAgentData
     type CommandAnswerAgentData = {
         oref: string;
@@ -1032,6 +1038,16 @@ declare global {
     type CommandGetSessionGroupRtnData = {
         root: string;
         label: string;
+    };
+
+    // wshrpc.CommandGetSessionUsageData
+    type CommandGetSessionUsageData = {
+        windowdays?: number;
+    };
+
+    // wshrpc.CommandGetSessionUsageRtnData
+    type CommandGetSessionUsageRtnData = {
+        sessions: UsageSession[];
     };
 
     // wshrpc.CommandGetSessionsActivityData
@@ -2780,6 +2796,17 @@ declare global {
         cwd: string;
         byagent: boolean;
         launchercmdline?: string;
+        repo?: string;
+        owner?: ServerOwner;
+    };
+
+    // devservers.ServerOwner
+    type ServerOwner = {
+        kind: string;
+        blockid?: string;
+        tabid?: string;
+        name?: string;
+        harness?: string;
     };
 
     // wshrpc.SessionActivity
@@ -2882,6 +2909,7 @@ declare global {
         "claude:activeaccount"?: string;
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
+        "usage:insightslang"?: string;
     };
 
     // wshrpc.ShippedItem
@@ -3124,6 +3152,14 @@ declare global {
         msgs: number;
     };
 
+    // wshrpc.UsageInsights
+    type UsageInsights = {
+        markdown: string;
+        analyzedts: number;
+        windowdays: number;
+        model: string;
+    };
+
     // waveobj.UsageRow
     type UsageRow = {
         role: string;
@@ -3136,6 +3172,33 @@ declare global {
         cachewrite1h: number;
         msgs: number;
         missing?: boolean;
+    };
+
+    // wshrpc.UsageSession
+    type UsageSession = {
+        id: string;
+        title: string;
+        project: string;
+        models: UsageSessionModel[];
+        turns: number;
+        subturns: number;
+        avgctx: number;
+        maxctx: number;
+        coldresumes: number;
+        coldtokens: number;
+        firstts: number;
+        lastts: number;
+    };
+
+    // wshrpc.UsageSessionModel
+    type UsageSessionModel = {
+        model: string;
+        sub?: boolean;
+        input: number;
+        output: number;
+        cacheread: number;
+        cachecreate: number;
+        cachecreate1h: number;
     };
 
     // wshrpc.VaultStatusRtnData

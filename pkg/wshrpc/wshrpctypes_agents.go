@@ -10,6 +10,9 @@ type AgentCommands interface {
 	GetAgentTranscriptCommand(ctx context.Context, data CommandGetAgentTranscriptData) (*CommandGetAgentTranscriptRtnData, error)
 	GetSubagentsCommand(ctx context.Context, data CommandGetSubagentsData) (*CommandGetSubagentsRtnData, error) // list a parent agent's on-disk subagent transcripts
 	GetUsageStatsCommand(ctx context.Context, data CommandGetUsageStatsData) (*CommandGetUsageStatsRtnData, error)
+	GetSessionUsageCommand(ctx context.Context, data CommandGetSessionUsageData) (*CommandGetSessionUsageRtnData, error) // Claude usage folded per session, for the Usage surface's By session table and digest
+	AnalyzeUsageCommand(ctx context.Context, data CommandAnalyzeUsageData) (*UsageInsights, error)                       // have Claude (Sonnet, headless) read a usage digest and save what it says
+	GetUsageInsightsCommand(ctx context.Context) (*UsageInsights, error)                                                 // the last saved usage analysis; the zero value when there is none
 	GetRecentSessionsCommand(ctx context.Context, data CommandGetRecentSessionsData) (*CommandGetRecentSessionsRtnData, error)
 	GetSessionsActivityCommand(ctx context.Context, data CommandGetSessionsActivityData) (*CommandGetSessionsActivityRtnData, error)
 	GetTranscriptTokensCommand(ctx context.Context, data CommandGetTranscriptTokensData) (*CommandGetTranscriptTokensRtnData, error)
@@ -111,6 +114,56 @@ type CommandGetUsageStatsData struct {
 
 type CommandGetUsageStatsRtnData struct {
 	Buckets []UsageBucket `json:"buckets"`
+}
+
+// UsageSessionModel is one (model, subagent or not) slice of a session's tokens; CacheCreate1h is a
+// subset of CacheCreate, as in UsageBucket.
+type UsageSessionModel struct {
+	Model         string `json:"model"`
+	Sub           bool   `json:"sub,omitempty"`
+	Input         int    `json:"input"`
+	Output        int    `json:"output"`
+	CacheRead     int    `json:"cacheread"`
+	CacheCreate   int    `json:"cachecreate"`
+	CacheCreate1h int    `json:"cachecreate1h"`
+}
+
+// UsageSession is one Claude session's usage. A session with Turns 0 has only subagent records in the
+// window, so its Title and Project are empty. Times are unix ms.
+type UsageSession struct {
+	ID          string              `json:"id"`
+	Title       string              `json:"title"`
+	Project     string              `json:"project"`
+	Models      []UsageSessionModel `json:"models"`
+	Turns       int                 `json:"turns"`
+	SubTurns    int                 `json:"subturns"`
+	AvgCtx      int                 `json:"avgctx"`
+	MaxCtx      int                 `json:"maxctx"`
+	ColdResumes int                 `json:"coldresumes"`
+	ColdTokens  int                 `json:"coldtokens"`
+	FirstTs     int64               `json:"firstts"`
+	LastTs      int64               `json:"lastts"`
+}
+
+type CommandGetSessionUsageData struct {
+	WindowDays int `json:"windowdays,omitempty"`
+}
+
+type CommandGetSessionUsageRtnData struct {
+	Sessions []UsageSession `json:"sessions"`
+}
+
+type CommandAnalyzeUsageData struct {
+	WindowDays int    `json:"windowdays"`
+	Digest     string `json:"digest"` // the numbers-only digest the frontend builds (usagedigest.ts)
+}
+
+// UsageInsights is one saved usage analysis. The zero value (empty Markdown) means none has run yet.
+type UsageInsights struct {
+	Markdown   string `json:"markdown"`
+	AnalyzedTs int64  `json:"analyzedts"` // unix ms
+	WindowDays int    `json:"windowdays"` // the window the digest covered
+	Model      string `json:"model"`
 }
 
 type CommandGetRecentSessionsData struct {

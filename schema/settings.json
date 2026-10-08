@@ -164,6 +164,9 @@
         },
         "radar:auditmodel": {
           "type": "string"
+        },
+        "usage:insightslang": {
+          "type": "string"
         }
       },
       "additionalProperties": false,
