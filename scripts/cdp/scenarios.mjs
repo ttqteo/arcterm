@@ -17128,7 +17128,10 @@ const RAIL_SERVERS_AGENT_JS =
 // spawns exe and resolves with the child and its first line of output; rejects if it ends first or is silent for 10s
 function railServersStart(exe, args, options) {
     return new Promise((resolve, reject) => {
-        const child = spawn(exe, args, { stdio: ["ignore", "pipe", "inherit"], windowsHide: true, ...options });
+        // a caller's FORCE_COLOR would colour the pid and port the child logs, which this reads as numbers
+        const env = { ...process.env, ...options?.env, NO_COLOR: "1" };
+        delete env.FORCE_COLOR;
+        const child = spawn(exe, args, { stdio: ["ignore", "pipe", "inherit"], windowsHide: true, ...options, env });
         let out = "";
         let settled = false;
         const settle = (err, line) => {
@@ -20270,7 +20273,7 @@ const consumersPopover = {
         await h.ev(`${consumersRowExpr("fx-consumers-worker")}?.querySelector("[data-consumer-stop]")?.click()`);
         const workerConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_WORKER)}`, 3000);
         await h.shot("cdp-shots/consumers-stop-worker.png");
-        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_WORKER)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Stop worker")?.click()`);
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_WORKER)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Stop worker"))?.click()`);
         const stopToast = await polishWaitFor(h, consumersToastExpr("Worker t-3 stopped"), 3000);
         const stopCall = (await calls()).find((c) => c.command === "dagaction");
         rec(
@@ -20283,7 +20286,7 @@ const consumersPopover = {
         await h.ev(`${consumersRowExpr("fx-consumers-mine")}?.querySelector("[data-consumer-stop]")?.click()`);
         const mineConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_MINE)}`, 3000);
         await h.shot("cdp-shots/consumers-stop-agent.png");
-        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_MINE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Cancel")?.click()`);
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_MINE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Cancel"))?.click()`);
         const cancelled = await polishWaitFor(h, `!${consumersDialogExpr(CONSUMERS_STOP_MINE)} && !!${consumersRowExpr("fx-consumers-mine")}`, 3000);
         rec(
             "9. Stop on an agent you opened asks the Close agent confirm; Cancel keeps it",
@@ -20387,7 +20390,7 @@ const consumersPopover = {
         await polishWaitFor(h, `!!${consumersRowExpr(ctx.liveTabId)}`, 5000);
         await h.ev(`${consumersRowExpr(ctx.liveTabId)}?.querySelector("[data-consumer-stop]")?.click()`);
         const liveConfirm = await polishWaitFor(h, `!!${consumersDialogExpr(CONSUMERS_STOP_LIVE)}`, 3000);
-        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_LIVE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Close agent")?.click()`);
+        await h.ev(`[...(${consumersDialogExpr(CONSUMERS_STOP_LIVE)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Close agent"))?.click()`);
         const liveTabOpen = async () =>
             (await h.rpc("workspacelist", null)).some((w) => (w.workspacedata?.tabids ?? []).includes(ctx.liveTabId));
         let liveGone = false;

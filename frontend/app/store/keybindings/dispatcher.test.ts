@@ -4,8 +4,10 @@
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel, SurfaceKey } from "@/app/view/agents/agents";
+import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
 import { docReviewAtom } from "@/app/view/agents/docreview";
 import type { LauncherKind } from "@/app/view/agents/launcher";
+import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
@@ -214,6 +216,20 @@ describe("deriveKeyContext", () => {
         globalStore.set(uploadsLightboxOpenAtom, true);
         expect(deriveKeyContext().modalOpen).toBe(true);
         globalStore.set(uploadsLightboxOpenAtom, false);
+        expect(deriveKeyContext().modalOpen).toBe(false);
+        unbind();
+    });
+
+    // the footer's popovers close on their own Escape listener, which runs after this dispatcher's capture handler;
+    // uncounted, agent:back took Escape and the popover stayed open
+    it("counts the Consumers and Servers popovers as modals", () => {
+        const unbind = bindModel("agent");
+        globalStore.set(consumersOpenAtom, "ram");
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        globalStore.set(consumersOpenAtom, null);
+        globalStore.set(machineServersOpenAtom, true);
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        globalStore.set(machineServersOpenAtom, false);
         expect(deriveKeyContext().modalOpen).toBe(false);
         unbind();
     });

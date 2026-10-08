@@ -5,7 +5,9 @@ import { anyModalOpen } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
@@ -98,6 +100,9 @@ export function deriveKeyContext(): KeyContext {
         // the Agent rail's Uploads lightbox is a ModalShell too, but one the dispatcher cannot see (component state);
         // uncounted, Escape left the surface with the lightbox still up, and j/k, the arrows, d and f acted behind it
         globalStore.get(uploadsLightboxOpenAtom) ||
+        // and the footer's Consumers and Servers popovers, whose Escape listeners run after this capture handler
+        globalStore.get(consumersOpenAtom) != null ||
+        globalStore.get(machineServersOpenAtom) ||
         globalStore.get(modalsModel.modalsAtom).length > 0;
     return {
         surface,
