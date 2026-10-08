@@ -3184,4 +3184,4 @@ git commit -m "test(cdp): consumers-popover drives the Consumers panel over a fi
 
 ## Execution notes
 
-- model-switch-midturn: (Task 1 writes `yes`, `no` or `unverified` here, with its evidence)
+- model-switch-midturn: unverified — tmux or claude missing: `command -v tmux` found nothing on this Mac (claude is at /opt/homebrew/bin/claude), so the spike's own `tmux -L modelspike` server could not be started
