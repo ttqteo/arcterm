@@ -71,6 +71,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Switching an agent between Terminal and Canvas (or Review) no longer reshapes the screen: the details rail stays,
   so the header's controls stay put, and the canvas and review toolbars match the header, with underlined board
   tabs and header-sized buttons.
+- In the details rail's Servers section the Stop button is red before you click it, and a server's log opens in a
+  tab named by its port and command (`:8100 uvicorn app.main:app`) instead of the output file's id; a background
+  task's log is named by the task.
 
 ### Fixed
 
@@ -78,14 +81,17 @@ Add one line in the same commit as any change a user would notice, under `Added`
   instead of running them together into one paragraph. Lines outside quotes still join as before.
 - A part an agent only quotes as an example, in quotes or code (`kiểu "Phần 2/4"`), no longer shows on its row as
   the part it stopped on, and no longer keeps a finished agent from offering **Close**.
+- An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot
+  stays only on a question still unanswered.
 - Consumers opens right under (or over) the control you clicked, the usage meters or the free-RAM chip, instead of
   at the window's right edge.
 - An agent's terminal you had not opened for a while no longer comes back as garbled characters: showing it again
   redraws its text.
-- An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot
-  stays only on a question still unanswered.
 - Choosing an agent that is asking a question in its terminal now moves typing into that terminal, so the arrow keys
   answer its picker instead of moving through the agent list.
+- Background tasks a resumed Claude session had left unfinished no longer show **running** forever: the "didn't
+  finish before the previous session ended" notice now marks them stopped, so a server's Log button opens the
+  command that is actually running.
 - The live agents in the sidebar's Active section keep their places when you switch to the Cockpit and back, instead
   of the ones that had gone idle dropping to the bottom.
 - On Windows, Consumers no longer sits on "Reading…": listing the machine's processes took over ten seconds there,
