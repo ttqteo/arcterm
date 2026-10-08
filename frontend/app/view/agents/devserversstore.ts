@@ -69,7 +69,8 @@ export function useDevServers(
                     blockid: blockId,
                 });
                 if (!cancelled) {
-                    writeEntry(agentId, () => ({ servers: rtn.servers ?? [], failed: false }));
+                    // the generated Server types owner.kind as string; Go only writes the four devservers.Owner* kinds
+                    writeEntry(agentId, () => ({ servers: (rtn.servers ?? []) as DevServerRow[], failed: false }));
                 }
             } catch {
                 if (!cancelled) {
