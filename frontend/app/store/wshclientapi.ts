@@ -66,6 +66,12 @@ export class RpcApiType {
         return client.wshRpcCall("agentssend", data, opts);
     }
 
+    // command "agentssetmodel" [call]
+    AgentsSetModelCommand(client: WshClient, data: CommandAgentsSetModelData, opts?: RpcOpts): Promise<CommandAgentsSetModelRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentssetmodel", data, opts);
+        return client.wshRpcCall("agentssetmodel", data, opts);
+    }
+
     // command "agentsyncadopt" [call]
     AgentSyncAdoptCommand(client: WshClient, data: CommandAgentSyncAdoptData, opts?: RpcOpts): Promise<CommandAgentSyncAdoptRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentsyncadopt", data, opts);
@@ -514,6 +520,12 @@ export class RpcApiType {
     GetClaudeQuotaCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetClaudeQuotaRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getclaudequota", null, opts);
         return client.wshRpcCall("getclaudequota", null, opts);
+    }
+
+    // command "getconsumers" [call]
+    GetConsumersCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetConsumersRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getconsumers", null, opts);
+        return client.wshRpcCall("getconsumers", null, opts);
     }
 
     // command "getdossier" [call]

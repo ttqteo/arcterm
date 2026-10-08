@@ -464,6 +464,19 @@ declare global {
         midturn: boolean;
     };
 
+    // wshrpc.CommandAgentsSetModelData
+    type CommandAgentsSetModelData = {
+        tab: string;
+        model: string;
+    };
+
+    // wshrpc.CommandAgentsSetModelRtnData
+    type CommandAgentsSetModelRtnData = {
+        tabid: string;
+        midturn: boolean;
+        overstream: boolean;
+    };
+
     // wshrpc.CommandAnswerAgentData
     type CommandAnswerAgentData = {
         oref: string;
@@ -947,6 +960,18 @@ declare global {
         source?: string;
         email?: string;
         retryat?: number;
+    };
+
+    // wshrpc.CommandGetConsumersRtnData
+    type CommandGetConsumersRtnData = {
+        totalbytes: number;
+        availablebytes: number;
+        windowms: number;
+        agents: ConsumerAgent[];
+        interfacebytes?: number;
+        serverbytes?: number;
+        hostbytes?: number;
+        terminalsbytes?: number;
     };
 
     // wshrpc.CommandGetDossierData
@@ -1713,6 +1738,23 @@ declare global {
     // wshrpc.ConsultChunk
     type ConsultChunk = {
         text: string;
+    };
+
+    // wshrpc.ConsumerAgent
+    type ConsumerAgent = {
+        tabid: string;
+        blockid: string;
+        rambytes?: number;
+        tokensread: boolean;
+        tokens?: UsageBucket[];
+        dag?: ConsumerDag;
+    };
+
+    // wshrpc.ConsumerDag
+    type ConsumerDag = {
+        channelid: string;
+        runid: string;
+        taskid: string;
     };
 
     // wshrpc.DagAskItem

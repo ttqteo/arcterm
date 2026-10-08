@@ -27,6 +27,8 @@ type AgentCommands interface {
 	AgentsListCommand(ctx context.Context) (*CommandAgentsListRtnData, error)                                                             // the live claude and pi agent tabs
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
 	AgentsReadCommand(ctx context.Context, data CommandAgentsReadData) (*CommandAgentsReadRtnData, error)                                 // a live agent's state and last answer
+	AgentsSetModelCommand(ctx context.Context, data CommandAgentsSetModelData) (*CommandAgentsSetModelRtnData, error)                     // switch a live Claude session's model with its /model command
+	GetConsumersCommand(ctx context.Context) (*CommandGetConsumersRtnData, error)                                                         // every live agent's RAM and last-10-minutes tokens, and arcterm's own processes' RAM
 }
 
 // what a live agent session is doing, as AgentInfo.State and CommandAgentsReadRtnData.State carry it.
@@ -231,4 +233,45 @@ type BackgroundAgentData struct {
 	Name      string `json:"name"`
 	State     string `json:"state"`
 	StartedTs int64  `json:"startedts"` // epoch ms
+}
+
+type CommandAgentsSetModelData struct {
+	Tab   string `json:"tab"`   // a tab id or a unique prefix of one
+	Model string `json:"model"` // one word `/model` takes: an alias ("sonnet") or a model id
+}
+
+type CommandAgentsSetModelRtnData struct {
+	TabId      string `json:"tabid"`
+	MidTurn    bool   `json:"midturn"`    // the session was not at its prompt
+	OverStream bool   `json:"overstream"` // its mod took the command; else it was typed into the terminal
+}
+
+// ConsumerDag is where a run worker's task lives: the dag action that stops it takes these.
+type ConsumerDag struct {
+	ChannelId string `json:"channelid"`
+	RunId     string `json:"runid"` // the owner (orchestrator) run
+	TaskId    string `json:"taskid"`
+}
+
+// ConsumerAgent is one live agent in a GetConsumers reading. RamBytes is absent when its process tree could
+// not be read; Tokens are its transcript's usage buckets inside the window, read only when TokensRead.
+type ConsumerAgent struct {
+	TabId      string        `json:"tabid"`
+	BlockId    string        `json:"blockid"`
+	RamBytes   *uint64       `json:"rambytes,omitempty"`
+	TokensRead bool          `json:"tokensread"`
+	Tokens     []UsageBucket `json:"tokens,omitempty"`
+	Dag        *ConsumerDag  `json:"dag,omitempty"`
+}
+
+// CommandGetConsumersRtnData is one reading of the Consumers panel. A nil byte count is one that could not be read.
+type CommandGetConsumersRtnData struct {
+	TotalBytes     uint64          `json:"totalbytes"`
+	AvailableBytes uint64          `json:"availablebytes"`
+	WindowMs       int64           `json:"windowms"`
+	Agents         []ConsumerAgent `json:"agents"`
+	InterfaceBytes *uint64         `json:"interfacebytes,omitempty"`
+	ServerBytes    *uint64         `json:"serverbytes,omitempty"`
+	HostBytes      *uint64         `json:"hostbytes,omitempty"`
+	TerminalsBytes *uint64         `json:"terminalsbytes,omitempty"` // what plain terminal tabs run: wavesrv's tree minus wavesrv and the agents
 }
