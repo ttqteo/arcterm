@@ -1,4 +1,5 @@
 import { globalStore } from "@/app/store/jotaiStore";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import {
     confirmRemoveProject,
     projectListAtom,
@@ -6,7 +7,6 @@ import {
     type ProjectRow,
 } from "@/app/view/agents/projectsstore";
 import { briefProfileAtom } from "@/app/view/jarvis/jarvisstore";
-import { newRunPrefillAtom } from "@/app/view/jarvis/newruncontrol";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { fireAndForget } from "@/util/util";
 import type { ThingEntry, ThingKindDef } from "./types";
@@ -42,10 +42,7 @@ export const PROJECT_KIND: ThingKindDef<ProjectThing> = {
             label: "New run in it",
             group: "steer",
             applies: () => true,
-            run: (p, { model }) => {
-                globalStore.set(newRunPrefillAtom, { projectName: p.name, goal: "", shape: "orchestrator" });
-                globalStore.set(model.newRunOpenAtom, true);
-            },
+            run: (p, { model }) => openLauncher(model, "run", { projectName: p.name, goal: "", shape: "orchestrator" }),
         },
         {
             id: "channel:defaults",

@@ -4,6 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
 import { SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import type { LauncherKind } from "@/app/view/agents/launcher";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
@@ -662,18 +663,28 @@ describe("command palette chord", () => {
 
 describe("new run chord", () => {
     const build = () => {
-        const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), newRunOpenAtom: atom(false) } as any;
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
         return { model, b: buildGlobalBindings(model).find((x) => x.id === "new-run")! };
     };
 
     // reachable from a field and the terminal, as New agent's Mod+N is; Mod+R would take Ctrl+R from the shell
-    it("is Mod+Shift+R and opens the New run window from anywhere but a modal", () => {
+    it("is Mod+Shift+R and opens the launcher at the run door from anywhere but a modal", () => {
         const { model, b } = build();
         expect(b.keys).toBe("Mod:Shift:r");
         expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
         b.run(ctx());
-        expect(globalStore.get(model.newRunOpenAtom)).toBe(true);
+        expect(globalStore.get(model.launcherAtom)).toBe("run");
+    });
+});
+
+describe("new agent chord", () => {
+    it("is Mod+N and opens the launcher at the agent door", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("cockpit"), launcherAtom: atom<LauncherKind | null>(null) } as any;
+        const b = buildGlobalBindings(model).find((x) => x.id === "new-agent")!;
+        expect(b.keys).toBe("Mod:n");
+        b.run(ctx());
+        expect(globalStore.get(model.launcherAtom)).toBe("agent");
     });
 });
 

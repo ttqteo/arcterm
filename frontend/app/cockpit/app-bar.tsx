@@ -6,6 +6,7 @@ import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { openLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
@@ -85,7 +86,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     data-new-run
                     aria-haspopup="dialog"
                     title={withChord("New run", newRunKeys)}
-                    onClick={() => globalStore.set(model.newRunOpenAtom, true)}
+                    onClick={() => openLauncher(model, "run")}
                     className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-edge-mid bg-surface-raised px-[clamp(9px,1.3vw,12px)] py-[6px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-primary hover:border-edge-strong hover:bg-surface-hover"
                 >
                     <span className="-mt-px text-[15px] leading-none">+</span>New run
@@ -94,7 +95,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     title={withChord("New agent", newAgentKeys)}
-                    onClick={() => globalStore.set(model.newAgentOpenAtom, true)}
+                    onClick={() => openLauncher(model, "agent")}
                     className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[clamp(9px,1.3vw,12px)] py-[7px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-background hover:bg-accenthover"
                 >
                     <span className="-mt-px text-[15px] leading-none">+</span>New agent

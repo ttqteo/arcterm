@@ -68,6 +68,7 @@ import { NeedsYouStrip } from "./needsyoustrip";
 import { ProjectSwitcher } from "./projectswitcher";
 import { useSubagentTracking } from "./subagenttracking";
 import { SURFACE_TITLE_CLASS } from "./surfacescaffold";
+import { openLauncher } from "./launcherstore";
 
 // Status tabs (mockup A3): a tab's count takes its status color while it has any, the selected tab underlines
 const TAB_TONE: Record<ChipFilter, { text: string; line: string }> = {
@@ -535,7 +536,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                         {phase === "empty" ? (
                             <CockpitEmptyState
                                 key="empty"
-                                onNewAgent={() => globalStore.set(model.newAgentOpenAtom, true)}
+                                onNewAgent={() => openLauncher(model, "agent")}
                             />
                         ) : phase === "loading" ? (
                             <CockpitGridSkeleton key="loading" />

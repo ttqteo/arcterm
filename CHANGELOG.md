@@ -27,6 +27,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- **New agent** and **New run** are one dialog. Pick what to start with its number key, Tab to the project column
+  (type to filter it, or press a project's number), then `Cmd+Enter` (`Ctrl+Enter` on Windows). A click outside now
+  closes it, and opening it again brings back what you had typed.
 - An agent's OS notification names its project first, `[arcterm] Finished: <agent>`, and a finished agent's
   notification shows the first line of its last answer underneath instead of the project.
 - The Jarvis pet falls back to the footer when you drop it, with a small bounce, instead of snapping there; and when

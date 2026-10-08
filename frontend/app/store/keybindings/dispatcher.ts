@@ -82,8 +82,7 @@ export function deriveKeyContext(): KeyContext {
     const surface = globalStore.get(model.surfaceAtom);
     const modalOpen =
         globalStore.get(model.paletteOpenAtom) ||
-        globalStore.get(model.newAgentOpenAtom) ||
-        globalStore.get(model.newRunOpenAtom) ||
+        globalStore.get(model.launcherAtom) != null ||
         globalStore.get(model.newInitiativeOpenAtom) ||
         globalStore.get(model.newProjectOpenAtom) ||
         // the DAG modal too: left out, the Brief's bindings underneath took the graph's own keys first

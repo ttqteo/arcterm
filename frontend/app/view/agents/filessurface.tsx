@@ -98,6 +98,7 @@ import { RESTORE_DISMISS_MS, countLabel } from "./historyquery";
 import { WORKING_TREE, worktreeCaption } from "./historyrows";
 import { SourcePicker } from "./sourcepicker";
 import { SurfaceEmptyState, SurfaceError } from "./surfacescaffold";
+import { openLauncher } from "./launcherstore";
 
 // What the change poll saw, as one string: Review re-reads the whole patch only when this moves, not on
 // every tick the way the single-file diff does (that one reads a single file).
@@ -376,7 +377,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
             <SurfaceEmptyState
                 title="No changes to show"
                 body="Start an agent or pick a project to see its changed files here."
-                action={{ label: "New agent", onClick: () => globalStore.set(model.newAgentOpenAtom, true) }}
+                action={{ label: "New agent", onClick: () => openLauncher(model, "agent") }}
             />
         );
     }
