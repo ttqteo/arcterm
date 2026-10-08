@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Antigravity CLI (agy) is back as a harness: live status, questions on the card, launch and resume, consults,
+  Conversation History, usage, and plan task workers.
 - The Jarvis pet's popup answers a worker's question in place: a one-question ask (an escalation too) shows its
   options as buttons, and `1`…`9` sends one, the same answer as the Cockpit's answer bar.
 - `g` `w` opens the Jarvis pet's popup (what's waiting on you) from any surface; `Cmd+G` `w` (`Ctrl+G` `w` on Windows)
