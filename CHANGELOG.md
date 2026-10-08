@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Consumers' RAM view ends its arcterm section with **Total, with agents**: everything arcterm runs, its own
+  processes and every agent, in one figure.
 - A **+** on a project's folder in the sidebar's Terminals section opens a terminal in that project, and with a
   project picked in the app bar the **+** sits in the Terminals header, so a terminal no longer takes New → Terminal.
 - A terminal in the sidebar's Terminals section shows a pulsing dot while a command runs in it (a dev server, a
@@ -62,6 +64,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Consumers opens right under (or over) the control you clicked, the usage meters or the free-RAM chip, instead of
+  at the window's right edge.
 - An agent's terminal you had not opened for a while no longer comes back as garbled characters: showing it again
   redraws its text.
 - An ended conversation no longer keeps the amber "waiting for you" dot after you answered its question; the dot

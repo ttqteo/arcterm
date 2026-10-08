@@ -68,7 +68,12 @@ export function FooterUsageMeters({ model }: { model: AgentsViewModel }) {
         fireAndForget(() => loadWindowTokens(claude.fivehour.reset, claude.week.reset));
     }, [claude?.fivehour.reset, claude?.week.reset]);
     return (
-        <UsageMeters donuts={donuts} windowTokens={windowTokens} now={now} onOpen={() => toggleConsumers("tokens")} />
+        <UsageMeters
+            donuts={donuts}
+            windowTokens={windowTokens}
+            now={now}
+            onOpen={(opener) => toggleConsumers("tokens", opener)}
+        />
     );
 }
 
@@ -81,7 +86,7 @@ function UsageMeters({
     donuts: ReturnType<typeof planDonuts>;
     windowTokens: WindowTokens | null;
     now: number;
-    onOpen: () => void;
+    onOpen: (opener: Element) => void;
 }) {
     const items = donuts.flatMap((d) =>
         WINDOWS.filter(([w]) => usageBarVisible(d[w].pct, d.stale != null)).map(([w, short, label, windowMs], i) => {
@@ -109,7 +114,7 @@ function UsageMeters({
             type="button"
             data-usage-meters
             aria-haspopup="dialog"
-            onClick={onOpen}
+            onClick={(e) => onOpen(e.currentTarget)}
             title={[...items.map((m) => m.title), "Token use by agent"].join("\n")}
             className="flex h-[22px] shrink-0 cursor-pointer items-center gap-2 rounded px-1.5 hover:bg-surface-hover"
         >
