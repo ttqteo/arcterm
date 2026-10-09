@@ -416,6 +416,8 @@ func main() {
 	blocklogger.InitBlockLogger()
 	blockcontroller.InitBlockController()
 	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one
+	// idle agents sleep after a while, or early when RAM runs low
+	wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
 	jarvisvolunteer.StartLooseEndSweep(context.Background())
 	err = wcore.InitBadgeStore()
 	if err != nil {

@@ -138,6 +138,9 @@ func (ws *WshServer) AgentsSetModelCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
+	if target.State == wshrpc.AgentsState_Sleeping {
+		return nil, fmt.Errorf("agent %q is asleep; wake it first: the /model line would go to no process", target.Name)
+	}
 	if target.Harness != "claude" {
 		return nil, fmt.Errorf("agent %q runs %s; only a Claude session switches its model with /model", target.Name, target.Harness)
 	}

@@ -39,6 +39,50 @@ var restoreAgentStagger = 300 * time.Millisecond
 // codex resumes through a subcommand, `codex resume <id>`, which sits where the others put their flag
 var agentResumeFlags = map[string]string{"claude": "--resume", "opencode": "-s", "pi": "--session", "agy": "--conversation", "codex": "resume"}
 
+// what a launch's own args may already say about a session, which must not stack under the one a resume adds: the
+// flags that take a value, and the bare ones (launch.ts resumeArgsFor*, which this mirrors)
+var agentStaleSessionFlags = map[string]struct{ withValue, bare map[string]bool }{
+	"claude":   {map[string]bool{"--resume": true}, map[string]bool{"--continue": true}},
+	"opencode": {map[string]bool{"-s": true, "--session": true}, map[string]bool{"-c": true, "--continue": true}},
+	"pi":       {map[string]bool{"--session": true}, nil},
+	"agy":      {map[string]bool{"--conversation": true}, map[string]bool{"-c": true, "--continue": true}},
+}
+
+// ResumeArgs is cmd:args that reopen session in a harness: its resume flag and the session first, then the launch
+// flags (baseArgs, never the task prompt) with any session of their own dropped. The flag and session lead because
+// shouldRestoreAgent bakes on args[0] and args[1], so a woken agent comes back after a crash or an update. False
+// when the harness has no resume flag or session is empty.
+func ResumeArgs(harness, session string, baseArgs []string) ([]string, bool) {
+	flag, ok := agentResumeFlags[harness]
+	if !ok || session == "" {
+		return nil, false
+	}
+	return append([]string{flag, session}, StripSessionArgs(harness, baseArgs)...), true
+}
+
+// StripSessionArgs is args without any session the harness's launch flags already name. Never nil, so a caller
+// writing it into block meta writes an empty list, not a delete.
+func StripSessionArgs(harness string, args []string) []string {
+	stale := agentStaleSessionFlags[harness]
+	kept := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case stale.withValue[a]:
+			i++ // its value too
+		case stale.bare[a]:
+		default:
+			kept = append(kept, a)
+		}
+	}
+	return kept
+}
+
+// agentAsleep reports whether a block's agent was put to sleep: its controller is gone on purpose, and a server
+// relaunch leaves it so.
+func agentAsleep(meta waveobj.MetaMapType) bool {
+	return meta.GetFloat(waveobj.MetaKey_AgentSleeping, 0) > 0
+}
+
 // Pure: whether a block runs a hand-launched agent whose session can be resumed, so its process is marked live.
 func tracksAgentLive(meta waveobj.MetaMapType) bool {
 	if meta.GetString(waveobj.MetaKey_Controller, "") != BlockController_Cmd || meta.GetString(metaKeyAgentRunId, "") != "" {

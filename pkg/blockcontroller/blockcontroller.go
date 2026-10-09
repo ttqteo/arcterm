@@ -222,6 +222,12 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		return fmt.Errorf("error getting block: %w", err)
 	}
 
+	// A sleeping agent has no process on purpose. Only a wake, which forces the restart, starts it again: not the
+	// boot's restore, nor a pane mounting.
+	if !force && agentAsleep(blockData.Meta) {
+		return nil
+	}
+
 	controllerName := blockData.Meta.GetString(waveobj.MetaKey_Controller, "")
 	connName := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
 
