@@ -20,7 +20,9 @@ export function jumpToAgent(model: AgentsViewModel, id: string) {
 }
 
 // An asking worker's answer row, reusing the cockpit's AnswerBar + model answer state.
-export function AskRow({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
+// `alert` tints the card amber: a held command's card sits on the terminal's dark fill, where the grey lane card
+// did not stand out.
+export function AskRow({ model, agent, alert }: { model: AgentsViewModel; agent: AgentVM; alert?: boolean }) {
     const answerSel = useAtomValue(model.answerSelAtom);
     const answerText = useAtomValue(model.answerTextAtom);
     const sentIds = useAtomValue(model.sentIdsAtom);
@@ -28,7 +30,13 @@ export function AskRow({ model, agent }: { model: AgentsViewModel; agent: AgentV
         ? () => fireAndForget(() => RpcApi.AgentAskClearCommand(TabRpcClient, agent.ask!.oref!))
         : undefined;
     return (
-        <div className="rounded-[9px] border border-edge-mid bg-lane p-3">
+        <div
+            className={
+                alert
+                    ? "rounded-[9px] border border-asking/45 bg-askingbg p-3"
+                    : "rounded-[9px] border border-edge-mid bg-lane p-3"
+            }
+        >
             <AnswerBar
                 model={model}
                 agent={agent}

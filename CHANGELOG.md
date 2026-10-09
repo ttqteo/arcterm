@@ -30,6 +30,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   of a working set that also counted memory shared with other apps (the Interface row read about a third too high).
 - A terminal hidden for more than 30 seconds gives its GPU drawing context back and takes a new one when it shows
   again, so the interface holds less memory with many agents open.
+- The Low RAM card above an agent's terminal is tinted amber with an amber border, so it no longer blends into the
+  terminal behind it.
 
 ### Fixed
 

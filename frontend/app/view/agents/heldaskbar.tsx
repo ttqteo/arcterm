@@ -13,7 +13,7 @@ export function HeldAskBar({ model, agent }: { model: AgentsViewModel; agent: Ag
     }
     return (
         <div data-held-ask={agent.id} className="mx-1 mb-2 shrink-0">
-            <AskRow model={model} agent={agent} />
+            <AskRow model={model} agent={agent} alert />
         </div>
     );
 }
