@@ -25,6 +25,7 @@ import { graphOnAtom, historyFiltersAtom, historyScrollAtom } from "@/app/view/a
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
+import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -53,6 +54,11 @@ import type { KeyContext } from "./types";
 vi.mock("@/app/view/jarvis/openref", async (orig) => ({
     ...(await orig<typeof import("@/app/view/jarvis/openref")>()),
     peekTarget: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock("@/app/view/agents/agentactions", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/agentactions")>()),
+    confirmCloseSession: vi.fn(),
 }));
 
 // the canvas guards read the focused agent id from the model
@@ -1470,5 +1476,41 @@ describe("g w: what's waiting", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
         const b = buildGlobalBindings(model).find((x) => x.id === "go:waiting")!;
         expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+    });
+});
+
+describe("agent:done-close", () => {
+    const doneModel = (agent: Record<string, unknown>): any => ({
+        focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+        agentsAtom: atom([{ id: "a1", name: "worker", ...agent }]),
+        lineageAtom: atom({ runs: {}, roles: {} }),
+    });
+    const press = (model: any) =>
+        buildAgentBindings(model)
+            .find((b) => b.id === "agent:done-close")!
+            .run(ctx("agent"));
+
+    beforeEach(() => {
+        globalStore.set(centerModeAtom, "terminal");
+        vi.mocked(confirmCloseSession).mockClear();
+    });
+
+    it("is Alt+W on the Agent surface, live inside the terminal", () => {
+        const b = buildAgentBindings(doneModel({})).find((x) => x.id === "agent:done-close")!;
+        expect(b.keys).toBe("Alt:w");
+        expect(b.when!({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when!(ctx("cockpit"))).toBe(false);
+    });
+
+    it("closes the focused agent when its header offers Done", () => {
+        const model = doneModel({ state: "idle", committed: true });
+        expect(press(model)).not.toBe(false);
+        expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), model);
+    });
+
+    it("passes the key to the terminal when nothing is offered", () => {
+        expect(press(doneModel({ state: "working", committed: true }))).toBe(false);
+        expect(press(doneModel({ state: "idle" }))).toBe(false);
+        expect(confirmCloseSession).not.toHaveBeenCalled();
     });
 });

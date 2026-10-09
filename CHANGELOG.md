@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- `Alt`+`W` closes the focused agent when its header shows **Done — Close**, also from inside its terminal; the button's
+  tooltip names the key.
 - **Mark for later** in a session's menu, in the Agents tree or under Conversations, flags it with a bookmark until you
   pick **Done**; the mark stays when you close the agent, puts the conversation first in its project's list, and is back
   on the row when you resume it.

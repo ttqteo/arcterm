@@ -23,6 +23,7 @@ import { gotoChange } from "@/app/view/agents/diffnav";
 import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
 import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
+import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
 import { toggleFloat } from "@/app/view/agents/floatstore";
 import {
@@ -40,6 +41,7 @@ import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/rails
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
+import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { refreshSidebar, sidebarFoldedAtom, sidebarShownFoldedAtom } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
@@ -867,6 +869,15 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const inCanvas = (ctx: KeyContext) => agentNav(ctx) && canvas()?.mode === "canvas";
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
     const docReview = () => focusedDocReview(model);
+    // the focused agent when the header offers its Done — Close (donesuggest.ts), else undefined
+    const doneAgent = (): AgentVM | undefined => {
+        const id = globalStore.get(model.focusIdAtom);
+        const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
+        const unread = agent != null ? (globalStore.get(unreadAgentsAtom).get(agent.id) ?? 0) : 0;
+        return agent != null && doneSuggestion(agent, unread, globalStore.get(model.lineageAtom).runs)
+            ? agent
+            : undefined;
+    };
     const inReview = (ctx: KeyContext) => agentNav(ctx) && docReview()?.mode === "review";
     // live inside the general note on purpose, as canvas-send is in a mark's note; it stands down in History and a
     // session, which cover the review pane without leaving review mode
@@ -1057,6 +1068,23 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Back to the terminal",
             when: inCanvas,
             run: () => setAgentView(focusId(), "terminal", Date.now()),
+        },
+        {
+            // the header's Done — Close, from inside the terminal too. Whether it is offered is read in run(), not
+            // when(): the offer follows the roster, unread counts and runs, none of them a predicate atom
+            // (whenstate.ts), so the key is live on the surface and passes to the TUI when nothing is offered
+            id: "agent:done-close",
+            keys: "Alt:w",
+            group: "Agent",
+            label: "Close the agent if its header shows Done (works inside the terminal)",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: () => {
+                const agent = doneAgent();
+                if (agent == null) {
+                    return false;
+                }
+                confirmCloseSession(agent, model);
+            },
         },
         {
             // The bare c and r are typed into the TUI while it holds focus, so the header's Terminal | Canvas | Review
