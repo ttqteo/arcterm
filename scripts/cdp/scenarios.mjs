@@ -15302,7 +15302,9 @@ const launcherScenario = {
             JSON.stringify(s)
         );
         if (s == null) return steps;
-        const digit = (id) => String(s.startRows.indexOf(id) + 1);
+        // read from the dialog at each press: the Start list drops a runtime whose CLI is missing once the harness
+        // catalog loads, which can land after the first read and renumber the rows
+        const digit = async (id) => String(((await state())?.startRows ?? []).indexOf(id) + 1);
 
         // before any draft exists, so no Clear button of a restored note sits between Start and the primary button
         await launcherPress(h, "Tab", { shift: true });
@@ -15341,7 +15343,7 @@ const launcherScenario = {
         );
 
         await h.ev(focusColumn("start"));
-        await launcherPress(h, digit("terminal"));
+        await launcherPress(h, await digit("terminal"));
         s = await state();
         await h.shot("cdp-shots/launcher-2-terminal.png");
         rec(
@@ -15350,7 +15352,7 @@ const launcherScenario = {
             JSON.stringify(s)
         );
 
-        await launcherPress(h, digit("quick"));
+        await launcherPress(h, await digit("quick"));
         s = await state();
         rec(
             "6. Quick run's digit picks it: the title turns New run, and with no goal Start run waits on Write the goal",
@@ -15377,7 +15379,7 @@ const launcherScenario = {
         );
 
         await h.ev(focusColumn("start"));
-        await launcherPress(h, digit("orchestrator"));
+        await launcherPress(h, await digit("orchestrator"));
         await polishNap(300);
         s = await state();
         const startFrom = await h.ev(`!!${LAUNCHER}?.querySelector('[role="group"][aria-label="Start from"]')`);
@@ -15839,9 +15841,11 @@ const launcherResume = {
             rec("0. the dialog opens with Claude offered", false, JSON.stringify(s));
             return steps;
         }
-        const digit = (id) => String(s.startRows.indexOf(id) + 1);
+        // read from the dialog at each press: the Start list drops a runtime whose CLI is missing once the harness
+        // catalog loads, which can land after the first read and renumber the rows
+        const digit = async (id) => String(((await state())?.startRows ?? []).indexOf(id) + 1);
         await h.ev(focusColumn("start"));
-        await launcherPress(h, digit("claude"));
+        await launcherPress(h, await digit("claude"));
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-resume]')`, 8000);
         await polishNap(300);
         s = await state();
@@ -15912,11 +15916,11 @@ const launcherResume = {
         );
 
         await h.ev(focusColumn("start"));
-        await launcherPress(h, digit("terminal"));
+        await launcherPress(h, await digit("terminal"));
         await polishNap(300);
         s = await state();
         rec("5a. picking Terminal removes the Resume list", s.start === "terminal" && !s.list, JSON.stringify(s));
-        await launcherPress(h, digit("claude"));
+        await launcherPress(h, await digit("claude"));
         await polishNap(300);
         s = await state();
         rec(
