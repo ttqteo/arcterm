@@ -5,6 +5,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,5 +44,37 @@ func TestTurnCommitted(t *testing.T) {
 		if got := turnCommitted(c.lines); got != c.want {
 			t.Errorf("%s: turnCommitted = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// a turn whose commit is followed by more tool output than the 64 KB the other transcript readers take: the commit
+// must still be found, since the window is read back to the turn's prompt
+func TestReadTurnCommittedPastTheTail(t *testing.T) {
+	big := strings.Repeat("x", 4000)
+	lines := []string{
+		`{"type":"user","message":{"content":"commit it"}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"c1","name":"Bash","input":{"command":"git commit -m x"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"c1","is_error":false,"content":"ok"}]}}`,
+	}
+	for i := 0; len(strings.Join(lines, "\n")) < 3*transcriptTailBytes; i++ {
+		lines = append(lines,
+			fmt.Sprintf(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b%d","name":"Bash","input":{"command":"git log"}}]}}`, i),
+			fmt.Sprintf(`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b%d","is_error":false,"content":%q}]}}`, i, big))
+	}
+	lines = append(lines, `{"type":"assistant","message":{"content":[{"type":"text","text":"Committed."}]}}`)
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !readTurnCommitted(path) {
+		t.Fatal("readTurnCommitted = false for a commit more than transcriptTailBytes before the end")
+	}
+	// the earlier turn's commit stays the earlier turn's
+	lines = append(lines, `{"type":"user","message":{"content":"thanks"}}`, `{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}`)
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if readTurnCommitted(path) {
+		t.Fatal("readTurnCommitted = true for a turn after the committing one")
 	}
 }
