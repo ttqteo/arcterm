@@ -50,6 +50,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
+  that run, nested under it, is still going; the offer comes back once the run ends.
 - New run: Cancel or Esc while a run is starting now cancels that run and frees the dialog at once, instead of
   leaving it stuck on Starting… when reopened. Its key legend reads `Tab` for next.
 - An agent's terminal on Windows garbles far less often, so Redraw is rarely needed: a pane that grows taller no

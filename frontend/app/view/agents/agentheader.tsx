@@ -233,9 +233,13 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // Close the whole session (a tab, per launchAgent) — shared with the double-Ctrl+C handler. The
     // header also fronts background terminals, so the noun follows what is actually focused.
     const closeTerminal = () => confirmCloseSession(agent, model);
-    // its last turn committed and you have read it: the header offers Close with the session's token total, the
-    // figure its sidebar row shows (donesuggest.ts)
-    const done = doneSuggestion(agent, useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0);
+    // its last turn committed, you have read it and no run it started is still going: the header offers Close with the
+    // session's token total, the figure its sidebar row shows (donesuggest.ts)
+    const done = doneSuggestion(
+        agent,
+        useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
+        useAtomValue(model.lineageAtom).runs
+    );
     const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";
     // garbled text in the pane: repaint it and have the TUI draw itself again, without restarting the session

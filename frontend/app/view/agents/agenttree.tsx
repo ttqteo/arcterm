@@ -443,8 +443,9 @@ function ParentRow({
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
-    // its last turn committed and you have read it: the row offers to close it (donesuggest.ts)
-    const done = doneSuggestion(agent, unreadCount);
+    // its last turn committed, you have read it and no run it started is still going: the row offers to close it
+    // (donesuggest.ts)
+    const done = doneSuggestion(agent, unreadCount, useAtomValue(model.lineageAtom).runs);
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
     const settling = useSettle(agent.state === "idle");
 
