@@ -15,5 +15,7 @@
     "term:fontfamily": "\"JetBrains Mono\", monospace",
     "term:copyonselect": true,
     "term:trimtrailingwhitespace": true,
-    "harness:updatecheck": true
+    "harness:updatecheck": true,
+    "agents:sleepidle": true,
+    "agents:sleepaftermin": 30
 }

@@ -67,6 +67,24 @@ func AgentsSetModelCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSetModelD
 	return resp, err
 }
 
+// command "agentssetviewing", wshserver.AgentsSetViewingCommand
+func AgentsSetViewingCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSetViewingData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "agentssetviewing", data, opts)
+	return err
+}
+
+// command "agentssleep", wshserver.AgentsSleepCommand
+func AgentsSleepCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSleepData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentsSleepRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentsSleepRtnData](w, "agentssleep", data, opts)
+	return resp, err
+}
+
+// command "agentswake", wshserver.AgentsWakeCommand
+func AgentsWakeCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsWakeData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "agentswake", data, opts)
+	return err
+}
+
 // command "agentsyncadopt", wshserver.AgentSyncAdoptCommand
 func AgentSyncAdoptCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentSyncAdoptData, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentSyncAdoptRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentSyncAdoptRtnData](w, "agentsyncadopt", data, opts)

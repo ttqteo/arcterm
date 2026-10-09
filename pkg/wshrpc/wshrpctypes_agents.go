@@ -31,17 +31,22 @@ type AgentCommands interface {
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
 	AgentsReadCommand(ctx context.Context, data CommandAgentsReadData) (*CommandAgentsReadRtnData, error)                                 // a live agent's state and last answer
 	AgentsSetModelCommand(ctx context.Context, data CommandAgentsSetModelData) (*CommandAgentsSetModelRtnData, error)                     // switch a live Claude session's model with its /model command
+	AgentsSleepCommand(ctx context.Context, data CommandAgentsSleepData) (*CommandAgentsSleepRtnData, error)                             // put an idle agent to sleep: its process ends, its tab and conversation stay
+	AgentsWakeCommand(ctx context.Context, data CommandAgentsWakeData) error                                                              // relaunch a sleeping agent with --resume; with Message, deliver it once the agent reports in
+	AgentsSetViewingCommand(ctx context.Context, data CommandAgentsSetViewingData) error                                                  // the frontend's agents on screen, which the sleep loop never sleeps
 	GetConsumersCommand(ctx context.Context) (*CommandGetConsumersRtnData, error)                                                         // every live agent's RAM and last-10-minutes tokens, and arcterm's own processes' RAM
 }
 
 // what a live agent session is doing, as AgentInfo.State and CommandAgentsReadRtnData.State carry it.
 const (
-	AgentsState_Idle    = "idle"
-	AgentsState_Working = "working"
-	AgentsState_Asking  = "asking"
+	AgentsState_Idle     = "idle"
+	AgentsState_Working  = "working"
+	AgentsState_Asking   = "asking"
+	AgentsState_Sleeping = "sleeping"
 )
 
 // AgentInfo is one live agent tab. RunId is the run that owns it, empty for a session no run started.
+// SleptAt (unix ms) and FreedBytes are set only on a sleeping agent.
 type AgentInfo struct {
 	TabId       string `json:"tabid"`
 	Name        string `json:"name"`
@@ -50,6 +55,8 @@ type AgentInfo struct {
 	RunId       string `json:"runid"`
 	Harness     string `json:"harness"`
 	State       string `json:"state"`
+	SleptAt     int64  `json:"sleptat,omitempty"`
+	FreedBytes  uint64 `json:"freedbytes,omitempty"`
 }
 
 type CommandAgentsListRtnData struct {
@@ -297,6 +304,26 @@ type CommandAgentsSetModelRtnData struct {
 	TabId      string `json:"tabid"`
 	MidTurn    bool   `json:"midturn"`    // the session was not at its prompt
 	OverStream bool   `json:"overstream"` // its mod took the command; else it was typed into the terminal
+}
+
+type CommandAgentsSleepData struct {
+	Tab   string `json:"tab"`
+	Force bool   `json:"force,omitempty"` // stop its background tasks too (the person confirmed)
+}
+
+type CommandAgentsSleepRtnData struct {
+	FreedBytes uint64   `json:"freedbytes,omitempty"`
+	Background []string `json:"background,omitempty"` // set, and nothing slept, when it has running background work and Force is false
+}
+
+type CommandAgentsWakeData struct {
+	Tab     string `json:"tab"`
+	Message string `json:"message,omitempty"`
+	Fresh   bool   `json:"fresh,omitempty"` // Start fresh: relaunch without --resume (the resume failed)
+}
+
+type CommandAgentsSetViewingData struct {
+	TabIds []string `json:"tabids"`
 }
 
 // ConsumerDag is where a run worker's task lives: the dag action that stops it takes these.

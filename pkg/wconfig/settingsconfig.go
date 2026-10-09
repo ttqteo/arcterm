@@ -98,6 +98,10 @@ type SettingsType struct {
 	ClaudeClear         bool   `json:"claude:*,omitempty"`
 	ClaudeActiveAccount string `json:"claude:activeaccount,omitempty"`
 
+	AgentsClear         bool   `json:"agents:*,omitempty"`
+	AgentsSleepIdle     *bool  `json:"agents:sleepidle,omitempty"`
+	AgentsSleepAfterMin *int64 `json:"agents:sleepaftermin,omitempty"`
+
 	RadarAuditRuntime string `json:"radar:auditruntime,omitempty"`
 	RadarAuditModel   string `json:"radar:auditmodel,omitempty"`
 
