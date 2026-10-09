@@ -61,6 +61,11 @@ tasks:
             # the new DMG in a Finder window to lay out its icons. The DMG keeps the app and the Applications link.
             - cmd: CI=true cargo tauri build
               platforms: [darwin]
+            # a copy of the installer where it is easy to find, beside the repo's top level; releases/ is gitignored
+            - cmd: mkdir -p releases && cp "src-tauri/target/release/bundle/nsis/arcterm_{{.VERSION}}_x64-setup.exe" releases/
+              platforms: [windows]
+            - cmd: mkdir -p releases && cp src-tauri/target/release/bundle/dmg/*.dmg releases/
+              platforms: [darwin]
 
     install:
         desc: "Install the last `task tauri:build` over the installed arcterm and reopen it. It closes the running arcterm and every agent in it."

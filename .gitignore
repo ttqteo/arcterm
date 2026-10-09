@@ -64,3 +64,6 @@ claude/arc-view-mod/.claude-plugin/types/
 
 # orchestrator lead report scratch files (sealed into the run by wsh jarvis complete --report)
 /.arc-run-*-report.md
+
+# installers copied out by `task tauri:build`, local only
+/releases/
