@@ -18,9 +18,9 @@
 
 - Sessions come from `RpcApi.GetRecentSessionsCommand(TabRpcClient, { windowdays: 14, limit: 50 })`, loaded once per dialog open. The list shows at most 5 (`RESUME_LIST_MAX`).
 - Resume commands are the backend's `SessionInfo.resumecommand`: `claude --resume <id>`, `codex resume <id>`, `opencode -s <id>`, `agy --conversation <id>`, and for pi `startupArgs: resumeargs` plus `resumePath: transcriptpath` (exactly as `agentlaunchhero.tsx` resumes). The catalog flag with id `continue` is never added to a resume.
-- A picked session is honored only while it is among the current choices (derived with `pickedResume`), so switching runtime or project drops it without any reset code.
+- The picked session (`launcherResumeAtom`) resets to null whenever the runtime or the project changes (`pickLauncherRuntime` / `pickLauncherProject` in `launcherstore.ts`), as the spec says, so leaving a project and coming back starts on "New session". As a guard, a pick is also honored only while it is among the current choices (`pickedResume`).
 - Images: at most 8 (`MAX_TASK_IMAGES`); a paste is written with `createTempFileFromBlob`, a drop with `createTempFileFromFile` (both `frontend/app/view/term/termutil.ts`, 3.5 MB cap). Only `image/*` files are taken.
-- At launch: codex starting fresh gets `--image <p1>,<p2>` after the prompt (via `extraArgs`); every other case (claude, agy, a codex resume, a path with a comma) appends to the task:
+- Images are taken for every runtime that shows the Task box (`runtimeShowsTask`: every runtime but Terminal — claude, codex, agy, opencode and pi). At launch: codex starting fresh gets `--image <p1>,<p2>` after the prompt (via `extraArgs`); every other case (claude, agy, opencode, pi, a codex resume, a path with a comma) appends to the task:
   ```
   Attached images:
   - <path>
@@ -35,10 +35,11 @@
 
 1. **Resume with the `continue` flag left on:** the resume command must not carry `--continue`/`-c`, which would pick a different session. Pinned in Task 1 (`resumeLaunchSpec drops the continue flag`).
 2. **A project path written differently** (`D:\x\proj` vs `d:/x/proj/`): its sessions still list. Pinned in Task 1 (`resumeChoices matches a path across separators, case and a trailing slash`).
-3. **A session picked, then the project switched:** the launch must start fresh in the new project, not resume the old session. Pinned in Task 1 (`pickedResume returns null for an id not among the choices`).
+3. **A session picked, then the project or runtime switched:** the launch must start fresh in the new project, not resume the old session, and coming back must not bring the old pick back. Pinned in Task 3 (`launcherstore.test.ts`: `pickLauncherProject resets the resume pick`, `pickLauncherRuntime resets the resume pick`; scenario step 4) and Task 1 (`pickedResume returns null for an id not among the choices`).
 4. **Codex resume with images:** `codex resume <id>` may not take `--image`, so the images go in the text block. Pinned in Task 2 (`codex resuming uses the text block`).
-5. **A plain-text paste into Task:** unchanged — no temp file, the text lands at the caret. Pinned in Task 4 (scenario step 2).
-6. **Launch while an image is still writing:** the primary button is disabled until every image has a path or an error. Pinned in Task 4 (`imagesPending`).
+5. **A plain-text paste into Task:** unchanged — `onPaste` neither prevents the default nor adds a tile, so the browser pastes as usual. Pinned in Task 4 (scenario step 2).
+6. **Launch while an image is still writing:** the primary button is disabled until every image has a path or an error. Pinned in Task 2 (`imagesPending`) and Task 4 (scenario step 5).
+7. **Enter on a Resume row launches** rather than doing nothing. Pinned in Task 3 (`launcher.test.ts`: `Enter in the resume zone launches`).
 
 ---
 
@@ -161,7 +162,8 @@ export function resumeChoices(sessions: SessionInfo[] | null, runtime: Runtime, 
         .slice(0, RESUME_LIST_MAX);
 }
 
-// A pick outlives a runtime or project switch in the store; it counts only while it is still on offer.
+// The store resets the pick on a runtime or project switch; this guard keeps a pick that is no longer on offer (a
+// rescan dropped it) from launching.
 export function pickedResume(choices: SessionInfo[], id: string | null): SessionInfo | null {
     return id == null ? null : (choices.find((x) => x.id === id) ?? null);
 }
@@ -367,23 +369,24 @@ export async function loadLauncherSessions(): Promise<void> {
 }
 ```
 
-`clearLauncherDraft` sets `launcherResumeAtom` to null. Add a `launcherstore.test.ts` case: after setting a resume id, `clearLauncherDraft()` leaves it null.
+`clearLauncherDraft` sets `launcherResumeAtom` to null. `pickLauncherProject` also sets `launcherResumeAtom` to null when the project changes (beside its branch reset). Add `pickLauncherRuntime(runtime: Runtime)`: when `runtime` differs from `launcherRuntimeAtom`, it sets the runtime and resets `launcherResumeAtom` to null (the spec: the pick resets when the runtime or project changes). Write these `launcherstore.test.ts` cases first and see them fail: `clearLauncherDraft clears the resume pick` (after setting a resume id, `clearLauncherDraft()` leaves it null); `pickLauncherProject resets the resume pick` (pick "b" while on "a" with a resume id set → null; picking the project already on show keeps it); `pickLauncherRuntime resets the resume pick` (switch claude → codex with a resume id set → null and the runtime is codex; picking the same runtime keeps it).
 
-- [ ] **Step 2: Footer and label.** In `launcher.ts`: `primaryLabel(kind, runtime, resuming = false)` returns `"Resume agent"` for an agent with `resuming`; `FooterInput` gains `resume?: { title: string; branch: string } | null`, and for `kind === "agent"` with a resume, `footerLine` returns `{ lead: "Resumes ", strong: title, tail: branch ? \` · ${branch}\` : "", blocked: false }`. Title is `session.task || "(untitled session)"`. Test both in `launcher.test.ts` (write the tests first, see them fail, then implement).
+- [ ] **Step 2: Footer and label.** In `launcher.ts`: `primaryLabel(kind, runtime, resuming = false)` returns `"Resume agent"` for an agent with `resuming`; `FooterInput` gains `resume?: { title: string; branch: string } | null`, and for `kind === "agent"` with a resume, `footerLine` returns `{ lead: "Resumes ", strong: title, tail: branch ? \` · ${branch}\` : "", blocked: false }`. Title is `session.task || "(untitled session)"`. Add `"resume"` to `FocusZone`, and in `launcherKey` make Enter in the `"resume"` zone return `{ kind: "launch" }` (beside start, project and input); every other key in that zone stays `none` (the list handles its own arrows). Test all three in `launcher.test.ts` — `primaryLabel` with resuming, `footerLine` with a resume, and `Enter in the resume zone launches` (plus ArrowDown there returns none) — writing the tests first, seeing them fail, then implementing.
 
-- [ ] **Step 3: The list.** `launcherresumelist.tsx` exports `ResumeList({ choices, pickedId })`. Render nothing when `choices` is empty. Otherwise a `LAUNCHER_LABEL` "Resume" heading and a `role="radiogroup"` with `data-launcher-resume` holding a first row "New session" (`pickedId` null) and one row per session (`data-resume-id={s.id}`): radio dot (`bg-accent` when picked, else `bg-muted`), title (`s.task || "(untitled session)"`, `text-[12.5px] font-semibold text-primary`, truncated), and a meta line `{s.branch || "—"} · {formatAge(now - s.lastactivets)} · {formatTokens(s.tokenstotal)} tok` (`formatAge`/`formatTokens` from `./agentsviewmodel`). Picked row `bg-accentbg`, others `hover:bg-surface-hover`. A click sets `launcherResumeAtom`. Keyboard: the group's `onKeyDown` handles ArrowUp/ArrowDown (move the pick and focus with `stepIndex` from `./launcher`, then `e.stopPropagation()` and `preventDefault()` so the dialog's column navigation does not see them); on Enter, `preventDefault()` on the row (no click) and let it bubble so the dialog launches — read the dialog's `onKeyDown` (`launchermodal.tsx`, around line 500) first and confirm Enter in this zone launches; adjust `zoneOf` if it does not.
+- [ ] **Step 3: The list.** `launcherresumelist.tsx` exports `ResumeList({ choices, pickedId })`. Render nothing when `choices` is empty. Otherwise a `LAUNCHER_LABEL` "Resume" heading and a `role="radiogroup"` with `data-launcher-resume` holding a first row "New session" (`pickedId` null) and one row per session (`data-resume-id={s.id}`): radio dot (`bg-accent` when picked, else `bg-muted`), title (`s.task || "(untitled session)"`, `text-[12.5px] font-semibold text-primary`, truncated), and a meta line `{s.branch || "—"} · {formatAge(now - s.lastactivets)} · {formatTokens(s.tokenstotal)} tok` (`formatAge`/`formatTokens` from `./agentsviewmodel`). Picked row `bg-accentbg`, others `hover:bg-surface-hover`. A click sets `launcherResumeAtom`. Keyboard: the group's `onKeyDown` handles ArrowUp/ArrowDown (move the pick and focus with `stepIndex` from `./launcher`, then `e.stopPropagation()` and `preventDefault()` so the dialog's column navigation does not see them); on Enter, `preventDefault()` on the row (no button click) and let it bubble to the dialog's `onKeyDown`, which launches because `zoneOf` names the zone `"resume"` (Step 5).
 
 - [ ] **Step 4: Fields.** In `AgentFields`, take new props `resumeChoices: SessionInfo[]` and `resume: SessionInfo | null`. Render `<ResumeList>` between Task and Command when `runtimeShowsTask(runtime)`. With `resume` set: the Task hint reads "optional · sent as the next message"; the Command input shows `resumeLaunchSpec(resume, runtime, runtimeFlags).startupCommand`, `readOnly`, and the flag chips stay; the worktree block is not rendered.
 
-- [ ] **Step 5: Modal.** In `launchermodal.tsx`: call `fireAndForget(loadLauncherSessions)` in an effect when the dialog opens (`open` true) with sessions reset to null first. Derive `const choices = resumeChoices(sessions, runtime, projectPath)` and `const resume = isRun ? null : pickedResume(choices, resumeId)`. Pass both to `AgentFields`. `primaryLabel(kind, runtime, resume != null)`; `footerLine({ …, resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch } })`. In `launchAgentRow`, when `resume` is set, skip the worktree branch logic and spread `resumeLaunchSpec(resume, runtime, naFlags[runtime] ?? {})` over `startupCommand` (keep `task`, `projectPath: p.path`, `projectName: p.name`; `branch` undefined).
+- [ ] **Step 5: Modal.** In `launchermodal.tsx`: the Start-row pick (around line 388, `globalStore.set(launcherRuntimeAtom, row.id as Runtime)`) calls `pickLauncherRuntime(row.id as Runtime)` instead. `zoneOf` returns `"resume"` for a target inside `[data-launcher-resume]` (check it before the input/textarea cases: `target instanceof Element && target.closest("[data-launcher-resume]")`). Call `fireAndForget(loadLauncherSessions)` in an effect when the dialog opens (`open` true) with sessions reset to null first. Derive `const choices = resumeChoices(sessions, runtime, projectPath)` and `const resume = isRun ? null : pickedResume(choices, resumeId)`. Pass both to `AgentFields`. `primaryLabel(kind, runtime, resume != null)`; `footerLine({ …, resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch } })`. In `launchAgentRow`, when `resume` is set, skip the worktree branch logic and spread `resumeLaunchSpec(resume, runtime, naFlags[runtime] ?? {})` over `startupCommand` (keep `task`, `projectPath: p.path`, `projectName: p.name`; `branch` undefined).
 
 - [ ] **Step 6: Scenario `launcher-resume`** in `scripts/cdp/scenarios.mjs`, modeled on `launcherScenario` (same project setup via `createproject` and the recent-projects localStorage). Arrange also seeds one Claude transcript the backend scan will read as a session of that project: a directory `verify-launcher-resume-<random>` under `~/.claude/projects` holding `<uuid>.jsonl`. Read `claudeSessionFrom` / `parseClaudeLines` in `pkg/agentsessions/agentsessions.go` and their tests for the minimal records (a `cwd` equal to the project dir, a user prompt whose text is `verify resume session`, timestamps now). Teardown removes that directory, the projects and restores localStorage. Assert steps, each `rec(...)`:
   1. New agent opened with the verify project and Claude picked shows `[data-launcher-resume]` with a row whose text contains `verify resume session`; shot `cdp-shots/launcher-resume-1-list.png`.
-  2. Clicking that row: the primary button reads `Resume agent`, the footer starts `Resumes`, `#launcher-cmd` value is `claude --resume <uuid>`, and no `Isolated git worktree` switch is on screen; shot `cdp-shots/launcher-resume-2-picked.png`.
+  2. Clicking that row: the primary button reads `Resume agent`, the footer starts `Resumes`, `#launcher-cmd` value is `claude --resume <uuid>`, the Task hint contains `optional · sent as the next message`, and no `Isolated git worktree` switch is on screen; shot `cdp-shots/launcher-resume-2-picked.png`.
   3. Picking the second project: the Resume section is gone and the button reads `Launch agent`.
-  4. Back on the first project, ArrowDown/ArrowUp inside the list moves the pick; then pick "New session" and Escape the dialog. Never press Launch.
+  4. Back on the first project: the Resume list is back with "New session" picked (the session row is not picked) and the button reads `Launch agent` — the pick did not survive the round trip. ArrowDown inside the list moves the pick to the session (button `Resume agent`), ArrowUp moves it back to "New session".
+  5. Picking Terminal in the Start column: no `[data-launcher-resume]` on screen. Pick Claude again, then Escape the dialog. Never press Launch.
 
-  Run it on the dev app: `task verify:ui -- launcher-resume launcher` (the dev app must be running; `task dev`).
+  Register the scenario: add `launcherResume` (the scenario object's variable) to the scenarios array at the bottom of `scenarios.mjs`, after `launcherScenario` (around line 25156); `task verify:ui` runs only what that array lists. Run it on the dev app: `task verify:ui -- launcher-resume launcher` (the dev app must be running; `task dev`).
 
 - [ ] **Step 7: Check and commit.** `npx vitest run frontend/app/view/agents/launcher.test.ts frontend/app/view/agents/launcherstore.test.ts frontend/app/view/agents/launcherresume.test.ts`, `NODE_OPTIONS=--max-old-space-size=4096 task check:ts`, `npx eslint` on the touched `.ts`/`.tsx`. Commit the files above with a pathspec: `feat(launcher): resume a recent session of the picked agent and project`.
 
@@ -391,7 +394,7 @@ export async function loadLauncherSessions(): Promise<void> {
 
 **Depends on:** Task 2, Task 3
 
-**Files:** `frontend/app/view/agents/launcherstore.ts`, `frontend/app/view/agents/launcherstore.test.ts`, `frontend/app/view/agents/launcheragentfields.tsx`, `frontend/app/view/agents/launchermodal.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
+**Files:** `frontend/app/view/agents/launcherstore.ts`, `frontend/app/view/agents/launcherstore.test.ts`, `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`, `frontend/app/view/agents/launcheragentfields.tsx`, `frontend/app/view/agents/launchermodal.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
 - [ ] **Step 1: Store.** In `launcherstore.ts`:
 
@@ -425,7 +428,7 @@ export function removeTaskImage(id: string): void {
 }
 ```
 
-`clearLauncherDraft` revokes every preview URL and empties the atom. `draftShown`'s draft (`keptDraft` here, `draftShown` in `launcher.ts`) counts images too, so a draft with only images is reported as restored. Test in `launcherstore.test.ts`: `clearLauncherDraft()` empties the images (stub `URL.revokeObjectURL` with `vi.fn()`); `removeTaskImage` drops only its id.
+`clearLauncherDraft` revokes every preview URL and empties the atom. A draft with only images counts as restored: in `launcher.ts`, `LauncherDraft` gains `images: number` and `draftShown` also returns true when `draft.images > 0` (update its comment, which lists what a close keeps); `keptDraft` in `launcherstore.ts` passes `images: globalStore.get(launcherImagesAtom).length`. Tests, written first: in `launcher.test.ts`, `draftShown counts images` (`{ ...empty, images: 1 }` → true; the existing `empty` gains `images: 0`); in `launcherstore.test.ts`, `clearLauncherDraft()` empties the images (stub `URL.revokeObjectURL` with `vi.fn()`), and `removeTaskImage` drops only its id.
 
 - [ ] **Step 2: Fields.** In `AgentFields`, on the Task textarea:
   - `onPaste`: `const files = imageFilesOf(e.clipboardData?.files)`; if none, return (the browser pastes text as usual). Otherwise `e.preventDefault()`, `addTaskImages(files, "paste")`, and if `e.clipboardData.getData("text/plain")` is non-empty insert it at the caret with `setRangeText(text, start, end, "end")` and write the new value to `launcherTaskAtom`.
@@ -434,13 +437,17 @@ export function removeTaskImage(id: string): void {
 
 - [ ] **Step 3: Modal.** In `launchermodal.tsx`, read `launcherImagesAtom`. `primaryDisabled` also holds while `!isRun && imagesPending(images)`. In `launchAgentRow`, compute `const { task: fullTask, extraArgs } = composeTaskWithImages(runtime, runtimeShowsTask(runtime) ? task : "", images.flatMap((i) => (i.path ? [i.path] : [])), resume != null)` and pass `task: fullTask, extraArgs` to `launchAgent`. `endLauncherDraft` already clears the images through `clearLauncherDraft`.
 
-- [ ] **Step 4: Scenario `launcher-images`** in `scripts/cdp/scenarios.mjs`, modeled on `launcherScenario`. A page helper makes a PNG `File` from a 32×32 canvas (`canvas.toBlob`) and dispatches on `#launcher-task` a `new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })` with a `DataTransfer` holding it. Assert steps:
-  1. One paste: one `[data-task-image]` reaching `ready` within 10 s; shot `cdp-shots/launcher-images-1-one.png`.
-  2. A paste carrying only `text/plain` `hello`: still one tile, and the task value ends with `hello`.
-  3. A second image paste: two tiles; removing the first with its ✕ leaves one; shot `cdp-shots/launcher-images-2-row.png`.
-  4. Teardown removes every tile, clears the task (the store's `clearLauncherDraft` through the dialog's Clear, or by emptying the textarea) and closes the dialog. Never press Launch.
+- [ ] **Step 4: Scenario `launcher-images`** in `scripts/cdp/scenarios.mjs`, modeled on `launcherScenario`. A page helper makes a PNG `File` from a 32×32 canvas (`canvas.toBlob`) and dispatches on `#launcher-task` a `new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })` with a `DataTransfer` holding it; a second helper dispatches `new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true })` the same way. Assert steps, each `rec(...)`:
+  1. One paste: one `[data-task-image]` reaching `data-task-image-state="ready"` within 10 s; shot `cdp-shots/launcher-images-1-one.png`.
+  2. A paste whose `DataTransfer` carries only `text/plain` `hello`: the dispatched event's `defaultPrevented` is false (`dispatchEvent` returns true) and there is still exactly one tile. (A synthetic paste has no default action, so the textarea's value is not asserted.)
+  3. A second image paste: two tiles; removing the first with its ✕ (`aria-label="Remove image"`) leaves one; shot `cdp-shots/launcher-images-2-row.png`.
+  4. A drop of a PNG on `#launcher-task`: its `defaultPrevented` is true and a new tile reaches `ready` (two tiles).
+  5. Pending: in one evaluate, paste a large noise PNG (a 900×900 canvas filled with random pixels, about 3 MB, under the 3.5 MB cap), wait one `requestAnimationFrame`, then read: a tile with `data-task-image-state="pending"` is on screen and the dialog's primary button is `disabled`. Then wait (within 15 s) for it to leave `pending` and the button to be enabled again; shot `cdp-shots/launcher-images-3-pending.png` is taken while pending if the timing allows, else after.
+  6. Error: paste a `File` of type `image/x-none` (`createTempFileFromBlob` refuses an unknown image type): its tile reaches `data-task-image-state="error"` and a `text-warning` line naming the error is under the box; shot `cdp-shots/launcher-images-4-error.png`. The primary button is enabled (an error does not hold the launch).
+  7. Survives a close: Escape the dialog, reopen New agent: the same number of tiles is on screen and `[data-launcher-restored]` ("draft restored") shows; shot `cdp-shots/launcher-images-5-reopen.png`.
+  8. Teardown removes every tile, clears the task (the dialog's Clear, which runs `clearLauncherDraft`) and closes the dialog. Never press Launch.
 
-  Run it on the dev app: `task verify:ui -- launcher-images launcher`.
+  Register the scenario: add `launcherImages` (the scenario object's variable) to the scenarios array at the bottom of `scenarios.mjs`, after `launcherResume` (around line 25156); `task verify:ui` runs only what that array lists. Run it on the dev app: `task verify:ui -- launcher-images launcher`.
 
 - [ ] **Step 5: Changelog.** Under `Added` in the top `CHANGELOG.md` section (open `## Unreleased` above a dated one): `- New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.`
 
