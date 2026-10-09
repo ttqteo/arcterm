@@ -10,6 +10,8 @@ import { cn, fireAndForget } from "@/util/util";
 import { Copy } from "lucide-react";
 import { formatAgo } from "./agentsviewmodel";
 import { ChangedFileList, TreeModeToggle } from "./changedfilelist";
+import { type ChangesStatus } from "./changesstatus";
+import { filesListLabel } from "./fileslistlabel";
 import { type GitChanges } from "./gitstatus";
 import { WORKING_TREE, refChipClass, type HistoryRow } from "./historyrows";
 import { SubLabel } from "./sectionlabel";
@@ -78,12 +80,18 @@ function CommitHeader({ row }: { row: HistoryRow }) {
 export function CommitPane({
     row,
     changes,
+    listStatus,
+    onRetry,
     selectedFile,
     onSelectFile,
     caption,
 }: {
     row: HistoryRow | null;
     changes: GitChanges | null;
+    // changes is null both while the list loads and after its read failed; this says which
+    listStatus: ChangesStatus;
+    // re-reads the list after a failure
+    onRetry: () => void;
     selectedFile: string | null;
     onSelectFile: (path: string) => void;
     // the working-tree row's "measured from what" line; worktreeCaption builds it
@@ -97,7 +105,7 @@ export function CommitPane({
         );
     }
     const isWorkingTree = row.hash === WORKING_TREE;
-    const count = changes?.files.length ?? 0;
+    const label = filesListLabel(listStatus, changes);
     return (
         <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex-none border-b border-edge-faint px-[15px] pb-[12px] pt-[14px]">
@@ -105,15 +113,35 @@ export function CommitPane({
             </div>
             <div className="flex flex-none items-center gap-[9px] px-[15px] pb-[8px] pt-[10px]">
                 <SubLabel>
-                    {count} {count === 1 ? "file" : "files"}
+                    <span data-files-count>{label.text}</span>
                 </SubLabel>
                 <div className="flex-1" />
-                <span className="text-[11px] font-semibold tabular-nums text-diff-added">+{changes?.adds ?? 0}</span>
-                <span className="text-[11px] font-semibold tabular-nums text-diff-removed">−{changes?.dels ?? 0}</span>
+                {label.counts ? (
+                    <>
+                        <span className="text-[11px] font-semibold tabular-nums text-diff-added">
+                            +{changes?.adds ?? 0}
+                        </span>
+                        <span className="text-[11px] font-semibold tabular-nums text-diff-removed">
+                            −{changes?.dels ?? 0}
+                        </span>
+                    </>
+                ) : null}
                 <TreeModeToggle />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-[8px] pb-[20px]">
-                <ChangedFileList changes={changes} selectedFile={selectedFile} onSelectFile={onSelectFile} />
+                {listStatus === "failed" ? (
+                    <div className="flex flex-col items-start gap-[8px] px-[7px] py-[6px]">
+                        <button
+                            data-files-retry
+                            onClick={onRetry}
+                            className="h-[26px] rounded-[7px] border border-edge-mid px-[10px] text-[11.5px] font-semibold text-ink-mid hover:text-ink-hi"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                ) : (
+                    <ChangedFileList changes={changes} selectedFile={selectedFile} onSelectFile={onSelectFile} />
+                )}
             </div>
         </div>
     );

@@ -26,6 +26,7 @@ import { diffPairAtom } from "./diffcontentstore";
 import { emptyDiffState, type EmptyDiff } from "./diffempty";
 import { changePosition, clearDiffNav, diffNavPosAtom, gotoChange, setDiffNav } from "./diffnav";
 import { diffWrapPathAtom, ignoreWsAtom, paneHeaderLayout, paneOptions, splitViewAtom } from "./diffoptions";
+import { activeChangesStatusAtom, shownChangesAtom } from "./githistorystore";
 import { activeReviewKeyAtom, reviewModeAtom } from "./linecommentstore";
 import { LineReviewTray } from "./linereviewtray";
 import { ReviewList } from "./reviewlistview";
@@ -94,6 +95,9 @@ export function DiffPane({
     review?: ReviewTarget | null;
 }) {
     const pair = useAtomValue(diffPairAtom);
+    // the file list this pane picks from: with no path selected, whether it is loading, failed or empty decides the words
+    const listStatus = useAtomValue(activeChangesStatusAtom);
+    const shownChanges = useAtomValue(shownChangesAtom);
     const split = useAtomValue(splitViewAtom);
     const ignoreWs = useAtomValue(ignoreWsAtom);
     const navPos = useAtomValue(diffNavPosAtom);
@@ -132,7 +136,13 @@ export function DiffPane({
         () => paneOptions(split && layout.split, ignoreWs, wrap),
         [split, layout.split, ignoreWs, wrap]
     );
-    const empty = emptyDiffState({ path, pair, nothingToCompare });
+    const empty = emptyDiffState({
+        path,
+        pair,
+        nothingToCompare,
+        listStatus,
+        fileCount: shownChanges?.files.length ?? null,
+    });
 
     const body = () => {
         if (reviewing) {

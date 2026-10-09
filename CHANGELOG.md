@@ -54,6 +54,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Diff: a commit whose files are still loading, or could not be read, no longer shows `0 files +0 −0` beside an
+  empty diff. The list says it is reading, or that the read failed with a Retry, and a commit that really changes
+  no files says so.
 - An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
   that run, nested under it, is still going; the offer comes back once the run ends.
 - An agent that committed and then ran a few more commands with long output in the same turn now offers ✓ Close;

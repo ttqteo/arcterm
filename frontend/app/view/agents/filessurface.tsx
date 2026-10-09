@@ -54,6 +54,7 @@ import { CompareColumn } from "./comparecolumn";
 import { AGGREGATE, buildCompareRows, compareNavIds, type CompareCommitRow } from "./comparerows";
 import {
     compareActiveChangesAtom,
+    compareActiveChangesStatusAtom,
     compareAggregateAtom,
     compareBranchesAtom,
     compareErrorAtom,
@@ -67,6 +68,7 @@ import {
     fetchStateOf,
     fetchStatesAtom,
     leaveCompare,
+    retrySelectedCompareRow,
     runFetch,
     selectCompareFile,
     selectCompareRow,
@@ -77,6 +79,7 @@ import {
 import { RefPicker } from "./refpicker";
 import {
     activeChangesAtom,
+    activeChangesStatusAtom,
     dismissRestoreNotice,
     graphOnAtom,
     historyAppendAtom,
@@ -93,6 +96,7 @@ import {
     resetHistory,
     restoreNoticeAtom,
     retryHistory,
+    retrySelectedCommit,
     selectCommit,
     selectCommitFile,
     selectedCommitAtom,
@@ -136,6 +140,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const selectedFile = useAtomValue(selectedFileAtom);
     const graphOn = useAtomValue(graphOnAtom);
     const activeChanges = useAtomValue(activeChangesAtom);
+    const activeChangesStatus = useAtomValue(activeChangesStatusAtom);
     const compareOn = useAtomValue(compareOnAtom);
     const compareRefs = useAtomValue(compareRefsAtom);
     const compareSides = useAtomValue(compareSidesAtom);
@@ -145,6 +150,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const compareError = useAtomValue(compareErrorAtom);
     const compareBranches = useAtomValue(compareBranchesAtom);
     const compareChanges = useAtomValue(compareActiveChangesAtom);
+    const compareChangesStatus = useAtomValue(compareActiveChangesStatusAtom);
     // the ref picker's own open/closed state: `c` and a click on the chip open it, Enter/Escape close it
     const [pickerOpen, setPickerOpen] = useState(false);
     // a file clicked in the commit pane's list, for Review to scroll to; n tells two clicks on one file apart
@@ -642,6 +648,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                                 ) as CompareCommitRow | undefined) ?? null
                                             }
                                             changes={compareChanges}
+                                            listStatus={compareChangesStatus}
+                                            onRetry={retrySelectedCompareRow}
                                             selectedFile={compareFile}
                                             onSelectFile={(path) => selectCompareFile(path)}
                                         />
@@ -649,6 +657,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                 ) : (
                                     <CommitPane
                                         row={selectedRow}
+                                        listStatus={activeChangesStatus}
+                                        onRetry={retrySelectedCommit}
                                         caption={
                                             scope && state
                                                 ? worktreeCaption(scope.range, state.branch, state.head, state.ref)
