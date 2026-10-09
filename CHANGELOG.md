@@ -45,6 +45,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Code's sidebar keeps one width across Files, Search and Changed, so switching between them no longer moves the
+  editor's edge; dragging it in any mode sets it for all three.
 - In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and
   coming back lands on the same spot instead of the top.
 - In a narrow sidebar, an agent row with subagents no longer runs past the row's right edge: its subagents chip shows

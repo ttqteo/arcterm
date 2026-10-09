@@ -10,18 +10,13 @@ export const CODE_SIDEBAR_EDITOR_FLOOR = 280;
 export const CODE_SIDEBAR_COMPACT_WIDTH = 36;
 export const CODE_SIDEBAR_SEPARATOR_WIDTH = 8;
 
-export const CODE_SIDEBAR_DEFAULT_WIDTHS = {
-    files: 280,
-    search: 380,
-    changed: 380,
-} as const;
+// One width for every mode, so switching between Files, Search and Changed never moves the editor's edge.
+export const CODE_SIDEBAR_DEFAULT_WIDTH = 280;
 
-export type CodeSidebarMode = keyof typeof CODE_SIDEBAR_DEFAULT_WIDTHS;
-
-export type CodeSidebarWidths = Record<CodeSidebarMode, number>;
+export type CodeSidebarMode = "files" | "search" | "changed";
 
 export type CodeSidebarPrefs = {
-    widths: CodeSidebarWidths;
+    width: number;
     open: boolean;
 };
 
@@ -31,7 +26,7 @@ export type CodeSidebarVisibility = {
 };
 
 export function defaultCodeSidebarPrefs(): CodeSidebarPrefs {
-    return { widths: { ...CODE_SIDEBAR_DEFAULT_WIDTHS }, open: true };
+    return { width: CODE_SIDEBAR_DEFAULT_WIDTH, open: true };
 }
 
 export function clampCodeSidebarWidth(value: number, max = CODE_SIDEBAR_MAX_WIDTH): number {
@@ -56,8 +51,8 @@ export function codeSidebarVisibility(workspaceWidth: number, open: boolean): Co
     return { temporary, compact: temporary || !open };
 }
 
-export function codeSidebarWidthFor(mode: CodeSidebarMode, widths: CodeSidebarWidths, workspaceWidth: number): number {
-    return clampCodeSidebarWidth(widths[mode], codeSidebarMaxWidth(workspaceWidth));
+export function codeSidebarWidthFor(width: number, workspaceWidth: number): number {
+    return clampCodeSidebarWidth(width, codeSidebarMaxWidth(workspaceWidth));
 }
 
 export function codeSidebarWidthAfterPointer(start: number, deltaX: number, max: number): number {
@@ -103,16 +98,15 @@ export function parseCodeSidebarPrefs(raw: string | null): CodeSidebarPrefs {
         if (value == null || typeof value !== "object" || Array.isArray(value)) {
             return defaults;
         }
-        const record = value as { widths?: unknown; open?: unknown };
-        const widths = record.widths;
-        const widthRecord = widths != null && typeof widths === "object" && !Array.isArray(widths) ? widths : {};
-        const storedWidths = widthRecord as Partial<Record<CodeSidebarMode, unknown>>;
+        const record = value as { width?: unknown; widths?: unknown; open?: unknown };
+        // Prefs saved before the width was shared kept one per mode; the Files width carries over.
+        const legacy = record.widths;
+        const legacyFiles =
+            legacy != null && typeof legacy === "object" && !Array.isArray(legacy)
+                ? (legacy as { files?: unknown }).files
+                : undefined;
         return {
-            widths: {
-                files: validWidth(storedWidths.files, defaults.widths.files),
-                search: validWidth(storedWidths.search, defaults.widths.search),
-                changed: validWidth(storedWidths.changed, defaults.widths.changed),
-            },
+            width: validWidth(record.width, validWidth(legacyFiles, defaults.width)),
             open: typeof record.open === "boolean" ? record.open : defaults.open,
         };
     } catch {
@@ -122,11 +116,7 @@ export function parseCodeSidebarPrefs(raw: string | null): CodeSidebarPrefs {
 
 export function codeSidebarPrefsJson(prefs: CodeSidebarPrefs): string {
     return JSON.stringify({
-        widths: {
-            files: clampCodeSidebarWidth(prefs.widths.files),
-            search: clampCodeSidebarWidth(prefs.widths.search),
-            changed: clampCodeSidebarWidth(prefs.widths.changed),
-        },
+        width: clampCodeSidebarWidth(prefs.width),
         open: prefs.open,
     });
 }

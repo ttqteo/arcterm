@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    CODE_SIDEBAR_DEFAULT_WIDTHS,
+    CODE_SIDEBAR_DEFAULT_WIDTH,
     CODE_SIDEBAR_EDITOR_FLOOR,
     CODE_SIDEBAR_MAX_WIDTH,
     CODE_SIDEBAR_MIN_WIDTH,
@@ -22,21 +22,21 @@ import {
 describe("Code sidebar preferences", () => {
     it("uses defaults for malformed or invalid persisted state", () => {
         expect(parseCodeSidebarPrefs("not json")).toEqual(defaultCodeSidebarPrefs());
-        expect(parseCodeSidebarPrefs(JSON.stringify({ widths: { files: "380", search: NaN }, open: "no" }))).toEqual(
-            defaultCodeSidebarPrefs()
-        );
-        expect(
-            parseCodeSidebarPrefs(JSON.stringify({ widths: { files: 900, search: 180, changed: 312 }, open: false }))
-        ).toEqual({
-            widths: { files: 480, search: 200, changed: 312 },
-            open: false,
-        });
+        expect(parseCodeSidebarPrefs(JSON.stringify({ width: "380", open: "no" }))).toEqual(defaultCodeSidebarPrefs());
+        expect(parseCodeSidebarPrefs(JSON.stringify({ width: 900, open: false }))).toEqual({ width: 480, open: false });
     });
 
-    it("round-trips mode widths and collapse preference", () => {
-        const prefs = { widths: { files: 240, search: 410, changed: 360 }, open: false };
+    it("carries the Files width over from per-mode prefs", () => {
+        expect(
+            parseCodeSidebarPrefs(JSON.stringify({ widths: { files: 240, search: 410, changed: 360 }, open: true }))
+        ).toEqual({ width: 240, open: true });
+        expect(parseCodeSidebarPrefs(JSON.stringify({ widths: { search: 410 } }))).toEqual(defaultCodeSidebarPrefs());
+    });
+
+    it("round-trips the shared width and collapse preference", () => {
+        const prefs = { width: 312, open: false };
         expect(parseCodeSidebarPrefs(codeSidebarPrefsJson(prefs))).toEqual(prefs);
-        expect(CODE_SIDEBAR_DEFAULT_WIDTHS).toEqual({ files: 280, search: 380, changed: 380 });
+        expect(CODE_SIDEBAR_DEFAULT_WIDTH).toBe(280);
     });
 });
 
@@ -49,11 +49,10 @@ describe("Code sidebar geometry", () => {
         expect(CODE_SIDEBAR_EDITOR_FLOOR).toBe(280);
     });
 
-    it("clamps each mode independently", () => {
-        const widths = { files: 220, search: 470, changed: 380 };
-        expect(codeSidebarWidthFor("files", widths, 900)).toBe(220);
-        expect(codeSidebarWidthFor("search", widths, 700)).toBe(412);
-        expect(codeSidebarWidthFor("changed", widths, 1600)).toBe(380);
+    it("clamps the stored width to the workspace", () => {
+        expect(codeSidebarWidthFor(220, 900)).toBe(220);
+        expect(codeSidebarWidthFor(470, 700)).toBe(412);
+        expect(codeSidebarWidthFor(380, 1600)).toBe(380);
     });
 
     it("clamps a provisional drag width when the workspace narrows", () => {

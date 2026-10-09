@@ -43,7 +43,7 @@ import { CodeSearchPane } from "./codesearchpane";
 import { codeSearchModeAtom } from "./codesearchstore";
 import {
     CODE_SIDEBAR_COMPACT_WIDTH,
-    CODE_SIDEBAR_DEFAULT_WIDTHS,
+    CODE_SIDEBAR_DEFAULT_WIDTH,
     CODE_SIDEBAR_MIN_WIDTH,
     codeSidebarDragEndWidth,
     codeSidebarDragWidthForWorkspace,
@@ -508,7 +508,7 @@ const EDITOR_SKELETON_WIDTHS = ["w-[60%]", "w-[85%]", "w-[75%]", "w-[40%]", "w-[
 function CodePanesSkeleton() {
     return (
         <div aria-hidden="true" className="flex h-full">
-            <div className="flex shrink-0 border-r border-border" style={{ width: CODE_SIDEBAR_DEFAULT_WIDTHS.files }}>
+            <div className="flex shrink-0 border-r border-border" style={{ width: CODE_SIDEBAR_DEFAULT_WIDTH }}>
                 <SkeletonRows className="flex-1 space-y-2 px-3 pt-3">
                     {(i) => (
                         <SkeletonLine
@@ -573,7 +573,6 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
     const openerRef = useRef<HTMLButtonElement>(null);
     const dragRef = useRef<{
         pointerId: number;
-        mode: CodeSidebarMode;
         startX: number;
         startWidth: number;
         width: number;
@@ -585,7 +584,7 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
     const compact = visibility.compact;
     const width =
         dragWidth == null
-            ? codeSidebarWidthFor(mode, prefs.widths, workspaceWidth)
+            ? codeSidebarWidthFor(prefs.width, workspaceWidth)
             : codeSidebarDragWidthForWorkspace(dragWidth, workspaceWidth);
 
     useEffect(() => {
@@ -674,7 +673,7 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
         }
         const completedWidth = codeSidebarDragEndWidth(drag.width, workspaceWidth, commit);
         if (completedWidth != null) {
-            persist({ ...prefs, widths: { ...prefs.widths, [drag.mode]: completedWidth } });
+            persist({ ...prefs, width: completedWidth });
         }
     };
 
@@ -692,22 +691,21 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
         }
         event.preventDefault();
         const nextWidth = nextCodeSidebarWidth(
-            codeSidebarWidthFor(mode, prefs.widths, workspaceWidth),
+            codeSidebarWidthFor(prefs.width, workspaceWidth),
             event.key,
             event.shiftKey,
             codeSidebarMaxWidth(workspaceWidth)
         );
-        persist({ ...prefs, widths: { ...prefs.widths, [mode]: nextWidth } });
+        persist({ ...prefs, width: nextWidth });
     };
 
     const onGripPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         if (compact || gripRef.current == null) {
             return;
         }
-        const startWidth = codeSidebarWidthFor(mode, prefs.widths, workspaceWidth);
+        const startWidth = codeSidebarWidthFor(prefs.width, workspaceWidth);
         dragRef.current = {
             pointerId: event.pointerId,
-            mode,
             startX: event.clientX,
             startWidth,
             width: startWidth,
