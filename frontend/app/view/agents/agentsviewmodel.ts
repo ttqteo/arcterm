@@ -105,6 +105,9 @@ export interface AgentVM {
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
     loginEmail?: string; // a Default claude agent: the /login account its process started on (block meta agent:loginemail)
     running?: boolean; // a plain terminal: its shell is running a command, not waiting at its prompt
+    // Asleep (block meta agent:sleeping): its process is gone to free RAM, its row, output and conversation stay. The
+    // state stays idle; wakeFailed is why the last wake did not come back (the agent stays asleep while it is set).
+    sleeping?: { since: number; freedBytes: number; wakeFailed?: string };
 }
 
 const STATE_RANK: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
@@ -497,6 +500,7 @@ export interface LiveAgentInput {
     step?: string; // the status event's step: the "n/m" part an idle turn or a pending AskUserQuestion stopped on
     committed?: boolean; // the status event's committed: an idle turn that ended on a git commit
     loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
+    sleeping?: AgentVM["sleeping"]; // the block's agent:sleeping keys (sleepingOf), absent when it is awake
 }
 
 /** Pure: one live row -> an AgentVM. `asking` (a pending AskUserQuestion) maps straight to asking so
@@ -527,6 +531,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     };
     if (input.loginEmail) {
         vm.loginEmail = input.loginEmail;
+    }
+    if (input.sleeping) {
+        vm.sleeping = input.sleeping;
     }
     if (input.runORef?.startsWith("run:")) {
         vm.runId = input.runORef.slice("run:".length);
