@@ -11,7 +11,7 @@
 // digest's figures are dated rather than presented as current.
 
 import type { AgentVM } from "../agents/agentsviewmodel";
-import { isTerminal, leadWorker } from "../agents/runmodel";
+import { canResume, currentPhaseIndex, isTerminal, leadWorker } from "../agents/runmodel";
 import {
     cleanupOnly,
     firstLine,
@@ -197,16 +197,37 @@ function cancelledStatus(read: SheetRead): SheetStatus {
     };
 }
 
+// A blocked run's worker died: the app restarted under it, or its process exited. Its phase recorded when it
+// stopped, so the meta says how long it ran and how long ago it stopped, rather than an elapsed time that kept
+// counting for a run nothing is running. What to do next is the sheet's to say: the dock offers Resume when the
+// run can be resumed, and Cancel either way.
 function blockedStatus(read: SheetRead): SheetStatus {
     const { run, nowMs } = read;
+    const orch = run.mode === "orchestrator";
+    const who = orch ? "lead" : "worker";
+    const phaseIdx = currentPhaseIndex(run);
+    const stoppedTs = run.phases?.[phaseIdx]?.donets ?? 0;
+    const meta: SheetMeta[] =
+        stoppedTs > 0
+            ? [
+                  { text: `ran ${since(stoppedTs, run.createdts)}`, tone: "muted" },
+                  { text: `stopped ${since(nowMs, stoppedTs)} ago`, tone: "error-soft" },
+              ]
+            : [{ text: `${since(nowMs, run.createdts)} since launch`, tone: "muted" }];
+    const resumable = canResume(run, phaseIdx);
     return {
         verb: "Blocked",
-        sub: run.mode === "orchestrator" ? "the lead is no longer running" : "the worker is no longer running",
+        sub:
+            orch && runGraphRef(run) == null
+                ? "the lead stopped before it submitted a plan"
+                : `the ${who} is no longer running`,
         tone: "error",
         pulse: false,
         meter: null,
-        meta: [{ text: `${since(nowMs, run.createdts)} elapsed`, tone: "muted" }],
-        next: null,
+        meta,
+        next: resumable
+            ? `resume the ${who} in its own session to pick up where it stopped, or cancel the run`
+            : "cancel the run and start a new one: this one cannot be resumed",
         retry: false,
     };
 }
@@ -439,7 +460,7 @@ export function taskSectionMeta(run: Run, digest: DagStatusDigest | undefined): 
         return "none — a quick run has no graph";
     }
     if (runGraphRef(run) == null) {
-        return "not decided yet";
+        return run.status === "blocked" ? "none — no plan was submitted" : "not decided yet";
     }
     return planShapeText(digest?.shape) ?? "";
 }

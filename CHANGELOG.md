@@ -51,6 +51,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   just the count, and a long model name is cut short.
 - Jarvis's Runs list no longer jumps around while agents start and stop: rows keep their place instead of all
   re-sliding each time one agent's state changes.
+- A blocked run's sheet offers **Resume lead** (or **Resume worker**) when the run can be picked up again, says how
+  long it ran and when it stopped instead of an elapsed time that kept counting, and no longer tells you the lead is
+  writing its plan when it stopped before submitting one.
 - A subagent that has finished no longer stays listed as running under its agent in the sidebar.
 - After opening a subagent from the sidebar, clicking its agent's row brings the agent's terminal back.
 

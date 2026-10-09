@@ -20,12 +20,20 @@ import { runAtom } from "@/app/view/agents/channelsstore";
 import { ChildAskCard } from "@/app/view/agents/childaskcard";
 import { userOwnedAsks } from "@/app/view/agents/childaskmodel";
 import { childAsksAtom } from "@/app/view/agents/childaskstore";
-import { endFinalStage, type FinalEndOutcome } from "@/app/view/agents/runactions";
+import { endFinalStage, resumeRun, type FinalEndOutcome } from "@/app/view/agents/runactions";
 import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents/runcards";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
 import { RunGoal } from "@/app/view/agents/rungoalview";
-import { cancelSurvivors, isTerminal, leadAsker, leadWorker, liveWorkers } from "@/app/view/agents/runmodel";
+import {
+    cancelSurvivors,
+    canResume,
+    currentPhaseIndex,
+    isTerminal,
+    leadAsker,
+    leadWorker,
+    liveWorkers,
+} from "@/app/view/agents/runmodel";
 import { SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
 import { eventTitle, tsLabel } from "@/app/view/agents/runtimeline";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
@@ -776,7 +784,13 @@ function EmptyTasks({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }) {
     const actClass = cn(SHEET_BTN, "mt-[3px] self-start px-[11px] py-[5px]");
     if (dag == null) {
         if (run.mode === "orchestrator") {
-            return (
+            // a blocked lead will not submit anything until it is resumed, so "writes the plan first" would be wrong
+            return run.status === "blocked" ? (
+                <EmptyBox
+                    title="No plan was submitted"
+                    body="The lead stopped before it submitted a plan, so nothing was dispatched."
+                />
+            ) : (
                 <EmptyBox
                     title="No tasks yet"
                     body="The lead writes the plan first. Nothing is dispatched until it submits one."
@@ -948,6 +962,23 @@ function Dock({
     // a held land leads the dock: the run is done and waits only on the human clearing the reason and retrying
     const held = run.land?.state === "held";
     const [landing, setLanding] = useState(false);
+    // a blocked run's stopped worker, restarted in its own session (the palette's run:resume)
+    const resumePhase = currentPhaseIndex(run);
+    const resumable = run.status === "blocked" && canResume(run, resumePhase);
+    const [resuming, setResuming] = useState(false);
+    const resume = () => {
+        setResuming(true);
+        setResult(null);
+        fireAndForget(async () => {
+            try {
+                await resumeRun(channel.oid, run.id, resumePhase);
+            } catch (e) {
+                setResult({ failed: true, text: `Resuming failed: ${e instanceof Error ? e.message : String(e)}` });
+            } finally {
+                setResuming(false);
+            }
+        });
+    };
     const land = () => {
         setLanding(true);
         setResult(null);
@@ -973,6 +1004,17 @@ function Dock({
                 </span>
             ) : null}
             <div className="flex items-center gap-2">
+                {resumable ? (
+                    <button
+                        type="button"
+                        data-run-sheet-resume
+                        disabled={resuming}
+                        onClick={resume}
+                        className={DOCK_ACCENT}
+                    >
+                        {resuming ? "Resuming…" : run.mode === "orchestrator" ? "Resume lead" : "Resume worker"}
+                    </button>
+                ) : null}
                 {held ? (
                     <button
                         type="button"

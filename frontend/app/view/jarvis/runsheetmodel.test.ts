@@ -148,6 +148,35 @@ describe("runGraphRef", () => {
 });
 
 describe("sheetStatus", () => {
+    // a lead the app restart stopped before it submitted a plan (run 8b822a9b): it sat Blocked with an
+    // elapsed time that kept counting, a "writes the plan first" box, and no way forward but Cancel
+    const stoppedLead = (over: Partial<Run> = {}) =>
+        run({
+            status: "blocked",
+            dagoref: "",
+            runtime: "claude",
+            sessionid: "s-1",
+            phases: [{ kind: "orchestrate", state: "failed", donets: NOW - 10 * MIN, workerorefs: ["tab:t1"] }],
+            ...over,
+        } as Partial<Run>);
+
+    it("dates a blocked run by when it stopped, and offers to resume a lead that can be", () => {
+        const s = sheetStatus(read({ run: stoppedLead(), dag: null }));
+        expect(s.verb).toBe("Blocked");
+        expect(s.sub).toBe("the lead stopped before it submitted a plan");
+        expect(s.meta.map((m) => m.text)).toEqual(["ran 8m", "stopped 10m ago"]);
+        expect(s.next).toBe("resume the lead in its own session to pick up where it stopped, or cancel the run");
+    });
+
+    it("says only cancel is left when a blocked run cannot be resumed", () => {
+        const s = sheetStatus(read({ run: stoppedLead({ sessionid: "" }), dag: null }));
+        expect(s.next).toBe("cancel the run and start a new one: this one cannot be resumed");
+    });
+
+    it("says no plan was submitted for a blocked lead with no graph", () => {
+        expect(taskSectionMeta(stoppedLead(), undefined)).toBe("none — no plan was submitted");
+    });
+
     it("reads a healthy run as executing, with the meter and next line from the same read", () => {
         const s = sheetStatus(read());
         expect(s.verb).toBe("Executing");
