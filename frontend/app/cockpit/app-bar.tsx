@@ -17,6 +17,7 @@ import clsx from "clsx";
 import { useAtomValue } from "jotai";
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { JobQueueChip } from "./jobqueuechip";
 import { versionInfoAtom } from "./versioninfo";
 
 // Handoff top app bar (38px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
@@ -77,6 +78,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
 
             <div data-tauri-drag-region className="relative flex h-full shrink-0 items-center gap-2.5">
                 <VersionMismatchPill />
+                <JobQueueChip />
                 <WorkerCapacityChip />
                 <HeaderUsageMeters model={model} />
                 {/* one button, one dialog: it opens on whatever the last open left picked, and the digits switch
