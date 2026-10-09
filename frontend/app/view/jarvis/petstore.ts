@@ -81,6 +81,12 @@ export const petOutfitChoiceAtom = atomWithStorage<PetOutfitChoice>(
     }
 ) as PrimitiveAtom<PetOutfitChoice>;
 
+// Whether the pet says a quote now and then (petquotes.ts, Settings → Appearance), persisted like the outfit.
+export const DEFAULT_PET_QUOTES = true;
+export const petQuotesOnAtom = atomWithStorage<boolean>("jarvis.pet.quotes", DEFAULT_PET_QUOTES, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<boolean>;
+
 // Persisted, because "push once per event" has to survive a relaunch: an unpersisted watermark would
 // make every launch re-say whatever the last session already said.
 export const petWatermarkAtom = atom<PetWatermark | null>(readWatermark()) as PrimitiveAtom<PetWatermark | null>;

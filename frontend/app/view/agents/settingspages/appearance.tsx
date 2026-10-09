@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, and Jarvis's outfit. The terminal's own face is a Terminal setting.
+// faces, and Jarvis's outfit and quotes. The terminal's own face is a Terminal setting.
 
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
-import { petOutfitChoiceAtom } from "@/app/view/jarvis/petstore";
+import { petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
 import { MONO_FONTS, SANS_FONTS } from "../fonts";
 import { fontMonoAtom, fontSansAtom } from "../fontstore";
-import { Segmented, SettingCard, SettingRow } from "../settingsui";
+import { Segmented, SettingCard, SettingRow, Toggle } from "../settingsui";
 import { ACCENT_SWATCHES, activePalette, colorOf, THEMES, type OverrideRole } from "../themes";
 import { themeOverridesAtom, themePresetAtom } from "../themestore";
 
@@ -29,6 +29,7 @@ export function AppearancePage() {
             </SettingCard>
             <SettingCard id="jarvis" label="Jarvis">
                 <PetOutfitRow />
+                <PetQuotesRow />
             </SettingCard>
         </>
     );
@@ -150,6 +151,15 @@ function PetOutfitRow() {
                 value={petOutfitChoice(outfit)}
                 onChange={(id) => setOutfit(id)}
             />
+        </SettingRow>
+    );
+}
+
+function PetQuotesRow() {
+    const [on, setOn] = useAtom(petQuotesOnAtom);
+    return (
+        <SettingRow id="appearance.petquotes">
+            <Toggle on={on} onToggle={() => setOn(!on)} label="Jarvis quotes" />
         </SettingRow>
     );
 }

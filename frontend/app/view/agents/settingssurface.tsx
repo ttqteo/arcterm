@@ -12,7 +12,7 @@
 import { MOTION } from "@/app/element/motiontokens";
 import { atoms } from "@/app/store/global";
 import { DEFAULT_PET_OUTFIT, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
-import { petOutfitChoiceAtom } from "@/app/view/jarvis/petstore";
+import { DEFAULT_PET_QUOTES, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { Search } from "lucide-react";
@@ -77,6 +77,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [startup, setStartup] = useAtom(startupSurfaceAtom);
     const [rail, setRail] = useAtom(railVisibleAtom);
     const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
+    const [quotes, setQuotes] = useAtom(petQuotesOnAtom);
     const [flags, setFlags] = useAtom(naFlagsAtom);
     const [remember, setRemember] = useAtom(naRememberFlagsAtom);
 
@@ -96,6 +97,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             changed: petOutfitChoice(outfit) !== DEFAULT_PET_OUTFIT,
             revert: () => setOutfit(DEFAULT_PET_OUTFIT),
         },
+        "appearance.petquotes": { changed: quotes !== DEFAULT_PET_QUOTES, revert: () => setQuotes(DEFAULT_PET_QUOTES) },
         "newagent.remember": {
             changed: remember !== DEFAULT_REMEMBER_FLAGS,
             revert: () => setRemember(DEFAULT_REMEMBER_FLAGS),

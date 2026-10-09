@@ -12,6 +12,7 @@
 // It never draws a number. The nav badge owns the count; the creature owns the kind (pet spec §3).
 
 import { toastsAtom } from "@/app/cockpit/notificationstore";
+import { atoms } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
@@ -29,6 +30,7 @@ import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner
 import { petOutfit, petOutfitChoice } from "./petoutfit";
 import { PetPeek } from "./petpeek";
 import { tightestWindow } from "./petquota";
+import { canQuote, pickQuote, QUOTE_RETRY_MS, quoteDelayMs, quoteEvent, type QuoteMoment } from "./petquotes";
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
 import {
     petBubbleAtom,
@@ -36,6 +38,7 @@ import {
     petHomeAtom,
     petOutfitChoiceAtom,
     petPeekOpenAtom,
+    petQuotesOnAtom,
     petUnreadAtom,
     petWatermarkAtom,
     rememberSaid,
@@ -137,6 +140,9 @@ function cellRect(c: PetCell, i: number) {
     );
 }
 
+// the last quote said, so the next is never the same one; module scope, so a remount (leaving float) keeps it
+let lastQuote = -1;
+
 export function PetView({ model }: { model: AgentsViewModel }) {
     const signals = usePetSignals(model);
     const expression = expressionFor(signals);
@@ -171,7 +177,49 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         }
     }, [events, watermark]);
 
-    const openPeek = useCallback(() => openPetPeek(), []);
+    // Now and then a quote, when the creature has nothing else to say (petquotes.ts). The moment is read when the timer
+    // fires, through a ref, so the timer is armed once rather than on every render.
+    const quotesOn = useAtomValue(petQuotesOnAtom);
+    const focused = useAtomValue(atoms.documentHasFocus);
+    const momentRef = useRef<QuoteMoment>(null);
+    momentRef.current = {
+        enabled: quotesOn,
+        expression: expression.kind,
+        posture,
+        speaking: bubble != null,
+        peekOpen,
+        focused,
+    };
+    useEffect(() => {
+        if (!quotesOn) {
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout>;
+        const arm = (ms: number) => {
+            timer = setTimeout(fire, ms);
+        };
+        const fire = () => {
+            const moment = momentRef.current;
+            if (moment == null || !canQuote(moment)) {
+                arm(QUOTE_RETRY_MS);
+                return;
+            }
+            lastQuote = pickQuote(Math.random(), lastQuote);
+            globalStore.set(petBubbleAtom, quoteEvent(lastQuote, Date.now()));
+            arm(quoteDelayMs(Math.random()));
+        };
+        arm(quoteDelayMs(Math.random()));
+        return () => clearTimeout(timer);
+    }, [quotesOn]);
+
+    // a quote is not news: clicking it only puts it away, and it leaves no unread marker behind
+    const openPeek = useCallback(() => {
+        if (globalStore.get(petBubbleAtom)?.kind === "quote") {
+            globalStore.set(petBubbleAtom, null);
+            return;
+        }
+        openPetPeek();
+    }, []);
 
     return (
         <>
@@ -193,8 +241,11 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 corner={corner}
                 onOpen={openPeek}
                 onDismiss={() => {
+                    const said = globalStore.get(petBubbleAtom);
                     globalStore.set(petBubbleAtom, null);
-                    globalStore.set(petUnreadAtom, true);
+                    if (said?.kind !== "quote") {
+                        globalStore.set(petUnreadAtom, true);
+                    }
                 }}
             />
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is

@@ -181,3 +181,19 @@ describe("the bubble", () => {
         expect(bubbleMs(ev("a", 1, { kind: "notify" }))).toBe(6_000);
     });
 });
+
+describe("a quote", () => {
+    const quote = ev("q", 1, { kind: "quote", text: "“Clear is better than clever.”", detail: "Rob Pike" });
+
+    it("is labelled with its author", () => {
+        expect(eventLabel(quote)).toBe("Rob Pike");
+    });
+
+    it("stays 10 seconds, long enough to read a line", () => {
+        expect(bubbleMs(quote)).toBe(10_000);
+    });
+
+    it("is said as it is", () => {
+        expect(bubbleText(quote)).toBe("“Clear is better than clever.”");
+    });
+});

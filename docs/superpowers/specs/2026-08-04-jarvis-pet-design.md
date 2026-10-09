@@ -430,6 +430,14 @@ bet loses.
 - **Blended condition expressions** (§4 decision 4). Harder to unit-test and harder to read at a glance than
   a precedence order.
 
+### Exceptions taken later
+
+- **Idle quotes (2026-10-09, the user's call).** Now and then the creature says a well-known line about
+  programming (`frontend/app/view/jarvis/petquotes.ts`). It is the one utterance that is not a read of committed
+  state, and it is kept from costing §2 anything: it speaks only at rest with nothing waiting, never over another
+  bubble or into a window you are not in, leaves no unread marker, is never listed in the peek, and Settings →
+  Appearance turns it off.
+
 ## 12. Out of scope
 
 - **Git-history capture.** Turning commits and diffs into vault nodes — so Jarvis can answer *why is this

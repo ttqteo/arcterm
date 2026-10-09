@@ -131,7 +131,12 @@ export function PetBubble({
                         <EventLabel event={said} className="text-[9px]" />
                         {/* clamped: a notification title passes through verbatim and would otherwise stretch
                             the bubble. Inline only, and links as plain text — the bubble is one button. */}
-                        <span className="line-clamp-3 text-[12px] leading-[1.45] text-secondary [overflow-wrap:anywhere]">
+                        <span
+                            className={cn(
+                                "text-[12px] leading-[1.45] text-secondary [overflow-wrap:anywhere]",
+                                said.kind === "quote" ? "line-clamp-4" : "line-clamp-3"
+                            )}
+                        >
                             <InlineMarkdown text={bubbleText(said)} plainLinks />
                         </span>
                     </button>

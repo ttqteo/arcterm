@@ -89,6 +89,7 @@ Cả ba công tắc thông báo mặc định bật.
 | **Fonts** | **Interface font** | Inter (mặc định), Hanken Grotesk, System UI. |
 | | **Code font** | JetBrains Mono (mặc định), Hack, Fira Code. |
 | **Jarvis** | Trang phục | **Flag shirt**, **Holds the flag** hoặc **Off**. Vào 30/4, 1/5 và 2/9 Jarvis mặc áo cờ kể cả khi tắt. |
+| **Jarvis** | **Jarvis quotes** | Bật (mặc định): thỉnh thoảng, khi không có gì chờ bạn, Jarvis nói một câu danh ngôn về lập trình. |
 
 ### Terminal
 

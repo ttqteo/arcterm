@@ -36,7 +36,9 @@ export interface PetEvent {
         | "ledger"
         // announcement channels: notifications and pending agent questions
         | "notify"
-        | "ask";
+        | "ask"
+        // a well-known line, said only when there is nothing else to say (petquotes.ts); never listed in the peek
+        | "quote";
     text: string;
     // message body / question body — the bubble shows only `text`; the peek renders this dimmed
     detail?: string;
@@ -65,6 +67,7 @@ const KIND_LABEL: Record<PetEvent["kind"], string> = {
     ledger: "Work state",
     notify: "Notice",
     ask: "Needs you",
+    quote: "Quote",
 };
 
 const LEVEL_LABEL: Record<NotifyLevel, string> = {
@@ -74,6 +77,9 @@ const LEVEL_LABEL: Record<NotifyLevel, string> = {
 };
 
 export function eventLabel(event: PetEvent): string {
+    if (event.kind === "quote") {
+        return event.detail || KIND_LABEL.quote; // the author
+    }
     return event.kind === "notify" ? LEVEL_LABEL[event.level ?? "info"] : KIND_LABEL[event.kind];
 }
 
@@ -83,9 +89,10 @@ export function bubbleText(event: PetEvent): string {
     return agent ? `${agent}: ${event.text}` : event.text;
 }
 
-// How long the bubble stays: a Needs-you one as long as the toast it replaces, anything else a moment.
+// How long the bubble stays: a Needs-you one as long as the toast it replaces, a quote long enough to read it, anything
+// else a moment.
 export function bubbleMs(event: PetEvent): number {
-    return event.kind === "ask" ? 15_000 : 6_000;
+    return event.kind === "ask" ? 15_000 : event.kind === "quote" ? 10_000 : 6_000;
 }
 
 // The last event the creature considered, not merely the last one it said. Both fields are needed: `at`
