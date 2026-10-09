@@ -7,7 +7,7 @@ import { askPayload, cardAnswer, cardCanAsk, parseAskReply } from "./ask-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
-import { memgateArgs, memgateLine } from "./memgate-core";
+import { jobslotArgs, jobslotLine } from "./jobslot-core";
 import { idleArgs } from "./status-core";
 import { usageArgs } from "./usage-core";
 
@@ -95,41 +95,53 @@ async function refusal($: EngineInterface, command: string): Promise<string | nu
     return active ? denial(command, await $.session.cwd()) : null;
 }
 
-// a heavy command (a build, the typecheck, a whole test suite) waits for the person's say on arcterm's card
-// while RAM is short: `wsh memgate` holds it, and its hold lines show here meanwhile. null lets it run, as
-// does any failure of wsh's. spawn, not run: run gives up after ten minutes, and the card can wait longer
-async function ramHold($: EngineInterface, command: string): Promise<string | null> {
+// a heavy command (a build, the typecheck, a whole test suite) waits for its turn in arcterm's job queue, and
+// holds the slot while it runs: `wsh jobslot` stays alive until this ends its stream, which kills it and
+// frees the slot. the stream's loop is the child's life, so this holds the iterator open across run(). its
+// queued lines show here meanwhile, and a refusal (the person skipped it on the card) denies the command.
+// any failure of wsh's lets the command run. spawn, not run: run gives up after ten minutes, and a queue
+// can wait longer
+async function withJobSlot<T>(
+    $: EngineInterface,
+    command: string,
+    run: () => Promise<T>
+): Promise<T | { deny: string }> {
     if (!active) {
-        return null;
+        return run();
     }
-    let held: string | null = null;
+    const stream = $.process.spawn({ argv: [WSH, ...jobslotArgs(command)] });
     let buffered = "";
+    let denied: string | null = null;
     try {
-        for await (const chunk of $.process.spawn({ argv: [WSH, ...memgateArgs(command)] })) {
-            if (chunk.stream !== "stdout") {
+        wait: for (;;) {
+            const step = await stream.next();
+            if (step.done) {
+                break;
+            }
+            if (step.value.stream !== "stdout") {
                 continue;
             }
-            const taken = takeLines(buffered + chunk.text);
+            const taken = takeLines(buffered + step.value.text);
             buffered = taken.rest;
             for (const line of taken.lines) {
-                const read = memgateLine(line);
+                const read = jobslotLine(line);
                 if (read && "hold" in read) {
                     $.ui.log(`arc: ${read.hold}`);
                 } else if (read) {
-                    held = read.refusal;
+                    denied = read.refusal;
+                    break wait;
                 }
             }
         }
     } catch (err) {
-        $.ui.log(`arc: wsh memgate failed: ${String(err)}`, { to: "debug" });
-        return null;
+        $.ui.log(`arc: wsh jobslot failed: ${String(err)}`, { to: "debug" });
     }
-    return held;
-}
-
-// why the shell command does not run: arcterm refuses it outright, or the person held it for RAM
-async function shellRefusal($: EngineInterface, command: string): Promise<string | null> {
-    return (await refusal($, command)) ?? (await ramHold($, command));
+    try {
+        return denied !== null ? { deny: denied } : await run();
+    } finally {
+        // ending the stream kills wsh, and the server's waiter cancel frees the slot. a no-op once wsh has exited
+        await stream.return(undefined as never).catch(() => undefined);
+    }
 }
 
 export const register: Register = (on) => {
@@ -201,13 +213,13 @@ export const register: Register = (on) => {
 
     // refused in code: a prompt's rule is one the model can talk itself out of
     on("tool.call", { tool: "Bash" }, async ($, e, next) => {
-        const why = await shellRefusal($, e.command);
-        return why === null ? next(e) : { deny: why };
+        const why = await refusal($, e.command);
+        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
     });
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
-        const why = await shellRefusal($, e.command);
-        return why === null ? next(e) : { deny: why };
+        const why = await refusal($, e.command);
+        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
     });
 
     // claude's own dialog asks in the terminal while the cockpit card asks beside it, and the first answer
