@@ -415,6 +415,13 @@ svg [aria-label="tip"] g path {
 ::highlight(doc-review-pending) {
     background-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
 }
+/* The finding in focus in the review dialog: the document blocks it names stay, the rest dims. */
+[data-doc-focusing] > * {
+    transition: opacity 150ms ease;
+}
+[data-doc-focusing] > :not([data-doc-focus]) {
+    opacity: 0.28;
+}
 
 /* Agents-view narration markdown (see markdownmessage.tsx). Neutral overlays, not palette hex. */
 .agent-md p {

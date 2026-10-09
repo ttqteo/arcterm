@@ -15,7 +15,7 @@ import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowUpRight, Check, FileText, SquareDashed, X, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { openTarget } from "../jarvis/openref";
 import { ICON_BTN } from "./agentheader";
 import type { AgentsViewModel } from "./agents";
@@ -24,6 +24,7 @@ import { cleanLabel } from "./answerbar";
 import { parseCanvasPath } from "./canvasmodel";
 import { canvasOwner } from "./canvasstore";
 import { docReviewAtom, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
+import { findingRef, taskOfHeading, type FindingRef } from "./docreviewlinks";
 import {
     addNote,
     composeAnswer,
@@ -73,6 +74,81 @@ const SECONDARY_BTN =
     "flex cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface-raised px-3 py-[6px] text-[12.5px] font-semibold text-secondary hover:border-edge-strong hover:bg-surface-hover";
 
 const closeDialog = () => globalStore.set(docReviewAtom, null);
+
+// a finding shows its place once the pointer rests on it, so sweeping down the list does not scroll the document
+const HOVER_DELAY_MS = 120;
+const FOCUS_ATTR = "data-doc-focus";
+const FOCUSING_ATTR = "data-doc-focusing";
+const SCROLL_MARGIN = 12;
+
+const headingLevel = (el: Element) => (/^H[1-6]$/.test(el.tagName) ? Number(el.tagName[1]) : null);
+
+// The rendered markdown's top-level blocks a finding names: each task's heading through the line before the next
+// heading at its level or above, or else the first block that mentions one of its code terms.
+function focusBlocks(md: Element, ref: FindingRef): Element[] {
+    const top = [...md.children];
+    const out: Element[] = [];
+    for (const n of ref.tasks) {
+        const at = top.findIndex((el) => headingLevel(el) != null && taskOfHeading(el.textContent ?? "") === n);
+        if (at < 0) {
+            continue;
+        }
+        const level = headingLevel(top[at]);
+        out.push(top[at]);
+        for (const el of top.slice(at + 1)) {
+            const l = headingLevel(el);
+            if (l != null && l <= level) {
+                break;
+            }
+            out.push(el);
+        }
+    }
+    if (out.length > 0) {
+        return out;
+    }
+    for (const term of ref.terms) {
+        const block = top.find((el) => el.textContent?.includes(term));
+        if (block) {
+            return [block];
+        }
+    }
+    return [];
+}
+
+function scrollToBlock(scroller: HTMLElement, el: Element) {
+    const box = scroller.getBoundingClientRect();
+    // the dialog scales while it opens, and rects are measured scaled
+    const scale = box.width / scroller.offsetWidth || 1;
+    const top = (el.getBoundingClientRect().top - box.top) / scale + scroller.scrollTop - SCROLL_MARGIN;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+
+// The finding in focus keeps its blocks and dims the rest of the document (tailwindsetup.css), scrolled to them.
+function useFindingFocus(
+    scrollRef: RefObject<HTMLElement | null>,
+    docRef: RefObject<HTMLElement | null>,
+    focus: string | null,
+    textKey: string
+) {
+    useEffect(() => {
+        const md = docRef.current?.firstElementChild;
+        const scroller = scrollRef.current;
+        if (focus == null || md == null || scroller == null) {
+            return;
+        }
+        const blocks = focusBlocks(md, findingRef(focus));
+        if (blocks.length === 0) {
+            return;
+        }
+        md.setAttribute(FOCUSING_ATTR, "");
+        blocks.forEach((b) => b.setAttribute(FOCUS_ATTR, ""));
+        scrollToBlock(scroller, blocks[0]);
+        return () => {
+            md.removeAttribute(FOCUSING_ATTR);
+            blocks.forEach((b) => b.removeAttribute(FOCUS_ATTR));
+        };
+    }, [focus, textKey]);
+}
 
 const NO_NOTES: DocNote[] = [];
 
@@ -128,6 +204,9 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
     const [draft, setDraft] = useState("");
     const [openId, setOpenId] = useState<string | null>(null);
     const [collapsed, setCollapsed] = useState(false);
+    const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+    const [pinIdx, setPinIdx] = useState<number | null>(null);
+    const focusIdx = hoverIdx ?? pinIdx;
 
     // the ask was answered or cleared (or the agent is gone, or it is a Doc review): nothing left for the dialog
     useEffect(() => {
@@ -147,6 +226,8 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
         dropPending();
         setOpenId(null);
         setCollapsed(false);
+        setHoverIdx(null);
+        setPinIdx(null);
     }, [askId]);
 
     const sent = agent != null && sentIds.has(askSentKey(agent) ?? "");
@@ -257,13 +338,20 @@ export function DocReviewDialog({ model }: { model: AgentsViewModel }) {
                             <DocumentPane
                                 path={review.path}
                                 quoting={quoting}
+                                focus={focusIdx != null ? (review.items[focusIdx] ?? null) : null}
                                 onOpen={() => {
                                     closeDialog();
                                     fireAndForget(() => openFileInCode(model, review.path));
                                 }}
                             />
                         )}
-                        <AskPane review={review}>
+                        <AskPane
+                            review={review}
+                            focusIdx={review.doc === "canvas" ? null : focusIdx}
+                            pinIdx={pinIdx}
+                            onHover={setHoverIdx}
+                            onPin={(i) => setPinIdx((pin) => (pin === i ? null : i))}
+                        >
                             {review.doc === "canvas" || askId == null ? null : (
                                 <NotesSection
                                     notes={notes}
@@ -372,12 +460,14 @@ function CanvasPane({ path, onOpen }: { path: string; onOpen: () => void }) {
     );
 }
 
-function DocumentPane({ path, quoting, onOpen }: { path: string; quoting: Quoting; onOpen: () => void }) {
+function DocumentPane(p: { path: string; quoting: Quoting; focus: string | null; onOpen: () => void }) {
+    const { path, quoting, onOpen } = p;
     const [load] = useFileText(path);
     const { file } = splitPath(path);
     const scrollRef = useRef<HTMLDivElement>(null);
     const docRef = useRef<HTMLDivElement>(null);
     useDocHighlights(docRef, quoting.notes, quoting.pending, load.text);
+    useFindingFocus(scrollRef, docRef, p.focus, load.text);
     const onMouseUp = () => {
         const passage = readSelection(docRef.current);
         if (passage) {
@@ -426,9 +516,28 @@ function DocumentPane({ path, quoting, onOpen }: { path: string; quoting: Quotin
     );
 }
 
-// children is the notes section, pinned under the decisions, which keep their own scroll
-function AskPane({ review, children }: { review: DialogReview; children?: ReactNode }) {
+// children is the notes section, pinned under the decisions, which keep their own scroll. Resting on an item
+// shows its place in the document; a click pins it there while you read, and a second click lets go.
+function AskPane(p: {
+    review: DialogReview;
+    focusIdx: number | null;
+    pinIdx: number | null;
+    onHover: (i: number | null) => void;
+    onPin: (i: number) => void;
+    children?: ReactNode;
+}) {
+    const { review, children } = p;
     const numbered = review.kind === "spec";
+    const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+    useEffect(() => () => clearTimeout(timer.current), []);
+    const hover = (i: number | null) => {
+        clearTimeout(timer.current);
+        if (i == null) {
+            p.onHover(null);
+        } else {
+            timer.current = setTimeout(() => p.onHover(i), HOVER_DELAY_MS);
+        }
+    };
     return (
         <div className="flex w-[460px] flex-none flex-col bg-surface-raised">
             <div className="sc flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-5 pb-5 pt-4">
@@ -443,7 +552,20 @@ function AskPane({ review, children }: { review: DialogReview; children?: ReactN
                 ) : null}
                 <ol className={cn("m-0 flex list-none flex-col p-0", numbered ? "gap-2.5" : "gap-3")}>
                     {review.items.map((item, i) => (
-                        <li key={i} className={cn(numbered && "grid grid-cols-[22px_minmax(0,1fr)]")}>
+                        <li
+                            key={i}
+                            data-doc-finding={i}
+                            data-pinned={p.pinIdx === i || undefined}
+                            onMouseEnter={() => hover(i)}
+                            onMouseLeave={() => hover(null)}
+                            onClick={() => p.onPin(i)}
+                            className={cn(
+                                "-mx-2 cursor-pointer rounded-[6px] px-2 py-1 hover:bg-surface-hover",
+                                p.pinIdx === i && "bg-surface-selected hover:bg-surface-selected",
+                                p.focusIdx === i && "shadow-[inset_2px_0_0_var(--color-accent)]",
+                                numbered && "grid grid-cols-[22px_minmax(0,1fr)]"
+                            )}
+                        >
                             {numbered ? (
                                 <span className="pt-0.5 text-[11px] tabular-nums text-muted">{i + 1}</span>
                             ) : null}

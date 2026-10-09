@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- In a Spec or Plan review, resting the pointer on a finding scrolls the document to the task it names and dims
+  the rest, so you read only the part it changes; click the finding to keep it shown while you read.
 - Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,
   type at a laptop or dribble a ball, picked at random each time, as well as standing or sitting still.
 - `Alt`+`C` switches an agent between Terminal, Canvas and Review from inside its terminal, where a bare `c` is
