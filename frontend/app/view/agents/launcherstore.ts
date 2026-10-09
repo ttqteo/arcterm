@@ -9,9 +9,11 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { prefillToLaunch, type NewRunPrefill } from "@/app/view/jarvis/newrun";
+import { createTempFileFromBlob, createTempFileFromFile } from "@/app/view/term/termutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { Runtime } from "./launch";
 import { draftShown, type LauncherKind } from "./launcher";
+import { imageRoom, type TaskImage } from "./launcherimages";
 import { planPathAtom, setRunShape, setStart } from "./runconfigstore";
 
 export const launcherKindAtom = atom<LauncherKind>("agent") as PrimitiveAtom<LauncherKind>;
@@ -38,6 +40,8 @@ export const launcherBranchListAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherSessionsAtom = atom<SessionInfo[] | null>(null) as PrimitiveAtom<SessionInfo[] | null>;
 // the session to resume, by id; honored only while it is among the choices (launcherresume.ts pickedResume)
 export const launcherResumeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// the images pasted or dropped into the Task box, each with its temp file once written (launcherimages.ts)
+export const launcherImagesAtom = atom<TaskImage[]>([]) as PrimitiveAtom<TaskImage[]>;
 // this open showed a draft a close had kept
 export const launcherRestoredAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBusyAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -52,6 +56,7 @@ function keptDraft() {
         goal: globalStore.get(launcherGoalAtom),
         planPath: globalStore.get(planPathAtom),
         prototype: globalStore.get(launcherPrototypeAtom),
+        images: globalStore.get(launcherImagesAtom).length,
     };
 }
 
@@ -87,7 +92,37 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherWorktreeAtom, false);
     globalStore.set(launcherBranchAtom, null);
     globalStore.set(launcherResumeAtom, null);
+    for (const img of globalStore.get(launcherImagesAtom)) {
+        URL.revokeObjectURL(img.previewUrl);
+    }
+    globalStore.set(launcherImagesAtom, []);
     globalStore.set(launcherRestoredAtom, false);
+}
+
+function patchImage(id: string, patch: Partial<TaskImage>): void {
+    globalStore.set(launcherImagesAtom, (prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+}
+
+// A paste is a bare blob (createTempFileFromBlob names it); a drop keeps its file name (createTempFileFromFile).
+export function addTaskImages(files: File[], from: "paste" | "drop"): void {
+    const room = imageRoom(globalStore.get(launcherImagesAtom).length, files.length);
+    for (const f of files.slice(0, room)) {
+        const id = crypto.randomUUID();
+        globalStore.set(launcherImagesAtom, (prev) => [...prev, { id, previewUrl: URL.createObjectURL(f) }]);
+        const write = from === "paste" ? createTempFileFromBlob(f) : createTempFileFromFile(f);
+        write.then(
+            (path) => patchImage(id, { path }),
+            (e) => patchImage(id, { error: String(e?.message ?? e) })
+        );
+    }
+}
+
+export function removeTaskImage(id: string): void {
+    const img = globalStore.get(launcherImagesAtom).find((i) => i.id === id);
+    if (img != null) {
+        URL.revokeObjectURL(img.previewUrl);
+    }
+    globalStore.set(launcherImagesAtom, (prev) => prev.filter((i) => i.id !== id));
 }
 
 // A launch consumed the draft. Hand-edited commands go with it; the pick, the project and the flags stay.

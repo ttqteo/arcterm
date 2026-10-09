@@ -55,6 +55,7 @@ import {
     type StartRowId,
 } from "./launcher";
 import { AgentFields, LAUNCHER_LABEL, useProjectBranches } from "./launcheragentfields";
+import { composeTaskWithImages, imagesPending } from "./launcherimages";
 import { pickedResume, resumeChoices, resumeLaunchSpec } from "./launcherresume";
 import { startLauncherRun } from "./launcherrun";
 import { RunFields } from "./launcherrunfields";
@@ -72,6 +73,7 @@ import {
     launcherCommandAtom,
     launcherFlagMenuAtom,
     launcherGoalAtom,
+    launcherImagesAtom,
     launcherKindAtom,
     launcherLaunchAbandoned,
     launcherLaunchTicket,
@@ -203,6 +205,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const branchPick = useAtomValue(launcherBranchAtom);
     const sessions = useAtomValue(launcherSessionsAtom);
     const resumeId = useAtomValue(launcherResumeAtom);
+    const images = useAtomValue(launcherImagesAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
     const restored = useAtomValue(launcherRestoredAtom);
@@ -288,7 +291,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             ? newAgentRamWarning(cap, "run", "worker")
             : null
         : newAgentRamWarning(cap, runtime);
-    const primaryDisabled = project == null || blocker != null || busy;
+    // an image still being written has no path to send yet; one that failed does not hold the launch
+    const imagesWriting = !isRun && imagesPending(images);
+    const primaryDisabled = project == null || blocker != null || busy || imagesWriting;
     // what an Escape closes first: a popover only while it is drawn (a branch list with no branches draws nothing)
     const flagMenuShown = !isRun && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
@@ -440,6 +445,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (!beginLauncherLaunch()) {
             return;
         }
+        // the task with its images: codex starting fresh takes them as --image after the prompt, the rest as a block
+        const { task: fullTask, extraArgs } = composeTaskWithImages(
+            runtime,
+            runtimeShowsTask(runtime) ? task : "",
+            images.flatMap((i) => (i.path ? [i.path] : [])),
+            resume != null
+        );
         try {
             await launchAgent(model, {
                 runtime,
@@ -448,7 +460,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     runtime,
                     naFlags[runtime] ?? {}
                 ),
-                task: runtimeShowsTask(runtime) ? task : "",
+                task: fullTask,
+                extraArgs,
                 projectPath: p.path,
                 projectName: p.name,
                 branch,
@@ -514,6 +527,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
 
     const launch = () => {
         if (project == null) {
+            return;
+        }
+        // Enter and Mod+Enter reach here as well as the button, which is disabled while an image is still writing
+        if (imagesWriting) {
             return;
         }
         if (isRun) {

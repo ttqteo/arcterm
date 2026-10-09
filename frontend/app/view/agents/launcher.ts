@@ -158,12 +158,14 @@ export interface LauncherDraft {
     goal: string;
     planPath: string;
     prototype: string;
+    // how many images sit under the Task box
+    images: number;
 }
 
-// Whether an open says "draft restored" (spec "Open, close and draft"): a close kept a task, a goal, a plan path or a
-// prototype, whichever pick the dialog opens on. Clear empties all four.
+// Whether an open says "draft restored" (spec "Open, close and draft"): a close kept a task, a goal, a plan path, a
+// prototype or an image, whichever pick the dialog opens on. Clear empties all five.
 export function draftShown(draft: LauncherDraft): boolean {
-    return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "");
+    return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "") || draft.images > 0;
 }
 
 // "resume" is the Resume list: it takes ↑↓ itself (launcheragentfields), so only Enter is the dialog's

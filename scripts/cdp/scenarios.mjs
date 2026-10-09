@@ -15230,7 +15230,7 @@ async function launcherBlockIds(h) {
     const { tabIds } = await caTabIds(h);
     const ids = [];
     for (const tabid of tabIds) {
-        const tab = await h.rpc("gettab", tabid);
+        const tab = await waveService(h, "object", "GetObject", [`tab:${tabid}`]);
         ids.push(...(tab?.blockids ?? []));
     }
     return ids;
@@ -15952,6 +15952,343 @@ const launcherResume = {
                 )
             );
         }
+        if (ctx.prevRecent !== undefined) {
+            const key = JSON.stringify(RECENT_PROJECTS_KEY);
+            await step("restore the recent projects", () =>
+                h.ev(
+                    ctx.prevRecent === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevRecent)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            // the store replaces projects.json by rename, which Windows refuses while something else holds the file
+            await step(`delete ${name}`, async () => {
+                for (let attempt = 1; ; attempt++) {
+                    try {
+                        return await h.rpc("deleteproject", { name });
+                    } catch (e) {
+                        if (attempt >= 3) throw e;
+                        await new Promise((r) => setTimeout(r, 400));
+                    }
+                }
+            });
+        }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        // the dialog's draft lives in memory; a reload hands the next scenario a fresh one
+        await step("reload", async () => {
+            await h.ev("location.reload()");
+            await new Promise((r) => setTimeout(r, 2500));
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step("remove a project dir", () => rmSync(dir, { recursive: true, force: true }));
+        }
+    },
+};
+
+// --- launcher-images: images pasted or dropped into the New agent dialog's Task box
+// (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). The events are dispatched on the textarea
+// with a DataTransfer, as a browser makes them. A synthetic paste has no default action, so what the textarea does
+// with pasted text is not asserted, only that the handler left the event alone. It never presses Launch: that would
+// start a real agent.
+const LAUNCHER_IMAGES_PROJECT = "verify-launcher-images";
+const LAUNCHER_IMAGES_CAP_BYTES = 3.5 * 1024 * 1024; // MAX_UPLOAD_BYTES (uploadfile.ts)
+const LAUNCHER_PRIMARY_LABEL = "/^(Launch agent|Resume agent|Open terminal|Start run|Starting…)/";
+
+// page side: a PNG File (a flat colour, or random pixels PNG cannot shrink) and the two events. paste and drop return
+// dispatchEvent's answer: false means the handler took the event (preventDefault), true means the browser keeps it.
+const launcherImagesPage = `(() => {
+    const task = () => document.querySelector('#launcher-task');
+    const png = async ({ size = 32, noise = false, hue = 200 } = {}) => {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const g = c.getContext('2d');
+        if (noise) {
+            const img = g.createImageData(size, size);
+            const bytes = new Uint8Array(img.data.buffer);
+            for (let o = 0; o < bytes.length; o += 65536) crypto.getRandomValues(bytes.subarray(o, o + 65536));
+            for (let i = 3; i < bytes.length; i += 4) bytes[i] = 255;
+            g.putImageData(img, 0, 0);
+        } else {
+            g.fillStyle = 'hsl(' + hue + ' 70% 50%)';
+            g.fillRect(0, 0, size, size);
+        }
+        const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+        return new File([blob], 'verify-' + hue + '.png', { type: 'image/png' });
+    };
+    const holding = (file) => {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        return dt;
+    };
+    return {
+        png,
+        holding,
+        paste: (dt) =>
+            task().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })),
+        drop: (dt) => task().dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })),
+    };
+})()`;
+
+const pasteImageExpr = (opts) => `(async () => {
+    const p = ${launcherImagesPage};
+    return { notPrevented: p.paste(p.holding(await p.png(${JSON.stringify(opts)}))) };
+})()`;
+
+const launcherImagesState = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const primary = [...d.querySelectorAll('button')].find((b) => ${LAUNCHER_PRIMARY_LABEL}.test(flat(b)));
+    const box = d.querySelector('#launcher-task');
+    const boxBottom = box?.getBoundingClientRect().bottom ?? 0;
+    const tiles = [...d.querySelectorAll('[data-task-image]')];
+    return {
+        box: !!box,
+        tiles: tiles.map((t) => t.getAttribute('data-task-image-state')),
+        srcs: tiles.map((t) => t.querySelector('img')?.getAttribute('src') ?? null),
+        errors: [...d.querySelectorAll('[data-task-image-error]')].map((e) => ({
+            text: flat(e),
+            warning: e.classList.contains('text-warning'),
+            belowBox: e.getBoundingClientRect().top >= boxBottom,
+        })),
+        restored: !!d.querySelector('[data-launcher-restored]'),
+        task: box?.value ?? null,
+        hint: flat(d.querySelector('label[for="launcher-task"]')?.parentElement),
+        primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
+    };
+})()`;
+
+// n tiles on screen, every one past pending
+const imageTilesSettled = (n) =>
+    `(() => { const t = [...(${LAUNCHER}?.querySelectorAll('[data-task-image]') ?? [])]; return t.length === ${n} && t.every((x) => x.getAttribute('data-task-image-state') !== 'pending'); })()`;
+
+// Pastes a ~2.4 MB noise PNG (under the 3.5 MB cap) and looks, in the same evaluate and from the paste's own tick, for
+// a pending tile: React has committed it by the time dispatchEvent returns or within a few ms, and the write (a read,
+// a base64 pass and an RPC) takes longer, so a short poll catches it without racing the render.
+const pendingProbeExpr = `(async () => {
+    const p = ${launcherImagesPage};
+    const d = ${LAUNCHER};
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const primary = () => [...d.querySelectorAll('button')].find((b) => ${LAUNCHER_PRIMARY_LABEL}.test(flat(b)));
+    const file = await p.png({ size: 900, noise: true, hue: 300 });
+    const notPrevented = p.paste(p.holding(file));
+    let seen = null;
+    for (const t0 = performance.now(); performance.now() - t0 < 1000; ) {
+        if (d.querySelector('[data-task-image-state="pending"]')) {
+            seen = { primaryDisabled: primary()?.disabled ?? null };
+            break;
+        }
+        await new Promise((r) => setTimeout(r, 4));
+    }
+    return { bytes: file.size, notPrevented, seen };
+})()`;
+
+const launcherImages = {
+    name: "launcher-images",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const dir = mkdtempSync(join(tmpdir(), `${LAUNCHER_IMAGES_PROJECT}-`));
+            ctx.dirs.push(dir);
+            await h.rpc("createproject", { name: LAUNCHER_IMAGES_PROJECT, path: dir });
+            ctx.projects.push(LAUNCHER_IMAGES_PROJECT);
+            await waitForProjectInConfig(h, LAUNCHER_IMAGES_PROJECT);
+            // recent-first puts the verify project on top; put the developer's own list back in teardown
+            ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
+            const recent = [LAUNCHER_IMAGES_PROJECT, ...JSON.parse(ctx.prevRecent ?? "[]")];
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(RECENT_PROJECTS_KEY)}, ${JSON.stringify(JSON.stringify(recent))})`
+            );
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. a project was registered and made recent", false, ctx.arrangeError);
+            return steps;
+        }
+        const state = () => h.ev(launcherImagesState);
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("cockpit");
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        let s = await h.ev(launcherState);
+        if (s == null) {
+            rec("0. the dialog opens", false, "no dialog");
+            return steps;
+        }
+        // any agent row with a Task box will do; Terminal has none
+        const agent = ["claude", "codex", "opencode", "pi", "agy"].find((id) => s.startRows.includes(id));
+        if (agent == null) {
+            rec("0. an agent with a Task box is offered", false, JSON.stringify(s.startRows));
+            return steps;
+        }
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, String(s.startRows.indexOf(agent) + 1));
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('#launcher-task')`, 5000);
+        await polishNap(300);
+        s = await state();
+        if (!s?.box || s.tiles.length !== 0) {
+            rec("0. the Task box is there and holds no image yet", false, JSON.stringify(s));
+            return steps;
+        }
+
+        // 1. one pasted image
+        const first = await h.ev(pasteImageExpr({ hue: 200 }));
+        const settled1 = await polishWaitFor(h, imageTilesSettled(1), 10000);
+        s = await state();
+        await h.shot("cdp-shots/launcher-images-1-one.png");
+        rec(
+            "1. pasting one image shows one tile that reaches ready, and the hint says paste or drop images",
+            first.notPrevented === false &&
+                settled1 &&
+                s.tiles.length === 1 &&
+                s.tiles[0] === "ready" &&
+                s.hint.includes("paste or drop images"),
+            JSON.stringify({ first, s })
+        );
+
+        // 2. a text-only paste is left to the browser
+        const text = await h.ev(`(() => {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', 'hello');
+            return { notPrevented: document.querySelector('#launcher-task').dispatchEvent(
+                new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })) };
+        })()`);
+        await polishNap(300);
+        s = await state();
+        rec(
+            "2. a paste of plain text only is not cancelled and adds no tile",
+            text.notPrevented === true && s.tiles.length === 1,
+            JSON.stringify({ text, tiles: s.tiles })
+        );
+
+        // 3. a second image, then the first one's ✕
+        await h.ev(pasteImageExpr({ hue: 20 }));
+        const settled2 = await polishWaitFor(h, imageTilesSettled(2), 10000);
+        const two = await state();
+        await h.ev(`${LAUNCHER}.querySelectorAll('[data-task-image] button[aria-label="Remove image"]')[0]?.click()`);
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-images-2-row.png");
+        rec(
+            "3. a second image makes two tiles; the first one's ✕ leaves the second",
+            settled2 && two.tiles.length === 2 && s.tiles.length === 1 && s.srcs[0] === two.srcs[1],
+            JSON.stringify({ two: two.srcs, after: s.srcs })
+        );
+
+        // 4. a dropped image
+        const dropped = await h.ev(`(async () => {
+            const p = ${launcherImagesPage};
+            return { notPrevented: p.drop(p.holding(await p.png({ hue: 120 }))) };
+        })()`);
+        const settled3 = await polishWaitFor(h, imageTilesSettled(2), 10000);
+        s = await state();
+        rec(
+            "4. dropping an image on the Task box is taken (not left to the browser) and adds a tile that reaches ready",
+            dropped.notPrevented === false && settled3 && s.tiles.join() === "ready,ready",
+            JSON.stringify({ dropped, tiles: s.tiles })
+        );
+
+        // 5. a launch waits for an image still being written
+        const probe = await h.ev(pendingProbeExpr);
+        await h.shot("cdp-shots/launcher-images-3-pending.png");
+        const left = await polishWaitFor(h, imageTilesSettled(3), 15000);
+        s = await state();
+        rec(
+            "5. a large image is pending while it is written, the primary button disabled until it is ready",
+            probe.bytes < LAUNCHER_IMAGES_CAP_BYTES &&
+                probe.notPrevented === false &&
+                probe.seen?.primaryDisabled === true &&
+                left &&
+                s.tiles.join() === "ready,ready,ready" &&
+                s.primary?.disabled === false,
+            JSON.stringify({ probe, left, tiles: s.tiles, primary: s.primary })
+        );
+
+        // 6. a file the writer refuses keeps its tile and says why
+        await h.ev(`(() => {
+            const dt = new DataTransfer();
+            dt.items.add(new File([new Uint8Array([1, 2, 3, 4])], 'x.bin', { type: 'image/x-none' }));
+            document.querySelector('#launcher-task').dispatchEvent(
+                new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+            return true;
+        })()`);
+        const errored = await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-task-image-state="error"]')`, 10000);
+        await polishNap(200);
+        s = await state();
+        await h.shot("cdp-shots/launcher-images-4-error.png");
+        rec(
+            "6. an unsupported image keeps a tile in the error state with a warning line below the box, and does not hold the launch",
+            errored &&
+                s.tiles.join() === "ready,ready,ready,error" &&
+                s.errors.length === 1 &&
+                s.errors[0].warning &&
+                s.errors[0].belowBox &&
+                /image\/x-none/.test(s.errors[0].text) &&
+                s.primary?.disabled === false,
+            JSON.stringify({ tiles: s.tiles, errors: s.errors, primary: s.primary })
+        );
+
+        // 7. a close keeps the images
+        const before = s.tiles.join();
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, "Escape");
+        const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-task-image]')`, 5000);
+        await polishNap(400);
+        s = await state();
+        await h.shot("cdp-shots/launcher-images-5-reopen.png");
+        rec(
+            "7. Escape and reopen: the same tiles are there, and the dialog says draft restored though the task is empty",
+            closed && s != null && s.tiles.join() === before && s.restored && s.task === "",
+            JSON.stringify({ closed, before, s })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`launcher-images teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // 8. never Launch: take every tile off, run the dialog's Clear (clearLauncherDraft) and close it
+        await step("clear the images and the draft", async () => {
+            if (!(await h.ev(`!!${LAUNCHER}`))) {
+                await h.ev(OPEN_NEW_AGENT);
+                await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+                await polishNap(300);
+            }
+            await h.ev(
+                `[...${LAUNCHER}.querySelectorAll('[data-task-image] button[aria-label="Remove image"]')].forEach((b) => b.click())`
+            );
+            await polishNap(200);
+            await h.ev(`${LAUNCHER}.querySelector('[data-launcher-restored] button')?.click()`);
+            await polishNap(200);
+            await h.ev(`${LAUNCHER}.querySelector('button[aria-label="Close"]')?.click()`);
+        });
         if (ctx.prevRecent !== undefined) {
             const key = JSON.stringify(RECENT_PROJECTS_KEY);
             await step("restore the recent projects", () =>
@@ -25414,6 +25751,7 @@ export const SCENARIOS = [
     newRunWindow,
     launcherScenario,
     launcherResume,
+    launcherImages,
     paletteActions,
     paletteGoal,
     modelPicks,

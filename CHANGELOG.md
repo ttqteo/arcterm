@@ -12,6 +12,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.
 - `Alt`+`1`…`9` jumps to an agent in the Agent surface's Active list, even from inside its terminal; hold `Alt` a
   moment and each agent row shows its number. Holding `Ctrl` (`Cmd` on a Mac) likewise numbers the rail's surfaces
   for `Ctrl`+`1`…`7`.
