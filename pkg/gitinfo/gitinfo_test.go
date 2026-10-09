@@ -39,6 +39,39 @@ func repoWithChange(t *testing.T) string {
 	return dir
 }
 
+// A bare remote the repo pushes to, so @{u} resolves.
+func repoWithUpstream(t *testing.T) (dir, bare string) {
+	t.Helper()
+	dir = repoWithChange(t)
+	bare = t.TempDir()
+	git(t, bare, "init", "-q", "--bare", "-b", "main")
+	git(t, dir, "remote", "add", "origin", bare)
+	git(t, dir, "push", "-q", "-u", "origin", "main")
+	return dir, bare
+}
+
+func TestGetChangesUpstreamCounts(t *testing.T) {
+	dir, _ := repoWithUpstream(t)
+	git(t, dir, "commit", "-q", "--allow-empty", "-m", "local only")
+	ch, err := GetChanges(context.Background(), dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Upstream != "origin/main" || ch.UpstreamAhead != 1 || ch.UpstreamBehind != 0 {
+		t.Fatalf("upstream = %q +%d -%d, want origin/main +1 -0", ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind)
+	}
+}
+
+func TestGetChangesNoUpstream(t *testing.T) {
+	ch, err := GetChanges(context.Background(), repoWithChange(t), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Upstream != "" || ch.UpstreamAhead != 0 || ch.UpstreamBehind != 0 {
+		t.Fatalf("want no upstream, got %q +%d -%d", ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind)
+	}
+}
+
 func TestHeadCommit(t *testing.T) {
 	dir := repoWithChange(t) // has one commit ("init") + uncommitted edits
 	sha, err := HeadCommit(context.Background(), dir)

@@ -60,6 +60,36 @@ describe("loadFilesForScope, run range", () => {
     });
 });
 
+describe("loadFilesForScope, upstream counts", () => {
+    it("carries the upstream and both counts into the state the sync bar reads", async () => {
+        gitChanges.mockResolvedValue({
+            isrepo: true,
+            branch: "main",
+            statusz: "M  x.ts\0",
+            numstat: "1\t0\tx.ts\n",
+            upstream: "origin/main",
+            upstreamahead: 2,
+            upstreambehind: 1,
+        });
+
+        await loadFilesForScope(projectScopeVal("p"));
+        await new Promise((r) => setTimeout(r, 0));
+
+        const s = globalStore.get(filesStateAtom);
+        expect([s?.upstream, s?.upstreamAhead, s?.upstreamBehind]).toEqual(["origin/main", 2, 1]);
+    });
+
+    it("reads a branch with no upstream as empty and 0/0 (the wire omits the zero values)", async () => {
+        gitChanges.mockResolvedValue({ isrepo: true, branch: "main", statusz: "M  x.ts\0", numstat: "1\t0\tx.ts\n" });
+
+        await loadFilesForScope(projectScopeVal("p"));
+        await new Promise((r) => setTimeout(r, 0));
+
+        const s = globalStore.get(filesStateAtom);
+        expect([s?.upstream, s?.upstreamAhead, s?.upstreamBehind]).toEqual(["", 0, 0]);
+    });
+});
+
 describe("loadFilesForScope, session range", () => {
     it("resolves the session-start ts, sends it as sessionstartts, and records the echoed base as the anchor", async () => {
         resolveCwd.mockResolvedValue("/wt");

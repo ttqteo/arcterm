@@ -1143,6 +1143,9 @@ declare global {
         ref?: string;
         head?: string;
         basebranch?: string;
+        upstream?: string;
+        upstreamahead?: number;
+        upstreambehind?: number;
     };
 
     // wshrpc.CommandGitCommitChangesData

@@ -35,6 +35,11 @@ type Changes struct {
 	// the open surface has to be noticeable, and comparing one sha is what lets the surface re-read the
 	// log only when the log has actually changed.
 	Head string
+	// HEAD's upstream ("origin/main") and how far HEAD is from it. "" when the branch has none or HEAD is
+	// detached: a state the sync bar draws, not an error.
+	Upstream       string
+	UpstreamAhead  int
+	UpstreamBehind int
 }
 
 // quotePath off: without -z, git octal-escapes a non-ASCII path ("t\303\252n.txt") in numstat, so its
@@ -43,6 +48,23 @@ func run(ctx context.Context, cwd string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false", "-C", cwd}, args...)...)
 	out, err := cmd.Output()
 	return string(out), err
+}
+
+// upstreamCounts names HEAD's upstream and counts the commits each side has that the other lacks.
+func upstreamCounts(ctx context.Context, cwd string) (string, int, int) {
+	up, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		return "", 0, 0
+	}
+	up = strings.TrimSpace(up)
+	out, err := run(ctx, cwd, "rev-list", "--left-right", "--count", "@{u}...HEAD")
+	f := strings.Fields(out)
+	if err != nil || len(f) != 2 {
+		return up, 0, 0
+	}
+	behind, _ := strconv.Atoi(f[0])
+	ahead, _ := strconv.Atoi(f[1])
+	return up, ahead, behind
 }
 
 func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
@@ -61,6 +83,7 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	if out, herr := run(ctx, cwd, "rev-parse", "HEAD"); herr == nil {
 		head = strings.TrimSpace(out)
 	}
+	up, ahead, behind := upstreamCounts(ctx, cwd)
 	// cwd's path within the repo (e.g. "services/foo/"), empty when cwd is the repo root. When cwd is
 	// a subdirectory — a microservice inside a monorepo — this scopes the surface to cwd's subtree and
 	// makes every path cwd-relative, so a path fed back as a `git -C cwd` pathspec
@@ -84,7 +107,8 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 		// git diff omits untracked files (nothing in HEAD/index to diff), so a new file would show +0.
 		// Append synthetic numstat rows for untracked files so their added lines count in the totals.
 		numstat += untrackedNumstat(cwd, statusZ)
-		return &Changes{Branch: strings.TrimSpace(branch), StatusZ: statusZ, Numstat: numstat, IsRepo: true, Head: head}, nil
+		return &Changes{Branch: strings.TrimSpace(branch), StatusZ: statusZ, Numstat: numstat, IsRepo: true, Head: head,
+			Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind}, nil
 	}
 	// ref mode: tracked changes come from the base diff (committed + uncommitted); untracked files
 	// are not in the base, so their ?? rows are carried over from status verbatim.
@@ -93,7 +117,8 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	untrackedZ := untrackedEntriesZ(statusZ)
 	numstat, _ := run(ctx, cwd, "diff", "--numstat", "--relative", ref)
 	numstat += untrackedNumstat(cwd, untrackedZ)
-	return &Changes{Branch: strings.TrimSpace(branch), StatusZ: trackedZ + untrackedZ, Numstat: numstat, IsRepo: true, Head: head}, nil
+	return &Changes{Branch: strings.TrimSpace(branch), StatusZ: trackedZ + untrackedZ, Numstat: numstat, IsRepo: true, Head: head,
+		Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind}, nil
 }
 
 // GetRangeChanges computes the per-file changes introduced by the commit range base..end — the commits

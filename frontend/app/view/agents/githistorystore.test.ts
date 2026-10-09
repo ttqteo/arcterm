@@ -82,6 +82,9 @@ beforeEach(() => {
         changes: RUN_CHANGES as any,
         ref: "base000",
         head: "aaa1111",
+        upstream: "",
+        upstreamAhead: 0,
+        upstreamBehind: 0,
     });
 });
 
@@ -152,6 +155,9 @@ describe("loadHistory selection settling", () => {
             changes: RUN_CHANGES as any,
             ref: "base000",
             head: "aaa1111",
+            upstream: "",
+            upstreamAhead: 0,
+            upstreamBehind: 0,
         });
         await loadHistory(CWD, RUN_OPTS, RUN);
         await settle();
@@ -443,6 +449,9 @@ describe("startFromTop", () => {
             changes: { files: [] } as any,
             ref: "",
             head: "aaa",
+            upstream: "",
+            upstreamAhead: 0,
+            upstreamBehind: 0,
         });
         globalStore.set(historyFiltersAtom, { author: "dana", path: "", text: "" });
         globalStore.set(historyScrollAtom, 300);

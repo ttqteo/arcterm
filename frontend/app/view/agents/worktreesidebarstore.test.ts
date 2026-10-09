@@ -173,6 +173,9 @@ describe("withLiveCount", () => {
         },
         ref: "",
         head: "abc",
+        upstream: "",
+        upstreamAhead: 0,
+        upstreamBehind: 0,
         ...over,
     });
     const wts = [
