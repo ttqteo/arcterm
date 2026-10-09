@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisdossier"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
@@ -53,13 +54,29 @@ func extractLayer2(d *jarvisdossier.Dossier, run *waveobj.Run, channelName strin
 	return AttributedEdge{}, false
 }
 
-// windowsOverlap reports whether the run's active window intersects the dossier's. An active dossier's
-// window extends to now; a run with no completion extends to now.
-func windowsOverlap(d *jarvisdossier.Dossier, run *waveobj.Run, now int64) bool {
-	dEnd := d.Updated
-	if d.Status == "active" {
-		dEnd = now
+// dossierActiveUntil is when the dossier's work last went on: its last update, or the end of the latest of its
+// own (layer-1) runs, or now while one of them is still running. An active dossier used to reach to now by its
+// status alone, and since nothing closes a dossier when its runs finish, every dossier that ever ran in a repo
+// reached every new run there: a fresh run read 14 structural edges, one per old plan in the repo.
+func dossierActiveUntil(d *jarvisdossier.Dossier, ownRuns []*waveobj.Run, now int64) int64 {
+	end := d.Updated
+	if d.Status != "active" {
+		return end
 	}
+	for _, r := range ownRuns {
+		if r.CompletedTs == 0 && (r.Status == jarvis.RunStatus_Executing || r.Status == jarvis.RunStatus_Planning) {
+			return now
+		}
+		if r.CompletedTs > end {
+			end = r.CompletedTs
+		}
+	}
+	return end
+}
+
+// windowsOverlap reports whether the run's active window intersects the dossier's, which runs from its
+// creation to dEnd (dossierActiveUntil). A run with no completion extends to now.
+func windowsOverlap(d *jarvisdossier.Dossier, dEnd int64, run *waveobj.Run, now int64) bool {
 	rStart := run.CreatedTs
 	rEnd := run.CompletedTs
 	if rEnd == 0 {
@@ -75,13 +92,14 @@ func pastProbation(run *waveobj.Run, now int64) bool {
 }
 
 // extractLayer3 fires a weak structural edge when the run is in one of the dossier's anchor repos and
-// their windows overlap. Self-corrects: a concrete different ticket in the run's commits retracts it.
-// Time-boxes: a never-reinforced run finished beyond the time-box decays (not returned).
-func extractLayer3(d *jarvisdossier.Dossier, run *waveobj.Run, anchorPaths map[string]bool, commitSubjects []string, now int64) (AttributedEdge, bool) {
+// their windows overlap; dEnd is where the dossier's window ends (dossierActiveUntil). Self-corrects: a
+// concrete different ticket in the run's commits retracts it. Time-boxes: a never-reinforced run finished
+// beyond the time-box decays (not returned).
+func extractLayer3(d *jarvisdossier.Dossier, run *waveobj.Run, anchorPaths map[string]bool, dEnd int64, commitSubjects []string, now int64) (AttributedEdge, bool) {
 	if len(anchorPaths) == 0 || !anchorPaths[run.ProjectPath] {
 		return AttributedEdge{}, false
 	}
-	if !windowsOverlap(d, run, now) {
+	if !windowsOverlap(d, dEnd, run, now) {
 		return AttributedEdge{}, false
 	}
 	runEnd := run.CompletedTs
@@ -140,6 +158,7 @@ func assembleEdges(d *jarvisdossier.Dossier, runs []*waveobj.Run, lk edgeLookups
 	m := map[string]AttributedEdge{}
 	anchorPaths := map[string]bool{}
 	l1 := map[string]bool{}
+	var ownRuns []*waveobj.Run
 
 	// layer 1: the dossier's canonical run references (written by F at dispatch, or hardened by D).
 	for _, ref := range d.Refs {
@@ -151,8 +170,10 @@ func assembleEdges(d *jarvisdossier.Dossier, runs []*waveobj.Run, lk edgeLookups
 		l1[oref] = true
 		if r := byORef[oref]; r != nil {
 			anchorPaths[r.ProjectPath] = true
+			ownRuns = append(ownRuns, r)
 		}
 	}
+	dEnd := dossierActiveUntil(d, ownRuns, now)
 
 	// layers 2 & 3 over the remaining candidate runs.
 	for _, r := range runs {
@@ -164,7 +185,7 @@ func assembleEdges(d *jarvisdossier.Dossier, runs []*waveobj.Run, lk edgeLookups
 		if e, ok := extractLayer2(d, r, lk.channelName(r.ChannelOID), subs); ok {
 			mergeInto(m, e)
 		}
-		if e, ok := extractLayer3(d, r, anchorPaths, subs, now); ok {
+		if e, ok := extractLayer3(d, r, anchorPaths, dEnd, subs, now); ok {
 			mergeInto(m, e)
 		}
 	}

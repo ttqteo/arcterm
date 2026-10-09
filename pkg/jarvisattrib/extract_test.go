@@ -46,27 +46,63 @@ func TestLayer3AnchoredCorrelation(t *testing.T) {
 	run := &waveobj.Run{OID: "r1", ProjectPath: "/repo/app", CreatedTs: now - 3000, CompletedTs: now - 1000}
 
 	// in anchor repo + overlapping window + no contradicting ticket → weak edge
-	e, ok := extractLayer3(d, run, anchor, nil, now)
+	e, ok := extractLayer3(d, run, anchor, now, nil, now)
 	if !ok || e.Confidence != weightLayer3 || e.Provenance != provStructural || !containsLayer(e.Layers, 3) {
 		t.Fatalf("expected weak structural edge, got %+v ok=%v", e, ok)
 	}
 
 	// wrong repo → no edge
-	if _, ok := extractLayer3(d, &waveobj.Run{OID: "r2", ProjectPath: "/other", CreatedTs: now - 3000}, anchor, nil, now); ok {
+	if _, ok := extractLayer3(d, &waveobj.Run{OID: "r2", ProjectPath: "/other", CreatedTs: now - 3000}, anchor, now, nil, now); ok {
 		t.Fatal("run outside anchor repo must not correlate")
 	}
 	// no anchors at all → no edge
-	if _, ok := extractLayer3(d, run, map[string]bool{}, nil, now); ok {
+	if _, ok := extractLayer3(d, run, map[string]bool{}, now, nil, now); ok {
 		t.Fatal("no anchor => layer 3 cannot fire")
 	}
 	// self-correction: commit carries a DIFFERENT ticket → contradicted, no edge
-	if _, ok := extractLayer3(d, run, anchor, []string{"OTHER-9 unrelated"}, now); ok {
+	if _, ok := extractLayer3(d, run, anchor, now, []string{"OTHER-9 unrelated"}, now); ok {
 		t.Fatal("a different concrete ticket must retract the weak edge")
 	}
 	// time-boxed: run finished long ago, never reinforced → decays
 	old := &waveobj.Run{OID: "r3", ProjectPath: "/repo/app", CreatedTs: now - timeBoxMs - 5000, CompletedTs: now - timeBoxMs - 1000}
-	if _, ok := extractLayer3(d, old, anchor, nil, now); ok {
+	if _, ok := extractLayer3(d, old, anchor, now, nil, now); ok {
 		t.Fatal("a run completed beyond the time-box must decay")
+	}
+}
+
+// An active dossier reaches a new run only while its own work goes on. Nothing closes a dossier when its runs
+// finish, so by status alone every old plan in a repo reached every new run there (a fresh run read
+// "+14 more").
+func TestAssembleBoundsAnActiveDossierByItsOwnRuns(t *testing.T) {
+	const now = int64(1_000_000_000_000)
+	const hour = int64(3_600_000)
+	lk := edgeLookups{channelName: func(string) string { return "" }, commits: func(*waveobj.Run) []string { return nil }}
+	fresh := &waveobj.Run{OID: "fresh", ProjectPath: "/repo/app", Status: "executing", CreatedTs: now - hour}
+	dossier := func(own *waveobj.Run) []AttributedEdge {
+		d := &jarvisdossier.Dossier{ID: "task-old", Status: "active", Created: own.CreatedTs, Updated: own.CreatedTs, Refs: []string{"run-" + own.OID}}
+		return assembleEdges(d, []*waveobj.Run{own, fresh}, lk, now)
+	}
+	reaches := func(edges []AttributedEdge) bool {
+		for _, e := range edges {
+			if e.RunORef == "run:fresh" {
+				return true
+			}
+		}
+		return false
+	}
+
+	finished := &waveobj.Run{OID: "own", ProjectPath: "/repo/app", Status: "done", CreatedTs: now - 50*hour, CompletedTs: now - 48*hour}
+	if reaches(dossier(finished)) {
+		t.Fatal("a dossier whose own run finished two days ago reached a run started an hour ago")
+	}
+	running := &waveobj.Run{OID: "own", ProjectPath: "/repo/app", Status: "executing", CreatedTs: now - 50*hour}
+	if !reaches(dossier(running)) {
+		t.Fatal("a dossier whose own run is still going must reach a run beside it in the same repo")
+	}
+	// a blocked run is not going: a lead the app restart stopped holds no dossier open
+	blocked := &waveobj.Run{OID: "own", ProjectPath: "/repo/app", Status: "blocked", CreatedTs: now - 50*hour}
+	if reaches(dossier(blocked)) {
+		t.Fatal("a dossier whose own run is blocked reached a new run")
 	}
 }
 
@@ -154,7 +190,7 @@ func TestAssembleMergesAndOrders(t *testing.T) {
 	const now = int64(1_000_000_000_000)
 	// dossier already has a canonical layer-1 ref to run r0, ticket matches r1, r2 is a weak same-repo prior.
 	d := &jarvisdossier.Dossier{
-		ID: "task-1", Ticket: "PROJ-142", Status: "active", Created: now - 10000,
+		ID: "task-1", Ticket: "PROJ-142", Status: "active", Created: now - 10000, Updated: now - 1000,
 		Refs: []string{"run-r0", "dec-abc"}, // dec- is a decision ref, ignored by run attribution
 	}
 	runs := []*waveobj.Run{
