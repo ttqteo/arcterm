@@ -126,6 +126,7 @@ export interface LaunchMetaSpec {
     startupCommand: string; // resolved command (defaults to the runtime cmd; user-editable)
     startupArgs?: string[]; // exact argv to launch with (pi session resume); used verbatim, never split
     task: string;
+    extraArgs?: string[]; // argv after the task (codex --image); never part of agent:baseargs
     cwd: string;
 }
 
@@ -158,6 +159,7 @@ export function buildLaunchMeta(spec: LaunchMetaSpec): Record<string, unknown> {
         }
         args.push(task);
     }
+    args.push(...(spec.extraArgs ?? []));
     const meta: Record<string, unknown> = {
         view: "term",
         controller: "cmd",

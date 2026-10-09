@@ -3,6 +3,7 @@
 
 // Always-on keyboard hints footer. Three postures, all in one bar:
 //  - leader active (e.g. after Ctrl+G): show the continuation list (the former WhichKeyBar).
+//  - Ctrl or Alt held on its own: every chord on it that would fire now (heldHints), on every surface.
 //  - otherwise: show visibleHints(ctx) — surface hints at rest, and only editable-surviving chords
 //    (dimmed) when focus is in the terminal. In-terminal falls out of the filter, not a special case.
 // Mounted in layout flow (reserves ~28px), so it never overlays content.
@@ -14,11 +15,13 @@ import { bindingsAtom } from "@/app/store/keybindings/store";
 import { watchFocusedAgent, whenVersionAtom } from "@/app/store/keybindings/whenstate";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { formatChordString } from "@/util/keysym";
+import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 import { ctrlHeldAtom } from "./ctrlheld";
-import { visibleHints } from "./footer-visible";
+import { digitHintAtom } from "./digithints";
+import { heldHints, visibleHints, type HintChip } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS } from "./footerhints";
 import { FooterStatus } from "./footerstatus";
 
@@ -61,11 +64,17 @@ function Chip({ glyph, label, lit }: { glyph: string; label: string; lit?: boole
     );
 }
 
+function chipGlyph(c: HintChip): string {
+    const glyph = c.glyph ?? formatChordString(c.keys!);
+    return c.rangeTo != null && c.rangeTo > 1 ? `${glyph}–${c.rangeTo}` : glyph;
+}
+
 export function HintsFooter({ model }: { model: AgentsViewModel }) {
     const surface = useAtomValue(model.surfaceAtom);
     const leader = useAtomValue(activeLeaderAtom);
     const bindings = useAtomValue(bindingsAtom);
     const ctrlHeld = useAtomValue(ctrlHeldAtom);
+    const held = useAtomValue(digitHintAtom);
     // subscribe-only: some when(ctx) predicates read state ctx doesn't carry (see whenstate.ts), so
     // this is what tells React to recompute chips below when that state changes.
     useAtomValue(whenVersionAtom);
@@ -93,6 +102,21 @@ export function HintsFooter({ model }: { model: AgentsViewModel }) {
                 <div className={CHIP_ROW}>
                     {items.map((it) => (
                         <Chip key={it.next} glyph={it.next} label={it.label} />
+                    ))}
+                </div>
+            </FooterBar>
+        );
+    }
+
+    // Held posture: Ctrl or Alt down on its own past the hint delay, the same moment the rail and the Active list number
+    // their rows. Not dimmed in the terminal: there these chords are the only keys that reach the cockpit.
+    if (held != null) {
+        const chips = heldHints(deriveKeyContext(), bindings, held, isMacOS());
+        return (
+            <FooterBar model={model}>
+                <div className={CHIP_ROW}>
+                    {chips.map((c) => (
+                        <Chip key={c.keys} glyph={chipGlyph(c)} label={c.label} lit />
                     ))}
                 </div>
             </FooterBar>

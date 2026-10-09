@@ -157,9 +157,9 @@ function statTitle(s: AgentRailStat, canAttach: boolean): string {
     }
 }
 
-// RailStats counts the agent's lists after the tabs, one icon each in a fixed order, so the rail keeps one shape while
-// the body lists only what holds something. A count opens its section; an empty Uploads attaches; any other 0 is inert.
-// aria-disabled, not disabled: a disabled button shows no tooltip.
+// RailStats counts the agent's lists after the tabs, one icon each in a fixed order, only those a click acts on: a count
+// opens its section; an empty Uploads attaches (inert, with aria-disabled, where there is no terminal to attach to; not
+// disabled: a disabled button shows no tooltip). An empty list has no icon.
 export function RailStats({
     stats,
     canAttach,

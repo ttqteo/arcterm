@@ -34,7 +34,8 @@ and `resumeLaunchSpec(session, task, flags)`.
 
 ## Paste images into the task
 
-**Input.** Only for runtimes that show the Task box (Claude, Codex, Antigravity).
+**Input.** Only for runtimes that show the Task box (`runtimeShowsTask`: every runtime but Terminal — Claude, Codex,
+Antigravity, opencode and pi).
 
 - Ctrl+V: `onPaste` looks for image items in `clipboardData`. With images it prevents the default, writes each with
   `createTempFileFromBlob`, and still inserts any text the clipboard also carried. Without images the paste is
@@ -53,7 +54,8 @@ like the rest of the draft. `clearLauncherDraft` / `endLauncherDraft` empty it a
 
 - Codex: its native `--image <p1>,<p2>` placed after the task prompt (the option is variadic and would swallow a prompt
   that followed it). A path containing a comma falls back to the text block below.
-- Claude and Antigravity: a block appended to the task, which the agent reads with its file tools:
+- Claude, Antigravity, opencode and pi (and a Codex resume): a block appended to the task, which the agent reads with
+  its file tools:
   ```
   Attached images:
   - C:\…\waveterm_paste_….png

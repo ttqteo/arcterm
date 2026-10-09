@@ -2394,6 +2394,7 @@ declare global {
         "session:project"?: string;
         "session:effort"?: string;
         "session:collapsedgroups"?: string[];
+        "session:later"?: {[key: string]: number};
         "session:helper"?: boolean;
         "app:loom"?: boolean;
         "agent:transcriptpath"?: string;

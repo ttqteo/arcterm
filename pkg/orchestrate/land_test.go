@@ -341,7 +341,12 @@ func TestLandKeepsUncommittedEdits(t *testing.T) {
 		writeFile(t, filepath.Join(f.project, "base.txt"), edit)
 		head := gitCmd(t, f.project, "rev-parse", "main")
 
-		f.assertHeld(t, f.landRun(t, false), head, "base.txt")
+		// git's own text names the file too; the reason must say it in words, not quote the git command
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "would overwrite uncommitted changes in the checkout: base.txt")
+		if strings.Contains(land.Reason, "git [merge") {
+			t.Fatalf("reason %q quotes the git command", land.Reason)
+		}
 		if got := readFile(t, filepath.Join(f.project, "base.txt")); got != edit {
 			t.Fatalf("base.txt = %q, want the edit byte-identical", got)
 		}
@@ -357,6 +362,27 @@ func TestLandKeepsUncommittedEdits(t *testing.T) {
 			t.Fatalf("base.txt = %q, want the edit intact", got)
 		}
 	})
+}
+
+// git() trims each line of git's output, so the files are found by the lines around them, not by git's tab
+func TestOverwrittenFilesReadsGitsRefusal(t *testing.T) {
+	cases := []struct {
+		name, out string
+		files     []string
+		untracked bool
+	}{
+		{"uncommitted", "git [merge]: exit status 2: error: Your local changes to the following files would be overwritten by merge:\nCHANGELOG.md\npkg/a.go\nPlease commit your changes or stash them before you merge.\nAborting\nMerge with strategy ort failed.", []string{"CHANGELOG.md", "pkg/a.go"}, false},
+		{"untracked", "error: The following untracked working tree files would be overwritten by merge:\n\tnew.txt\nPlease move or remove them before you merge.\nAborting", []string{"new.txt"}, true},
+		{"anything else", "fatal: refusing to merge unrelated histories", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			files, untracked := overwrittenFiles(c.out)
+			if !slices.Equal(files, c.files) || untracked != c.untracked {
+				t.Fatalf("overwrittenFiles = %v, %v, want %v, %v", files, untracked, c.files, c.untracked)
+			}
+		})
+	}
 }
 
 // the lead writes its spec or plan in the checkout before submit, and the engine commits the same file on

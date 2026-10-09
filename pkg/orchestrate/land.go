@@ -453,16 +453,35 @@ func mergeRefusal(ctx context.Context, project, base string, merr error) string 
 		}
 		return fmt.Sprintf("the merge conflicts with %s in %s; it was aborted", base, files)
 	}
-	var files []string
-	for _, line := range strings.Split(merr.Error(), "\n") {
-		if strings.HasPrefix(line, "\t") {
-			files = append(files, strings.TrimSpace(line))
+	if files, untracked := overwrittenFiles(merr.Error()); len(files) > 0 {
+		what := "uncommitted changes"
+		if untracked {
+			what = "untracked files"
 		}
-	}
-	if len(files) > 0 {
-		return "git refused the merge because it would overwrite uncommitted changes in the checkout: " + strings.Join(files, ", ")
+		return fmt.Sprintf("git refused the merge because it would overwrite %s in the checkout: %s", what, strings.Join(files, ", "))
 	}
 	return "git refused the merge: " + merr.Error()
+}
+
+// overwrittenFiles reads the files git names under its "would be overwritten by merge:" line, up to its "Please
+// commit" (or "Please move or remove") line. The lines are matched by those bounds, not git's tab indent, which
+// git() trims; untracked is git's untracked-files form of the refusal.
+func overwrittenFiles(out string) (files []string, untracked bool) {
+	in := false
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasSuffix(line, "would be overwritten by merge:"):
+			in = true
+			untracked = untracked || strings.Contains(line, "untracked")
+		case !in || line == "":
+		case strings.HasPrefix(line, "Please ") || line == "Aborting":
+			in = false
+		default:
+			files = append(files, line)
+		}
+	}
+	return files, untracked
 }
 
 // planTitleSuffix ends the H1 of a plan written from the writing-plans template; a commit subject names the

@@ -64,7 +64,10 @@ function Section(p: {
                     {section.label.startsWith("§") ? (
                         <span className="text-[12px] text-muted">{section.label}</span>
                     ) : null}
-                    <h2 className={cn("m-0 font-semibold text-primary", HEADING[section.level] ?? HEADING[3])}>
+                    <h2
+                        data-outline-level={section.level}
+                        className={cn("m-0 font-semibold text-primary", HEADING[section.level] ?? HEADING[3])}
+                    >
                         {section.title}
                     </h2>
                 </div>

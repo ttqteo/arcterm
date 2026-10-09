@@ -11,8 +11,7 @@ import { endedWorkerId, holdsTask, NO_LINEAGE, workerAsk, type Lineage, type Run
 
 export const UNGROUPED_PROJECT = "ungrouped";
 
-// `under` marks a row of a run listed beneath the session that started it, which the tree draws one level in
-export type AgentTreeRow = (
+export type AgentTreeRow =
     | { kind: "group"; project: string; count: number; attn: number }
     | { kind: "parent"; agent: AgentVM; project: string }
     // an orchestrator lead; `live` counts its workers that are not done
@@ -36,8 +35,7 @@ export type AgentTreeRow = (
     | { kind: "stage"; agent: AgentVM; project: string; run: RunInfo; stageRole: string; outcome?: StageOutcome }
     // the fold of what finished: `count` done tasks and `stages` stage sessions with a verdict
     | { kind: "done"; project: string; run: RunInfo; count: number; stages: number; open: boolean }
-    | { kind: "queued"; project: string; run: RunInfo; count: number; open: boolean }
-) & { under?: boolean };
+    | { kind: "queued"; project: string; run: RunInfo; count: number; open: boolean };
 
 // TreeFolds is what the human folded: runs whose workers are hidden, runs whose done or queued tasks are listed,
 // and tasks (by taskFoldKey) whose other tabs are listed. A done fold is keyed to how many tasks were done when it
@@ -200,39 +198,6 @@ function runRows(
     return { rows, members: agents, attn };
 }
 
-// besideOrigins moves each run a session started with `wsh runs start` to just after that session, so the two read
-// as one piece of work, and returns the runs it moved. Runs from one session keep their order; a run whose session
-// is gone, or in another project's group, stays where `order` put it.
-function besideOrigins(items: TopItem[]): { items: TopItem[]; under: Set<TopItem> } {
-    const ids = new Set(items.flatMap((it) => (it.kind === "run" ? [] : [it.agent.id])));
-    const anchored = (it: TopItem): it is Exclude<TopItem, { kind: "parent" }> =>
-        it.kind !== "parent" && it.run.originId != null && ids.has(it.run.originId);
-    const out: TopItem[] = [];
-    const under = new Set<TopItem>();
-    const place = (it: TopItem) => {
-        out.push(it);
-        if (it.kind === "run") {
-            return;
-        }
-        for (const child of items) {
-            if (anchored(child) && child.run.originId === it.agent.id) {
-                under.add(child);
-                place(child);
-            }
-        }
-    };
-    for (const it of items) {
-        if (!anchored(it)) {
-            place(it);
-        }
-    }
-    // a cycle of runs started from one another has no unanchored root; keep its runs rather than drop them
-    return {
-        items: out.length === items.length ? out : [...out, ...items.filter((it) => !out.includes(it))],
-        under,
-    };
-}
-
 /** Pure: roster + anchored order -> [group, ...rows] per project. Projects appear in the first-seen order
  *  of `order`; top-level rows within a group follow `order` (ids absent from `order` sort last). A run's
  *  workers follow its lead in plan order, and a run with no lead in the roster takes the place of its first
@@ -308,11 +273,10 @@ export function buildAgentTree(
 
     const rows: AgentTreeRow[] = [];
     for (const g of groups) {
-        const placed = besideOrigins(g.items);
         const body: AgentTreeRow[] = [];
         let count = 0;
         let attn = 0;
-        for (const item of placed.items) {
+        for (const item of g.items) {
             if (item.kind === "parent") {
                 body.push(item);
                 count++;
@@ -326,7 +290,7 @@ export function buildAgentTree(
                 folds,
                 focusId
             );
-            body.push(...(placed.under.has(item) ? r.rows.map((row) => ({ ...row, under: true })) : r.rows));
+            body.push(...r.rows);
             count += r.members + (item.kind === "lead" ? 1 : 0);
             attn += r.attn + (item.kind === "lead" && item.agent.state === "asking" ? 1 : 0);
         }

@@ -3,10 +3,11 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LauncherKind } from "./launcher";
 import {
     abandonLauncherLaunch,
+    addTaskImages,
     applyLauncherPrefill,
     beginLauncherLaunch,
     clearLauncherDraft,
@@ -19,6 +20,7 @@ import {
     launcherCommandAtom,
     launcherFlagMenuAtom,
     launcherGoalAtom,
+    launcherImagesAtom,
     launcherKindAtom,
     launcherLaunchAbandoned,
     launcherLaunchTicket,
@@ -26,19 +28,38 @@ import {
     launcherProjectAtom,
     launcherPrototypeAtom,
     launcherRestoredAtom,
+    launcherResumeAtom,
     launcherRuntimeAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
     openLauncher,
     pickLauncherProject,
+    pickLauncherRuntime,
+    removeTaskImage,
     reopenLauncher,
 } from "./launcherstore";
 import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
 
+const mocks = vi.hoisted(() => ({ blob: vi.fn(), file: vi.fn() }));
+vi.mock("@/app/view/term/termutil", () => ({
+    createTempFileFromBlob: mocks.blob,
+    createTempFileFromFile: mocks.file,
+}));
+
 // the cast: without strictNullChecks, null picks atom's read-only overload
 const model = () => ({ launcherAtom: atom<LauncherKind | null>(null) as PrimitiveAtom<LauncherKind | null> });
 
+// The preview URLs are the browser's; the store only hands them out and takes them back.
+const realUrl = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+let revoke: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
+    let n = 0;
+    URL.createObjectURL = vi.fn(() => `blob:preview-${++n}`);
+    revoke = vi.fn();
+    URL.revokeObjectURL = revoke;
+    mocks.blob.mockReset();
+    mocks.file.mockReset();
     globalStore.set(launcherKindAtom, "agent");
     globalStore.set(launcherRuntimeAtom, null);
     globalStore.set(launcherProjectAtom, "");
@@ -46,6 +67,11 @@ beforeEach(() => {
     globalStore.set(launcherBusyAtom, false);
     endLauncherDraft();
     resetRunConfig();
+});
+
+afterEach(() => {
+    URL.createObjectURL = realUrl.create;
+    URL.revokeObjectURL = realUrl.revoke;
 });
 
 describe("reopenLauncher", () => {
@@ -165,6 +191,25 @@ describe("closing, clearing and launching", () => {
         expect(globalStore.get(launcherProjectAtom)).toBe("thesis");
         expect(globalStore.get(launcherCommandAtom)).toEqual({ claude: "claude --verbose" });
     });
+    it("clearLauncherDraft clears the resume pick", () => {
+        globalStore.set(launcherResumeAtom, "sess-1");
+        clearLauncherDraft();
+        expect(globalStore.get(launcherResumeAtom)).toBeNull();
+    });
+    it("clearLauncherDraft empties the images and frees their previews", () => {
+        globalStore.set(launcherImagesAtom, [
+            { id: "a", previewUrl: "blob:a", path: "/tmp/a.png" },
+            { id: "b", previewUrl: "blob:b" },
+        ]);
+        clearLauncherDraft();
+        expect(globalStore.get(launcherImagesAtom)).toEqual([]);
+        expect(revoke.mock.calls.map((c) => c[0])).toEqual(["blob:a", "blob:b"]);
+    });
+    it("a draft of only images is restored on the next open", () => {
+        globalStore.set(launcherImagesAtom, [{ id: "a", previewUrl: "blob:a", path: "/tmp/a.png" }]);
+        openLauncher(model(), "agent");
+        expect(globalStore.get(launcherRestoredAtom)).toBe(true);
+    });
     it("a launch also drops hand-edited commands", () => {
         globalStore.set(launcherCommandAtom, { claude: "claude --verbose" });
         globalStore.set(launcherTaskAtom, "a");
@@ -209,6 +254,29 @@ describe("pickLauncherProject", () => {
         pickLauncherProject("arcterm", "arcterm");
         expect(globalStore.get(launcherBranchAtom)).toBe("feat/x");
     });
+    it("pickLauncherProject resets the resume pick", () => {
+        globalStore.set(launcherResumeAtom, "sess-1");
+        pickLauncherProject("b", "a");
+        expect(globalStore.get(launcherResumeAtom)).toBeNull();
+        // the project already on show keeps the pick
+        globalStore.set(launcherResumeAtom, "sess-1");
+        pickLauncherProject("b", "b");
+        expect(globalStore.get(launcherResumeAtom)).toBe("sess-1");
+    });
+});
+
+describe("pickLauncherRuntime", () => {
+    it("pickLauncherRuntime resets the resume pick", () => {
+        globalStore.set(launcherRuntimeAtom, "claude");
+        globalStore.set(launcherResumeAtom, "sess-1");
+        pickLauncherRuntime("codex");
+        expect(globalStore.get(launcherRuntimeAtom)).toBe("codex");
+        expect(globalStore.get(launcherResumeAtom)).toBeNull();
+        // picking the runtime already on show keeps the pick
+        globalStore.set(launcherResumeAtom, "sess-2");
+        pickLauncherRuntime("codex");
+        expect(globalStore.get(launcherResumeAtom)).toBe("sess-2");
+    });
 });
 
 describe("applyLauncherPrefill", () => {
@@ -237,5 +305,69 @@ describe("applyLauncherPrefill", () => {
     });
     it("does nothing without a prefill", () => {
         expect(applyLauncherPrefill(["arcterm"])).toBe(false);
+    });
+});
+
+describe("task images", () => {
+    const png = (name = "a.png") => new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+
+    it("a paste shows a tile at once and gives it the temp path when the write lands", async () => {
+        mocks.blob.mockResolvedValue("/tmp/paste.png");
+        addTaskImages([png()], "paste");
+        expect(globalStore.get(launcherImagesAtom)).toEqual([{ id: expect.any(String), previewUrl: "blob:preview-1" }]);
+        await flush();
+        expect(globalStore.get(launcherImagesAtom)[0].path).toBe("/tmp/paste.png");
+        expect(mocks.blob).toHaveBeenCalledTimes(1);
+        expect(mocks.file).not.toHaveBeenCalled();
+    });
+    it("a drop keeps the file's name, so it goes through the file writer", async () => {
+        mocks.file.mockResolvedValue("/tmp/dir/shot.png");
+        addTaskImages([png("shot.png")], "drop");
+        await flush();
+        expect(globalStore.get(launcherImagesAtom)[0].path).toBe("/tmp/dir/shot.png");
+        expect(mocks.file).toHaveBeenCalledTimes(1);
+        expect(mocks.blob).not.toHaveBeenCalled();
+    });
+    it("a write that fails keeps its tile with the error", async () => {
+        mocks.blob.mockRejectedValue(new Error("Image too large (>3.5 MB)"));
+        addTaskImages([png()], "paste");
+        await flush();
+        const [img] = globalStore.get(launcherImagesAtom);
+        expect(img.path).toBeUndefined();
+        expect(img.error).toBe("Image too large (>3.5 MB)");
+    });
+    it("takes no more than eight images in all", () => {
+        mocks.blob.mockResolvedValue("/tmp/x.png");
+        addTaskImages(
+            Array.from({ length: 6 }, () => png()),
+            "paste"
+        );
+        addTaskImages(
+            Array.from({ length: 6 }, () => png()),
+            "paste"
+        );
+        expect(globalStore.get(launcherImagesAtom)).toHaveLength(8);
+        expect(mocks.blob).toHaveBeenCalledTimes(8);
+    });
+    it("removeTaskImage drops only its id and frees its preview", () => {
+        globalStore.set(launcherImagesAtom, [
+            { id: "a", previewUrl: "blob:a", path: "/tmp/a.png" },
+            { id: "b", previewUrl: "blob:b", path: "/tmp/b.png" },
+        ]);
+        removeTaskImage("a");
+        expect(globalStore.get(launcherImagesAtom).map((i) => i.id)).toEqual(["b"]);
+        expect(revoke).toHaveBeenCalledWith("blob:a");
+        expect(revoke).not.toHaveBeenCalledWith("blob:b");
+    });
+    it("an image written after its tile was removed does not bring it back", async () => {
+        let land: (p: string) => void = () => {};
+        mocks.blob.mockReturnValue(new Promise<string>((r) => (land = r)));
+        addTaskImages([png()], "paste");
+        const [{ id }] = globalStore.get(launcherImagesAtom);
+        removeTaskImage(id);
+        land("/tmp/late.png");
+        await flush();
+        expect(globalStore.get(launcherImagesAtom)).toEqual([]);
     });
 });

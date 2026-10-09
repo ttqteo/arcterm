@@ -73,6 +73,7 @@ const (
 	MetaKey_SessionProject                   = "session:project"
 	MetaKey_SessionEffort                    = "session:effort"
 	MetaKey_SessionCollapsedGroups           = "session:collapsedgroups"
+	MetaKey_SessionLater                     = "session:later"
 	MetaKey_SessionHelper                    = "session:helper"
 
 	MetaKey_AppLoom                          = "app:loom"

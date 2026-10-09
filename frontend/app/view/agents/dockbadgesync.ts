@@ -9,14 +9,19 @@ import { isWindows } from "@/util/platformutil";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
-import { attentionAtom, splitAttention } from "./attentionstore";
+import type { AgentsViewModel } from "./agents";
+import { attentionAtom, cockpitWaitingCount, splitAttention } from "./attentionstore";
+import { channelMessagesAtom } from "./channelsstore";
 import { dockBadgeCount } from "./dockbadge";
+import { answeredAskIdsAcross } from "./jarvisderive";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 
-export function useDockBadge(): void {
+export function useDockBadge(model: AgentsViewModel): void {
     const unread = useAtomValue(unreadAgentsAtom);
     const attention = useAtomValue(attentionAtom);
-    const count = dockBadgeCount(unread.size, splitAttention(attention).cockpit.length);
+    const agents = useAtomValue(model.agentsAtom);
+    const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
+    const count = dockBadgeCount(unread.size, cockpitWaitingCount(splitAttention(attention).cockpit, agents, answered));
     useEffect(() => {
         if (isWindows()) {
             return;

@@ -20,6 +20,7 @@ import { useAtomValue } from "jotai";
 import { ArrowLeftToLine, X } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { OUTLINE_SELECTOR, WithOutline } from "../agents/docoutlineview";
 import { isMarkdownPath, isTexPath, languageForPath } from "./codeclassify";
 import { splitFrontmatter } from "./codefrontmatter";
 import { isPreviewable } from "./codepreviewable";
@@ -169,24 +170,28 @@ export function CodeSidePane({ project, side }: { project: CodeProject; side: Co
                 );
             } else if (mode === "preview" && tex) {
                 body = (
-                    <TexPreview
-                        text={text}
-                        onSource={() => setSideMode("source")}
-                        onLink={(href) => fireAndForget(() => openLink(href))}
-                    />
+                    <WithOutline selector={OUTLINE_SELECTOR.tex} textKey={text}>
+                        <TexPreview
+                            text={text}
+                            onSource={() => setSideMode("source")}
+                            onLink={(href) => fireAndForget(() => openLink(href))}
+                        />
+                    </WithOutline>
                 );
             } else if (mode === "preview" && isMarkdownPath(side.rel)) {
                 const doc = splitFrontmatter(text);
                 body = (
-                    <Markdown
-                        text={doc.body}
-                        header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
-                        scrollable
-                        className="markdown-doc h-full"
-                        contentClassName="px-8 pb-12 pt-7"
-                        fontSizeOverride={DOC_FONT_SIZE}
-                        resolveOpts={{ connName: "local", baseDir: abs.replace(/[\\/][^\\/]*$/, "") }}
-                    />
+                    <WithOutline selector={OUTLINE_SELECTOR.markdown} textKey={doc.body}>
+                        <Markdown
+                            text={doc.body}
+                            header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
+                            scrollable
+                            className="markdown-doc h-full"
+                            contentClassName="px-8 pb-12 pt-7"
+                            fontSizeOverride={DOC_FONT_SIZE}
+                            resolveOpts={{ connName: "local", baseDir: abs.replace(/[\\/][^\\/]*$/, "") }}
+                        />
+                    </WithOutline>
                 );
             } else {
                 body = (

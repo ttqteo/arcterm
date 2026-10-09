@@ -24,6 +24,9 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   the available next keys.
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
   that will work in your current context.
+- **Held modifier.** Hold `Mod` or `Alt` on its own a moment and the bottom bar lists every chord on that key that
+  works right now — inside the terminal, the only keys that reach the cockpit. The digit jumps show as one chip
+  (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Active list number their rows.
 - **Cheat sheet.** Press `?` (while not typing) to open a searchable modal of every shortcut.
   When you are typing (e.g. in the terminal), open it via Search (`Mod`+`P`) → Commands → "Keyboard shortcuts".
 

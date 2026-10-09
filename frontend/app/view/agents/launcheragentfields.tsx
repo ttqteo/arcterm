@@ -4,7 +4,8 @@
 // The New launcher's details for an agent row: the task, the command with its flags, and the worktree. Moved out of
 // the old New agent dialog. The task field is always there (it hid behind "+ Start with a task") so Tab lands in it.
 // Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes the
-// open one on Escape wherever focus is, and the dialog stays.
+// open one on Escape wherever focus is, and the dialog stays. Images pasted or dropped into the task show as a row of
+// tiles under it (launcherimages.ts holds the rules, launcherstore.ts the temp writes).
 
 import { composerReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -13,9 +14,9 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, Plus, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, Loader2, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ClipboardEvent, type DragEvent } from "react";
 import {
     RUNTIME_FLAGS,
     runtimeShowsTask,
@@ -24,13 +25,19 @@ import {
     worktreeOutcome,
     type Runtime,
 } from "./launch";
+import { imageFilesOf } from "./launcherimages";
+import { resumeLaunchSpec } from "./launcherresume";
+import { ResumeList } from "./launcherresumelist";
 import {
+    addTaskImages,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
+    launcherImagesAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
+    removeTaskImage,
 } from "./launcherstore";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 
@@ -90,14 +97,100 @@ export function useProjectBranches(
     return { currentBranch, branches };
 }
 
+// an OS file drag; the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file
+const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
+
+// A pasted text is left to the browser; a paste that carries images takes them and inserts any text beside them.
+function pasteIntoTask(e: ClipboardEvent<HTMLTextAreaElement>): void {
+    const files = imageFilesOf(e.clipboardData?.files);
+    if (files.length === 0) {
+        return;
+    }
+    e.preventDefault();
+    addTaskImages(files, "paste");
+    const text = e.clipboardData.getData("text/plain");
+    if (text !== "") {
+        const el = e.currentTarget;
+        el.setRangeText(text, el.selectionStart, el.selectionEnd, "end");
+        globalStore.set(launcherTaskAtom, el.value);
+    }
+}
+
+function dropIntoTask(e: DragEvent<HTMLTextAreaElement>): void {
+    if (!dragHasFiles(e.dataTransfer)) {
+        return;
+    }
+    e.preventDefault();
+    addTaskImages(imageFilesOf(e.dataTransfer.files), "drop");
+}
+
+function TaskImages() {
+    const images = useAtomValue(launcherImagesAtom);
+    if (images.length === 0) {
+        return null;
+    }
+    return (
+        <>
+            <div className="flex flex-wrap gap-2">
+                {images.map((img) => {
+                    const state = img.error != null ? "error" : img.path != null ? "ready" : "pending";
+                    return (
+                        <div
+                            key={img.id}
+                            data-task-image
+                            data-task-image-state={state}
+                            className="relative h-12 w-12 shrink-0"
+                        >
+                            <img
+                                src={img.previewUrl}
+                                alt=""
+                                className={cn(
+                                    "h-full w-full rounded-[8px] border object-cover",
+                                    state === "error" ? "border-warning" : "border-edge-mid"
+                                )}
+                            />
+                            {state === "pending" ? (
+                                <span className="absolute inset-0 flex items-center justify-center rounded-[8px] bg-background/60">
+                                    <Loader2
+                                        size={14}
+                                        className="animate-spin text-primary motion-reduce:animate-none"
+                                    />
+                                </span>
+                            ) : null}
+                            <button
+                                type="button"
+                                aria-label="Remove image"
+                                onClick={() => removeTaskImage(img.id)}
+                                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-edge-mid bg-surface text-muted hover:text-primary"
+                            >
+                                <X size={10} strokeWidth={2.4} />
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+            {images.map((img) =>
+                img.error != null ? (
+                    <span key={img.id} data-task-image-error className="text-[12px] text-warning">
+                        {img.error}
+                    </span>
+                ) : null
+            )}
+        </>
+    );
+}
+
 interface AgentFieldsProps {
     runtime: Runtime;
     currentBranch: string;
     branches: BranchInfo[];
     ramWarning: string | null;
+    // the picked agent's recent sessions in the picked project, and the one picked to resume (null: a new session)
+    resumeChoices: SessionInfo[];
+    resume: SessionInfo | null;
 }
 
-export function AgentFields({ runtime, currentBranch, branches, ramWarning }: AgentFieldsProps) {
+export function AgentFields({ runtime, currentBranch, branches, ramWarning, resumeChoices, resume }: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
@@ -113,12 +206,15 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
         globalStore.set(launcherFlagMenuAtom, false);
         globalStore.set(launcherBranchListAtom, false);
     }, [runtime]);
-    const startup = commands[runtime] ?? runtimeStartupCommand(runtime);
     const setStartup = (value: string) =>
         globalStore.set(launcherCommandAtom, (prev) => ({ ...prev, [runtime]: value }));
     // flag state is per runtime: read and write only the picked runtime's record
     const flagCatalog = RUNTIME_FLAGS[runtime];
     const runtimeFlags = naFlags[runtime] ?? {};
+    // a resume runs the session's own command, which the field previews and does not take edits to
+    const startup = resume
+        ? resumeLaunchSpec(resume, runtime, runtimeFlags).startupCommand
+        : (commands[runtime] ?? runtimeStartupCommand(runtime));
     const enabledFlags = flagCatalog.filter((f) => runtimeFlags[f.id]);
     const setFlag = (id: string, on: boolean) =>
         globalStore.set(naFlagsAtom, (prev) => ({ ...prev, [runtime]: { ...prev[runtime], [id]: on } }));
@@ -133,17 +229,31 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                         <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
                             Task
                         </label>
-                        <span className="text-[11px] text-muted">optional · sent as the first prompt</span>
+                        <span className="text-[11px] text-muted">
+                            {resume
+                                ? "optional · sent as the next message · paste or drop images"
+                                : "optional · sent as the first prompt · paste or drop images"}
+                        </span>
                     </div>
+                    {/* grows with what is typed, up to about eleven lines, then scrolls */}
                     <textarea
                         id="launcher-task"
                         value={task}
                         onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
+                        onPaste={pasteIntoTask}
+                        onDragOver={(e) => {
+                            if (dragHasFiles(e.dataTransfer)) {
+                                e.preventDefault();
+                            }
+                        }}
+                        onDrop={dropIntoTask}
                         placeholder="What should it work on? Leave empty to just open the session."
-                        className="block h-16 w-full resize-none rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
+                        className="block field-sizing-content min-h-16 max-h-[240px] w-full resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
                     />
+                    <TaskImages />
                 </div>
             ) : null}
+            {runtimeShowsTask(runtime) ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
             <div className="flex flex-col gap-2">
                 <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
                     Command
@@ -153,6 +263,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                     <input
                         id="launcher-cmd"
                         value={startup}
+                        readOnly={resume != null}
                         onChange={(e) => setStartup(e.target.value)}
                         placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
                         style={{
@@ -252,7 +363,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                     A plain shell in the project folder. No agent, no task.
                 </span>
             ) : null}
-            {runtimeSupportsWorktree(runtime) ? (
+            {runtimeSupportsWorktree(runtime) && resume == null ? (
                 <div className="flex flex-col gap-[7px]">
                     <div className="flex min-h-[34px] items-center gap-3">
                         <button

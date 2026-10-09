@@ -56,8 +56,9 @@ const MODEL_TONE: Record<PlanModelTone, string> = {
     "at-review": "text-muted",
     workers: "text-ink-mid",
 };
+// grows with what is typed, up to about eleven lines, then scrolls
 const FIELD =
-    "block w-full resize-none rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700";
+    "block field-sizing-content max-h-[240px] w-full resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700";
 
 // the Brief launcher's own Start from buttons, side by side on the Workers row
 function StartToggle({ start }: { start: StartFrom }) {
@@ -310,7 +311,7 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
                         value={goal}
                         onChange={(e) => globalStore.set(launcherGoalAtom, e.target.value)}
                         placeholder="What should it do?"
-                        className={cn(FIELD, orchestrator ? "h-24" : "h-28")}
+                        className={cn(FIELD, orchestrator ? "min-h-24" : "min-h-28")}
                     />
                     {orchestrator ? (
                         <span className="text-[11px] leading-[1.45] text-muted">{startNote("goal")}</span>

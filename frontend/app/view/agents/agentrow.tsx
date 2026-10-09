@@ -35,7 +35,7 @@ import {
     type AgentVM,
     type CardTask,
 } from "./agentsviewmodel";
-import { AnswerBar, DocReviewSummary } from "./answerbar";
+import { AnswerBar, DocReviewSummary, TerminalAskNote } from "./answerbar";
 import { AttentionBanner, BannerChip } from "./attentioncard";
 import { diffStatsByIdAtom } from "./cardgitstore";
 import type { CardShare } from "./cardgridlayout";
@@ -540,6 +540,13 @@ export const AgentRow = memo(function AgentRow({
                                           )
                                     : undefined
                             }
+                            className="shrink-0 border-t border-edge-mid px-3 py-2"
+                        />
+                    ) : null}
+                    {asking ? (
+                        <TerminalAskNote
+                            agent={agent}
+                            onOpenTerminal={onOpenTerminal}
                             className="shrink-0 border-t border-edge-mid px-3 py-2"
                         />
                     ) : null}

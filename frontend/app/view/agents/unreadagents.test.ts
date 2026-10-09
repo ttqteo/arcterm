@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentState } from "./agentsviewmodel";
+import type { RunInfo } from "./runlineage";
 import { latestUnreadId, nestedIds, nextUnread, sameCounts, unreadLabel, viewingIds } from "./unreadagents";
 
 const states = (o: Record<string, AgentState>) => new Map(Object.entries(o));
@@ -136,12 +137,31 @@ describe("sameCounts", () => {
 });
 
 describe("nestedIds", () => {
-    it("picks workers and stage sessions, not leads", () => {
+    const run = (runId: string, dag?: RunInfo["dag"]): RunInfo => ({
+        runId,
+        channelId: "c",
+        title: "",
+        project: "p",
+        dag,
+    });
+
+    it("picks workers and stage sessions, and a lead still talking its plan through does not count among them", () => {
         const out = nestedIds({
-            lead: { kind: "lead", runId: "r" },
-            w: { kind: "worker", leadRunId: "r", taskId: "t-1" },
-            s: { kind: "stage", leadRunId: "r", stageRole: "review" },
+            roles: {
+                lead: { kind: "lead", runId: "r" },
+                w: { kind: "worker", leadRunId: "r", taskId: "t-1" },
+                s: { kind: "stage", leadRunId: "r", stageRole: "review" },
+            },
+            runs: { r: run("r") },
         });
         expect(out).toEqual(new Set(["w", "s"]));
+    });
+
+    it("picks a lead whose plan the engine runs, since the engine wakes it for every task and merge", () => {
+        const out = nestedIds({
+            roles: { lead: { kind: "lead", runId: "r" }, other: { kind: "lead", runId: "q" } },
+            runs: { r: run("r", { runid: "r" } as RunInfo["dag"]), q: run("q") },
+        });
+        expect(out).toEqual(new Set(["lead"]));
     });
 });

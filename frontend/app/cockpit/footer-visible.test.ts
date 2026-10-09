@@ -16,7 +16,7 @@ import type { OpenTarget } from "@/app/view/jarvis/address";
 import { setPlatform } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { visibleHints } from "./footer-visible";
+import { heldHints, visibleHints } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS, type FooterHint } from "./footerhints";
 
 const nav = (c: KeyContext) => !c.editable && !c.modalOpen && c.surface === "agent";
@@ -189,5 +189,44 @@ describe("peek chip", () => {
 
     it("shows on the cockpit through its documented Space, which the surface handles itself", () => {
         expect(peekChip({ ...jarvis, surface: "cockpit" })?.label).toBe("peek");
+    });
+});
+
+describe("heldHints", () => {
+    const run = () => {};
+    const agentOnly = (c: KeyContext) => c.surface === "agent" && !c.modalOpen;
+    const reg: Binding[] = [
+        { id: "s1", keys: "Mod:1", group: "Global", label: "Jump to agent", run },
+        { id: "s2", keys: "Mod:2", group: "Global", label: "Jump to code", run },
+        { id: "s7", keys: "Mod:7", group: "Global", label: "Jump to usage", run },
+        { id: "palette", keys: "Mod:p", group: "Global", label: "Search", run },
+        { id: "run", keys: "Mod:Shift:r", group: "Global", label: "New run", run },
+        { id: "next", keys: "Ctrl:Tab", group: "Agent", label: "Next agent", when: agentOnly, run },
+        { id: "a1", keys: "Alt:1", group: "Agent", label: "Jump to agent 1", when: agentOnly, run },
+        { id: "a3", keys: "Alt:3", group: "Agent", label: "Jump to agent 3", when: agentOnly, run },
+        { id: "cycle", keys: "Alt:c", group: "Agent", label: "Switch view", when: agentOnly, run },
+        { id: "go", keys: "g w", group: "Go to", label: "What's waiting", run },
+        { id: "move", keys: "j", group: "Agent", label: "Next", run },
+    ];
+
+    it("Ctrl lists every chord on it that would fire, the digits as one run", () => {
+        expect(heldHints(term, reg, "ctrl", false)).toEqual([
+            { keys: "Mod:1", label: "Jump to surface", rangeTo: 7 },
+            { keys: "Mod:p", label: "Search" },
+            { keys: "Mod:Shift:r", label: "New run" },
+            { keys: "Ctrl:Tab", label: "Next agent" },
+        ]);
+    });
+
+    it("Alt lists only Alt chords, and a chord whose when fails is left out", () => {
+        expect(heldHints(term, reg, "alt", false)).toEqual([
+            { keys: "Alt:1", label: "Jump to agent", rangeTo: 3 },
+            { keys: "Alt:c", label: "Switch view" },
+        ]);
+        expect(heldHints({ ...term, surface: "code" }, reg, "alt", false)).toEqual([]);
+    });
+
+    it("on a Mac the held key is Command, so a Control chord is not its own", () => {
+        expect(heldHints(term, reg, "ctrl", true).map((c) => c.keys)).not.toContain("Ctrl:Tab");
     });
 });

@@ -21,6 +21,7 @@ import { useDocReviewSync } from "./docreviewstore";
 import { FilesSurface } from "./filessurface";
 import { floatModeAtom } from "./floatstore";
 import { initHarnessPreference, loadHarnesses } from "./harnessstore";
+import { HeldAskDialog } from "./heldaskdialog";
 import { setupRosterSeededLatch } from "./liveagents";
 import { NavRail } from "./navrail";
 import { NotifySync } from "./notifysync";
@@ -126,7 +127,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useEffect(() => setupRosterSeededLatch(), []);
     // a turn can end while any surface shows, so the unread set is kept here, not in the Agent surface
     useUnreadTracking(model);
-    useDockBadge();
+    useDockBadge(model);
     const surface = useAtomValue(model.surfaceAtom);
     const floating = useAtomValue(floatModeAtom);
     return (
@@ -163,6 +164,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             </div>
             {/* outside the surface switch: a lead's review opens over whichever surface is showing */}
             <DocReviewDialog model={model} />
+            {/* a held command (Low RAM) blocks its agent until answered: its card pops over any surface */}
+            <HeldAskDialog model={model} />
             {/* a turn can end or an ask can land while any surface shows */}
             <NotifySync model={model} />
         </div>

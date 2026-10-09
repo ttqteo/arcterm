@@ -12,6 +12,19 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Mark for later** in a session's menu, in the Agents tree or under Conversations, flags it with a bookmark until you
+  pick **Done**; the mark stays when you close the agent, puts the conversation first in its project's list, and is back
+  on the row when you resume it.
+- New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.
+- A Low RAM card now pops up over whatever surface you are on, so a command held for memory no longer waits unseen
+  behind Jarvis or the Cockpit; press its number to answer, **Open agent** to go to it, or **Later** (`Esc`) to leave
+  it on the agent's own card.
+- The Agent rail shows the project's instructions file under the project and branch, `CLAUDE.md` for a Claude agent
+  (or `AGENTS.md` when there is none) and `AGENTS.md` for pi and the others; click it to read it in the rail.
+- An **Outline** button lists a document's headings and jumps to the one you pick, with the section you are reading
+  marked: in the Spec and Plan review, and over the Code surface's Markdown and LaTeX previews.
+- In a Spec or Plan review, resting the pointer on a finding scrolls the document to the task it names and dims
+  the rest, so you read only the part it changes; click the finding to keep it shown while you read.
 - Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,
   type at a laptop or dribble a ball, picked at random each time, as well as standing or sitting still.
 - `Alt`+`C` switches an agent between Terminal, Canvas and Review from inside its terminal, where a bare `c` is
@@ -45,6 +58,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
   tab.
 - Diff: choosing a source, a commit, the session row or a comparison opens its first file at once, and `↑`/`↓` in a
   file list open the next or previous file without Enter.
+- Rename opens on the session's current name, all of it selected, so you can type a new one or edit the old one.
+- New agent and New run: the Task and Goal boxes grow as you type, to about eleven lines before they scroll, instead
+  of staying a fixed few lines tall.
+- A run started from a session is no longer listed one level in under that session, in the sidebar or in
+  Conversations: it sits on its own row in its project, so closing the session no longer moves the run.
 - A Claude agent asks you before it starts a subagent, naming it and warning that one can cost millions of tokens
   (agents in an engine run are not asked); the 10-subagent cap per session, which had stopped holding, holds again.
 - The app bar is slimmer: 38px instead of 46px, with a narrower search box and smaller buttons, and the 5-hour
@@ -66,6 +84,17 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Diff: a commit whose files are still loading, or could not be read, no longer shows `0 files +0 −0` beside an
   empty diff. The list says it is reading, or that the read failed with a Retry, and a commit that really changes
   no files says so.
+- A run in its final stage now reads **Verifying** in the run sheet, with the step it is on and for how long, instead
+  of **Executing** over a full strip; a run's progress line in the Agents tree shows its full text on hover when cut
+  off.
+- A run held because the checkout has uncommitted edits to a file it changes now says so and names the files,
+  instead of quoting git's whole merge command and error.
+- An orchestrator lead no longer collects an unread count once its plan is running: the turns the engine wakes it
+  for (a task done, a merge, a handoff) are not news for you, and what it needs from you still arrives as a question.
+- The Cockpit's nav badge (and the Dock badge on a Mac) counts an agent at a permission prompt or a question asked in
+  its terminal, so it no longer reads 0 while the Cockpit's "need you" tab says 3.
+- A card waiting on you with no choices it can show (a permission prompt, or a question asked in the terminal) says
+  so and offers **Open terminal**, instead of "Waiting on you" over nothing to answer.
 - An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
   that run, nested under it, is still going; the offer comes back once the run ends.
 - An agent that committed and then ran a few more commands with long output in the same turn now offers ✓ Close;

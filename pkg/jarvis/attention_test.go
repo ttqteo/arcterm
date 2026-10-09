@@ -495,6 +495,53 @@ func TestHeldLandSaysWhy(t *testing.T) {
 	}
 }
 
+func TestHeldLandOnAFailedFinalNamesTheFailingStep(t *testing.T) {
+	held := func(id string) *waveobj.Run {
+		return finishedRun(id, nil, &waveobj.RunLand{State: "held", Reason: "the final stage failed"})
+	}
+	dag := func(runID string, final *waveobj.FinalStage) *waveobj.TaskGroup {
+		return &waveobj.TaskGroup{OID: "g-" + runID, RunID: runID, Status: "blocked", Final: final}
+	}
+	shots := &waveobj.FinalStage{State: "failed", Round: 2, Detail: "Final `x` failed (exit 1):\n...", Shots: []waveobj.FinalShot{
+		{Name: "launcher", Steps: []waveobj.FinalShotStep{
+			{Step: "4. in Project, ArrowDown moves the pick", State: "pass"},
+			{Step: "5. Terminal's digit picks it", State: "fail", Detail: "{}"},
+			{Step: "9. Escape closes it", State: "fail"},
+		}},
+		{Name: "launcher-resume", Steps: []waveobj.FinalShotStep{{Step: "1. lists the session", State: "fail"}}},
+	}}
+	items := BuildAttention(AttentionInput{
+		Channels: []AttentionChannel{{OID: "c1", Name: "alpha", Runs: []*waveobj.Run{held("r1"), held("r2"), held("r3")}}},
+		Dags: []*waveobj.TaskGroup{
+			dag("r1", shots),
+			dag("r2", &waveobj.FinalStage{State: "failed", Detail: "Final `go test ./...` failed (exit 1):\n--- FAIL: TestX"}),
+		},
+	})
+	got := itemsOfKind(items, AttentionRunLandHeld)
+	if len(got) != 3 {
+		t.Fatalf("run-land-held items = %+v, want 3", got)
+	}
+	byRun := map[string]wshrpc.AttentionItem{}
+	for _, it := range got {
+		byRun[it.RunId] = it
+	}
+	if r1 := byRun["r1"]; r1.Text != "The final stage failed at launcher, 5. Terminal's digit picks it (and 2 more steps)" {
+		t.Fatalf("r1 text = %q, want the first failing step and the count of the rest", r1.Text)
+	}
+	if r2 := byRun["r2"]; r2.Text != "The final stage failed: Final `go test ./...` failed (exit 1)" {
+		t.Fatalf("r2 text = %q, want the detail's first line without a steps manifest", r2.Text)
+	}
+	if r3 := byRun["r3"]; r3.Text != "The run's branch was not merged back: the final stage failed" {
+		t.Fatalf("r3 text = %q, want the plain reason when the dag is not loaded", r3.Text)
+	}
+	for _, it := range got {
+		// landing again only reads the same failed stage: the way out is the forced land, and no fix clears it
+		if !strings.Contains(it.Why, "wsh runs land "+it.RunId+" --force") || strings.Contains(it.Why, "Clear the reason") {
+			t.Fatalf("%s why = %q, want the forced land named and no clear-the-reason advice", it.RunId, it.Why)
+		}
+	}
+}
+
 func TestGoalHeadline(t *testing.T) {
 	long := strings.Repeat("é", 100)
 	cases := []struct{ goal, want string }{

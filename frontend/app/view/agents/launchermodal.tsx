@@ -55,6 +55,8 @@ import {
     type StartRowId,
 } from "./launcher";
 import { AgentFields, LAUNCHER_LABEL, useProjectBranches } from "./launcheragentfields";
+import { composeTaskWithImages, imagesPending } from "./launcherimages";
+import { pickedResume, resumeChoices, resumeLaunchSpec } from "./launcherresume";
 import { startLauncherRun } from "./launcherrun";
 import { RunFields } from "./launcherrunfields";
 import {
@@ -71,6 +73,7 @@ import {
     launcherCommandAtom,
     launcherFlagMenuAtom,
     launcherGoalAtom,
+    launcherImagesAtom,
     launcherKindAtom,
     launcherLaunchAbandoned,
     launcherLaunchTicket,
@@ -78,11 +81,15 @@ import {
     launcherProjectAtom,
     launcherPrototypeAtom,
     launcherRestoredAtom,
+    launcherResumeAtom,
     launcherRuntimeAtom,
+    launcherSessionsAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
+    loadLauncherSessions,
     openLauncher,
     pickLauncherProject,
+    pickLauncherRuntime,
 } from "./launcherstore";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
@@ -196,6 +203,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const prototype = useAtomValue(launcherPrototypeAtom);
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
+    const sessions = useAtomValue(launcherSessionsAtom);
+    const resumeId = useAtomValue(launcherResumeAtom);
+    const images = useAtomValue(launcherImagesAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
     const restored = useAtomValue(launcherRestoredAtom);
@@ -238,7 +248,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         runtimeSupportsWorktree(runtime)
     );
     const branchNames = branches.map((b) => b.name);
-    const wantsWorktree = !isRun && worktreeOn && runtimeSupportsWorktree(runtime);
+    // the sessions this agent and project offer, and the one picked (a pick no longer on offer launches nothing)
+    const choices = resumeChoices(sessions, runtime, projectPath);
+    const resume = isRun ? null : pickedResume(choices, resumeId);
+    // a resumed session keeps its own folder, so the worktree option is neither shown nor applied
+    const wantsWorktree = !isRun && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
     const chosenBranch = (branchPick ?? currentBranch).trim();
     // git can't reuse the checked-out branch for a worktree; branch a fresh one off it instead
     const landingBranch = chosenBranch === currentBranch ? deriveBranch(currentBranch, branchNames) : chosenBranch;
@@ -246,7 +260,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         ? chosenBranch && `worktree on ${landingBranch}`
         : currentBranch && `on ${currentBranch}`;
     const blocker = isRun ? launchBlocker({ shape, start, goal, planPath, preview }) : null;
-    const footer = footerLine({ kind, shape, parallelism, project, branchNote, blocker });
+    const footer = footerLine({
+        kind,
+        shape,
+        parallelism,
+        project,
+        branchNote,
+        blocker,
+        resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch },
+    });
     const config: RunConfig = {
         shape,
         parallelism,
@@ -269,7 +291,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             ? newAgentRamWarning(cap, "run", "worker")
             : null
         : newAgentRamWarning(cap, runtime);
-    const primaryDisabled = project == null || blocker != null || busy;
+    // an image still being written has no path to send yet; one that failed does not hold the launch
+    const imagesWriting = !isRun && imagesPending(images);
+    const primaryDisabled = project == null || blocker != null || busy || imagesWriting;
     // what an Escape closes first: a popover only while it is drawn (a branch list with no branches draws nothing)
     const flagMenuShown = !isRun && flagMenuOpen && RUNTIME_FLAGS[runtime].length > 0;
     const branchListShown = wantsWorktree && branchListOpen && branches.length > 0;
@@ -318,6 +342,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         if (open) {
             fireAndForget(primeChannels);
+        }
+    }, [open]);
+
+    // the Resume list's sessions are read once per open, and the last open's are dropped first so a stale list never
+    // flashes
+    useEffect(() => {
+        if (open) {
+            globalStore.set(launcherSessionsAtom, null);
+            fireAndForget(loadLauncherSessions);
         }
     }, [open]);
 
@@ -385,7 +418,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             return;
         }
         globalStore.set(launcherKindAtom, "agent");
-        globalStore.set(launcherRuntimeAtom, row.id as Runtime);
+        pickLauncherRuntime(row.id as Runtime);
     };
 
     const pickProject = (name: string) => pickLauncherProject(name, project?.name ?? "");
@@ -412,6 +445,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (!beginLauncherLaunch()) {
             return;
         }
+        // the task with its images: codex starting fresh takes them as --image after the prompt, the rest as a block
+        const { task: fullTask, extraArgs } = composeTaskWithImages(
+            runtime,
+            runtimeShowsTask(runtime) ? task : "",
+            images.flatMap((i) => (i.path ? [i.path] : [])),
+            resume != null
+        );
         try {
             await launchAgent(model, {
                 runtime,
@@ -420,10 +460,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     runtime,
                     naFlags[runtime] ?? {}
                 ),
-                task: runtimeShowsTask(runtime) ? task : "",
+                task: fullTask,
+                extraArgs,
                 projectPath: p.path,
                 projectName: p.name,
                 branch,
+                // a resume replaces the command (and, for pi, the argv and the transcript to preflight)
+                ...(resume ? resumeLaunchSpec(resume, runtime, naFlags[runtime] ?? {}) : {}),
             });
             // Remember off: flags are single-use, cleared for the next agent
             if (!globalStore.get(naRememberFlagsAtom)) {
@@ -486,6 +529,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (project == null) {
             return;
         }
+        // Enter and Mod+Enter reach here as well as the button, which is disabled while an image is still writing
+        if (imagesWriting) {
+            return;
+        }
         if (isRun) {
             if (blocker != null) {
                 // Enter or Mod+Enter on a run that cannot start yet goes to the field that blocks it
@@ -504,6 +551,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         if (target === projectRef.current) {
             return "project";
+        }
+        if (target instanceof Element && target.closest("[data-launcher-resume]")) {
+            return "resume";
         }
         if (target instanceof HTMLTextAreaElement) {
             return "textarea";
@@ -802,6 +852,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 currentBranch={currentBranch}
                                 branches={branches}
                                 ramWarning={ramWarning}
+                                resumeChoices={choices}
+                                resume={resume}
                             />
                         )}
                     </div>
@@ -840,7 +892,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
                         >
-                            {busy && isRun ? "Starting…" : primaryLabel(kind, runtime)}
+                            {busy && isRun ? "Starting…" : primaryLabel(kind, runtime, resume != null)}
                         </DialogButton>
                     </div>
                 </div>

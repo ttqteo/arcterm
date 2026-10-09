@@ -71,13 +71,14 @@ type MetaTSType struct {
 	TermOsc52               string   `json:"term:osc52,omitempty"`
 
 	// for session sidebar (Wave Agent Sessions fork)
-	SessionPinned          bool     `json:"session:pinned,omitempty"`          // tab
-	SessionAgent           string   `json:"session:agent,omitempty"`           // tab
-	SessionLabel           string   `json:"session:label,omitempty"`           // tab (user-set custom name; overrides the agent-derived row label)
-	SessionProject         string   `json:"session:project,omitempty"`         // tab (launch-time project name; roster group + boot label below the ai-title)
-	SessionEffort          string   `json:"session:effort,omitempty"`          // tab ("effort:<oid>": the initiative the session was launched from, or last read or wrote through `wsh effort`)
-	SessionCollapsedGroups []string `json:"session:collapsedgroups,omitempty"` // workspace
-	SessionHelper          bool     `json:"session:helper,omitempty"`          // tab (a short-lived helper terminal, e.g. the Claude sign-in dialog's; the sidebar skips it)
+	SessionPinned          bool             `json:"session:pinned,omitempty"`          // tab
+	SessionAgent           string           `json:"session:agent,omitempty"`           // tab
+	SessionLabel           string           `json:"session:label,omitempty"`           // tab (user-set custom name; overrides the agent-derived row label)
+	SessionProject         string           `json:"session:project,omitempty"`         // tab (launch-time project name; roster group + boot label below the ai-title)
+	SessionEffort          string           `json:"session:effort,omitempty"`          // tab ("effort:<oid>": the initiative the session was launched from, or last read or wrote through `wsh effort`)
+	SessionCollapsedGroups []string         `json:"session:collapsedgroups,omitempty"` // workspace
+	SessionLater           map[string]int64 `json:"session:later,omitempty"`           // workspace (session id, its transcript's file stem -> when it was marked for later)
+	SessionHelper          bool             `json:"session:helper,omitempty"`          // tab (a short-lived helper terminal, e.g. the Claude sign-in dialog's; the sidebar skips it)
 
 	// for loom git client (Wave Agent Sessions fork)
 	AppLoom bool `json:"app:loom,omitempty"` // block (marks the live loom block for toggle)

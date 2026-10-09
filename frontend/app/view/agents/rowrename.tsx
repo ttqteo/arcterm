@@ -23,9 +23,10 @@ function endRowRename(tabId: string): void {
 }
 
 // Mounted in place of the row's name while renaming, which is why the seed is read on mount: this component's
-// whole lifetime IS the edit.
-export function RenameBox({ tabId }: { tabId: string }) {
-    const [initial] = useState(() => sessionCustomLabel(tabId));
+// whole lifetime IS the edit. It opens on the name the row shows (its own label, else the auto name `shown`), all of it
+// selected: typing replaces it, an arrow key edits it, and an emptied box goes back to the auto name.
+export function RenameBox({ tabId, shown }: { tabId: string; shown: string }) {
+    const [initial] = useState(() => sessionCustomLabel(tabId) || shown);
     const [draft, setDraft] = useState(initial);
     // Enter and blur both mean commit and Escape means cancel, but removing a focused input also
     // fires blur — so without this latch, cancelling would immediately commit the draft it discarded.
@@ -47,6 +48,7 @@ export function RenameBox({ tabId }: { tabId: string }) {
     return (
         <input
             autoFocus
+            onFocus={(e) => e.currentTarget.select()}
             value={draft}
             // the row itself is a click target (select/focus); a click meant for the caret is not one
             onClick={(e) => e.stopPropagation()}

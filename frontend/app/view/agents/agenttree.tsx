@@ -15,6 +15,8 @@ import {
     ArrowRight,
     ArrowUpRight,
     Check,
+    Bookmark,
+    BookmarkCheck,
     ChevronDown,
     ChevronRight,
     ChevronUp,
@@ -44,6 +46,8 @@ import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemode
 import { setAgentView } from "./agentview";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
+import { laterFirst, laterSince, laterTitle, type LaterMarks } from "./latermodel";
+import { laterMarksAtom, setLater } from "./laterstore";
 import { RenameBox, startRowRename } from "./rowrename";
 import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
@@ -60,13 +64,13 @@ import {
     liveBranches,
     notableBranch,
     registeredConversations,
-    runsBesideOrigins,
     runTokens,
     sessionAgeLabel,
     splitActive,
     startedLabel,
     startOfDay,
     terminalTree,
+    type ConversationEntry,
     type EndedRunRow,
     type EndedSessionRow,
 } from "./agentsidebarmodel";
@@ -232,17 +236,6 @@ function Guides({ depth }: { depth: 1 | 2 }) {
     );
 }
 
-// A row of a run a session started, set one level in under that session's row with a guide down its leading column,
-// so the session and its run read as one group
-function UnderOrigin({ children }: { children: React.ReactNode }) {
-    return (
-        <div className="relative pl-[17px]">
-            <span className={cn("absolute inset-y-0 w-px bg-edge-strong", GUIDE_LEFT[0])} />
-            {children}
-        </div>
-    );
-}
-
 // `word` follows the label only where its @container line has room for it, so a narrow sidebar keeps just the count
 function FoldChip({
     label,
@@ -343,7 +336,9 @@ function RunCompleteLabel({ run }: { run: RunInfo }) {
     return (
         <span className="flex min-w-0 items-center gap-[5px] text-success">
             <Check size={11} aria-hidden className="flex-none" />
-            <span className="truncate">{finishedRunLabel(run)}</span>
+            <span className="truncate" title={finishedRunLabel(run)}>
+                {finishedRunLabel(run)}
+            </span>
         </span>
     );
 }
@@ -373,7 +368,10 @@ function RunSubline({
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
-                    <span className="truncate text-muted">
+                    <span
+                        className="truncate text-muted"
+                        title={runStatusView(run.status ?? "planning", run.land).label}
+                    >
                         {runStatusView(run.status ?? "planning", run.land).label}
                     </span>
                 )}
@@ -399,7 +397,9 @@ function RunSubline({
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
-                    <span className="truncate text-muted">{progress}</span>
+                    <span className="truncate text-muted" title={progress}>
+                        {progress}
+                    </span>
                 )}
                 {trailing != null ? <span className="flex-1" /> : null}
                 {trailing}
@@ -451,6 +451,7 @@ function ParentRow({
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
     const digit = useHeldDigit(navDigit);
+    const laterAt = laterSince(useAtomValue(laterMarksAtom), agent.transcriptPath);
 
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
@@ -463,6 +464,7 @@ function ParentRow({
                 icon: <Copy size={15} />,
                 click: () => void navigator.clipboard.writeText(agent.name),
             },
+            laterMenuItem(agent.transcriptPath, laterAt != null),
             { type: "separator" },
             {
                 label: "Close agent",
@@ -620,7 +622,7 @@ function ParentRow({
                 )}
             >
                 {renaming ? (
-                    <RenameBox tabId={agent.id} />
+                    <RenameBox tabId={agent.id} shown={agent.name} />
                 ) : (
                     <div className="flex min-w-0 items-center gap-[6px]">
                         <DigitHint digit={digit}>
@@ -644,6 +646,7 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
+                        {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
                     </div>
@@ -1093,6 +1096,38 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
+// A row menu's later item (latermodel.ts): Mark for later, or Done once marked. Disabled for a session with no
+// transcript yet, which has no id to file the mark under.
+function laterMenuItem(transcriptPath: string | undefined, marked: boolean): ContextMenuItem {
+    return marked
+        ? {
+              label: "Done (clear later)",
+              icon: <BookmarkCheck size={15} />,
+              click: () => setLater(transcriptPath, false),
+          }
+        : {
+              label: "Mark for later",
+              icon: <Bookmark size={15} />,
+              enabled: !!transcriptPath,
+              click: () => setLater(transcriptPath, true),
+          };
+}
+
+// The mark after a row's name for a session marked for later; `title` says since when.
+function LaterMark({ title }: { title: string }) {
+    return (
+        <span role="img" aria-label={title} title={title} data-agent-later className="flex flex-none text-warning">
+            <Bookmark size={11} fill="currentColor" aria-hidden />
+        </span>
+    );
+}
+
+// laterLabel is an ended conversation's later tooltip, or undefined when it is not marked (a run is never one)
+function laterLabel(marks: LaterMarks, row: ConversationEntry, now: number): string | undefined {
+    const since = row.kind === "session" ? laterSince(marks, row.session.transcriptpath) : undefined;
+    return since != null ? laterTitle(since, now, formatAgeShort) : undefined;
+}
+
 // An ended conversation in the Conversations section, on one line: its runtime, first prompt, tokens and how long ago
 // it last moved (the folder, or the app bar's filter, names the project). A second line comes only when it tells the
 // row apart: a branch other than the default, or, when another shown row has the same title, when it started.
@@ -1106,12 +1141,14 @@ const ConversationRow = memo(function ConversationRow({
     age,
     started,
     selected,
+    later,
 }: {
     model: AgentsViewModel;
     row: EndedSessionRow;
     age: string;
     started?: string; // startedLabel, for a row whose title another shown row shares
     selected: boolean;
+    later?: string; // laterTitle, for a session marked for later
 }) {
     const { session } = row;
     const branch = notableBranch(session.branch);
@@ -1124,7 +1161,7 @@ const ConversationRow = memo(function ConversationRow({
                 click: () => runSessionPrimary(model, session),
             });
         }
-        items.push(copyTitleItem(row.title));
+        items.push(copyTitleItem(row.title), laterMenuItem(session.transcriptpath, later != null));
         if (canDeleteSession(session)) {
             items.push(
                 { type: "separator" },
@@ -1153,13 +1190,16 @@ const ConversationRow = memo(function ConversationRow({
                 tokens={session.tokenstotal}
                 icon={<RuntimeGlyph runtime={session.runtime} />}
                 mark={
-                    session.needsAttention ? (
-                        <span
-                            role="img"
-                            aria-label="waiting for you"
-                            className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
-                        />
-                    ) : null
+                    <>
+                        {later != null ? <LaterMark title={later} /> : null}
+                        {session.needsAttention ? (
+                            <span
+                                role="img"
+                                aria-label="waiting for you"
+                                className="h-[6px] w-[6px] flex-none rounded-full bg-warning"
+                            />
+                        ) : null}
+                    </>
                 }
             />
             {branch || started ? (
@@ -1516,7 +1556,7 @@ function TerminalRow({ model, terminal }: { model: AgentsViewModel; terminal: Ag
                 <SquareTerminal size={13} aria-hidden className="text-muted" />
             </Slot>
             {renaming ? (
-                <RenameBox tabId={terminal.id} />
+                <RenameBox tabId={terminal.id} shown={terminal.name} />
             ) : (
                 <span
                     title={terminal.name}
@@ -1623,30 +1663,24 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const open = useSectionOpen("conversations");
     // filed under the project name the Active section's folders use (agentsidebarmodel.ts); only the projects added to
     // arcterm, the rest being Conversation History's
+    const laterMarks = useAtomValue(laterMarksAtom);
     const { ended, elsewhere } = useMemo(
-        () => registeredConversations(endedConversationsByProject(archive, agents, registered), registered),
-        [archive, agents, registered]
+        () =>
+            registeredConversations(
+                laterFirst(endedConversationsByProject(archive, agents, registered), laterMarks),
+                registered
+            ),
+        [archive, agents, registered, laterMarks]
     );
     // a clock that moves once a day, so the run views below do not rebuild on every tick
     const today = startOfDay(now);
-    const paged = useMemo(
+    const rows = useMemo(
         () => conversationTree(ended, filter, new Set(collapsedList), presses),
         [ended, filter, collapsedList, presses]
     );
     // each shown run's view, from its own objects (loaded on first read); an ended run's dag no longer moves
-    const shownRuns = useMemo(() => paged.filter((r): r is EndedRunRow => r.kind === "run"), [paged]);
+    const shownRuns = useMemo(() => rows.filter((r): r is EndedRunRow => r.kind === "run"), [rows]);
     const runObjs = useRunObjects(shownRuns.map((r) => r.group.runId));
-    // a run a session started sits under that session, once the run's object says which session it was
-    const rows = useMemo(() => {
-        const origins = new Map<string, string>();
-        for (const r of shownRuns) {
-            const path = runObjs[r.group.runId]?.run?.origintranscript;
-            if (path) {
-                origins.set(r.group.runId, path);
-            }
-        }
-        return origins.size > 0 ? runsBesideOrigins(paged, origins) : paged;
-    }, [paged, shownRuns, runObjs]);
     const runViews = useMemo(() => {
         const out = new Map<string, RunView>();
         for (const r of shownRuns) {
@@ -1705,22 +1739,18 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                         <ShowMoreConversations project={r.project} hidden={r.hidden} less={r.less} />
                                     </div>
                                 );
-                            case "run": {
-                                const row = (
-                                    <RunConversationRow
-                                        model={model}
-                                        row={r}
-                                        view={runViews.get(r.key)}
-                                        age={sessionAgeLabel(r.lastactivets, now)}
-                                        selected={mode === "run" && sel === r.key}
-                                    />
-                                );
+                            case "run":
                                 return (
                                     <div key={r.key} className={rowIndent(filtered)}>
-                                        {r.under ? <UnderOrigin>{row}</UnderOrigin> : row}
+                                        <RunConversationRow
+                                            model={model}
+                                            row={r}
+                                            view={runViews.get(r.key)}
+                                            age={sessionAgeLabel(r.lastactivets, now)}
+                                            selected={mode === "run" && sel === r.key}
+                                        />
                                     </div>
                                 );
-                            }
                             case "session":
                                 return (
                                     <div key={r.key} className={rowIndent(filtered)}>
@@ -1734,6 +1764,7 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                                     : undefined
                                             }
                                             selected={mode === "session" && sel === r.key}
+                                            later={laterLabel(laterMarks, r, now)}
                                         />
                                     </div>
                                 );
@@ -2008,7 +2039,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         animate="animate"
                                         exit="exit"
                                     >
-                                        {r.under ? <UnderOrigin>{body}</UnderOrigin> : body}
+                                        {body}
                                     </motion.div>
                                 );
                             })}

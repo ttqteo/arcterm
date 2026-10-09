@@ -210,6 +210,17 @@ describe("buildLaunchMeta", () => {
         expect(m["cmd:args"]).toEqual(["--session", "C:\\old\\s.jsonl", "--model", "x"]);
         expect(m["agent:baseargs"]).toEqual(["--session", "C:\\old\\s.jsonl", "--model", "x"]);
     });
+    it("puts extraArgs after the task and keeps them out of agent:baseargs", () => {
+        const meta = buildLaunchMeta({
+            runtime: "codex",
+            startupCommand: "codex --full-auto",
+            task: "fix it",
+            extraArgs: ["--image", "a.png"],
+            cwd: "/p",
+        });
+        expect(meta["cmd:args"]).toEqual(["--full-auto", "fix it", "--image", "a.png"]);
+        expect(meta["agent:baseargs"]).toEqual(["--full-auto"]);
+    });
 });
 
 describe("sessionIdFromTranscript", () => {
