@@ -1,13 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-//go:build !darwin || !cgo
+//go:build !windows && (!darwin || !cgo)
 
 package memusage
 
 import "github.com/shirou/gopsutil/v4/process"
 
-// footprint is the resident set (the working set on Windows): the footprint call is darwin's, and wsh builds
+// footprint is the resident set: the footprint call is darwin's, and wsh builds
 // without cgo.
 func footprint(pid int32) (uint64, bool) {
 	p, err := process.NewProcess(pid)

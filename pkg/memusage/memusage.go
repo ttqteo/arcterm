@@ -3,7 +3,8 @@
 
 // Package memusage measures what arcterm's processes hold in memory: each agent's process tree, wavesrv, the
 // Tauri host and the webview that draws the cockpit. The figure is the physical footprint on macOS, what
-// Activity Monitor shows, and the resident set elsewhere. A value that could not be read is absent, never zero.
+// Activity Monitor shows, the private working set on Windows, what Task Manager shows, and the resident set
+// elsewhere. A value that could not be read is absent, never zero.
 package memusage
 
 import (

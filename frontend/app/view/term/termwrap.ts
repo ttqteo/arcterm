@@ -60,6 +60,9 @@ const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
 const MaxRepaintTransactionMs = 2000;
+// how long a pane stays hidden before it gives its WebGL context back (see handleResize): long enough that flipping
+// between agents does not rebuild a context each time
+const WebGLParkDelayMs = 30_000;
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
@@ -107,6 +110,11 @@ export class TermWrap {
     webglAddon: WebglAddon | null = null;
     webglContextLossDisposable: TermTypes.IDisposable | null = null;
     webglEnabledAtom: jotai.PrimitiveAtom<boolean>;
+    // the renderer asked for (settings, the toggle, a lost context); a hidden pane may park WebGL without changing it
+    wantWebGl = false;
+    // a hidden pane's WebGL context was given back and comes back when the pane shows
+    webglParked = false;
+    webglParkTimer: ReturnType<typeof setTimeout> | null = null;
     pasteActive: boolean = false;
     lastUpdated: number;
     promptMarkers: TermTypes.IMarker[] = [];
@@ -378,6 +386,45 @@ export class TermWrap {
     }
 
     setTermRenderer(renderer: "webgl" | "dom") {
+        this.wantWebGl = renderer === "webgl" && WebGLSupported;
+        this.webglParked = false;
+        this.applyTermRenderer(renderer);
+    }
+
+    // Each WebGL terminal holds its own context in the GPU process, and every pane stays mounted while hidden, so a
+    // pane hidden past WebGLParkDelayMs draws with the DOM renderer (xterm draws nothing while hidden anyway) and loads
+    // WebGL again when it shows.
+    private parkWebGlWhenHidden() {
+        if (this.webglAddon == null || this.webglParkTimer != null) {
+            return;
+        }
+        this.webglParkTimer = setTimeout(() => {
+            this.webglParkTimer = null;
+            if (this.webglAddon != null && this.isHidden()) {
+                this.applyTermRenderer("dom");
+                this.webglParked = true;
+            }
+        }, WebGLParkDelayMs);
+    }
+
+    // true when it loaded WebGL again, which starts from the current glyph atlas
+    private unparkWebGl(): boolean {
+        if (this.webglParkTimer != null) {
+            clearTimeout(this.webglParkTimer);
+            this.webglParkTimer = null;
+        }
+        if (!this.webglParked) {
+            return false;
+        }
+        this.webglParked = false;
+        if (!this.wantWebGl) {
+            return false;
+        }
+        this.applyTermRenderer("webgl");
+        return true;
+    }
+
+    private applyTermRenderer(renderer: "webgl" | "dom") {
         if (renderer === "webgl") {
             if (this.webglAddon != null) {
                 return;
@@ -493,6 +540,10 @@ export class TermWrap {
             }
         });
         this.promptMarkers = [];
+        if (this.webglParkTimer != null) {
+            clearTimeout(this.webglParkTimer);
+            this.webglParkTimer = null;
+        }
         this.webglContextLossDisposable?.dispose();
         this.webglContextLossDisposable = null;
         this.terminal.dispose();
@@ -629,23 +680,32 @@ export class TermWrap {
         }
     }
 
-    handleResize() {
-        // skip while hidden/detached (display:none -> offsetParent null, 0 size) so we don't fit to a
-        // 0-size box and shrink the PTY; the ResizeObserver fires again with real dims on re-show.
-        if (
+    // display:none on the pane or an ancestor: offsetParent null, 0 size
+    private isHidden(): boolean {
+        return (
             this.connectElem.offsetParent == null ||
             this.connectElem.clientWidth === 0 ||
             this.connectElem.clientHeight === 0
-        ) {
+        );
+    }
+
+    handleResize() {
+        // skip while hidden/detached (display:none -> offsetParent null, 0 size) so we don't fit to a
+        // 0-size box and shrink the PTY; the ResizeObserver fires again with real dims on re-show.
+        if (this.isHidden()) {
             this.hiddenSinceShown = true;
+            this.parkWebGlWhenHidden();
             return;
         }
+        const reloadedWebGl = this.unparkWebGl();
         // every WebGL terminal shares one glyph atlas, which the visible ones grow and repack while this one is
         // hidden; shown again, it drew from stale glyph positions and its text came out garbled until a window
         // focus rebuilt the atlas. Showing a pane (choosing its agent) rebuilds it here.
         if (this.hiddenSinceShown) {
             this.hiddenSinceShown = false;
-            this.webglAddon?.clearTextureAtlas();
+            if (!reloadedWebGl) {
+                this.webglAddon?.clearTextureAtlas();
+            }
         }
         const oldRows = this.terminal.rows;
         const oldCols = this.terminal.cols;

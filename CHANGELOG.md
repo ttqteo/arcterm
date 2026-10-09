@@ -26,6 +26,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - The Agent panel's Files tab opens as wide as Overview instead of the File tab's width, and remembers its own width
   when you drag its edge.
+- On Windows, the Consumers panel's RAM figures are each process's private memory, as Task Manager shows it, instead
+  of a working set that also counted memory shared with other apps (the Interface row read about a third too high).
+- A terminal hidden for more than 30 seconds gives its GPU drawing context back and takes a new one when it shows
+  again, so the interface holds less memory with many agents open.
 
 ## 0.15.7 — 2026-10-09
 
