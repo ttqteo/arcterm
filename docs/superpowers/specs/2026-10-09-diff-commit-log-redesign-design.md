@@ -1,7 +1,9 @@
 # The Diff surface as a Commit | Log tool window
 
 **Date:** 2026-10-09
-**Status:** design, agreed in brainstorming 2026-10-09; mockup next
+**Status:** partly built. Run 57b7ed36 (2026-10-09) landed the Go writes (commit, pull, push, upstream counts), the
+pure models, the quick look and the panel layout (§1). The Commit tab's form (§2), the sync bar (§3) and the docs are
+still to build: plan Tasks 8–10.
 **Builds on:** the worktree sidebar (`2026-10-08-diff-worktree-sidebar-design.md`), the stored scope
 (`2026-08-06-diff-scope-model-design.md`) and the polish pass (`2026-09-25-diff-surface-polish-design.md`).
 It replaces the four-column layout and the range strip. It takes on part of the deferred "repository

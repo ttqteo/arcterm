@@ -2,6 +2,14 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Progress:** run 57b7ed36 (2026-10-09) landed Tasks 1–7. Tasks 8–10 were paused by the human and are left for a
+> later run; a later run takes only those three (re-number them, and Task 8 depends on nothing then). Task 8's
+> unfinished, unreviewed attempt is kept at tag `arc/57b7ed36-t-8-wip` (`committab.tsx`, `commitstore.ts`,
+> `commitrows.ts`). Task 7's review notes for them: `diff-log-tab` seeds a feature branch four commits ahead of main
+> (history rows 0 = touch a and b, 1 = tweak c, 2 = tweak a, 3 = empty), and `pickFilesSource` clicks
+> `[data-folded-source]` when the panel is folded, which pins `panelFoldedAtom` false, so a scenario relying on the
+> width fold picks before it narrows and restores `PANEL_FOLD_KEY` in teardown.
+
 **Goal:** Rebuild the Diff surface as one left panel (Commit | Log tabs, a source dropdown, a sync bar) beside a wide
 diff. Add commit, fetch, pull and push. Make every selection show a diff at once, never `0 files` while loading.
 
