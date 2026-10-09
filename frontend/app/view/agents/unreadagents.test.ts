@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentState } from "./agentsviewmodel";
-import { nestedIds, nextUnread, sameCounts, unreadLabel, viewingIds } from "./unreadagents";
+import { latestUnreadId, nestedIds, nextUnread, sameCounts, unreadLabel, viewingIds } from "./unreadagents";
 
 const states = (o: Record<string, AgentState>) => new Map(Object.entries(o));
 const roster = (o: Record<string, AgentState>) => Object.entries(o).map(([id, state]) => ({ id, state }));
@@ -76,6 +76,31 @@ describe("unreadLabel", () => {
         expect(unreadLabel(9)).toBe("9");
         expect(unreadLabel(10)).toBe("9+");
         expect(unreadLabel(250)).toBe("9+");
+    });
+});
+
+describe("latestUnreadId", () => {
+    const agents = [{ id: "a", idleSince: 100 }, { id: "b", idleSince: 300 }, { id: "c" }, { id: "d", idleSince: 200 }];
+    const unread = (...ids: string[]) => new Map(ids.map((id) => [id, 1]));
+
+    it("is the unread agent that went idle last", () => {
+        expect(latestUnreadId(unread("a", "d"), agents)).toBe("d");
+        expect(latestUnreadId(unread("a", "b", "d"), agents)).toBe("b");
+    });
+
+    it("ranks an agent with no idleSince oldest, and keeps roster order on a tie", () => {
+        expect(latestUnreadId(unread("c", "a"), agents)).toBe("a");
+        expect(latestUnreadId(unread("c"), agents)).toBe("c");
+        const tied = [
+            { id: "x", idleSince: 5 },
+            { id: "y", idleSince: 5 },
+        ];
+        expect(latestUnreadId(unread("y", "x"), tied)).toBe("x");
+    });
+
+    it("is undefined when nothing in the roster is unread", () => {
+        expect(latestUnreadId(unread(), agents)).toBeUndefined();
+        expect(latestUnreadId(unread("gone"), agents)).toBeUndefined();
     });
 });
 

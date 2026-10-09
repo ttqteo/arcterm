@@ -15,6 +15,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - `Alt`+`1`…`9` jumps to an agent in the Agent surface's Active list, even from inside its terminal; hold `Alt` a
   moment and each agent row shows its number. Holding `Ctrl` (`Cmd` on a Mac) likewise numbers the rail's surfaces
   for `Ctrl`+`1`…`7`.
+- On the Agent surface, clicking the unread count on the rail's Agent icon opens the agent that finished last; click
+  again for the next one.
 - In Float, a small Sprout in the bar shows when something waits on you (`?`, `!` or the review eye); click it, or
   press `g` `w`, to open the pet's popup below it.
 - When the computer sleeps while agents are working, Jarvis's pet says so on waking: how long it slept, from when to
