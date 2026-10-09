@@ -318,7 +318,7 @@ function Header({ agent, review }: { agent: AgentVM; review: DialogReview }) {
                     onClick={closeDialog}
                     aria-label="Hide the review (Esc)"
                     title="Hide the review (Esc)"
-                    className={cn(ICON_BTN, "px-[7px] py-[5px] leading-none hover:border-edge-strong")}
+                    className={cn(ICON_BTN, "leading-none")}
                 >
                     <X size={14} aria-hidden />
                 </button>

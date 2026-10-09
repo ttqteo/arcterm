@@ -19,7 +19,7 @@ import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { versionInfoAtom } from "./versioninfo";
 
-// Handoff top app bar (46px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
+// Handoff top app bar (38px). Replaces CockpitTitlebar + the old "+ New Agent" strip.
 // Windows adaptation (spec D1): functional min/max/close on the right; no mac traffic-lights.
 // macOS keeps its native traffic lights instead (tauri.macos.conf.json overlays them on this bar), so
 // the bar drops its own controls and leaves room for the lights on the left: 16px margin, the ~60px
@@ -38,7 +38,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             data-app-bar
             data-tauri-drag-region
             className={clsx(
-                "flex h-[46px] shrink-0 items-center gap-4 border-b border-border bg-surface",
+                "flex h-[38px] shrink-0 items-center gap-4 border-b border-border bg-surface",
                 mac ? "pr-4" : null,
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}
@@ -64,14 +64,14 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                 <button
                     type="button"
                     onClick={() => globalStore.set(model.paletteOpenAtom, true)}
-                    className="flex w-full max-w-[520px] cursor-text items-center gap-2.5 rounded-[9px] border border-edge-mid bg-surface-raised px-3 py-[7px] text-muted hover:border-edge-strong hover:bg-surface-hover"
+                    className="flex h-[26px] w-full max-w-[360px] cursor-text items-center gap-2 rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-muted hover:border-edge-strong hover:bg-surface-hover"
                 >
-                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <circle cx="5.5" cy="5.5" r="4" />
                         <path d="M9 9l3 3" strokeLinecap="round" />
                     </svg>
-                    <span className="min-w-0 flex-1 truncate text-left text-[13px]">Search, or type a goal…</span>
-                    <ShortcutHint id="palette" className="border-border" />
+                    <span className="min-w-0 flex-1 truncate text-left text-[12.5px]">Search, or type a goal…</span>
+                    <ShortcutHint id="palette" className={clsx(HINT_SM, "border-border")} />
                 </button>
             </div>
 
@@ -87,12 +87,12 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     aria-haspopup="dialog"
                     title={withChord("New agent or run", newAgentKeys)}
                     onClick={() => reopenLauncher(model)}
-                    className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-accent px-[clamp(9px,1.3vw,12px)] py-[7px] text-[clamp(11px,1.35vw,12.5px)] font-semibold text-background hover:bg-accenthover"
+                    className="flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] bg-accent px-2.5 text-[12px] font-semibold text-background hover:bg-accenthover"
                 >
-                    <span className="-mt-px text-[15px] leading-none">+</span>New
+                    <span className="-mt-px text-[14px] leading-none">+</span>New
                     <ShortcutHint
                         id="new-agent"
-                        className={clsx(HINT_FIT, "border-background/30 text-background/75")}
+                        className={clsx(HINT_SM, HINT_FIT, "border-background/30 text-background/75")}
                     />
                 </button>
 
@@ -102,6 +102,8 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     );
 }
 
+// The shortcut chips, cut down to sit inside the bar's 26px controls.
+const HINT_SM = "px-1 py-0 text-[10.5px] leading-4";
 // A button's chips go at a narrow window, where the bar has no room left for them; the title still names the chord.
 const HINT_FIT = "ml-0.5 max-[1199px]:hidden";
 
@@ -118,21 +120,21 @@ export function WindowControls() {
             <button
                 onClick={() => win.minimize()}
                 aria-label="Minimize"
-                className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
+                className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >
                 &#x2013;
             </button>
             <button
                 onClick={() => win.toggleMaximize()}
                 aria-label={maximized ? "Restore" : "Maximize"}
-                className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
+                className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >
                 {maximized ? <RestoreGlyph /> : <>&#x25A1;</>}
             </button>
             <button
                 onClick={() => win.close()}
                 aria-label="Close"
-                className="flex h-8 w-11 cursor-pointer items-center justify-center text-secondary hover:bg-error hover:text-white"
+                className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-error hover:text-white"
             >
                 &#x2715;
             </button>

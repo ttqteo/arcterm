@@ -113,7 +113,7 @@ typography:
     fontSize: 12px
 spacing:
   base: 4px
-  appbar: 46px
+  appbar: 38px
   rail-wide: 78px
   rail-narrow: 56px
   stage-min: 640px
@@ -346,8 +346,8 @@ Flexbox everywhere; grid only for card grids. The recurring chrome combo is
 `min-w-0` so they can shrink. Fixed widths belong to rails and sidebars only;
 content is always fluid.
 
-- **App bar** — fixed 46px row, `data-tauri-drag-region` for window drag;
-  left logo + switchers, center search (max 520px), right primary CTA +
+- **App bar** — fixed 38px row, `data-tauri-drag-region` for window drag;
+  left logo + switchers, center search (max 360px), right primary CTA +
   window controls.
 - **Nav rail** — fixed 78px wide (56px on narrow windows via
   `navRailCollapsed(windowWidth)` in `navrailwidth.ts`).

@@ -16,7 +16,7 @@ import { PET_GRID, type PetCell } from "./petsprite";
 import { petOutfitChoiceAtom } from "./petstore";
 import { usePetSignals } from "./petview";
 
-// two px a cell: 32px stands inside the 46px bar
+// two px a cell: 32px stands inside the 38px bar
 const CELL_PX = 2;
 const SPROUT_PX = PET_GRID * CELL_PX;
 

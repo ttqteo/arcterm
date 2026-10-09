@@ -70,9 +70,12 @@ export const CTX_TEXT: Record<"ok" | "warn" | "hot", string> = {
     hot: "text-error",
 };
 
-// shared compact icon-button (matches the rail-toggle's resting style)
+// shared compact icon-button: a bare icon that takes a fill on hover. The border stays transparent so a button that
+// turns on (ICON_BTN_ON) keeps its size.
 export const ICON_BTN =
-    "cursor-pointer rounded-[7px] border border-edge-mid bg-surface-raised px-[9px] py-[6px] text-secondary";
+    "flex cursor-pointer items-center justify-center rounded-[6px] border border-transparent p-[5px] text-muted hover:bg-surface-hover hover:text-primary";
+// an icon-button that is on (split shown, floating, fullscreen, pinned)
+export const ICON_BTN_ON = "border-accent/50 bg-accentbg text-accent hover:bg-accentbg hover:text-accent";
 
 // useRunLineage reads what the header says about an agent a run spawned: a lead's run, a worker's task and
 // lead, or a stage session's run and lead.
@@ -435,14 +438,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         aria-pressed={splitShown}
                         onClick={openSplitMenu}
                         title="Split: show another agent beside this one (or drag a row from the sidebar onto the terminal)"
-                        className={cn(
-                            "flex cursor-pointer items-center gap-[6px] rounded-[7px] border px-[9px] py-[6px] text-[12px]",
-                            splitShown
-                                ? "border-accent bg-accentbg text-accent"
-                                : cn(ICON_BTN, "hover:border-edge-strong")
-                        )}
+                        className={cn(ICON_BTN, "gap-[6px] text-[12px]", splitShown && ICON_BTN_ON)}
                     >
-                        <Columns2 size={16} strokeWidth={1.8} aria-hidden />
+                        <Columns2 size={15} strokeWidth={1.8} aria-hidden />
                         {splitShown ? <span className="tabular-nums">{cellCount}</span> : null}
                     </button>
                 ) : null}
@@ -475,9 +473,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             onClick={redraw}
                             title="Redraw terminal: repaint garbled text; the session keeps running"
                             aria-label="Redraw terminal"
-                            className={cn(ICON_BTN, "hover:border-edge-strong")}
+                            className={ICON_BTN}
                         >
-                            <RotateCw size={16} strokeWidth={1.8} />
+                            <RotateCw size={15} strokeWidth={1.8} />
                         </button>
                         <button
                             type="button"
@@ -486,14 +484,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             title={floatTitle}
                             aria-label={floating ? "Leave float" : "Float window"}
                             aria-pressed={floating}
-                            className={cn(
-                                "cursor-pointer rounded-[7px] border px-[9px] py-[6px]",
-                                floating
-                                    ? "border-accent bg-accentbg text-accent"
-                                    : cn(ICON_BTN, "hover:border-edge-strong")
-                            )}
+                            className={cn(ICON_BTN, floating && ICON_BTN_ON)}
                         >
-                            <PictureInPicture2 size={16} strokeWidth={1.8} />
+                            <PictureInPicture2 size={15} strokeWidth={1.8} />
                         </button>
                         <motion.button
                             type="button"
@@ -506,12 +499,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             aria-pressed={fullscreen}
                             whileHover={{ scale: 1.06 }}
                             whileTap={{ scale: 0.85 }}
-                            className={cn(
-                                "cursor-pointer rounded-[7px] border px-[9px] py-[6px]",
-                                fullscreen
-                                    ? "border-accent bg-accentbg text-accent"
-                                    : cn(ICON_BTN, "hover:border-edge-strong")
-                            )}
+                            className={cn(ICON_BTN, fullscreen && ICON_BTN_ON)}
                         >
                             {/* re-keyed so each toggle replays the rotate-in, reinforcing the state flip */}
                             <motion.span
@@ -522,9 +510,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 className="block"
                             >
                                 {fullscreen ? (
-                                    <Minimize2 size={16} strokeWidth={1.8} />
+                                    <Minimize2 size={15} strokeWidth={1.8} />
                                 ) : (
-                                    <Maximize2 size={16} strokeWidth={1.8} />
+                                    <Maximize2 size={15} strokeWidth={1.8} />
                                 )}
                             </motion.span>
                         </motion.button>
@@ -536,9 +524,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                     ? "Close terminal — ends its shell"
                                     : `Close agent — ends its session (${formatChordString("Ctrl:c")} twice)`
                             }
-                            className={cn(ICON_BTN, "hover:border-error hover:text-error")}
+                            className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error")}
                         >
-                            <X size={16} strokeWidth={1.9} />
+                            <X size={15} strokeWidth={1.9} />
                         </button>
                     </>
                 ) : null}

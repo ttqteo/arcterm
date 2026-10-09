@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useBindingKeys } from "@/app/store/keybindings/store";
-import { CTX_TEXT, ICON_BTN, STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
+import { CTX_TEXT, ICON_BTN, ICON_BTN_ON, STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
 import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
@@ -18,7 +18,7 @@ import { WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
-// the pin and the way back. 46px on a Mac, because macOS overlays its traffic lights at the centre line of a bar that
+// the pin and the way back. 38px on a Mac, because macOS overlays its traffic lights at the centre line of a bar that
 // tall (tauri.macos.conf.json); 40px elsewhere, room for the 32px Sprout and little more.
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
@@ -35,7 +35,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             data-tauri-drag-region
             className={cn(
                 "flex shrink-0 items-center gap-2 border-b border-border bg-surface",
-                mac ? "h-[46px] pl-[92px] pr-3" : "h-[40px] pl-3"
+                mac ? "h-[38px] pl-[92px] pr-3" : "h-[40px] pl-3"
             )}
         >
             <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
@@ -82,10 +82,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                 aria-label={pinLabel}
                 title={pinLabel}
                 onClick={() => fireAndForget(() => setFloatPinned(!pinned))}
-                className={cn(
-                    "cursor-pointer rounded-[7px] border px-[9px] py-[6px]",
-                    pinned ? "border-accent bg-accentbg text-accent" : cn(ICON_BTN, "hover:border-edge-strong")
-                )}
+                className={cn(ICON_BTN, pinned && ICON_BTN_ON)}
             >
                 <Pin size={15} strokeWidth={1.8} className={pinned ? "" : "rotate-45"} />
             </button>
@@ -95,7 +92,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                 aria-label="Leave float"
                 title={floatKeys != null ? `Leave float (${formatChordString(floatKeys)})` : "Leave float"}
                 onClick={() => fireAndForget(() => exitFloat(true))}
-                className={cn(ICON_BTN, "hover:border-edge-strong")}
+                className={ICON_BTN}
             >
                 <PictureInPicture2 size={15} strokeWidth={1.8} />
             </button>

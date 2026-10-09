@@ -29,6 +29,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A Claude agent asks you before it starts a subagent, naming it and warning that one can cost millions of tokens
   (agents in an engine run are not asked); the 10-subagent cap per session, which had stopped holding, holds again.
+- The app bar is slimmer: 38px instead of 46px, with a narrower search box and smaller buttons, and the 5-hour
+  meter's countdown moved into its tooltip. The agent header's Redraw, Float, fullscreen and close buttons are bare
+  icons that fill on hover rather than boxed buttons.
 - Float has one bar instead of two: the agent's header is gone, and the float bar shows the agent's state, model and
   context next to its name, so the small window gives the terminal more room.
 - The Agent panel's Files tab opens as wide as Overview instead of the File tab's width, and remembers its own width

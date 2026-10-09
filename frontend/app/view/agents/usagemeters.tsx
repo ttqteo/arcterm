@@ -3,7 +3,7 @@
 //
 // The app bar's plan-usage meters, beside the RAM chip: each provider's logo, then its 5-hour and weekly windows as two
 // small bars, each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
-// by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
+// by pace: a fast start read red at 27%). Tokens and both resets are on hover, so the bar stays short;
 // the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
 
 import { Meter } from "@/app/element/meter";
@@ -12,14 +12,7 @@ import { useAtomValue } from "jotai";
 import { Fragment, useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
 import { usageLevel } from "./agentsviewmodel";
-import {
-    formatResetShort,
-    meterTitle,
-    providerDot,
-    usageBarVisible,
-    windowElapsed,
-    windowUsedTokens,
-} from "./cockpitrailmodel";
+import { meterTitle, providerDot, usageBarVisible, windowElapsed, windowUsedTokens } from "./cockpitrailmodel";
 import { toggleConsumers } from "./consumersstore";
 import {
     activeClaudeKeyAtom,
@@ -103,8 +96,6 @@ function UsageMeters({
                 short,
                 pct: d[w].pct!,
                 elapsed: windowElapsed(reset, windowMs, now),
-                // the weekly window is days out and nobody waits it out: its tick says the pace, the tooltip the time
-                countdown: w === "fivehour" && reset ? formatResetShort(reset, now) : null,
                 title: meterTitle(label, d[w].pct!, windowUsedTokens(d.provider, windowTokens, w), reset, now),
             };
         })
@@ -121,7 +112,7 @@ function UsageMeters({
             aria-haspopup="dialog"
             onClick={(e) => onOpen(e.currentTarget)}
             title={[...items.map((m) => m.title), "Token use by agent"].join("\n")}
-            className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
+            className="flex h-[26px] shrink-0 cursor-pointer items-center gap-2.5 rounded border border-edge-mid bg-transparent px-2.5 hover:border-edge-strong hover:bg-surface-raised"
         >
             {items.map((m, i) => {
                 const lvl = usageLevel(m.pct);
@@ -149,11 +140,6 @@ function UsageMeters({
                         <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
                             {Math.round(m.pct)}%
                         </span>
-                        {m.countdown != null ? (
-                            <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
-                                {m.countdown}
-                            </span>
-                        ) : null}
                     </Fragment>
                 );
             })}

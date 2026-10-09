@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from "vitest";
 import {
-    formatResetShort,
     meterTitle,
     providerDot,
     providerLabel,
@@ -93,20 +92,5 @@ describe("windowElapsed", () => {
     it("stays inside 0..1 when the reset is past or further out than the window", () => {
         expect(windowElapsed(NOW / 1000 - 60, FIVE_H, NOW)).toBe(1);
         expect(windowElapsed(NOW / 1000 + 6 * 3600, FIVE_H, NOW)).toBe(0);
-    });
-});
-
-describe("formatResetShort", () => {
-    const NOW = 1_700_000_000_000;
-    const at = (mins: number) => NOW / 1000 + mins * 60;
-    it("drops the space and the trailing m", () => {
-        expect(formatResetShort(at(115), NOW)).toBe("1h55");
-        expect(formatResetShort(at(180), NOW)).toBe("3h");
-        expect(formatResetShort(at(42), NOW)).toBe("42m");
-        expect(formatResetShort(at(76 * 60), NOW)).toBe("3d4h");
-        expect(formatResetShort(at(72 * 60), NOW)).toBe("3d");
-    });
-    it("says now once the reset has passed", () => {
-        expect(formatResetShort(at(-1), NOW)).toBe("now");
     });
 });

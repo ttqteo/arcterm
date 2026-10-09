@@ -72,11 +72,3 @@ export function windowElapsed(reset: number | undefined, windowMs: number, now: 
     const left = reset * 1000 - now;
     return Math.min(1, Math.max(0, 1 - left / windowMs));
 }
-
-/** Pure: formatReset for the app bar, where every pixel counts: "1h55", "3h", "42m", "3d4h". */
-export function formatResetShort(resetSec: number, now: number): string {
-    return formatReset(resetSec, now)
-        .replace(/ 0[mh]$/, "")
-        .replace(" ", "")
-        .replace(/(h\d+)m$/, "$1");
-}
