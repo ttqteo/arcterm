@@ -46,9 +46,7 @@
 
 **Depends on:** none
 
-**Files:**
-- Create: `frontend/app/view/agents/launcherresume.ts`
-- Test: `frontend/app/view/agents/launcherresume.test.ts`
+**Files:** `frontend/app/view/agents/launcherresume.ts`, `frontend/app/view/agents/launcherresume.test.ts`
 
 - [ ] **Step 1: Write the failing tests** in `launcherresume.test.ts`:
 
@@ -196,12 +194,7 @@ export function resumeLaunchSpec(session: SessionInfo, runtime: Runtime, flags: 
 
 **Depends on:** none
 
-**Files:**
-- Create: `frontend/app/view/agents/launcherimages.ts`
-- Test: `frontend/app/view/agents/launcherimages.test.ts`
-- Modify: `frontend/app/view/agents/launch.ts` (`LaunchMetaSpec`, `buildLaunchMeta`)
-- Modify: `frontend/app/view/agents/launch.test.ts`
-- Modify: `frontend/app/cockpit/cockpit-actions.ts` (`LaunchAgentOpts` gains `extraArgs?: string[]`, passed to `buildLaunchMeta`; find the type with `grep -n "LaunchAgentOpts" -r frontend/app/cockpit`)
+**Files:** `frontend/app/view/agents/launcherimages.ts`, `frontend/app/view/agents/launcherimages.test.ts`, `frontend/app/view/agents/launch.ts`, `frontend/app/view/agents/launch.test.ts`, `frontend/app/cockpit/cockpit-actions.ts`
 
 - [ ] **Step 1: Write the failing tests.** `launcherimages.test.ts`:
 
@@ -354,15 +347,7 @@ and in `buildLaunchMeta`, after the `if (task) { … }` block: `args.push(...(sp
 
 **Depends on:** Task 1
 
-**Files:**
-- Modify: `frontend/app/view/agents/launcherstore.ts`
-- Modify: `frontend/app/view/agents/launcherstore.test.ts`
-- Modify: `frontend/app/view/agents/launcher.ts` (`footerLine`, `primaryLabel`)
-- Modify: `frontend/app/view/agents/launcher.test.ts`
-- Create: `frontend/app/view/agents/launcherresumelist.tsx`
-- Modify: `frontend/app/view/agents/launcheragentfields.tsx`
-- Modify: `frontend/app/view/agents/launchermodal.tsx`
-- Modify: `scripts/cdp/scenarios.mjs` (new scenario `launcher-resume`, registered wherever `launcherScenario` is)
+**Files:** `frontend/app/view/agents/launcherstore.ts`, `frontend/app/view/agents/launcherstore.test.ts`, `frontend/app/view/agents/launcher.ts`, `frontend/app/view/agents/launcher.test.ts`, `frontend/app/view/agents/launcherresumelist.tsx`, `frontend/app/view/agents/launcheragentfields.tsx`, `frontend/app/view/agents/launchermodal.tsx`, `scripts/cdp/scenarios.mjs`
 
 - [ ] **Step 1: Store.** In `launcherstore.ts` add:
 
@@ -406,13 +391,7 @@ export async function loadLauncherSessions(): Promise<void> {
 
 **Depends on:** Task 2, Task 3
 
-**Files:**
-- Modify: `frontend/app/view/agents/launcherstore.ts`
-- Modify: `frontend/app/view/agents/launcherstore.test.ts`
-- Modify: `frontend/app/view/agents/launcheragentfields.tsx`
-- Modify: `frontend/app/view/agents/launchermodal.tsx`
-- Modify: `scripts/cdp/scenarios.mjs` (new scenario `launcher-images`)
-- Modify: `CHANGELOG.md`
+**Files:** `frontend/app/view/agents/launcherstore.ts`, `frontend/app/view/agents/launcherstore.test.ts`, `frontend/app/view/agents/launcheragentfields.tsx`, `frontend/app/view/agents/launchermodal.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
 - [ ] **Step 1: Store.** In `launcherstore.ts`:
 
