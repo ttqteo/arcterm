@@ -17,9 +17,9 @@ frontend keeps its stores (`filesstore`, `githistorystore`, `comparestore`) and 
 **Tech stack:** Go (`os/exec` git), wshrpc codegen, React 19 + jotai + Tailwind 4, vitest, CDP scenarios
 (`scripts/cdp/scenarios.mjs`).
 
-**Spec:** `docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md`. Read it first; decision 0 (quick
-look) outranks the rest.
+Read the spec named below first; its decision 0 (quick look) outranks the rest.
 
+**Spec:** `docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md`
 **Verify:** `node scripts/verify.mjs ./pkg/gitinfo ./pkg/wshrpc/...`
 **Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: diff-log-tab, diff-commit-tab, diff-sync need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs diff-log-tab diff-commit-tab diff-sync diff-worktrees diff-compare git-history agent-rail-file-link`
 **Prototype:** .superpowers/design/diff-commit-log/project
@@ -53,10 +53,10 @@ Board → scenario step:
 ---
 
 ### Task 1: Upstream counts on the change read
-
 **Depends on:** none
+**Files:** `pkg/gitinfo/gitinfo.go`, `pkg/gitinfo/gitinfo_test.go`, `pkg/wshrpc/wshrpctypes_projects.go`, `pkg/wshrpc/wshserver/wshserver_projects.go`, `frontend/app/view/agents/filesstore.ts`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
-**Files:**
+**What changes where:**
 - Modify: `pkg/gitinfo/gitinfo.go` (`Changes` struct ~line 28, `GetChanges` ~line 46)
 - Modify: `pkg/wshrpc/wshrpctypes_projects.go` (`CommandGitChangesRtnData`)
 - Modify: `pkg/wshrpc/wshserver/wshserver_projects.go` (`GitChangesCommand`)
@@ -167,10 +167,10 @@ git commit -m "feat(gitinfo): the change read reports HEAD's upstream and how fa
 ---
 
 ### Task 2: Commit with `--only`, and HEAD's message
-
 **Depends on:** Task 1
+**Files:** `pkg/gitinfo/gitinfo.go`, `pkg/gitinfo/gitinfo_test.go`, `pkg/wshrpc/wshrpctypes_git.go`, `pkg/wshrpc/wshserver/wshserver_git.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
-**Files:**
+**What changes where:**
 - Modify: `pkg/gitinfo/gitinfo.go`
 - Modify: `pkg/wshrpc/wshrpctypes_git.go` (interface + types)
 - Modify: `pkg/wshrpc/wshserver/wshserver_git.go`
@@ -412,11 +412,8 @@ and `gofmt -l pkg/gitinfo pkg/wshrpc`.
 ---
 
 ### Task 3: Pull (fast-forward only) and push (never forced)
-
 **Depends on:** Task 2
-
-**Files:** `pkg/gitinfo/gitinfo.go`, `pkg/wshrpc/wshrpctypes_git.go`, `pkg/wshrpc/wshserver/wshserver_git.go`, test
-`pkg/gitinfo/gitinfo_test.go`.
+**Files:** `pkg/gitinfo/gitinfo.go`, `pkg/gitinfo/gitinfo_test.go`, `pkg/wshrpc/wshrpctypes_git.go`, `pkg/wshrpc/wshserver/wshserver_git.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
 **Step 1: Write the failing tests**
 
@@ -575,10 +572,10 @@ handlers and run `task generate`.
 ---
 
 ### Task 4: Commit selection model (pure)
-
 **Depends on:** none
+**Files:** `frontend/app/view/agents/gitstatus.ts`, `frontend/app/view/agents/gitstatus.test.ts`, `frontend/app/view/agents/commitselection.ts`, `frontend/app/view/agents/commitselection.test.ts`
 
-**Files:**
+**What changes where:**
 - Modify: `frontend/app/view/agents/gitstatus.ts` (`GitChange` gains `from?: string`; `parseStatusZ` keeps a
   rename's source)
 - Create: `frontend/app/view/agents/commitselection.ts`
@@ -755,10 +752,8 @@ export function amendAllowed(s: { head: string; upstream: string; upstreamAhead:
 ---
 
 ### Task 5: Sync bar model (pure)
-
 **Depends on:** none
-
-**Files:** Create `frontend/app/view/agents/syncstate.ts`; test `frontend/app/view/agents/syncstate.test.ts`.
+**Files:** `frontend/app/view/agents/syncstate.ts`, `frontend/app/view/agents/syncstate.test.ts`
 
 **Step 1: Write the failing tests**
 
@@ -841,17 +836,15 @@ Rules for `syncView`:
 ---
 
 ### Task 6: Quick look: a loading commit never reads as 0 files
-
 **Depends on:** none
+**Files:** `frontend/app/view/agents/githistorystore.ts`, `frontend/app/view/agents/diffempty.ts`, `frontend/app/view/agents/diffempty.test.ts`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/diffpane.tsx`, `frontend/app/view/agents/fileslistlabel.ts`, `frontend/app/view/agents/fileslistlabel.test.ts`
 
-**Files:**
+**What changes where:**
 - Modify: `frontend/app/view/agents/githistorystore.ts` (`selectCommit` ~line 385)
 - Modify: `frontend/app/view/agents/diffempty.ts` and `diffempty.test.ts`
 - Modify: `frontend/app/view/agents/commitpane.tsx` (files header ~line 106)
 - Modify: `frontend/app/view/agents/diffpane.tsx` (pass the list state to `emptyDiffState`)
 - Create: `frontend/app/view/agents/fileslistlabel.ts` + `fileslistlabel.test.ts`
-- Modify: the global `Window` declaration that holds `__worktreeSidebarFault` (find it with
-  `grep -rn __worktreeSidebarFault frontend`)
 
 The bug (2026-10-09): `selectCommit` set `commitChangesAtom` to null on a failed or non-repo read. null also means
 "loading", so the pane showed skeleton rows and `0 FILES +0 −0` forever beside "Pick a file". Commit `63736f8` has 4
@@ -896,7 +889,8 @@ In `diffempty.test.ts`, add cases:
     `filesStateAtom`'s cwd;
   - in DEV only, read `window.__commitChangesFault` (`"hang"` | `"error"`) at the top of the commit read and clear it:
     `"hang"` awaits a never-resolving promise, and `"error"` throws. Model it on `devFault()` in
-    `worktreesidebarstore.ts`, and declare the field beside `__worktreeSidebarFault`.
+    `worktreesidebarstore.ts`, with a `declare global { interface Window { ... } }` block in `githistorystore.ts` as
+    that file has.
 - `fileslistlabel.ts`: export `filesListLabel(status, changes)` exactly as the tests read.
 - `commitpane.tsx`:
   - the files header shows `filesListLabel(...).text` with `data-files-count`;
@@ -913,13 +907,13 @@ In `diffempty.test.ts`, add cases:
 ---
 
 ### Task 7: The panel layout: source dropdown, Commit | Log tabs, one-line diff header
-
 **Depends on:** Task 6
+**Files:** `frontend/app/view/agents/difflayout.ts`, `frontend/app/view/agents/difflayout.test.ts`, `frontend/app/view/agents/worktreesidebarstore.ts`, `frontend/app/view/agents/worktreesidebarstore.test.ts`, `frontend/app/view/agents/worktreesidebarview.tsx`, `frontend/app/view/agents/sourcepicker.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/historypane.tsx`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/diffpane.tsx`, `frontend/app/view/agents/diffoptions.ts`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/rangestrip.tsx`, `frontend/app/view/agents/historyrail.tsx`, `frontend/app/store/keybindings/bindings.ts`, `scripts/cdp/scenarios.mjs`
 
 This task rebuilds the surface layout to match `Log.dc.html`, `Rail.dc.html` and `Compare.dc.html`. The Commit tab
 renders a read-only placeholder list here; Task 8 replaces it.
 
-**Files:**
+**What changes where:**
 - Modify: `frontend/app/view/agents/difflayout.ts` + `difflayout.test.ts`:
   - delete `HISTORY_COLLAPSE_PX`, `historyCollapsedAtom`, `resolveCollapsed`, `SIDEBAR_FOLD_PX` and
     `resolveSidebarFolded`;
@@ -1035,19 +1029,18 @@ renders a read-only placeholder list here; Task 8 replaces it.
    6. the bindings.
 4. Run `task check:ts` and the keybinding tests.
 5. With `task dev` running, run `task verify:ui -- diff-log-tab diff-worktrees diff-compare git-history agent-rail-file-link`.
-   Every step must pass. Compare the shots against `Log.dc.html`, `Loading.dc.html`, `Rail.dc.html` and
-   `Compare.dc.html`.
+   Every step must pass; the final verifier compares their shots with the boards.
 6. Commit by pathspec: `feat(diff): one panel with Commit and Log tabs beside a wide diff`.
 
 ---
 
 ### Task 8: The Commit tab
-
 **Depends on:** Task 2, Task 4, Task 5, Task 7
+**Files:** `frontend/app/view/agents/commitstore.ts`, `frontend/app/view/agents/committab.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/filessurface.tsx`, `scripts/cdp/scenarios.mjs`
 
 Build `Main.dc.html` and the commit half of `States.dc.html`.
 
-**Files:**
+**What changes where:**
 - Create: `frontend/app/view/agents/commitstore.ts`. All its state is keyed by cwd, so it survives the surface
   unmounting.
   - Atoms:
@@ -1122,19 +1115,18 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
    `commitselection.ts`).
 2. Build the store and the view.
 3. Run `task check:ts`, then eslint and prettier on the touched files.
-4. Run `task verify:ui -- diff-commit-tab diff-log-tab` and compare against `Main.dc.html` and `States.dc.html`
-   (panels A–C).
+4. Run `task verify:ui -- diff-commit-tab diff-log-tab`; every step must pass.
 5. Commit by pathspec: `feat(diff): commit ticked files from the Commit tab`.
 
 ---
 
 ### Task 9: The sync bar
-
 **Depends on:** Task 3, Task 5, Task 8
+**Files:** `frontend/app/view/agents/syncstore.ts`, `frontend/app/view/agents/syncbar.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/diffpane.tsx`, `scripts/cdp/scenarios.mjs`
 
 Build the sync cluster of `Main.dc.html` and the sync half of `States.dc.html`.
 
-**Files:**
+**What changes where:**
 - Create: `frontend/app/view/agents/syncstore.ts`:
   - `syncRunAtom: Record<cwd, { running: "pull" | "push" | null; failure: { kind: "pull" | "push"; failure: GitFailure } | null }>`;
   - `runPull(cwd)` calls `GitPullCommand` with `{ timeout: 60000 }`, and `runPush(cwd)` calls `GitPushCommand` with
@@ -1149,8 +1141,8 @@ Build the sync cluster of `Main.dc.html` and the sync half of `States.dc.html`.
     runs. Publish is a text button.
   - **Pull confirm:** when `agentsWorkingIn(cwd, …)` is non-empty, Pull opens a popover (`data-pull-confirm`,
     `role="dialog"`) titled "Pull n commits into <branch>?". It names the agents and offers Cancel / "Pull n commits".
-    For the scenario, in DEV only, `window.__syncWorkingAgents` (a string array) replaces the computed list; declare it
-    beside `__commitChangesFault`.
+    For the scenario, in DEV only, `window.__syncWorkingAgents` (a string array) replaces the computed list; declare it in
+    a `declare global` block in `syncbar.tsx`.
   - **Failure:** `GitFailureNotice` under the top bar (`data-sync-failure`), preceded by `explainSyncFailure`'s
     sentence when it is not empty.
 - Modify: `diffpanel.tsx`. The top bar renders `SyncBar` in place of Task 7's Fetch control. Modify `diffpane.tsx` so
@@ -1170,17 +1162,16 @@ Build the sync cluster of `Main.dc.html` and the sync half of `States.dc.html`.
 **Steps:**
 1. Build the store and the bar.
 2. Run `task check:ts`, then eslint and prettier on the touched files.
-3. Run `task verify:ui -- diff-sync diff-commit-tab diff-log-tab diff-compare`. Compare against `States.dc.html`
-   (panels D–F) and `Main.dc.html`'s top bar.
+3. Run `task verify:ui -- diff-sync diff-commit-tab diff-log-tab diff-compare`; every step must pass.
 4. Commit by pathspec: `feat(diff): fetch, pull and push from the Diff panel`.
 
 ---
 
 ### Task 10: Docs
-
 **Depends on:** Task 9
+**Files:** `CHANGELOG.md`, `docs/keyboard-shortcuts.md`, `docs/deferred.md`, `docs/open-issues.md`, `docs/reference/architecture.md`
 
-**Files:**
+**What changes where:**
 - `CHANGELOG.md`: under `## Unreleased`, add one `Added` line for commit and sync from the Diff surface, and one
   `Changed` line for the Commit | Log panel beside a wide diff. Add one `Fixed` line: a commit's files no longer read
   "0 files" while they load or after a failed read.
