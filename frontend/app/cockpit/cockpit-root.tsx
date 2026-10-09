@@ -36,7 +36,7 @@ import { CommandPalette } from "./command-palette";
 import { FloatBar } from "./float-bar";
 import "./cockpit.scss";
 import { ctrlHeldAtom, nextCtrlHeld } from "./ctrlheld";
-import { digitHintAtom, HINT_DELAY_MS, nextDigitHint, NO_DIGIT_HINT, type HintEvent } from "./digithints";
+import { digitHintAtom, nextDigitHint, NO_DIGIT_HINT } from "./digithints";
 import { ShortcutsCheatSheet } from "./shortcuts-cheatsheet";
 import { makeSyntheticNodeModel } from "./synthetic-node-model";
 import { HintsFooter } from "./hints-footer";
@@ -123,20 +123,9 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     // capture phase: a focused xterm stops key events from bubbling to the window
     useEffect(() => {
         let hint = NO_DIGIT_HINT;
-        let hintTimer: ReturnType<typeof setTimeout> | undefined;
-        const stepHint = (ev: HintEvent) => {
-            const wasArmed = hint.armed;
-            hint = nextDigitHint(hint, ev);
-            globalStore.set(digitHintAtom, hint.shown);
-            if (hint.armed !== wasArmed) {
-                clearTimeout(hintTimer);
-                if (hint.armed != null) {
-                    hintTimer = setTimeout(() => stepHint({ type: "timer" }), HINT_DELAY_MS);
-                }
-            }
-        };
         const track = (e: Event) => {
-            stepHint(e as KeyboardEvent);
+            hint = nextDigitHint(hint, e as KeyboardEvent);
+            globalStore.set(digitHintAtom, hint);
             const held = nextCtrlHeld(globalStore.get(ctrlHeldAtom), e as KeyboardEvent);
             globalStore.set(ctrlHeldAtom, held);
             if (held) {
@@ -149,7 +138,6 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         window.addEventListener("keyup", track, true);
         window.addEventListener("blur", track);
         return () => {
-            clearTimeout(hintTimer);
             window.removeEventListener("keydown", track, true);
             window.removeEventListener("keyup", track, true);
             window.removeEventListener("blur", track);

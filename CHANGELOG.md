@@ -14,6 +14,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long
   list scrolls inside itself.
+- Holding `Ctrl` or `Alt` shows the shortcut bar and the rail and agent numbers at once instead of after a short pause;
+  pressing any other key with it, as in `Ctrl`+`C`, hides them again.
 
 ## 0.15.8 — 2026-10-09
 
