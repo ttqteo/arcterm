@@ -522,9 +522,13 @@ JetBrains-parity work was scoped as six gaps; five are specced and planned
 `git show edf0132b:docs/superpowers/plans/2026-09-04-git-compare-viewer-parity.md`). The sixth — **repository
 actions** — is this entry.
 
-- **What was deferred:** checkout, cherry-pick, revert (file and hunk), and any other operation that
-  writes to the repository from the Diff surface. JetBrains offers these from its compare view's
-  context menu; this surface offers none of them and stays read-only.
+- **Shipped 2026-10-09:** commit (the Commit tab), fetch, pull and push (the sync bar), under
+  `docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md`. That spec also left out hunk selection,
+  AI-written messages, changelists, Commit and Push, remotes other than origin, force push, tags, merge or rebase
+  when a branch has diverged, and automatic fetch; this entry does not cover them.
+- **What is still deferred:** checkout, cherry-pick, revert (file and hunk), and any other operation that
+  writes to the repository from the Diff surface beyond the four above. JetBrains offers these from its compare
+  view's context menu; this surface offers none of them.
 - **Why:** everything in the parity spec reads; these write. Different risk class, needs its own
   confirmation UX and its own conversation about what a cockpit should be allowed to do to a working
   tree. Designing a diff renderer and a destructive action in the same spec would have rushed the

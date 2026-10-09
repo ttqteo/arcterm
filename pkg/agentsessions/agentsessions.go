@@ -362,6 +362,7 @@ type codexLine struct {
 	Payload struct {
 		Type      string `json:"type"`
 		SessionID string `json:"session_id"`
+		ID        string `json:"id"`
 		Cwd       string `json:"cwd"`
 		Model     string `json:"model"`
 		Message   string `json:"message"`
@@ -386,6 +387,8 @@ func extractCodexSession(_ string, lines []string) *SessionInfo {
 		case "session_meta":
 			if rec.Payload.SessionID != "" {
 				s.ID = rec.Payload.SessionID
+			} else if rec.Payload.ID != "" {
+				s.ID = rec.Payload.ID
 			}
 			if rec.Payload.Cwd != "" {
 				s.ProjectPath = rec.Payload.Cwd
@@ -1384,6 +1387,11 @@ func TranscriptForSession(root, runtime, cwd, sessionId string) string {
 			return path
 		}
 		pattern = filepath.Join(root, "*", sessionId+".jsonl")
+	case "codex":
+		if filepath.Base(sessionId) != sessionId || strings.ContainsAny(sessionId, "*?[]") {
+			return ""
+		}
+		pattern = filepath.Join(root, "*", "*", "*", "rollout-*"+sessionId+".jsonl")
 	case "pi":
 		pattern = filepath.Join(root, "*", "*_"+sessionId+".jsonl")
 	case "agy":

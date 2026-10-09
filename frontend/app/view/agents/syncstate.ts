@@ -8,6 +8,7 @@
 // React, no Wave imports beyond the path normalizer.
 
 import { normalizeRepoPath } from "@/util/paths";
+import type { DiffOrigin } from "./diffscope";
 
 export type SyncKind = "fetch" | "pull" | "push";
 
@@ -92,6 +93,34 @@ export function syncView(input: SyncInput): SyncViewModel {
     };
 }
 
+export type SyncToastContext = {
+    // the branch that was synced, and its upstream before the action ("" when it had none)
+    branch: string;
+    upstream: string;
+    // a push that set the upstream
+    published: boolean;
+};
+
+// The toast a finished Pull or Push shows. `moved` is the commits the action carried, as the backend counted them.
+export function syncToast(
+    kind: "pull" | "push",
+    moved: number,
+    { branch, upstream, published }: SyncToastContext
+): { title: string; message: string } {
+    const commits = `${moved} ${moved === 1 ? "commit" : "commits"}`;
+    if (kind === "pull") {
+        return moved > 0
+            ? { title: `Pulled ${commits}`, message: `into ${branch}` }
+            : { title: "Already up to date", message: upstream ? `${branch} matches ${upstream}` : branch };
+    }
+    if (published) {
+        return { title: `Published ${branch}`, message: `origin/${branch} is its upstream now` };
+    }
+    return moved > 0
+        ? { title: `Pushed ${commits}`, message: `to ${upstream || "origin"}` }
+        : { title: "Nothing to push", message: upstream ? `${upstream} already has ${branch}` : branch };
+}
+
 // A sentence for the two failures a user can act on; "" for anything else, which the GitFailure panel
 // shows in git's own words (an authentication error, a hook, a network drop).
 export function explainSyncFailure(kind: SyncKind, failure: GitFailure, branch: string, upstream: string): string {
@@ -113,7 +142,7 @@ export function explainSyncFailure(kind: SyncKind, failure: GitFailure, branch: 
 export function agentsWorkingIn(
     cwd: string,
     agents: { id: string; name: string; state: string }[],
-    agentCwds: Record<string, string>
+    agentCwds: Record<string, string | null>
 ): string[] {
     const root = normalizeRepoPath(cwd);
     if (root === "") {
@@ -131,4 +160,19 @@ export function agentsWorkingIn(
         }
     }
     return names;
+}
+
+// The project a terminal opened at `cwd` is filed under in the Terminals section: the project or worktree source names it,
+// an agent source brings its own (`agentProject`, "" when unknown), and a run or anything else takes the folder's name.
+export function terminalProjectName(origin: DiffOrigin | undefined, agentProject: string, cwd: string): string {
+    if (origin?.kind === "project") {
+        return origin.name;
+    }
+    if (origin?.kind === "worktree") {
+        return origin.project;
+    }
+    if (origin?.kind === "agent" && agentProject !== "") {
+        return agentProject;
+    }
+    return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
 }

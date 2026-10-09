@@ -276,11 +276,12 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `j` / `k` (or `↓` / `↑`) | Next / previous commit. In a file list, `↓` / `↑` open the next / previous file at once |
+| `Space` | In the Commit tab's list: tick or untick the selected file |
 | `Enter` | Open the file under the cursor |
 | `/` | Filter history (`Esc` clears) |
 | `Shift`+`G` | Toggle the history graph |
 | `Mod`+`G` `g` | Top of history |
-| `Shift`+`C` | Commit tab |
+| `Shift`+`C` | Commit tab, with the message box focused |
 | `Shift`+`H` | Log tab |
 | `Shift`+`B` | Hide / show the left panel (it starts hidden in a narrow window; your choice is kept) |
 | `Shift`+`N` / `Shift`+`P` | Next / previous change in the open diff |
@@ -291,7 +292,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `c` | In the log: compare refs (the Log tab's Compare…). In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
 | `Tab` | Switch compare side (in compare) |
-| `Mod`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |
+| `Mod`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels). In the Commit tab's message box: commit the ticked files |
 | `Esc` | Clear filters, else leave compare, else back to the Cockpit |
 
 ### Usage

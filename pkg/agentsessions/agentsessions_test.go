@@ -735,3 +735,26 @@ func TestClaudeSession_countsARepeatedMessageOnce(t *testing.T) {
 		t.Errorf("tokensTotal = %d, want 140", got[0].TokensTotal)
 	}
 }
+
+func TestCodexCurrentSessionIDAndTranscriptLookup(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "2026", "10", "09")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-2026-10-09T10-00-00-thread-1.jsonl")
+	text := "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-1\",\"cwd\":\"/project\"}}\n" + "{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Fix icons\"}}\n"
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	session, err := ExtractSession(path, "codex")
+	if err != nil || session == nil || session.ID != "thread-1" || session.Task != "Fix icons" {
+		t.Fatalf("session = %+v, error = %v", session, err)
+	}
+	if got := TranscriptForSession(root, "codex", "/project", "thread-1"); got != path {
+		t.Fatalf("path = %q, want %q", got, path)
+	}
+	if got := TranscriptForSession(root, "codex", "/project", "*"); got != "" {
+		t.Fatalf("wildcard matched %q", got)
+	}
+}

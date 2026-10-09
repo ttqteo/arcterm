@@ -8,6 +8,7 @@ import {
     commitTabCount,
     defaultPanelTab,
     PANEL_FOLD_PX,
+    panelDirtyCount,
     panelTabToApply,
     resolvePanelFolded,
     sourceTitle,
@@ -128,6 +129,46 @@ describe("panelTabToApply", () => {
 
     it("returns null for an applied key that is not loaded either", () => {
         expect(panelTabToApply("project:a|working", "project:a|working", false, "project", "working", 0)).toBeNull();
+    });
+});
+
+// What filessurface feeds panelTabToApply for the key it just picked: just after a project is picked the store still
+// holds the agent's session-anchored read of the same repository, and that read must not count as the project's tree
+describe("panelDirtyCount", () => {
+    const read = (ref: string, files: number) => ({
+        ref,
+        changes: { files: Array.from({ length: files }, () => ({})) },
+    });
+
+    it("says nothing while no read has landed", () => {
+        expect(panelDirtyCount("working", null)).toBeNull();
+        expect(panelDirtyCount("session", null)).toBeNull();
+    });
+
+    it("counts a working-tree read for a working scope", () => {
+        expect(panelDirtyCount("working", read("", 3))).toBe(3);
+        expect(panelDirtyCount("working", read("", 0))).toBe(0);
+    });
+
+    it("does not count a session-anchored read for a project, so a clean project does not pick Commit", () => {
+        const sessionRead = read("9f2c1de", 2);
+        expect(panelDirtyCount("working", sessionRead)).toBeNull();
+        const dirty = panelDirtyCount("working", sessionRead);
+        expect(panelTabToApply("", "project:a|working", dirty != null, "project", "working", dirty ?? 0)).toBeNull();
+        // once the project's own read lands, the clean tree opens Log and a dirty one Commit
+        const clean = panelDirtyCount("working", read("", 0));
+        expect(panelTabToApply("", "project:a|working", clean != null, "project", "working", clean ?? 0)).toBe("log");
+        const busy = panelDirtyCount("working", read("", 2));
+        expect(panelTabToApply("", "project:a|working", busy != null, "project", "working", busy ?? 0)).toBe("commit");
+    });
+
+    it("counts a repository git could not read as a working tree with nothing in it", () => {
+        expect(panelDirtyCount("working", { ref: "", changes: null })).toBe(0);
+    });
+
+    it("takes any read for a range that opens Log whatever the count", () => {
+        expect(panelDirtyCount("session", read("9f2c1de", 4))).toBe(0);
+        expect(panelDirtyCount("run", read("", 4))).toBe(0);
     });
 });
 

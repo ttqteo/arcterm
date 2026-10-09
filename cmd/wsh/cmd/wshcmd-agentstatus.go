@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -145,6 +146,7 @@ func agentStatusRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		agentStatusCwd, agentStatusTranscript, agentStatusSessionID, agentStatusTitle, agentStatusProvider,
 		agentStatusModel, time.Now().UnixMilli())
 
+	eventData = enrichCodexStatus(eventData, os.Getenv("CODEX_THREAD_ID"))
 	err = publishAgentStatusData(oref, eventData, 1)
 	if err != nil {
 		return fmt.Errorf("publishing agentstatus event: %v", err)
@@ -194,4 +196,40 @@ func publishUsage(oref *waveobj.ORef, usage *baseds.AgentUsage) error {
 	// Persist:0 — usage deltas are ephemeral; a retained usage event would evict the
 	// retained Persist:1 parent-state event that a late subscriber must replay.
 	return publishAgentStatusData(oref, eventData, 0)
+}
+
+// Codex reporters may omit identity and title; its thread environment and rollout supply them.
+func enrichCodexStatus(data baseds.AgentStatusData, threadID string) baseds.AgentStatusData {
+	if data.Agent == "" && threadID != "" {
+		data.Agent = "codex"
+	}
+	if data.Agent != "codex" {
+		return data
+	}
+	if data.SessionID == "" {
+		data.SessionID = threadID
+	}
+	if data.TranscriptPath == "" {
+		data.TranscriptPath = agentsessions.TranscriptForSession(agentsessions.SessionRoot("codex"), "codex", data.Cwd, data.SessionID)
+	}
+	if data.TranscriptPath == "" || (data.Title != "" && data.Model != "" && data.Cwd != "") {
+		return data
+	}
+	session, err := agentsessions.ExtractSession(data.TranscriptPath, "codex")
+	if err != nil || session == nil {
+		return data
+	}
+	if data.Title == "" {
+		data.Title = titleFromPrompt(session.Task)
+	}
+	if data.Model == "" {
+		data.Model = session.Model
+	}
+	if data.Cwd == "" {
+		data.Cwd = session.ProjectPath
+	}
+	if data.SessionID == "" {
+		data.SessionID = session.ID
+	}
+	return data
 }

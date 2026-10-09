@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -147,5 +149,27 @@ func TestBuildUsageDeltaTagsClaudeAccount(t *testing.T) {
 	t.Setenv("ARC_CLAUDE_ACCOUNT", "")
 	if got := buildUsageDelta(agentStatusCmd); got.Account != "" {
 		t.Fatalf("usage account = %q, want \"\" (Default)", got.Account)
+	}
+}
+
+func TestEnrichCodexStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	transcript := "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-1\",\"cwd\":\"/project\"}}\n" +
+		"{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5.5\"}}\n" +
+		"{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Fix sidebar icons\"}}\n"
+	if err := os.WriteFile(path, []byte(transcript), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := enrichCodexStatus(baseds.AgentStatusData{TranscriptPath: path}, "thread-1")
+	if got.Agent != "codex" || got.SessionID != "thread-1" || got.Title != "Fix sidebar icons" || got.Model != "gpt-5.5" || got.Cwd != "/project" {
+		t.Fatalf("unexpected metadata: %+v", got)
+	}
+	explicit := baseds.AgentStatusData{Agent: "codex", TranscriptPath: path, Title: "My title", Model: "my-model", Cwd: "/other", SessionID: "explicit"}
+	if got := enrichCodexStatus(explicit, "thread-1"); got != explicit {
+		t.Fatalf("explicit metadata changed: %+v", got)
+	}
+	other := baseds.AgentStatusData{Agent: "pi", TranscriptPath: path}
+	if got := enrichCodexStatus(other, "thread-1"); got != other {
+		t.Fatalf("other runtime changed: %+v", got)
 	}
 }

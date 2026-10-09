@@ -18,13 +18,22 @@ import { sessionSidebarViewModelAtom } from "@/app/view/agents/session-models/se
 import { flattenVisualOrder } from "@/app/view/agents/session-models/sessionviewmodel";
 import { getCommandRunningAtom, getLastCommandAtom } from "@/app/view/term/lastcommand";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
-import { agentVMFromInput, askingCount, deriveTerminalVMs, isAskStale, withAsk, type AgentEntry, type AgentVM } from "./agentsviewmodel";
 import { getAgentAskAtom } from "./agentaskstore";
+import {
+    agentVMFromInput,
+    askingCount,
+    deriveTerminalVMs,
+    isAskStale,
+    withAsk,
+    type AgentEntry,
+    type AgentVM,
+} from "./agentsviewmodel";
 import { fetchPreviousInfo } from "./previousinfo";
 import { registeredProjectFor } from "./projectlabel";
 import { projectsAtom } from "./projectsstore";
 import { blockLoginEmail } from "./ratelimitstore";
 import { isLayoutLoaded, isRosterSeeded, latchWhenTrue } from "./rosterseed";
+import { resolveAgentIdentity } from "./transcriptregistry";
 
 interface PreviousInfoEntry {
     entries: AgentEntry[];
@@ -32,7 +41,9 @@ interface PreviousInfoEntry {
 }
 
 // id (tabId) -> fetched previous-info + title; filled by ensurePreviousInfo for asking agents.
-export const previousInfoByIdAtom = atom<Record<string, PreviousInfoEntry>>({}) as PrimitiveAtom<Record<string, PreviousInfoEntry>>;
+export const previousInfoByIdAtom = atom<Record<string, PreviousInfoEntry>>({}) as PrimitiveAtom<
+    Record<string, PreviousInfoEntry>
+>;
 
 // in-flight guard so the view effect doesn't double-fetch the same agent
 const previousInfoLoading = new Set<string>();
@@ -59,7 +70,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 name: row.label,
                 status: row.status,
                 detail: row.detail,
-                agent: status.agent,
+                agent: resolveAgentIdentity(status.agent, row.agent, status.transcriptpath),
                 model: row.model,
                 ts: status.ts,
                 transcriptPath: status.transcriptpath,

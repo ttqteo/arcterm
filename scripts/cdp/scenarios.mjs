@@ -7,6 +7,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+    chmodSync,
     copyFileSync,
     existsSync,
     linkSync,
@@ -3480,8 +3481,9 @@ const diffLogTab = {
         const viewed2 = await ev(`(async () => {
             ${RAIL_LINK_LIB}
             const row = () => {
+                // a parent row's name is a span, not a div (ParentRow, agenttree.tsx): find the name leaf in any element
                 const tree = document.querySelector("[data-agent-tree]");
-                const name = tree && [...tree.querySelectorAll("div")].find(
+                const name = tree && [...tree.querySelectorAll("*")].find(
                     (d) => d.textContent.trim() === ${JSON.stringify(DLT_AGENT.name)} && d.children.length === 0
                 );
                 return name ? name.closest(".cursor-pointer") : null;
@@ -3873,6 +3875,232 @@ func Submit(id string) error {
     },
 };
 
+// --- diff-sync: Fetch, Pull and Push from the Diff panel -----------------------------------------------
+// docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md §3. A bare remote with two clones: A is registered
+// as the project and picked in the source dropdown, B is "someone else" who pushes to the same branch. Real pushes, pulls
+// and a real divergence - nothing is injected but the DEV agents override (window.__syncWorkingAgents) that makes Pull
+// ask first. Boards (D:/arc-proto/diff-commit-log/project): steps 2-4 are States, step 5 is Main.
+const DSY_PROJECT = "verify-dsy-repo";
+
+const diffSync = {
+    name: "diff-sync",
+    surface: "files",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-dsy-"));
+        const ctx = { cwd: base, remote: join(base, "remote.git"), a: join(base, "a"), b: join(base, "b") };
+        try {
+            ctx.prevFolded = await h.ev(`localStorage.getItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
+            git(base, "init", "-q", "--bare", "--initial-branch=main", ctx.remote);
+            const identify = (dir) => {
+                git(dir, "config", "user.name", "verify");
+                git(dir, "config", "user.email", "verify@example.invalid");
+                git(dir, "config", "core.autocrlf", "false");
+            };
+            git(base, "clone", "-q", ctx.remote, ctx.a);
+            identify(ctx.a);
+            writeFileSync(join(ctx.a, "seed.txt"), "seed\n");
+            git(ctx.a, "add", ".");
+            git(ctx.a, "commit", "-q", "-m", "seed the repository");
+            git(ctx.a, "branch", "-M", "main");
+            git(ctx.a, "push", "-q", "-u", "origin", "main");
+            git(base, "clone", "-q", ctx.remote, ctx.b);
+            identify(ctx.b);
+
+            await h.rpc("createproject", { name: DSY_PROJECT, path: ctx.a });
+            ctx.project = DSY_PROJECT;
+            await waitForProjectInConfig(h, DSY_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the bare remote, its two clones, and the project", ok: false, detail: ctx.arrangeError }];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+        const ev = (expr) => h.ev(expr);
+        const wait = async (expr, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 200) {
+                if (await h.ev(`!!(${expr})`)) return true;
+                await nap(200);
+            }
+            return !!(await h.ev(`!!(${expr})`));
+        };
+        const press = async (key, code, keyCode, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode: keyCode });
+            }
+            await nap(300);
+        };
+        const SHIFT = 8;
+        const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
+        const click = (sel) => ev(`(${q(sel)}?.click(), !!${q(sel)})`);
+        const counts = () => ev(`(${q("[data-sync-counts]")}?.textContent || "").trim()`);
+        const countsAre = (text, ms = 12000) =>
+            wait(`(${q("[data-sync-counts]")}?.textContent || "").trim() === ${JSON.stringify(text)}`, ms);
+        const toast = (text, ms = 15000) =>
+            wait(
+                `[...document.querySelectorAll("[data-notification-toast]")].some((t) => (t.textContent || "").includes(${JSON.stringify(text)}))`,
+                ms
+            );
+        // r re-reads the change list and the history: a commit made outside the app shows at once instead of at the next poll
+        const reread = async () => {
+            await ev(`document.activeElement?.blur?.()`);
+            await press("r", "KeyR", 82);
+            await nap(700);
+        };
+        const out = (dir, ...args) => git(dir, ...args).toString().trim();
+        const commit = (dir, file, text, message) => {
+            writeFileSync(join(dir, file), text);
+            git(dir, "add", file);
+            git(dir, "commit", "-q", "-m", message);
+        };
+        // the fetch button is done when it no longer spins: its icon is swapped for the spinner while it runs
+        const fetchDone = () => wait(`${q('[data-sync="fetch"]')} && !${q('[data-sync="fetch"] .animate-spin')}`, 15000);
+
+        // the project, picked in the source dropdown (the panel is unfolded by it when it was folded away)
+        if (!(await pickFilesSource(h, DSY_PROJECT))) throw new Error(`source option "${DSY_PROJECT}" not in the source dropdown`);
+        await wait(q("[data-sync-counts]"), 15000);
+
+        // 1. a local commit counts as ahead; Push sends it, and the counts and a toast say so
+        const base1 = await countsAre("↑0 ↓0", 15000);
+        commit(ctx.a, "a1.txt", "a one\n", "add a1");
+        await reread();
+        const ahead1 = await countsAre("↑1 ↓0");
+        const title1 = await ev(`${q("[data-sync-counts]")}?.title ?? null`);
+        await click('[data-sync="push"]');
+        const toast1 = await toast("Pushed 1 commit");
+        const zero1 = await countsAre("↑0 ↓0");
+        const onRemote1 = out(ctx.remote, "rev-parse", "main") === out(ctx.a, "rev-parse", "HEAD");
+        rec(
+            "1. a commit reads ↑1 ↓0 (title Against origin/main); Push shows a Pushed 1 commit toast, the counts read ↑0 ↓0, and the remote has the commit",
+            base1 && ahead1 && title1 === "Against origin/main" && toast1 && zero1 && onRemote1,
+            JSON.stringify({ base1, ahead1, title1, toast1, zero1, onRemote1 })
+        );
+
+        // 2. B pushes first and A commits too: after Fetch the branch has diverged, and Pull is refused in words, titled for
+        //    the pull, with a way to a terminal; Dismiss clears it
+        git(ctx.b, "pull", "-q", "--ff-only");
+        commit(ctx.b, "b1.txt", "b one\n", "add b1");
+        git(ctx.b, "push", "-q");
+        commit(ctx.a, "a2.txt", "a two\n", "add a2");
+        await click('[data-sync="fetch"]');
+        await fetchDone();
+        const diverged2 = await countsAre("↑1 ↓1");
+        await click('[data-sync="pull"]');
+        const failed2 = await wait(q("[data-sync-failure]"), 15000);
+        const text2 = await ev(`(${q("[data-sync-failure]")}?.textContent || "").trim()`);
+        const kind2 = await ev(`${q("[data-sync-failure]")}?.dataset.syncFailureKind ?? null`);
+        const terminal2 = await ev(`!!${q("[data-sync-open-terminal]")}`);
+        const confirm2 = await ev(`!!${q("[data-pull-confirm]")}`);
+        await h.shot("cdp-shots/diff-sync-diverged.png");
+        await click('[data-sync-failure] [aria-label="Dismiss"]');
+        const gone2 = await wait(`!${q("[data-sync-failure]")}`, 3000);
+        git(ctx.a, "reset", "-q", "--hard", "origin/main");
+        rec(
+            "2. after B pushes and A commits, Fetch reads ↑1 ↓1; Pull shows data-sync-failure titled Pull failed (not Fetch failed) saying main and origin/main have diverged, with Open a terminal here and no confirm; Dismiss removes it",
+            diverged2 && failed2 && kind2 === "pull" && text2.includes("Pull failed") && !text2.includes("Fetch failed") &&
+                text2.includes("main and origin/main have diverged") && terminal2 && !confirm2 && gone2,
+            JSON.stringify({ diverged2, failed2, kind2, text2: text2.slice(0, 240), terminal2, confirm2, gone2 })
+        );
+
+        // 3. with an agent working here Pull asks first, naming it; confirming pulls the one commit
+        commit(ctx.b, "b2.txt", "b two\n", "add b2");
+        git(ctx.b, "push", "-q");
+        await ev(`window.__syncWorkingAgents = ["fixture agent"]`);
+        await click('[data-sync="fetch"]');
+        await fetchDone();
+        const behind3 = await countsAre("↑0 ↓1");
+        await click('[data-sync="pull"]');
+        const asked3 = await wait(q("[data-pull-confirm]"), 3000);
+        const confirmText3 = await ev(`(${q("[data-pull-confirm]")}?.textContent || "").trim()`);
+        const role3 = await ev(`${q("[data-pull-confirm]")}?.getAttribute("role") ?? null`);
+        const idleBefore3 = out(ctx.a, "rev-parse", "HEAD") !== out(ctx.b, "rev-parse", "HEAD");
+        await h.shot("cdp-shots/diff-sync-confirm.png");
+        await click("[data-pull-confirm-yes]");
+        const toast3 = await toast("Pulled 1 commit");
+        const zero3 = await countsAre("↑0 ↓0");
+        const closed3 = await wait(`!${q("[data-pull-confirm]")}`, 3000);
+        const same3 = out(ctx.a, "rev-parse", "HEAD") === out(ctx.b, "rev-parse", "HEAD");
+        await ev(`delete window.__syncWorkingAgents`);
+        rec(
+            "3. with an agent working here, Pull opens data-pull-confirm (a dialog titled Pull 1 commit into main?) naming it and pulls nothing until Pull 1 commit is clicked; then a Pulled 1 commit toast shows, the counts read ↑0 ↓0 and A has B's commit",
+            behind3 && asked3 && role3 === "dialog" && confirmText3.includes("Pull 1 commit into main?") &&
+                confirmText3.includes("fixture agent") && idleBefore3 && toast3 && zero3 && closed3 && same3,
+            JSON.stringify({ behind3, asked3, role3, confirmText3: confirmText3.slice(0, 240), idleBefore3, toast3, zero3, closed3, same3 })
+        );
+
+        // 4. a new branch has no upstream: the counts say so and Push becomes Publish, which sets the upstream
+        git(ctx.a, "checkout", "-q", "-b", "feature");
+        commit(ctx.a, "f1.txt", "feature one\n", "add f1");
+        await reread();
+        const none4 = await countsAre("no upstream");
+        const label4 = await ev(`(${q('[data-sync="push"]')}?.textContent || "").trim()`);
+        const pullOff4 = await ev(`${q('[data-sync="pull"]')}?.disabled ?? null`);
+        await h.shot("cdp-shots/diff-sync-publish.png");
+        await click('[data-sync="push"]');
+        const toast4 = await toast("Published feature");
+        const zero4 = await countsAre("↑0 ↓0");
+        const upstream4 = out(ctx.a, "rev-parse", "--abbrev-ref", "feature@{u}");
+        rec(
+            "4. a new branch reads no upstream and its push button reads Publish (Pull disabled); Publish shows a Published feature toast, the counts read ↑0 ↓0 and origin/feature is its upstream",
+            none4 && label4 === "Publish" && pullOff4 === true && toast4 && zero4 && upstream4 === "origin/feature",
+            JSON.stringify({ none4, label4, pullOff4, toast4, zero4, upstream4 })
+        );
+
+        // 5. folded away, the diff's header keeps the counts and drops the buttons
+        await ev(`document.activeElement?.blur?.()`);
+        await press("B", "KeyB", 66, SHIFT);
+        const folded5 = await wait(q('[data-diff-panel="folded"]'), 3000);
+        const counts5 = await counts();
+        const buttons5 = await ev(`document.querySelectorAll("[data-sync]").length`);
+        const title5 = await ev(`${q("[data-sync-counts]")}?.title ?? null`);
+        await h.shot("cdp-shots/diff-sync-folded.png");
+        await press("B", "KeyB", 66, SHIFT);
+        const open5 = await wait(q('[data-diff-panel="open"]'), 3000);
+        rec(
+            "5. Shift+B folds the panel: the folded header's data-sync-counts reads ↑0 ↓0 under the same title and no data-sync button shows; Shift+B again unfolds it",
+            folded5 && counts5 === "↑0 ↓0" && title5 === "Against origin/feature" && buttons5 === 0 && open5,
+            JSON.stringify({ folded5, counts5, title5, buttons5, open5 })
+        );
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`diff-sync teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the DEV agents override", () => h.ev(`(delete window.__syncWorkingAgents, true)`));
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.a))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("restore the panel's fold", () => restorePanelFold(h, ctx.prevFolded));
+        await step("remove the temp dirs", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+    },
+};
+
 // --- diff-worktrees: the Diff surface's source dropdown --------------------------------------------
 // A temp repo on main with two linked worktrees beside it: `feature` (one commit ahead, a modified and an untracked
 // file) and `broken` (its .git file names a gitdir that does not exist, so its status read fails). The repo and a plain
@@ -4246,6 +4474,327 @@ const diffWorktrees = {
             fn: () => restorePanelFold(h, ctx.prevFolded),
         });
         if (ctx.plain) rmSync(ctx.plain, { recursive: true, force: true });
+    },
+};
+
+// --- diff-commit-tab: the Commit tab ------------------------------------------------------------------
+// docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md §2. A temp repo (user.name/email configured, since
+// the app's own git calls carry no identity) holding what the Commit tab has to tell apart: a.txt modified; b.txt
+// modified and staged, as another session would leave it; an untracked new.txt; logo.png with a NUL byte (reads "bin");
+// and vendor/tool/ with a git repository of its own (reads "repo", its tick disabled). Registered as a project and
+// picked in the source dropdown. Boards (D:/arc-proto/diff-commit-log/project): steps 1-3 are Main, 5-7 are States.
+const DCT_PROJECT = "verify-dct-repo";
+
+const diffCommitTab = {
+    name: "diff-commit-tab",
+    surface: "files",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-dct-"));
+        const ctx = { cwd: base, repo: join(base, "repo"), remote: join(base, "remote.git") };
+        try {
+            ctx.prevFolded = await h.ev(`localStorage.getItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
+            mkdirSync(ctx.repo);
+            git(ctx.repo, "init", "-q", "--initial-branch=main");
+            git(ctx.repo, "config", "user.name", "verify");
+            git(ctx.repo, "config", "user.email", "verify@example.invalid");
+            git(ctx.repo, "config", "core.autocrlf", "false");
+            const put = (name, text) => writeFileSync(join(ctx.repo, name), text);
+            put("a.txt", "a one\n");
+            put("b.txt", "b one\n");
+            git(ctx.repo, "add", ".");
+            git(ctx.repo, "commit", "-q", "-m", "seed the files");
+            put("a.txt", "a one\na two\n");
+            put("b.txt", "b one\nb two\n");
+            git(ctx.repo, "add", "b.txt"); // staged by "another session": --only must leave it out of a commit that omits it
+            put("new.txt", "new\n");
+            writeFileSync(join(ctx.repo, "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03]));
+            const nested = join(ctx.repo, "vendor", "tool");
+            mkdirSync(nested, { recursive: true });
+            git(nested, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(nested, "tool.txt"), "tool\n");
+            git(nested, "add", ".");
+            git(nested, "commit", "-q", "-m", "a repository of its own");
+
+            await h.rpc("createproject", { name: DCT_PROJECT, path: ctx.repo });
+            ctx.project = DCT_PROJECT;
+            await waitForProjectInConfig(h, DCT_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo with its nested repository, and its project", ok: false, detail: ctx.arrangeError }];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+        const ev = (expr) => h.ev(expr);
+        const wait = async (expr, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 200) {
+                if (await h.ev(`!!(${expr})`)) return true;
+                await nap(200);
+            }
+            return !!(await h.ev(`!!(${expr})`));
+        };
+        const press = async (key, code, keyCode, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode: keyCode });
+            }
+            await nap(300);
+        };
+        const SHIFT = 8;
+        const CTRL = 2;
+        const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
+        const attr = (name, value) => `[${name}=${JSON.stringify(value)}]`;
+        const header = () => ev(`(${q("[data-diff-header]")}?.textContent || "").trim()`);
+        const tab = () => ev(`${q('[data-panel-tab][aria-selected="true"]')}?.dataset.panelTab ?? null`);
+        const tick = (path) => ev(`${q(attr("data-commit-tick", path))}?.getAttribute("aria-checked") ?? null`);
+        const rowText = (path) => ev(`(${q(attr("data-commit-row", path))}?.textContent || "").trim()`);
+        const message = () => ev(`${q("[data-commit-message]")}?.value ?? null`);
+        const click = (sel) => ev(`(${q(sel)}?.click(), !!${q(sel)})`);
+        const typeInto = async (sel, text) => {
+            await ev(`${q(sel)}?.focus()`);
+            await h.cdp("Input.insertText", { text });
+            await nap(200);
+        };
+        // every enabled tick, then every disabled one: [path, aria-checked]
+        const ticks = (disabled) =>
+            ev(`[...document.querySelectorAll("[data-commit-tick]")].filter((e) => e.disabled === ${disabled}).map((e) => [e.dataset.commitTick, e.getAttribute("aria-checked")])`);
+        const unfoldUnversioned = async () => {
+            if ((await ev(`${q("[data-commit-unversioned]")}?.getAttribute("aria-expanded")`)) !== "true") {
+                await click("[data-commit-unversioned]");
+            }
+            return wait(`${q("[data-commit-unversioned]")}?.getAttribute("aria-expanded") === "true"`, 3000);
+        };
+        const refresh = async () => {
+            await click("[data-commit-refresh]");
+            await nap(900);
+        };
+        const gitOut = (...args) => git(ctx.repo, ...args).toString().trim();
+        const put = (name, text) => writeFileSync(join(ctx.repo, name), text);
+
+        // 1. the dropdown opens with the project row and the filter focused; picking the project opens the Commit tab,
+        //    its tick defaults, and the quick look at a.txt
+        await ev(`${q("[data-folded-source]")}?.click()`);
+        await wait(q("[data-source-picker-trigger]"), 8000);
+        await click("[data-source-picker-trigger]");
+        const open1 = await wait(q('[data-source-picker="open"]'), 3000);
+        const option = attr("data-files-source-option", DCT_PROJECT);
+        let row1 = await wait(q(option), 1500);
+        if (!row1) {
+            const group = attr("data-worktree-group", DCT_PROJECT);
+            await wait(q(group), 5000);
+            await ev(`(() => { const g = ${q(group)}; if (g?.getAttribute("aria-expanded") === "false") g.click(); })()`);
+            row1 = await wait(q(option), 8000);
+        }
+        const filter1 = await ev(`document.activeElement?.hasAttribute("data-worktree-filter") ?? false`);
+        await h.shot("cdp-shots/diff-source-picker.png");
+        await click(option);
+        const closed1 = await wait(`!${q('[data-source-picker="open"]')}`, 3000);
+        const listed1 = await wait(q(attr("data-commit-row", "a.txt")), 15000);
+        const tab1 = await tab();
+        const folded1 = await ev(`${q("[data-commit-unversioned]")}?.getAttribute("aria-expanded") === "false"`);
+        const hidden1 = await ev(`!${q(attr("data-commit-row", "new.txt"))}`);
+        const monaco1 = await wait(q("[data-diff-pane] .monaco-diff-editor"), 15000);
+        const shows1 = (await header()).includes("a.txt");
+        await unfoldUnversioned();
+        const state1 = {
+            a: await tick("a.txt"),
+            b: await tick("b.txt"),
+            new: await tick("new.txt"),
+            vendor: await tick("vendor/tool/"),
+            vendorOff: await ev(`${q(attr("data-commit-tick", "vendor/tool/"))}?.disabled ?? null`),
+            vendorNote: (await rowText("vendor/tool/")).endsWith("repo"),
+            logoNote: (await rowText("logo.png")).includes("bin"),
+        };
+        await click("[data-commit-unversioned]"); // folded again, as the board draws it
+        await nap(300);
+        await h.shot("cdp-shots/diff-commit-tab.png");
+        rec(
+            "1. the dropdown opens on the project with the filter focused; picking it opens Commit with a.txt and b.txt ticked, Unversioned folded, new.txt unticked, vendor/tool/ disabled as repo, logo.png as bin, and a.txt's diff open",
+            open1 && row1 && filter1 && closed1 && listed1 && tab1 === "commit" && folded1 && hidden1 && monaco1 && shows1 &&
+                state1.a === "true" && state1.b === "true" && state1.new === "false" && state1.vendor === "false" &&
+                state1.vendorOff === true && state1.vendorNote && state1.logoNote,
+            JSON.stringify({ open1, row1, filter1, closed1, listed1, tab1, folded1, hidden1, monaco1, shows1, ...state1 })
+        );
+
+        // 2. ↓ in the list shows b.txt at once, Space unticks it; ticking new.txt and Ctrl+Enter commits a.txt and new.txt
+        //    alone, leaving what another session staged; the toast opens the commit in the Log tab
+        await ev(`${q("[data-commit-list]")}?.focus()`);
+        await press("ArrowDown", "ArrowDown", 40);
+        const sel2 = await wait(`${q(attr("data-commit-row", "b.txt"))}?.hasAttribute("data-selected")`, 3000);
+        const head2 = await wait(`(${q("[data-diff-header]")}?.textContent || "").includes("b.txt")`, 5000);
+        await press(" ", "Space", 32);
+        const unticked2 = await wait(`${q(attr("data-commit-tick", "b.txt"))}?.getAttribute("aria-checked") === "false"`, 3000);
+        await unfoldUnversioned();
+        await click(attr("data-commit-tick", "new.txt"));
+        const newTicked2 = await wait(`${q(attr("data-commit-tick", "new.txt"))}?.getAttribute("aria-checked") === "true"`, 3000);
+        const subject2 = "add new.txt and tweak a";
+        await typeInto("[data-commit-message]", subject2);
+        await press("Enter", "Enter", 13, CTRL);
+        const toast2 = await wait(`(${q("[data-notification-toast]")}?.textContent || "").includes("Committed ")`, 15000);
+        const toastText2 = await ev(`(${q("[data-notification-toast]")}?.textContent || "").trim()`);
+        const committed2 = gitOut("show", "--name-only", "--format=", "HEAD").split(/\r?\n/).sort();
+        const staged2 = gitOut("diff", "--cached", "--name-only").split(/\r?\n/);
+        const fullHash = gitOut("rev-parse", "HEAD");
+        const cleared2 = (await message()) === "";
+        await click("[data-notification-open]");
+        const log2 = await wait(`${q('[data-panel-tab="log"][aria-selected="true"]')}`, 5000);
+        const rowSel2 = await wait(
+            `${q(attr("data-history-row", fullHash))}?.querySelector("button")?.className.includes("bg-surface-selected")`,
+            15000
+        );
+        rec(
+            "2. ↓ opens b.txt's diff at once and Space unticks it; Ctrl+Enter commits a.txt and new.txt only (b.txt stays staged), a Committed toast shows, and its link opens that commit selected in the Log tab",
+            sel2 && head2 && unticked2 && newTicked2 && toast2 && toastText2.includes("2 files") &&
+                committed2.join() === "a.txt,new.txt" && staged2.join() === "b.txt" && cleared2 && log2 && rowSel2,
+            JSON.stringify({ sel2, head2, unticked2, newTicked2, toast2, toastText2, committed2, staged2, cleared2, log2, rowSel2 })
+        );
+
+        // 3. the header checkbox, the agents note, and Amend
+        await click('[data-panel-tab="commit"]');
+        await wait(q("[data-commit-tick-all]"), 8000);
+        await unfoldUnversioned();
+        const allState = () => ev(`${q("[data-commit-tick-all]")}?.getAttribute("aria-checked") ?? null`);
+        const mixed3 = await wait(`${q("[data-commit-tick-all]")}?.getAttribute("aria-checked") === "mixed"`, 5000);
+        let clicks3 = 0;
+        while ((await allState()) !== "true" && clicks3 < 2) {
+            await click("[data-commit-tick-all]");
+            clicks3++;
+            await nap(300);
+        }
+        const on3 = await ticks(false);
+        const off3 = await ticks(true);
+        await click("[data-commit-tick-all]");
+        await nap(300);
+        const none3 = await ticks(false);
+        await ev(`window.__syncWorkingAgents = ["fixture agent"]`);
+        await refresh();
+        const note3 = await ev(`(${q("[data-commit-agents-note]")}?.textContent || "").trim()`);
+        await ev(`delete window.__syncWorkingAgents`);
+        await refresh();
+        const noteGone3 = await ev(`!${q("[data-commit-agents-note]")}`);
+        await click("[data-commit-tick-all]"); // everything enabled again, so Amend has files to carry
+        await nap(300);
+        const n3 = (await ticks(false)).length;
+        await click("[data-commit-amend]");
+        const head3 = await wait(`${q("[data-commit-message]")}?.value === ${JSON.stringify(subject2)}`, 5000);
+        const label3 = await ev(`(${q("[data-commit-button]")}?.textContent || "").trim()`);
+        await h.shot("cdp-shots/diff-commit-amend.png");
+        await click("[data-commit-amend]");
+        const empty3 = await wait(`${q("[data-commit-message]")}?.value === ""`, 3000);
+        rec(
+            "3. the header checkbox reads mixed, then true (ticking every enabled row, never vendor/tool/), then clears them; the agents note reads 1 agent running here only while the override is set; Amend loads HEAD's message and reads Amend with n files, and unticking empties the box",
+            mixed3 && clicks3 <= 2 && on3.length >= 2 && on3.every(([, v]) => v === "true") &&
+                off3.length === 1 && off3[0][0] === "vendor/tool/" && off3[0][1] === "false" &&
+                none3.every(([, v]) => v === "false") && note3 === "1 agent running here" && noteGone3 &&
+                head3 && label3.startsWith(`Amend with ${n3} files`) && n3 >= 2 && empty3,
+            JSON.stringify({ mixed3, clicks3, on3, off3, none3, note3, noteGone3, n3, head3, label3, empty3 })
+        );
+
+        // 4. Shift+C from the Log tab opens Commit with the cursor in the box; refresh finds a file written outside
+        await click('[data-panel-tab="log"]');
+        const logTab4 = await wait(q('[data-panel-tab="log"][aria-selected="true"]'), 3000);
+        await ev(`document.activeElement?.blur?.()`);
+        await press("C", "KeyC", 67, SHIFT);
+        const commitTab4 = await wait(q('[data-panel-tab="commit"][aria-selected="true"]'), 3000);
+        const focused4 = await wait(`document.activeElement?.hasAttribute("data-commit-message")`, 3000);
+        put("x.txt", "written outside the app\n");
+        await refresh();
+        const x4 = await wait(q(attr("data-commit-row", "x.txt")), 5000);
+        rec(
+            "4. from the Log tab Shift+C opens Commit with focus in the message box, and refresh lists a file written outside the app under Unversioned",
+            logTab4 && commitTab4 && focused4 && x4,
+            JSON.stringify({ logTab4, commitTab4, focused4, x4 })
+        );
+
+        // 5. a refusing pre-commit hook: its words show under the button and the message and ticks stay
+        const hook = join(ctx.repo, ".git", "hooks", "pre-commit");
+        mkdirSync(join(ctx.repo, ".git", "hooks"), { recursive: true });
+        writeFileSync(hook, "#!/bin/sh\necho 'lint refused the commit' >&2\nexit 1\n");
+        chmodSync(hook, 0o755);
+        put("a.txt", "a one\na two\na three\n");
+        await refresh();
+        await typeInto("[data-commit-message]", "break the build");
+        await press("Enter", "Enter", 13, CTRL);
+        const failure5 = await wait(q("[data-commit-failure]"), 15000);
+        const failText5 = await ev(`(${q("[data-commit-failure]")}?.textContent || "").trim()`);
+        const kept5 = (await message()) === "break the build";
+        const tickA5 = await tick("a.txt");
+        await h.shot("cdp-shots/diff-commit-failed.png");
+        rmSync(hook, { force: true });
+        rec(
+            "5. a failing pre-commit hook shows its text in data-commit-failure with git's command and exit code, and the message and ticks are still there",
+            failure5 && failText5.includes("lint refused the commit") && failText5.includes("exit 1") &&
+                failText5.includes("Your message and ticks are kept") && kept5 && tickA5 === "true",
+            JSON.stringify({ failure5, failText5: failText5.slice(0, 200), kept5, tickA5 })
+        );
+
+        // 6. once HEAD is on a remote, Amend is locked
+        git(ctx.cwd, "init", "-q", "--bare", "--initial-branch=main", ctx.remote);
+        git(ctx.repo, "remote", "add", "origin", ctx.remote);
+        git(ctx.repo, "push", "-q", "-u", "origin", "main");
+        await refresh();
+        const locked6 = await wait(`${q("[data-commit-amend]")}?.disabled === true`, 5000);
+        const title6 = await ev(`${q("[data-commit-amend]")}?.title ?? null`);
+        await h.shot("cdp-shots/diff-commit-amend-locked.png");
+        rec(
+            "6. after git push -u, data-commit-amend is disabled with the title Already pushed: amending would need a force push",
+            locked6 && title6 === "Already pushed: amending would need a force push",
+            JSON.stringify({ locked6, title6 })
+        );
+
+        // 7. a tree with nothing left to commit says so (Unversioned folded again first, so a re-run starts from the default)
+        if ((await ev(`${q("[data-commit-unversioned]")}?.getAttribute("aria-expanded")`)) === "true") {
+            await click("[data-commit-unversioned]");
+        }
+        writeFileSync(join(ctx.repo, ".git", "info", "exclude"), "vendor/tool/\n", { flag: "a" });
+        git(ctx.repo, "add", "-A");
+        git(ctx.repo, "commit", "-q", "-m", "everything else");
+        await refresh();
+        const empty7 = await wait(q("[data-commit-empty]"), 8000);
+        const text7 = await ev(`(${q("[data-commit-empty]")}?.textContent || "").trim()`);
+        await h.shot("cdp-shots/diff-commit-empty.png");
+        rec(
+            "7. a clean tree shows data-commit-empty: No uncommitted changes, The working tree matches HEAD., and the link to the Log",
+            empty7 && text7.includes("No uncommitted changes") && text7.includes("The working tree matches HEAD.") &&
+                text7.includes("Open the Log (Shift+H)"),
+            JSON.stringify({ empty7, text7 })
+        );
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`diff-commit-tab teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the DEV agents override", () => h.ev(`(delete window.__syncWorkingAgents, true)`));
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("restore the panel's fold", () => restorePanelFold(h, ctx.prevFolded));
+        await step("remove the temp dirs", () => rmSync(ctx.cwd, { recursive: true, force: true }));
     },
 };
 
@@ -14134,8 +14683,9 @@ const agentRailFileLink = {
             ctx.railFiles = await h.ev(`(async () => {
                 ${RAIL_LINK_LIB}
                 const row = () => {
+                    // a parent row's name is a span, not a div (ParentRow, agenttree.tsx): find the name leaf in any element
                     const tree = document.querySelector("[data-agent-tree]");
-                    const name = tree && [...tree.querySelectorAll("div")].find(
+                    const name = tree && [...tree.querySelectorAll("*")].find(
                         (d) => d.textContent.trim() === ${JSON.stringify(RAIL_LINK_AGENT)} && d.children.length === 0
                     );
                     return name ? name.closest(".cursor-pointer") : null;
@@ -26407,7 +26957,9 @@ export const SCENARIOS = [
     gitHistory,
     diffLogTab,
     diffCompare,
+    diffSync,
     diffWorktrees,
+    diffCommitTab,
     surfaceSmoke,
     codeSearch,
     codeSidebar,

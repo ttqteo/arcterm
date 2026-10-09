@@ -1,6 +1,6 @@
 // frontend/app/view/agents/syncstate.test.ts
 import { describe, expect, it } from "vitest";
-import { agentsWorkingIn, explainSyncFailure, syncView } from "./syncstate";
+import { agentsWorkingIn, explainSyncFailure, syncToast, syncView, terminalProjectName } from "./syncstate";
 
 const base = { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, running: null, fetchedAgo: "" } as const;
 
@@ -105,5 +105,47 @@ describe("agentsWorkingIn", () => {
         const agents = [{ id: "1", name: "lost", state: "working" }];
         expect(agentsWorkingIn("D:/repo", agents, {})).toEqual([]);
         expect(agentsWorkingIn("", agents, { "1": "D:/repo" })).toEqual([]);
+    });
+    it("skips an agent whose directory is known to be unresolved (null, as agentCwdsAtom stores it)", () => {
+        const agents = [{ id: "1", name: "unresolved", state: "working" }];
+        expect(agentsWorkingIn("D:/repo", agents, { "1": null })).toEqual([]);
+    });
+});
+
+describe("syncToast", () => {
+    const ctx = { branch: "main", upstream: "origin/main", published: false };
+    it("counts what a pull moved, with the singular for one", () => {
+        expect(syncToast("pull", 3, ctx)).toEqual({ title: "Pulled 3 commits", message: "into main" });
+        expect(syncToast("pull", 1, ctx).title).toBe("Pulled 1 commit");
+    });
+    it("says a pull that moved nothing was already up to date", () => {
+        expect(syncToast("pull", 0, ctx).title).toBe("Already up to date");
+    });
+    it("counts what a push sent and names the upstream", () => {
+        expect(syncToast("push", 2, ctx)).toEqual({ title: "Pushed 2 commits", message: "to origin/main" });
+        expect(syncToast("push", 1, ctx).title).toBe("Pushed 1 commit");
+    });
+    it("says a push of nothing sent nothing", () => {
+        expect(syncToast("push", 0, ctx).title).toBe("Nothing to push");
+    });
+    it("names the branch a push published, whatever it carried", () => {
+        const published = { branch: "feature", upstream: "", published: true };
+        expect(syncToast("push", 0, published).title).toBe("Published feature");
+        expect(syncToast("push", 4, published).title).toBe("Published feature");
+    });
+});
+
+describe("terminalProjectName", () => {
+    it("takes the project a project or worktree source names", () => {
+        expect(terminalProjectName({ kind: "project", name: "arcterm", path: "D:/arc" }, "", "D:/arc")).toBe("arcterm");
+        expect(terminalProjectName({ kind: "worktree", path: "D:/arc/wt", project: "arcterm" }, "", "D:/arc/wt")).toBe(
+            "arcterm"
+        );
+    });
+    it("takes an agent's own project, else the folder's name", () => {
+        const agent = { kind: "agent", id: "a1" } as const;
+        expect(terminalProjectName(agent, "payments-api", "D:/work/repo")).toBe("payments-api");
+        expect(terminalProjectName(agent, "", "D:\\work\\repo\\")).toBe("repo");
+        expect(terminalProjectName(undefined, "", "/home/me/repo")).toBe("repo");
     });
 });

@@ -22,6 +22,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Ellipsis, Fil
 import { motion } from "motion/react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
+import { commitListAtom, commitShownPaths, unversionedOpenAtom } from "./commitstore";
 import { firstDifferingLine } from "./diffcontent";
 import { diffPairAtom } from "./diffcontentstore";
 import { emptyDiffState, type EmptyDiff } from "./diffempty";
@@ -45,7 +46,7 @@ import { activeReviewKeyAtom, reviewModeAtom } from "./linecommentstore";
 import { LineReviewTray } from "./linereviewtray";
 import { ReviewList } from "./reviewlistview";
 import { fmtBytes } from "./runcompletion";
-import { syncView } from "./syncstate";
+import { SyncCounts } from "./syncbar";
 
 const MonacoDiffViewer = lazy(() => import("@/app/monaco/monaco-react").then((m) => ({ default: m.MonacoDiffViewer })));
 
@@ -99,17 +100,16 @@ function FoldedLead({
     const shown = useAtomValue(shownChangesAtom);
     const tree = useAtomValue(treeModeAtom);
     const collapsed = useAtomValue(collapsedDirsAtom);
+    const commitLists = useAtomValue(commitListAtom);
+    const unversionedOpen = useAtomValue(unversionedOpenAtom);
     const title = sourceTitle(scope, state?.branch ?? "");
-    const sync = syncView({
-        branch: state?.branch ?? "",
-        upstream: state?.upstream ?? "",
-        ahead: state?.upstreamAhead ?? 0,
-        behind: state?.upstreamBehind ?? 0,
-        running: null,
-        fetchedAgo: "",
-    });
     const count = commitTabCount(state);
-    const paths = shownPaths(shown?.files ?? [], tree, collapsed);
+    // on the Commit tab the file list is the tick list, in the order its open groups draw it
+    const commitFiles = tab === "commit" && state?.cwd ? commitLists[state.cwd]?.changes.files : undefined;
+    const paths =
+        commitFiles != null
+            ? commitShownPaths(commitFiles, tree, collapsed, unversionedOpen)
+            : shownPaths(shown?.files ?? [], tree, collapsed);
     const unfold = (t?: PanelTab) => {
         if (t != null) {
             globalStore.set(panelTabAtom, t);
@@ -136,11 +136,7 @@ function FoldedLead({
                     <span className="max-w-[120px] truncate text-[12px] text-muted">{title.branch}</span>
                 ) : null}
             </button>
-            {state?.isRepo ? (
-                <span title={sync.countsTitle} className="flex-none text-[11px] tabular-nums text-ink-mid">
-                    {sync.counts}
-                </span>
-            ) : null}
+            {state?.isRepo ? <SyncCounts state={state} /> : null}
             <span className="flex flex-none items-center gap-[2px]">
                 {(["commit", "log"] as const).map((t) => (
                     <button

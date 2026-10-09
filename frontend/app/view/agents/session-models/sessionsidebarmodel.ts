@@ -1,6 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { sessionsArchiveAtom } from "../sessionsarchivestore";
+import { resolveAgentIdentity } from "../transcriptregistry";
+
 import { getTabBadgeAtom } from "@/app/store/badge";
 import { atoms } from "@/app/store/global-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -48,6 +51,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
     const tabIds = ws?.tabids ?? [];
     const activeId = ws?.activetabid;
     const labelMap = get(sessionGroupLabelAtom);
+    const archive = get(sessionsArchiveAtom);
 
     const sessions: SessionInput[] = tabIds.flatMap((tabId) => {
         const tab = get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
@@ -75,6 +79,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
         let detail: string | undefined;
         let model: string | undefined;
         let title: string | undefined;
+        let runtime: string | undefined;
         let subagents: SubagentVM[] = [];
         let subagentsExpanded = false;
         let termBlockOref: string | undefined;
@@ -86,7 +91,18 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
                 detail = agentStatus.detail;
             }
             model = agentStatus?.model;
-            title = agentStatus?.title;
+            const scanned = archive?.find(
+                (s) =>
+                    agentStatus?.transcriptpath &&
+                    s.transcriptpath.replace(/\\/g, "/").toLowerCase() ===
+                        agentStatus.transcriptpath.replace(/\\/g, "/").toLowerCase()
+            );
+            runtime = resolveAgentIdentity(
+                agentStatus?.agent,
+                tab?.meta?.["session:agent"],
+                agentStatus?.transcriptpath
+            );
+            title = agentStatus?.title || (runtime === "codex" ? scanned?.task : undefined);
             subagentsExpanded = subagentExpanded(subagents, get(getSubagentExpandAtom(termBlockOref)));
         }
 
@@ -94,7 +110,7 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
         const session: SessionInput = {
             tabId,
             name: tab?.name ?? "",
-            agent: meta["session:agent"],
+            agent: runtime || meta["session:agent"],
             customLabel: meta["session:label"],
             projectLabel: meta["session:project"],
             runORef: sessionRunORef(meta, termBlock?.meta),

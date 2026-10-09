@@ -2,20 +2,21 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Diff surface's left panel: a top bar with the source dropdown and Fetch, a Commit | Log tab strip, and the tab's
+// The Diff surface's left panel: a top bar with the source dropdown and the sync bar (syncbar.tsx), a Commit | Log tab strip, and the tab's
 // body. Log is the history graph over the selected commit, split by a draggable divider; with a comparison on, the
-// graph gives way to the branch's own commits under a compare bar. Commit lists the working tree's changes (a
-// read-only list until the commit form lands). The panel is a view over the stores; the surface owns what to load.
+// graph gives way to the branch's own commits under a compare bar. Commit is the tick list, message box and Commit button
+// (committab.tsx). The panel is a view over the stores; the surface owns what to load.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { RefreshCw, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useRef, useState } from "react";
-import { formatAge, type AgentVM } from "./agentsviewmodel";
+import type { AgentsViewModel } from "./agents";
+import type { AgentVM } from "./agentsviewmodel";
 import { AggregatePane } from "./aggregatepane";
-import { ChangedFileList, TreeModeToggle } from "./changedfilelist";
 import { CommitPane } from "./commitpane";
+import { CommitTab } from "./committab";
 import { CompareColumn } from "./comparecolumn";
 import { AGGREGATE, type CompareCommitRow, type CompareRow } from "./comparerows";
 import {
@@ -29,11 +30,8 @@ import {
     compareSelectionAtom,
     compareSidesAtom,
     enterCompare,
-    fetchStateOf,
-    fetchStatesAtom,
     leaveCompare,
     retrySelectedCompareRow,
-    runFetch,
     selectCompareFile,
     selectCompareRow,
     setCompareForm,
@@ -72,9 +70,10 @@ import {
 } from "./githistorystore";
 import { HistoryPane } from "./historypane";
 import { countLabel } from "./historyquery";
-import { WORKING_TREE, worktreeCaption } from "./historyrows";
+import { worktreeCaption } from "./historyrows";
 import { RefPicker } from "./refpicker";
 import { SourcePicker } from "./sourcepicker";
+import { SyncBar, SyncFailure } from "./syncbar";
 
 const TAB_BASE = "flex items-center gap-[6px] border-b-2 px-[10px] text-[12px] font-semibold";
 
@@ -96,66 +95,6 @@ function PanelTabButton({ id, count, active }: { id: PanelTab; count?: number | 
                 <span className="text-[10.5px] font-medium tabular-nums text-muted">{count}</span>
             ) : null}
         </button>
-    );
-}
-
-// The Fetch control the subject bar used to carry, in the panel's top bar. Task 9 turns the bar into the sync bar.
-function FetchButton({ cwd }: { cwd: string | undefined }) {
-    const states = useAtomValue(fetchStatesAtom);
-    const fetch = fetchStateOf(states, cwd);
-    return (
-        <button
-            data-fetch
-            onClick={() => cwd && fireAndForget(() => runFetch(cwd))}
-            disabled={fetch.running || !cwd}
-            aria-label="Fetch"
-            // a remote-tracking ref is only as fresh as the last fetch, so the clock is part of reading a comparison;
-            // absent until one has happened, because "just now" on an unfetched session would be a lie
-            title={
-                fetch.running
-                    ? "Fetching…"
-                    : fetch.at > 0
-                      ? `Fetch origin · fetched ${formatAge(Date.now() - fetch.at * 1000)} ago`
-                      : "Fetch origin"
-            }
-            className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[6px] text-ink-mid hover:bg-surface-hover hover:text-ink-hi disabled:opacity-50"
-        >
-            <RefreshCw size={14} className={cn(fetch.running && "animate-spin")} />
-        </button>
-    );
-}
-
-// Commit tab, until its form arrives: the working tree's changed files, picked to read their diff against HEAD.
-function CommitList({
-    state,
-    rangeKind,
-    onRevealFile,
-}: {
-    state: FilesState | null;
-    rangeKind: DiffScope["range"]["kind"] | null;
-    onRevealFile: (path: string) => void;
-}) {
-    const selectedCommit = useAtomValue(selectedCommitAtom);
-    const selectedFile = useAtomValue(selectedFileAtom);
-    if (rangeKind != null && rangeKind !== "working") {
-        return (
-            <div className="px-[10px] py-[8px] text-[12px] leading-[1.5] text-ink-mid">
-                The Commit tab lists a working tree's changes. The Log tab lists what changed since this source's start.
-            </div>
-        );
-    }
-    return (
-        <ChangedFileList
-            changes={state?.changes ?? null}
-            selectedFile={selectedCommit === WORKING_TREE ? selectedFile : null}
-            onSelectFile={(path) => {
-                if (selectedCommit !== WORKING_TREE && state?.cwd) {
-                    void selectCommit(state.cwd, WORKING_TREE);
-                }
-                selectCommitFile(WORKING_TREE, path);
-                onRevealFile(path);
-            }}
-        />
     );
 }
 
@@ -244,6 +183,7 @@ function CompareBar({
 }
 
 export function DiffPanel({
+    model,
     agents,
     projects,
     scope,
@@ -256,6 +196,8 @@ export function DiffPanel({
     onRevealFile,
     unreadable,
 }: {
+    // the sync failure's "Open a terminal here" launches through it
+    model: AgentsViewModel;
     agents: AgentVM[];
     projects: FilesProject[];
     scope: DiffScope | null;
@@ -372,8 +314,9 @@ export function DiffPanel({
                     onPickProject={onPickProject}
                     onPickWorktree={onPickWorktree}
                 />
-                <FetchButton cwd={cwd} />
+                <SyncBar agents={agents} state={state} />
             </div>
+            <SyncFailure model={model} agents={agents} scope={scope} state={state} />
             <div className="flex h-[34px] flex-none items-stretch gap-[2px] border-b border-border px-[8px]">
                 <div role="tablist" className="flex items-stretch gap-[2px]">
                     <PanelTabButton id="commit" count={commitTabCount(state)} active={tab === "commit"} />
@@ -390,20 +333,11 @@ export function DiffPanel({
                         Compare…
                     </button>
                 ) : null}
-                {tab === "commit" ? (
-                    <span className="flex flex-none items-center">
-                        <TreeModeToggle />
-                    </span>
-                ) : null}
             </div>
 
             {unreadable ? null : tab === "commit" ? (
-                <div
-                    role="tabpanel"
-                    data-panel-body="commit"
-                    className="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[12px] pt-[6px]"
-                >
-                    <CommitList state={state} rangeKind={scope?.range.kind ?? null} onRevealFile={onRevealFile} />
+                <div role="tabpanel" data-panel-body="commit" className="flex min-h-0 flex-1 flex-col">
+                    <CommitTab cwd={cwd} agents={agents} onRevealFile={onRevealFile} />
                 </div>
             ) : (
                 <>
