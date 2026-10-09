@@ -51,6 +51,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Diff is one panel beside a wide diff instead of four columns. At the panel's top a source dropdown (the project,
+  worktree and agent tree) replaces the Worktrees column; under it, Commit and Log tabs. Log holds the history graph
+  over the selected commit, split by a divider you can drag, and Compare… lives there; the range strip and the
+  right-hand summary are gone, and the diff's header is one line with a `⋯` menu for the view options. Drag the
+  panel's right edge to resize it. `Shift`+`B` hides the whole panel: the diff then takes the full width and its
+  header carries the source, the tabs and a file stepper. `Shift`+`H` opens the Log tab and `Shift`+`C` the Commit
+  tab.
+- Diff: choosing a source, a commit, the session row or a comparison opens its first file at once, and `↑`/`↓` in a
+  file list open the next or previous file without Enter.
 - Rename opens on the session's current name, all of it selected, so you can type a new one or edit the old one.
 - Hold `Ctrl` (`⌘` on a Mac) or `Alt` a moment and the bottom bar lists every shortcut on that key that works right
   now, so from inside an agent's terminal you can see each way out without leaving it.
@@ -78,6 +87,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- Diff: a commit whose files are still loading, or could not be read, no longer shows `0 files +0 −0` beside an
+  empty diff. The list says it is reading, or that the read failed with a Retry, and a commit that really changes
+  no files says so.
 - A run in its final stage now reads **Verifying** in the run sheet, with the step it is on and for how long, instead
   of **Executing** over a full strip; a run's progress line in the Agents tree shows its full text on hover when cut
   off.

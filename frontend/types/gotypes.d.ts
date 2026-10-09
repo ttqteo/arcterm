@@ -1143,6 +1143,9 @@ declare global {
         ref?: string;
         head?: string;
         basebranch?: string;
+        upstream?: string;
+        upstreamahead?: number;
+        upstreambehind?: number;
     };
 
     // wshrpc.CommandGitCommitChangesData
@@ -1156,6 +1159,31 @@ declare global {
         statusz: string;
         numstat: string;
         isrepo: boolean;
+    };
+
+    // wshrpc.CommandGitCommitData
+    type CommandGitCommitData = {
+        cwd: string;
+        message: string;
+        paths: string[];
+        amend?: boolean;
+    };
+
+    // wshrpc.CommandGitCommitMessageData
+    type CommandGitCommitMessageData = {
+        cwd: string;
+        ref?: string;
+    };
+
+    // wshrpc.CommandGitCommitMessageRtnData
+    type CommandGitCommitMessageRtnData = {
+        message: string;
+    };
+
+    // wshrpc.CommandGitCommitRtnData
+    type CommandGitCommitRtnData = {
+        hash?: string;
+        failure?: GitFailure;
     };
 
     // wshrpc.CommandGitCompareChangesData
@@ -1304,6 +1332,18 @@ declare global {
     type CommandGitReviewPatchRtnData = {
         isrepo: boolean;
         files: ReviewPatchFile[];
+    };
+
+    // wshrpc.CommandGitSyncData
+    type CommandGitSyncData = {
+        cwd: string;
+    };
+
+    // wshrpc.CommandGitSyncRtnData
+    type CommandGitSyncRtnData = {
+        moved: number;
+        branch?: string;
+        failure?: GitFailure;
     };
 
     // wshrpc.CommandJarvisCtxData

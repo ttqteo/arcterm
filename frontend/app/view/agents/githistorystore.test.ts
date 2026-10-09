@@ -21,6 +21,9 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 import { scopeKey } from "./diffscope";
 import { filesStateAtom, requestFileLink } from "./filesstore";
 import {
+    activeChangesAtom,
+    activeChangesStatusAtom,
+    commitChangesStatusAtom,
     historyCommitsAtom,
     historyFailureAtom,
     historyFiltersAtom,
@@ -35,6 +38,8 @@ import {
     resetHistory,
     restoreNoticeAtom,
     retryHistory,
+    retrySelectedCommit,
+    selectCommit,
     selectedCommitAtom,
     selectedFileAtom,
     setHistoryOpts,
@@ -82,6 +87,9 @@ beforeEach(() => {
         changes: RUN_CHANGES as any,
         ref: "base000",
         head: "aaa1111",
+        upstream: "",
+        upstreamAhead: 0,
+        upstreamBehind: 0,
     });
 });
 
@@ -152,6 +160,9 @@ describe("loadHistory selection settling", () => {
             changes: RUN_CHANGES as any,
             ref: "base000",
             head: "aaa1111",
+            upstream: "",
+            upstreamAhead: 0,
+            upstreamBehind: 0,
         });
         await loadHistory(CWD, RUN_OPTS, RUN);
         await settle();
@@ -443,6 +454,9 @@ describe("startFromTop", () => {
             changes: { files: [] } as any,
             ref: "",
             head: "aaa",
+            upstream: "",
+            upstreamAhead: 0,
+            upstreamBehind: 0,
         });
         globalStore.set(historyFiltersAtom, { author: "dana", path: "", text: "" });
         globalStore.set(historyScrollAtom, 300);
@@ -458,5 +472,130 @@ describe("startFromTop", () => {
         expect(globalStore.get(historyFiltersAtom)).toEqual(NO_FILTERS);
         expect(globalStore.get(historyScrollAtom)).toBe(0);
         expect(globalStore.get(restoreNoticeAtom)).toBeNull();
+    });
+});
+
+// 2026-10-09: a failed or non-repo read left the commit's change list at null, which also means
+// "loading", so the pane showed skeleton rows and `0 FILES +0 −0` for good. The status says which.
+describe("a commit's file list status", () => {
+    function deferred<T>() {
+        let resolve!: (v: T) => void;
+        const promise = new Promise<T>((res) => {
+            resolve = res;
+        });
+        return { promise, resolve };
+    }
+
+    it("is loading while the read is in flight, then ready with the files", async () => {
+        const d = deferred<any>();
+        gitCommitChanges.mockReturnValueOnce(d.promise);
+        const p = selectCommit(CWD, "ccc3333");
+        expect(globalStore.get(commitChangesStatusAtom)).toBe("loading");
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("loading");
+        expect(globalStore.get(activeChangesAtom)).toBeNull();
+        d.resolve({ isrepo: true, statusz: "M  x.ts\0", numstat: "1\t0\tx.ts\n" });
+        await p;
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+        expect(globalStore.get(activeChangesAtom)?.files.map((f) => f.path)).toEqual(["x.ts"]);
+        expect(globalStore.get(selectedFileAtom)).toBe("x.ts");
+    });
+
+    it("is failed when the read throws, with no files and no selected file", async () => {
+        gitCommitChanges.mockRejectedValueOnce(new Error("boom"));
+        await selectCommit(CWD, "ccc3333");
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("failed");
+        expect(globalStore.get(activeChangesAtom)).toBeNull();
+        expect(globalStore.get(selectedFileAtom)).toBeNull();
+    });
+
+    it("is failed when git says this is not a repository", async () => {
+        gitCommitChanges.mockResolvedValueOnce({ isrepo: false, statusz: "", numstat: "" });
+        await selectCommit(CWD, "ccc3333");
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("failed");
+    });
+
+    it("is ready with an empty list for a commit that changes no files", async () => {
+        gitCommitChanges.mockResolvedValueOnce({ isrepo: true, statusz: "", numstat: "" });
+        await selectCommit(CWD, "ccc3333");
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+        expect(globalStore.get(activeChangesAtom)?.files).toEqual([]);
+    });
+
+    it("ignores a late answer for a commit the selection has left", async () => {
+        const slow = deferred<any>();
+        gitCommitChanges.mockReturnValueOnce(slow.promise);
+        const first = selectCommit(CWD, "ccc3333");
+        await selectCommit(CWD, "ddd4444");
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+        slow.resolve({ isrepo: false, statusz: "", numstat: "" });
+        await first;
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+        expect(globalStore.get(activeChangesAtom)?.files.length).toBe(1);
+    });
+
+    it("retry re-reads the selected commit and recovers", async () => {
+        gitCommitChanges.mockRejectedValueOnce(new Error("boom"));
+        await selectCommit(CWD, "ccc3333");
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("failed");
+        retrySelectedCommit();
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("loading");
+        await vi.waitFor(() => expect(globalStore.get(activeChangesStatusAtom)).toBe("ready"));
+        expect(gitCommitChanges).toHaveBeenLastCalledWith({}, { cwd: CWD, hash: "ccc3333" });
+    });
+
+    it("retry does nothing for the working tree, which has no commit read", async () => {
+        globalStore.set(selectedCommitAtom, WORKING_TREE);
+        retrySelectedCommit();
+        expect(gitCommitChanges).not.toHaveBeenCalled();
+    });
+
+    it("the working-tree row is loading until the change list exists", () => {
+        globalStore.set(selectedCommitAtom, WORKING_TREE);
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+        globalStore.set(filesStateAtom, null);
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("loading");
+    });
+
+    it("a stale failure does not follow the selection back to the working tree", async () => {
+        gitCommitChanges.mockRejectedValueOnce(new Error("boom"));
+        await selectCommit(CWD, "ccc3333");
+        await selectCommit(CWD, WORKING_TREE);
+        expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+    });
+
+    describe("the DEV fault hook", () => {
+        beforeEach(() => {
+            (globalThis as any).window = {};
+        });
+        afterEach(() => {
+            delete (globalThis as any).window;
+        });
+
+        it("'error' fails exactly one commit read, then clears itself", async () => {
+            (globalThis as any).window.__commitChangesFault = "error";
+            await selectCommit(CWD, "ccc3333");
+            expect(globalStore.get(activeChangesStatusAtom)).toBe("failed");
+            expect((globalThis as any).window.__commitChangesFault).toBeUndefined();
+            expect(gitCommitChanges).not.toHaveBeenCalled();
+            retrySelectedCommit();
+            await vi.waitFor(() => expect(globalStore.get(activeChangesStatusAtom)).toBe("ready"));
+        });
+
+        it("'hang' holds the read in loading until the selection moves on", async () => {
+            (globalThis as any).window.__commitChangesFault = "hang";
+            void selectCommit(CWD, "ccc3333");
+            await settle();
+            expect(globalStore.get(activeChangesStatusAtom)).toBe("loading");
+            expect((globalThis as any).window.__commitChangesFault).toBeUndefined();
+            expect(gitCommitChanges).not.toHaveBeenCalled();
+            await selectCommit(CWD, "ddd4444");
+            expect(globalStore.get(activeChangesStatusAtom)).toBe("ready");
+        });
+
+        it("is not read for the working-tree row, which has no commit read", async () => {
+            (globalThis as any).window.__commitChangesFault = "error";
+            await selectCommit(CWD, WORKING_TREE);
+            expect((globalThis as any).window.__commitChangesFault).toBe("error");
+        });
     });
 });

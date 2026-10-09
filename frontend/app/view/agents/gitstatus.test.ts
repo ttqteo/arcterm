@@ -27,10 +27,16 @@ describe("parseGitChanges", () => {
         expect(r.files[0]).toEqual({ path: "old.ts", status: "D", adds: 0, dels: 4 });
     });
 
-    it("skips the rename source field and uses the new path", () => {
+    it("keys a rename by its new path and keeps the source as from", () => {
         const statusZ = `R  new.ts${NUL}old.ts${NUL}`;
         const r = parseGitChanges(statusZ, "0\t0\tnew.ts\n");
-        expect(r.files).toEqual([{ path: "new.ts", status: "R", adds: 0, dels: 0 }]);
+        expect(r.files).toEqual([{ path: "new.ts", status: "R", adds: 0, dels: 0, from: "old.ts" }]);
+        expect(r.files[0].from).toBe("old.ts");
+    });
+
+    it("sets no from key on a change that is not a rename", () => {
+        const r = parseGitChanges(` M a.ts${NUL}`, "1\t0\ta.ts\n");
+        expect("from" in r.files[0]).toBe(false);
     });
 
     it("treats binary numstat (-/-) as zero counts and notes it", () => {
@@ -66,13 +72,13 @@ describe("parseGitChanges", () => {
     // and edited file read as +0 −0 and its lines went missing from the totals.
     it("counts a rename that also edited content", () => {
         const r = parseGitChanges(`RM renamed.txt${NUL}big.txt${NUL}`, "1\t1\tbig.txt => renamed.txt\n");
-        expect(r.files).toEqual([{ path: "renamed.txt", status: "R", adds: 1, dels: 1 }]);
+        expect(r.files).toEqual([{ path: "renamed.txt", status: "R", adds: 1, dels: 1, from: "big.txt" }]);
         expect(r).toMatchObject({ adds: 1, dels: 1 });
     });
 
     it("counts a rename git wrote in its brace form", () => {
         const r = parseGitChanges(`RM sub/renamed.txt${NUL}big.txt${NUL}`, "2\t3\t{ => sub}/renamed.txt\n");
-        expect(r.files[0]).toEqual({ path: "sub/renamed.txt", status: "R", adds: 2, dels: 3 });
+        expect(r.files[0]).toEqual({ path: "sub/renamed.txt", status: "R", adds: 2, dels: 3, from: "big.txt" });
     });
 
     it("leaves an ordinary path with a literal arrow-free name alone", () => {

@@ -13,6 +13,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { resolveCwd } from "./agentcwdresolve";
 import { ensureSessionStart } from "./agentsessionstore";
 import { originCwd, scopeKey, type DiffOrigin, type DiffRange, type DiffScope } from "./diffscope";
+import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 
 export interface FilesState {
@@ -26,6 +27,12 @@ export interface FilesState {
     // landing under it: the poll below re-reads the change list on a timer, and the surface compares
     // this against the sha its commit column was built from.
     head: string;
+    // HEAD's upstream ("origin/main") and how many commits HEAD is ahead of / behind it. "" and 0/0 when the
+    // branch has no upstream or HEAD is detached. The sync bar reads these off this poll, so no second
+    // timer reads the repository.
+    upstream: string;
+    upstreamAhead: number;
+    upstreamBehind: number;
 }
 
 // A registered project the Diff surface can scope to, resolved from the config registry (name -> path).
@@ -43,7 +50,17 @@ export const filesErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
 // either the repository or the range cancels the in-flight load.
 const current = { token: "" };
 
-const EMPTY: FilesState = { cwd: null, branch: "", isRepo: false, changes: null, ref: "", head: "" };
+const EMPTY: FilesState = {
+    cwd: null,
+    branch: "",
+    isRepo: false,
+    changes: null,
+    ref: "",
+    head: "",
+    upstream: "",
+    upstreamAhead: 0,
+    upstreamBehind: 0,
+};
 
 // How to anchor the diff: an explicit base commit (runs), or a session-start unix-seconds timestamp
 // (interactive agents) that the backend resolves to the session-start commit and echoes back so
@@ -78,13 +95,23 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
         // diffs so they match the list. Otherwise use the ref we sent ("" = live).
         const ref = opts.sessionStartTs ? (ch.ref ?? "") : (opts.ref ?? "");
         const changes = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
-        globalStore.set(filesStateAtom, { cwd, branch: ch.branch, isRepo: ch.isrepo, changes, ref, head: ch.head ?? "" });
+        globalStore.set(filesStateAtom, {
+            cwd,
+            branch: ch.branch,
+            isRepo: ch.isrepo,
+            changes,
+            ref,
+            head: ch.head ?? "",
+            upstream: ch.upstream ?? "",
+            upstreamAhead: ch.upstreamahead ?? 0,
+            upstreamBehind: ch.upstreambehind ?? 0,
+        });
         globalStore.set(filesErrorAtom, false);
         if (isInitial) {
             // Deliberately always the first file: a deep link is claimed by the history store, which owns
             // the *visible* selection. Honouring it here as well would load one file's diff and then have
             // the history load pick another, so the pane showed whichever RPC landed last.
-            const first = changes?.files[0]?.path;
+            const first = changes ? firstShownPath(changes.files) : undefined;
             if (first) {
                 selectFile(first);
             }

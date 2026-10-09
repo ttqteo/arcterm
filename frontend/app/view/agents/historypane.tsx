@@ -2,17 +2,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pane 1 of the Diff surface (Wave-git-review.dc.html): commits newest-first, the uncommitted row at
-// the top, an optional lane gutter behind them. Rows are left-padded by the gutter width so the SVG
-// and the list stay in register without the rows knowing any geometry. The column owns its own
-// controls — count, Clear filters, Graph, collapse, and the filter row under them.
+// The top half of the panel's Log tab: commits newest-first, the uncommitted row at the top, an optional lane gutter
+// behind them. Rows are left-padded by the gutter width so the SVG and the list stay in register without the rows
+// knowing any geometry. The pane owns its own controls: the filter row, and under it the filtered count, Clear
+// filters and the Graph toggle.
 
 import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Clock, GitGraph, PanelLeftClose } from "lucide-react";
+import { Clock, GitGraph } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { assignLanes, laneCount } from "./gitgraph";
 import { graphGeometry } from "./gitgraphgeom";
@@ -27,13 +27,12 @@ import { GraphGutter } from "./graphgutter";
 import { HistoryFilterRow } from "./historyfilterrow";
 import { HISTORY_PAGE_SIZE, NEAR_BOTTOM_PX, SCROLL_THROTTLE_MS, noMatchSentence, slowSeconds } from "./historyquery";
 import { refChipClass, type HistoryRow } from "./historyrows";
-import { SubLabel } from "./sectionlabel";
 
-const ROW_H = 34;
-const HASH_W = 52;
-// lanes past this fold into one grey column; nine concurrent lanes will not fit the history column
-const MAX_LANES = 7;
-const NO_GRAPH_PAD = 14;
+const ROW_H = 28;
+const HASH_W = 48;
+// lanes past this fold into one grey column; more than four will not fit a 340px panel beside the hash and a subject
+const MAX_LANES = 4;
+const NO_GRAPH_PAD = 8;
 const SLOW_TICK_MS = 1_000;
 
 // SkeletonLine takes only className, so the ragged widths are literal utility classes rather than an
@@ -44,7 +43,7 @@ function HistorySkeleton() {
     return (
         <SkeletonRows className="h-full px-[14px]">
             {(i) => (
-                <div key={i} className="flex h-[34px] items-center gap-[10px]">
+                <div key={i} className="flex h-[28px] items-center gap-[10px]">
                     <SkeletonLine className="h-[9px] w-[9px] rounded-full" />
                     <SkeletonLine className={cn("h-[8px]", SKELETON_WIDTHS[i % SKELETON_WIDTHS.length])} />
                     <div className="flex-1" />
@@ -119,15 +118,17 @@ function NoMatch() {
 function Row({
     row,
     laneIndent,
+    graphOn,
     selected,
     onSelect,
 }: {
     row: HistoryRow;
     laneIndent: number;
+    graphOn: boolean;
     selected: boolean;
     onSelect: () => void;
 }) {
-    // refs eat the subject's width fast; show the first and collapse the rest into a count
+    // refs eat the subject's width fast in a 340px panel; show the first and collapse the rest into a count
     const chips = row.refs.length > 1 ? row.refs.slice(0, 1) : row.refs;
     const overflow = row.refs.length - chips.length;
     return (
@@ -135,24 +136,44 @@ function Row({
             onClick={onSelect}
             style={{ height: ROW_H, paddingLeft: laneIndent }}
             className={cn(
-                "relative flex w-full items-center gap-[9px] pr-[12px] text-left transition-colors duration-[140ms] hover:bg-surface",
+                "relative flex w-full items-center gap-[7px] rounded-[7px] pr-[8px] text-left transition-colors duration-[140ms] hover:bg-surface-hover",
                 selected && "bg-surface-selected"
             )}
         >
             {/* no left accent bar: it lands 13px from lane 0's line in the same blue, so a selected row
                 grew a second thing that looks like a graph lane. The fill alone marks the selection. */}
-            <span style={{ width: HASH_W }} className="flex flex-none items-center font-mono text-[11px] text-muted">
-                {row.workingTree ? (
-                    <span className="h-[10px] w-[10px] rounded-full border border-dashed border-warning" />
-                ) : (
-                    row.hash.slice(0, 7)
+            {row.workingTree ? (
+                // the graph draws this row's dashed node itself; without the graph the row carries its own
+                graphOn ? null : (
+                    <span className="h-[10px] w-[10px] flex-none rounded-full border border-dashed border-warning" />
+                )
+            ) : (
+                <span
+                    style={{ width: HASH_W }}
+                    className="flex flex-none items-center font-mono text-[10.5px] text-muted"
+                >
+                    {row.hash.slice(0, 7)}
+                </span>
+            )}
+            <span
+                className={cn(
+                    "min-w-0 flex-1 truncate text-[11.5px]",
+                    row.before
+                        ? "text-muted"
+                        : selected
+                          ? "font-semibold text-ink-hi"
+                          : row.workingTree
+                            ? "font-semibold text-warning"
+                            : "text-foreground"
                 )}
+            >
+                {row.subject}
             </span>
             {chips.map((r) => (
                 <span
                     key={r.label}
                     className={cn(
-                        "max-w-[110px] flex-none truncate rounded-[4px] border px-[6px] py-[1px] text-[10.5px] font-semibold",
+                        "max-w-[90px] flex-none truncate rounded-[5px] border px-[5px] text-[10px] font-semibold leading-[16px]",
                         refChipClass(r.kind)
                     )}
                 >
@@ -160,34 +181,16 @@ function Row({
                 </span>
             ))}
             {overflow > 0 ? (
-                <span className="flex-none rounded-[4px] border border-edge-mid bg-surface-raised px-[6px] py-[1px] text-[10.5px] font-semibold tabular-nums text-muted">
+                <span className="flex-none rounded-[5px] border border-edge-mid bg-surface-raised px-[5px] text-[10px] font-semibold leading-[16px] tabular-nums text-muted">
                     +{overflow}
                 </span>
             ) : null}
-            <span
-                className={cn(
-                    "min-w-[140px] flex-1 truncate text-[12.5px]",
-                    row.before
-                        ? "text-muted"
-                        : selected
-                          ? "font-semibold text-ink-hi"
-                          : row.workingTree
-                            ? "text-warning"
-                            : "text-foreground"
-                )}
-            >
-                {row.subject}
-            </span>
             {row.workingTree ? (
-                <span className="flex-none text-[11px] text-muted">
+                <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
                     {row.fileCount} {row.fileCount === 1 ? "file" : "files"}
                 </span>
-            ) : row.refs.length === 0 ? (
-                <span className="flex-none truncate text-[11px] text-muted" style={{ maxWidth: 92 }}>
-                    {row.author}
-                </span>
             ) : null}
-            <span className="w-[42px] flex-none text-right text-[10.5px] tabular-nums text-muted">{row.when}</span>
+            <span className="flex-none text-right text-[10.5px] tabular-nums text-muted">{row.when}</span>
         </button>
     );
 }
@@ -217,7 +220,6 @@ export function HistoryPane({
     onSelect,
     onScroll,
     onLoadMore,
-    onCollapse,
 }: {
     rows: HistoryRow[];
     selected: string | null;
@@ -233,8 +235,6 @@ export function HistoryPane({
     onSelect: (hash: string) => void;
     onScroll: (top: number) => void;
     onLoadMore: () => void;
-    // the collapse button renders only when the surface can collapse the column
-    onCollapse?: () => void;
 }) {
     const laned = assignLanes(rows);
     const lanes = Math.min(Math.max(laneCount(laned), 1), MAX_LANES);
@@ -277,15 +277,13 @@ export function HistoryPane({
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex flex-none items-center gap-[9px] px-[14px] pb-[8px] pt-[10px]">
-                <SubLabel>History</SubLabel>
+            <HistoryFilterRow />
+            <div className="flex h-[26px] flex-none items-center gap-[8px] px-[12px]">
                 {filtered ? (
                     <span data-filter-count className="text-[10.5px] font-semibold tabular-nums text-accent-soft">
                         {countLabel}
                     </span>
-                ) : (
-                    <span className="text-[10.5px] tabular-nums text-muted">{countLabel}</span>
-                )}
+                ) : null}
                 {graphOn && geom.foldedCount > 0 ? (
                     <span className="rounded-[5px] border border-edge-mid bg-surface-raised px-[7px] py-[2px] text-[10.5px] font-semibold tabular-nums text-graphlane-fold">
                         {laneCount(laned)} lanes · {geom.foldedCount} folded
@@ -295,32 +293,22 @@ export function HistoryPane({
                 {filtered ? <ClearFiltersButton kbd /> : null}
                 <button
                     onClick={() => globalStore.set(graphOnAtom, !graphPref)}
+                    title={`Commit graph (${formatChordString("Shift:g")})`}
+                    aria-pressed={graphPref}
                     className={cn(
-                        "flex flex-none items-center gap-[6px] rounded-[7px] border px-[9px] py-[4px] text-[11.5px] font-semibold",
+                        "flex h-[22px] flex-none items-center gap-[6px] rounded-[6px] border px-[8px] text-[11px] font-semibold",
                         graphPref ? "border-accent/30 bg-accentbg text-ink-hi" : "border-edge-mid bg-surface text-muted"
                     )}
                 >
-                    <GitGraph size={13} />
+                    <GitGraph size={12} />
                     Graph
-                    <span className="font-mono text-[10.5px] text-muted">{formatChordString("Shift:g")}</span>
                 </button>
-                {onCollapse ? (
-                    <button
-                        onClick={onCollapse}
-                        title="Collapse history"
-                        aria-label="Collapse history"
-                        className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[6px] text-muted hover:bg-surface hover:text-foreground"
-                    >
-                        <PanelLeftClose size={15} />
-                    </button>
-                ) : null}
             </div>
-            <HistoryFilterRow />
             <div
                 ref={scrollRef}
                 onScroll={handleScroll}
                 data-history-scroll
-                className="min-h-0 flex-1 overflow-y-auto pb-[24px]"
+                className="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[12px]"
             >
                 {loading ? (
                     <>
@@ -331,7 +319,7 @@ export function HistoryPane({
                     filtered ? (
                         <NoMatch />
                     ) : (
-                        <div className="px-[14px] py-[6px] text-[12px] text-ink-mid">No commits</div>
+                        <div className="px-[8px] py-[6px] text-[12px] text-ink-mid">No commits</div>
                     )
                 ) : (
                     <div className="relative">
@@ -343,6 +331,7 @@ export function HistoryPane({
                                 <Row
                                     row={row}
                                     laneIndent={indent}
+                                    graphOn={graphOn}
                                     selected={selected === row.hash}
                                     onSelect={() => onSelect(row.hash)}
                                 />
@@ -352,12 +341,12 @@ export function HistoryPane({
                         {appendState === "failed" ? (
                             <button
                                 onClick={onLoadMore}
-                                className="flex h-[34px] w-full items-center gap-[8px] px-[14px] text-left text-[12px] text-error hover:text-foreground"
+                                className="flex h-[28px] w-full items-center gap-[8px] px-[8px] text-left text-[12px] text-error hover:text-foreground"
                             >
                                 Couldn’t load more commits — retry
                             </button>
                         ) : appendState === "loading" ? (
-                            <div className="flex h-[34px] items-center px-[14px] text-[11px] tabular-nums text-muted">
+                            <div className="flex h-[28px] items-center px-[8px] text-[11px] tabular-nums text-muted">
                                 {`loading commits ${rows.length + 1}–${rows.length + HISTORY_PAGE_SIZE}…`}
                             </div>
                         ) : null}

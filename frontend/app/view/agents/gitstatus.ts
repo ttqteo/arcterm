@@ -17,6 +17,7 @@ export interface GitChange {
     adds: number;
     dels: number;
     note?: ChangeNote;
+    from?: string; // a rename's or copy's source path
 }
 
 export const CHANGE_NOTE_TITLE: Record<ChangeNote, string> = {
@@ -32,8 +33,8 @@ export interface GitChanges {
 }
 
 // porcelain -z: NUL-separated entries "XY path"; rename/copy entries carry an extra NUL old-path.
-function parseStatusZ(statusZ: string): { path: string; status: string }[] {
-    const out: { path: string; status: string }[] = [];
+function parseStatusZ(statusZ: string): { path: string; status: string; from?: string }[] {
+    const out: { path: string; status: string; from?: string }[] = [];
     const parts = statusZ.split("\0");
     for (let i = 0; i < parts.length; i++) {
         const entry = parts[i];
@@ -43,10 +44,12 @@ function parseStatusZ(statusZ: string): { path: string; status: string }[] {
         const xy = entry.slice(0, 2);
         const path = entry.slice(3);
         const status = xy.includes("?") ? "?" : (xy.trim()[0] ?? "?");
+        let from: string | undefined;
         if (xy[0] === "R" || xy[0] === "C") {
-            i++; // the next field is the rename/copy source path — consume + ignore it
+            from = parts[i + 1] || undefined; // the next field is the rename/copy source path
+            i++;
         }
-        out.push({ path, status });
+        out.push(from ? { path, status, from } : { path, status });
     }
     return out;
 }
@@ -88,9 +91,12 @@ export function parseGitChanges(statusZ: string, numstat: string): GitChanges {
     const files: GitChange[] = [];
     let adds = 0;
     let dels = 0;
-    for (const { path, status } of parseStatusZ(statusZ)) {
+    for (const { path, status, from } of parseStatusZ(statusZ)) {
         const n = stat.get(path);
         const change: GitChange = { path, status, adds: n?.adds ?? 0, dels: n?.dels ?? 0 };
+        if (from) {
+            change.from = from;
+        }
         if (path.endsWith("/")) {
             change.note = "repo";
         } else if (n?.binary) {

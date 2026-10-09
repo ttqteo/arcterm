@@ -1,35 +1,29 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// State for the Diff surface's worktree sidebar. Mirrors filesstore.ts: module-level atoms written by async
-// loaders via globalStore, so the folded rail, the expanded groups and each group's last read survive the surface
-// unmounting on a nav switch. The rows themselves are derived purely in worktreesidebar.ts.
+// State for the Diff surface's source tree (the dropdown at the top of the panel). Mirrors filesstore.ts: module-level
+// atoms written by async loaders via globalStore, so the expanded groups and each group's last read survive the
+// surface unmounting on a nav switch. The rows themselves are derived purely in worktreesidebar.ts.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { sameRepoPath } from "@/util/paths";
 import { atom, type PrimitiveAtom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
 import { resolveCwd } from "./agentcwdresolve";
-import { resolveSidebarFolded } from "./difflayout";
+import { panelFoldedAtom, resolvePanelFolded } from "./difflayout";
 import type { FilesProject, FilesState } from "./filesstore";
 import { projectListAtom } from "./projectsstore";
 
-// The person's own fold: null = follow the surface's width, true/false = they said so and a resize must not undo it.
-// Persisted across launches; the width's fold never is. The cast is railstore.ts's (jotai otherwise types it as a
-// promise).
-export const sidebarFoldedAtom = atomWithStorage<boolean | null>("cockpit.files.sidebar.folded", null, undefined, {
-    getOnInit: true,
-}) as PrimitiveAtom<boolean | null>;
-
-// The Diff surface's whole width, sidebar included, as FilesSurface last measured it; 0 until it has.
+// The Diff surface's whole width, panel included, as FilesSurface last measured it; 0 until it has.
 export const diffSurfaceWidthAtom = atom(0) as PrimitiveAtom<number>;
 
-// Whether the sidebar shows as its rail: the explicit choice, else the width's (difflayout.ts).
-export const sidebarShownFoldedAtom = atom((get) =>
-    resolveSidebarFolded(get(sidebarFoldedAtom), get(diffSurfaceWidthAtom))
-);
+// Whether the panel is folded away: the person's explicit choice (panelFoldedAtom), else the width's (difflayout.ts).
+export const panelShownFoldedAtom = atom((get) => resolvePanelFolded(get(panelFoldedAtom), get(diffSurfaceWidthAtom)));
+
+// Whether the panel's source dropdown is open. An atom rather than the picker's own state so "Choose a source" on the
+// not-a-repository panel can open it from outside.
+export const sourcePickerOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // Project names whose group is open, for this session only. The view adds the current source's group on a scope change.
 export const sidebarExpandedAtom = atom<Set<string>>(new Set<string>()) as PrimitiveAtom<Set<string>>;

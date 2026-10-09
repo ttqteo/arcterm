@@ -13,8 +13,11 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { devCommitFault, type ChangesStatus } from "./changesstatus";
+import { compareActiveChangesAtom, compareActiveChangesStatusAtom, compareOnAtom } from "./comparestore";
 import { historyKey, type LoadHistoryOpts } from "./diffscope";
 import { consumeFileLink, filesStateAtom, selectFile } from "./filesstore";
+import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 import {
     FILTER_DEBOUNCE_MS,
@@ -49,6 +52,9 @@ export const graphOnAtom = atom<boolean>(true) as PrimitiveAtom<boolean>;
 export const historyLoadStartedAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
 
 const commitChangesAtom = atom<GitChanges | null>(null) as PrimitiveAtom<GitChanges | null>;
+// What the selected commit's read is doing. commitChangesAtom is null both while it loads and after it
+// fails, so the file list could not tell "0 files" from "not read yet" without this.
+export const commitChangesStatusAtom = atom<ChangesStatus>("ready") as PrimitiveAtom<ChangesStatus>;
 // The scope's anchor/labels, held so the debounced filter reload can reissue the same scoped read.
 const historyOptsAtom = atom<LoadHistoryOpts>({}) as PrimitiveAtom<LoadHistoryOpts>;
 // When the current page was read. Relative ages are computed against this rather than a live clock,
@@ -87,6 +93,28 @@ export const activeChangesAtom = atom<GitChanges | null>((get) =>
     get(selectedCommitAtom) === WORKING_TREE ? (get(filesStateAtom)?.changes ?? null) : get(commitChangesAtom)
 );
 
+// The status of the list the Diff surface is showing, whichever source feeds it: a compare range reads its
+// own, the working-tree row waits for the scope's change list, and a commit reads its own status. Nothing
+// selected has no list to be loading.
+export const activeChangesStatusAtom = atom<ChangesStatus>((get) => {
+    if (get(compareOnAtom)) {
+        return get(compareActiveChangesStatusAtom);
+    }
+    const selected = get(selectedCommitAtom);
+    if (selected == null) {
+        return "ready";
+    }
+    if (selected === WORKING_TREE) {
+        return get(filesStateAtom) == null ? "loading" : "ready";
+    }
+    return get(commitChangesStatusAtom);
+});
+
+// The list behind activeChangesStatusAtom, compare included: what the diff pane picks its file from.
+export const shownChangesAtom = atom<GitChanges | null>((get) =>
+    get(compareOnAtom) ? get(compareActiveChangesAtom) : get(activeChangesAtom)
+);
+
 const current = { token: "" };
 let filterTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -121,6 +149,7 @@ export function resetHistory(): void {
     globalStore.set(selectedCommitAtom, null);
     globalStore.set(selectedFileAtom, null);
     globalStore.set(commitChangesAtom, null);
+    globalStore.set(commitChangesStatusAtom, "ready");
     globalStore.set(historyLoadStartedAtom, null);
 }
 
@@ -388,7 +417,8 @@ export async function selectCommit(cwd: string, hash: string): Promise<void> {
     if (hash === WORKING_TREE) {
         // the working tree's file list is already loaded by filesstore for the active scope; just pick
         // its first file so pane 3 is never blank
-        const first = globalStore.get(filesStateAtom)?.changes?.files[0]?.path;
+        const working = globalStore.get(filesStateAtom)?.changes;
+        const first = working ? firstShownPath(working.files) : undefined;
         if (first) {
             globalStore.set(selectedFileAtom, first);
             selectFile(first);
@@ -396,22 +426,40 @@ export async function selectCommit(cwd: string, hash: string): Promise<void> {
         return;
     }
     globalStore.set(commitChangesAtom, null);
+    globalStore.set(commitChangesStatusAtom, "loading");
     try {
+        await devCommitFault();
         const ch = await RpcApi.GitCommitChangesCommand(TabRpcClient, { cwd, hash });
         if (globalStore.get(selectedCommitAtom) !== hash) {
             return; // selection moved on
         }
-        const changes = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
+        if (!ch.isrepo) {
+            globalStore.set(commitChangesStatusAtom, "failed");
+            return;
+        }
+        const changes = parseGitChanges(ch.statusz, ch.numstat);
         globalStore.set(commitChangesAtom, changes);
-        const first = changes?.files[0]?.path;
+        globalStore.set(commitChangesStatusAtom, "ready");
+        const first = firstShownPath(changes.files);
         if (first) {
             selectCommitFile(hash, first);
         }
     } catch {
         if (globalStore.get(selectedCommitAtom) === hash) {
             globalStore.set(commitChangesAtom, null);
+            globalStore.set(commitChangesStatusAtom, "failed");
         }
     }
+}
+
+// The Retry on a commit whose files failed to read. The working-tree row has no commit read to repeat.
+export function retrySelectedCommit(): void {
+    const hash = globalStore.get(selectedCommitAtom);
+    const cwd = globalStore.get(filesStateAtom)?.cwd;
+    if (hash == null || hash === WORKING_TREE || !cwd) {
+        return;
+    }
+    void selectCommit(cwd, hash);
 }
 
 // Selection only. The pane reads the commit and its parent itself (diffcontentstore), so there is no

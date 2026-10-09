@@ -78,4 +78,9 @@ type CommandGitChangesRtnData struct {
 	Head string `json:"head,omitempty"`
 	// BaseBranch is the default branch a BranchBase read measured from; "" otherwise.
 	BaseBranch string `json:"basebranch,omitempty"`
+	// HEAD's upstream and the commits each side lacks; Upstream "" = none. The Diff surface's sync bar reads these
+	// off the poll it already runs, so no second timer reads the repository.
+	Upstream       string `json:"upstream,omitempty"`
+	UpstreamAhead  int    `json:"upstreamahead,omitempty"`
+	UpstreamBehind int    `json:"upstreambehind,omitempty"`
 }

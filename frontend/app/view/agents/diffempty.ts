@@ -5,7 +5,9 @@
 // Pure: why the diff pane has nothing to draw, in words. Null means there is something to draw, or
 // the pair is still loading and the pane's skeleton is the honest answer.
 
-export type EmptyDiffKind = "nothing" | "nofile" | "toolarge" | "binary" | "unchanged";
+import type { ChangesStatus } from "./changesstatus";
+
+export type EmptyDiffKind = "nothing" | "nofile" | "nofiles" | "listfailed" | "toolarge" | "binary" | "unchanged";
 
 export interface EmptyDiff {
     kind: EmptyDiffKind;
@@ -18,6 +20,11 @@ export interface EmptyDiffInput {
     pair: { path: string; binary: boolean; tooLarge: boolean; original: string; modified: string } | null;
     // set when compare's aggregate is selected and lists no files
     nothingToCompare: { base: string; head: string } | null;
+    // whether the file list beside the pane has loaded; with no path, a list that is still loading must not
+    // read as "pick a file"
+    listStatus: ChangesStatus;
+    // files in the list the pane picks from; null = there is no list at all (nothing selected yet)
+    fileCount: number | null;
 }
 
 export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
@@ -26,6 +33,23 @@ export function emptyDiffState(i: EmptyDiffInput): EmptyDiff | null {
         return { kind: "nothing", title: "Nothing to compare", body: `${base} and ${head} have no file differences.` };
     }
     if (!i.path) {
+        if (i.listStatus === "loading") {
+            return null;
+        }
+        if (i.listStatus === "failed") {
+            return {
+                kind: "listfailed",
+                title: "Couldn't read the file list",
+                body: "Git did not answer. Try again from the list.",
+            };
+        }
+        if (i.fileCount === 0) {
+            return {
+                kind: "nofiles",
+                title: "This commit changes no files",
+                body: "It may be a merge or an empty commit.",
+            };
+        }
         return {
             kind: "nofile",
             title: "Pick a file to see its changes",

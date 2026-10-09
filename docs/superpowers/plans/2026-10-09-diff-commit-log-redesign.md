@@ -2,6 +2,14 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Progress:** run 57b7ed36 (2026-10-09) landed Tasks 1–7. Tasks 8–10 were paused by the human and are left for a
+> later run; a later run takes only those three (re-number them, and Task 8 depends on nothing then). Task 8's
+> unfinished, unreviewed attempt is kept at tag `arc/57b7ed36-t-8-wip` (`committab.tsx`, `commitstore.ts`,
+> `commitrows.ts`). Task 7's review notes for them: `diff-log-tab` seeds a feature branch four commits ahead of main
+> (history rows 0 = touch a and b, 1 = tweak c, 2 = tweak a, 3 = empty), and `pickFilesSource` clicks
+> `[data-folded-source]` when the panel is folded, which pins `panelFoldedAtom` false, so a scenario relying on the
+> width fold picks before it narrows and restores `PANEL_FOLD_KEY` in teardown.
+
 **Goal:** Rebuild the Diff surface as one left panel (Commit | Log tabs, a source dropdown, a sync bar) beside a wide
 diff. Add commit, fetch, pull and push. Make every selection show a diff at once, never `0 files` while loading.
 
@@ -21,19 +29,23 @@ Read the spec named below first; its decision 0 (quick look) outranks the rest.
 
 **Spec:** `docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md`
 **Verify:** `node scripts/verify.mjs ./pkg/gitinfo ./pkg/wshrpc/...`
-**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: diff-log-tab, diff-commit-tab, diff-sync need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs diff-log-tab diff-commit-tab diff-sync diff-worktrees diff-compare git-history agent-rail-file-link`
+**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: diff-log-tab, diff-commit-tab, diff-sync and the Diff scenarios need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs surface-smoke diff-log-tab diff-commit-tab diff-sync diff-worktrees diff-compare git-history agent-rail-file-link line-review record-band-detach-restore`
 **Prototype:** .superpowers/design/diff-commit-log/project
 
 Board → scenario step:
 
 | Board | Scenario step |
 |---|---|
-| Main | `diff-commit-tab` step 1 |
-| Log | `diff-log-tab` step 1 |
-| Loading | `diff-log-tab` step 2 |
-| Rail | `diff-log-tab` step 4 |
-| Compare | `diff-log-tab` step 5 |
-| States | `diff-commit-tab` steps 3–5 (failed, locked rows / amend, empty) and `diff-sync` steps 2–4 (diverged, confirm, publish) |
+| Main | `diff-commit-tab` step 1 (the tab, and the source dropdown open) and step 2 (the toast's link) |
+| Log | `diff-log-tab` step 2 (the rail's View diff: Log tab, "Since session start" selected, first file open) |
+| Loading | `diff-log-tab` step 3 |
+| Rail | `diff-log-tab` step 5 |
+| Compare | `diff-log-tab` step 6 |
+| States | `diff-commit-tab` steps 4–6 (failed, locked rows / amend, empty) and `diff-sync` steps 2–4 (diverged, confirm, publish) |
+
+Interactions with no board of their own have steps too: `↑`/`↓` in a file list (`diff-log-tab` steps 1 and 6), the
+`⋯` menu (step 7), the panel and Log split drags (step 8), `[data-file-step]` (step 5); and in the Commit list `↑`/`↓`,
+`Space`, `Ctrl+Enter` and `Shift+C` (`diff-commit-tab` steps 2–3).
 
 ## Conventions for every task
 
@@ -248,6 +260,45 @@ func TestCommitHookFailureIsData(t *testing.T) {
 	}
 }
 
+func TestCommitRename(t *testing.T) {
+	dir := commitRepo(t)
+	git(t, dir, "mv", "a.txt", "renamed.txt")
+	r, err := Commit(context.Background(), dir, "rename a", []string{"renamed.txt", "a.txt"}, false)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("commit: %v %+v", err, r)
+	}
+	out := gitOutT(t, dir, "show", "--name-status", "-M", "--format=", "HEAD")
+	if !strings.HasPrefix(out, "R") || !strings.Contains(out, "a.txt") || !strings.Contains(out, "renamed.txt") {
+		t.Fatalf("HEAD should record the rename, got %q", out)
+	}
+	if st := gitOutT(t, dir, "status", "--porcelain", "--", "a.txt", "renamed.txt"); st != "" {
+		t.Fatalf("both ends should be committed, status %q", st)
+	}
+}
+
+func TestCommitFailureUnstagesAddedPaths(t *testing.T) {
+	dir := commitRepo(t)
+	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	r, err := Commit(context.Background(), dir, "add b", []string{"b.txt"}, false)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+	if st := gitOutT(t, dir, "status", "--porcelain", "--", "b.txt"); st != "?? b.txt" {
+		t.Fatalf("a failed commit must leave b.txt untracked, status %q", st)
+	}
+}
+
+// gitOutT is git's trimmed stdout, failing the test when git does.
+func gitOutT(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func TestCommitAmendRewritesHead(t *testing.T) {
 	dir := commitRepo(t)
 	if r, _ := Commit(context.Background(), dir, "first", []string{"a.txt"}, false); r.Failure != nil {
@@ -318,7 +369,8 @@ func refused(command, why string) *CommitResult {
 
 // Commit records exactly paths (cwd-relative, as GetChanges lists them) with --only, so what another session
 // staged for other paths stays in the index and out of this commit. Untracked paths are added first, since --only
-// takes only paths git knows. A path the status does not list, or a nested repository, is refused before git runs.
+// takes only paths git knows, and unstaged again when the commit fails. A path the status does not list, or a nested
+// repository, is refused before git runs.
 func Commit(ctx context.Context, cwd, message string, paths []string, amend bool) (*CommitResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, commitTimeout)
 	defer cancel()
@@ -358,6 +410,10 @@ func Commit(ctx context.Context, cwd, message string, paths []string, amend bool
 	}
 	args = append(append(args, "--"), paths...)
 	if out, err := runInput(ctx, cwd, message, args...); err != nil {
+		// put the index back as it was: a path this call added must not wait, staged, for someone else's commit
+		if len(add) > 0 {
+			runInput(ctx, cwd, "", append([]string{"reset", "-q", "--"}, add...)...)
+		}
 		cmd := fmt.Sprintf("git commit --only -F - -- %d paths", len(paths))
 		return &CommitResult{Failure: &GitFailure{Command: cmd, ExitCode: exitCodeOf(err), Stderr: strings.TrimSpace(out)}}, nil
 	}
@@ -415,7 +471,9 @@ and `gofmt -l pkg/gitinfo pkg/wshrpc`.
 **Depends on:** Task 2
 **Files:** `pkg/gitinfo/gitinfo.go`, `pkg/gitinfo/gitinfo_test.go`, `pkg/wshrpc/wshrpctypes_git.go`, `pkg/wshrpc/wshserver/wshserver_git.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
-**Step 1: Write the failing tests**
+**Step 1: Write the failing tests.** Besides the four below, add `TestNetCommandsFailAsData`: point a clone's
+`origin` at `http://127.0.0.1:1/nope.git` and assert that `Fetch`, `Pull` and `Push` each return a `Failure` (not an
+error) well inside their budgets. Nothing listens there, so no prompt can appear; the test pins all three as data.
 
 ```go
 // two clones of one bare remote: a is the source the surface shows, b stands in for a colleague
@@ -511,17 +569,18 @@ type SyncResult struct {
 	Failure *GitFailure `json:"failure,omitempty"`
 }
 
-// runSync is runInput for the network: GIT_TERMINAL_PROMPT=0 makes a missing credential fail at once instead of
-// waiting on a prompt nobody can see. A credential manager's own window still appears.
-func runSync(ctx context.Context, cwd string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cwd}, args...)...)
+// runNet is run for a command that talks to a remote (fetch, pull, push): GIT_TERMINAL_PROMPT=0 makes a missing
+// credential fail at once instead of waiting on a prompt nobody can see. A credential manager's own window still
+// appears. It keeps run's cmd.Output(), so failureOf finds git's stderr on the ExitError.
+func runNet(ctx context.Context, cwd string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false", "-C", cwd}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	return string(out), err
 }
 
-func syncFailure(command string, out string, err error) *SyncResult {
-	return &SyncResult{Failure: &GitFailure{Command: command, ExitCode: exitCodeOf(err), Stderr: strings.TrimSpace(out)}}
+func syncFailure(args []string, err error) *SyncResult {
+	return &SyncResult{Failure: failureOf(args, err)}
 }
 
 // Pull fast-forwards to the upstream and nothing else: no merge commit, no rebase, so no conflict can leave the
@@ -533,8 +592,8 @@ func Pull(ctx context.Context, cwd string) (*SyncResult, error) {
 	if up == "" {
 		return &SyncResult{Failure: &GitFailure{Command: "git pull --ff-only", ExitCode: -1, Stderr: "this branch has no upstream to pull from"}}, nil
 	}
-	if out, err := runSync(ctx, cwd, "pull", "--ff-only"); err != nil {
-		return syncFailure("git pull --ff-only", out, err), nil
+	if _, err := runNet(ctx, cwd, "pull", "--ff-only"); err != nil {
+		return syncFailure([]string{"pull", "--ff-only"}, err), nil
 	}
 	return &SyncResult{Moved: behind}, nil
 }
@@ -553,12 +612,16 @@ func Push(ctx context.Context, cwd string) (*SyncResult, error) {
 	if up == "" {
 		args = []string{"push", "-u", "origin", branch}
 	}
-	if out, err := runSync(ctx, cwd, args...); err != nil {
-		return syncFailure("git "+strings.Join(args, " "), out, err), nil
+	if _, err := runNet(ctx, cwd, args...); err != nil {
+		return syncFailure(args, err), nil
 	}
 	return &SyncResult{Moved: ahead, Branch: branch}, nil
 }
 ```
+
+`Fetch` (`gitinfo.go` ~line 1260) already has its 55s `fetchTimeout`, but its `git fetch` goes through `run`, so it can
+wait on a credential prompt. Change that one call to `runNet(ctx, cwd, args...)`, keeping `failureOf`. Spec §3: every
+sync command (Fetch, Pull, Push) runs through `runNet`, and no network git command runs any other way.
 
 Wire it: `GitPullCommand` and `GitPushCommand` take `CommandGitSyncData{Cwd}` and return
 `CommandGitSyncRtnData{Moved int "moved"; Branch string "branch,omitempty"; Failure *gitinfo.GitFailure "failure,omitempty"}`,
@@ -907,8 +970,8 @@ In `diffempty.test.ts`, add cases:
 ---
 
 ### Task 7: The panel layout: source dropdown, Commit | Log tabs, one-line diff header
-**Depends on:** Task 6
-**Files:** `frontend/app/view/agents/difflayout.ts`, `frontend/app/view/agents/difflayout.test.ts`, `frontend/app/view/agents/worktreesidebarstore.ts`, `frontend/app/view/agents/worktreesidebarstore.test.ts`, `frontend/app/view/agents/worktreesidebarview.tsx`, `frontend/app/view/agents/sourcepicker.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/historypane.tsx`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/diffpane.tsx`, `frontend/app/view/agents/diffoptions.ts`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/rangestrip.tsx`, `frontend/app/view/agents/historyrail.tsx`, `frontend/app/store/keybindings/bindings.ts`, `scripts/cdp/scenarios.mjs`
+**Depends on:** Task 1, Task 6
+**Files:** `frontend/app/view/agents/difflayout.ts`, `frontend/app/view/agents/difflayout.test.ts`, `frontend/app/view/agents/filesstore.ts`, `frontend/app/view/agents/comparestore.ts`, `frontend/app/view/agents/githistorystore.ts`, `frontend/app/view/agents/worktreesidebarstore.ts`, `frontend/app/view/agents/worktreesidebarstore.test.ts`, `frontend/app/view/agents/worktreesidebarview.tsx`, `frontend/app/view/agents/sourcepicker.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/historypane.tsx`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/diffpane.tsx`, `frontend/app/view/agents/diffoptions.ts`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/rangestrip.tsx`, `frontend/app/view/agents/historyrail.tsx`, `frontend/app/view/agents/filestep.ts`, `frontend/app/view/agents/filestep.test.ts`, `frontend/app/view/agents/changedfilelist.tsx`, `frontend/app/store/keybindings/bindings.ts`, `scripts/cdp/scenarios.mjs`
 
 This task rebuilds the surface layout to match `Log.dc.html`, `Rail.dc.html` and `Compare.dc.html`. The Commit tab
 renders a read-only placeholder list here; Task 8 replaces it.
@@ -925,9 +988,28 @@ renders a read-only placeholder list here; Task 8 replaces it.
     - `panelWidthAtom = atomWithStorage("cockpit.files.panel.width", 340)` and `clampPanelWidth(w)` (280–560);
     - `logSplitAtom = atomWithStorage("cockpit.files.log.split", 0.55)` and `clampLogSplit(f)` (0.25–0.8);
     - `defaultPanelTab(originKind, rangeKind, dirtyCount)`: `"log"` for an agent origin or a session, run or compare
-      range; otherwise `"commit"` when `dirtyCount > 0`, else `"log"`.
+      range; otherwise `"commit"` when `dirtyCount > 0`, else `"log"`;
+    - `panelTabToApply(appliedKey, key, loaded, originKind, rangeKind, dirtyCount)`: the tab to set now, or `null`.
+      It is `null` while the list for `key` is still loading (`loaded` false: `filesStateAtom` is null or holds another
+      cwd), and `null` once `appliedKey === key`. Otherwise it is `defaultPanelTab(...)`. The surface stores `key` as
+      applied only when this returns a tab. A fresh pick of a dirty tree therefore waits for its list and opens Commit,
+      never Log off a list that has not arrived.
 
-    Test every rule.
+    Test every rule, including: a fresh key that is not loaded yet returns `null`; the same key once loaded with 3 dirty
+    files returns `"commit"`; a reload of an applied key returns `null` even when its dirty count changes.
+- Create: `frontend/app/view/agents/filestep.ts` + `filestep.test.ts` (spec decision 0). Pure:
+  - `shownPaths(files, treeMode, collapsed)`: the file paths in the order the list draws them (`buildFileTree`'s rows
+    in tree mode, the list order flat);
+  - `stepFile(paths, current, delta)`: the next or previous path, clamped at the ends; the first path when `current`
+    is null or no longer listed;
+  - `fileStepLabel(paths, current)`: `"file i of n"`.
+
+  Test each, including a tree whose order differs from the input order.
+- Modify: `frontend/app/view/agents/changedfilelist.tsx` (spec decision 0). The list is focusable (`tabIndex=0`,
+  `data-file-list`). `↑`/`↓` in it select the next file at once through its existing select callback (`selectFile`,
+  `selectCompareFile`); no Enter. The selected row scrolls into view. The first file a source, commit, session row or
+  compare range selects on load is `shownPaths(...)[0]`, so the pick matches the top row in tree mode too: change the
+  `files[0]` picks in `filesstore.ts` and `comparestore.ts`, and `settleSelection` in `githistorystore.ts`, to it.
 - Modify: `frontend/app/view/agents/worktreesidebarstore.ts`: delete `sidebarFoldedAtom`, `sidebarShownFoldedAtom`
   and `diffSurfaceWidthAtom`'s fold use (keep the atom if `filessurface` still measures with it).
 - Modify: `frontend/app/view/agents/worktreesidebarview.tsx`:
@@ -950,9 +1032,11 @@ renders a read-only placeholder list here; Task 8 replaces it.
   - the body.
     - **Commit:** a placeholder list using `ChangedFileList` over `filesStateAtom` changes when the range is `working`.
       Task 8 replaces it.
-    - **Log:** history on top and the selected commit below, split by a draggable divider (`logSplitAtom`).
-  - The panel width comes from `panelWidthAtom`, with a drag handle on its right edge. Folded, the panel is not
-    rendered.
+    - **Log:** history on top and the selected commit below, split by a draggable divider (`data-log-split`,
+      `role="separator"`, `aria-orientation="horizontal"`) that writes `logSplitAtom` through `clampLogSplit`.
+  - The panel width comes from `panelWidthAtom`, with a drag handle on its right edge (`data-panel-resize`,
+    `role="separator"`, `aria-orientation="vertical"`) that writes it through `clampPanelWidth`. The panel root is
+    `data-diff-panel="open"`. Folded, the panel is not rendered, and the diff pane carries `data-diff-panel="folded"`.
 - Modify: `frontend/app/view/agents/historypane.tsx`:
   - `ROW_H` 34 → 28;
   - drop the author column, the "HISTORY · n loaded" header and `onCollapse`;
@@ -981,7 +1065,9 @@ renders a read-only placeholder list here; Task 8 replaces it.
     - the form toggle `since it left <base>` | `tip to tip`.
 
     `CompareColumn` lists the rows and `AggregatePane`/`CommitPane` sits below;
-  - apply `defaultPanelTab` once per `scopeKey(scope)` (keep a ref of the last key) and never on a re-render;
+  - on each change of `scopeKey(scope)` or of the list's load state, call `panelTabToApply` with the last applied key
+    (a ref) and set the tab only when it returns one. The rail's View diff also selects the session row, which the
+    history store already does for an agent scope;
   - delete `rangestrip.tsx` and `historyrail.tsx` if nothing else imports them (`grep -rn`).
 - Modify: `frontend/app/store/keybindings/bindings.ts`, `buildFilesBindings`:
   - `files:toggle-history` (`Shift:h`) becomes "Log tab": it sets `panelTabAtom` to `"log"` and `panelFoldedAtom` to
@@ -999,36 +1085,61 @@ renders a read-only placeholder list here; Task 8 replaces it.
     `data-files-range-summary` steps with the panel equivalents. The fold is `Shift+B` on
     `[data-diff-panel="folded"|"open"]`, compare is `[data-compare-button]`, and the summary assertions read
     `[data-files-count]` and the diff header;
-  - check `agent-rail-file-link`, `doc-review-canvas`, `cockpit-needs-you-cross-channel`,
-    `record-band-detach-restore` and `new-run-window` for the removed selectors, and fix the ones that use them;
-  - add the scenario `diff-log-tab` beside `git-history`. It seeds a repo with three commits (the newest touching two
-    files) and registers it as a project, then runs these steps:
-    1. Pick the project: the Log tab is selected, the top commit row is selected, `[data-changed-file-row]` count is
-       2, and a Monaco diff is mounted with no "Pick a file" text. Shot `cdp-shots/diff-log-tab.png`.
-    2. Set `window.__commitChangesFault = "hang"` and click the second commit: `[data-files-count]` reads
-       "Reading this commit's files…" and the page has no "0 files". Shot `cdp-shots/diff-log-loading.png`.
-    3. Set `"error"` and click the third commit: "Couldn't read" shows with `[data-files-retry]`; clicking it loads the
+  - fix the other scenarios that reach the Diff surface:
+    - `line-review` (`const LR` ~line 12400; the plan reviewer called it `doc-review-canvas`, but the lines are in
+      `line-review`): ~line 12899 clicks `[data-range-chip="compare"]` and ~12901 waits for `[data-history-rail]`.
+      Use `[data-compare-button]` and `[data-compare-bar]`. It also picks sources with `pickFilesSource`;
+    - `agent-rail-file-link` and `record-band-detach-restore` read `[data-changed-file-row]` on the Diff surface: keep
+      them passing under the new layout;
+    - `doc-review-canvas`, `cockpit-needs-you-cross-channel` and `new-run-window` use none of the removed selectors
+      (checked 2026-10-09; `SIDEBAR_FOLD_KEY` and `pickFilesSource` are only defined after the latter's object). Grep
+      again after the rename and fix any hit;
+    - every scenario you edit is in the plan's Final line; if you edit one that is not, say so in your report;
+  - add the scenario `diff-log-tab` beside `git-history`. It seeds a clean repo with three commits (the newest
+    touching two files) and registers it as a project. It also writes a fixture agent whose cwd is the repo and whose
+    session started before the newest commit, the way `agent-rail-file-link` writes its fixture. Steps:
+    1. Pick the project (a clean tree): the Log tab is selected, the top commit row is selected,
+       `[data-changed-file-row]` count is 2, and a Monaco diff of the first shown file is mounted with no "Pick a file"
+       text. Focus `[data-file-list]` and press `↓`: the diff header names the second file without Enter. Shot
+       `cdp-shots/diff-log-project.png`.
+    2. Open the fixture agent on the Agent surface and click its rail's View diff: the Diff surface opens on the Log
+       tab, the `[data-history-row="worktree"]` row reads "Since session start" and is selected, and the first file
+       is open in the diff. Shot `cdp-shots/diff-log-tab.png` (the Log board).
+    3. Pick the project again. Set `window.__commitChangesFault = "hang"` and click the second commit:
+       `[data-files-count]` reads "Reading this commit's files…" and the page has no "0 files". Shot
+       `cdp-shots/diff-log-loading.png`.
+    4. Set `"error"` and click the third commit: "Couldn't read" shows with `[data-files-retry]`; clicking it loads the
        list.
-    4. Press `Shift+B`: `[data-diff-panel="folded"]`, `[data-folded-source]` and `[data-folded-tab]` show, with split
-       view on (`Shift+D`). Shot `cdp-shots/diff-panel-folded.png`. Press `Shift+B` again.
-    5. Press `c`: `[data-compare-bar]` shows, and the first file is open in the diff. Shot
-       `cdp-shots/diff-log-compare.png`. Escape leaves.
+    5. Click the top commit and press `Shift+B`: `[data-diff-panel="folded"]`, `[data-folded-source]`,
+       `[data-folded-tab]` and `[data-file-step]` show, with split view on (`Shift+D`). Shot
+       `cdp-shots/diff-panel-folded.png`. Click the step's next arrow: the header names the second file and the step
+       reads "file 2 of 2". Click `[data-folded-tab="commit"]`: the panel unfolds on the Commit tab. Press `Shift+H`:
+       the Log tab.
+    6. Press `c`: `[data-compare-bar]` shows, and the first shown file is open in the diff. Focus `[data-file-list]`
+       and press `↓`: the next file opens. Shot `cdp-shots/diff-log-compare.png`. Escape leaves.
+    7. Click `[data-diff-options]`: the menu lists split/unified, whitespace, wrap, Open in editor and Open in Code.
+       Shot `cdp-shots/diff-options.png`. Click wrap: the menu's wrap item reads on (`aria-checked="true"`). Click it
+       again to restore, then Escape: the menu closes.
+    8. Drag `[data-panel-resize]` 100px right with `Input.dispatchMouseEvent`: `[data-diff-panel="open"]` is about
+       100px wider (±4) and `localStorage["cockpit.files.panel.width"]` changed. Drag `[data-log-split]` 80px down: the
+       history pane is taller and `cockpit.files.log.split` changed.
 
-    Teardown restores the panel fold key and removes the project. Register the scenario in `SCENARIOS` right after
-    `git-history`.
+    Teardown restores the panel fold, width and split keys, removes the fixture agent and the project. Register the
+    scenario in `SCENARIOS` right after `git-history`.
 
 **Steps:**
-1. Write the `difflayout.test.ts` cases for the new rules, run them, and watch them fail.
-2. Implement `difflayout.ts` and run the tests until they pass.
+1. Write the `difflayout.test.ts` and `filestep.test.ts` cases for the new rules, run them, and watch them fail.
+2. Implement `difflayout.ts` and `filestep.ts` and run the tests until they pass.
 3. Build the views in this order:
    1. `SourceTree` / `SourcePicker`;
    2. `DiffPanel`;
    3. `historypane` / `commitpane`;
    4. the `diffpane` header;
-   5. `filessurface`;
-   6. the bindings.
+   5. the `changedfilelist` arrows and the first-file picks;
+   6. `filessurface`;
+   7. the bindings.
 4. Run `task check:ts` and the keybinding tests.
-5. With `task dev` running, run `task verify:ui -- diff-log-tab diff-worktrees diff-compare git-history agent-rail-file-link`.
+5. With `task dev` running, run `task verify:ui -- surface-smoke diff-log-tab diff-worktrees diff-compare git-history agent-rail-file-link line-review record-band-detach-restore`.
    Every step must pass; the final verifier compares their shots with the boards.
 6. Commit by pathspec: `feat(diff): one panel with Commit and Log tabs beside a wide diff`.
 
@@ -1063,16 +1174,17 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
       failure and keeps the draft and ticks. On success it clears the draft, amend and ticks, then reloads the list,
       calls `reloadChanges(cwd)` and `refreshHistory()`, and `pushToast({ title: \`Committed ${hash}\`, message:
       \`${n} ${n === 1 ? "file" : "files"}\`, level: "info", onOpen })`. `onOpen` switches to the Log tab and calls
-      `selectCommit(cwd, hash)`.
+      `selectCommit(cwd, hash)`, so the new commit's row is selected and its first file open.
 - Create: `frontend/app/view/agents/committab.tsx`, as drawn in `Main.dc.html`:
-  - The header row: a tri-state checkbox (`role="checkbox"`, `aria-checked="mixed"` for some), `Changes n`, and
-    `TreeModeToggle`.
+  - The header row: a tri-state checkbox (`role="checkbox"`, `aria-checked="mixed"` for some), `Changes n`,
+    `TreeModeToggle`, and a refresh icon button (`data-commit-refresh`, `aria-label="Refresh"`, `RefreshCw`) that calls
+    `loadCommitList(cwd)` and spins while it runs.
   - The **Changes** group, then **Unversioned files** (folded by default), each built with `buildFileTree` /
     `treeModeAtom` as `ChangedFileList` does.
   - A row (`data-commit-row={path}`) holds a checkbox (`data-commit-tick={path}`, `aria-checked`, `disabled` with a
     `title` from `CHANGE_NOTE_TITLE` when `!committable`), the status letter, the name, and the counts or the note.
-  - Clicking a row selects it. The list container is focusable: `↑`/`↓` move the selection and `Space` toggles its
-    tick.
+  - Clicking a row selects it and shows its diff. The list container (`data-commit-list`) is focusable: `↑`/`↓` move
+    the selection and show that file's diff at once (`stepFile` from `filestep.ts`), and `Space` toggles its tick.
   - The box (`data-commit-box`) holds:
     - the textarea `data-commit-message` (3–10 lines, `aria-label="Commit message"`). `Ctrl+Enter` in it calls
       `commitNow`;
@@ -1097,15 +1209,23 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
   - `vendor/tool/` with its own `git init`.
 
   Steps:
-  1. Pick the project: the Commit tab is selected (dirty tree), a.txt and b.txt are ticked, new.txt is unticked,
+  1. Click `[data-source-picker-trigger]`: `[data-source-picker="open"]` shows the project row and the filter has
+     focus. Shot `cdp-shots/diff-source-picker.png`. Pick the project with the dropdown (it closes): the Commit tab is
+     selected (a dirty tree, decided once its list loaded), a.txt and b.txt are ticked, new.txt is unticked,
      `vendor/tool/` is disabled with "repo", and `logo.png` reads "bin". The diff shows a.txt. Shot
      `cdp-shots/diff-commit-tab.png`.
-  2. Untick b.txt, unfold Unversioned, tick new.txt, type a message and click Commit. A toast shows, `git show
-     --name-only HEAD` lists a.txt and new.txt, and `git diff --cached --name-only` is still b.txt.
-  3. Write a failing `pre-commit` hook, modify a.txt and commit: `[data-commit-failure]` holds the hook's text and the
+  2. Focus `[data-commit-list]` and press `↓`: b.txt is selected and the diff header names it, without Enter. Press
+     `Space`: b.txt's `[data-commit-tick]` reads `aria-checked="false"`. Unfold Unversioned, tick new.txt, type a
+     message into `[data-commit-message]` and press `Ctrl+Enter` there. A toast shows "Committed <hash>"; `git show
+     --name-only HEAD` lists a.txt and new.txt, and `git diff --cached --name-only` is still b.txt. Click the toast's
+     `[data-notification-open]`: the Log tab is selected and the `[data-history-row="<hash>"]` row is selected.
+  3. Switch to the Log tab, then press `Shift+C`: the Commit tab is selected and `document.activeElement` is
+     `[data-commit-message]`. Write `x.txt` in node and click `[data-commit-refresh]`: an x.txt row appears in
+     Unversioned.
+  4. Write a failing `pre-commit` hook, modify a.txt and commit: `[data-commit-failure]` holds the hook's text and the
      message is still in the box. Shot `cdp-shots/diff-commit-failed.png`. Remove the hook.
-  4. Add a bare remote and `git push -u`: Amend is disabled with its title. Shot `cdp-shots/diff-commit-amend-locked.png`.
-  5. Commit everything left (`git add -A && git commit` in node, unticking the nested repo first by ignoring it in
+  5. Add a bare remote and `git push -u`: Amend is disabled with its title. Shot `cdp-shots/diff-commit-amend-locked.png`.
+  6. Commit everything left (`git add -A && git commit` in node, unticking the nested repo first by ignoring it in
      `.git/info/exclude`): `[data-commit-empty]` shows. Shot `cdp-shots/diff-commit-empty.png`.
 
   Teardown removes the project and the temp dirs.
@@ -1115,7 +1235,7 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
    `commitselection.ts`).
 2. Build the store and the view.
 3. Run `task check:ts`, then eslint and prettier on the touched files.
-4. Run `task verify:ui -- diff-commit-tab diff-log-tab`; every step must pass.
+4. Run `task verify:ui -- diff-commit-tab diff-log-tab surface-smoke`; every step must pass.
 5. Commit by pathspec: `feat(diff): commit ticked files from the Commit tab`.
 
 ---
@@ -1162,7 +1282,7 @@ Build the sync cluster of `Main.dc.html` and the sync half of `States.dc.html`.
 **Steps:**
 1. Build the store and the bar.
 2. Run `task check:ts`, then eslint and prettier on the touched files.
-3. Run `task verify:ui -- diff-sync diff-commit-tab diff-log-tab diff-compare`; every step must pass.
+3. Run `task verify:ui -- diff-sync diff-commit-tab diff-log-tab diff-compare surface-smoke`; every step must pass.
 4. Commit by pathspec: `feat(diff): fetch, pull and push from the Diff panel`.
 
 ---

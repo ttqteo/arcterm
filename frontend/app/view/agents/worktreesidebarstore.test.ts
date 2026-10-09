@@ -31,17 +31,17 @@ vi.mock("./projectsstore", async () => {
     return { projectListAtom: atom<{ name: string; path: string }[]>([]) };
 });
 
+import { panelFoldedAtom } from "./difflayout";
 import type { FilesState } from "./filesstore";
 import { projectListAtom } from "./projectsstore";
 import {
     agentCwdsAtom,
     diffSurfaceWidthAtom,
     loadProjectWorktrees,
+    panelShownFoldedAtom,
     refreshSidebar,
     resolveAgentCwds,
     sidebarExpandedAtom,
-    sidebarFoldedAtom,
-    sidebarShownFoldedAtom,
     withLiveCount,
     worktreeErrorsAtom,
     worktreesByProjectAtom,
@@ -173,6 +173,9 @@ describe("withLiveCount", () => {
         },
         ref: "",
         head: "abc",
+        upstream: "",
+        upstreamAhead: 0,
+        upstreamBehind: 0,
         ...over,
     });
     const wts = [
@@ -194,37 +197,37 @@ describe("withLiveCount", () => {
     });
 });
 
-describe("sidebarFoldedAtom", () => {
-    it("persists under cockpit.files.sidebar.folded and defaults to following the width", async () => {
+describe("panelFoldedAtom", () => {
+    it("persists under cockpit.files.panel.folded and defaults to following the width", async () => {
         lsMock.clear();
-        expect(globalStore.get(sidebarFoldedAtom)).toBe(null);
-        globalStore.set(sidebarFoldedAtom, true);
-        expect(lsMock.store.get("cockpit.files.sidebar.folded")).toBe("true");
+        expect(globalStore.get(panelFoldedAtom)).toBe(null);
+        globalStore.set(panelFoldedAtom, true);
+        expect(lsMock.store.get("cockpit.files.panel.folded")).toBe("true");
         vi.resetModules();
         const { createStore } = await import("jotai");
-        const fresh = await import("./worktreesidebarstore");
-        expect(createStore().get(fresh.sidebarFoldedAtom)).toBe(true);
+        const fresh = await import("./difflayout");
+        expect(createStore().get(fresh.panelFoldedAtom)).toBe(true);
     });
 });
 
-describe("sidebarShownFoldedAtom", () => {
+describe("panelShownFoldedAtom", () => {
     afterEach(() => {
-        globalStore.set(sidebarFoldedAtom, null);
+        globalStore.set(panelFoldedAtom, null);
         globalStore.set(diffSurfaceWidthAtom, 0);
     });
 
     it("folds a narrow surface without writing the persisted choice", () => {
         lsMock.clear();
-        globalStore.set(sidebarFoldedAtom, null);
+        globalStore.set(panelFoldedAtom, null);
         globalStore.set(diffSurfaceWidthAtom, 920);
-        expect(globalStore.get(sidebarShownFoldedAtom)).toBe(true);
-        expect(globalStore.get(sidebarFoldedAtom)).toBe(null);
-        expect(lsMock.store.get("cockpit.files.sidebar.folded")).not.toBe("true");
+        expect(globalStore.get(panelShownFoldedAtom)).toBe(true);
+        expect(globalStore.get(panelFoldedAtom)).toBe(null);
+        expect(lsMock.store.get("cockpit.files.panel.folded")).not.toBe("true");
     });
 
     it("keeps an explicit unfold on a narrow surface", () => {
         globalStore.set(diffSurfaceWidthAtom, 920);
-        globalStore.set(sidebarFoldedAtom, false);
-        expect(globalStore.get(sidebarShownFoldedAtom)).toBe(false);
+        globalStore.set(panelFoldedAtom, false);
+        expect(globalStore.get(panelShownFoldedAtom)).toBe(false);
     });
 });

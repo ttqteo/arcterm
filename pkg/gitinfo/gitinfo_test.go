@@ -39,6 +39,39 @@ func repoWithChange(t *testing.T) string {
 	return dir
 }
 
+// A bare remote the repo pushes to, so @{u} resolves.
+func repoWithUpstream(t *testing.T) (dir, bare string) {
+	t.Helper()
+	dir = repoWithChange(t)
+	bare = t.TempDir()
+	git(t, bare, "init", "-q", "--bare", "-b", "main")
+	git(t, dir, "remote", "add", "origin", bare)
+	git(t, dir, "push", "-q", "-u", "origin", "main")
+	return dir, bare
+}
+
+func TestGetChangesUpstreamCounts(t *testing.T) {
+	dir, _ := repoWithUpstream(t)
+	git(t, dir, "commit", "-q", "--allow-empty", "-m", "local only")
+	ch, err := GetChanges(context.Background(), dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Upstream != "origin/main" || ch.UpstreamAhead != 1 || ch.UpstreamBehind != 0 {
+		t.Fatalf("upstream = %q +%d -%d, want origin/main +1 -0", ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind)
+	}
+}
+
+func TestGetChangesNoUpstream(t *testing.T) {
+	ch, err := GetChanges(context.Background(), repoWithChange(t), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Upstream != "" || ch.UpstreamAhead != 0 || ch.UpstreamBehind != 0 {
+		t.Fatalf("want no upstream, got %q +%d -%d", ch.Upstream, ch.UpstreamAhead, ch.UpstreamBehind)
+	}
+}
+
 func TestHeadCommit(t *testing.T) {
 	dir := repoWithChange(t) // has one commit ("init") + uncommitted edits
 	sha, err := HeadCommit(context.Background(), dir)
@@ -2272,5 +2305,304 @@ func TestBranchBaseWithNoDefaultBranch(t *testing.T) {
 	branch, mb, err := BranchBase(context.Background(), dir)
 	if err != nil || branch != "" || mb != "" {
 		t.Errorf("BranchBase = (%q, %q, %v), want empty", branch, mb, err)
+	}
+}
+
+// Commit runs git without the test env's author vars, so the repo carries its own identity.
+func commitRepo(t *testing.T) string {
+	t.Helper()
+	dir := repoWithChange(t) // a.txt committed then modified, b.txt untracked
+	git(t, dir, "config", "user.name", "t")
+	git(t, dir, "config", "user.email", "t@t")
+	return dir
+}
+
+func headFiles(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "show", "--name-only", "--format=", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// gitOutT is git's trimmed stdout, failing the test when git does.
+func gitOutT(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestCommitOnlyLeavesOtherStagedPaths(t *testing.T) {
+	dir := commitRepo(t)
+	os.WriteFile(filepath.Join(dir, "c.txt"), []byte("staged by another session\n"), 0o644)
+	git(t, dir, "add", "c.txt")
+	r, err := Commit(context.Background(), dir, "edit a", []string{"a.txt"}, false)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("commit: %v %+v", err, r)
+	}
+	if got := headFiles(t, dir); got != "a.txt" {
+		t.Fatalf("HEAD carries %q, want only a.txt", got)
+	}
+	staged, _ := exec.Command("git", "-C", dir, "diff", "--cached", "--name-only").Output()
+	if strings.TrimSpace(string(staged)) != "c.txt" {
+		t.Fatalf("index lost another session's staging: %q", staged)
+	}
+}
+
+func TestCommitAddsUntracked(t *testing.T) {
+	dir := commitRepo(t)
+	r, err := Commit(context.Background(), dir, "add b", []string{"b.txt"}, false)
+	if err != nil || r.Failure != nil || r.Hash == "" {
+		t.Fatalf("commit: %v %+v", err, r)
+	}
+	if got := headFiles(t, dir); got != "b.txt" {
+		t.Fatalf("HEAD carries %q, want b.txt", got)
+	}
+}
+
+func TestCommitRefusesAPathWithNoChange(t *testing.T) {
+	dir := commitRepo(t)
+	before, _ := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	r, err := Commit(context.Background(), dir, "nope", []string{"nope.txt"}, false)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+	after, _ := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if string(before) != string(after) {
+		t.Fatal("HEAD moved on a refused commit")
+	}
+}
+
+func TestCommitRefusesAnEmptyMessageAndNoPaths(t *testing.T) {
+	dir := commitRepo(t)
+	if r, err := Commit(context.Background(), dir, "  \n", []string{"a.txt"}, false); err != nil || r.Failure == nil {
+		t.Fatalf("an empty message must be refused, got %v %+v", err, r)
+	}
+	if r, err := Commit(context.Background(), dir, "msg", nil, false); err != nil || r.Failure == nil {
+		t.Fatalf("no paths must be refused, got %v %+v", err, r)
+	}
+}
+
+func TestCommitHookFailureIsData(t *testing.T) {
+	dir := commitRepo(t)
+	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	os.WriteFile(hook, []byte("#!/bin/sh\necho 'lint failed' >&2\nexit 1\n"), 0o755)
+	r, err := Commit(context.Background(), dir, "edit a", []string{"a.txt"}, false)
+	if err != nil || r.Failure == nil || !strings.Contains(r.Failure.Stderr, "lint failed") {
+		t.Fatalf("want the hook's words in Failure, got %v %+v", err, r)
+	}
+}
+
+func TestCommitRename(t *testing.T) {
+	dir := commitRepo(t)
+	git(t, dir, "mv", "a.txt", "renamed.txt")
+	r, err := Commit(context.Background(), dir, "rename a", []string{"renamed.txt", "a.txt"}, false)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("commit: %v %+v", err, r)
+	}
+	out := gitOutT(t, dir, "show", "--name-status", "-M", "--format=", "HEAD")
+	if !strings.HasPrefix(out, "R") || !strings.Contains(out, "a.txt") || !strings.Contains(out, "renamed.txt") {
+		t.Fatalf("HEAD should record the rename, got %q", out)
+	}
+	if st := gitOutT(t, dir, "status", "--porcelain", "--", "a.txt", "renamed.txt"); st != "" {
+		t.Fatalf("both ends should be committed, status %q", st)
+	}
+}
+
+func TestCommitFailureUnstagesAddedPaths(t *testing.T) {
+	dir := commitRepo(t)
+	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	r, err := Commit(context.Background(), dir, "add b", []string{"b.txt"}, false)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+	if st := gitOutT(t, dir, "status", "--porcelain", "--", "b.txt"); st != "?? b.txt" {
+		t.Fatalf("a failed commit must leave b.txt untracked, status %q", st)
+	}
+}
+
+// A path is a name, not a pattern: ticking "[a].txt" must not also commit a.txt, which a glob would match.
+func TestCommitTreatsPathsLiterally(t *testing.T) {
+	dir := commitRepo(t)
+	os.WriteFile(filepath.Join(dir, "[a].txt"), []byte("bracketed\n"), 0o644)
+	r, err := Commit(context.Background(), dir, "add bracketed", []string{"[a].txt"}, false)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("commit: %v %+v", err, r)
+	}
+	if got := headFiles(t, dir); got != "[a].txt" {
+		t.Fatalf("HEAD carries %q, want only [a].txt", got)
+	}
+	if st := gitOutT(t, dir, "status", "--porcelain", "--", "a.txt"); st != "M a.txt" {
+		t.Fatalf("a.txt must stay an unstaged change, status %q", st)
+	}
+}
+
+func TestCommitFromASubdirectory(t *testing.T) {
+	dir := commitRepo(t)
+	sub := filepath.Join(dir, "sub")
+	os.MkdirAll(sub, 0o755)
+	os.WriteFile(filepath.Join(sub, "n.txt"), []byte("nested\n"), 0o644)
+	r, err := Commit(context.Background(), sub, "add n", []string{"n.txt"}, false)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("commit: %v %+v", err, r)
+	}
+	if got := headFiles(t, dir); got != "sub/n.txt" {
+		t.Fatalf("HEAD carries %q, want sub/n.txt", got)
+	}
+}
+
+func TestCommitAmendRewritesHead(t *testing.T) {
+	dir := commitRepo(t)
+	if r, _ := Commit(context.Background(), dir, "first", []string{"a.txt"}, false); r.Failure != nil {
+		t.Fatal(r.Failure.Stderr)
+	}
+	r, err := Commit(context.Background(), dir, "first, reworded", []string{"b.txt"}, true)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("amend: %v %+v", err, r)
+	}
+	msg, _ := CommitMessage(context.Background(), dir, "")
+	if strings.TrimSpace(msg) != "first, reworded" {
+		t.Fatalf("HEAD message %q", msg)
+	}
+	if got := headFiles(t, dir); got != "a.txt\nb.txt" {
+		t.Fatalf("amended HEAD carries %q", got)
+	}
+}
+
+func TestCommitMessageReadsHeadAndAnOlderCommit(t *testing.T) {
+	dir := commitRepo(t)
+	if r, _ := Commit(context.Background(), dir, "subject one\n\nbody of the first", []string{"a.txt"}, false); r.Failure != nil {
+		t.Fatal(r.Failure.Stderr)
+	}
+	older := gitOutT(t, dir, "rev-parse", "HEAD")
+	if r, _ := Commit(context.Background(), dir, "subject two", []string{"b.txt"}, false); r.Failure != nil {
+		t.Fatal(r.Failure.Stderr)
+	}
+	head, err := CommitMessage(context.Background(), dir, "")
+	if err != nil || strings.TrimSpace(head) != "subject two" {
+		t.Fatalf("HEAD message = %q, %v", head, err)
+	}
+	old, err := CommitMessage(context.Background(), dir, older)
+	if err != nil || strings.TrimSpace(old) != "subject one\n\nbody of the first" {
+		t.Fatalf("older message = %q, %v", old, err)
+	}
+}
+
+func TestCommitMessageRefusesAnOptionShapedRef(t *testing.T) {
+	dir := commitRepo(t)
+	if msg, err := CommitMessage(context.Background(), dir, "--output=x.txt"); err == nil || msg != "" {
+		t.Fatalf("want a refusal, got %q, %v", msg, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "x.txt")); statErr == nil {
+		t.Fatal("the option reached git and wrote a file")
+	}
+}
+
+// two clones of one bare remote: a is the source the surface shows, b stands in for a colleague
+func twoClones(t *testing.T) (a, b string) {
+	t.Helper()
+	seed, _ := repoWithUpstream(t) // pushed main to a bare origin
+	bare := gitOutT(t, seed, "remote", "get-url", "origin")
+	parent := t.TempDir()
+	git(t, parent, "clone", "-q", bare, "a")
+	git(t, parent, "clone", "-q", bare, "b")
+	a, b = filepath.Join(parent, "a"), filepath.Join(parent, "b")
+	for _, d := range []string{a, b} {
+		git(t, d, "config", "user.name", "t")
+		git(t, d, "config", "user.email", "t@t")
+	}
+	return a, b
+}
+
+func TestPullFastForwards(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	git(t, a, "fetch", "-q")
+	r, err := Pull(context.Background(), a)
+	if err != nil || r.Failure != nil || r.Moved != 1 {
+		t.Fatalf("pull: %v %+v", err, r)
+	}
+}
+
+// The pull fetches first, so the behind count read before it can be stale: Moved is what HEAD actually advanced by.
+func TestPullWithoutFetchCountsMoved(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	r, err := Pull(context.Background(), a) // a has not fetched: its @{u} still points at the old tip
+	if err != nil || r.Failure != nil || r.Moved != 1 {
+		t.Fatalf("pull: %v %+v", err, r)
+	}
+	if got := gitOutT(t, a, "rev-parse", "HEAD"); got != gitOutT(t, b, "rev-parse", "HEAD") {
+		t.Fatalf("HEAD %s did not reach b's commit", got)
+	}
+}
+
+func TestPullRefusesDiverged(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "from a")
+	before := gitOutT(t, a, "rev-parse", "HEAD")
+	r, err := Pull(context.Background(), a)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+	if gitOutT(t, a, "rev-parse", "HEAD") != before {
+		t.Fatal("a refused pull moved HEAD")
+	}
+}
+
+func TestPushRejectedIsData(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "from a")
+	r, err := Push(context.Background(), a)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+}
+
+func TestPushPublishesANewBranch(t *testing.T) {
+	a, _ := twoClones(t)
+	git(t, a, "checkout", "-q", "-b", "feature")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "feature work")
+	r, err := Push(context.Background(), a)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("publish: %v %+v", err, r)
+	}
+	if up := gitOutT(t, a, "rev-parse", "--abbrev-ref", "@{u}"); up != "origin/feature" {
+		t.Fatalf("upstream %q", up)
+	}
+}
+
+// Nothing listens on port 1, so no credential prompt can appear: all three network commands must hand git's refusal
+// back as data, well inside their budgets.
+func TestNetCommandsFailAsData(t *testing.T) {
+	a, _ := twoClones(t)
+	git(t, a, "remote", "set-url", "origin", "http://127.0.0.1:1/nope.git")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "local")
+	start := time.Now()
+	f, err := Fetch(context.Background(), a, "")
+	if err != nil || f.Failure == nil {
+		t.Fatalf("fetch: want a Failure, got %v %+v", err, f)
+	}
+	p, err := Pull(context.Background(), a)
+	if err != nil || p.Failure == nil {
+		t.Fatalf("pull: want a Failure, got %v %+v", err, p)
+	}
+	s, err := Push(context.Background(), a)
+	if err != nil || s.Failure == nil {
+		t.Fatalf("push: want a Failure, got %v %+v", err, s)
+	}
+	if took := time.Since(start); took > 20*time.Second {
+		t.Fatalf("three refused network commands took %v", took)
 	}
 }

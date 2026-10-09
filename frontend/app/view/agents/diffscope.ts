@@ -228,6 +228,24 @@ export function summaryLine(i: SummaryInput): string {
     }
 }
 
+// The diff header's "measured against" words, which follow the selection like summaryLine does: a commit is "in
+// <hash>", otherwise the range says what the file is compared with.
+export function measuredAgainst(i: { range: DiffRange; commit: string | null }): string {
+    if (i.commit != null) {
+        return `in ${shortSha(i.commit)}`;
+    }
+    switch (i.range.kind) {
+        case "compare":
+            return `${i.range.head} vs ${i.range.base}${i.range.form === "tips" ? ", tip to tip" : ""}`;
+        case "run":
+            return i.range.baseCommit ? `since run base ${shortSha(i.range.baseCommit)}` : "vs HEAD";
+        case "session":
+            return "since session start";
+        case "working":
+            return "vs HEAD";
+    }
+}
+
 // The registered project a scope belongs to, for finding the agents that work on it. A run's (or a
 // vanished agent's) repository is matched by path; a worktree's path is not registered, so it says.
 export function scopeProjectName<P extends { name: string; path: string }>(

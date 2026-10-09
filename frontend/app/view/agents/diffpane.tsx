@@ -2,10 +2,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pane 3 of the Diff surface. One Monaco diff editor for every state the surface has — the working
-// tree, a commit, a comparison — because they differ only in which two refs feed it. Split is gated
-// on the pane's own measured width rather than the window's: a collapsed history column at the
-// shipped 1000x700 leaves enough room for unified and not for split.
+// The Diff surface's diff, beside the panel. One Monaco diff editor for every state the surface has — the working
+// tree, a commit, a comparison — because they differ only in which two refs feed it. Split is gated on the pane's own
+// measured width rather than the window's. The header is one line: where the file is, what it is measured against, the
+// change walker, File | Review and a ⋯ menu that holds the view options. With the panel folded away the header also
+// carries the panel's entry points (the source, the upstream counts, the two tabs) and a file stepper.
 
 import { MOTION } from "@/app/element/motiontokens";
 import { SkeletonLine, SkeletonRows } from "@/app/element/skeleton";
@@ -13,30 +14,47 @@ import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { openInCode } from "@/app/view/code/codestore";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
-import { joinRepoPath, splitRepoPath } from "@/util/paths";
 import { formatChordString } from "@/util/keysym";
+import { joinRepoPath, splitRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronUp, Code, ExternalLink, FileText, Pilcrow, WrapText } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Ellipsis, FileText, PanelLeft } from "lucide-react";
 import { motion } from "motion/react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { firstDifferingLine } from "./diffcontent";
 import { diffPairAtom } from "./diffcontentstore";
 import { emptyDiffState, type EmptyDiff } from "./diffempty";
+import { commitTabCount, panelFoldedAtom, panelTabAtom, sourceTitle, type PanelTab } from "./difflayout";
 import { changePosition, clearDiffNav, diffNavPosAtom, gotoChange, setDiffNav } from "./diffnav";
-import { diffWrapPathAtom, ignoreWsAtom, paneHeaderLayout, paneOptions, splitViewAtom } from "./diffoptions";
+import {
+    diffWrapPathAtom,
+    ignoreWsAtom,
+    optionItems,
+    paneHeaderLayout,
+    paneOptions,
+    splitViewAtom,
+    type OptionId,
+    type OptionItem,
+} from "./diffoptions";
+import { filesStateAtom } from "./filesstore";
+import { fileStepLabel, shownPaths, stepFile } from "./filestep";
+import { collapsedDirsAtom, treeModeAtom } from "./filetree";
+import { activeChangesStatusAtom, shownChangesAtom } from "./githistorystore";
 import { activeReviewKeyAtom, reviewModeAtom } from "./linecommentstore";
 import { LineReviewTray } from "./linereviewtray";
 import { ReviewList } from "./reviewlistview";
 import { fmtBytes } from "./runcompletion";
+import { syncView } from "./syncstate";
 
 const MonacoDiffViewer = lazy(() => import("@/app/monaco/monaco-react").then((m) => ({ default: m.MonacoDiffViewer })));
 
-const headerBtn =
-    "flex h-[28px] flex-none items-center gap-[6px] rounded-[8px] border border-edge-mid px-[10px] text-[11.5px] font-semibold";
+const headerBar =
+    "flex h-[40px] flex-none items-center gap-[10px] border-b border-border bg-background pl-[14px] pr-[12px]";
 const navBtn =
-    "flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[6px] text-muted hover:text-ink-hi";
+    "flex h-[24px] w-[24px] flex-none items-center justify-center rounded-[6px] text-ink-mid hover:bg-surface-hover hover:text-ink-hi";
+const stepBtn =
+    "flex h-[24px] w-[24px] flex-none items-center justify-center rounded-[6px] border border-edge-mid text-ink-mid hover:text-ink-hi";
 
 function EmptyState({ empty }: { empty: EmptyDiff }) {
     return (
@@ -63,6 +81,206 @@ function PaneSkeleton() {
     );
 }
 
+// With the panel folded away the header starts with the panel's entry points: the source button that unfolds it, the
+// upstream counts, the two tabs (each unfolds the panel on its tab) and a stepper through the file list the panel would
+// show. Everything it draws is a read of a store, so the pane needs no props for it beyond the select callback.
+function FoldedLead({
+    model,
+    path,
+    onStepFile,
+}: {
+    model: AgentsViewModel;
+    path: string | null;
+    onStepFile: (path: string) => void;
+}) {
+    const scope = useAtomValue(model.diffScopeAtom);
+    const state = useAtomValue(filesStateAtom);
+    const tab = useAtomValue(panelTabAtom);
+    const shown = useAtomValue(shownChangesAtom);
+    const tree = useAtomValue(treeModeAtom);
+    const collapsed = useAtomValue(collapsedDirsAtom);
+    const title = sourceTitle(scope, state?.branch ?? "");
+    const sync = syncView({
+        branch: state?.branch ?? "",
+        upstream: state?.upstream ?? "",
+        ahead: state?.upstreamAhead ?? 0,
+        behind: state?.upstreamBehind ?? 0,
+        running: null,
+        fetchedAgo: "",
+    });
+    const count = commitTabCount(state);
+    const paths = shownPaths(shown?.files ?? [], tree, collapsed);
+    const unfold = (t?: PanelTab) => {
+        if (t != null) {
+            globalStore.set(panelTabAtom, t);
+        }
+        globalStore.set(panelFoldedAtom, false);
+    };
+    const step = (delta: number) => {
+        const next = stepFile(paths, path, delta);
+        if (next != null && next !== path) {
+            onStepFile(next);
+        }
+    };
+    return (
+        <>
+            <button
+                data-folded-source
+                onClick={() => unfold()}
+                title={`Open the panel (${formatChordString("Shift:b")})`}
+                className="flex h-[28px] min-w-0 flex-none items-center gap-[7px] rounded-[7px] border border-edge-mid px-[8px] text-ink-hi hover:border-edge-strong"
+            >
+                <PanelLeft size={14} className="flex-none text-ink-mid" />
+                <span className="max-w-[160px] truncate text-[12.5px] font-semibold">{title.name}</span>
+                {title.branch ? (
+                    <span className="max-w-[120px] truncate text-[12px] text-muted">{title.branch}</span>
+                ) : null}
+            </button>
+            {state?.isRepo ? (
+                <span title={sync.countsTitle} className="flex-none text-[11px] tabular-nums text-ink-mid">
+                    {sync.counts}
+                </span>
+            ) : null}
+            <span className="flex flex-none items-center gap-[2px]">
+                {(["commit", "log"] as const).map((t) => (
+                    <button
+                        key={t}
+                        data-folded-tab={t}
+                        onClick={() => unfold(t)}
+                        title={`${t === "commit" ? "Commit" : "Log"} (${formatChordString(t === "commit" ? "Shift:c" : "Shift:h")})`}
+                        className={cn(
+                            "h-[26px] rounded-[6px] px-[8px] text-[12px] font-semibold",
+                            t === tab ? "bg-surface-raised text-ink-hi" : "text-muted hover:text-ink-hi"
+                        )}
+                    >
+                        {t === "commit" ? "Commit" : "Log"}
+                        {t === "commit" && count != null && count > 0 ? (
+                            <span className="ml-[6px] text-[10.5px] font-medium tabular-nums text-muted">{count}</span>
+                        ) : null}
+                    </button>
+                ))}
+            </span>
+            <span className="h-[18px] w-px flex-none bg-edge-mid" />
+            <span data-file-step className="flex flex-none items-center gap-[6px]">
+                <button
+                    onClick={() => step(-1)}
+                    aria-label="Previous file"
+                    title="Previous file"
+                    disabled={paths.length === 0}
+                    className={stepBtn}
+                >
+                    <ChevronLeft size={12} />
+                </button>
+                <span className="text-[11px] tabular-nums text-muted">{fileStepLabel(paths, path)}</span>
+                <button
+                    onClick={() => step(1)}
+                    aria-label="Next file"
+                    title="Next file"
+                    disabled={paths.length === 0}
+                    className={stepBtn}
+                >
+                    <ChevronRight size={12} />
+                </button>
+            </span>
+        </>
+    );
+}
+
+// The header's ⋯ menu: the view options the old header spread over four buttons. While it is open it owns its keys, so
+// Escape closes it rather than leaving the surface; closing blurs the button so the surface's keys come back.
+function OptionsMenu({ items, onPick }: { items: OptionItem[]; onPick: (id: OptionId) => void }) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const onDown = (e: MouseEvent) => {
+            if (!wrapRef.current?.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", onDown, true);
+        return () => document.removeEventListener("mousedown", onDown, true);
+    }, [open]);
+
+    const close = () => {
+        setOpen(false);
+        triggerRef.current?.blur();
+    };
+
+    return (
+        <div
+            ref={wrapRef}
+            data-owns-keys={open ? "" : undefined}
+            onKeyDown={(e) => {
+                if (open && e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    close();
+                }
+            }}
+            className="relative flex-none"
+        >
+            <button
+                ref={triggerRef}
+                data-diff-options
+                onClick={() => setOpen(!open)}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label="View options"
+                title="Whitespace, wrap, side-by-side"
+                className={cn(
+                    "flex h-[26px] w-[26px] items-center justify-center rounded-[6px] border border-edge-mid text-ink-mid hover:text-ink-hi",
+                    open && "bg-surface-raised text-ink-hi"
+                )}
+            >
+                <Ellipsis size={14} />
+            </button>
+            {open ? (
+                <div
+                    role="menu"
+                    className="absolute right-0 top-[calc(100%+6px)] z-30 w-[236px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md"
+                >
+                    {items.map((i) => (
+                        <button
+                            key={i.id}
+                            role={i.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                            aria-checked={i.checked}
+                            data-diff-options-item={i.id}
+                            disabled={i.disabled}
+                            title={i.reason}
+                            onClick={() => {
+                                onPick(i.id);
+                                // a switch stays open to be read; an action is done
+                                if (i.checked === undefined) {
+                                    close();
+                                }
+                            }}
+                            className={cn(
+                                "flex h-[28px] w-full items-center gap-[8px] rounded-[6px] px-[8px] text-left text-[12px]",
+                                i.disabled ? "text-ink-faint" : "text-ink-hi hover:bg-surface-hover"
+                            )}
+                        >
+                            <span className="flex w-[12px] flex-none items-center justify-center text-ink-hi">
+                                {i.checked ? <Check size={12} /> : null}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{i.label}</span>
+                            {i.chord ? (
+                                <span className="flex-none font-mono text-[10.5px] text-muted">
+                                    {formatChordString(i.chord)}
+                                </span>
+                            ) : null}
+                        </button>
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 export interface ReviewTarget {
     source: string; // "worktree" or a commit hash
     base: string; // FilesState.ref: what the Uncommitted row's file list diffs against
@@ -81,6 +299,9 @@ export function DiffPane({
     model,
     nothingToCompare = null,
     review = null,
+    against,
+    folded,
+    onStepFile,
 }: {
     path: string | null;
     adds: number;
@@ -88,12 +309,21 @@ export function DiffPane({
     editorCwd: string | null;
     repoCwd: string | null;
     model: AgentsViewModel;
+    // what the file is measured against, as measuredAgainst words it
+    against: string;
+    // the panel is folded away, so the header carries its entry points and the file stepper
+    folded: boolean;
+    // selects a file by path, as a click on the list would; the folded stepper moves with it
+    onStepFile: (path: string) => void;
     // compare's aggregate is selected and the two refs list no files
     nothingToCompare?: { base: string; head: string } | null;
     // what Review would show: the Uncommitted row or one commit, never compare; null hides the File | Review control
     review?: ReviewTarget | null;
 }) {
     const pair = useAtomValue(diffPairAtom);
+    // the file list this pane picks from: with no path selected, whether it is loading, failed or empty decides the words
+    const listStatus = useAtomValue(activeChangesStatusAtom);
+    const shownChanges = useAtomValue(shownChangesAtom);
     const split = useAtomValue(splitViewAtom);
     const ignoreWs = useAtomValue(ignoreWsAtom);
     const navPos = useAtomValue(diffNavPosAtom);
@@ -132,7 +362,13 @@ export function DiffPane({
         () => paneOptions(split && layout.split, ignoreWs, wrap),
         [split, layout.split, ignoreWs, wrap]
     );
-    const empty = emptyDiffState({ path, pair, nothingToCompare });
+    const empty = emptyDiffState({
+        path,
+        pair,
+        nothingToCompare,
+        listStatus,
+        fileCount: shownChanges?.files.length ?? null,
+    });
 
     const body = () => {
         if (reviewing) {
@@ -197,7 +433,7 @@ export function DiffPane({
                 role="group"
                 data-diff-mode={reviewing ? "review" : "file"}
                 title="One file, or every changed file to comment on"
-                className="flex h-[28px] flex-none overflow-hidden rounded-[8px] border border-edge-mid"
+                className="flex h-[26px] flex-none gap-[2px] rounded-[7px] border border-edge-mid p-[2px]"
             >
                 {(["file", "review"] as const).map((m) => (
                     <button
@@ -206,8 +442,8 @@ export function DiffPane({
                         onClick={() => globalStore.set(reviewModeAtom, m)}
                         aria-pressed={mode === m}
                         className={cn(
-                            "px-[10px] text-[11.5px] font-semibold",
-                            mode === m ? "bg-surface-selected text-ink-hi" : "text-muted hover:text-ink-hi"
+                            "rounded-[5px] px-[10px] text-[11px] font-semibold",
+                            mode === m ? "bg-surface-raised text-ink-hi" : "text-muted hover:text-ink-hi"
                         )}
                     >
                         {m === "file" ? "File" : "Review"}
@@ -216,8 +452,11 @@ export function DiffPane({
             </div>
         );
 
+    const lead = () => (folded ? <FoldedLead model={model} path={path} onStepFile={onStepFile} /> : null);
+
     const reviewHeader = () => (
-        <div className="flex h-[48px] flex-none items-center gap-[10px] border-b border-border pl-[18px] pr-[14px]">
+        <div data-diff-header className={headerBar}>
+            {lead()}
             <span className="min-w-0 truncate text-[12.5px] text-ink-mid">
                 {review.source === "worktree" ? "Every uncommitted change" : "Every file in this commit"}
             </span>
@@ -226,10 +465,50 @@ export function DiffPane({
         </div>
     );
 
+    const onPickOption = (id: OptionId) => {
+        switch (id) {
+            case "split":
+                globalStore.set(splitViewAtom, !split);
+                return;
+            case "whitespace":
+                globalStore.set(ignoreWsAtom, !ignoreWs);
+                return;
+            case "wrap":
+                toggleWrap(wrapPath);
+                return;
+            case "editor":
+                if (editorCwd && path) {
+                    getApi().openExternal(joinRepoPath(editorCwd, path));
+                }
+                return;
+            case "code":
+                if (repoCwd && path) {
+                    fireAndForget(() =>
+                        openInCode(model, {
+                            projectPath: repoCwd,
+                            rel: path,
+                            line: pair ? firstDifferingLine(pair.original, pair.modified) : undefined,
+                        })
+                    );
+                }
+                return;
+        }
+    };
+
     const header = () => {
+        // no file yet: the lead keeps its place, and a list still loading says so instead of leaving a bare bar
+        if (!path) {
+            return (
+                <div data-diff-header className={headerBar}>
+                    {lead()}
+                    {listStatus === "loading" ? <SkeletonLine className="h-[12px] w-[260px] rounded-[6px]" /> : null}
+                </div>
+            );
+        }
         const { dir, file } = splitRepoPath(path);
         return (
-            <div className="flex h-[48px] flex-none items-center gap-[10px] border-b border-border pl-[18px] pr-[14px]">
+            <div data-diff-header className={headerBar}>
+                {lead()}
                 <span className="flex min-w-0 items-baseline text-[12.5px]">
                     {/* rtl truncates from the left, but alone it would move the directory's trailing "/"
                         to its front; the bdi keeps the text itself left-to-right */}
@@ -243,6 +522,7 @@ export function DiffPane({
                 {empty?.kind === "toolarge" && pair != null ? (
                     <span className="flex-none text-[11px] tabular-nums text-muted">{fmtBytes(pair.size)}</span>
                 ) : null}
+                <span className="min-w-0 truncate text-[10.5px] text-muted">{against}</span>
                 <div className="flex-1" />
                 {navPos != null && navPos.total > 0 ? (
                     <div className="flex flex-none items-center gap-[2px]">
@@ -254,9 +534,9 @@ export function DiffPane({
                         >
                             <ChevronUp size={14} />
                         </button>
-                        <span className="text-center text-[11px] tabular-nums text-muted">
+                        <span className="text-center text-[11px] tabular-nums text-ink-mid">
                             {layout.labelled ? "change " : ""}
-                            {navPos.index}/{navPos.total}
+                            {navPos.index} / {navPos.total}
                         </span>
                         <button
                             onClick={() => gotoChange("next")}
@@ -269,85 +549,18 @@ export function DiffPane({
                     </div>
                 ) : null}
                 {modeControl()}
-                {layout.split ? (
-                    <div
-                        role="group"
-                        title={`Unified / split (${formatChordString("Shift:d")})`}
-                        className="flex h-[28px] flex-none overflow-hidden rounded-[8px] border border-edge-mid"
-                    >
-                        {[false, true].map((v) => (
-                            <button
-                                key={String(v)}
-                                onClick={() => globalStore.set(splitViewAtom, v)}
-                                aria-pressed={split === v}
-                                className={cn(
-                                    "px-[10px] text-[11.5px] font-semibold",
-                                    split === v ? "bg-surface-selected text-ink-hi" : "text-muted hover:text-ink-hi"
-                                )}
-                            >
-                                {v ? "Split" : "Unified"}
-                            </button>
-                        ))}
-                    </div>
-                ) : null}
-                <button
-                    onClick={() => globalStore.set(ignoreWsAtom, !ignoreWs)}
-                    title={`Hide whitespace (${formatChordString("Shift:w")})`}
-                    aria-label={`Hide whitespace (${formatChordString("Shift:w")})`}
-                    aria-pressed={ignoreWs}
-                    className={cn(
-                        headerBtn,
-                        ignoreWs ? "border-accent/30 bg-accentbg text-ink-hi" : "text-ink-mid hover:text-ink-hi"
-                    )}
-                >
-                    <Pilcrow size={13} />
-                    {layout.labelled ? "Hide whitespace" : null}
-                </button>
-                {wrapPath !== "" && empty == null ? (
-                    <button
-                        data-diff-wrap
-                        onClick={() => toggleWrap(wrapPath)}
-                        title={`${wrap ? "Stop wrapping long lines" : "Wrap long lines"} (${formatChordString("Alt:z")})`}
-                        aria-label={`Wrap long lines (${formatChordString("Alt:z")})`}
-                        aria-pressed={wrap}
-                        className={cn(
-                            headerBtn,
-                            wrap ? "border-accent/30 bg-accentbg text-ink-hi" : "text-ink-mid hover:text-ink-hi"
-                        )}
-                    >
-                        <WrapText size={13} />
-                        {layout.labelled ? "Wrap" : null}
-                    </button>
-                ) : null}
-                {repoCwd && (
-                    <button
-                        onClick={() =>
-                            fireAndForget(() =>
-                                openInCode(model, {
-                                    projectPath: repoCwd,
-                                    rel: path,
-                                    line: pair ? firstDifferingLine(pair.original, pair.modified) : undefined,
-                                })
-                            )
-                        }
-                        title="Open in Code"
-                        aria-label="Open in Code"
-                        className={cn(headerBtn, "text-ink-mid hover:text-ink-hi")}
-                    >
-                        <Code size={13} />
-                        {layout.labelled ? "Open in Code" : null}
-                    </button>
-                )}
-                {editorCwd && (
-                    <button
-                        onClick={() => getApi().openExternal(joinRepoPath(editorCwd, path))}
-                        title="Open in editor"
-                        aria-label="Open in editor"
-                        className={cn(headerBtn, "text-ink-mid hover:text-ink-hi")}
-                    >
-                        <ExternalLink size={13} />
-                    </button>
-                )}
+                <OptionsMenu
+                    items={optionItems({
+                        split,
+                        splitAllowed: layout.split,
+                        ignoreWs,
+                        wrap,
+                        wrapAllowed: wrapPath !== "" && empty == null,
+                        editorAllowed: !!editorCwd,
+                        codeAllowed: !!repoCwd,
+                    })}
+                    onPick={onPickOption}
+                />
             </div>
         );
     };
@@ -360,8 +573,9 @@ export function DiffPane({
             className="flex min-h-0 min-w-0 flex-1 flex-col"
             ref={hostRef}
             data-diff-pane
+            data-diff-panel={folded ? "folded" : undefined}
         >
-            {reviewing ? reviewHeader() : path ? header() : null}
+            {reviewing ? reviewHeader() : header()}
             {body()}
             {repoCwd ? <LineReviewTray repoKey={repoCwd} model={model} /> : null}
         </motion.div>

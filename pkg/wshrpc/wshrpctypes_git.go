@@ -24,6 +24,10 @@ type GitCommands interface {
 	GitFileAtRefCommand(ctx context.Context, data CommandGitFileAtRefData) (*CommandGitFileAtRefRtnData, error)
 	GitReviewPatchCommand(ctx context.Context, data CommandGitReviewPatchData) (*CommandGitReviewPatchRtnData, error)
 	GitFetchCommand(ctx context.Context, data CommandGitFetchData) (*CommandGitFetchRtnData, error)
+	GitCommitCommand(ctx context.Context, data CommandGitCommitData) (*CommandGitCommitRtnData, error)
+	GitCommitMessageCommand(ctx context.Context, data CommandGitCommitMessageData) (*CommandGitCommitMessageRtnData, error)
+	GitPullCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
+	GitPushCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
 }
 
 type CommandGitHistoryData struct {
@@ -215,4 +219,40 @@ type CommandGitFetchRtnData struct {
 	// shipped GitFailure panel renders git's own stderr out of this.
 	Failure *gitinfo.GitFailure `json:"failure,omitempty"`
 	IsRepo  bool                `json:"isrepo"`
+}
+
+type CommandGitCommitData struct {
+	Cwd     string   `json:"cwd"`
+	Message string   `json:"message"`
+	Paths   []string `json:"paths"` // cwd-relative, as GitChangesCommand lists them; a rename lists both ends
+	Amend   bool     `json:"amend,omitempty"`
+}
+
+// A refused commit is data (Failure), as with Fetch; the RPC errors only when git cannot be asked at all.
+type CommandGitCommitRtnData struct {
+	Hash    string              `json:"hash,omitempty"`
+	Failure *gitinfo.GitFailure `json:"failure,omitempty"`
+}
+
+type CommandGitCommitMessageData struct {
+	Cwd string `json:"cwd"`
+	// "" reads HEAD's message (what Amend loads); a hash reads that commit's (the Log tab's body).
+	Ref string `json:"ref,omitempty"`
+}
+
+type CommandGitCommitMessageRtnData struct {
+	Message string `json:"message"`
+}
+
+type CommandGitSyncData struct {
+	Cwd string `json:"cwd"`
+}
+
+// Shared by GitPullCommand and GitPushCommand. As with Fetch, the client must raise opts.timeout past gitinfo's
+// pullTimeout (55 s) or pushTimeout (120 s), or the call is cancelled underneath the git it is waiting on. A refusal
+// (a diverged pull, a rejected push, a missing credential) is Failure, not an RPC error.
+type CommandGitSyncRtnData struct {
+	Moved   int                 `json:"moved"`
+	Branch  string              `json:"branch,omitempty"` // a push's branch, so a publish can name what it created
+	Failure *gitinfo.GitFailure `json:"failure,omitempty"`
 }

@@ -35,6 +35,11 @@ type Changes struct {
 	// the open surface has to be noticeable, and comparing one sha is what lets the surface re-read the
 	// log only when the log has actually changed.
 	Head string
+	// HEAD's upstream ("origin/main") and how far HEAD is from it. "" when the branch has none or HEAD is
+	// detached: a state the sync bar draws, not an error.
+	Upstream       string
+	UpstreamAhead  int
+	UpstreamBehind int
 }
 
 // quotePath off: without -z, git octal-escapes a non-ASCII path ("t\303\252n.txt") in numstat, so its
@@ -43,6 +48,23 @@ func run(ctx context.Context, cwd string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false", "-C", cwd}, args...)...)
 	out, err := cmd.Output()
 	return string(out), err
+}
+
+// upstreamCounts names HEAD's upstream and counts the commits each side has that the other lacks.
+func upstreamCounts(ctx context.Context, cwd string) (string, int, int) {
+	up, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		return "", 0, 0
+	}
+	up = strings.TrimSpace(up)
+	out, err := run(ctx, cwd, "rev-list", "--left-right", "--count", "@{u}...HEAD")
+	f := strings.Fields(out)
+	if err != nil || len(f) != 2 {
+		return up, 0, 0
+	}
+	behind, _ := strconv.Atoi(f[0])
+	ahead, _ := strconv.Atoi(f[1])
+	return up, ahead, behind
 }
 
 func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
@@ -61,6 +83,7 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	if out, herr := run(ctx, cwd, "rev-parse", "HEAD"); herr == nil {
 		head = strings.TrimSpace(out)
 	}
+	up, ahead, behind := upstreamCounts(ctx, cwd)
 	// cwd's path within the repo (e.g. "services/foo/"), empty when cwd is the repo root. When cwd is
 	// a subdirectory — a microservice inside a monorepo — this scopes the surface to cwd's subtree and
 	// makes every path cwd-relative, so a path fed back as a `git -C cwd` pathspec
@@ -84,7 +107,8 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 		// git diff omits untracked files (nothing in HEAD/index to diff), so a new file would show +0.
 		// Append synthetic numstat rows for untracked files so their added lines count in the totals.
 		numstat += untrackedNumstat(cwd, statusZ)
-		return &Changes{Branch: strings.TrimSpace(branch), StatusZ: statusZ, Numstat: numstat, IsRepo: true, Head: head}, nil
+		return &Changes{Branch: strings.TrimSpace(branch), StatusZ: statusZ, Numstat: numstat, IsRepo: true, Head: head,
+			Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind}, nil
 	}
 	// ref mode: tracked changes come from the base diff (committed + uncommitted); untracked files
 	// are not in the base, so their ?? rows are carried over from status verbatim.
@@ -93,7 +117,8 @@ func GetChanges(ctx context.Context, cwd, ref string) (*Changes, error) {
 	untrackedZ := untrackedEntriesZ(statusZ)
 	numstat, _ := run(ctx, cwd, "diff", "--numstat", "--relative", ref)
 	numstat += untrackedNumstat(cwd, untrackedZ)
-	return &Changes{Branch: strings.TrimSpace(branch), StatusZ: trackedZ + untrackedZ, Numstat: numstat, IsRepo: true, Head: head}, nil
+	return &Changes{Branch: strings.TrimSpace(branch), StatusZ: trackedZ + untrackedZ, Numstat: numstat, IsRepo: true, Head: head,
+		Upstream: up, UpstreamAhead: ahead, UpstreamBehind: behind}, nil
 }
 
 // GetRangeChanges computes the per-file changes introduced by the commit range base..end — the commits
@@ -1277,12 +1302,83 @@ func Fetch(ctx context.Context, cwd, remote string) (*FetchResult, error) {
 		}}, nil
 	}
 	args := []string{"fetch", "--prune", remote}
-	// run, not runErr: runErr folds git's output into its error text, which left failureOf no stderr
-	// and the banner printing the command and "exit status 128" ahead of git's own message
-	if _, err := run(ctx, cwd, args...); err != nil {
+	// runNet keeps run's Output(), not runErr: runErr folds git's output into its error text, which left failureOf
+	// no stderr and the banner printing the command and "exit status 128" ahead of git's own message
+	if _, err := runNet(ctx, cwd, args...); err != nil {
 		return &FetchResult{IsRepo: true, Failure: failureOf(args, err)}, nil
 	}
 	return &FetchResult{IsRepo: true, FetchedAt: time.Now().Unix()}, nil
+}
+
+const (
+	pullTimeout = 55 * time.Second
+	pushTimeout = 120 * time.Second
+)
+
+// SyncResult is a pull's or push's outcome: how many commits moved, or git's refusal as data.
+type SyncResult struct {
+	Moved   int         `json:"moved"`
+	Branch  string      `json:"branch,omitempty"`
+	Failure *GitFailure `json:"failure,omitempty"`
+}
+
+// runNet is run for a command that talks to a remote (fetch, pull, push): GIT_TERMINAL_PROMPT=0 makes a missing
+// credential fail at once instead of waiting on a prompt nobody can see. A credential manager's own window still
+// appears. It keeps run's cmd.Output(), so failureOf finds git's stderr on the ExitError. No network git command
+// runs any other way.
+func runNet(ctx context.Context, cwd string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false", "-C", cwd}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func syncFailure(args []string, err error) *SyncResult {
+	return &SyncResult{Failure: failureOf(args, err)}
+}
+
+// Pull fast-forwards to the upstream and nothing else: no merge commit, no rebase, so no conflict can leave the
+// tree half-done under an agent. A diverged branch is refused with git's own words. Moved is counted after the pull
+// (the pull fetches first, so a count read before it can be stale).
+func Pull(ctx context.Context, cwd string) (*SyncResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, pullTimeout)
+	defer cancel()
+	up, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil || strings.TrimSpace(up) == "" {
+		return &SyncResult{Failure: &GitFailure{Command: "git pull --ff-only", ExitCode: -1, Stderr: "this branch has no upstream to pull from"}}, nil
+	}
+	old, _ := run(ctx, cwd, "rev-parse", "HEAD")
+	old = strings.TrimSpace(old)
+	args := []string{"pull", "--ff-only"}
+	if _, err := runNet(ctx, cwd, args...); err != nil {
+		return syncFailure(args, err), nil
+	}
+	moved := 0
+	if old != "" {
+		n, _ := run(ctx, cwd, "rev-list", "--count", old+"..HEAD")
+		moved, _ = strconv.Atoi(strings.TrimSpace(n))
+	}
+	return &SyncResult{Moved: moved}, nil
+}
+
+// Push sends the branch to its upstream, or publishes it to origin when it has none. It never forces.
+func Push(ctx context.Context, cwd string) (*SyncResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
+	b, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	branch := strings.TrimSpace(b)
+	if err != nil || branch == "HEAD" || branch == "" {
+		return &SyncResult{Failure: &GitFailure{Command: "git push", ExitCode: -1, Stderr: "HEAD is detached: check out a branch to push"}}, nil
+	}
+	up, ahead, _ := upstreamCounts(ctx, cwd)
+	args := []string{"push"}
+	if up == "" {
+		args = []string{"push", "-u", "origin", branch}
+	}
+	if _, err := runNet(ctx, cwd, args...); err != nil {
+		return syncFailure(args, err), nil
+	}
+	return &SyncResult{Moved: ahead, Branch: branch}, nil
 }
 
 // GitFailure describes a git invocation that failed, in the shape the Diff surface's failure panel
@@ -1319,6 +1415,119 @@ func failureOf(args []string, err error) *GitFailure {
 		f.Stderr = err.Error() // no stderr to show (git absent, deadline): the Go error is the evidence
 	}
 	return f
+}
+
+const commitTimeout = 60 * time.Second // hooks run inside it
+
+// CommitResult is a commit's outcome. A refusal from git (a hook, a lock, nothing to commit) is data, as with Fetch:
+// the surface draws git's own words.
+type CommitResult struct {
+	Hash    string      `json:"hash,omitempty"`
+	Failure *GitFailure `json:"failure,omitempty"`
+}
+
+// runInput is run with stdin and git's whole output: a commit message travels on stdin so no quoting or argument
+// limit touches it, and a hook may write its reason to either stream. Paths are literal: a ticked
+// "app/[id]/page.tsx" must not also match "app/i/page.tsx" and carry that change into the commit.
+func runInput(ctx context.Context, cwd, input string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"--literal-pathspecs", "-c", "core.quotePath=false", "-C", cwd}, args...)...)
+	cmd.Stdin = strings.NewReader(input)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// statusPaths reads a porcelain -z listing into the paths it names (a rename's source included) and the untracked
+// ones.
+func statusPaths(statusZ string) (known, untracked map[string]bool) {
+	known, untracked = map[string]bool{}, map[string]bool{}
+	parts := strings.Split(statusZ, "\x00")
+	for i := 0; i < len(parts); i++ {
+		e := parts[i]
+		if len(e) < 4 {
+			continue
+		}
+		known[e[3:]] = true
+		if e[:2] == "??" {
+			untracked[e[3:]] = true
+		}
+		if (e[0] == 'R' || e[0] == 'C') && i+1 < len(parts) {
+			i++
+			known[parts[i]] = true
+		}
+	}
+	return known, untracked
+}
+
+func refused(command, why string) *CommitResult {
+	return &CommitResult{Failure: &GitFailure{Command: command, ExitCode: -1, Stderr: why}}
+}
+
+// Commit records exactly paths (cwd-relative, as GetChanges lists them) with --only, so what another session
+// staged for other paths stays in the index and out of this commit. Untracked paths are added first, since --only
+// takes only paths git knows, and unstaged again when the commit fails. A path the status does not list, or a nested
+// repository, is refused before git runs.
+func Commit(ctx context.Context, cwd, message string, paths []string, amend bool) (*CommitResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, commitTimeout)
+	defer cancel()
+	if strings.TrimSpace(message) == "" {
+		return refused("git commit", "the commit message is empty"), nil
+	}
+	if len(paths) == 0 {
+		return refused("git commit", "no files are ticked"), nil
+	}
+	prefix, _ := run(ctx, cwd, "rev-parse", "--show-prefix")
+	statusZ, err := run(ctx, cwd, "status", "--porcelain=v1", "-z", "-uall", "--", ".")
+	if err != nil {
+		return nil, err
+	}
+	known, untracked := statusPaths(stripPrefixZ(statusZ, strings.TrimSpace(prefix)))
+	var add []string
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/") {
+			return refused("git commit", p+" is a nested repository; commit it in its own repository"), nil
+		}
+		if !known[p] {
+			return refused("git commit", p+" has no uncommitted change"), nil
+		}
+		if untracked[p] {
+			add = append(add, p)
+		}
+	}
+	if len(add) > 0 {
+		args := append([]string{"add", "--"}, add...)
+		if out, err := runInput(ctx, cwd, "", args...); err != nil {
+			return &CommitResult{Failure: &GitFailure{Command: "git add", ExitCode: exitCodeOf(err), Stderr: strings.TrimSpace(out)}}, nil
+		}
+	}
+	args := []string{"commit", "--only", "-F", "-"}
+	if amend {
+		args = append(args, "--amend")
+	}
+	args = append(append(args, "--"), paths...)
+	if out, err := runInput(ctx, cwd, message, args...); err != nil {
+		// put the index back as it was: a path this call added must not wait, staged, for someone else's commit
+		if len(add) > 0 {
+			runInput(ctx, cwd, "", append([]string{"reset", "-q", "--"}, add...)...)
+		}
+		cmd := fmt.Sprintf("git commit --only -F - -- %d paths", len(paths))
+		return &CommitResult{Failure: &GitFailure{Command: cmd, ExitCode: exitCodeOf(err), Stderr: strings.TrimSpace(out)}}, nil
+	}
+	hash, _ := run(ctx, cwd, "rev-parse", "--short", "HEAD")
+	return &CommitResult{Hash: strings.TrimSpace(hash)}, nil
+}
+
+// CommitMessage is a commit's whole message (HEAD's for ref ""), which Amend loads into the box and the Log tab shows
+// under a selected commit; the history read carries subjects only. The text ends with git's newline.
+func CommitMessage(ctx context.Context, cwd, ref string) (string, error) {
+	if strings.HasPrefix(ref, "-") {
+		return "", fmt.Errorf("refusing to read the message of %q: a revision cannot begin with '-'", ref)
+	}
+	if ref == "" {
+		ref = "HEAD"
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	return run(ctx, cwd, "log", "-1", "--format=%B", ref, "--")
 }
 
 // maxListFiles caps the enumeration so a pathological repo cannot hand the frontend a

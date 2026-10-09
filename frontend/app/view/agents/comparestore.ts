@@ -16,10 +16,12 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { devCommitFault, type ChangesStatus } from "./changesstatus";
 import { AGGREGATE } from "./comparerows";
 import type { CompareForm } from "./diffcontent";
 import type { DiffRange } from "./diffscope";
 import { diffScopeAtom } from "./diffscopeatom";
+import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 
 export interface CompareRefs {
@@ -49,11 +51,26 @@ export const compareErrorAtom = atom<string | null>(null) as PrimitiveAtom<strin
 export const compareBranchesAtom = atom<BranchInfo[]>([]) as PrimitiveAtom<BranchInfo[]>;
 
 const commitChangesAtom = atom<GitChanges | null>(null) as PrimitiveAtom<GitChanges | null>;
+// What the selected compare commit's read is doing. commitChangesAtom is null both while it loads and
+// after it fails, so the list could not tell "0 files" from "not read yet" without this.
+const commitChangesStatusAtom = atom<ChangesStatus>("ready") as PrimitiveAtom<ChangesStatus>;
 
 // Pane 2 reads one source regardless of which row is selected.
 export const compareActiveChangesAtom = atom<GitChanges | null>((get) =>
     get(compareSelectionAtom) === AGGREGATE ? get(compareAggregateAtom) : get(commitChangesAtom)
 );
+
+// The status of whichever list compareActiveChangesAtom holds. The aggregate row has no read of its own:
+// it is the setCompareRefs read, so it loads until the aggregate lands and fails with the compare error.
+export const compareActiveChangesStatusAtom = atom<ChangesStatus>((get) => {
+    if (get(compareSelectionAtom) !== AGGREGATE) {
+        return get(commitChangesStatusAtom);
+    }
+    if (get(compareErrorAtom) != null) {
+        return "failed";
+    }
+    return get(compareAggregateAtom) == null ? "loading" : "ready";
+});
 
 const current = { token: "" };
 
@@ -86,6 +103,7 @@ function clearCompareState(): void {
     globalStore.set(compareSelectionAtom, AGGREGATE);
     globalStore.set(compareSelectedFileAtom, null);
     globalStore.set(commitChangesAtom, null);
+    globalStore.set(commitChangesStatusAtom, "ready");
     globalStore.set(compareErrorAtom, null);
     // compareRefsAtom survives on purpose: re-entering compare should offer the pair you last used.
 }
@@ -143,6 +161,7 @@ export async function setCompareRefs(cwd: string, base: string, head: string): P
     globalStore.set(compareSelectionAtom, AGGREGATE);
     globalStore.set(compareSelectedFileAtom, null);
     globalStore.set(commitChangesAtom, null);
+    globalStore.set(commitChangesStatusAtom, "ready");
     globalStore.set(compareErrorAtom, null);
     if (!base || !head) {
         globalStore.set(compareErrorAtom, "Pick two refs to compare.");
@@ -170,7 +189,7 @@ export async function setCompareRefs(cwd: string, base: string, head: string): P
         });
         const changes = parseGitChanges(agg.statusz, agg.numstat);
         globalStore.set(compareAggregateAtom, changes);
-        const first = changes.files[0]?.path;
+        const first = firstShownPath(changes.files);
         if (first) {
             selectCompareFile(first);
         }
@@ -267,29 +286,47 @@ export async function selectCompareRow(cwd: string, rowId: string): Promise<void
     globalStore.set(compareSelectionAtom, rowId);
     globalStore.set(compareSelectedFileAtom, null);
     if (rowId === AGGREGATE) {
-        const first = globalStore.get(compareAggregateAtom)?.files[0]?.path;
+        const aggregate = globalStore.get(compareAggregateAtom);
+        const first = aggregate ? firstShownPath(aggregate.files) : undefined;
         if (first) {
             selectCompareFile(first);
         }
         return;
     }
     globalStore.set(commitChangesAtom, null);
+    globalStore.set(commitChangesStatusAtom, "loading");
     try {
+        await devCommitFault();
         const ch = await RpcApi.GitCommitChangesCommand(TabRpcClient, { cwd, hash: rowId });
         if (globalStore.get(compareSelectionAtom) !== rowId) {
             return; // selection moved on
         }
-        const changes = ch.isrepo ? parseGitChanges(ch.statusz, ch.numstat) : null;
+        if (!ch.isrepo) {
+            globalStore.set(commitChangesStatusAtom, "failed");
+            return;
+        }
+        const changes = parseGitChanges(ch.statusz, ch.numstat);
         globalStore.set(commitChangesAtom, changes);
-        const first = changes?.files[0]?.path;
+        globalStore.set(commitChangesStatusAtom, "ready");
+        const first = firstShownPath(changes.files);
         if (first) {
             selectCompareFile(first);
         }
     } catch {
         if (globalStore.get(compareSelectionAtom) === rowId) {
             globalStore.set(commitChangesAtom, null);
+            globalStore.set(commitChangesStatusAtom, "failed");
         }
     }
+}
+
+// The Retry on a compare commit whose files failed to read: the same row, the same repository.
+export function retrySelectedCompareRow(): void {
+    const rowId = globalStore.get(compareSelectionAtom);
+    if (rowId === AGGREGATE || !remembered.cwd) {
+        return;
+    }
+    void selectCompareRow(remembered.cwd, rowId);
 }
 
 // Selection only. Which two refs the aggregate row and a commit row mean is the pane's question now

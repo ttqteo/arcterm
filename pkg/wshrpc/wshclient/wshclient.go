@@ -648,9 +648,21 @@ func GitChangesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitChangesData, opt
 	return resp, err
 }
 
+// command "gitcommit", wshserver.GitCommitCommand
+func GitCommitCommand(w *wshutil.WshRpc, data wshrpc.CommandGitCommitData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitCommitRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitCommitRtnData](w, "gitcommit", data, opts)
+	return resp, err
+}
+
 // command "gitcommitchanges", wshserver.GitCommitChangesCommand
 func GitCommitChangesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitCommitChangesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitCommitChangesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitCommitChangesRtnData](w, "gitcommitchanges", data, opts)
+	return resp, err
+}
+
+// command "gitcommitmessage", wshserver.GitCommitMessageCommand
+func GitCommitMessageCommand(w *wshutil.WshRpc, data wshrpc.CommandGitCommitMessageData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitCommitMessageRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitCommitMessageRtnData](w, "gitcommitmessage", data, opts)
 	return resp, err
 }
 
@@ -705,6 +717,18 @@ func GitListIgnoredDirCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListIgnor
 // command "gitlistworktrees", wshserver.GitListWorktreesCommand
 func GitListWorktreesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListWorktreesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitListWorktreesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitListWorktreesRtnData](w, "gitlistworktrees", data, opts)
+	return resp, err
+}
+
+// command "gitpull", wshserver.GitPullCommand
+func GitPullCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSyncData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitSyncRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitSyncRtnData](w, "gitpull", data, opts)
+	return resp, err
+}
+
+// command "gitpush", wshserver.GitPushCommand
+func GitPushCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSyncData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitSyncRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitSyncRtnData](w, "gitpush", data, opts)
 	return resp, err
 }
 
