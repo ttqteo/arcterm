@@ -964,7 +964,7 @@ In `diffempty.test.ts`, add cases:
 ---
 
 ### Task 7: The panel layout: source dropdown, Commit | Log tabs, one-line diff header
-**Depends on:** Task 6
+**Depends on:** Task 1, Task 6
 **Files:** `frontend/app/view/agents/difflayout.ts`, `frontend/app/view/agents/difflayout.test.ts`, `frontend/app/view/agents/filesstore.ts`, `frontend/app/view/agents/comparestore.ts`, `frontend/app/view/agents/githistorystore.ts`, `frontend/app/view/agents/worktreesidebarstore.ts`, `frontend/app/view/agents/worktreesidebarstore.test.ts`, `frontend/app/view/agents/worktreesidebarview.tsx`, `frontend/app/view/agents/sourcepicker.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/historypane.tsx`, `frontend/app/view/agents/commitpane.tsx`, `frontend/app/view/agents/diffpane.tsx`, `frontend/app/view/agents/diffoptions.ts`, `frontend/app/view/agents/filessurface.tsx`, `frontend/app/view/agents/rangestrip.tsx`, `frontend/app/view/agents/historyrail.tsx`, `frontend/app/view/agents/filestep.ts`, `frontend/app/view/agents/filestep.test.ts`, `frontend/app/view/agents/changedfilelist.tsx`, `frontend/app/store/keybindings/bindings.ts`, `scripts/cdp/scenarios.mjs`
 
 This task rebuilds the surface layout to match `Log.dc.html`, `Rail.dc.html` and `Compare.dc.html`. The Commit tab
