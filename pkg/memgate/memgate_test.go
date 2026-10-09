@@ -83,6 +83,24 @@ func TestClassifyTakesTheHeaviestStep(t *testing.T) {
 	}
 }
 
+func TestLongRunningIsTheDevServer(t *testing.T) {
+	cases := map[string]bool{
+		"task dev":         true,
+		"cargo tauri dev":  true,
+		"task check:ts":    false,
+		"task tauri:build": false,
+	}
+	for command, want := range cases {
+		job, heavy := Classify(command)
+		if !heavy || job.LongRunning() != want {
+			t.Fatalf("Classify(%q) = %+v, %v; want heavy, LongRunning %v", command, job, heavy, want)
+		}
+	}
+	if DevBytes != 3*gib {
+		t.Fatalf("DevBytes = %d, want 3 GB", DevBytes)
+	}
+}
+
 func TestFits(t *testing.T) {
 	job := Job{Name: "task check:ts", Bytes: 3 * gib}
 	cases := []struct {

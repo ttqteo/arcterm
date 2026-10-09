@@ -27,12 +27,15 @@ type Job struct {
 	Bytes uint64
 }
 
+// DevBytes is a dev app's peak (task dev, tauri dev); the engine's Final, which starts one, claims it too.
+const DevBytes = 3 * gib
+
 // the peaks, rounded up, of each job on an 8 GB Apple silicon Mac. The Vite build is capped at a 4 GB
 // heap (NODE_OPTIONS in AGENTS.md); tauri:build runs it, then a release cargo build.
 var (
 	jobAppBuild      = Job{"task tauri:build", 3584 * mib}
 	jobCargoTauri    = Job{"cargo tauri build", 3 * gib}
-	jobDev           = Job{"task dev", 3 * gib}
+	jobDev           = Job{"task dev", DevBytes}
 	jobViteBuild     = Job{"vite build", 3 * gib}
 	jobBackend       = Job{"task build:backend", 1536 * mib}
 	jobCargoBuild    = Job{"cargo build", 2 * gib}
@@ -59,6 +62,11 @@ func Classify(command string) (Job, bool) {
 // Fits says whether the job can start on the RAM free now and still leave the headroom.
 func Fits(job Job, available uint64) bool {
 	return available >= job.Bytes+Headroom
+}
+
+// LongRunning says the job is a dev server: it runs until stopped, so it never holds a queue slot.
+func (j Job) LongRunning() bool {
+	return j == jobDev
 }
 
 // FormatGB is a byte count as the card shows it: GB with one decimal, "3 GB" rather than "3.0 GB".
