@@ -3481,8 +3481,9 @@ const diffLogTab = {
         const viewed2 = await ev(`(async () => {
             ${RAIL_LINK_LIB}
             const row = () => {
+                // a parent row's name is a span, not a div (ParentRow, agenttree.tsx): find the name leaf in any element
                 const tree = document.querySelector("[data-agent-tree]");
-                const name = tree && [...tree.querySelectorAll("div")].find(
+                const name = tree && [...tree.querySelectorAll("*")].find(
                     (d) => d.textContent.trim() === ${JSON.stringify(DLT_AGENT.name)} && d.children.length === 0
                 );
                 return name ? name.closest(".cursor-pointer") : null;
@@ -14682,8 +14683,9 @@ const agentRailFileLink = {
             ctx.railFiles = await h.ev(`(async () => {
                 ${RAIL_LINK_LIB}
                 const row = () => {
+                    // a parent row's name is a span, not a div (ParentRow, agenttree.tsx): find the name leaf in any element
                     const tree = document.querySelector("[data-agent-tree]");
-                    const name = tree && [...tree.querySelectorAll("div")].find(
+                    const name = tree && [...tree.querySelectorAll("*")].find(
                         (d) => d.textContent.trim() === ${JSON.stringify(RAIL_LINK_AGENT)} && d.children.length === 0
                     );
                     return name ? name.closest(".cursor-pointer") : null;

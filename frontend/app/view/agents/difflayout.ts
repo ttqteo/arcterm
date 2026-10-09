@@ -123,3 +123,21 @@ export function commitTabCount(state: { ref: string; changes: { files: unknown[]
     }
     return state.changes.files.length;
 }
+
+// The dirty count panelTabToApply may judge by, or null while the read in hand cannot say. A working scope is judged by
+// a working-tree read (ref ""): just after a pick the store still holds the previous subject's read, and an agent's
+// session-anchored one lists committed work too, so counting it opens Commit on a clean project. A repository git could
+// not read (changes null) is a working-tree read with nothing in it. Any other range opens Log whatever the count, so
+// any read will do for it.
+export function panelDirtyCount(
+    rangeKind: DiffRange["kind"],
+    state: { ref: string; changes: { files: unknown[] } | null } | null
+): number | null {
+    if (state == null) {
+        return null;
+    }
+    if (rangeKind !== "working") {
+        return 0;
+    }
+    return state.ref === "" ? (commitTabCount(state) ?? 0) : null;
+}

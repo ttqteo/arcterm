@@ -39,7 +39,7 @@ import {
 } from "./comparestore";
 import type { CompareForm, DiffSelection } from "./diffcontent";
 import { clearDiffPair, loadDiffPair } from "./diffcontentstore";
-import { panelAppliedKeyAtom, panelTabAtom, panelTabToApply } from "./difflayout";
+import { panelAppliedKeyAtom, panelDirtyCount, panelTabAtom, panelTabToApply } from "./difflayout";
 import { DiffPane } from "./diffpane";
 import { DiffPanel } from "./diffpanel";
 import {
@@ -224,8 +224,12 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         scope == null ? null : scope.range.kind === "compare" ? { ...scope, range: scope.range.from } : scope;
     const tabKey = tabScope ? scopeKey(tabScope) : "";
     const knownCwd = tabScope ? originCwd(tabScope.repo.origin) : null;
-    const listLoaded = state != null && (knownCwd == null || (state.cwd != null && sameRepoPath(state.cwd, knownCwd)));
-    const dirtyCount = state?.changes?.files.length ?? 0;
+    // A working scope waits for a working-tree read: the agent's session-anchored one is still in the store just after a
+    // project is picked, and it counts as dirty (panelDirtyCount).
+    const workingCount = tabScope ? panelDirtyCount(tabScope.range.kind, state) : null;
+    const listLoaded =
+        workingCount != null && (knownCwd == null || (state?.cwd != null && sameRepoPath(state.cwd, knownCwd)));
+    const dirtyCount = workingCount ?? 0;
     useEffect(() => {
         if (scope == null || tabScope == null) {
             return;
