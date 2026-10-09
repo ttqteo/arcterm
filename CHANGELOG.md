@@ -27,6 +27,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- A Claude agent asks you before it starts a subagent, naming it and warning that one can cost millions of tokens
+  (agents in an engine run are not asked); the 10-subagent cap per session, which had stopped holding, holds again.
 - Float has one bar instead of two: the agent's header is gone, and the float bar shows the agent's state, model and
   context next to its name, so the small window gives the terminal more room.
 - The Agent panel's Files tab opens as wide as Overview instead of the File tab's width, and remembers its own width

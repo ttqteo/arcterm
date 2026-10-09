@@ -46,6 +46,7 @@ type ccHookEvent struct {
 	ToolInput        json.RawMessage `json:"tool_input"`
 	Source           string          `json:"source"`
 	NotificationType string          `json:"notification_type"`
+	PermissionMode   string          `json:"permission_mode"`
 }
 
 // agentEmission describes what to publish for one hook event. State=="" means no
@@ -173,17 +174,55 @@ func subagentCallAllowed(dir, sessionID, toolUseID string, max int) bool {
 	return true
 }
 
-// subagentCapDenial is the PreToolUse decision that refuses an Agent call past jarvis.MaxSubagents.
-func subagentCapDenial() []byte {
-	reason := fmt.Sprintf("arcterm caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
+// preToolUseDecision is a PreToolUse hook's answer: "deny" or "ask", with the reason claude shows.
+func preToolUseDecision(decision, reason string) []byte {
 	out, _ := json.Marshal(map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",
-			"permissionDecision":       "deny",
+			"permissionDecision":       decision,
 			"permissionDecisionReason": reason,
 		},
 	})
 	return out
+}
+
+// subagentCapDenial is the PreToolUse decision that refuses an Agent call past jarvis.MaxSubagents.
+func subagentCapDenial() []byte {
+	reason := fmt.Sprintf("arcterm caps a session at %d subagents, and this one has dispatched them all. Do the rest of this work yourself, in this session. A plan too big for that is an engine run (`wsh runs start --plan <file>`), not a subagent per task.", jarvis.MaxSubagents)
+	return preToolUseDecision("deny", reason)
+}
+
+// subagentNeedsApproval reports whether an Agent call waits on the person. A subagent rereads its whole
+// context on every tool call, so one Explore can spend millions of tokens unseen. An engine run's agents
+// run with --dangerously-skip-permissions (bypassPermissions) and nobody to answer, so they are never asked.
+func subagentNeedsApproval(ev ccHookEvent) bool {
+	return isSubagentDispatch(ev) && ev.PermissionMode != "bypassPermissions"
+}
+
+// subagentApprovalAsk is the PreToolUse decision that puts an Agent call to the person, naming what it
+// would start.
+func subagentApprovalAsk(ev ccHookEvent) []byte {
+	var in struct {
+		Description  string `json:"description"`
+		SubagentType string `json:"subagent_type"`
+		Model        string `json:"model"`
+		Background   bool   `json:"run_in_background"`
+	}
+	_ = json.Unmarshal(ev.ToolInput, &in)
+	what := in.SubagentType
+	if what == "" {
+		what = "general-purpose"
+	}
+	if in.Model != "" {
+		what += " on " + in.Model
+	}
+	if in.Background {
+		what += ", in the background"
+	}
+	if in.Description != "" {
+		what = fmt.Sprintf("%q (%s)", in.Description, what)
+	}
+	return preToolUseDecision("ask", "Start a subagent: "+what+"? It rereads its whole context on every tool call, which can cost millions of tokens. arcterm asks before each one.")
 }
 
 // canvasRevealFor names the canvas an agent just wrote a board of, and the project it sits in, so the
@@ -464,6 +503,7 @@ var (
 	agentHookAgent  string
 	agentHookShadow string
 	agentHookState  string
+	agentHookGate   bool
 )
 
 func init() {
@@ -471,6 +511,7 @@ func init() {
 	agentHookCmd.Flags().StringVar(&agentHookAgent, "agent", "claude", "agent identity to stamp (claude | opencode)")
 	agentHookCmd.Flags().StringVar(&agentHookShadow, "shadow", "", "opencode shadow transcript path to report as the transcript")
 	agentHookCmd.Flags().StringVar(&agentHookState, "state", "", "explicit agent state (opencode path; claude derives it from the hook payload)")
+	agentHookCmd.Flags().BoolVar(&agentHookGate, "gate", false, "decide a subagent dispatch (cap, then ask) and report nothing")
 }
 
 // hookDebugLine appends one diagnostic line to ~/.claude/arc-hook-debug.log when WAVETERM_HOOK_DEBUG
@@ -519,10 +560,16 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	}
-	// decided before any rpc, so the cap holds while wavesrv is down. stdout carries only this decision
-	if isSubagentDispatch(ev) && !subagentCallAllowed(subagentLedgerDir(), ev.SessionID, ev.ToolUseID, jarvis.MaxSubagents) {
-		os.Stdout.Write(subagentCapDenial())
-		hookDebugLine("denied subagent past the cap session=" + ev.SessionID)
+	// the synchronous gate hook only decides an Agent call; it makes no rpc, so the cap holds while wavesrv
+	// is down. stdout carries only this decision. The async per-tool run reports state and skips it.
+	if agentHookGate {
+		if isSubagentDispatch(ev) && !subagentCallAllowed(subagentLedgerDir(), ev.SessionID, ev.ToolUseID, jarvis.MaxSubagents) {
+			os.Stdout.Write(subagentCapDenial())
+			hookDebugLine("denied subagent past the cap session=" + ev.SessionID)
+		} else if subagentNeedsApproval(ev) {
+			os.Stdout.Write(subagentApprovalAsk(ev))
+		}
+		return nil
 	}
 	em := planEmission(ev)
 	if agentHookShadow != "" {

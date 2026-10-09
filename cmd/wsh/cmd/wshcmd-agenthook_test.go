@@ -386,3 +386,49 @@ func TestSubagentCapDenialIsAPreToolUseDeny(t *testing.T) {
 		}
 	}
 }
+
+func TestSubagentNeedsApprovalSparesAnEngineRun(t *testing.T) {
+	agent := ccHookEvent{HookEventName: "PreToolUse", ToolName: "Agent", ToolUseID: "t1"}
+	for _, mode := range []string{"", "default", "auto", "acceptEdits", "plan"} {
+		ev := agent
+		ev.PermissionMode = mode
+		if !subagentNeedsApproval(ev) {
+			t.Errorf("mode %q: an Agent call should ask", mode)
+		}
+	}
+	ev := agent
+	ev.PermissionMode = "bypassPermissions"
+	if subagentNeedsApproval(ev) {
+		t.Error("bypassPermissions (an engine run's agent) should not ask")
+	}
+	if subagentNeedsApproval(ccHookEvent{HookEventName: "PreToolUse", ToolName: "Bash"}) {
+		t.Error("a Bash call should not ask")
+	}
+}
+
+func TestSubagentApprovalAskNamesTheSubagent(t *testing.T) {
+	ev := ccHookEvent{
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+		ToolInput:     json.RawMessage(`{"description":"Map facts for agent sleep","subagent_type":"Explore","model":"sonnet","run_in_background":true,"prompt":"..."}`),
+	}
+	var out struct {
+		HookSpecificOutput struct {
+			HookEventName            string `json:"hookEventName"`
+			PermissionDecision       string `json:"permissionDecision"`
+			PermissionDecisionReason string `json:"permissionDecisionReason"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal(subagentApprovalAsk(ev), &out); err != nil {
+		t.Fatalf("ask is not json: %v", err)
+	}
+	h := out.HookSpecificOutput
+	if h.HookEventName != "PreToolUse" || h.PermissionDecision != "ask" {
+		t.Fatalf("ask = %+v, want a PreToolUse ask", h)
+	}
+	for _, want := range []string{`"Map facts for agent sleep"`, "Explore on sonnet", "in the background"} {
+		if !strings.Contains(h.PermissionDecisionReason, want) {
+			t.Errorf("reason missing %q: %s", want, h.PermissionDecisionReason)
+		}
+	}
+}

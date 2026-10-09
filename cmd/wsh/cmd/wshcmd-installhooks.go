@@ -39,6 +39,9 @@ type managedHook struct {
 // order is deterministic so re-runs produce stable output
 var managedHooks = []managedHook{
 	{Event: "PreToolUse", Args: "agent-hook", Timeout: 10, Async: true},
+	// the subagent gate (cap, then ask the person) must answer before the call: claude ignores an async
+	// hook's decision, so it cannot ride on the per-tool report above
+	{Event: "PreToolUse", Matcher: "Agent|Task", Args: "agent-hook --gate", Timeout: 10},
 	{Event: "PreToolUse", Matcher: "AskUserQuestion", Args: "ask", Timeout: 3600},
 	{Event: "PostToolUse", Args: "agent-hook", Timeout: 10, Async: true},
 	{Event: "PostToolUse", Matcher: "AskUserQuestion", Args: "ask --clear", Timeout: 10},
@@ -106,7 +109,7 @@ func isManagedCommand(command string) bool {
 	switch strings.TrimSpace(rest) {
 	// the agent-memory-* entries name removed subcommands and stay listed so a reinstall still
 	// recognizes — and therefore strips — a hook an older arcterm wrote
-	case "agent-hook", "ask", "ask --clear", "jarvis dag rules --inject",
+	case "agent-hook", "agent-hook --gate", "ask", "ask --clear", "jarvis dag rules --inject",
 		"agent-memory-hook", "agent-memory-project", "agent-memory-project --inject":
 		return true
 	}
