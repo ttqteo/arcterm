@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { digitHintAtom } from "@/app/cockpit/digithints";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -19,6 +20,7 @@ import { useEffect, useState } from "react";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { workingCount } from "./agentsviewmodel";
 import { attentionAtom, splitAttention } from "./attentionstore";
+import { DigitHint } from "./digithint";
 import { navRailCollapsed } from "./navrailwidth";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
@@ -73,6 +75,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     // Agent also says how many agents are working while you are on another surface, so a run doing its work is
     // visible from Code or Diff; on Agent itself the rows already show it
     const working = workingCount(useAtomValue(model.agentsAtom));
+    // while Ctrl is held each surface shows the digit Ctrl+1..7 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
+    const ctrlHeld = useAtomValue(digitHintAtom) === "ctrl";
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
     useEffect(() => {
         const onResize = () => setNarrow(navRailCollapsed(window.innerWidth));
@@ -83,6 +87,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         const Icon = ICON[key];
         const isActive = active === key;
         const busy = key === "agent" && !isActive ? working : 0;
+        const at = ITEMS.findIndex((it) => it.key === key);
+        const digit = ctrlHeld && at >= 0 ? at + 1 : undefined;
         return (
             <button
                 key={key}
@@ -104,7 +110,9 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     </>
                 ) : null}
                 <span className="relative z-[1]">
-                    <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
+                    <DigitHint digit={digit}>
+                        <Icon size={tool ? 16 : 20} strokeWidth={1.8} />
+                    </DigitHint>
                     {badge > 0 ? (
                         <span
                             data-nav-badge={key}

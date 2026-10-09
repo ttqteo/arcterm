@@ -3,6 +3,7 @@
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ctrlHeldAtom } from "@/app/cockpit/ctrlheld";
+import { digitHintAtom } from "@/app/cockpit/digithints";
 import { useSettle } from "@/app/element/motionhooks";
 import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -48,7 +49,9 @@ import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
 import { centerModeAtom, showHistory, showSession, showTerminal } from "./agentcenter";
 import {
+    activeAgentIds,
     activeView,
+    agentDigits,
     ALL_PROJECTS,
     collidingTitles,
     conversationCount,
@@ -119,6 +122,7 @@ import {
     toggleSubagentExpand,
 } from "./session-models/agentstatusstore";
 import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
+import { DigitHint } from "./digithint";
 import { StatusDot } from "./statusdot";
 import { focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
@@ -204,6 +208,11 @@ function splitMenuItem(model: AgentsViewModel, agent: AgentVM): ContextMenuItem[
 }
 
 const PULSE = "pulse-dot";
+
+// An agent row's Alt+1..9 digit (agentDigits), shown over its leading mark only while Alt is held (digithints.ts).
+function useHeldDigit(digit: number | undefined): number | undefined {
+    return useAtomValue(digitHintAtom) === "alt" ? digit : undefined;
+}
 
 // Every row's leading mark sits in one column, so dots, icons and fold marks line up down the tree.
 function Slot({ children }: { children: React.ReactNode }) {
@@ -406,12 +415,14 @@ function ParentRow({
     branch,
     tokens,
     lead,
+    navDigit,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     branch?: string; // the git branch its session is on (liveBranches); absent until the scan has seen it
     tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
+    navDigit?: number; // its Alt+1..9 digit
 }) {
     const shownBranch = notableBranch(branch);
     const focusId = useSelectedRowId(model);
@@ -438,6 +449,7 @@ function ParentRow({
     const settling = useSettle(agent.state === "idle");
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
+    const digit = useHeldDigit(navDigit);
 
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
@@ -610,16 +622,18 @@ function ParentRow({
                     <RenameBox tabId={agent.id} />
                 ) : (
                     <div className="flex min-w-0 items-center gap-[6px]">
-                        {mark ? (
-                            <Workflow
-                                size={12}
-                                strokeWidth={1.8}
-                                aria-hidden
-                                className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
-                            />
-                        ) : (
-                            <RuntimeGlyph runtime={agent.agent} />
-                        )}
+                        <DigitHint digit={digit}>
+                            {mark ? (
+                                <Workflow
+                                    size={12}
+                                    strokeWidth={1.8}
+                                    aria-hidden
+                                    className={cn("flex-none", LEAD_MARK_CLASS[mark.tone], mark.pulse && PULSE)}
+                                />
+                            ) : (
+                                <RuntimeGlyph runtime={agent.agent} />
+                            )}
+                        </DigitHint>
                         <span
                             className={cn(
                                 "min-w-0 flex-1 truncate text-[13px]",
@@ -768,6 +782,7 @@ function WorkerRow({
     agent,
     nested,
     extras,
+    navDigit,
 }: {
     model: AgentsViewModel;
     run: RunInfo;
@@ -775,6 +790,7 @@ function WorkerRow({
     agent?: AgentVM;
     nested?: boolean;
     extras?: { count: number; open: boolean };
+    navDigit?: number; // its agent's Alt+1..9 digit
 }) {
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
@@ -798,6 +814,7 @@ function WorkerRow({
         state: nested ? undefined : taskStateLabel(task, now),
     });
     const title = nested ? agent?.name || task.id : task.label || task.id;
+    const digit = useHeldDigit(navDigit);
 
     const select = () => {
         if (focusKey == null) {
@@ -833,18 +850,20 @@ function WorkerRow({
         >
             <Guides depth={nested ? 2 : 1} />
             <Slot>
-                {done ? (
-                    // a check, not a dot: dots mean a live session, so a landed worker must not read as one
-                    <Check size={11} aria-hidden className="text-success" />
-                ) : waits ? (
-                    <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
-                ) : (task.state === "verifying" || task.state === "reviewing") && !nested ? (
-                    <StatusDot state="working" pulse className="!h-[7px] !w-[7px]" />
-                ) : agent == null ? (
-                    <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-muted" />
-                ) : (
-                    <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
-                )}
+                <DigitHint digit={digit}>
+                    {done ? (
+                        // a check, not a dot: dots mean a live session, so a landed worker must not read as one
+                        <Check size={11} aria-hidden className="text-success" />
+                    ) : waits ? (
+                        <span className="h-[7px] w-[7px] shrink-0 rounded-full border border-muted" />
+                    ) : (task.state === "verifying" || task.state === "reviewing") && !nested ? (
+                        <StatusDot state="working" pulse className="!h-[7px] !w-[7px]" />
+                    ) : agent == null ? (
+                        <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-muted" />
+                    ) : (
+                        <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
+                    )}
+                </DigitHint>
             </Slot>
             <div className="min-w-0 flex-1">
                 <div className="truncate text-[12.5px] font-medium text-ink-hi">{title}</div>
@@ -894,15 +913,18 @@ function StageRow({
     agent,
     stageRole,
     outcome,
+    navDigit,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     stageRole: string;
     outcome?: StageOutcome;
+    navDigit?: number; // its Alt+1..9 digit
 }) {
     const focusId = useSelectedRowId(model);
     const now = useAtomValue(model.nowAtom);
     const selected = focusId === agent.id;
+    const digit = useHeldDigit(navDigit);
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
         const split = splitMenuItem(model, agent);
@@ -926,13 +948,15 @@ function StageRow({
         >
             <Guides depth={1} />
             <Slot>
-                {outcome === "passed" ? (
-                    <Check size={11} aria-hidden className="text-success" />
-                ) : outcome ? (
-                    <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", STAGE_OUTCOME_DOT[outcome])} />
-                ) : (
-                    <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
-                )}
+                <DigitHint digit={digit}>
+                    {outcome === "passed" ? (
+                        <Check size={11} aria-hidden className="text-success" />
+                    ) : outcome ? (
+                        <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", STAGE_OUTCOME_DOT[outcome])} />
+                    ) : (
+                        <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[7px] !w-[7px]" />
+                    )}
+                </DigitHint>
             </Slot>
             <div className="min-w-0 flex-1">
                 <div className="truncate text-[12.5px] font-medium text-ink-hi">{stageLabel(stageRole)}</div>
@@ -1305,8 +1329,17 @@ function useSectionOpen(section: SidebarSection): boolean {
 // out as the cells are (two side by side, three as two over one, four as 2x2), so the row is a map of the screen.
 // A click focuses that cell; a segment drags onto the grid like any agent row. The 1px gaps over the edge colour are
 // the dividers.
-function SplitRow({ model, agents }: { model: AgentsViewModel; agents: AgentVM[] }) {
+function SplitRow({
+    model,
+    agents,
+    digits,
+}: {
+    model: AgentsViewModel;
+    agents: AgentVM[];
+    digits: ReadonlyMap<string, number>;
+}) {
     const focusId = useSelectedRowId(model);
+    const altHeld = useAtomValue(digitHintAtom) === "alt";
     const segmentMenu = (agent: AgentVM, e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             { label: "Remove from split", icon: <X size={15} />, click: () => removeFromGrid(model, agent.id) },
@@ -1351,11 +1384,13 @@ function SplitRow({ model, agents }: { model: AgentsViewModel; agents: AgentVM[]
                             selected ? "bg-surface-selected" : "bg-surface hover:bg-surface-hover"
                         )}
                     >
-                        {agent.state === "asking" ? (
-                            <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" aria-label="asking" />
-                        ) : (
-                            <StatusDot state={agent.state} pulse={agent.state !== "idle"} />
-                        )}
+                        <DigitHint digit={altHeld ? digits.get(agent.id) : undefined}>
+                            {agent.state === "asking" ? (
+                                <span className="h-[7px] w-[7px] flex-none rounded-full bg-warning" aria-label="asking" />
+                            ) : (
+                                <StatusDot state={agent.state} pulse={agent.state !== "idle"} />
+                            )}
+                        </DigitHint>
                         <span
                             className={cn(
                                 "min-w-0 flex-1 truncate text-[12.5px]",
@@ -1778,6 +1813,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const { split, rows: unsplit } = splitActive(tree, cells, agents);
     const active = activeView(unsplit, filter, collapsed);
     const visibleRows = active.rows;
+    // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
+    const digits = agentDigits(activeAgentIds(split, visibleRows));
     // every project's, whatever the filter: the badge stays on the header while the section is folded, so an agent asking
     // in a project the filter hides is never out of sight
     const asking = askingCount(agents);
@@ -1838,7 +1875,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                 {/* the rows are this wrapper's direct children (AnimatePresence renders no element); relative so popLayout
                     pops an exiting row out of flow in this wrapper's own coordinates. A folded section unmounts it, and
                     its AnimatePresence starts over with initial={false}, so unfolding never replays the entrances */}
-                {activeOpen && split.length > 0 ? <SplitRow model={model} agents={split} /> : null}
+                {activeOpen && split.length > 0 ? <SplitRow model={model} agents={split} digits={digits} /> : null}
                 {activeOpen ? (
                     <div data-agent-active-rows className="relative">
                         <AnimatePresence mode="popLayout" initial={false}>
@@ -1874,6 +1911,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 agent={r.agent}
                                                 branch={branches.get(r.agent.id)}
                                                 tokens={tokens.get(r.agent.id)}
+                                                navDigit={digits.get(r.agent.id)}
                                             />
                                         );
                                         break;
@@ -1886,6 +1924,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 branch={branches.get(r.agent.id)}
                                                 tokens={tokens.get(r.agent.id)}
                                                 lead={{ run: r.run, open: r.open, live: r.live }}
+                                                navDigit={digits.get(r.agent.id)}
                                             />
                                         );
                                         break;
@@ -1907,6 +1946,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                         ? undefined
                                                         : { count: r.extras ?? 0, open: r.extrasOpen ?? false }
                                                 }
+                                                navDigit={r.agent != null ? digits.get(r.agent.id) : undefined}
                                             />
                                         );
                                         break;
@@ -1918,6 +1958,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 agent={r.agent}
                                                 stageRole={r.stageRole}
                                                 outcome={r.outcome}
+                                                navDigit={digits.get(r.agent.id)}
                                             />
                                         );
                                         break;

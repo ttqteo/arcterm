@@ -323,6 +323,14 @@ export function activeAgentIds(split: AgentVM[], rows: AgentTreeRow[]): string[]
     return ids;
 }
 
+/** Pure: the digit Alt+1..9 jumps to for each of the first nine agents the Active section shows (activeAgentIds order),
+ *  which is also the digit its row shows while Alt is held. */
+export const AGENT_DIGITS = 9;
+
+export function agentDigits(ids: readonly string[]): Map<string, number> {
+    return new Map(ids.slice(0, AGENT_DIGITS).map((id, i) => [id, i + 1]));
+}
+
 export interface SplitActive {
     split: AgentVM[]; // the split's agents in cell order; empty when nothing is split
     rows: AgentTreeRow[]; // the Active rows without them

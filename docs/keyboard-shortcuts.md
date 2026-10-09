@@ -31,7 +31,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 | Keys | Action |
 |---|---|
-| `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar |
+| `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar. Hold `Mod` a moment to see the numbers on the rail |
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
@@ -203,6 +203,7 @@ its card above the terminal and does not take the keyboard.
 |---|---|
 | `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
 | `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above |
+| `Alt`+`1`…`9` | The nth agent of the Active list, top to bottom (the split's agents first). Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 

@@ -150,6 +150,18 @@ describe("surface switch [ / ]", () => {
         expect(globalStore.get(model.surfaceAtom)).toBe("radar");
     });
 
+    it("binds Alt+1..9 to the Active list's agents on the Agent surface, inside a terminal too", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent"), focusAgentAt: vi.fn() } as any;
+        const chords = buildGlobalBindings(model).filter((b) => b.id.startsWith("agent:jump-"));
+        expect(chords.map((b) => b.keys)).toEqual(Array.from({ length: 9 }, (_, i) => `Alt:${i + 1}`));
+        const inTerminal: KeyContext = { surface: "agent", editable: true, modalOpen: false, leader: null };
+        expect(chords.every((b) => b.when!(inTerminal))).toBe(true);
+        expect(chords[0].when!({ ...inTerminal, surface: "code" })).toBe(false);
+        expect(chords[0].when!({ ...inTerminal, modalOpen: true })).toBe(false);
+        chords[2].run(ctx());
+        expect(model.focusAgentAt).toHaveBeenCalledWith(3);
+    });
+
     it("enters the cycle gracefully from a surface not in SURFACE_ORDER (settings)", () => {
         const model = { surfaceAtom: atom<SurfaceKey>("settings") } as any;
         const bindings = buildGlobalBindings(model);

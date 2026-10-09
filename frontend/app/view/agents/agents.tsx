@@ -27,6 +27,7 @@ import { liveAgentsAtom, liveTerminalsAtom } from "./liveagents";
 import type { Lineage } from "./runlineage";
 import { endedWorkerAtomFor, lineageAtomFor, type EndedWorker } from "./runlineagestore";
 import { activeNavOrder } from "./activenav";
+import { AGENT_DIGITS } from "./agentsidebarmodel";
 import { usageBucketsAtom } from "./usagestore";
 import { aggregateBuckets, type HarnessFilter } from "./usagestats";
 
@@ -172,12 +173,26 @@ export class AgentsViewModel implements ViewModel {
         }
         const next = cycleId(ids, globalStore.get(this.focusIdAtom), 1);
         if (next != null) {
-            if (document.activeElement?.closest("[data-agent-terminal]") != null) {
-                globalStore.set(this.typingFollowsAtom, next);
-            }
-            globalStore.set(this.focusIdAtom, next);
-            showTerminal();
+            this.focusFromKeys(next);
         }
+    }
+
+    // Alt+1..9: the nth agent the Active section shows, as its row's digit says while Alt is held. A digit past the
+    // list does nothing.
+    focusAgentAt(n: number) {
+        const id = n <= AGENT_DIGITS ? activeNavOrder(this)[n - 1] : undefined;
+        if (id != null) {
+            this.focusFromKeys(id);
+        }
+    }
+
+    // a key pressed in a terminal brings typing along to the agent it moves to
+    private focusFromKeys(id: string) {
+        if (document.activeElement?.closest("[data-agent-terminal]") != null) {
+            globalStore.set(this.typingFollowsAtom, id);
+        }
+        globalStore.set(this.focusIdAtom, id);
+        showTerminal();
     }
 
     // Shared by the cockpit grid and the Agent surface: sends the answer held in the model's answer atoms.

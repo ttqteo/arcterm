@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     activeAgentIds,
     activeView,
+    agentDigits,
     agentExited,
     ALL_PROJECTS,
     collidingTitles,
@@ -855,5 +856,17 @@ describe("scanDue", () => {
     it("rescans soon after an exit, since the ended session just landed", () => {
         expect(scanDue(8_000, 10_000, "exit")).toBe(true);
         expect(scanDue(9_500, 10_000, "exit")).toBe(false);
+    });
+});
+
+describe("agentDigits", () => {
+    it("numbers the first nine agents from 1, in list order, and leaves the rest without one", () => {
+        const ids = Array.from({ length: 11 }, (_, i) => `a${i}`);
+        const digits = agentDigits(ids);
+        expect(digits.get("a0")).toBe(1);
+        expect(digits.get("a8")).toBe(9);
+        expect(digits.has("a9")).toBe(false);
+        expect(digits.size).toBe(9);
+        expect(agentDigits([]).size).toBe(0);
     });
 });

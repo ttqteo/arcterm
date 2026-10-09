@@ -10,6 +10,7 @@ import { activeNavOrder } from "@/app/view/agents/activenav";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
+import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView } from "@/app/view/agents/agentview";
 import { paneState } from "@/app/view/agents/canvasmodel";
@@ -196,6 +197,18 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
         run: () => globalStore.set(model.surfaceAtom, surface),
     }));
 
+    // Alt+1..9 jump to the nth agent of the Active list, numbered as its rows are while Alt is held. Like Ctrl+Tab they
+    // work from inside a terminal, and typing follows; Ctrl+1..9 stay the surfaces.
+    const agentDigitChords: Binding[] = Array.from({ length: AGENT_DIGITS }, (_, i) => i + 1).map((n) => ({
+        id: `agent:jump-${n}`,
+        keys: `Alt:${n}`,
+        group: "Agent",
+        label: `Jump to agent ${n}`,
+        paletteHidden: true, // a key by its position in the list, which a palette row cannot show
+        when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen,
+        run: () => model.focusAgentAt(n),
+    }));
+
     const goBindings: Binding[] = GO_TARGETS.map((t) => ({
         id: t.id ?? `go:${t.surface}`,
         keys: `g ${t.letter}`,
@@ -207,6 +220,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
 
     return [
         ...surfaceChords,
+        ...agentDigitChords,
         ...goBindings,
         {
             id: "surface:next",
