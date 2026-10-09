@@ -74,6 +74,10 @@ Other useful commands:
   subagents, a workflow, or real agents (demo agents, an engine run), give a rough estimate and ask, or take the cheap
   path: one agent, narrow reads, existing docs. Never launch real agents only to stage screenshots without asking. The
   5-hour meter is in the app bar: when it climbs fast mid-task, say so and offer to stop.
+- **A subagent that reads a lot of code to write something gets split in two.** A research subagent reads and returns
+  a short fact sheet with `path:line` for each fact; a fresh writing subagent works from the sheet and reads no code;
+  one page per writer. The 2026-10-08 rewrite's ~200M went to subagents that `cat` whole files, then made ~140 calls
+  on a 400–566k context. Paste the briefs in `docs/agents/subagent-briefs.md` into the prompts.
 - CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
 - **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
   `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold
