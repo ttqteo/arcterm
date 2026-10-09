@@ -68,6 +68,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A run in its final stage now reads **Verifying** in the run sheet, with the step it is on and for how long, instead
+  of **Executing** over a full strip; a run's progress line in the Agents tree shows its full text on hover when cut
+  off.
 - A run held because the checkout has uncommitted edits to a file it changes now says so and names the files,
   instead of quoting git's whole merge command and error.
 - An orchestrator lead no longer collects an unread count once its plan is running: the turns the engine wakes it

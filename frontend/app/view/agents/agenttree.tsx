@@ -331,7 +331,9 @@ function RunCompleteLabel({ run }: { run: RunInfo }) {
     return (
         <span className="flex min-w-0 items-center gap-[5px] text-success">
             <Check size={11} aria-hidden className="flex-none" />
-            <span className="truncate">{finishedRunLabel(run)}</span>
+            <span className="truncate" title={finishedRunLabel(run)}>
+                {finishedRunLabel(run)}
+            </span>
         </span>
     );
 }
@@ -361,7 +363,10 @@ function RunSubline({
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
-                    <span className="truncate text-muted">
+                    <span
+                        className="truncate text-muted"
+                        title={runStatusView(run.status ?? "planning", run.land).label}
+                    >
                         {runStatusView(run.status ?? "planning", run.land).label}
                     </span>
                 )}
@@ -387,7 +392,9 @@ function RunSubline({
                 {runComplete(run) ? (
                     <RunCompleteLabel run={run} />
                 ) : (
-                    <span className="truncate text-muted">{progress}</span>
+                    <span className="truncate text-muted" title={progress}>
+                        {progress}
+                    </span>
                 )}
                 {trailing != null ? <span className="flex-1" /> : null}
                 {trailing}

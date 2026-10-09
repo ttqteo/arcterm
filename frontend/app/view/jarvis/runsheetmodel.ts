@@ -11,6 +11,7 @@
 // digest's figures are dated rather than presented as current.
 
 import type { AgentVM } from "../agents/agentsviewmodel";
+import { finalStageActivity } from "../agents/runlineage";
 import { canResume, currentPhaseIndex, isTerminal, leadWorker } from "../agents/runmodel";
 import {
     cleanupOnly,
@@ -384,6 +385,21 @@ function daggedStatus(read: SheetRead, dag: SheetDagRead): SheetStatus {
             meter,
             meta,
             next: "nothing to dispatch — the lead is finishing the run",
+            retry: false,
+        };
+    }
+    // every task merged, the final stage checking the merged result: not "Executing", which read as workers still on it
+    if (group.status === "finalizing") {
+        const activity = finalStageActivity(group.final);
+        const step = group.final?.stepts ? ` (${since(nowMs, group.final.stepts)})` : "";
+        return {
+            verb: "Verifying",
+            sub: `all ${plural(total, "task")} done · final: ${activity ? activity + step : "starting"}`,
+            tone: "success",
+            pulse: true,
+            meter,
+            meta,
+            next: "the run lands on its base once the final stage passes",
             retry: false,
         };
     }

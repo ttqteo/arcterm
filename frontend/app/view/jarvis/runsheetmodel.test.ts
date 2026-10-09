@@ -207,6 +207,24 @@ describe("sheetStatus", () => {
         expect(s.next).not.toMatch(/finished/);
     });
 
+    it("says Verifying with the final step while the final stage runs, not Executing", () => {
+        const s = sheetStatus(
+            read({
+                dag: {
+                    digest: fresh(digest({ next: { kind: "final-wait" } }, { done: 4, running: 0 })),
+                    group: group(["done", "done", "done", "done"], {
+                        status: "finalizing",
+                        final: { state: "checking", round: 1, step: "check", stepts: NOW - 2 * 60_000 },
+                    }),
+                    groupRead: "ready",
+                },
+            })
+        );
+        expect(s.verb).toBe("Verifying");
+        expect(s.sub).toBe("all 4 tasks done · final: running Check (2m)");
+        expect(s.next).toMatch(/lands/);
+    });
+
     it("counts a skipped task as finished, so Landing never sits over a strip one short", () => {
         const g = group(["done", "skipped", "done", "done"], { status: "done" });
         const s = sheetStatus(
