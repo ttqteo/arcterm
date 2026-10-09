@@ -162,6 +162,7 @@ func harnessUpdateCheckEnabled() bool {
 
 func createMainWshClient() {
 	rpc := wshserver.GetMainRpcClient()
+	wshutil.DomainLinkClosedHook = rpc.CancelRequestsForLink // a dead wsh's streams end with it (a held job slot)
 	wshutil.DefaultRouter.RegisterTrustedLeaf(rpc, wshutil.DefaultRoute)
 	wps.Broker.SetClient(wshutil.DefaultRouter)
 	localInitialEnv := envutil.PruneInitialEnv(envutil.SliceToMap(os.Environ()))
