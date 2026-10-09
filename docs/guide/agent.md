@@ -105,7 +105,7 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 
 Header phía trên terminal là một hàng gọn:
 
-- chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`, hoặc nhãn riêng như `Low RAM`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
+- chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
 - bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **Done · N tok — Close** khi agent trông như đã xong; nút **Redraw**; nút **Float**; nút toàn màn hình; nút `×` đóng.
 
 Chuột phải vào header: **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Float window** / **Leave float**, **Redraw terminal**, **Show details** / **Hide details**, **Close agent**.
@@ -138,7 +138,7 @@ Mỗi hàng agent: biểu tượng harness và **tên** ở dòng trên; dòng d
 | Dấu hiệu | Nghĩa |
 |---|---|
 | Chấm nhấp nháy | Đang làm; chấm xám: đã xong |
-| `asking` (cam) | Đang hỏi bạn; đọc là `Low RAM` khi một lệnh nặng của nó đang chờ RAM |
+| `asking` (cam) | Đang hỏi bạn |
 | `review` | Đang xin duyệt Spec/Plan/Doc; bấm để mở review |
 | Số trong vòng tròn màu accent | Số lượt đã xong mà bạn chưa đọc (`9+` là tối đa). Tên đậm. Chỉ tính agent cấp trên, không tính worker của run |
 | Chip `1/3` (cam) | Agent dừng ở một phần trong mạch trình bày nhiều phần ("Phần 1/3") và đang chờ bạn trả lời; giữ cho tới khi bạn trả lời |
@@ -246,7 +246,7 @@ Một agent đang hỏi hiện màu cam trong sidebar, thành thẻ trên Cockpi
 | Palette `Ctrl+P` → **Needs you** (`n:`) | Chọn dòng, nhấn `1`–`9` |
 | Popup của con vật Jarvis (`Ctrl+G` `w`) | `1`–`9` cho câu hỏi một lựa chọn |
 
-Một lệnh nặng (build, typecheck, cả bộ test, `npm install`) khi RAM thiếu sẽ chờ trên thẻ **Low RAM** đặt ngay trên terminal của agent: **Run now**, **Wait for RAM** (tự chạy khi có chỗ) hoặc **Don't run**. Đây là thẻ, không cướp phím của terminal.
+Một lệnh nặng (build, typecheck, cả bộ test, `npm install`) chờ đến lượt trong hàng đợi lệnh nặng; transcript của agent ghi chỗ của nó. Xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng).
 
 ## Duyệt tài liệu do agent yêu cầu
 

@@ -10,8 +10,8 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này làm mới c
 
 | Harness | Cài vào đâu | Làm gì |
 |---|---|---|
-| Claude Code | hook trong `~/.claude/settings.json`; mod `~/.arc/claude-mod` và `~/.arc/claude-view-mod`, liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Trạng thái, tên phiên, usage, câu hỏi trên thẻ, chặn lệnh nguy hiểm, cổng RAM |
-| pi | extension của pi (và theme `arc`) | Trạng thái, câu hỏi, usage, cổng RAM |
+| Claude Code | hook trong `~/.claude/settings.json`; mod `~/.arc/claude-mod` và `~/.arc/claude-view-mod`, liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Trạng thái, tên phiên, usage, câu hỏi trên thẻ, chặn lệnh nguy hiểm, hàng đợi lệnh nặng |
+| pi | extension của pi (và theme `arc`) | Trạng thái, câu hỏi, usage, hàng đợi lệnh nặng |
 | OpenCode | plugin trạng thái | Trạng thái trên rail |
 | Antigravity | khóa `arcterm` trong `~/.gemini/config/hooks.json` | Xem [Antigravity](#antigravity-agy) |
 | Codex | không có hook | Mở, resume, lịch sử và token đọc từ transcript |
@@ -34,7 +34,7 @@ Muốn một phiên dev không động vào các file này, đặt `ARC_DEV_NO_G
 - **Báo trạng thái và usage**, kể cả lượt kết thúc không có câu trả lời (ngắt, lỗi API) mà Claude không chạy hook `Stop`.
 - **Nhận lệnh từ cockpit**: prompt gửi từ cockpit (ví dụ composer của Jarvis, hay `wsh agents send`) vào phiên, nối vào lượt đang chạy khi được yêu cầu, hoặc yêu cầu compact.
 - **Chặn một số lệnh shell**, bất kể prompt nói gì. Ví dụ dừng app bằng tên tiến trình (`taskkill /IM wave-tauri.exe`): bản dev và arcterm đã cài dùng chung tên, nên lệnh đó giết luôn arcterm đang chạy phiên này cùng mọi agent khác. Dừng theo PID thì được.
-- **Cổng RAM**: trước mỗi lệnh shell nặng (build, typecheck, cả bộ test, `npm install`) nó hỏi `wsh memgate`. Nếu chạy lệnh sẽ để lại dưới 512 MB trống, lệnh chờ trên thẻ **Low RAM** để bạn chọn; chọn không chạy thì agent nhận "Not run: …" và nên tiếp tục mà báo là đã bỏ qua. Xem [Usage → Thẻ Low RAM](usage.md#thẻ-low-ram). pi và Antigravity đi qua cùng cổng.
+- **Hàng đợi lệnh nặng**: trước mỗi lệnh shell nó gọi `wsh jobslot`. Lệnh nặng (build, typecheck, cả bộ test, `npm install`) chờ đến lượt trong hàng đợi chung của wavesrv và giữ chỗ trong lúc chạy; bạn bấm **Skip** ở popover Jobs thì agent nhận "Not run: …" và nên tiếp tục mà báo là đã bỏ qua. Xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng). pi và Antigravity đi qua cùng hàng đợi.
 
 `claude/arc-view-mod` là mod thứ hai, chỉ để vẽ các hàng transcript của prompt mà mod arc gửi vào. Kiểm tra mod bằng `claude plugin validate claude/arc-mod`.
 
@@ -97,5 +97,5 @@ arcterm mang theo vài skill dạy agent dùng `wsh` và quy ước của cockpi
 ## Xem thêm
 
 - [Orchestrator](orchestrator.md) — lead, worker và `wsh jarvis dag`.
-- [Usage](usage.md) — quota, token, thẻ Low RAM.
+- [Usage](usage.md) — quota, token, hàng đợi lệnh nặng.
 - `docs/agents/` — ghi chú kỹ thuật (tiếng Anh) về usage reporting, tên phiên tự động và Antigravity.

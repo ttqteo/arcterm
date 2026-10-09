@@ -11,7 +11,7 @@ Mới bắt đầu thì đọc [Bắt đầu với arcterm](getting-started.md):
 | [Cockpit và khung ứng dụng](cockpit.md) | Thẻ mọi agent, dải **Needs you**, app bar, footer, command palette, thông báo, con vật Jarvis |
 | [Jarvis](jarvis.md) | Brief, initiative, run sheet, trả lời câu hỏi, hộp Spec / Plan review, profile của run |
 | [Agent](agent.md) | Terminal thật của từng agent, sidebar Active và Conversations, grid, rail chi tiết, lịch sử hội thoại |
-| [Usage](usage.md) | Quota 5 giờ và tuần, token, chi phí ước tính, thẻ Low RAM |
+| [Usage](usage.md) | Quota 5 giờ và tuần, token, chi phí ước tính, hàng đợi lệnh nặng |
 | [Code](code.md) | Duyệt và sửa file của project, xem Markdown |
 | [Diff](diff.md) | Lịch sử git, file đã đổi, diff, so sánh hai ref, review từng dòng |
 | [Radar](radar.md) | Audit các commit sửa lỗi, biến phát hiện thành run |

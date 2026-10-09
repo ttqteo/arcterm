@@ -10,8 +10,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- Builds, typechecks and whole test suites from every agent and run now wait their turn in one queue, one at a time by
+  default, so several runs no longer stall the machine; the new Jobs chip in the app bar shows what runs and what waits,
+  with Run now and Skip.
+
 ### Changed
 
+- The Low RAM card is gone: a heavy command waits in the job queue instead.
 - New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long
   list scrolls inside itself.
 - Holding `Ctrl` or `Alt` shows the shortcut bar and the rail and agent numbers at once instead of after a short pause;

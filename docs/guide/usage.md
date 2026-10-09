@@ -4,7 +4,7 @@ Trang này nói về những chỗ arcterm cho bạn thấy agent đang tiêu g�
 
 - surface **Usage**: giới hạn 5 giờ và theo tuần của từng provider, lịch sử token, chi phí ước tính, và nút **Analyze** để Claude chỉ ra quota của bạn đi đâu;
 - **thanh meter quota** và **chip RAM** trên app bar, và bảng **Consumers** mở ra từ chúng;
-- thẻ **Low RAM**: lệnh nặng của agent chờ bạn quyết định khi máy sắp hết RAM.
+- chip **Jobs**: các lệnh nặng (build, typecheck, cả bộ test) của mọi agent và run chờ đến lượt trong một hàng đợi chung, và popover của nó cho thấy cái gì đang chạy, cái gì đang chờ.
 
 Các trang liên quan: [Cockpit và khung ứng dụng](cockpit.md) (app bar, footer), [Agent](agent.md) (thanh context và chi phí của từng agent), [Settings](settings.md) (tài khoản Claude), [Tích hợp agent](agent-integration.md) (agent báo usage về cockpit thế nào).
 
@@ -158,25 +158,60 @@ Mỗi hàng có:
 
 <!-- shot: usage-consumers-tokens.png | Bảng Consumers ở view Tokens: tiêu đề kèm "5h quota", cột "tokens · $", một hàng có dấu cảnh báo "Spending fastest", nút → Sonnet ở hàng Opus | Scenario CDP `consumers-popover`; bấm `[data-usage-meters]`, bảng là `[data-consumers-panel][data-sort="tokens"]`, dấu cảnh báo `[data-consumer-burn]` -->
 
-## Thẻ Low RAM
+## Hàng đợi lệnh nặng
 
-Trước mỗi lệnh shell mà một agent chạy, mod Claude, extension pi và hook Antigravity hỏi `wsh memgate`. Với lệnh thường, nó cho chạy ngay. Với lệnh **nặng**, nó so RAM đang trống với lượng lệnh cần cộng thêm 512 MB chừa cho phần còn lại của máy. Nếu không đủ, lệnh bị giữ lại và một thẻ **Low RAM** hiện ra:
+`go build`, `cargo`, `tsc` và cả bộ test đều chiếm hết CPU và đĩa của máy, nên vài run chạy chung là máy đứng. Vì vậy mọi lệnh **nặng** xếp vào **một hàng đợi chung** và chạy **từng cái một** (mặc định). Hàng đợi nhận:
 
-> An agent wants to run `task check:ts`, which needs about 3 GB of RAM. 2.1 GB of 8 GB is free now.
+- **lệnh shell của agent** khi nó nặng. Trước mỗi lệnh, mod Claude, extension pi và hook Antigravity hỏi `wsh jobslot`: lệnh thường chạy ngay, lệnh nặng chờ đến lượt rồi giữ chỗ trong lúc chạy;
+- **Verify** và **Final** của một run (luôn luôn), cùng **Setup** và **Check** khi lệnh của chúng nặng. Chúng xếp chung hàng với lệnh của agent.
 
-| Lựa chọn | Tác dụng |
+Lệnh đứng đầu hàng bắt đầu khi cả hai điều sau đúng: số lệnh đang chạy ít hơn **Slots**, và RAM trống đủ cho đỉnh RAM của nó cộng 512 MB chừa cho phần còn lại của máy. Đến trước chạy trước. Một lệnh chờ bao lâu cũng được; không có hạn.
+
+Số lệnh chạy cùng lúc đặt bằng bộ chọn **Slots** (1–4, mặc định 1) ở đầu popover bên dưới; nó ghi vào `jobs:slots` và có tác dụng ngay.
+
+### Chip Jobs và popover
+
+Chip **Jobs** nằm trên app bar, bên trái chip RAM. Nó chỉ hiện khi có lệnh đang chạy hoặc đang chờ: `1 running`, hoặc `1 · 2 queued`. Khi có lệnh đã chờ quá 5 phút, chip chuyển vàng kèm ⚠: thường là thứ đang giữ chỗ bị kẹt. Bấm chip mở popover **Heavy jobs**; `Esc` hoặc bấm ra ngoài để đóng.
+
+<!-- shot: usage-job-queue.png | Popover Heavy jobs mở từ chip Jobs: bộ chọn Slots ở đầu, một lệnh đang chạy (`task check:ts`, chấm accent) và ba lệnh đang chờ (`npm install`, `go test ./...`, `cargo build`) đánh số 2–4, mỗi hàng có RAM đỉnh, thời gian chờ, nguồn và lý do `slot busy`, nút Run now / Skip | Scenario CDP `jobqueue-chip` (`task verify:ui -- jobqueue-chip`); ảnh `cdp-shots/jobqueue-chip-panel.png`, chip là `[data-job-queue-chip]`, popover là `[data-job-queue-panel]` -->
+
+Popover xếp lệnh đang chạy lên trước (lệnh chạy lâu nhất ở trên cùng), rồi hàng đợi theo thứ tự sẽ được phục vụ. Mỗi hàng có hai dòng:
+
+| Thành phần | Ý nghĩa |
 |---|---|
-| **Run now** | Chạy ngay với RAM đang có. Máy có thể swap và chậm đi. |
-| **Wait for RAM** | Chạy tự động khi RAM trống đủ. Kiểm tra mỗi 5 giây, bỏ cuộc sau 30 phút. Đóng bớt ứng dụng để có chỗ. |
-| **Don't run** | Agent bỏ qua lệnh đó và làm tiếp. Đóng thẻ mà không chọn cũng là **Don't run**. |
+| Dòng đầu | Chấm accent (đang chạy) hoặc số thứ tự trong hàng; tên lệnh (`task check:ts`); đỉnh RAM ước tính; thời gian đã chạy, hoặc `waiting 20s` với lệnh đang chờ. |
+| Dòng thứ hai | Nguồn của lệnh: tên agent (`an agent` khi chưa biết tên), hoặc `Run 700db4 · Verify` cho một bước của run. Lệnh đang chờ có thêm lý do: `slot busy` (mọi chỗ đang bận) hoặc `needs 3 GB, 1.1 GB free` (chưa đủ RAM). |
+| ↗ | Mở agent hoặc run đó. |
+| **Run now** | Bắt đầu ngay, bỏ qua cả số chỗ lẫn RAM. Máy có thể swap và chậm đi. |
+| **Skip** | Bỏ lệnh khỏi hàng; agent của nó nhận "Not run: …" (xem dưới). Hàng của run (Verify, Final, Setup) không có **Skip**: bỏ Verify là làm hỏng bước merge. |
 
-Khi lệnh không chạy, agent nhận lời nhắn "Not run: …" dặn không thử lại và ghi rõ trong báo cáo là đã bỏ qua. Vì vậy một lựa chọn là quyết định của bạn: đừng ép agent chạy lại.
+Khi hàng đã trống mà popover còn mở, nó ghi "No heavy jobs running."
 
-Trong lúc thẻ mở, trạng thái của agent đọc là **Low RAM** chứ không phải **asking**. Bạn trả lời ở thẻ nằm ngay trên terminal của agent trong **Agent**, hoặc ở Cockpit và Jarvis như mọi câu hỏi khác.
+### Trong terminal của agent
 
-<!-- shot: usage-low-ram-card.png | Thẻ Low RAM phía trên terminal của một agent: tiêu đề Low RAM, câu hỏi nêu lệnh và RAM trống, ba nút Run now / Wait for RAM / Don't run | Chưa có scenario sẵn: cần một agent fixture có `ask` với `hold: true` (trường `Hold` của `CommandAskData`, thẻ hiện qua `[data-held-ask]` trên surface Agent), hoặc chạy `task check:ts` trong một session Claude thật khi RAM trống dưới ~3.5 GB -->
+Trong lúc chờ, transcript của agent ghi chỗ của nó:
 
-Lệnh được coi là nặng (ước lượng đỉnh RAM tính trên Mac Apple silicon 8 GB):
+> Queued #2 — waiting behind task check:ts (run 700db4)
+
+Claude ghi dòng này trong transcript, pi ghi ở dòng trạng thái. Phần trong ngoặc chỉ có khi lệnh đứng trước thuộc về một run.
+
+Nếu bạn **Skip** một lệnh, agent nhận lời nhắn "Not run: …" dặn không thử lại và ghi rõ trong báo cáo là đã bỏ qua. Vì vậy Skip là quyết định của bạn: đừng ép agent chạy lại.
+
+### Chỗ thuộc về một tiến trình còn sống
+
+Lệnh chạy xong, agent sập hoặc tab đóng thì chỗ được trả lại. Phòng khi một tiến trình bị bỏ quên, chỗ của một agent giữ quá 60 phút bị lấy lại; chỗ của run sống đúng bằng bước của run.
+
+Antigravity và lệnh Claude chạy nền (`run_in_background`) không báo lúc lệnh xong, nên chúng chờ đến lượt rồi trả chỗ ngay: hàng đợi chỉ xếp thứ tự lúc chúng **bắt đầu**.
+
+### Không xếp hàng, và khi hàng đợi hỏng
+
+- Dev server (`task dev`, `tauri dev`) chạy đến khi bạn dừng nó, nên không bao giờ xếp hàng.
+- Lệnh bạn gõ trong một terminal không đi qua hàng đợi (không hook nào thấy chúng). Codex và OpenCode cũng không.
+- Hàng đợi hỏng thì lệnh vẫn chạy: nếu `wsh jobslot` gặp lỗi (wavesrv cũ, mất kết nối), agent cứ chạy lệnh của nó. Khởi động lại wavesrv làm trống hàng và các lệnh đang chờ chạy luôn. Hàng đợi không bao giờ chặn một agent chỉ vì nó hỏng.
+
+### Lệnh nào là nặng
+
+Lệnh được coi là nặng (ước lượng đỉnh RAM tính trên Mac Apple silicon 8 GB; đây cũng là RAM mà hàng đợi tính cho từng lệnh):
 
 | Lệnh | RAM ước tính |
 |---|---|
@@ -187,9 +222,9 @@ Lệnh được coi là nặng (ước lượng đỉnh RAM tính trên Mac Appl
 | `task build:backend` | 1,5 GB |
 | `npm install` (và `task init`) | 1 GB |
 
-Một file test đơn lẻ hoặc lọc theo tên (`-run`, `-t`) là nhẹ và không bao giờ hỏi. Bảng lệnh nằm trong `pkg/memgate/memgate.go`. Nếu `wsh memgate` gặp lỗi, lệnh vẫn chạy: cổng RAM không bao giờ chặn một agent chỉ vì nó hỏng. Ngoài arcterm nó không làm gì. Codex và OpenCode không đi qua cổng này.
+Một file test đơn lẻ hoặc lọc theo tên (`-run`, `-t`) là nhẹ và không bao giờ xếp hàng. Bảng lệnh nằm trong `pkg/memgate/memgate.go`.
 
-Ngoài thẻ, arcterm cảnh báo sớm hơn: hộp thoại **New** ghi rõ khi RAM trống không đủ cho thêm một agent hay worker (vẫn cho chạy), và các bộ chỉnh số worker của run cảnh báo khi bạn chọn nhiều hơn số RAM chứa được.
+Ngoài hàng đợi, arcterm cảnh báo sớm hơn: hộp thoại **New** ghi rõ khi RAM trống không đủ cho thêm một agent hay worker (vẫn cho chạy), và các bộ chỉnh số worker của run cảnh báo khi bạn chọn nhiều hơn số RAM chứa được.
 
 ## Phím tắt của Usage
 
