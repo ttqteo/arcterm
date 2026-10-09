@@ -439,6 +439,14 @@ func Hold(ctx context.Context, req Request) (release func(), err error) {
 	return slot.Release, nil
 }
 
+// Poke has the default queue read its inputs again now: a changed jobs:slots takes effect at once rather than at
+// the next release or Tick. With no default queue it does nothing.
+func Poke() {
+	if Default != nil {
+		Default.evaluate(context.Background())
+	}
+}
+
 type sourceKey struct{}
 
 // WithSource carries who a job is for down to the call that holds it.

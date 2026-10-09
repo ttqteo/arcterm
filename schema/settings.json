@@ -167,6 +167,9 @@
         },
         "usage:insightslang": {
           "type": "string"
+        },
+        "jobs:slots": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,

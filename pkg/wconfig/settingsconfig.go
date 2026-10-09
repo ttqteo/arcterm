@@ -102,6 +102,8 @@ type SettingsType struct {
 	RadarAuditModel   string `json:"radar:auditmodel,omitempty"`
 
 	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
+
+	JobsSlots *int `json:"jobs:slots,omitempty"` // heavy jobs run at once (pkg/jobqueue), 1–4; unset is 1
 }
 
 type ConfigError struct {

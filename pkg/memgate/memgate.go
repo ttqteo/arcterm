@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package memgate tells the shell commands that take a lot of RAM (builds, the typecheck, whole test
-// suites) from the rest, with a rough peak for each, so an agent's command can wait for the person's say
-// when the machine is short. `wsh memgate` asks; the Claude mod and the pi extension call it before every
-// shell command an agent runs.
+// suites) from the rest, with a rough peak for each, so the heavy-job queue (pkg/jobqueue) can start them
+// one at a time and only when the RAM fits. `wsh jobslot` asks the queue; the Claude mod and the pi
+// extension call it before every shell command an agent runs.
 package memgate
 
 import (

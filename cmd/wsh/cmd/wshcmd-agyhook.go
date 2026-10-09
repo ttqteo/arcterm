@@ -122,7 +122,7 @@ func decideAgyHook(event string, raw []byte) []byte {
 	if event != "PreToolUse" {
 		return nil
 	}
-	// the only event that blocks: on the ask card, or in memgate. When the bound hits the answer is neutral
+	// the only event that blocks: on the ask card, or for a turn in the job queue. When the bound hits the answer is neutral
 	ctx, cancel := context.WithTimeout(context.Background(), agyhook.PreToolUseBound)
 	defer cancel()
 	switch {
@@ -141,11 +141,11 @@ func decideAgyHook(event string, raw []byte) []byte {
 		}
 		return agyhook.Deny(agyhook.AnswerReason(em.Questions, rtn.Answers))
 	case em.Command != "":
-		verdict, err := memgateDecide(ctx, em.Command, func(any) {})
-		if err != nil || verdict.Run {
+		run, reason, err := jobslotTurn(ctx, em.Command)
+		if err != nil || run {
 			return nil // a broken gate never blocks an agent
 		}
-		return agyhook.Deny(verdict.Reason)
+		return agyhook.Deny(reason)
 	}
 	return nil
 }

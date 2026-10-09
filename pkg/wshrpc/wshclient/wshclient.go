@@ -552,6 +552,12 @@ func GetJarvisProfileCommand(w *wshutil.WshRpc, data wshrpc.CommandGetJarvisProf
 	return resp, err
 }
 
+// command "getjobqueue", wshserver.GetJobQueueCommand
+func GetJobQueueCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.JobQueueData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.JobQueueData](w, "getjobqueue", nil, opts)
+	return resp, err
+}
+
 // command "getlatestresume", wshserver.GetLatestResumeCommand
 func GetLatestResumeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetLatestResumeRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetLatestResumeRtnData](w, "getlatestresume", nil, opts)
@@ -760,6 +766,23 @@ func JarvisStateCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisStateData, o
 func JarvisStatusCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisStatusData, opts *wshrpc.RpcOpts) (*wshrpc.CommandJarvisStatusRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandJarvisStatusRtnData](w, "jarvisstatus", data, opts)
 	return resp, err
+}
+
+// command "jobqueuerunnow", wshserver.JobQueueRunNowCommand
+func JobQueueRunNowCommand(w *wshutil.WshRpc, data wshrpc.CommandJobQueueActData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "jobqueuerunnow", data, opts)
+	return err
+}
+
+// command "jobqueueskip", wshserver.JobQueueSkipCommand
+func JobQueueSkipCommand(w *wshutil.WshRpc, data wshrpc.CommandJobQueueActData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "jobqueueskip", data, opts)
+	return err
+}
+
+// command "jobslot", wshserver.JobSlotCommand
+func JobSlotCommand(w *wshutil.WshRpc, data wshrpc.CommandJobSlotData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate] {
+	return sendRpcRequestResponseStreamHelper[wshrpc.JobSlotUpdate](w, "jobslot", data, opts)
 }
 
 // command "landrun", wshserver.LandRunCommand

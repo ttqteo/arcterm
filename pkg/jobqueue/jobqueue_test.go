@@ -3,6 +3,7 @@ package jobqueue
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -183,6 +184,36 @@ func TestReclaimFreesAnAgentSlotHeldTooLong(t *testing.T) {
 	}
 	if n := len(q.Snapshot().Jobs); n != 1 {
 		t.Fatalf("%d jobs, want the engine's alone", n)
+	}
+}
+
+func TestPokeAppliesAChangedSlotCountAtOnce(t *testing.T) {
+	Poke() // no default queue: nothing to do
+	var slots atomic.Int32
+	slots.Store(1)
+	Default = New(Config{
+		Slots:     func() int { return int(slots.Load()) },
+		Available: func(context.Context) (uint64, error) { return 64 * gb, nil },
+	})
+	t.Cleanup(func() { Default = nil })
+	ctx := context.Background()
+	held, _ := Default.Acquire(ctx, Request{Name: "a", Bytes: gb}, nil)
+	defer held.Release()
+	got := make(chan *Slot, 1)
+	go func() { s, _ := Default.Acquire(ctx, Request{Name: "b", Bytes: gb}, nil); got <- s }()
+	waitFor(t, func() bool { return len(Default.Snapshot().Jobs) == 2 })
+	select {
+	case <-got:
+		t.Fatal("b started on a full slot")
+	case <-time.After(50 * time.Millisecond):
+	}
+	slots.Store(2)
+	Poke()
+	select {
+	case s := <-got:
+		s.Release()
+	case <-time.After(time.Second):
+		t.Fatal("b still queued after Poke")
 	}
 }
 
