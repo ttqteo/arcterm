@@ -48,6 +48,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- New run: Cancel or Esc while a run is starting now cancels that run and frees the dialog at once, instead of
+  leaving it stuck on Starting… when reopened. Its key legend reads `Tab` for next.
 - Code's sidebar keeps one width across Files, Search and Changed, so switching between them no longer moves the
   editor's edge; dragging it in any mode sets it for all three.
 - In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and

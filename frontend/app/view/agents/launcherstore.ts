@@ -129,3 +129,23 @@ export function beginLauncherLaunch(): boolean {
 export function endLauncherLaunch(): void {
     globalStore.set(launcherBusyAtom, false);
 }
+
+// A run can take minutes to start. A close in that time gives the start up: the ticket moves on and the dialog is
+// free at once, and the start, when it returns, finds itself abandoned and cancels the run it made.
+let launchTicket = 0;
+
+export function launcherLaunchTicket(): number {
+    return launchTicket;
+}
+
+export function abandonLauncherLaunch(): void {
+    if (!globalStore.get(launcherBusyAtom)) {
+        return;
+    }
+    launchTicket++;
+    globalStore.set(launcherBusyAtom, false);
+}
+
+export function launcherLaunchAbandoned(ticket: number): boolean {
+    return ticket !== launchTicket;
+}

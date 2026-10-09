@@ -58,6 +58,7 @@ import { AgentFields, LAUNCHER_LABEL, useProjectBranches } from "./launcheragent
 import { startLauncherRun } from "./launcherrun";
 import { RunFields } from "./launcherrunfields";
 import {
+    abandonLauncherLaunch,
     applyLauncherPrefill,
     beginLauncherLaunch,
     clearLauncherDraft,
@@ -71,6 +72,8 @@ import {
     launcherFlagMenuAtom,
     launcherGoalAtom,
     launcherKindAtom,
+    launcherLaunchAbandoned,
+    launcherLaunchTicket,
     launcherPrefillAtom,
     launcherProjectAtom,
     launcherPrototypeAtom,
@@ -84,7 +87,7 @@ import {
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
 import { leadRouteSeed } from "./route";
-import { channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
+import { cancelRun, channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
 import { launchBlocker, type RunShape } from "./runconfig";
 import {
     hydrateRunConfigFromProfile,
@@ -364,6 +367,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const close = () => {
         setError(null);
         setFilter("");
+        // a run still starting is given up with the dialog (startRun cancels it when it lands); an agent launch is
+        // quick and is left to finish
+        if (isRun) {
+            abandonLauncherLaunch();
+        }
         closeLauncher(model);
     };
 
@@ -440,6 +448,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             return;
         }
         setError(null);
+        const ticket = launcherLaunchTicket();
         fireAndForget(async () => {
             let started: { channelId: string; run: Run };
             try {
@@ -451,12 +460,20 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     pickedRoute: routeTouched ? runRoute : null,
                 });
             } catch (e) {
-                // only a failure before the run exists keeps the dialog: there is still a launch to retry
-                setError(String(e));
+                // only a failure before the run exists keeps the dialog: there is still a launch to retry. A start the
+                // user gave up has no dialog to say it in.
+                if (!launcherLaunchAbandoned(ticket)) {
+                    setError(String(e));
+                    endLauncherLaunch();
+                }
                 return;
-            } finally {
-                endLauncherLaunch();
             }
+            if (launcherLaunchAbandoned(ticket)) {
+                // closed while it started: the user cancelled it, so the run goes and the draft stays for a retry
+                await cancelRun(started.channelId, started.run.id);
+                return;
+            }
+            endLauncherLaunch();
             endLauncherDraft();
             close();
             // landing on the run reports its own failures (openTarget toasts); holding the dialog over a run that is
@@ -659,7 +676,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 </span>
                             ) : null}
                             <span className="flex items-center gap-[5px]">
-                                <kbd className={KEY_LEGEND}>{startFocused ? "→" : "⇥"}</kbd>next
+                                <kbd className={KEY_LEGEND}>{startFocused ? "→" : "Tab"}</kbd>next
                             </span>
                         </span>
                         <button
