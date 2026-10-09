@@ -26,6 +26,7 @@ Deviations from the spec, decided while planning:
 - The engine's **Setup and Check** queue only when `memgate.Classify` calls the command heavy (this repo's `.arc/setup` only makes junctions); **Verify and Final** always queue.
 - `agy` (`wsh agy-hook`) has no "command finished" event: it waits its turn, then releases at once (a start gate). Same for a Claude command run with `run_in_background`.
 - The ask's `Hold` flag stays (unused after this plan); removing it is a separate cleanup.
+- The `for` of a `wsh jobslot` queued line (spec: `"for":"run 700db4"`) names the run when the job ahead is an engine step; when it is an agent's, `for` is left out, since wavesrv does not know an agent's display name (the popover takes it from the cockpit's roster). The transcript line follows the spec: `Queued #2 — waiting behind task check:ts (run 700db4)`, without the parenthesis when `for` is empty.
 
 ---
 
@@ -105,7 +106,7 @@ func newTestQueue(slots int) *Queue {
 func TestAcquireIsFIFOOneAtATime(t *testing.T) {
 	q := newTestQueue(1)
 	ctx := context.Background()
-	first, err := q.Acquire(ctx, Request{Name: "a", Bytes: gb}, nil)
+	first, err := q.Acquire(ctx, Request{Name: "a", Bytes: gb, Engine: true, Source: Source{RunId: "700db4a1-xx", Label: "Verify"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestAcquireIsFIFOOneAtATime(t *testing.T) {
 		got <- s
 	}()
 	w := <-waits
-	if w.Position != 1 || w.Behind != "a" || w.Reason != "slot busy" {
+	if w.Position != 1 || w.Behind != "a" || w.For != "run 700db4" || w.Reason != "slot busy" {
 		t.Fatalf("wait = %+v", w)
 	}
 	select {
@@ -290,6 +291,18 @@ type Source struct {
 	Label   string // "Verify · Task 3"; empty for an agent
 	// Always queues an engine step that memgate does not call heavy (Verify, Final)
 	Always bool
+	// Peak is the RAM an Always step claims when memgate does not know its command: memgate.DevBytes for
+	// Final (it starts a dev app); 0 means verify.mjs's peak
+	Peak uint64
+}
+
+// For names who the job is for, in a queued agent's transcript: "run 700db4" for an engine step, empty for an
+// agent (wavesrv does not know its display name).
+func (s Source) For() string {
+	if s.RunId == "" {
+		return ""
+	}
+	return "run " + s.RunId[:min(6, len(s.RunId))]
 }
 
 type Request struct {
@@ -320,13 +333,14 @@ type Snapshot struct {
 type Wait struct {
 	Position int
 	Behind   string // the job just ahead, or the running job for the head
+	For      string // Behind's Source.For()
 	Reason   string
 }
 
 type Config struct {
 	Slots     func() int
 	Available func(context.Context) (uint64, error)
-	OnChange  func(Snapshot) // after every change, outside the lock
+	OnChange  func(Snapshot) // when the snapshot differs from the last one handed out, outside the lock
 	Now       func() time.Time
 }
 
@@ -444,7 +458,7 @@ The "RAM short" case expects `needs 3 GB, 2 GB free` with 2 GB available: `memga
 Then the methods (write them; behaviour pinned by the tests):
 
 - `Acquire(ctx, req, wait func(Wait)) (*Slot, error)`: append an entry (`Id` = `fmt.Sprintf("j%d", seq)`, `QueuedAt` = now), `evaluate(ctx)`, then `select` on `admitted` (return a `Slot` whose `reclaim` is the entry's), `skipped` (remove, evaluate, `ErrSkipped`), `ctx.Done()` (remove, evaluate, `ctx.Err()`).
-- `evaluate(ctx)`: read `Available` outside the lock (an error reads as `math.MaxUint64`: a broken reading never blocks); under the lock call `plan` on the jobs in order, mark each started entry `Running`, `StartedAt` = now, `Forced` kept, close `admitted`; give each queued entry its `Position`, `Reason` and `Behind` (the job ahead, or the oldest running job's name for the head); collect the `wait` callbacks whose `Wait` changed and the snapshot; after unlocking call them, then `OnChange`.
+- `evaluate(ctx)`: read `Available` outside the lock (an error reads as `math.MaxUint64`: a broken reading never blocks); under the lock call `plan` on the jobs in order, mark each started entry `Running`, `StartedAt` = now, `Forced` kept, close `admitted`; give each queued entry its `Position`, `Reason`, `Behind` (the job ahead, or the oldest running job's name for the head) and `For` (that job's `Source.For()`); collect the `wait` callbacks whose `Wait` changed and the snapshot; after unlocking call them, then `OnChange` only when the snapshot differs from the last one it got (`Run` evaluates every `Tick`; an unchanged queue publishes nothing).
 - `remove(e)`: drop the entry from `entries`.
 - `Snapshot()`: `Slots` from config, the jobs running first (by `StartedAt`), then queued in order.
 - `RunNow(id) bool`: a queued entry gets `Forced = true`, then `evaluate`; false for unknown or running.
@@ -454,13 +468,20 @@ Then the methods (write them; behaviour pinned by the tests):
 - `Hold(ctx, req) (release func(), err error)` (package func): `Default == nil` returns a no-op release; else `Acquire(ctx, req, nil)` and `slot.Release`.
 - `WithSource(ctx, Source) context.Context` / `SourceFrom(ctx) Source`: a ctx value for the engine's call sites.
 
-**Step 4: Add `LongRunning` to `pkg/memgate/memgate.go`**, below `Fits`:
+**Step 4: Add `LongRunning` and `DevBytes` to `pkg/memgate/memgate.go`**, below `Fits`:
 
 ```go
 // LongRunning says the job is a dev server: it runs until stopped, so it never holds a queue slot.
 func (j Job) LongRunning() bool {
 	return j == jobDev
 }
+```
+
+and above the job table, with `jobDev` changed to `Job{"task dev", DevBytes}`:
+
+```go
+// DevBytes is a dev app's peak (task dev, tauri dev); the engine's Final, which starts one, claims it too.
+const DevBytes = 3 * gib
 ```
 
 Add a case to `pkg/memgate/memgate_test.go`: `Classify("task dev")` and `Classify("cargo tauri dev")` are `LongRunning`, `Classify("task check:ts")` is not.
@@ -530,10 +551,10 @@ git commit -m "fix(wshutil): a wsh that disconnects from the domain socket ends 
 
 **Depends on:** Task 1, Task 2
 
-**Files:** `pkg/wshrpc/wshrpctypes_jobqueue.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_jobqueue.go`, `pkg/wshrpc/wshserver/wshserver_jobqueue_test.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wconfig/settingsconfig.go`, `cmd/server/main-server.go`, `cmd/wsh/cmd/wshcmd-jobslot.go`, `cmd/wsh/cmd/wshcmd-agyhook.go`, `cmd/wsh/cmd/wshcmd-memgate.go`, `cmd/wsh/cmd/wshcmd-memgate-decide.go`, `pkg/memgate/card.go`, `pkg/memgate/card_test.go`
+**Files:** `pkg/wshrpc/wshrpctypes_jobqueue.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_jobqueue.go`, `pkg/wshrpc/wshserver/wshserver_jobqueue_test.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wconfig/settingsconfig.go`, `cmd/server/main-server.go`, `cmd/wsh/cmd/wshcmd-jobslot.go`, `cmd/wsh/cmd/wshcmd-jobslot_test.go`, `cmd/wsh/cmd/wshcmd-agyhook.go`, `cmd/wsh/cmd/wshcmd-memgate.go`, `cmd/wsh/cmd/wshcmd-memgate-decide.go`, `cmd/wsh/cmd/wshcmd-memgate-decide_test.go`, `pkg/memgate/card.go`, `pkg/memgate/card_test.go`
 **Files:** `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`, `schema/settings.json`
 
-Create `wshrpctypes_jobqueue.go`, the server handler and its test, and `wshcmd-jobslot.go`. Embed `JobQueueCommands` beside `DagCommands` in `pkg/wshrpc/wshrpctypes.go` (~line 45). Change `cmd/wsh/cmd/wshcmd-agyhook.go:144`. Delete `wshcmd-memgate.go`, `wshcmd-memgate-decide.go`, `pkg/memgate/card.go` and `card_test.go`. The second Files line is what `task generate` writes (add `jobs:slots` to `schema/settings.json` by hand if it does not).
+Create `wshrpctypes_jobqueue.go`, the server handler and its test, and `wshcmd-jobslot.go` with its test. Embed `JobQueueCommands` beside `DagCommands` in `pkg/wshrpc/wshrpctypes.go` (~line 45). Change `cmd/wsh/cmd/wshcmd-agyhook.go:144`. Delete `wshcmd-memgate.go`, `wshcmd-memgate-decide.go`, `wshcmd-memgate-decide_test.go`, `pkg/memgate/card.go` and `card_test.go`. The second Files line is what `task generate` writes (add `jobs:slots` to `schema/settings.json` by hand if it does not).
 
 **Step 1: Wire types** — `pkg/wshrpc/wshrpctypes_jobqueue.go`:
 
@@ -556,12 +577,12 @@ type CommandJobSlotData struct {
 	BlockId string `json:"blockid,omitempty"`
 }
 
-// JobSlotUpdate is one line of `wsh jobslot`: a queued place while it waits, then run true (held) or false
-// with the reason the agent reads.
+// JobSlotUpdate is one line of `wsh jobslot`: a queued place while it waits (the job ahead and who it is
+// for), then run true (held) or false with the reason the agent reads.
 type JobSlotUpdate struct {
 	Queued int    `json:"queued,omitempty"`
 	Behind string `json:"behind,omitempty"`
-	Why    string `json:"why,omitempty"`
+	For    string `json:"for,omitempty"`
 	Run    *bool  `json:"run,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
@@ -601,7 +622,9 @@ type CommandJobQueueActData struct {
 **Step 3: Failing server test** — `wshserver_jobqueue_test.go`. Set `jobqueue.Default = jobqueue.New(...)` with 1 slot (restore with `t.Cleanup`), then:
 - `JobSlotCommand` for `"echo hi"` sends one update with `Run` true and closes.
 - For `"task dev"` likewise (long-running is never queued).
-- Two `"task check:ts"` streams: the first sends `Run` true and stays open; the second sends `Queued: 1, Behind: "task check:ts", Why: "slot busy"`. Cancel the first stream's ctx and the second sends `Run` true.
+- Two `"task check:ts"` streams: the first sends `Run` true and stays open; the second sends `Queued: 1, Behind: "task check:ts"` (no `For`: the job ahead is an agent's). Cancel the first stream's ctx and the second sends `Run` true.
+- The `For` of a queued line: hold the slot with an engine job from the test (`jobqueue.Default.Acquire` with `Source{RunId: "700db4a1-xx"}`); a `"task check:ts"` stream sends `For: "run 700db4"`.
+- A slot comes back when its connection drops (`TestJobSlotFreedWhenItsLinkCloses`), through the real request path: `w := wshutil.MakeWshRpc(wshrpc.RpcContext{}, &WshServer{}, "jobqueue-test")`; feed it two `jobslot` requests for `"task check:ts"` with `w.SendRpcMessage(<a marshalled wshutil.RpcMessage{Command: "jobslot", ReqId: "r1", Data: …, Timeout: 60000}>, baseds.LinkId(7), "test")`, the second as `r2` on `baseds.LinkId(8)`; read the responses from `w.OutputCh` (`r1` gets `run: true`, `r2` a queued line); then `w.CancelRequestsForLink(baseds.LinkId(7))` — what wavesrv does when a domain-socket link closes (Task 2) — and `r2` gets `run: true` within 1 s, and the snapshot holds one job. Check the `RpcMessage` field names and how a stream response is framed in `pkg/wshutil/wshrpc.go`.
 - `JobQueueSkipCommand` on a queued job makes its stream send `Run` false with a reason containing `Do not retry`.
 - `GetJobQueueCommand` lists the jobs with `QueuedTs`/`StartedTs` in Unix ms.
 
@@ -635,7 +658,7 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 			}
 		}
 		slot, err := q.Acquire(ctx, jobqueue.Request{Name: job.Name, Bytes: job.Bytes, Source: src}, func(w jobqueue.Wait) {
-			send(wshrpc.JobSlotUpdate{Queued: w.Position, Behind: w.Behind, Why: w.Reason})
+			send(wshrpc.JobSlotUpdate{Queued: w.Position, Behind: w.Behind, For: w.For})
 		})
 		if errors.Is(err, jobqueue.ErrSkipped) {
 			send(wshrpc.JobSlotUpdate{Run: &no, Reason: fmt.Sprintf(
@@ -690,7 +713,7 @@ Add `GetJobQueueCommand` (convert `jobqueue.Snapshot` to `wshrpc.JobQueueData`; 
 ```go
 // the Claude mod and the pi extension run this before every shell command an agent runs, and keep it alive
 // while the command runs: it waits for a slot in arcterm's heavy-job queue, prints one JSON line per state
-// ({"queued":2,"behind":…,"why":…} while queued, then {"run":true} or {"run":false,"reason":…}), and holds the
+// ({"queued":2,"behind":…,"for":…} while queued, then {"run":true} or {"run":false,"reason":…}), and holds the
 // slot until it is killed. Any error exits non-zero with no verdict line, and the hooks run the command.
 var jobslotCmd = &cobra.Command{
 	Use:                   "jobslot -- <command>",
@@ -715,11 +738,13 @@ func jobslotTurn(ctx context.Context, command string) (run bool, reason string, 
 
 and use it in `wshcmd-agyhook.go:144` in place of `memgateDecide(ctx, em.Command, func(any) {})`, keeping that call site's existing handling of a refusal (`run == false` → `reason`) and of an error (the command runs).
 
-**Step 8: Delete** `cmd/wsh/cmd/wshcmd-memgate.go`, `cmd/wsh/cmd/wshcmd-memgate-decide.go`, `pkg/memgate/card.go`, `pkg/memgate/card_test.go`. Check nothing else used `memgate.Question/Asking/Waiting/Choice/Wait/Skipped/TimedOut/Verdict/Hold`.
+Move `rpcWithContext` (`wshcmd-memgate-decide.go:17-37`, with its comment) into `wshcmd-jobslot.go` unchanged: `wshcmd-agyhook.go:130` uses it for the ask, and `jobslotTurn` can use it too. Its test, `TestRpcWithContextGivesUpWhenTheContextEnds`, moves from `wshcmd-memgate-decide_test.go` into `cmd/wsh/cmd/wshcmd-jobslot_test.go` unchanged; the two `memgateDecide` tests go with the function (`jobslotTurn` is a thin RPC call; the server test covers its stream).
+
+**Step 8: Delete** `cmd/wsh/cmd/wshcmd-memgate.go`, `cmd/wsh/cmd/wshcmd-memgate-decide.go`, `cmd/wsh/cmd/wshcmd-memgate-decide_test.go`, `pkg/memgate/card.go`, `pkg/memgate/card_test.go`. Check nothing else used `memgate.Question/Asking/Waiting/Choice/Wait/Skipped/TimedOut/Verdict/Hold`, `memgateDecide` or anything else in the deleted files (`grep -rn` over `cmd pkg`), and that `go vet ./cmd/wsh/...` compiles the tests.
 
 **Step 9: Tests and build**
 
-Run: `go test ./pkg/wshrpc/wshserver -run 'JobSlot|JobQueue' ./pkg/memgate ./pkg/jobqueue` then `go build ./cmd/server ./cmd/wsh`, `go vet ./cmd/wsh/cmd ./pkg/jobqueue`.
+Run: `go test ./pkg/wshrpc/wshserver -run 'JobSlot|JobQueue' ./pkg/memgate ./pkg/jobqueue`, `go test ./cmd/wsh/cmd -run 'RpcWithContext|Jobslot'`, then `go build ./cmd/server ./cmd/wsh`, `go vet ./cmd/wsh/... ./pkg/jobqueue`.
 Expected: PASS, builds.
 
 **Step 10: Commit** (pathspec: every file above plus the generated ones `git status` lists).
@@ -740,7 +765,7 @@ Every Setup, Check, Verify, Final and land check runs through `execPlanCommandEn
 
 Change `plancmd.go`, and label the job at each call site: `final.go:309` (Check), `final.go:325` (Verify, final stage), `final.go:344` (Final), `verify.go:371` and `verify.go:452` (Verify at a merge), `engine.go:636` and `final.go:730` (Setup), `basecheck.go:106` (Setup) and `:116` (Check), `land.go:334` (land check).
 
-**Step 1: Failing test.** Set `jobqueue.Default` to a 1-slot queue (restore after). Hold its slot with an `Acquire` from the test. Run `execPlanCommandEnv(jobqueue.WithSource(ctx, jobqueue.Source{Label: "Verify", Always: true}), t.TempDir(), "echo ok", nil, time.Minute, nil)` in a goroutine; assert it has not returned after 100 ms and the snapshot shows it queued with `Engine` true and label `Verify`; release the test slot; assert it returns `ok`. A second case: `"echo light"` with no `Always` source runs at once while the slot is held.
+**Step 1: Failing test.** Set `jobqueue.Default` to a 1-slot queue (restore after). Hold its slot with an `Acquire` from the test. Run `execPlanCommandEnv(jobqueue.WithSource(ctx, jobqueue.Source{Label: "Verify", Always: true}), t.TempDir(), "echo ok", nil, time.Minute, nil)` in a goroutine; assert it has not returned after 100 ms and the snapshot shows it queued with `Engine` true and label `Verify`; release the test slot; assert it returns `ok`. A second case: `"echo light"` with no `Always` source runs at once while the slot is held. A third: a Final source (`Source{Label: "Final", Always: true, Peak: memgate.DevBytes}`) queues with `Bytes == memgate.DevBytes`, and the Verify one above with `engineStepBytes`.
 
 **Step 2:** `go test ./pkg/orchestrate -run TestPlanCommandQueues`: FAIL.
 
@@ -755,7 +780,8 @@ Change `plancmd.go`, and label the job at each call site: `final.go:309` (Check)
 ```
 
 ```go
-// engineStepBytes is the RAM a Verify or Final claims when memgate does not know its command: verify.mjs's peak.
+// engineStepBytes is the RAM a Verify claims when memgate does not know its command: verify.mjs's peak. A Final
+// claims a dev app's (Source.Peak = memgate.DevBytes).
 const engineStepBytes = 2560 << 20
 
 // holdPlanSlot waits for a slot in the heavy-job queue for a plan command memgate calls heavy, or for any
@@ -769,6 +795,9 @@ func holdPlanSlot(ctx context.Context, command string) (func(), error) {
 	name, bytes := job.Name, job.Bytes
 	if !heavy || job.LongRunning() {
 		name, bytes = src.Label, engineStepBytes
+		if src.Peak > 0 {
+			bytes = src.Peak
+		}
 	}
 	return jobqueue.Hold(ctx, jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src})
 }
@@ -776,7 +805,7 @@ func holdPlanSlot(ctx context.Context, command string) (func(), error) {
 
 `jobqueue.Hold` with a nil `Default` is a no-op, so every existing engine test is unaffected.
 
-At each call site wrap the ctx: `jobqueue.WithSource(ctx, jobqueue.Source{RunId: <run id>, Label: "<Step> · <task title or id>", Always: <true for Verify and Final>})`. Use whatever run id and task id are in scope (`runID` at `verify.go:452`; read each function's parameters for the others — the dag's run is on `g`/`run`/`owner`); when a task is not in scope the label is the step alone. Keep the wrap on the line that calls, not in a shared helper.
+At each call site wrap the ctx: `jobqueue.WithSource(ctx, jobqueue.Source{RunId: <run id>, Label: "<Step> · <task title or id>", Always: <true for Verify and Final>})`, and the Final call site (`final.go:344`) adds `Peak: memgate.DevBytes`, as the spec gives Final the `task dev` peak. Use whatever run id and task id are in scope (`runID` at `verify.go:452`; read each function's parameters for the others — the dag's run is on `g`/`run`/`owner`); when a task is not in scope the label is the step alone. Keep the wrap on the line that calls, not in a shared helper.
 
 **Step 4:** `ARC_VERIFY_CHANGED=<file listing your changed paths> node scripts/verify.mjs ./pkg/orchestrate`
 Expected: PASS (under 2 min).
@@ -808,8 +837,11 @@ describe("jobslot", () => {
         expect(jobslotArgs("-rf x")).toEqual(["jobslot", "--", "-rf x"]);
     });
     it("reads a queued place as a hold line", () => {
-        expect(jobslotLine('{"queued":2,"behind":"task check:ts","why":"slot busy"}')).toEqual({
-            hold: "Queued #2, waiting behind `task check:ts` (slot busy).",
+        expect(jobslotLine('{"queued":2,"behind":"task check:ts","for":"run 700db4"}')).toEqual({
+            hold: "Queued #2 — waiting behind task check:ts (run 700db4)",
+        });
+        expect(jobslotLine('{"queued":1,"behind":"go test ./..."}')).toEqual({
+            hold: "Queued #1 — waiting behind go test ./...",
         });
     });
     it("reads run true as no refusal, run false as the reason", () => {
@@ -828,7 +860,7 @@ Mirror the same cases for pi in `waveterm-tools-core.test.ts` (rename `memgateAr
 
 **Step 2:** `npx vitest run claude/arc-mod/hooks/jobslot-core.test.ts pi/extensions/waveterm-tools-core.test.ts`: FAIL.
 
-**Step 3: Implement the core** (`jobslot-core.ts`): `memgate-core.ts`'s parser with the `hold` field replaced by the queued shape, rendering `Queued #${queued}, waiting behind \`${behind}\` (${why}).` (omit the parenthesis when `why` is empty).
+**Step 3: Implement the core** (`jobslot-core.ts`): `memgate-core.ts`'s parser with the `hold` field replaced by the queued shape, rendering the spec's `Queued #${queued} — waiting behind ${behind} (${for})` (omit the parenthesis when `for` is empty).
 
 **Step 4: The Claude mod.** `$.process.spawn` returns a stream whose loop is the child's life: `return()` on it kills the child, and nothing else does (`process.spawn` doc in the mod API types). So hold the iterator open across `next(e)`:
 
@@ -956,7 +988,7 @@ Check the agent roster's field names in `model.agentsAtom` (the block id and dis
 
 **Step 3: Implement `jobqueue.ts`** (pure): `LONG_WAIT_MS = 5 * 60_000`, `chipLabel`, `longWait`, `formatElapsed`, `ordered`, `sourceLabel`, and `openTargetFor(job, agents): OpenTarget | null` (`{ kind: "run", runId }` for a run; `{ kind: "agent", tabId }` for an agent with a tab id; else null). `OpenTarget` is in `frontend/app/view/jarvis/address.ts`.
 
-**Step 4: The store** — `jobqueuestore.ts`: `jobQueueAtom` (`JobQueueData | null`), `jobQueueOpenAtom` (boolean), `jobQueueOpenerAtom` (`Element | null`), `toggleJobQueue(opener)` (closes `machineServersOpenAtom` and `consumersOpenAtom` first, as `toggleConsumers` does), and `useJobQueueFeed()`: one `RpcApi.GetJobQueueCommand(TabRpcClient)` load, then `waveEventSubscribeSingle({ eventType: "jobqueue", handler: (e) => globalStore.set(jobQueueAtom, e.data as JobQueueData) })` (the pattern at `frontend/app/view/jarvis/petsources.tsx:184`); unsubscribe on unmount. The feed runs in `JobQueuePanel`, which is always mounted.
+**Step 4: The store** — `jobqueuestore.ts`: `jobQueueAtom` (`JobQueueData | null`), `jobQueueOpenAtom` (boolean), `jobQueueOpenerAtom` (`Element | null`), `toggleJobQueue(opener)` (closes `machineServersOpenAtom` and `consumersOpenAtom` first, as `toggleConsumers` does), and `useJobQueueFeed()`: one `RpcApi.GetJobQueueCommand(TabRpcClient)` load, then `waveEventSubscribeSingle({ eventType: "jobqueue", handler: (e) => globalStore.set(jobQueueAtom, e.data as JobQueueData) })` (the pattern at `frontend/app/view/jarvis/petsources.tsx:184`); unsubscribe on unmount. The feed runs in `JobQueuePanel`, which is always mounted. In DEV only (`import.meta.env.DEV`), expose `window.__jobQueueInject = (d: JobQueueData) => globalStore.set(jobQueueAtom, d)` (declared on `Window` as `changesstatus.ts:33` does for its hook): the CDP scenario sets a snapshot the queue cannot make in seconds, a job queued over 5 min ago.
 
 **Step 5: The chip** — `jobqueuechip.tsx`, styled exactly like `WorkerCapacityChip` (`frontend/app/view/agents/workercapacitychip.tsx`): `data-job-queue-chip`, `aria-haspopup="dialog"`, a lucide `Layers` icon (`TriangleAlert` once `longWait`), `chipLabel` text, `text-warning` once `longWait`, else `text-muted`; `null` when `chipLabel` is null. While anything is queued, re-render every 15 s (`useEffect` interval) so the warning tone arrives without an event. Title: `Heavy jobs: N running, M queued (one at a time; set in the popover)`.
 
@@ -965,14 +997,15 @@ Check the agent roster's field names in `model.agentsAtom` (the block id and dis
 - Header: `Heavy jobs` and a Slots select (1–4, `data-job-queue-slots`) writing `RpcApi.SetConfigCommand(TabRpcClient, { "jobs:slots": n })` (the pattern at `frontend/app/view/agents/settingsui.tsx:71`).
 - One row per job in `ordered` order (`data-job-row={id}`, `data-state="running"|"queued"`): a running dot or the queue position, the name, `memgate`-style GB (`(bytes / 2**30).toFixed(1)` without `.0`), elapsed (running: since `startedts`; queued: `waiting` since `queuedts`, ticking each second while open), and a second line with `sourceLabel` and, when queued, the reason. ↗ (`data-job-open`) calls `openTarget(model, target)` after closing, when `openTargetFor` gives one.
 - Queued rows: **Run now** (`data-job-run-now`) → `RpcApi.JobQueueRunNowCommand(TabRpcClient, { id })`; **Skip** (`data-job-skip`, not on `engine` rows) → `JobQueueSkipCommand`. Button styling as the Consumers panel's row buttons (`consumerspanel.tsx:152,162`).
-- Empty: `No heavy jobs running.` (the panel can be open when the last job ends).
+- Empty: `No heavy jobs running.` (the panel can be open when the last job ends), as `data-job-queue-empty`.
+- The chip's icon carries `data-job-queue-warn` while `longWait` holds, for the scenario.
 
-**Step 7: The CDP scenario** `jobqueue-chip` in `scripts/cdp/scenarios.mjs` (4-space indent, never prettier it):
+**Step 7: The CDP scenario** `jobqueue-chip` in `scripts/cdp/scenarios.mjs` (4-space indent, never prettier it). Each acceptance below is a named step in its assert, so Final judges every part of this task from a step or a shot:
 
-- arrange: `h.rpc("setconfig", { "jobs:slots": 1 })`; then hold three slots from the page itself:
+- arrange: read `jobs:slots` from `h.rpc("getfullconfig", null)` for teardown, `h.rpc("setconfig", { "jobs:slots": 1 })`; then hold four slots from the page itself (no `blockid`, so no row has a source to open):
   ```js
   await h.ev(`(() => {
-      window.__jq = ["task check:ts", "go test ./...", "npx vitest run"].map((command) => {
+      window.__jq = ["task check:ts", "npm install", "go test ./...", "cargo build"].map((command) => {
           const g = window.TabRpcClient.wshRpcStream("jobslot", { command }, { timeout: 600000 });
           g.next();
           return g;
@@ -981,8 +1014,16 @@ Check the agent roster's field names in `model.agentsAtom` (the block id and dis
   })()`);
   ```
   wait ~1 s.
-- assert: `[data-job-queue-chip]` exists and its text contains `1 · 2 queued`; click it; `[data-job-queue-panel]` shows 3 `[data-job-row]`, the first `data-state="running"` named `task check:ts`; the queued rows say `slot busy` and have Run now and Skip. Shot. Click Skip on the last row: it disappears. Shot.
-- teardown: `location.reload()` through `h.ev` (the page's websocket closes and wavesrv cancels its streams, freeing the slots); restore `jobs:slots` to what arrange read.
+- assert, in order (poll each DOM state up to ~3 s):
+  1. **chip**: `[data-job-queue-chip]` exists and its text contains `1 · 3 queued`. Click it.
+  2. **rows**: `[data-job-queue-panel]` shows 4 `[data-job-row]`; the first is `data-state="running"` named `task check:ts`; the three queued rows say `slot busy` and each has `[data-job-run-now]` and `[data-job-skip]`.
+  3. **no open button without a source**: no row has `[data-job-open]` (none of these jobs has a block or a run). Shot.
+  4. **Skip**: click Skip on the `cargo build` row: it disappears; 3 rows.
+  5. **Run now**: click Run now on the `go test ./...` row (the last queued, so Run now passes the head too): exactly 2 rows are `data-state="running"` (`task check:ts`, `go test ./...`), and `npm install` is still queued with `slot busy`. Shot.
+  6. **Slots**: set `[data-job-queue-slots]` to 3 (dispatch `change` on the select): `getfullconfig` reads `jobs:slots` 3, and the `npm install` row no longer says `slot busy` — it is `data-state="running"`, or waits on RAM (`needs …`), which the slot gate opening still shows. Shot.
+  7. **empty state**: drain the queue with `h.ev("(window.__jq.forEach((g) => g.return()), true)")` (each `return()` sends a wire cancel, so wavesrv ends the stream and frees its slot): the panel, still open, shows `[data-job-queue-empty]` with `No heavy jobs running.`, no `[data-job-row]`, and `[data-job-queue-chip]` is gone. Shot.
+  8. **long-wait warning**: close the panel (Esc), then `h.ev` calls `window.__jobQueueInject({ slots: 1, jobs: [{ id: "jx", name: "task check:ts", bytes: 3221225472, position: 1, reason: "slot busy", queuedts: Date.now() - 6 * 60_000 }] })`: the chip shows `1 queued`, has the `text-warning` class and `[data-job-queue-warn]` (the `TriangleAlert` icon) inside it. Shot. Then inject `{ slots: 1, jobs: [] }` so the fake row does not linger.
+- teardown: `h.ev("(window.__jq?.forEach((g) => g.return()), true)")`, then `location.reload()` through `h.ev` (belt and braces: the page's websocket closes and wavesrv cancels its streams); restore `jobs:slots` to what arrange read.
 
 **Step 8: Checks**
 
@@ -1001,14 +1042,22 @@ git commit -m "feat(cockpit): a Jobs chip in the app bar shows the heavy-job que
 
 **Depends on:** Task 4, Task 5, Task 6
 
-**Files:** `AGENTS.md`, `CHANGELOG.md`
+**Files:** `AGENTS.md`, `CHANGELOG.md`, `docs/guide/usage.md`, `docs/guide/agent-integration.md`, `docs/guide/orchestrator.md`, `docs/guide/agent.md`
 
 **Step 1:** Rewrite the AGENTS.md gotcha for the queue: before every Bash command an agent runs, the Claude mod and the pi extension call `wsh jobslot`; a heavy command (the table in `pkg/memgate/memgate.go`; dev servers excluded) waits its turn in wavesrv's queue (`pkg/jobqueue`) — `jobs:slots` at once, default 1, and only when its RAM fits — and holds the slot while it runs; the engine's Verify, Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't retry it, carry on and report it skipped. A single test file or `-run` filter is light and never queues.
 
 **Step 2:** CHANGELOG, under `Added` in the top section (open `## Unreleased` above it if the top section has a date): `Builds, typechecks and whole test suites from every agent and run now wait their turn in one queue, one at a time by default, so several runs no longer stall the machine; the new Jobs chip in the app bar shows what runs and what waits, with Run now and Skip.` Under `Changed`: `The Low RAM card is gone: a heavy command waits in the job queue instead.`
 
-**Step 3: Commit**
+**Step 3: The guide pages** (Vietnamese, like the rest of `docs/guide/`; match each page's voice):
+
+- `docs/guide/usage.md`: the intro bullet at line 7 (thẻ **Low RAM**) becomes the Jobs chip; the whole `## Thẻ Low RAM` section (~lines 161-192) becomes a section on the heavy-job queue: which commands queue (keep the RAM table, it is still each job's peak), one at a time by default and the Slots picker (1–4), the Jobs chip and its popover (rows, the reason a job waits, ↗, **Run now**, **Skip**, Verify/Final rows have no Skip), the queued line in the agent's transcript, a skipped command coming back "Not run: …" (don't make the agent retry), failure stays open (a broken queue lets the command run), dev servers never queue. Drop the Low RAM card's shot comment; add one for the popover naming scenario `jobqueue-chip`. Rename the heading's anchor everywhere it is linked (`grep -rn "thẻ-low-ram" docs`).
+- `docs/guide/agent-integration.md:37`: the **Cổng RAM** bullet becomes the queue (`wsh jobslot`, waits its turn, holds the slot while the command runs; Skip gives "Not run: …"), linking the new usage section; line 100's "thẻ Low RAM" becomes the job queue.
+- `docs/guide/orchestrator.md:92`: drop "nơi `wsh memgate` bắt đầu giữ các lệnh nặng của agent"; add one sentence that the run's Verify, Final and heavy Setup wait their turn in the job queue with the agents' heavy commands, linking the usage section.
+- `docs/guide/agent.md`: line 108 and the `asking` row at line 141 drop the `Low RAM` label (no command waits on a card any more); the paragraph at line 249 becomes one line: a heavy command waits its turn in the job queue (transcript shows its place), see the usage section.
+- `grep -rn "memgate\|Low RAM" docs/guide README.md` comes back empty, except the `pkg/memgate/memgate.go` table pointer.
+
+**Step 4: Commit**
 
 ```bash
-git commit -m "docs: the heavy-job queue replaces the Low RAM card" -- AGENTS.md CHANGELOG.md
+git commit -m "docs: the heavy-job queue replaces the Low RAM card" -- AGENTS.md CHANGELOG.md docs/guide/usage.md docs/guide/agent-integration.md docs/guide/orchestrator.md docs/guide/agent.md
 ```
