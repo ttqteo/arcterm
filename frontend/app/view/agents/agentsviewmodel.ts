@@ -863,6 +863,18 @@ export function hasAnswerableAsk(agent: AgentVM): boolean {
     return (agent.ask?.questions?.length ?? 0) > 0;
 }
 
+/** Pure: what an asking agent with nothing for the card to draw is waiting on, so the card can send you to its
+ *  terminal instead of saying "waiting on you" over no choices. A permission prompt reports `waiting` (atPrompt);
+ *  a question that never reached a structured ask reports `asking`. Undefined when the card can answer it. */
+export function terminalAskNote(agent: AgentVM): string | undefined {
+    if (agent.state !== "asking" || hasAnswerableAsk(agent)) {
+        return undefined;
+    }
+    return agent.atPrompt
+        ? "A permission prompt is waiting in its terminal."
+        : "It asked in its terminal; the choices are there.";
+}
+
 /** Pure: the identity of an agent's *current ask* — the stable per-ask id, NOT the block oref (which is
  *  reused across successive asks from the same block). Single source for "which ask was answered", so a
  *  second ask from the same agent is never locked by the first. Undefined when the agent is not asking. */

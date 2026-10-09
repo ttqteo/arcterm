@@ -276,7 +276,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 
 	for _, ch := range in.Channels {
 		for _, run := range ch.Runs {
-			if it, ok := landHeldItem(ch, run); ok {
+			if it, ok := landHeldItem(ch, run, in.Dags); ok {
 				gates = append(gates, it)
 			}
 			if it, ok := unverifiedItem(ch, run); ok {
@@ -413,14 +413,26 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	return out
 }
 
+// landHeldFinalFailed mirrors the reason orchestrate.finalHold holds a land with when the final stage failed.
+const landHeldFinalFailed = "the final stage failed"
+
 // landHeldItem is a done run whose branch the engine did not merge back, with the reason. The run's work is
-// finished and waits only on the human clearing the reason, or dismissing the item.
-func landHeldItem(ch AttentionChannel, run *waveobj.Run) (wshrpc.AttentionItem, bool) {
+// finished and waits only on the human clearing the reason, or dismissing the item. A failed final stage is a
+// reason no fix clears, so that row names what failed and the forced land instead.
+func landHeldItem(ch AttentionChannel, run *waveobj.Run, dags []*waveobj.TaskGroup) (wshrpc.AttentionItem, bool) {
 	// mirrors orchestrate.LandState_Held
 	if run.Land == nil || run.Land.State != "held" || run.Land.Dismissed {
 		return wshrpc.AttentionItem{}, false
 	}
 	effortOID, chunkLabel := attribution(run)
+	text := "The run's branch was not merged back: " + run.Land.Reason
+	why := fmt.Sprintf("The work is on wave/%s. Clear the reason, then run `wsh runs land %s`.", run.ID, run.ID)
+	if run.Land.Reason == landHeldFinalFailed {
+		if failed := finalFailure(dagOfRun(dags, run.ID)); failed != "" {
+			text = "The final stage failed" + failed
+		}
+		why = fmt.Sprintf("The work is on wave/%s. Landing again reads the same failed stage, and a fix on the branch does not clear it: `wsh runs land %s --force` lands it as it is, or Open shows what failed.", run.ID, run.ID)
+	}
 	return wshrpc.AttentionItem{
 		Kind:         AttentionRunLandHeld,
 		Key:          "run-land-held:" + run.ID,
@@ -428,13 +440,56 @@ func landHeldItem(ch AttentionChannel, run *waveobj.Run) (wshrpc.AttentionItem, 
 		ChannelName:  ch.Name,
 		RunId:        run.ID,
 		Source:       goalHeadline(run.Goal),
-		Text:         "The run's branch was not merged back: " + run.Land.Reason,
+		Text:         text,
 		Action:       "Review",
 		WaitingSince: run.CompletedTs,
 		EffortOID:    effortOID,
 		ChunkLabel:   chunkLabel,
-		Why:          fmt.Sprintf("The work is on wave/%s. Clear the reason, then run `wsh runs land %s`.", run.ID, run.ID),
+		Why:          why,
 	}, true
+}
+
+func dagOfRun(dags []*waveobj.TaskGroup, runID string) *waveobj.TaskGroup {
+	for _, g := range dags {
+		if g.RunID == runID {
+			return g
+		}
+	}
+	return nil
+}
+
+// finalFailure is what a failed final stage failed on, as the tail of a sentence: the first failing scenario step
+// of its shots manifest and how many more failed, else the first line of its detail. The detail keeps only the
+// output's tail, which a long Final pushes its FAIL line out of; the manifest keeps every step.
+func finalFailure(g *waveobj.TaskGroup) string {
+	// mirrors orchestrate.FinalState_Failed
+	if g == nil || g.Final == nil || g.Final.State != "failed" {
+		return ""
+	}
+	first, more := "", 0
+	for _, shot := range g.Final.Shots {
+		for _, step := range shot.Steps {
+			if step.State != "fail" {
+				continue
+			}
+			if first == "" {
+				first = shot.Name + ", " + step.Step
+			} else {
+				more++
+			}
+		}
+	}
+	switch {
+	case first != "" && more == 1:
+		return " at " + first + " (and 1 more step)"
+	case first != "" && more > 1:
+		return fmt.Sprintf(" at %s (and %d more steps)", first, more)
+	case first != "":
+		return " at " + first
+	case strings.TrimSpace(g.Final.Detail) != "":
+		return ": " + strings.TrimSuffix(firstLine(g.Final.Detail), ":")
+	}
+	return ""
 }
 
 // unverifiedItem is a done run whose result nothing fully checked: the final stage's unverified reasons, and

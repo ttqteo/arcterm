@@ -1,7 +1,8 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { attentionAtom, loadAttention, splitAttention } from "./attentionstore";
+import type { AgentVM } from "./agentsviewmodel";
+import { attentionAtom, cockpitWaitingCount, loadAttention, splitAttention } from "./attentionstore";
 
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: { GetAttentionCommand: vi.fn() },
@@ -82,5 +83,27 @@ describe("splitAttention", () => {
         const out = splitAttention(undefined as unknown as AttentionItem[]);
         expect(out.cockpit).toHaveLength(0);
         expect(out.radar).toHaveLength(0);
+    });
+});
+
+describe("cockpitWaitingCount", () => {
+    const agent = (over: Partial<AgentVM>): AgentVM =>
+        ({ id: "a", name: "a", task: "", state: "idle", agent: "claude", model: "", ...over }) as AgentVM;
+
+    it("counts an agent at a permission prompt that the server list does not know", () => {
+        const agents = [agent({ id: "a1", state: "asking", blockId: "b1" }), agent({ id: "a2", state: "working" })];
+        expect(cockpitWaitingCount([], agents, new Set())).toBe(1);
+    });
+
+    it("counts an ask both the roster and the server list know once", () => {
+        const agents = [agent({ id: "a1", state: "asking", blockId: "b1" })];
+        const items = [item({ kind: "ask", key: "ask:block:b1" }), item({ kind: "dag-gate", key: "gate:1" })];
+        expect(cockpitWaitingCount(items, agents, new Set())).toBe(2);
+    });
+
+    it("keeps a server ask whose agent is not in the roster, and drops an ask Jarvis answered", () => {
+        const agents = [agent({ id: "a1", state: "asking", blockId: "b1", ask: { askId: "x" } as AgentVM["ask"] })];
+        const items = [item({ kind: "ask", key: "ask:block:b9" })];
+        expect(cockpitWaitingCount(items, agents, new Set(["x"]))).toBe(1);
     });
 });

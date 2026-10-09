@@ -21,8 +21,10 @@ import { useEffect, useState } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { workingCount } from "./agentsviewmodel";
-import { attentionAtom, splitAttention } from "./attentionstore";
+import { attentionAtom, cockpitWaitingCount, splitAttention } from "./attentionstore";
+import { channelMessagesAtom } from "./channelsstore";
 import { DigitHint } from "./digithint";
+import { answeredAskIdsAcross } from "./jarvisderive";
 import { navRailCollapsed } from "./navrailwidth";
 import { focusSubagentAtom } from "./subagentsstore";
 import { latestUnreadId, unreadLabel } from "./unreadagents";
@@ -64,20 +66,21 @@ const BADGE_FILL: Partial<Record<SurfaceKey, string>> = { agent: "bg-accent" };
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
     // Two disjoint "needs you" badges from one server-computed list: Cockpit counts everything waiting on
-    // you (asks as cards, the rest in its Needs-you strip), Radar counts projects with untriaged findings.
-    // Each sits on the surface that clears it; Jarvis has none. Agent counts the agents that finished a turn
-    // you have not looked at yet (unreadagents.ts).
+    // you (agents that need you as cards, the rest in its Needs-you strip), Radar counts projects with
+    // untriaged findings. Each sits on the surface that clears it; Jarvis has none. Agent counts the agents
+    // that finished a turn you have not looked at yet (unreadagents.ts).
     const attention = useAtomValue(attentionAtom);
     const split = splitAttention(attention);
     const unread = useAtomValue(unreadAgentsAtom);
-    const badges: Partial<Record<SurfaceKey, number>> = {
-        cockpit: split.cockpit.length,
-        agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
-        radar: split.radar.length,
-    };
     // Agent also says how many agents are working while you are on another surface, so a run doing its work is
     // visible from Code or Diff; on Agent itself the rows already show it
     const agents = useAtomValue(model.agentsAtom);
+    const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
+    const badges: Partial<Record<SurfaceKey, number>> = {
+        cockpit: cockpitWaitingCount(split.cockpit, agents, answered),
+        agent: unread.size, // agents with something unread, not turns: the rows carry each agent's count
+        radar: split.radar.length,
+    };
     const working = workingCount(agents);
     // On Agent itself the badge is a shortcut: it opens the agent that finished last, as choosing its row does, and
     // viewing it marks it read, so each click takes the next one
