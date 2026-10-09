@@ -17,6 +17,8 @@ import {
     rowMatches,
     sectionRows,
     settingsSections,
+    SLEEP_AFTER_MIN,
+    stepSleepAfter,
     vaultStatusLine,
     type SettingSectionDef,
 } from "./settingsmodel";
@@ -24,6 +26,28 @@ import {
 const sections = () => settingsSections("claude");
 const rowsOf = (id: string, flagRuntime: Parameters<typeof settingsSections>[0] = "claude") =>
     sectionRows(settingsSections(flagRuntime).find((s) => s.id === id)!);
+
+describe("sleep idle agents rows", () => {
+    it("holds the toggle and the minutes, both stored in settings.json", () => {
+        const agents = settingsSections("claude").find((s) => s.id === "agents")!;
+        const card = agents.cards.find((c) => c.id === "sleep")!;
+        expect(card.label).toBe("Sleep idle agents");
+        expect(card.rows.map((r) => [r.id, r.key, r.config, r.scope])).toEqual([
+            ["agents.sleepidle", "agents:sleepidle", true, "synced"],
+            ["agents.sleepaftermin", "agents:sleepaftermin", true, "synced"],
+        ]);
+        expect(card.rows[1].title).toBe("After idle for");
+    });
+
+    it("steps the minutes by 5 and keeps them between 5 and 240", () => {
+        expect(stepSleepAfter(30, 1)).toBe(35);
+        expect(stepSleepAfter(30, -1)).toBe(25);
+        expect(stepSleepAfter(SLEEP_AFTER_MIN.min, -1)).toBe(5);
+        expect(stepSleepAfter(SLEEP_AFTER_MIN.max, 1)).toBe(240);
+        expect(stepSleepAfter(238, 1)).toBe(240);
+        expect(stepSleepAfter(7, -1)).toBe(5);
+    });
+});
 
 describe("vault sync rows", () => {
     it("treats the vault path as machine-local", () => {
@@ -138,6 +162,8 @@ describe("settingsSections", () => {
             "term:cursorblink",
             "term:scrollback",
             "term:copyonselect",
+            "agents:sleepidle",
+            "agents:sleepaftermin",
             "headless:runtime",
             "headless:openroutercheapmodel",
             "radar:auditruntime",
@@ -237,6 +263,7 @@ describe("settings pages", () => {
         expect(cards["terminal/cursor"]).toEqual(["terminal.cursor", "terminal.cursorblink"]);
         expect(cards["terminal/behavior"]).toEqual(["terminal.scrollback", "terminal.copyonselect"]);
         expect(cards["agents/claudeaccount"]).toEqual([]);
+        expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
         expect(cards["agents/runs"]).toEqual(["run.route"]);
         expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
@@ -251,7 +278,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(35 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(37 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

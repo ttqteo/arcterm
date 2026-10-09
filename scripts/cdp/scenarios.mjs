@@ -25709,7 +25709,7 @@ const SP_PAGES = [
     { id: "general", cards: ["startup", "notifications", "vault"] },
     { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
-    { id: "agents", cards: ["claudeaccount", "runs", "flags"] },
+    { id: "agents", cards: ["claudeaccount", "sleep", "runs", "flags"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
     { id: "about", cards: ["versions", "agents"] },
 ];
