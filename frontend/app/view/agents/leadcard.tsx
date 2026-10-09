@@ -27,7 +27,7 @@ import {
     type AgentEntry,
     type AgentVM,
 } from "./agentsviewmodel";
-import { AnswerBar, DocReviewSummary } from "./answerbar";
+import { AnswerBar, DocReviewSummary, TerminalAskNote } from "./answerbar";
 import { AttentionBanner } from "./attentioncard";
 import { CapacityWarn } from "./capacitywarn";
 import { diffStatsByIdAtom } from "./cardgitstore";
@@ -364,6 +364,7 @@ export function LeadCard(p: LeadCardProps) {
                                 </p>
                             ) : null}
                             {answerBarFor(lead, "px-0 py-0")}
+                            <TerminalAskNote agent={lead} onOpenTerminal={() => model.openTerminal(lead.id)} />
                         </div>
                     ) : null}
 

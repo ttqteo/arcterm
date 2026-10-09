@@ -54,6 +54,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- The Cockpit's nav badge (and the Dock badge on a Mac) counts an agent at a permission prompt or a question asked in
+  its terminal, so it no longer reads 0 while the Cockpit's "need you" tab says 3.
+- A card waiting on you with no choices it can show (a permission prompt, or a question asked in the terminal) says
+  so and offers **Open terminal**, instead of "Waiting on you" over nothing to answer.
 - An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
   that run, nested under it, is still going; the offer comes back once the run ends.
 - An agent that committed and then ran a few more commands with long output in the same turn now offers ✓ Close;

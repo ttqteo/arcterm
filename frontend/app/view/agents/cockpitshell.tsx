@@ -126,7 +126,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useEffect(() => setupRosterSeededLatch(), []);
     // a turn can end while any surface shows, so the unread set is kept here, not in the Agent surface
     useUnreadTracking(model);
-    useDockBadge();
+    useDockBadge(model);
     const surface = useAtomValue(model.surfaceAtom);
     const floating = useAtomValue(floatModeAtom);
     return (

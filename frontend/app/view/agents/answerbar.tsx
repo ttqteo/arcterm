@@ -2,10 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { cn } from "@/util/util";
-import { ArrowUpRight, Check, FileText, X } from "lucide-react";
+import { ArrowUpRight, Check, FileText, SquareTerminal, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { AgentsViewModel } from "./agents";
-import { answerHint, nextUnansweredQuestion, type AgentAskQuestion, type AgentVM } from "./agentsviewmodel";
+import {
+    answerHint,
+    nextUnansweredQuestion,
+    terminalAskNote,
+    type AgentAskQuestion,
+    type AgentVM,
+} from "./agentsviewmodel";
 import { activePreview, previewMode, previewText } from "./answerbarpreview";
 import { DOC_REVIEW_HEADERS, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
 import { openReview } from "./docreviewstore";
@@ -457,6 +463,37 @@ export function AnswerBar({
             </div>
             {renderGroup(idx)}
             {showHint && hint ? <div className="mt-2 text-[11px] text-secondary">{hint}</div> : null}
+        </div>
+    );
+}
+
+/** Where an asking agent's choices are when the card has none to draw: a permission prompt, or a question that
+ *  never reached a structured ask. Without it the card said "waiting on you" over nothing to pick. */
+export function TerminalAskNote({
+    agent,
+    onOpenTerminal,
+    className,
+}: {
+    agent: AgentVM;
+    onOpenTerminal: () => void;
+    className?: string;
+}) {
+    const note = terminalAskNote(agent);
+    if (note == null) {
+        return null;
+    }
+    return (
+        <div onClick={(e) => e.stopPropagation()} className={cn("flex items-center gap-2.5", className)}>
+            <span className="min-w-0 flex-1 text-[12.5px] leading-[1.45] text-secondary">{note}</span>
+            <button
+                type="button"
+                onClick={onOpenTerminal}
+                title="Open terminal (T)"
+                className="flex h-[23px] shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 bg-warning px-[11px] text-[11.5px] font-bold text-background"
+            >
+                <SquareTerminal size={12} aria-hidden />
+                Open terminal
+            </button>
         </div>
     );
 }

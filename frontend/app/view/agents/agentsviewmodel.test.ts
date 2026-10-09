@@ -48,6 +48,7 @@ import {
     summarizeActions,
     syncCardOrder,
     taskProgress,
+    terminalAskNote,
     terminalName,
     toggleSelection,
     usageLevel,
@@ -466,6 +467,22 @@ describe("canSubmitAsk", () => {
         const questions = [q(), q()];
         expect(canSubmitAsk(questions, { 0: new Set([0]) }, { 1: "typed" })).toBe(true);
         expect(canSubmitAsk(questions, { 0: new Set([0]) }, { 1: "   " })).toBe(false);
+    });
+});
+
+describe("terminalAskNote", () => {
+    it("sends a permission prompt to the terminal", () => {
+        expect(terminalAskNote(mk("a", "asking", { atPrompt: true }))).toMatch(/permission prompt/);
+    });
+    it("sends a question with no structured ask to the terminal", () => {
+        expect(terminalAskNote(mk("a", "asking"))).toMatch(/asked in its terminal/);
+    });
+    it("is undefined when the card can answer the ask, or the agent is not asking", () => {
+        expect(
+            terminalAskNote(mk("a", "asking", { ask: { questions: [{ question: "q", options: [{ label: "a" }] }] } }))
+        ).toBeUndefined();
+        expect(terminalAskNote(mk("a", "working"))).toBeUndefined();
+        expect(terminalAskNote(mk("a", "idle", { atPrompt: true }))).toBeUndefined();
     });
 });
 

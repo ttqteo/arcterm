@@ -10,6 +10,8 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import type { AgentVM } from "./agentsviewmodel";
+import { needsHuman } from "./jarvisderive";
 
 export const attentionAtom = atom<AttentionItem[]>([]) as PrimitiveAtom<AttentionItem[]>;
 
@@ -36,6 +38,16 @@ export function splitAttention(items: AttentionItem[]): {
         (i.kind === "radar-triage" ? radar : cockpit).push(i);
     }
     return { cockpit, radar };
+}
+
+// cockpitWaitingCount is what the Cockpit's nav badge counts: every agent that needs you, as the Cockpit's
+// "need you" tab counts them, plus the Cockpit's share of the server list. That list knows only the asks
+// raised through `wsh ask`; a permission prompt or a question that fell back to the terminal is in the
+// roster alone, so a badge read off the list said 0 under a tab that said 3. An ask both know counts once.
+export function cockpitWaitingCount(cockpit: AttentionItem[], agents: AgentVM[], answered: Set<string>): number {
+    const asking = agents.filter((a) => needsHuman(a, answered));
+    const askKeys = new Set(asking.filter((a) => a.blockId).map((a) => `ask:block:${a.blockId}`));
+    return asking.length + cockpit.filter((i) => !(i.kind === "ask" && askKeys.has(i.key))).length;
 }
 
 // A failed poll leaves the last good list in place. Blanking the badge on one dropped request would
