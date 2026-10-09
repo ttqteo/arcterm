@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Mark for later** in a session's menu, in the Agents tree or under Conversations, flags it with a bookmark until you
+  pick **Done**; the mark stays when you close the agent, puts the conversation first in its project's list, and is back
+  on the row when you resume it.
 - New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.
 - A Low RAM card now pops up over whatever surface you are on, so a command held for memory no longer waits unseen
   behind Jarvis or the Cockpit; press its number to answer, **Open agent** to go to it, or **Later** (`Esc`) to leave
@@ -46,6 +49,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Rename opens on the session's current name, all of it selected, so you can type a new one or edit the old one.
 - New agent and New run: the Task and Goal boxes grow as you type, to about eleven lines before they scroll, instead
   of staying a fixed few lines tall.
 - A run started from a session is no longer listed one level in under that session, in the sidebar or in
