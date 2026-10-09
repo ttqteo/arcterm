@@ -10,6 +10,45 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Saved actions: one-click repeated chores such as commit and pull (deferred 2026-10-09)
+
+- **Deferred:** a panel of saved actions run with ▶, like Claude Code's agents panel (one row per `.claude/agents`
+  subagent), for chores done again and again: commit, pull/sync, a typecheck.
+- **Why deferred:** the user's call after a first brainstorm; nothing is blocked on it.
+- **Settled in discussion, for when it is picked up:**
+  - An action is either a `cmd` or a `prompt`, chosen by whether it needs judgment. A `cmd` (`git pull --rebase`,
+    `task check:ts`) runs in the project's terminal: instant, no tokens, the same every time. A `prompt` goes to the
+    selected agent, for work that must read the situation: a commit has to pick this session's files by pathspec
+    (the index is shared with other sessions), write the message and maybe a CHANGELOG line.
+  - A later option: a `cmd` with `onFail: prompt`, handing the failure output to an agent (a pull that hits a
+    conflict), so tokens are spent only when judgment is needed.
+  - Open: where actions live (a checked-in `.arc/actions.json` like `.arc/setup`, a global list, or both).
+- **Relation:** the Diff surface's repository actions (Spec B, below) ask the same questions about writing to a tree
+  an agent or run may hold; design the two together.
+- **Revive when** the same commit or sync prompt is typed by hand often enough to be a chore.
+
+## (arcterm) Token burn guard: warn before an agent fans out or burns cache reads (deferred 2026-10-08)
+
+- **What:** warn, before it happens, when an agent is about to spend tokens fast. Seen 2026-10-08: one docs
+  session with 4 subagents and 3 demo agents went from ~20M to ~220M tokens in about an hour, almost all cache
+  reads (every tool call re-sends the whole context, so cost ≈ context size × call count). Nothing warned.
+- **Signals we already have:** per-session tokens and the 10-minute burn the Consumers panel sorts by
+  (`consumers.ts`), each session's context size (the rail's token strip), and the 5-hour window
+  (`ratelimitstore.ts`). Hooks see a spawn before it runs: a `PreToolUse` on the `Agent`/`Task` tool
+  (and `Workflow`) can ask, the way `wsh memgate` asks before a heavy Bash command (`pkg/memgate`).
+- **Shape:** (1) a "token gate" beside memgate: before an agent spawns subagents or a workflow, show a card
+  with the projected cost (open context × expected calls × agents) and the 5h window left, Allow / Deny;
+  (2) a burn alert: a toast when a session's 10-minute burn would empty the 5h window before its reset, or
+  when its context passes ~150k while it keeps calling tools (suggest `/compact` or → Sonnet from the
+  Consumers row); (3) cache reads shown apart from fresh tokens in the Consumers Tokens view.
+- **Relation:** complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` (warns at 85%/95% of the
+  window and holds engine work); this guard acts earlier, on the rate rather than the level.
+- **Pick up** with a brainstorm/spec; measure first how well "context × calls" predicts a session's spend
+  from saved transcripts.
+- **Status (2026-10-09):** an orchestrator run for version 1 (`8b822a9b`, started 2026-10-08 21:15) was
+  interrupted by an app restart at 21:20, before its lead submitted a plan. Nothing was built; the run sits
+  Blocked until it is resumed (the sheet's Resume lead) or cancelled.
+
 ## Radar's metadata collectors and clustering pipeline (retired 2026-10-06)
 
 - **Retired:** the scan that collected metadata signals and clustered them in one model call that never read
@@ -26,6 +65,31 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   `collect_config.go`, `collect_dependency.go`, `collect_git.go`, `collect_runs.go`, `collect_structure.go`,
   `collect_transcript.go`, `modes.go`, `prepare.go`, `security.go`, `synth.go`, `validate.go` (each with its
   `_test.go`), or the old `scan.go`, `lifecycle.go` and `types.go` they plugged into.
+
+## (arcterm) Preview pane: localhost dev servers and HTML files (deferred 2026-10-08)
+
+- **Deferred:** an in-app preview limited to two things: a dev server on `http://localhost:<port>`, and an `.html`
+  file on disk (with its relative CSS, JS and images). Not a general browser.
+- **Why deferred:** the user's call ("chắc làm sau"); nothing is blocked on it.
+- **Why not a full browser:** a native child webview (Tauri multiwebview, still `unstable`) is an OS window layered
+  over the React UI, so the palette, popovers and toasts cannot draw over it and its bounds must be synced by hand.
+  Most real sites refuse an `<iframe>` (`X-Frame-Options`/CSP). WKWebView answers no CDP, so an agent-driven embedded
+  browser would be Windows-only. Agents already have claude-in-chrome and Playwright MCP.
+- **Settled in discussion, for when it is picked up:**
+  - Both are an `<iframe>`, so one approach covers Windows and macOS.
+  - **Localhost:** add `http://localhost:*` to `frame-src` in `src-tauri/tauri.conf.json` (today only
+    `http://127.0.0.1:*`). wavesrv finds the ports the selected agent's process (or its worktree's Setup) listens on,
+    and the pane follows the selected agent. Keep an "Open in browser" button: OAuth redirects and `SameSite` cookies
+    may break inside a frame.
+  - **HTML files:** do not reuse `/wave/stream-file` (`pdfframe.tsx` `streamFileUrl`). Its `?path=` query breaks
+    relative asset URLs, and the URL carries the wavesrv `authkey` on wavesrv's own origin, so the page's JS could read
+    `location.search` and drive wavesrv's RPC. Add a read-only `/preview/<token>/<relpath>` route whose token is scoped
+    to the file's folder (no `..` escape, not the authkey), and frame it with `sandbox="allow-scripts"` and no
+    `allow-same-origin`.
+  - HTML is a Preview mode of `.html` in the File tab, as `.md` and `.tex` have; no new surface. It also opens
+    `design-local` `.dc.html` canvases and agent-made HTML reports in the app. Build it first (small, used at once),
+    then the localhost pane with port detection.
+- **Revive when** opening a dev server or a `.dc.html` canvas in an outside browser becomes a regular step.
 
 ## (arcterm) agy as a run lead (2026-10-08)
 
@@ -163,7 +227,12 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   `openOrPeek` in `frontend/app/view/jarvis/openref.ts`, the way the Brief's `openLine` does, and mark it `data-peek`.
   Nothing was built for this, so there is nothing to recover from git.
 
-## Terminal file drop pastes the file's path (deferred 2026-09-30)
+## Terminal file drop pastes the file's path (deferred 2026-09-30) — ✅ RESOLVED 2026-10-06
+
+**Resolved by `6eeab650`:** an OS file dropped on a terminal is copied to a temp file and that path is pasted, one
+paste per file (`CockpitFocusPane` → `ingestFiles` in `frontend/app/view/agents/uploadsingest.ts`), with
+`dragDropEnabled` still off. **Residual:** the pasted path is the copy's, not the original's; pasting the original
+path still needs the native route below.
 
 - **Deferred:** dropping a file onto a terminal to paste its quoted path. The Electron build read the path with
   `webUtils.getPathForFile`; the Tauri port stubbed that to return `""`, so the drop handler never pasted anything.
@@ -319,8 +388,11 @@ review; everything else it designed waits for evidence, with each settled decisi
 The first cross-surface plan (`effort:2450d93e`) built typed surface navigation and a Space filter in
 `.worktrees/surface-integration`, uncommitted. The approved resource-linking spec
 (`docs/superpowers/specs/2026-09-15-cross-surface-resource-linking-design.md`) cut the effort to addressing
-and landing. That work is parked as `09e86573` on branch `feat/surface-integration`; keep the branch while
-this entry is open. Only the Sessions half of its project and Space scope moved to `main`.
+and landing. That work was parked as `09e86573` on branch `feat/surface-integration`. Only the Sessions half of
+its project and Space scope moved to `main`.
+
+**Recovery lost (checked 2026-10-09):** the branch is deleted and `09e86573` no longer exists in this clone, so
+every `git show 09e86573:…` pointer below is dead. Reviving this means building it again from the descriptions here.
 
 - **What was deferred:**
   - Cross-surface Back: `navigateSurface` with direct and contextual kinds, a history bounded at 20,
@@ -633,6 +705,14 @@ it is editor theming, not cockpit light mode.
   calibratable — `confidenceFor` returns the max of four fixed layer weights and never blends them, so
   the reachable confidence set is `{0.2, 0.3, 0.8, 1.0}` and no edge could land in the `[0.4, 0.75)`
   "medium" band. See J10 in `git show a4b5bd4f:docs/jarvis-second-brain-open-issues.md`.
+- **Layer-3 window — retuned 2026-10-09 from the live vault.** 34 of its 35 dossiers read `active`: a dossier is
+  made per dispatched run and nothing closes it when the run finishes. Layer 3 let an active dossier's window reach
+  now on status alone, so every old plan in a repo attached to every new run there (run `8b822a9b`'s record band
+  read "+14 more" before it had done anything). An active dossier's window now ends at its last update, the end of
+  its latest own run, or now only while one of its own runs is executing or planning (`dossierActiveUntil`,
+  `pkg/jarvisattrib/extract.go`). The weights, probation and time-box above are unchanged. **Still open:** nothing
+  moves a dossier off `active` when its run finishes; that is the root, and this bound only stops it leaking into
+  attribution.
 
 ## Jarvis U3 — graph edge/node visual tunables (2026-07-27)
 

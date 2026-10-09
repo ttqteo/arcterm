@@ -24,6 +24,7 @@ Status legend:
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) Token burn guard: nothing warns before an agent spawns subagents or a workflow, or while a session burns its 5h window through cache reads (a docs session went ~20M → ~220M tokens in an hour). A memgate-style card before `Agent`/`Task`/`Workflow` spawns with the projected cost, a burn-rate toast, and cache reads shown apart in Consumers | feature | M | `docs/deferred.md` "Token burn guard"; complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` |
 | (arcterm) The Claude sign-in dialog's `TokenScanner` is tested only on synthetic output: the `settings-claude-account` scenario runs a node stand-in through the dev override `arc:dev:setuptoken-cmd`, never the real command. Record a real `claude setup-token` run's pty output (the token redacted to a fixture of the same shape, line breaks and escape sequences kept) and add it as a `setuptokenscan.test.ts` case | verification gap | S | `frontend/app/view/agents/setuptokenscan.ts`, `frontend/app/cockpit/claude-signin-modal.tsx`; plan review of `docs/superpowers/plans/2026-10-07-claude-account-switch.md` (2026-10-07) |
 | (arcterm) A Claude Code background session reports its hooks to the block it was sent to the background from, not the tab that attached to it: the daemon inherits that tab's `WAVETERM_*` env, so after the tab closes its `SetMeta agent:transcriptpath` lands on a deleted block, and the Attach tab (`claude --resume <id>` turned `claude attach`) never gets the agent's status. Seen 2026-10-06: session `61c3c450` kept writing to block `0af9fb6e`, deleted 18 s earlier. Fix needs a way to bind a daemon-hosted session to the tab attached to it (e.g. route by session id, not by the hook's env block). Fixed since: a hosted session reports into the tab running `claude attach <key>` (`8a8006d9`), and a session sent to the background from its own terminal (no `claude attach`) is now matched by its fork source, the hosted command line's `--fork-session --resume <id>` against the terminal claude running that id (`agentobserve.DisplayBlock`). Still open: a session whose terminal command line names no session (a bare `claude`, `--continue`, or `--resume` picked from the list) or whose terminal has exited is matched to nothing, so its reports are dropped (`statusTarget`) and no tab shows its status or subagents | bug | M | `waveapp.log` 2026-10-06 16:40:02–16:40:20; `claude agents --json` lists the session `kind: background`; Close already stops it by the `--resume` id (`ce797bee`) |
 | (arcterm) Closing an agent attached to a background session was never exercised live: `ce797bee` runs `claude stop <id>` from `WorkspaceService.CloseTab` (dry run against the real `claude agents` picked only the background session), but no wavesrv with it has closed a real one. Check: Close it, then `claude agents` no longer lists it `working` | verification gap | S | `pkg/bgagents` `Stop`, `pkg/service/workspaceservice` `tabSessionIds` |
@@ -80,6 +81,12 @@ Cockpit and surfaces:
 - **Conversation History's "All activity" rows peeking a run, agent or initiative** (2026-10-01; the old
   Sessions surface moved into the Agent surface 2026-10-06) — revive when a row carries a target; wire it
   through `openOrPeek`.
+- **(arcterm) Saved actions: one-click commit, pull and other chores** (2026-10-09) — each action a `cmd` (no
+  tokens) or a `prompt` to the selected agent (commit, which needs judgment). Revive when the same chore prompt is
+  typed by hand often; design with the Diff surface's repository actions, notes in `docs/deferred.md`.
+- **(arcterm) Preview pane for localhost dev servers and HTML files** (2026-10-08) — iframes, not a browser;
+  HTML needs its own scoped `/preview/<token>/…` route, never `/wave/stream-file` (it leaks the authkey). Revive
+  when opening a dev server or `.dc.html` canvas outside arcterm becomes routine; design in `docs/deferred.md`.
 - **(arcterm) Line comments in the Spec/Plan review dialog** (2026-10-07) — reuse `MdDoc`, sent with
   Request changes. Revive when Spec review notes keep pointing at specific passages; settled design in
   `docs/deferred.md`.
@@ -94,8 +101,9 @@ Cockpit and surfaces:
   are reached almost only through the Agent panel's "Open in…" buttons, the palette and `g b` / `g f`.
 - **Markdown comments in the Agent panel: re-measure ~2026-10-20** (2026-10-06) — count the sends; near
   zero removes the comment gestures and the tray, keeping the Preview.
-- **Terminal file drop → pasted path** (2026-09-30) — needs Tauri's `dragDropEnabled`, which disables
-  HTML5 drag app-wide.
+- **Terminal file drop → the original file's path** (2026-09-30; a drop pastes a temp copy's path since
+  2026-10-06, `6eeab650`) — the original path needs Tauri's `dragDropEnabled`, which disables HTML5 drag
+  app-wide.
 - **Work on an initiative — "Save place and close"** (2026-09-29) — revive when losing a session's place
   recurs.
 - **Run recovery after a restart — New Agent sessions** (2026-09-30) — revive when a session is seen
@@ -109,8 +117,8 @@ Cockpit and surfaces:
   relationship annotation, companion split, time correlation, drag courier.
 - **Resource linking beyond navigation** (2026-09-17) — Related Work, the Work Trail strip, structured
   refs, file/diff/commit/session targets, a shared action builder, usage-to-work links.
-- **Cross-surface Back history and its context strip** (2026-09-17) — parked as `09e86573` on
-  `feat/surface-integration`; keep the branch while this is open.
+- **Cross-surface Back history and its context strip** (2026-09-17) — the parked branch
+  `feat/surface-integration` and its commit `09e86573` are gone (2026-10-09); reviving means rebuilding it.
 - **Composer attachments** (2026-09-18) — revive when attaching a file to a goal or steer is wanted.
 - **Diff surface repository actions (Spec B)** (2026-09-04) — checkout, cherry-pick, revert. Needs its
   own spec; revive when a write from the Diff surface is wanted. The orphaned revert path was deleted
