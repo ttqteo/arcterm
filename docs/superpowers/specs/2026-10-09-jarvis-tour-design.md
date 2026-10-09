@@ -49,10 +49,10 @@ The tour opens the newest run's sheet (`openAddress(model, "run:<id>")`); with n
 
 1. `[data-run-sheet-verb]` and the meter (`[data-run-sheet] [role="img"]`): where the run stands.
 2. `[data-run-sheet-rows]`: each task's state and action (Open in Agent, View child run, Open DAG), then `next:`.
-3. `[data-run-sheet-timeline]`'s toggle: every event, newest first; the part to read when a run needs you.
+3. *new* `[data-run-sheet-timeline-toggle]`: every event, newest first; the part to read when a run needs you.
 4. `[data-run-sheet-final-shots]`, only when the run has a Final: the screenshots of its last final round.
 5. `[data-jarvis-brief-sheet-config="editable"]`: the run's shape, and **Adjust** for later dispatches.
-6. `footer[data-jarvis-brief-sheet-face="settings"]`, its buttons marked *new* `data-run-sheet-dock="dag|lead|ask|cancel"`.
+6. `footer[data-jarvis-brief-sheet-face="settings"]`, the dock as one: Open DAG, Open lead, Land again, Cancel run.
 7. `aria-label="Previous run"` / `"Next run"` (`j` / `k`), and `[data-jarvis-brief-band="composer"]` when present.
 
 ### Profile
@@ -61,12 +61,14 @@ The tour opens the Profile (`briefProfileAtom` set to `""`).
 
 1. `[data-jarvis-brief-profile]` and `[data-jarvis-autonomy="chip"]`.
 2. `[data-jarvis-profile-tab]`: Global for every project, Project for this one; **Same as global** inherits.
-3. `role=group[aria-label="Default shape"]` and *new* `[data-jarvis-profile-field="parallel"]`.
-4. *new* `[data-jarvis-profile-field="lead-route|worker-route|reviewer-route"]`: which harness and model each role uses.
-5. `role=group[aria-label="Runs land on"]`: own branch `wave/<runId>` merged back when done, or the checkout; a
+3. *new* `[data-jarvis-profile-row="Default shape"]` and `"Parallel workers"`, lit together. Every Profile row
+   gets `data-jarvis-profile-row="<its label>"` from `DefaultRow`, the one place rows are drawn.
+4. `[data-jarvis-profile-row="Lead route|Worker route|Reviewer route"]`, lit together: which harness and model each
+   role uses.
+5. `[data-jarvis-profile-row="Runs land on"]`: own branch `wave/<runId>` merged back when done, or the checkout; a
    branch run is held when the checkout has uncommitted edits to a file it changes.
 6. `[data-jarvis-global-principles="editor"]`: short rules put in the lead's prompt, customizable per project.
-7. *new* `[data-jarvis-profile-save]`: saving applies to runs started afterwards only.
+7. `[data-jarvis-brief-modal="profile"] footer`: saving applies to runs started afterwards only.
 
 ## Components
 
@@ -76,17 +78,21 @@ The tour opens the Profile (`briefProfileAtom` set to `""`).
   so the reducer stays testable and the component does the opening.
 - `frontend/app/view/jarvis/jarvistourcontent.ts`: the four tracks, each step `{ id, target?, prepare?, vi, en }` with
   a title and a body in each language.
-- `frontend/app/view/jarvis/jarvistourstore.ts`: `tourAtom` (the track and step, or null); `tourLangAtom` and
-  `tourOfferedAtom` as `atomWithStorage` (`jarvis.tour.lang`, `jarvis.tour.offered`, `getOnInit: true`).
+- `frontend/app/view/jarvis/jarvistourstore.ts`: `tourAtom` (the track and step, or null) and `tourLangAtom`
+  (`atomWithStorage`, `jarvis.tour.lang`, `getOnInit: true`). The offer's flag `jarvis.tour.offered` is read from
+  `localStorage` when the Brief mounts, not held in an atom read at module load, so the CDP harness can set it after
+  load and keep the offer out of every other scenario's shots.
 - `frontend/app/view/jarvis/jarvistour.tsx`, thin: the overlay, the card and the **?** menu.
   - The overlay is a fixed layer above dialogs: a dim with a cut-out round the target's `getBoundingClientRect`,
     measured again on resize, scroll and a DOM change. It takes every click, so a click outside the card does
     nothing; the tour teaches by showing, not by letting a click open things mid-step.
   - The card is placed with `@floating-ui/react` (`offset`, `flip`, `shift`, `autoUpdate`, as
     `autonomyladderview.tsx` does) against the target's rect, or centered.
-  - Keys while the tour is open: `→` / `Enter` next, `←` back, `Esc` closes. A capture-phase listener takes them
-    before ModalShell's Escape, and the tour's open atom joins the guard list of `surface:back-home` in
-    `bindings.ts`. The **?** button has no chord: `Shift+?` is the shortcuts cheatsheet.
+  - Keys while the tour is open: `→` / `Enter` next, `←` back, `Esc` closes. They are bindings gated on `tourAtom`
+    (`buildJarvisTourBindings`), the atom counts as `modalOpen` in the dispatcher so the Brief's keys stand down,
+    and the tour registers itself on the modal stack (`registerModal`) after each step's opening, so a Profile it
+    just opened yields Escape to it and `surface:back-home` stays put. This is how the Final check viewer already
+    sits over the run sheet. The **?** button has no chord: `Shift+?` is the shortcuts cheatsheet.
 - The **?** button sits in the Brief header after the Profile button (`briefsurface.tsx`, before the divider),
   28×28 like it; the offer card sits under the header.
 
