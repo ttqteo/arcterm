@@ -62,18 +62,16 @@ describe("planAgentRail", () => {
 });
 
 describe("planRailStats", () => {
-    it("counts every list section in one fixed order, empty or not, so the strip keeps one shape", () => {
+    it("counts only the lists a click acts on: those holding something, and an empty Uploads (it attaches)", () => {
         expect(planRailStats(base)).toEqual([
-            { id: "subagents", count: 0 },
             { id: "files", count: 3 },
-            { id: "artifacts", count: 0 },
             { id: "uploads", count: 0 },
-            { id: "servers", count: 0 },
             { id: "bgtasks", count: 1 },
         ]);
     });
     it("the strip counts Servers between Uploads and Background tasks, and the body lists it only above zero", () => {
-        expect(planRailStats(base).map((s) => s.id)).toEqual([
+        const full = { ...base, subagents: 1, artifacts: 1, uploads: 1, servers: 1 };
+        expect(planRailStats(full).map((s) => s.id)).toEqual([
             "subagents",
             "files",
             "artifacts",

@@ -3,9 +3,9 @@
 //
 // The Agent details rail's sections: which show, in what order, with which counts. The session block first (its
 // context and spend, opening on its token usage and facts), then attention (needs you), then the lists the agent holds
-// (subagents, changed files, artifacts, uploads, servers, background tasks), and its run. Every list is counted in the
-// tab strip in one fixed order (planRailStats), empty or not, so the rail keeps one shape from agent to agent; the body
-// lists only the ones with something in them. Plain terminals are not an agent's: the Agent tree lists them in a
+// (subagents, changed files, artifacts, uploads, servers, background tasks), and its run. The tab strip counts, in one
+// fixed order (planRailStats), only the lists a click can act on: an empty one would crowd the strip past the rail's
+// 300px and clip its last icons. The body lists the ones with something in them. Plain terminals are not an agent's: the Agent tree lists them in a
 // section of its own.
 // Rendered by agentdetailsrail.tsx. A plain terminal has no rail.
 
@@ -47,7 +47,7 @@ export function planRailStats(i: AgentRailInput): AgentRailStat[] {
     if (i.inSubagent) {
         return [];
     }
-    return [
+    const all: AgentRailStat[] = [
         { id: "subagents", count: i.subagents },
         i.filesSwitchable ? { id: "files", count: i.files, switchable: true } : { id: "files", count: i.files },
         { id: "artifacts", count: i.artifacts },
@@ -55,6 +55,7 @@ export function planRailStats(i: AgentRailInput): AgentRailStat[] {
         { id: "servers", count: i.servers },
         { id: "bgtasks", count: i.bgTasks },
     ];
+    return all.filter((s) => railStatAction(s) != null);
 }
 
 // railStatAction is what a strip count does when clicked: open its section, which the body lists exactly when this is
