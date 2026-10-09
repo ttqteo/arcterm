@@ -31,6 +31,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A terminal hidden for more than 30 seconds gives its GPU drawing context back and takes a new one when it shows
   again, so the interface holds less memory with many agents open.
 
+### Fixed
+
+- In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and
+  coming back lands on the same spot instead of the top.
+
 ## 0.15.7 — 2026-10-09
 
 ### Added

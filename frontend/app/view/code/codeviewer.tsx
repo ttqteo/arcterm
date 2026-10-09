@@ -22,13 +22,14 @@ import { joinRepoPath } from "@/util/paths";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
-import { useEffect } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter } from "./codefrontmatter";
 import { resolveDocLink } from "./codelink";
 import { isPreviewable } from "./codepreviewable";
+import { applyScroll, keepScroll, keptScroll, scrollKey } from "./codescroll";
 import {
     codeDraftsAtom,
     codeFileAtom,
@@ -108,6 +109,63 @@ function keepEditor(ed: MonacoTypes.editor.IStandaloneCodeEditor, key: string): 
     for (const old of remember(kept, key, { model, view: ed.saveViewState() }, KEPT_EDITORS)) {
         old.model.dispose();
     }
+}
+
+// the element a preview scrolls: the markdown document's OverlayScrollbars viewport (its first; the TOC's comes after),
+// or the TeX preview's root
+const PREVIEW_SCROLLER = "[data-overlayscrollbars-viewport], [data-tex-preview]";
+const RESTORE_FRAMES = 30; // about half a second for the document to reach its height
+
+// KeptScroll records where a preview is scrolled and puts it back on the next mount (codescroll.ts)
+function KeptScroll({ id, children }: { id: string; children: ReactNode }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const target = keptScroll(id);
+        if (target == null || target <= 0) {
+            return;
+        }
+        let frames = 0;
+        let raf = 0;
+        const step = () => {
+            const el = ref.current?.querySelector<HTMLElement>(PREVIEW_SCROLLER);
+            if (el != null && applyScroll(el, target)) {
+                return;
+            }
+            if (++frames < RESTORE_FRAMES) {
+                raf = requestAnimationFrame(step);
+            } else if (el != null) {
+                el.scrollTop = target; // as far as the document now goes
+            }
+        };
+        raf = requestAnimationFrame(step);
+        // the reader scrolling first wins over a restore still waiting for the document to grow
+        const stop = () => cancelAnimationFrame(raf);
+        const host = ref.current;
+        host?.addEventListener("wheel", stop, { once: true, passive: true });
+        host?.addEventListener("pointerdown", stop, { once: true });
+        host?.addEventListener("keydown", stop, { once: true });
+        return () => {
+            stop();
+            host?.removeEventListener("wheel", stop);
+            host?.removeEventListener("pointerdown", stop);
+            host?.removeEventListener("keydown", stop);
+        };
+    }, [id]);
+    return (
+        <div
+            ref={ref}
+            className="h-full min-h-0"
+            // scroll does not bubble; the capture phase sees the inner scroller's
+            onScrollCapture={(e) => {
+                const el = e.target as HTMLElement;
+                if (el.matches?.(PREVIEW_SCROLLER)) {
+                    keepScroll(id, el.scrollTop);
+                }
+            }}
+        >
+            {children}
+        </div>
+    );
 }
 
 export function CodeViewer({ model }: { model: AgentsViewModel }) {
@@ -225,16 +283,17 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             // a paper reads as a document too; double-clicking a sentence opens Source at its line
             if (isTexPath(file.path) && mode === "preview") {
                 return (
-                    <TexPreview
-                        key={file.path}
-                        text={draft?.text ?? file.text}
-                        onSource={(line) => {
-                            // mode first: a pending line that lands while the preview still shows is consumed
-                            globalStore.set(codeViewModeAtom, "source");
-                            globalStore.set(codePendingLineAtom, line);
-                        }}
-                        onLink={(href) => fireAndForget(() => openLink(href))}
-                    />
+                    <KeptScroll key={abs} id={scrollKey("tex", abs)}>
+                        <TexPreview
+                            text={draft?.text ?? file.text}
+                            onSource={(line) => {
+                                // mode first: a pending line that lands while the preview still shows is consumed
+                                globalStore.set(codeViewModeAtom, "source");
+                                globalStore.set(codePendingLineAtom, line);
+                            }}
+                            onLink={(href) => fireAndForget(() => openLink(href))}
+                        />
+                    </KeptScroll>
                 );
             }
             // READMEs and other prose render as documents; Source (the CodeEditor below) stays one
@@ -242,36 +301,37 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             if (isMarkdownPath(file.path) && mode === "preview") {
                 const doc = splitFrontmatter(draft?.text ?? file.text);
                 return (
-                    <Markdown
-                        key={file.path}
-                        text={doc.body}
-                        header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
-                        scrollable
-                        className="markdown-doc h-full"
-                        contentClassName="px-8 pb-12 pt-7"
-                        fontSizeOverride={DOC_FONT_SIZE}
-                        resolveOpts={{
-                            connName: "local",
-                            baseDir: (project != null ? joinRepoPath(project.path, file.path) : file.path).replace(
-                                /[\\/][^\\/]*$/,
-                                ""
-                            ),
-                        }}
-                        onClickLink={(href) => {
-                            const target = project != null ? resolveDocLink(file.path, href) : null;
-                            if (target == null) {
-                                return false;
-                            }
-                            fireAndForget(() =>
-                                openInCode(model, {
-                                    projectPath: project.path,
-                                    rel: target.rel,
-                                    line: target.line ?? undefined,
-                                })
-                            );
-                            return true;
-                        }}
-                    />
+                    <KeptScroll key={abs} id={scrollKey("preview", abs)}>
+                        <Markdown
+                            text={doc.body}
+                            header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
+                            scrollable
+                            className="markdown-doc h-full"
+                            contentClassName="px-8 pb-12 pt-7"
+                            fontSizeOverride={DOC_FONT_SIZE}
+                            resolveOpts={{
+                                connName: "local",
+                                baseDir: (project != null ? joinRepoPath(project.path, file.path) : file.path).replace(
+                                    /[\\/][^\\/]*$/,
+                                    ""
+                                ),
+                            }}
+                            onClickLink={(href) => {
+                                const target = project != null ? resolveDocLink(file.path, href) : null;
+                                if (target == null) {
+                                    return false;
+                                }
+                                fireAndForget(() =>
+                                    openInCode(model, {
+                                        projectPath: project.path,
+                                        rel: target.rel,
+                                        line: target.line ?? undefined,
+                                    })
+                                );
+                                return true;
+                            }}
+                        />
+                    </KeptScroll>
                 );
             }
             return (
