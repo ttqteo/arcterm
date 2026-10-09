@@ -33,7 +33,8 @@ signed out) shows no status; a run worker in that state stalls at the five-minut
 
 agy's `ask_question` tool is answered on the cockpit card, for interactive agents and run workers alike; the answer
 returns to agy as the tool's denial reason. Outside arcterm (the desktop app, a plain terminal) the hook answers
-neutrally and agy asks in its own UI. A heavy shell command goes through the Low RAM gate like claude's and pi's.
+neutrally and agy asks in its own UI. A heavy shell command waits its turn in arcterm's job queue like claude's and
+pi's, but agy has no "command finished" event, so its slot is released as soon as the command starts.
 
 ## Runs
 
