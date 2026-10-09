@@ -25,7 +25,7 @@ and the drop types their paths at the prompt, so pointing an agent at `src/foo.t
 1. **A third tab, `tree`, labelled Files, icon `FolderTree`.** It sits between Overview and the editor-style File tab
    and is always visible while the agent has a cwd (`railState.cwd`); without one (no project, a subagent's interior, an
    ended session with no cwd) it is not shown. The key is `tree`, not `files`, because `files` already names the Files
-   changed count. It is a wide tab: it takes `railWideWidthAtom`'s width and grip like File. It is never the default tab
+   changed count. It is resizable like File but keeps its own width (`railTreeWidthAtom`, default Overview's 300px, minimum 240px; amended 2026-10-09: at File's 520px the tree read as too wide). It is never the default tab
    (`panelFor` keeps falling back to Overview); selecting it is remembered per agent in `railPanelsAtom` like any tab.
 2. **Root = the agent's cwd.** The tree lists what `GitListFilesCommand({cwd})` returns: tracked and untracked files
    under the cwd, plus ignored entries dimmed; a wholly ignored directory (`node_modules/`) lists only when expanded

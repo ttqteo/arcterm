@@ -1216,6 +1216,30 @@ func DefaultBranch(ctx context.Context, cwd string) (string, error) {
 	return "", nil
 }
 
+// BranchBase resolves what the current branch is measured against for a whole-branch diff: the repo's
+// default branch, preferring the local one (a worktree branch is cut from local main, which may be
+// ahead of origin/main), and the merge base of it with HEAD. Both are "" when no default resolves or
+// HEAD has no commits; that is not an error, the caller just has no branch view to offer.
+func BranchBase(ctx context.Context, cwd string) (branch string, mergeBase string, err error) {
+	def, err := DefaultBranch(ctx, cwd)
+	if err != nil || def == "" {
+		return "", "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	if local := strings.TrimPrefix(def, "origin/"); local != def {
+		if _, lerr := run(ctx, cwd, "rev-parse", "--verify", "--quiet", local); lerr == nil {
+			def = local
+		}
+	}
+	mb, err := run(ctx, cwd, "merge-base", def, "HEAD")
+	if err != nil {
+		// unrelated histories or an unborn HEAD: no base to measure from
+		return def, "", nil
+	}
+	return def, strings.TrimSpace(mb), nil
+}
+
 // A fetch talks to the network, so it gets its own budget: gitTimeout (10s) is a normal duration
 // for one, not a symptom. The client raises its RPC timeout to match.
 const fetchTimeout = 55 * time.Second

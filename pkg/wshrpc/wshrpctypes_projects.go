@@ -56,6 +56,11 @@ type CommandGitChangesData struct {
 	// (commits since start + uncommitted). Takes precedence over Ref; the resolved base is echoed in
 	// the response's Ref. 0 = fall through to Ref / live HEAD diff.
 	SessionStartTs int64 `json:"sessionstartts,omitempty"`
+	// BranchBase, when set, measures from the merge base of HEAD with the repo's default branch (local
+	// main before origin/main): everything the current branch carries, committed or not. Takes
+	// precedence over SessionStartTs and Ref; the response echoes the base in Ref and names the
+	// default branch in BaseBranch. No resolvable default falls through to the live HEAD diff.
+	BranchBase bool `json:"branchbase,omitempty"`
 }
 
 type CommandGitChangesRtnData struct {
@@ -71,4 +76,6 @@ type CommandGitChangesRtnData struct {
 	// built from, so a commit landing under the surface costs one log re-read and a quiet tick costs
 	// nothing.
 	Head string `json:"head,omitempty"`
+	// BaseBranch is the default branch a BranchBase read measured from; "" otherwise.
+	BaseBranch string `json:"basebranch,omitempty"`
 }

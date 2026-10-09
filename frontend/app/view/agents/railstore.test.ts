@@ -55,3 +55,33 @@ describe("railVisibleAtom", () => {
         expect(DEFAULT_RAIL_VISIBLE).toBe(true);
     });
 });
+
+describe("branchDiffOf", () => {
+    const read = (over: Partial<CommandGitChangesRtnData>): CommandGitChangesRtnData => ({
+        branch: "wave/abc",
+        statusz: " M src/a.ts\0",
+        numstat: "3\t1\tsrc/a.ts\n",
+        isrepo: true,
+        ref: "deadbeef",
+        basebranch: "main",
+        ...over,
+    });
+
+    it("is the branch's changes against the default branch it left", async () => {
+        const { branchDiffOf } = await import("./railstore");
+        const d = branchDiffOf(read({}));
+        expect(d?.base).toBe("main");
+        expect(d?.ref).toBe("deadbeef");
+        expect(d?.changes.files.map((f) => f.path)).toEqual(["src/a.ts"]);
+    });
+
+    it("is absent on the default branch itself, with no base, or with no read", async () => {
+        const { branchDiffOf } = await import("./railstore");
+        expect(branchDiffOf(read({ branch: "main" }))).toBeUndefined();
+        expect(branchDiffOf(read({ branch: "main", basebranch: "origin/main" }))).toBeUndefined();
+        expect(branchDiffOf(read({ basebranch: undefined }))).toBeUndefined();
+        expect(branchDiffOf(read({ ref: "" }))).toBeUndefined();
+        expect(branchDiffOf(read({ isrepo: false }))).toBeUndefined();
+        expect(branchDiffOf(null)).toBeUndefined();
+    });
+});

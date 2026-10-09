@@ -2220,3 +2220,36 @@ func TestReviewPatchNotARepo(t *testing.T) {
 		t.Fatalf("non-repo = %+v", res)
 	}
 }
+
+func TestBranchBaseIsTheMergeBaseWithLocalMain(t *testing.T) {
+	dir := repoDiverged(t)
+	gitAuthored(t, dir, "checkout", "feature")
+	branch, mb, err := BranchBase(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if branch != "main" {
+		t.Errorf("branch = %q, want main", branch)
+	}
+	want := gitRun(t, dir, "rev-list", "--max-parents=0", "HEAD")
+	if mb != want {
+		t.Errorf("merge base = %q, want the root commit %q", mb, want)
+	}
+	ch, err := GetChanges(context.Background(), dir, mb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ch.Numstat, "f1.txt") || !strings.Contains(ch.Numstat, "f2.txt") || strings.Contains(ch.Numstat, "m1.txt") {
+		t.Errorf("branch changes = %q, want f1.txt and f2.txt and not main's m1.txt", ch.Numstat)
+	}
+}
+
+func TestBranchBaseWithNoDefaultBranch(t *testing.T) {
+	dir := t.TempDir()
+	gitAuthored(t, dir, "init", "--initial-branch=trunk")
+	commitAuthored(t, dir, "a.txt", "a\n", "one")
+	branch, mb, err := BranchBase(context.Background(), dir)
+	if err != nil || branch != "" || mb != "" {
+		t.Errorf("BranchBase = (%q, %q, %v), want empty", branch, mb, err)
+	}
+}

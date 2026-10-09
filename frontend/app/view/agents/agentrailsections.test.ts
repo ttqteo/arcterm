@@ -96,6 +96,19 @@ describe("planRailStats", () => {
     });
 });
 
+describe("Files changed with a branch to switch to", () => {
+    it("lists its section and opens from the strip even while the session's list is empty", () => {
+        const i: AgentRailInput = { ...base, files: 0, filesSwitchable: true };
+        expect(ids(i)).toContain("files");
+        expect(header(i, "files")).toEqual({ count: 0 });
+        const stat = planRailStats(i).find((s) => s.id === "files")!;
+        expect(railStatAction(stat)).toBe("open");
+    });
+    it("without one, an empty list stays out of the body", () => {
+        expect(ids({ ...base, files: 0 })).not.toContain("files");
+    });
+});
+
 describe("railStatAction", () => {
     it("opens a section with something in it, or one not counted yet", () => {
         expect(railStatAction({ id: "files", count: 3 })).toBe("open");

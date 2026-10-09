@@ -23,7 +23,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
-import { agentDiffScope, openDiff } from "./agentdiffnav";
+import { agentDiffScope, openBranchDiff, openDiff } from "./agentdiffnav";
 import {
     cacheRewriteTitle,
     contextLevel,
@@ -60,7 +60,13 @@ import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { ServersSection } from "./railservers";
-import { loadRailForAgent, railStateAtom, railVisibleAtom } from "./railstore";
+import {
+    loadRailForAgent,
+    railChangesRangeAtom,
+    railStateAtom,
+    railVisibleAtom,
+    type RailChangesRange,
+} from "./railstore";
 import { RailTreePane } from "./railtreepane";
 import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
@@ -403,6 +409,86 @@ function SealedFiles({ files }: { files: EvidenceFile[] }) {
     );
 }
 
+// Session | Branch above Files changed, offered on a branch off the default one: this session's changes, or everything
+// the branch carries against the default branch (committed or not)
+function ChangesRangeSwitch({
+    value,
+    base,
+    onChange,
+}: {
+    value: RailChangesRange;
+    base: string;
+    onChange: (r: RailChangesRange) => void;
+}) {
+    const opt = (r: RailChangesRange, label: string, title: string) => (
+        <button
+            type="button"
+            role="radio"
+            aria-checked={value === r}
+            data-changes-range={r}
+            title={title}
+            onClick={() => onChange(r)}
+            className={cn(
+                "min-w-0 flex-1 cursor-pointer truncate rounded-[5px] border-0 px-[8px] py-[2px] text-[10.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                value === r ? "bg-surface-raised text-primary" : "bg-transparent text-muted hover:text-secondary"
+            )}
+        >
+            {label}
+        </button>
+    );
+    return (
+        <div
+            role="radiogroup"
+            aria-label="Changes to list"
+            className="mb-[8px] flex gap-[2px] rounded-[7px] border border-border p-[2px]"
+        >
+            {opt("session", "Session", "What changed since this session started")}
+            {opt("branch", `Branch vs ${base}`, `Everything this branch carries against ${base}, committed or not`)}
+        </div>
+    );
+}
+
+function FilesChangedList({
+    files,
+    summary,
+    onOpen,
+    onViewDiff,
+}: {
+    files: { path: string; status: string; adds: number; dels: number }[];
+    summary: string;
+    onOpen: (path: string) => void;
+    onViewDiff: () => void;
+}) {
+    return (
+        <>
+            <div className="flex flex-col gap-[7px]">
+                {files.map((f) => (
+                    <FileRow
+                        key={f.path}
+                        status={f.status}
+                        path={f.path}
+                        adds={f.adds}
+                        dels={f.dels}
+                        onClick={() => onOpen(f.path)}
+                    />
+                ))}
+            </div>
+            <div className="mt-[8px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
+                <span className="text-muted">{summary}</span>
+                <span className="flex-1" />
+                <button
+                    type="button"
+                    onClick={onViewDiff}
+                    className="inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] font-semibold text-accent-soft hover:bg-surface-hover"
+                >
+                    View diff
+                    <ArrowUpRight size={11} aria-hidden />
+                </button>
+            </div>
+        </>
+    );
+}
+
 export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const liveEntries = useAtomValue(entriesAtomFor(agent.id));
     const subs = useAtomValue(subagentsByIdAtom)[agent.id] ?? [];
@@ -418,6 +504,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const ctxPct = usage?.contextpct;
     const tools = toolChips(summarizeActions(recentActions(entries, 0)).byVerb);
     const railState = useAtomValue(railStateAtom);
+    const changesRange = useAtomValue(railChangesRangeAtom);
     // an agent's uploads are keyed by its terminal block (uploadsstore.ts); one with no terminal has none
     const uploads = useAtomValue(uploadsAtom(agent.blockId ?? ""));
     const cacheStatus = useAtomValue(agentCacheStatusAtom);
@@ -440,7 +527,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     // the Files tab lists the agent's worktree: it needs a resolved cwd, and a subagent's interior has no worktree of its own
     const hasTree = railState?.cwd != null && sub == null;
     const shown = shownTab(panel, hasTree);
-    const wide = useWideWidth();
+    // File and Files each keep their own dragged width; Overview's is fixed
+    const wide = useWideWidth(shown === "tree" ? "tree" : "file");
     const fileRef = panel.file.current;
     const railVisible = useAtomValue(railVisibleAtom);
     const showRail = () => globalStore.set(railVisibleAtom, true);
@@ -478,13 +566,21 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         return () => clearInterval(refresh);
     }, [usageId, usagePath]);
 
-    const changes = railState?.changes?.files ?? [];
+    // Files changed lists this session's changes, or, on a branch off the default one, everything the branch carries
+    const branchDiff = ended ? undefined : railState?.branchDiff;
+    const onBranch = changesRange === "branch" && branchDiff != null;
+    const changes = (onBranch ? branchDiff.changes.files : railState?.changes?.files) ?? [];
     const { shown: shownFiles } = capFiles(changes, RailFilesCap);
 
     // A path is only worth linking when the rail resolved a working directory to resolve it against.
     const openFileDiff = (path?: string) => {
         globalStore.set(model.focusIdAtom, agent.id);
-        openDiff(model, agentDiffScope(agent.id, agent.name), railState?.cwd && path ? path : undefined);
+        const scope = agentDiffScope(agent.id, agent.name);
+        if (onBranch && railState?.cwd) {
+            openBranchDiff(model, scope, railState.cwd, branchDiff.base, railState.branch || "HEAD");
+            return;
+        }
+        openDiff(model, scope, railState?.cwd && path ? path : undefined);
     };
     // a changed file opens on the File tab's Diff, beside the terminal; View diff is the way to the whole Diff surface
     const openChangedFile = (path: string) => {
@@ -497,7 +593,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             abs: joinRepoPath(cwd, path),
             root: cwd,
             reread: Date.now(), // the agent may have changed it since it was last open
-            diff: { rel: path, base: railState?.ref ?? "" },
+            diff: { rel: path, base: onBranch ? branchDiff.ref : (railState?.ref ?? "") },
         });
     };
     const drive = (data: string) => driveAgent(agent.blockId, data);
@@ -525,6 +621,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         needsYou: !sub && roleRun && role?.kind === "lead" ? yours.length : 0,
         subagents: subs.length,
         files: fileCount,
+        filesSwitchable: !ended && railState?.branchDiff != null,
         artifacts: artifacts.rows.length,
         uploads: uploads.length,
         servers: servers.length,
@@ -722,34 +819,27 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 </div>
             ) : !railState.isRepo ? (
                 <div className="text-[11.5px] text-muted">Not a git repository</div>
-            ) : shownFiles.length === 0 ? (
-                <div className="text-[11.5px] text-muted">No changes</div>
             ) : (
                 <>
-                    <div className="flex flex-col gap-[7px]">
-                        {shownFiles.map((f) => (
-                            <FileRow
-                                key={f.path}
-                                status={f.status}
-                                path={f.path}
-                                adds={f.adds}
-                                dels={f.dels}
-                                onClick={() => openChangedFile(f.path)}
-                            />
-                        ))}
-                    </div>
-                    <div className="mt-[8px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
-                        <span className="text-muted">{filesSummary(changes)}</span>
-                        <span className="flex-1" />
-                        <button
-                            type="button"
-                            onClick={() => openFileDiff()}
-                            className="inline-flex cursor-pointer items-center gap-[3px] rounded-[7px] px-[6px] py-[3px] font-semibold text-accent-soft hover:bg-surface-hover"
-                        >
-                            View diff
-                            <ArrowUpRight size={11} aria-hidden />
-                        </button>
-                    </div>
+                    {branchDiff ? (
+                        <ChangesRangeSwitch
+                            value={onBranch ? "branch" : "session"}
+                            base={branchDiff.base}
+                            onChange={(r) => globalStore.set(railChangesRangeAtom, r)}
+                        />
+                    ) : null}
+                    {shownFiles.length === 0 ? (
+                        <div className="text-[11.5px] text-muted">
+                            {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
+                        </div>
+                    ) : (
+                        <FilesChangedList
+                            files={shownFiles}
+                            summary={filesSummary(changes)}
+                            onOpen={openChangedFile}
+                            onViewDiff={() => openFileDiff()}
+                        />
+                    )}
                 </>
             ),
         artifacts: () => (
@@ -875,7 +965,11 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     />
                 ) : undefined
             }
-            edge={shown !== "overview" ? <RailResizeGrip width={wide.width} max={wide.max} /> : undefined}
+            edge={
+                shown !== "overview" ? (
+                    <RailResizeGrip tab={shown === "tree" ? "tree" : "file"} width={wide.width} max={wide.max} />
+                ) : undefined
+            }
             stripTabs={[
                 {
                     key: "overview",

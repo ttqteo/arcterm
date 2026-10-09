@@ -18,6 +18,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
   when, and how many agents it held up, so a run that sat still reads as a sleep rather than a hung agent.
 - Now and then, when nothing waits on you, Jarvis's pet says a well-known line about programming, with its author.
   Settings → Appearance → **Jarvis quotes** turns it off.
+- The Agent panel's Files changed can list the whole branch: on a branch off the default one, a Session / Branch vs
+  main switch shows everything the branch carries against where it left main, committed or not, and View diff opens
+  that comparison.
+
+### Changed
+
+- The Agent panel's Files tab opens as wide as Overview instead of the File tab's width, and remembers its own width
+  when you drag its edge.
 
 ## 0.15.7 — 2026-10-09
 

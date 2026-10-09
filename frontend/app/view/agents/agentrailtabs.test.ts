@@ -14,6 +14,8 @@ import {
     nextTab,
     openFile,
     panelFor,
+    RAIL_OVERVIEW_PX,
+    RAIL_TREE_MIN_PX,
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
     selectTab,
@@ -143,6 +145,12 @@ describe("widths", () => {
         expect(clampWideWidth(200, 900)).toBe(RAIL_WIDE_MIN_PX);
         expect(clampWideWidth(2000, 900)).toBe(900);
         expect(clampWideWidth(Number.NaN, 900)).toBe(RAIL_WIDE_DEFAULT_PX);
+    });
+
+    it("lets the Files tab go as narrow as its own minimum and defaults it to Overview's width", () => {
+        expect(clampWideWidth(260, 900, "tree")).toBe(260);
+        expect(clampWideWidth(100, 900, "tree")).toBe(RAIL_TREE_MIN_PX);
+        expect(clampWideWidth(Number.NaN, 900, "tree")).toBe(RAIL_OVERVIEW_PX);
     });
 });
 

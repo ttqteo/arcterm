@@ -27,7 +27,24 @@ export interface RailGitState {
     worktree?: string;
     // the commit changes is measured from (the session start's); "" is HEAD
     ref?: string;
+    // the whole branch's changes, from where it left the default branch; unset on the default branch itself, or when
+    // no default branch resolves
+    branchDiff?: BranchDiff;
 }
+
+export interface BranchDiff {
+    base: string; // the default branch it is measured against, e.g. "main"
+    ref: string; // the merge base the changes are measured from
+    changes: GitChanges;
+}
+
+// which changes the rail's Files changed lists: this session's, or everything on the agent's branch. One choice for
+// every agent, kept across launches
+export type RailChangesRange = "session" | "branch";
+
+export const railChangesRangeAtom = atomWithStorage<RailChangesRange>("agent.rail.changesRange", "session", undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<RailChangesRange>;
 
 // First persisted FE pref in frontend/app: the rail is global and on by default (localStorage key
 // "agent.rail.visible"). A stored value, on or off, wins over the default: it was off by default until 2026-10, so a
@@ -91,9 +108,11 @@ export async function loadRailForAgent(
         // sessionstartts: match the card pill / Diff tab — the branch's changed-file list vs the
         // session-start commit. Null ts degrades to the live working-tree-vs-HEAD diff.
         // the worktree list only names the worktree, so a failure there leaves the line out rather than the rail
-        const [ch, wts] = await Promise.all([
+        // the branch view is extra: a failure there leaves the session's list standing
+        const [ch, wts, br] = await Promise.all([
             RpcApi.GitChangesCommand(TabRpcClient, { cwd, sessionstartts: startTs ?? undefined }),
             RpcApi.GitListWorktreesCommand(TabRpcClient, { cwd }).catch(() => null),
+            RpcApi.GitChangesCommand(TabRpcClient, { cwd, branchbase: true }).catch(() => null),
         ]);
         if (current.id !== id) {
             return;
@@ -107,10 +126,22 @@ export async function loadRailForAgent(
             changes,
             worktree,
             ref: ch.ref ?? "",
+            branchDiff: ch.isrepo ? branchDiffOf(br) : undefined,
         });
     } catch {
         if (current.id === id) {
             globalStore.set(railStateAtom, { ...EMPTY, cwd });
         }
     }
+}
+
+// a branch read is a branch view only when it found a base and the branch is not that base itself
+export function branchDiffOf(br: CommandGitChangesRtnData | null): BranchDiff | undefined {
+    if (br == null || !br.isrepo || !br.basebranch || !br.ref) {
+        return undefined;
+    }
+    if (br.basebranch.replace(/^origin\//, "") === br.branch) {
+        return undefined;
+    }
+    return { base: br.basebranch, ref: br.ref, changes: parseGitChanges(br.statusz, br.numstat) };
 }

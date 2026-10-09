@@ -204,7 +204,7 @@ Nhấn `d` (hoặc bấm mũi tên ở rail) để thu rail thành một dải 4
 | **Status** | Khối đầu rail: vòng context (% và số token đang nằm trong context) cùng chi phí ước tính của phiên; tổng token và thanh chia theo loại token; dòng `project · nhánh · model`; worktree nếu có; các công cụ agent dùng nhiều (`Bash ×12`…). Nút **Breakdown** ở cuối khối mở ra nhận xét về nơi token đi vào, phần chia theo loại (token và ≈ chi phí) và, nếu phiên dùng nhiều model, phần chia theo model. Khi context đã lớn, một agent Claude đang rảnh còn có **Compact** (tóm tắt rồi tiếp tục) và **Clear** (hội thoại mới; `/resume` đưa cái cũ về) |
 | **Needs you** | Chỉ trên rail của lead: các câu hỏi của run đang chờ bạn |
 | **Subagents** | Từng subagent với model và trạng thái; bấm để xem bên trong |
-| **Files changed** | File đã đổi trong phiên (`M`/`A`/… cùng `+N −M`). Bấm một file để mở ở tab File dưới dạng diff so với lúc phiên bắt đầu; **View diff** mở cả surface [Diff](diff.md) |
+| **Files changed** | File đã đổi trong phiên (`M`/`A`/… cùng `+N −M`). Bấm một file để mở ở tab File dưới dạng diff so với lúc phiên bắt đầu; **View diff** mở cả surface [Diff](diff.md). Khi agent ở một branch tách từ branch mặc định, công tắc **Session / Branch vs main** chuyển sang mọi thay đổi của cả branch so với chỗ nó tách khỏi `main` (đã commit hay chưa); lúc đó **View diff** mở Diff ở chế độ so sánh `main`…branch |
 | **Artifacts** | Các board canvas của agent; bấm một dòng để mở canvas ở board đó |
 | **Uploads** | Ảnh dán và file thả hoặc đính kèm cho agent. **Attach** chọn file và đưa đường dẫn vào prompt. Ảnh dán hiện là `Image #N` như số Claude Code ghi trong prompt; bấm để phóng to |
 | **Servers** | Các tiến trình đang lắng nghe trong project của agent: cổng (bấm để mở trình duyệt), lệnh, tuổi, PID, ai khởi động. Rê chuột để hiện **Log**, **Copy**, **Stop** (hỏi hai lần). Tương tự popover **Servers** ở footer nhưng chỉ cho project này ([Cockpit](cockpit.md#chip-servers-và-popover)) |
@@ -222,7 +222,7 @@ Cây file của thư mục làm việc (worktree) của agent, lấy từ git: f
 - **Chọn:** bấm một dòng (bấm thư mục thì mở/đóng nó), `Ctrl`+bấm để thêm/bớt, `Shift`+bấm để chọn cả đoạn. `↑`/`↓` di chuyển, `←`/`→` đóng/mở thư mục, `Enter` mở thư mục hoặc mở file ở tab File; bấm đúp một file cũng mở nó.
 - **Kéo vào terminal:** kéo file hoặc thư mục (kéo một dòng đang chọn thì kéo cả vùng chọn) thả lên terminal; đường dẫn được gõ vào prompt, chưa nhấn Enter. Trên terminal của agent nó thành `@src/util.ts`, thư mục là `@src/app/`, đường dẫn có khoảng trắng là `@"docs/my notes.md"`, tính tương đối theo thư mục của agent nhận. Trên terminal thường thì không có `@`.
 
-Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent khi bạn đổi agent hay đổi surface. Tab Files rộng như tab File.
+Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent khi bạn đổi agent hay đổi surface. Tab Files mở rộng bằng Overview; kéo mép rail để đổi, độ rộng đó được nhớ riêng, không ảnh hưởng tab File.
 
 ### Tab File
 

@@ -22,6 +22,9 @@ export interface AgentRailInput {
     needsYou: number; // the lead's asks owned by the user
     subagents: number;
     files: number | null; // null: not known (loading, or not a git repo)
+    // Files changed can switch between the session's changes and the whole branch's, so it lists even while the one
+    // shown is empty: the other may not be
+    filesSwitchable?: boolean;
     artifacts: number; // the agent's canvas boards
     uploads: number; // files attached to the agent (paste, drop, Attach)
     servers: number; // listening processes in the agent's project
@@ -37,6 +40,7 @@ export interface AgentRailSectionPlan {
 export interface AgentRailStat {
     id: AgentRailStatId;
     count: number | null; // null: not known (files loading, or not a git repo)
+    switchable?: boolean; // an empty list that has another view to switch to still opens (Files changed's branch)
 }
 
 export function planRailStats(i: AgentRailInput): AgentRailStat[] {
@@ -45,7 +49,7 @@ export function planRailStats(i: AgentRailInput): AgentRailStat[] {
     }
     return [
         { id: "subagents", count: i.subagents },
-        { id: "files", count: i.files },
+        i.filesSwitchable ? { id: "files", count: i.files, switchable: true } : { id: "files", count: i.files },
         { id: "artifacts", count: i.artifacts },
         { id: "uploads", count: i.uploads },
         { id: "servers", count: i.servers },
@@ -56,7 +60,7 @@ export function planRailStats(i: AgentRailInput): AgentRailStat[] {
 // railStatAction is what a strip count does when clicked: open its section, which the body lists exactly when this is
 // "open"; attach files, for an empty Uploads, whose section would hold only the Attach button; or nothing
 export function railStatAction(s: AgentRailStat): "open" | "attach" | null {
-    if (s.count !== 0) {
+    if (s.count !== 0 || s.switchable) {
         return "open";
     }
     return s.id === "uploads" ? "attach" : null;

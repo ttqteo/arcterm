@@ -7,7 +7,9 @@
 // on its first file instead of the one that was clicked.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
+import { setCompareRefs } from "./comparestore";
 import { defaultRangeFor, scopeKey, type DiffOrigin, type DiffScope } from "./diffscope";
 import { requestFileLink } from "./filesstore";
 import { runTree } from "./runmodel";
@@ -43,4 +45,17 @@ export function openDiff(model: AgentsViewModel, scope: DiffScope, file?: string
     }
     globalStore.set(model.diffScopeAtom, scope);
     globalStore.set(model.surfaceAtom, "files");
+}
+
+// the whole branch on the Diff surface: a compare from the default branch it left (merge-base form, what the branch
+// introduced), returning to the scope's own range on leaving it
+export function openBranchDiff(
+    model: AgentsViewModel,
+    scope: DiffScope,
+    cwd: string,
+    base: string,
+    head: string
+): void {
+    openDiff(model, { ...scope, range: { kind: "compare", base, head, form: "mergebase", from: scope.range } });
+    fireAndForget(() => setCompareRefs(cwd, base, head));
 }

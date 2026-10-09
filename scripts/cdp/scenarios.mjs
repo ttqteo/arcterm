@@ -20318,7 +20318,7 @@ const RWF_AGENT_C = "fx-rwf-c";
 const RWF_BLOCK_B = "fx-blk-rwf-b";
 const RWF_BLOCK_C = "fx-blk-rwf-c";
 const RWF_PROJECT = "verify-rail-files";
-const RWF_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", GRID_KEY];
+const RWF_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.treeWidth", GRID_KEY];
 // the server's listing cap (maxListFiles, pkg/gitinfo/gitinfo.go), mirrored: agent C's repo holds one file more
 const RWF_LISTING_CAP = 20000;
 // RAIL_PATHS_MIME (frontend/app/view/agents/pathdrop.ts), mirrored: what a drag from the tree carries
@@ -20565,7 +20565,7 @@ const agentRailWorktreeFiles = {
             // is shown alone
             await h.ev(`(() => {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
-                for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth"])}) localStorage.removeItem(k);
+                for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.treeWidth"])}) localStorage.removeItem(k);
                 localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
             })()`);
             // the roster and the dev hooks (window.__arcTermPathLinks) are read once per page load

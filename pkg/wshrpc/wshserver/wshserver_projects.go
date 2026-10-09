@@ -91,7 +91,16 @@ func (ws *WshServer) ListBranchesCommand(ctx context.Context, data wshrpc.Comman
 
 func (ws *WshServer) GitChangesCommand(ctx context.Context, data wshrpc.CommandGitChangesData) (*wshrpc.CommandGitChangesRtnData, error) {
 	ref := data.Ref
-	if data.SessionStartTs != 0 {
+	baseBranch := ""
+	if data.BranchBase {
+		// the whole branch: from where it left the default branch; no base degrades to the live HEAD diff.
+		var mb string
+		baseBranch, mb, _ = gitinfo.BranchBase(ctx, data.Cwd)
+		if mb == "" {
+			baseBranch = ""
+		}
+		ref = mb
+	} else if data.SessionStartTs != 0 {
 		// the commit that was HEAD when the agent's session began; "" degrades to the live HEAD diff.
 		ref, _ = gitinfo.CommitBefore(ctx, data.Cwd, data.SessionStartTs)
 	}
@@ -99,5 +108,5 @@ func (ws *WshServer) GitChangesCommand(ctx context.Context, data wshrpc.CommandG
 	if err != nil {
 		return nil, fmt.Errorf("git changes: %w", err)
 	}
-	return &wshrpc.CommandGitChangesRtnData{Branch: ch.Branch, StatusZ: ch.StatusZ, Numstat: ch.Numstat, IsRepo: ch.IsRepo, Ref: ref, Head: ch.Head}, nil
+	return &wshrpc.CommandGitChangesRtnData{Branch: ch.Branch, StatusZ: ch.StatusZ, Numstat: ch.Numstat, IsRepo: ch.IsRepo, Ref: ref, Head: ch.Head, BaseBranch: baseBranch}, nil
 }

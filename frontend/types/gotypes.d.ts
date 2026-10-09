@@ -1131,6 +1131,7 @@ declare global {
         cwd: string;
         ref?: string;
         sessionstartts?: number;
+        branchbase?: boolean;
     };
 
     // wshrpc.CommandGitChangesRtnData
@@ -1141,6 +1142,7 @@ declare global {
         isrepo: boolean;
         ref?: string;
         head?: string;
+        basebranch?: string;
     };
 
     // wshrpc.CommandGitCommitChangesData

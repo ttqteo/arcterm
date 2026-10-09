@@ -68,6 +68,8 @@ export interface PanelState {
 export const RAIL_OVERVIEW_PX = 300;
 export const RAIL_WIDE_DEFAULT_PX = 520;
 export const RAIL_WIDE_MIN_PX = 360;
+// the Files tab is a tree, not a page: it opens as wide as Overview and keeps its own dragged width apart from File's
+export const RAIL_TREE_MIN_PX = 240;
 const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
 const AGENT_TREE_PX = 248; // agenttree.tsx's column
 
@@ -147,12 +149,21 @@ export function wideWidthMax(windowWidth: number, navWidth: number): number {
     return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - AGENT_TREE_PX - CENTRE_MIN_PX);
 }
 
-export function clampWideWidth(value: number, max: number): number {
-    const hi = Math.max(RAIL_WIDE_MIN_PX, max);
+// the panel tabs that take a dragged width, each with its own: File (a page of text) and Files (the worktree tree)
+export type ResizableTab = "file" | "tree";
+
+export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
+    file: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
+    tree: { min: RAIL_TREE_MIN_PX, def: RAIL_OVERVIEW_PX },
+};
+
+export function clampWideWidth(value: number, max: number, tab: ResizableTab = "file"): number {
+    const { min, def } = RAIL_WIDTHS[tab];
+    const hi = Math.max(min, max);
     if (!Number.isFinite(value)) {
-        return Math.min(RAIL_WIDE_DEFAULT_PX, hi);
+        return Math.min(def, hi);
     }
-    return Math.min(hi, Math.max(RAIL_WIDE_MIN_PX, value));
+    return Math.min(hi, Math.max(min, value));
 }
 
 export function nextTab(tabs: RailTab[], current: RailTab, key: "ArrowLeft" | "ArrowRight" | "Home" | "End"): RailTab {

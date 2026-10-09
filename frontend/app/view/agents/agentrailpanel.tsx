@@ -22,17 +22,18 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agentrailsections";
-import { closeRailFile, railWideDragAtom, railWideWidthAtom, selectRailTab } from "./agentrailstore";
+import { closeRailFile, railWideDragAtom, railWidthAtoms, selectRailTab } from "./agentrailstore";
 import {
     clampWideWidth,
     fileTabLabel,
     nextTab,
-    RAIL_WIDE_MIN_PX,
+    RAIL_WIDTHS,
     shownTab,
     visibleTabs,
     wideWidthMax,
     type PanelState,
     type RailTab,
+    type ResizableTab,
 } from "./agentrailtabs";
 import { navRailCollapsed } from "./navrailwidth";
 
@@ -229,17 +230,18 @@ function useWindowWidth(): number {
     return w;
 }
 
-// the wide tabs' width now: the drag in progress, else the stored width, clamped to what the window leaves
-export function useWideWidth(): { width: number; max: number } {
-    const stored = useAtomValue(railWideWidthAtom);
+// a resizable tab's width now: the drag in progress, else its stored width, clamped to what the window leaves
+export function useWideWidth(tab: ResizableTab): { width: number; max: number } {
+    const stored = useAtomValue(railWidthAtoms[tab]);
     const drag = useAtomValue(railWideDragAtom);
     const win = useWindowWidth();
     const max = wideWidthMax(win, navRailCollapsed(win) ? 56 : 78);
-    return { width: clampWideWidth(drag ?? stored, max), max };
+    return { width: clampWideWidth(drag ?? stored, max, tab), max };
 }
 
 // a separator on the panel's left edge: dragging left widens it; arrows step 16px (64 with Shift)
-export function RailResizeGrip({ width, max }: { width: number; max: number }) {
+export function RailResizeGrip({ tab, width, max }: { tab: ResizableTab; width: number; max: number }) {
+    const min = RAIL_WIDTHS[tab].min;
     const drag = useRef<{ id: number; startX: number; start: number } | null>(null);
     const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
         drag.current = { id: e.pointerId, startX: e.clientX, start: width };
@@ -251,7 +253,7 @@ export function RailResizeGrip({ width, max }: { width: number; max: number }) {
         if (d == null || d.id !== e.pointerId) {
             return;
         }
-        globalStore.set(railWideDragAtom, clampWideWidth(d.start + (d.startX - e.clientX), max));
+        globalStore.set(railWideDragAtom, clampWideWidth(d.start + (d.startX - e.clientX), max, tab));
     };
     const end = (e: PointerEvent<HTMLDivElement>, commit: boolean) => {
         const d = drag.current;
@@ -262,7 +264,7 @@ export function RailResizeGrip({ width, max }: { width: number; max: number }) {
         const live = globalStore.get(railWideDragAtom);
         globalStore.set(railWideDragAtom, null);
         if (commit && live != null) {
-            globalStore.set(railWideWidthAtom, live);
+            globalStore.set(railWidthAtoms[tab], live);
         }
     };
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -273,7 +275,7 @@ export function RailResizeGrip({ width, max }: { width: number; max: number }) {
                 : e.key === "ArrowRight"
                   ? width - step
                   : e.key === "Home"
-                    ? RAIL_WIDE_MIN_PX
+                    ? min
                     : e.key === "End"
                       ? max
                       : null;
@@ -281,7 +283,7 @@ export function RailResizeGrip({ width, max }: { width: number; max: number }) {
             return;
         }
         e.preventDefault();
-        globalStore.set(railWideWidthAtom, clampWideWidth(next, max));
+        globalStore.set(railWidthAtoms[tab], clampWideWidth(next, max, tab));
     };
     return (
         <div
@@ -289,7 +291,7 @@ export function RailResizeGrip({ width, max }: { width: number; max: number }) {
             aria-orientation="vertical"
             aria-label="Resize panel"
             data-owns-keys
-            aria-valuemin={RAIL_WIDE_MIN_PX}
+            aria-valuemin={min}
             aria-valuemax={max}
             aria-valuenow={Math.round(width)}
             tabIndex={0}
