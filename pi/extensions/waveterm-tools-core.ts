@@ -39,30 +39,43 @@ export function dagRulesArgs(): string[] {
     return ["jarvis", "dag", "rules"];
 }
 
-// memgateArgs asks wsh whether a bash command may run now: a heavy one (a build, the typecheck, a whole
-// test suite) waits for the person's say on arcterm's card while RAM is short. The command rides as one
-// argument after --, so one starting with a dash is never read as a flag.
-export function memgateArgs(command: string): string[] {
-    return ["memgate", "--", command];
+// jobslotArgs asks wsh for a slot in arcterm's job queue for a bash command: a heavy one (a build, the
+// typecheck, a whole test suite) waits its turn, and wsh holds the slot until it is killed. The command rides
+// as one argument after --, so one starting with a dash is never read as a flag.
+export function jobslotArgs(command: string): string[] {
+    return ["jobslot", "--", command];
 }
 
-// memgateRefusal reads wsh memgate's stdout (hold lines, then the verdict) as the reason the command does
-// not run, or null to run it. Anything but a well-formed refusal runs it: a broken gate never blocks pi.
-export function memgateRefusal(stdout: string): string | null {
-    let refusal: string | null = null;
-    for (const line of stdout.split("\n")) {
-        try {
-            const v = JSON.parse(line);
-            if (v?.run === true) {
-                refusal = null;
-            } else if (v?.run === false && typeof v.reason === "string" && v.reason !== "") {
-                refusal = v.reason;
-            }
-        } catch {
-            // not a json line: wsh's own error output
-        }
+// jobslotLine reads one stdout line of wsh jobslot: a place in the queue to show the person while the command
+// waits, or the verdict. refusal null lets the command run. Anything else, wsh's errors included, is no line
+// at all: a broken queue never blocks pi. (The same code as the Claude mod's jobslot-core.ts: the two ship
+// as separate installs and cannot share a file.)
+export type JobslotLine = { hold: string } | { refusal: string | null };
+
+const filled = (v: unknown): v is string => typeof v === "string" && v !== "";
+
+export function jobslotLine(line: string): JobslotLine | null {
+    let v: unknown;
+    try {
+        v = JSON.parse(line);
+    } catch {
+        return null;
     }
-    return refusal;
+    if (typeof v !== "object" || v === null) {
+        return null;
+    }
+    const o = v as { queued?: unknown; behind?: unknown; for?: unknown; run?: unknown; reason?: unknown };
+    if (typeof o.queued === "number" && o.queued >= 1) {
+        const ahead = filled(o.behind) ? ` — waiting behind ${o.behind}${filled(o.for) ? ` (${o.for})` : ""}` : "";
+        return { hold: `Queued #${o.queued}${ahead}` };
+    }
+    if (o.run === true) {
+        return { refusal: null };
+    }
+    if (o.run === false && filled(o.reason)) {
+        return { refusal: o.reason };
+    }
+    return null;
 }
 
 // withOrchestrationRules appends a lead's rules to a provider request as its last message (orchestrator

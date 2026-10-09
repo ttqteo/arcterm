@@ -177,6 +177,11 @@ func RunWshRpcOverListener(listener net.Listener, readCallback func()) {
 	}
 }
 
+// DomainLinkClosedHook runs once a domain-socket link is unregistered. wavesrv sets it to cancel the streaming
+// RPCs that entered on the link (a held job slot, an agent's control stream), as pkg/web/ws.go does for a
+// websocket; without it they live until their timeout.
+var DomainLinkClosedHook func(baseds.LinkId)
+
 func handleDomainSocketClient(conn net.Conn, readCallback func()) {
 	proxy := MakeRpcProxy("domain")
 	// register before the reader starts: a client that disconnects at once must still find its link
@@ -200,6 +205,9 @@ func handleDomainSocketClient(conn net.Conn, readCallback func()) {
 			conn.Close()
 			// unregister before closing ToRemoteCh so no reply is routed into a closed channel
 			DefaultRouter.UnregisterLink(linkId)
+			if DomainLinkClosedHook != nil {
+				DomainLinkClosedHook(linkId)
+			}
 			close(proxy.FromRemoteCh)
 			close(proxy.ToRemoteCh)
 		}()

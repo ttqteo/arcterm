@@ -63,11 +63,13 @@ Other useful commands:
   List `Get-Process wave-tauri,wavesrv.x64 | Select Id,Path`, and stop only the PID whose path is in a
   repo checkout (`src-tauri\target`, `dist\bin`), never one under `AppData\Local\arcterm` (or
   `AppData\Local\Arc`, where installs from before the rename live).
-- **A heavy shell command can come back "Not run: …" while RAM is short.** Before every Bash command an agent
-  runs, the Claude mod and the pi tools extension ask `wsh memgate`; a build, the typecheck, a whole test suite or
-  `npm install` that would not leave 512 MB free waits on a Low RAM card for the person. A refusal is the person's
-  call: don't retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
-  `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never asks.
+- **A heavy shell command waits its turn, and can come back "Not run: …".** Before every Bash command an agent
+  runs, the Claude mod and the pi tools extension call `wsh jobslot`; a heavy one (a build, the typecheck, a whole test
+  suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until a slot is free
+  (`jobs:slots` at once, default 1) and its RAM fits, and holds the slot while it runs. The engine's Verify, Final and
+  heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't retry it —
+  carry on and report it skipped. The commands and their RAM estimates are one table in `pkg/memgate/memgate.go`; a
+  single test file or `-run` filter is light and never queues.
 - **Say what a fan-out will cost before starting it.** Token cost grows as context size × tool calls × agents,
   and almost all of it is cache reads: on 2026-10-08 a docs rewrite with four research subagents and a few real Claude
   agents staged for screenshots took the account from ~20M to ~220M tokens in an hour. Before you launch several

@@ -171,4 +171,4 @@ Hook, `wsh` và cách agent nói chuyện với cockpit: [Tích hợp agent](age
 
 - **Chip `0.15.6 / 0.15.5` màu vàng trên app bar**: shell và backend khác phiên bản (`dist/bin` cũ). Chạy `task build:backend` rồi khởi động lại.
 - **Agent không hiện trạng thái**: kiểm tra `waveapp.log`, rồi chạy lại `wsh install-agent-hooks` trong terminal của arcterm. Với Antigravity, đảm bảo đã chạy `agy` một lần.
-- **Lệnh nặng của agent "Not run: …"**: RAM đang thiếu và bạn đã chọn không chạy; xem [Usage → Thẻ Low RAM](usage.md#thẻ-low-ram).
+- **Lệnh nặng của agent "Not run: …"**: bạn đã **Skip** nó trong popover Jobs; xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng).

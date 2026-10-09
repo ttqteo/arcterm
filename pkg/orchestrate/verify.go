@@ -18,6 +18,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -354,7 +355,8 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 	var passFlaky []string
 	steps := 0
 	first := batch[len(batch)/2-1].commit
-	stepErr := withDetachedTree(ctx, run.project, run.runID+"-bisect", "bisect tree", first, run.setup, func(wt string) error {
+	// the run id travels in the ctx, for the Setup withDetachedTree runs
+	stepErr := withDetachedTree(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID}), run.project, run.runID+"-bisect", "bisect tree", first, run.setup, func(wt string) error {
 		for hi-lo > 1 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -368,7 +370,7 @@ func judgeBatch(ctx context.Context, batch []batchTip, ordered bool, output stri
 				run.progress(fmt.Sprintf("verify: bisecting: testing %s at %.8s", strings.Join(tipIDs(batch[:mid]), ", "), commit))
 			}
 			env := changedFilesEnv(ctx, wt, batch[0].commit+"^", commit, run.dagID+"/bisect")
-			stepOut, stepFlaky, err := runVerifyCommand(ctx, wt, run.command, env, run.progress)
+			stepOut, stepFlaky, err := runVerifyCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.runID, Label: "Verify · bisect", Always: true}), wt, run.command, env, run.progress)
 			steps++
 			if err == nil {
 				lo, passOut, passFlaky = mid, stepOut, stepFlaky
@@ -412,9 +414,13 @@ func startVerify(channelID, dagID, runID, projectPath, command string, l *landin
 		var batch []batchTip
 		ordered := false
 		setup := ""
+		stepLabel := "Verify"
 		if g, err := wstore.GetDag(bg, dagID); err == nil {
 			batch, ordered = verifyBatch(bg, g, projectPath)
 			setup = g.Setup
+			if len(batch) > 0 {
+				stepLabel = taskStepLabel("Verify", g, batch[0].id)
+			}
 		}
 		first := ""
 		if len(batch) > 0 {
@@ -449,7 +455,7 @@ func startVerify(channelID, dagID, runID, projectPath, command string, l *landin
 			return ran && err == nil
 		}
 		env := batchScopeEnv(bg, dagID, projectPath, batch)
-		output, flaky, verr := runVerifyCommand(ctx, projectPath, command, env, progress)
+		output, flaky, verr := runVerifyCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: runID, Label: stepLabel, Always: true}), projectPath, command, env, progress)
 		run := batchRunner{channelID: channelID, dagID: dagID, runID: runID, project: project, tree: projectPath,
 			setup: setup, command: command, progress: progress}
 		// judged on the claim's context, so a cancelled dag also stops whatever judging runs

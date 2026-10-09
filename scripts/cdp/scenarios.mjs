@@ -26645,6 +26645,302 @@ const agyHarness = {
     },
 };
 
+// --- jobqueue-chip: the app bar's Jobs chip and its popover (docs/superpowers/specs/2026-10-09-heavy-job-queue-design.md).
+// Four real `jobslot` streams are held from the page, so wavesrv's queue is the real one: with one slot the first runs and
+// three wait. The popover's Skip, Run now and Slots picker act on that queue and are read back from its rows; draining
+// the streams empties it. The long-wait warning needs a job queued over 5 minutes ago, which the queue cannot make in
+// seconds, so step 8 sets that snapshot through the dev hook window.__jobQueueInject. Step 9 injects an engine row for a
+// real run (deferred, so no lead and no worker starts) to read its source and its ↗.
+const JQ_ROWS = `[...document.querySelectorAll("[data-job-queue-panel] [data-job-row]")].map((r) => ({
+    id: r.dataset.jobRow,
+    state: r.dataset.state,
+    name: r.querySelector("[data-job-name]")?.textContent ?? "",
+    text: r.textContent,
+    runNow: !!r.querySelector("[data-job-run-now]"),
+    skip: !!r.querySelector("[data-job-skip]"),
+    open: !!r.querySelector("[data-job-open]"),
+}))`;
+
+const jobqueueChip = {
+    name: "jobqueue-chip",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-jobqueue-")) };
+        try {
+            ctx.slotsBefore = (await h.rpc("getfullconfig", null))?.settings?.["jobs:slots"] ?? null;
+            await h.rpc("setconfig", { "jobs:slots": 1 });
+            ctx.slotsChanged = true;
+            // the run step 9 opens: deferred, so no lead and no worker starts
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-jobqueue", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            ctx.goal = `verify jobqueue ${Date.now() % 100000}: do nothing, make no file changes`;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: ctx.goal,
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
+            await h.ev("location.reload()");
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+            // four heavy commands from the page itself: no blockid, so no row has a source to open. One at a time, each
+            // waited for in the queue: separate streams reach wavesrv in no fixed order, and the steps name who runs
+            ctx.held = await h.ev(`(async () => {
+                window.__jq = [];
+                for (const command of ["task check:ts", "npm install", "go test ./...", "cargo build"]) {
+                    const g = window.TabRpcClient.wshRpcStream("jobslot", { command }, { timeout: 600000 });
+                    g.next();
+                    window.__jq.push(g);
+                    for (let i = 0; i < 40; i++) {
+                        const q = await window.TabRpcClient.wshRpcCall("getjobqueue", null, {});
+                        if (q.jobs.length === window.__jq.length) break;
+                        await new Promise((r) => setTimeout(r, 100));
+                    }
+                }
+                return (await window.TabRpcClient.wshRpcCall("getjobqueue", null, {})).jobs.map((j) => j.name);
+            })()`);
+            if (ctx.held.length !== 4) throw new Error(`the queue holds ${JSON.stringify(ctx.held)}, not the four jobs`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the config, the run and the four held jobs", false, ctx.arrangeError);
+            return steps;
+        }
+        const chipText = () => h.ev(`document.querySelector("[data-job-queue-chip]")?.textContent?.trim() ?? null`);
+        const rows = () => h.ev(JQ_ROWS);
+        const rowNamed = (all, name) => all.find((r) => r.name === name);
+        const click = (sel) =>
+            h.ev(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); b?.click(); return !!b; })()`);
+        const clickInRow = (name, sel) =>
+            h.ev(`(() => {
+                const r = [...document.querySelectorAll("[data-job-queue-panel] [data-job-row]")].find(
+                    (x) => x.querySelector("[data-job-name]")?.textContent === ${JSON.stringify(name)}
+                );
+                const b = r?.querySelector(${JSON.stringify(sel)});
+                b?.click();
+                return !!b;
+            })()`);
+        const escape = () =>
+            h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`);
+
+        // 1. the chip
+        const chipUp = await polishWaitFor(
+            h,
+            `document.querySelector("[data-job-queue-chip]")?.textContent?.includes("1 · 3 queued") === true`,
+            3000
+        );
+        rec("1. the Jobs chip says 1 · 3 queued", chipUp, `chip: ${await chipText()}`);
+        await click("[data-job-queue-chip]");
+
+        // 2. the rows
+        await polishWaitFor(h, `document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length === 4`, 3000);
+        let all = await rows();
+        const queued = all.filter((r) => r.state === "queued");
+        rec(
+            "2. the panel lists the running job first and three queued ones, each with Run now and Skip",
+            all.length === 4 &&
+                all[0].state === "running" &&
+                all[0].name === "task check:ts" &&
+                queued.length === 3 &&
+                queued.every((r) => r.text.includes("slot busy") && r.runNow && r.skip),
+            JSON.stringify(all.map((r) => [r.name, r.state, r.runNow, r.skip]))
+        );
+
+        // 3. no source, no ↗
+        await h.shot("cdp-shots/jobqueue-chip-panel.png");
+        rec(
+            "3. no row has a ↗ (none of these jobs has a block or a run)",
+            all.length === 4 && all.every((r) => !r.open),
+            JSON.stringify(all.map((r) => r.open))
+        );
+
+        // 4. Skip
+        const skipped = await clickInRow("cargo build", "[data-job-skip]");
+        const skipGone = await polishWaitFor(
+            h,
+            `document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length === 3`,
+            3000
+        );
+        all = await rows();
+        rec(
+            "4. Skip drops the cargo build row",
+            skipped && skipGone && !rowNamed(all, "cargo build"),
+            JSON.stringify(all.map((r) => r.name))
+        );
+
+        // 5. Run now on the last queued job passes the head too
+        const ran = await clickInRow("go test ./...", "[data-job-run-now]");
+        const twoRunning = await polishWaitFor(
+            h,
+            `document.querySelectorAll('[data-job-queue-panel] [data-job-row][data-state="running"]').length === 2`,
+            3000
+        );
+        all = await rows();
+        const running = all
+            .filter((r) => r.state === "running")
+            .map((r) => r.name)
+            .sort();
+        const npm = rowNamed(all, "npm install");
+        await h.shot("cdp-shots/jobqueue-chip-run-now.png");
+        rec(
+            "5. Run now starts go test ./... beside task check:ts; npm install still waits on a busy slot",
+            ran &&
+                twoRunning &&
+                JSON.stringify(running) === JSON.stringify(["go test ./...", "task check:ts"]) &&
+                npm?.state === "queued" &&
+                npm.text.includes("slot busy"),
+            JSON.stringify(all.map((r) => [r.name, r.state]))
+        );
+
+        // 6. the Slots picker
+        const picked = await h.ev(`(() => {
+            const s = document.querySelector("[data-job-queue-slots]");
+            if (!s) return false;
+            s.value = "3";
+            s.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+        })()`);
+        let slots = null;
+        for (let waited = 0; waited < 3000 && slots !== 3; waited += 250) {
+            slots = (await h.rpc("getfullconfig", null))?.settings?.["jobs:slots"] ?? null;
+            if (slots !== 3) await polishNap(250);
+        }
+        await polishWaitFor(
+            h,
+            `!document.querySelector('[data-job-queue-panel] [data-job-row][data-state="queued"]')?.textContent?.includes("slot busy")`,
+            3000
+        );
+        all = await rows();
+        const npmNow = rowNamed(all, "npm install");
+        await h.shot("cdp-shots/jobqueue-chip-slots.png");
+        rec(
+            "6. Slots 3 is saved, and npm install no longer waits on a busy slot",
+            picked && slots === 3 && !!npmNow && (npmNow.state === "running" || !npmNow.text.includes("slot busy")),
+            JSON.stringify({ picked, slots, npm: npmNow && [npmNow.state, npmNow.text] })
+        );
+
+        // 7. drain: each return() sends a wire cancel, so wavesrv ends the stream and frees its slot
+        await h.ev("(window.__jq.forEach((g) => g.return()), true)");
+        const emptied = await polishWaitFor(h, `!!document.querySelector("[data-job-queue-empty]")`, 3000);
+        const empty = await h.ev(`(() => ({
+            text: document.querySelector("[data-job-queue-empty]")?.textContent ?? null,
+            rows: document.querySelectorAll("[data-job-queue-panel] [data-job-row]").length,
+            panel: !!document.querySelector("[data-job-queue-panel]"),
+            chip: !!document.querySelector("[data-job-queue-chip]"),
+        }))()`);
+        await h.shot("cdp-shots/jobqueue-chip-empty.png");
+        rec(
+            "7. draining the queue leaves the open panel on No heavy jobs running. and removes the chip",
+            emptied && empty.text === "No heavy jobs running." && empty.rows === 0 && empty.panel && !empty.chip,
+            JSON.stringify(empty)
+        );
+
+        // 8. the long-wait warning
+        await escape();
+        const closed = await polishWaitFor(h, `!document.querySelector("[data-job-queue-panel]")`, 3000);
+        await h.ev(`window.__jobQueueInject({
+            slots: 1,
+            jobs: [{ id: "jx", name: "task check:ts", bytes: 3221225472, position: 1, reason: "slot busy", queuedts: Date.now() - 6 * 60_000 }],
+        })`);
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-chip]")`, 3000);
+        const warn = await h.ev(`(() => {
+            const c = document.querySelector("[data-job-queue-chip]");
+            return c
+                ? {
+                      text: c.textContent.trim(),
+                      amber: c.classList.contains("text-warning"),
+                      icon: !!c.querySelector("[data-job-queue-warn]"),
+                      triangle: !!c.querySelector("svg.lucide-triangle-alert"),
+                  }
+                : null;
+        })()`);
+        await h.shot("cdp-shots/jobqueue-chip-long-wait.png");
+        rec(
+            "8. a job queued 6 minutes ago turns the chip amber with a TriangleAlert",
+            closed && !!warn && warn.text === "1 queued" && warn.amber && warn.icon && warn.triangle,
+            JSON.stringify({ closed, warn })
+        );
+        await h.ev(`window.__jobQueueInject({ slots: 1, jobs: [] })`);
+
+        // 9. an engine step: named for its run, no Skip, ↗ opens the run
+        const runShort = ctx.runId.slice(0, 6);
+        await h.ev(`window.__jobQueueInject({
+            slots: 1,
+            jobs: [{
+                id: "je", name: "Verify", bytes: 2684354560, engine: true, runid: ${JSON.stringify(ctx.runId)},
+                label: "Verify · Task 1", position: 1, reason: "slot busy", queuedts: Date.now(),
+            }],
+        })`);
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-chip]")`, 3000);
+        await click("[data-job-queue-chip]");
+        await polishWaitFor(h, `!!document.querySelector('[data-job-queue-panel] [data-job-row="je"]')`, 3000);
+        all = await rows();
+        const engine = all[0];
+        await h.shot("cdp-shots/jobqueue-chip-engine.png");
+        rec(
+            "9a. an engine row reads Run <id> · Verify · Task 1, with Run now and ↗ but no Skip",
+            all.length === 1 &&
+                !!engine &&
+                engine.text.includes(`Run ${runShort} · Verify · Task 1`) &&
+                engine.runNow &&
+                !engine.skip &&
+                engine.open,
+            JSON.stringify(engine)
+        );
+        const opened = await click("[data-job-queue-panel] [data-job-open]");
+        const landed = await polishWaitFor(
+            h,
+            `!document.querySelector("[data-job-queue-panel]") && !!document.querySelector("[data-run-sheet]")`,
+            5000
+        );
+        const sheet = await h.ev(`(() => {
+            const s = document.querySelector("[data-run-sheet]");
+            return s ? { goal: s.textContent.includes(${JSON.stringify(ctx.goal)}) } : null;
+        })()`);
+        const surface = await h.activeSurfaceLabel();
+        await h.shot("cdp-shots/jobqueue-chip-opened-run.png");
+        rec(
+            "9b. ↗ closes the panel and opens the run on the Jarvis surface",
+            opened && landed && surface === SURFACE_LABEL.jarvis && sheet?.goal === true,
+            JSON.stringify({ opened, landed, surface, sheet })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jobqueue-chip teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("release the held jobs", () => h.ev("(window.__jq?.forEach((g) => g.return()), true)"));
+        await step("clear the injected snapshot", () => h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })"));
+        // cancels the run, deletes its channel, reloads the page (the websocket closes, so wavesrv cancels any stream
+        // still held) and removes the temp dir
+        await teardownFixtureRun(h, ctx, "jobqueue-chip", {
+            what: "restore jobs:slots",
+            fn: async () => {
+                if (ctx.slotsChanged) await h.rpc("setconfig", { "jobs:slots": ctx.slotsBefore });
+            },
+        });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -26739,4 +27035,5 @@ export const SCENARIOS = [
     machineServers,
     capacityWarn,
     notifyToast,
+    jobqueueChip,
 ];

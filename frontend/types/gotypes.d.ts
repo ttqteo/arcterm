@@ -1390,6 +1390,17 @@ declare global {
         status: CaptureStatus;
     };
 
+    // wshrpc.CommandJobQueueActData
+    type CommandJobQueueActData = {
+        id: string;
+    };
+
+    // wshrpc.CommandJobSlotData
+    type CommandJobSlotData = {
+        command: string;
+        blockid?: string;
+    };
+
     // wshrpc.CommandLandRunData
     type CommandLandRunData = {
         channelid: string;
@@ -2336,6 +2347,39 @@ declare global {
         landing?: string;
     };
 
+    // wshrpc.JobQueueData
+    type JobQueueData = {
+        slots: number;
+        jobs: JobQueueJob[];
+    };
+
+    // wshrpc.JobQueueJob
+    type JobQueueJob = {
+        id: string;
+        name: string;
+        bytes: number;
+        running?: boolean;
+        forced?: boolean;
+        engine?: boolean;
+        position?: number;
+        reason?: string;
+        queuedts: number;
+        startedts?: number;
+        blockid?: string;
+        tabid?: string;
+        runid?: string;
+        label?: string;
+    };
+
+    // wshrpc.JobSlotUpdate
+    type JobSlotUpdate = {
+        queued?: number;
+        behind?: string;
+        for?: string;
+        run?: boolean;
+        reason?: string;
+    };
+
     // waveobj.MetaTSType
     type MetaType = {
         view?: string;
@@ -2961,6 +3005,7 @@ declare global {
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
         "usage:insightslang"?: string;
+        "jobs:slots"?: number;
     };
 
     // wshrpc.ShippedItem

@@ -25,7 +25,7 @@ const (
 	DismissedReason = "The user dismissed the question."
 
 	// PreToolUseBound is how long `wsh agy-hook` works on a PreToolUse before it gives up and answers neutral:
-	// the ask card's 30-minute ceiling, or memgate's hold card (30) then its wait (30).
+	// the ask card's 30-minute ceiling, or a turn in the heavy-job queue.
 	PreToolUseBound = 60 * time.Minute
 
 	// HookTimeoutSeconds is the PreToolUse `timeout` written into agy's hooks.json: 62 minutes, so the hook always

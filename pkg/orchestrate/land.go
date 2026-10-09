@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/util/keyedmutex"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
@@ -331,7 +332,8 @@ func reverifyHold(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup) (
 		if c.cmd == "" || (c.name == "Check" && skipCheck) {
 			continue
 		}
-		if _, err := runPlanCommand(ctx, run.LandPath, c.cmd, c.env, VerifyTimeout, nil); err != nil {
+		checkCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: run.ID, Label: c.name + " · land", Always: c.name == "Verify"})
+		if _, err := runPlanCommand(checkCtx, run.LandPath, c.cmd, c.env, VerifyTimeout, nil); err != nil {
 			// the final stage let this through as unverified; holding here would leave no way to land
 			if c.name == "Check" && baseCheckFailed(g) {
 				note = sharedCheckFailure(g, "the run merged with "+run.BaseBranch, failureDetail(err))

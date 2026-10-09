@@ -128,3 +128,4 @@ Gồm ba thẻ: **Claude account**, **Runs** (**Run route**) và **Launch flags*
 - **Phím tắt** cố định, không đổi được: [Phím tắt](../keyboard-shortcuts.md).
 - **Instructions và skills** dùng chung cho các harness: [Setup](setup.md).
 - **Giới hạn và tiêu thụ quota**: [Usage](usage.md).
+- **Số lệnh nặng chạy cùng lúc** (`jobs:slots`): số lệnh nặng (build, typecheck, cả bộ test) chạy cùng lúc trên mọi agent và run, tức số chỗ của hàng đợi lệnh nặng; 1–4, mặc định 1. Không có thẻ trong Settings: ghi bằng bộ chọn **Slots** ở popover của chip **Jobs** trên app bar, xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng).

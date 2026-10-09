@@ -558,6 +558,12 @@ export class RpcApiType {
         return client.wshRpcCall("getjarvisprofile", data, opts);
     }
 
+    // command "getjobqueue" [call]
+    GetJobQueueCommand(client: WshClient, opts?: RpcOpts): Promise<JobQueueData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getjobqueue", null, opts);
+        return client.wshRpcCall("getjobqueue", null, opts);
+    }
+
     // command "getlatestresume" [call]
     GetLatestResumeCommand(client: WshClient, opts?: RpcOpts): Promise<CommandGetLatestResumeRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getlatestresume", null, opts);
@@ -766,6 +772,24 @@ export class RpcApiType {
     JarvisStatusCommand(client: WshClient, data: CommandJarvisStatusData, opts?: RpcOpts): Promise<CommandJarvisStatusRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jarvisstatus", data, opts);
         return client.wshRpcCall("jarvisstatus", data, opts);
+    }
+
+    // command "jobqueuerunnow" [call]
+    JobQueueRunNowCommand(client: WshClient, data: CommandJobQueueActData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jobqueuerunnow", data, opts);
+        return client.wshRpcCall("jobqueuerunnow", data, opts);
+    }
+
+    // command "jobqueueskip" [call]
+    JobQueueSkipCommand(client: WshClient, data: CommandJobQueueActData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jobqueueskip", data, opts);
+        return client.wshRpcCall("jobqueueskip", data, opts);
+    }
+
+    // command "jobslot" [responsestream]
+	JobSlotCommand(client: WshClient, data: CommandJobSlotData, opts?: RpcOpts): AsyncGenerator<JobSlotUpdate, void, boolean> {
+        if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "jobslot", data, opts);
+        return client.wshRpcStream("jobslot", data, opts);
     }
 
     // command "landrun" [call]

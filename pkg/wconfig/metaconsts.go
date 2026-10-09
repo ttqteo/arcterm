@@ -71,5 +71,7 @@ const (
 	ConfigKey_RadarAuditModel                = "radar:auditmodel"
 
 	ConfigKey_UsageInsightsLang              = "usage:insightslang"
+
+	ConfigKey_JobsSlots                      = "jobs:slots"
 )
 

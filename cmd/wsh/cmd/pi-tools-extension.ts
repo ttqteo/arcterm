@@ -1,15 +1,16 @@
-// pi extension: wave_* tools (pi drives arc), the notification bridge (B3) and the RAM gate on bash. Installed by
-// `wsh install-agent-hooks` into ~/.pi/agent/extensions/waveterm-tools.ts with __WSH_PATH__
+// pi extension: wave_* tools (pi drives arc), the notification bridge (B3) and the job queue slot on bash.
+// Installed by `wsh install-agent-hooks` into ~/.pi/agent/extensions/waveterm-tools.ts with __WSH_PATH__
 // substituted for the absolute wsh path. Bare pi outside a Wave block is inert: the tools fail closed
 // with a clear error.
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import type { ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { Type } from "typebox";
 import {
     captureTailArgs,
     dagRulesArgs,
-    memgateArgs,
-    memgateRefusal,
+    jobslotArgs,
+    jobslotLine,
     notifyArgs,
     openFileArgs,
     querySessionsArgs,
@@ -121,21 +122,85 @@ export function registerWavetermTools(pi: any, wshPath: string): void {
         },
     });
 
-    // --- RAM gate: a heavy bash command waits for the person's say while RAM is short ---------------
+    // --- job queue: a heavy bash command waits for its turn and holds its slot while it runs ---------
 
-    // execFile, not pi.exec: the card can hold the command for half an hour, and this has no timeout.
-    // a failed wsh lets the command run: a broken gate never blocks pi
-    const execFileAsync = promisify(execFile);
-    pi.on("tool_call", async (event: any) => {
+    // `wsh jobslot` keeps the slot until it is killed, so the child stays alive across the command: it is kept
+    // by tool call id and killed at that call's tool_result, or at shutdown. spawn, not pi.exec: the queue can
+    // hold the command for a long while, and this has no timeout. any failure of wsh's lets the command run:
+    // a broken queue never blocks pi
+    const heldSlots = new Map<string, ChildProcess>();
+    const releaseSlot = (toolCallId: string): void => {
+        heldSlots.get(toolCallId)?.kill();
+        heldSlots.delete(toolCallId);
+    };
+    // the status bar is a courtesy: pi builds without it, or without a UI, show nothing
+    const showQueue = (ctx: any, text: string | undefined): void => {
+        try {
+            ctx?.ui?.setStatus?.("arc-jobslot", text);
+        } catch {
+            // never breaks the command
+        }
+    };
+    // resolves with the reason the command may not run, or null when it may (a verdict, or wsh gone without one)
+    const awaitVerdict = (child: ChildProcess, ctx: any): Promise<string | null> =>
+        new Promise((resolve) => {
+            let settled = false;
+            const settle = (refusal: string | null) => {
+                if (!settled) {
+                    settled = true;
+                    resolve(refusal);
+                }
+            };
+            if (!child.stdout) {
+                settle(null);
+                return;
+            }
+            createInterface({ input: child.stdout }).on("line", (line) => {
+                const read = jobslotLine(line);
+                if (read && "hold" in read) {
+                    showQueue(ctx, read.hold);
+                } else if (read) {
+                    settle(read.refusal);
+                }
+            });
+            child.on("error", () => settle(null));
+            child.on("close", () => settle(null));
+        });
+
+    pi.on("tool_call", async (event: any, ctx: any) => {
         if (event?.toolName !== "bash" || !process.env.WAVETERM_BLOCKID) {
             return undefined;
         }
+        const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
+        let child: ChildProcess;
         try {
-            const { stdout } = await execFileAsync(wshPath, memgateArgs(event.input?.command ?? ""));
-            const reason = memgateRefusal(stdout);
-            return reason === null ? undefined : { block: true, reason };
+            child = spawn(wshPath, jobslotArgs(event.input?.command ?? ""), { stdio: ["ignore", "pipe", "ignore"] });
         } catch {
             return undefined;
+        }
+        const refusal = await awaitVerdict(child, ctx);
+        showQueue(ctx, undefined);
+        // a call with no id has no result to release the slot at: the queue only orders its start
+        if (refusal !== null || toolCallId === "") {
+            child.kill();
+            return refusal === null ? undefined : { block: true, reason: refusal };
+        }
+        heldSlots.set(toolCallId, child);
+        child.once("close", () => {
+            if (heldSlots.get(toolCallId) === child) {
+                heldSlots.delete(toolCallId);
+            }
+        });
+        return undefined;
+    });
+    pi.on("tool_result", (event: any) => {
+        if (typeof event?.toolCallId === "string") {
+            releaseSlot(event.toolCallId);
+        }
+    });
+    pi.on("session_shutdown", () => {
+        for (const toolCallId of [...heldSlots.keys()]) {
+            releaseSlot(toolCallId);
         }
     });
 

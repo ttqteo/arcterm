@@ -513,7 +513,9 @@ func TestScheduleOnceGivesEachDispatchItsOwnSpawnBudget(t *testing.T) {
 	if err := wstore.AppendDag(ctx, &g); err != nil {
 		t.Fatal(err)
 	}
-	const slowDispatch = 200 * time.Millisecond
+	// long enough that the git launch each dispatch makes before it spawns (IsGitRepo, up to ~600ms on a busy
+	// Windows box) stays well inside the slowDispatch/2 tolerance below
+	const slowDispatch = 2 * time.Second
 	var budgets []time.Duration
 	old := spawnWorker
 	spawnWorker = func(ctx context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {

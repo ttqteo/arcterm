@@ -14,6 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/jobqueue"
+	"github.com/wavetermdev/waveterm/pkg/memgate"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
 const (
@@ -192,7 +196,50 @@ func ProjectSetup(dir string) (string, error) {
 	return lines[0], nil
 }
 
+// engineStepBytes is the RAM a Verify claims when memgate does not know its command: verify.mjs's peak. A Final
+// claims a dev app's (Source.Peak = memgate.DevBytes).
+const engineStepBytes = 2560 << 20
+
+// holdPlanSlot waits for a slot in the heavy-job queue for a plan command memgate calls heavy, or for any
+// Verify or Final (Source.Always). A light Setup (this repo's .arc/setup only makes junctions) runs at once.
+func holdPlanSlot(ctx context.Context, command string) (func(), error) {
+	src := jobqueue.SourceFrom(ctx)
+	job, heavy := memgate.Classify(command)
+	// a dev server runs until stopped: it never holds a slot, and only an Always step stands in for it
+	known := heavy && !job.LongRunning()
+	if !known && !src.Always {
+		return func() {}, nil
+	}
+	name, bytes := job.Name, job.Bytes
+	if !known {
+		name, bytes = src.Label, engineStepBytes
+		if src.Peak > 0 {
+			bytes = src.Peak
+		}
+	}
+	return jobqueue.Hold(ctx, jobqueue.Request{Name: name, Bytes: bytes, Engine: true, Source: src})
+}
+
+// taskStepLabel names an engine step for the cockpit's queue: "Verify · Build the chip", the task's label, or its id
+// when it has none, and the step alone when the task is unknown.
+func taskStepLabel(step string, g *waveobj.TaskGroup, taskID string) string {
+	t := taskByID(g, taskID)
+	switch {
+	case t == nil:
+		return step
+	case t.Label != "":
+		return step + " · " + t.Label
+	}
+	return step + " · " + t.ID
+}
+
 func execPlanCommandEnv(ctx context.Context, dir, command string, env []string, timeout time.Duration, progress planProgress) (string, error) {
+	// before the timeout starts, so the time spent queued never counts against it
+	release, err := holdPlanSlot(ctx, command)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	c, err := shellCommand(ctx, command)

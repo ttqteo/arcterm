@@ -168,7 +168,7 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
 }
 
 // measured from the opener while open, and again when the window resizes, which moves the opener
-function usePanelPlacement(open: boolean, opener: Element | null) {
+export function usePanelPlacement(open: boolean, opener: Element | null) {
     const [, setSize] = useState(0);
     useEffect(() => {
         if (!open) {

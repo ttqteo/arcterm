@@ -35,7 +35,8 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 - **Signals we already have:** per-session tokens and the 10-minute burn the Consumers panel sorts by
   (`consumers.ts`), each session's context size (the rail's token strip), and the 5-hour window
   (`ratelimitstore.ts`). Hooks see a spawn before it runs: a `PreToolUse` on the `Agent`/`Task` tool
-  (and `Workflow`) can ask, the way `wsh memgate` asks before a heavy Bash command (`pkg/memgate`).
+  (and `Workflow`) can ask, the way `wsh memgate`'s Low RAM card asked before a heavy Bash command (removed
+  2026-10-09 for the job queue, `pkg/jobqueue`; the ask's `Hold` flag that drew it is still there).
 - **Shape:** (1) a "token gate" beside memgate: before an agent spawns subagents or a workflow, show a card
   with the projected cost (open context × expected calls × agents) and the 5h window left, Allow / Deny;
   (2) a burn alert: a toast when a session's 10-minute burn would empty the 5h window before its reset, or

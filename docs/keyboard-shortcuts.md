@@ -199,8 +199,7 @@ cells keeps changing which of them show.
 
 An agent asking a question in its terminal (Claude Code's picker) takes the keyboard: choose it by any route, or have
 the chosen agent start asking, and typing moves into its terminal, so `↑` / `↓`, `Enter` and the digits answer the
-picker instead of moving through the list. `Shift`+`Esc` goes back to the list. A held command (Low RAM) is answered on
-its card above the terminal and does not take the keyboard.
+picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 
 | Keys | Action |
 |---|---|
