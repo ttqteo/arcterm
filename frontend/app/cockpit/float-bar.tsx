@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useBindingKeys } from "@/app/store/keybindings/store";
-import { ICON_BTN } from "@/app/view/agents/agentheader";
+import { CTX_TEXT, ICON_BTN, STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
+import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
@@ -15,8 +17,9 @@ import { PictureInPicture2, Pin } from "lucide-react";
 import { WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
-// you drag it by, whose terminal it is, the pin and the way back. 46px like the app bar, because macOS overlays its
-// traffic lights at the centre line of a bar that tall (tauri.macos.conf.json).
+// you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
+// the pin and the way back. 46px on a Mac, because macOS overlays its traffic lights at the centre line of a bar that
+// tall (tauri.macos.conf.json); 40px elsewhere, room for the 32px Sprout and little more.
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
@@ -31,15 +34,44 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             data-float-bar
             data-tauri-drag-region
             className={cn(
-                "flex h-[46px] shrink-0 items-center gap-2 border-b border-border bg-surface",
-                mac ? "pl-[92px] pr-3" : "pl-4"
+                "flex shrink-0 items-center gap-2 border-b border-border bg-surface",
+                mac ? "h-[46px] pl-[92px] pr-3" : "h-[40px] pl-3"
             )}
         >
             <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
                 {agent != null ? <StatusDot state={agent.state} /> : null}
-                <span data-tauri-drag-region className="truncate text-[13px] font-semibold text-primary">
+                <span data-tauri-drag-region className="min-w-0 truncate text-[13px] font-semibold text-primary">
                     {agent?.name ?? "arcterm"}
                 </span>
+                {agent != null && agent.kind !== "terminal" ? (
+                    <span data-tauri-drag-region className="flex flex-none items-baseline gap-[7px] text-[11px]">
+                        <span
+                            data-tauri-drag-region
+                            className="font-medium"
+                            style={{ color: STATE_COLOR[agent.state] }}
+                        >
+                            {agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state]}
+                        </span>
+                        {agent.model ? (
+                            <span data-tauri-drag-region className="text-muted">
+                                {agent.model}
+                            </span>
+                        ) : null}
+                        {agent.usage?.contextpct != null ? (
+                            <span
+                                data-tauri-drag-region
+                                title={`context: ${Math.round(agent.usage.contextpct)}% of the window`}
+                                className={cn(
+                                    "font-semibold tabular-nums",
+                                    CTX_TEXT[contextLevel(agent.usage.contextpct, agent.usage.contextmax)]
+                                )}
+                            >
+                                {contextTokens(agent.usage.contextpct, agent.usage.contextmax) ??
+                                    `${Math.round(agent.usage.contextpct)}%`}
+                            </span>
+                        ) : null}
+                    </span>
+                ) : null}
             </div>
             {/* the footer and its walking pet are gone in float mode; what waits on you shows here */}
             <PetFloatMark model={model} />

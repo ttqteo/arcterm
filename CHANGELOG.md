@@ -24,6 +24,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Float has one bar instead of two: the agent's header is gone, and the float bar shows the agent's state, model and
+  context next to its name, so the small window gives the terminal more room.
 - The Agent panel's Files tab opens as wide as Overview instead of the File tab's width, and remembers its own width
   when you drag its edge.
 - On Windows, the Consumers panel's RAM figures are each process's private memory, as Task Manager shows it, instead

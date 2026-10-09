@@ -115,7 +115,7 @@ Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus v�
 | Việc | Cách làm |
 |---|---|
 | Toàn màn hình terminal | `f` hoặc `F11` (`F11` dùng được cả khi đang gõ trong terminal); `Esc` thoát toàn màn hình |
-| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn, nút ghim trên thanh tiêu đề giữ nó luôn nằm trên các app khác (mặc định tắt). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước |
+| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn và một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi); nút ghim trên thanh giữ nó luôn nằm trên các app khác (mặc định tắt). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước |
 | Ngắt lượt đang chạy | **Interrupt turn** trong menu header, hoặc `Esc` trong terminal, hoặc nút **Stop** ở chân rail |
 | Chuyển sang agent kế tiếp | `Ctrl+Tab`, dùng được cả khi con trỏ đang ở trong terminal; gõ phím theo sang terminal của agent mới |
 | Chuyển sang agent kế tiếp **đang hỏi** | `Ctrl+Shift+Tab` (đi tiến, chỉ qua các agent đang hỏi) |

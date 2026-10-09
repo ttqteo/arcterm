@@ -54,15 +54,15 @@ import { StatusDot } from "./statusdot";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
 
-const STATE_COLOR: Record<AgentVM["state"], string> = {
+export const STATE_COLOR: Record<AgentVM["state"], string> = {
     asking: "var(--color-warning)",
     working: "var(--color-accent)",
     idle: "var(--color-muted)",
 };
-const STATE_LABEL: Record<AgentVM["state"], string> = { asking: "asking", working: "working", idle: "idle" };
+export const STATE_LABEL: Record<AgentVM["state"], string> = { asking: "asking", working: "working", idle: "idle" };
 
 // header context chip color by context level (mirrors the rail gauge, as text not fill)
-const CTX_TEXT: Record<"ok" | "warn" | "hot", string> = {
+export const CTX_TEXT: Record<"ok" | "warn" | "hot", string> = {
     ok: "text-accent",
     warn: "text-warning",
     hot: "text-error",

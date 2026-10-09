@@ -49,6 +49,7 @@ import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { EndedTranscript } from "./endedtranscript";
+import { floatModeAtom } from "./floatstore";
 import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { GridCellBar } from "./gridcellbar";
@@ -183,6 +184,9 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // is what is maximized, which then fills the whole surface.
     const dockable = gridShown && agent?.kind !== "terminal" ? dock.docked : undefined;
     const dockMax = useAtomValue(terminalDockMaxAtom) && dockable != null;
+    // float mode's bar (cockpit/float-bar.tsx) already names the agent and its state: a second header would only
+    // repeat it in a window that has room for little else
+    const floating = useAtomValue(floatModeAtom);
     const docked = !fullscreen || dockMax ? dockable : undefined;
     // the cells' tiled look (gaps, borders, bars) is off while the dock covers them
     const tiled = multi && !dockMax;
@@ -506,7 +510,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             would name an agent that is not on screen */}
                         {dockMax ? null : (
                             <>
-                                <AgentHeader model={model} agent={agent} />
+                                {floating ? null : <AgentHeader model={model} agent={agent} />}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
                                 <HeldAskBar model={model} agent={agent} />
                             </>
