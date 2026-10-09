@@ -64,6 +64,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A run held because the checkout has uncommitted edits to a file it changes now says so and names the files,
+  instead of quoting git's whole merge command and error.
 - An orchestrator lead no longer collects an unread count once its plan is running: the turns the engine wakes it
   for (a task done, a merge, a handoff) are not news for you, and what it needs from you still arrives as a question.
 - The Cockpit's nav badge (and the Dock badge on a Mac) counts an agent at a permission prompt or a question asked in
