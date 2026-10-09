@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- `Alt`+`C` switches an agent between Terminal, Canvas and Review from inside its terminal, where a bare `c` is
+  typed into the agent.
 - `Alt`+`1`…`9` jumps to an agent in the Agent surface's Active list, even from inside its terminal; hold `Alt` a
   moment and each agent row shows its number. Holding `Ctrl` (`Cmd` on a Mac) likewise numbers the rail's surfaces
   for `Ctrl`+`1`…`7`.

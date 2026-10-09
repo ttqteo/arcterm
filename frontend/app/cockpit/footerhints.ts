@@ -48,6 +48,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:fullscreen"], glyph: "f", label: "full" },
         { ids: ["agent:fullscreen-chord"], keys: "F11", label: "full" }, // reachable in the terminal
         { ids: ["agent:canvas-open"], glyph: "c", label: "canvas" }, // terminal mode with a canvas
+        { ids: ["agent:view-cycle"], keys: "Alt:c", label: "switch view" }, // a canvas or review, also in the terminal
         { ids: ["agent:back"], glyph: "esc", label: "back" },
         { ids: ["agent:leave-center"], glyph: "esc", label: "terminal" }, // History or a session only, via its binding
         { ids: ["cycle-agent-next", "cycle-agent-prev"], keys: "Ctrl:Tab", label: "cycle" },

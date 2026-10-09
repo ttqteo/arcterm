@@ -10,6 +10,21 @@ import { setDocReviewMode } from "./docreviewstore";
 
 export type AgentView = "terminal" | "canvas" | "review";
 
+// Alt+C walks the header's segmented control in its order, skipping a view the agent doesn't have. Null when the
+// terminal is the only one, so the key passes.
+export function nextAgentView(view: AgentView, hasCanvas: boolean, hasReview: boolean): AgentView | null {
+    const views: AgentView[] = [
+        "terminal",
+        ...(hasCanvas ? ["canvas" as const] : []),
+        ...(hasReview ? ["review" as const] : []),
+    ];
+    if (views.length < 2) {
+        return null;
+    }
+    const i = views.indexOf(view);
+    return views[(i + 1) % views.length];
+}
+
 export function setAgentView(agentId: string, view: AgentView, now: number): void {
     switch (view) {
         case "review":

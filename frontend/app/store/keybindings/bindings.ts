@@ -12,7 +12,7 @@ import { centerModeAtom, showHistory, showTerminal } from "@/app/view/agents/age
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { setAgentView } from "@/app/view/agents/agentview";
+import { nextAgentView, setAgentView } from "@/app/view/agents/agentview";
 import { paneState } from "@/app/view/agents/canvasmodel";
 import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@/app/view/agents/canvasstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
@@ -1057,6 +1057,28 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Back to the terminal",
             when: inCanvas,
             run: () => setAgentView(focusId(), "terminal", Date.now()),
+        },
+        {
+            // The bare c and r are typed into the TUI while it holds focus, so the header's Terminal | Canvas | Review
+            // control also has a chord that works from inside the terminal, as Alt+1..9 does for the agents
+            id: "agent:view-cycle",
+            keys: "Alt:c",
+            group: "Agent",
+            label: "Switch terminal, canvas and review (works inside the terminal)",
+            when: (ctx) =>
+                ctx.surface === "agent" &&
+                !ctx.modalOpen &&
+                centerAtRest() &&
+                (canvas() != null || docReview() != null),
+            run: () => {
+                const view =
+                    docReview()?.mode === "review" ? "review" : canvas()?.mode === "canvas" ? "canvas" : "terminal";
+                const next = nextAgentView(view, canvas() != null, docReview() != null);
+                if (next == null) {
+                    return false;
+                }
+                setAgentView(focusId(), next, Date.now());
+            },
         },
         {
             id: "agent:canvas-prev",

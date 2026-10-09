@@ -62,8 +62,8 @@ describe("agent canvas mode chips", () => {
         surfaceAtom: atom<SurfaceKey>("agent"),
     } as any;
     const real = [...buildGlobalBindings(model), ...buildAgentBindings(model)];
-    const chips = () =>
-        visibleHints(rest, real, SURFACE_HINTS.agent!, GLOBAL_HINTS).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
+    const chips = (ctx: KeyContext = rest) =>
+        visibleHints(ctx, real, SURFACE_HINTS.agent!, GLOBAL_HINTS).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
     const globals = () => visibleHints(rest, real, [], GLOBAL_HINTS).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
 
     beforeEach(() => {
@@ -83,6 +83,7 @@ describe("agent canvas mode chips", () => {
             "f full",
             "F11 full",
             "c canvas",
+            "Alt:c switch view",
             "esc back",
             "Ctrl:Tab cycle",
             ...globals(),
@@ -91,20 +92,49 @@ describe("agent canvas mode chips", () => {
 
     it("canvas mode shows the agent switches, then terminal, board and mark before the globals", () => {
         setCanvasMode("a1", "canvas", 1);
-        expect(chips()).toEqual(["↑↓ move", "Ctrl:Tab cycle", "c terminal", "[ ] board", "m mark", ...globals()]);
+        expect(chips()).toEqual([
+            "↑↓ move",
+            "Alt:c switch view",
+            "Ctrl:Tab cycle",
+            "c terminal",
+            "[ ] board",
+            "m mark",
+            ...globals(),
+        ]);
     });
 
     it("marking shows stop marking, then terminal", () => {
         setCanvasMode("a1", "canvas", 1);
         setMarking("a1", true);
-        expect(chips()).toEqual(["↑↓ move", "Ctrl:Tab cycle", "m stop marking", "c terminal", ...globals()]);
+        expect(chips()).toEqual([
+            "↑↓ move",
+            "Alt:c switch view",
+            "Ctrl:Tab cycle",
+            "m stop marking",
+            "c terminal",
+            ...globals(),
+        ]);
     });
 
     it("marking with a mark puts send first", () => {
         setCanvasMode("a1", "canvas", 1);
         setMarking("a1", true);
         updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
-        expect(chips()).toEqual(["↑↓ move", "Ctrl:Tab cycle", "Mod:Enter send", "m stop marking", "c terminal", ...globals()]);
+        expect(chips()).toEqual([
+            "↑↓ move",
+            "Alt:c switch view",
+            "Ctrl:Tab cycle",
+            "Mod:Enter send",
+            "m stop marking",
+            "c terminal",
+            ...globals(),
+        ]);
+    });
+
+    it("typing in the terminal drops c canvas and keeps Alt+C, which is typed nowhere", () => {
+        const chipsInTerm = chips({ ...rest, editable: true });
+        expect(chipsInTerm).toContain("Alt:c switch view");
+        expect(chipsInTerm).not.toContain("c canvas");
     });
 
     it("History and a session offer only esc terminal and cycle: F11 and send stand down, even mid-marking", () => {
