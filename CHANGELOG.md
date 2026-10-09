@@ -12,6 +12,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.
 - A Low RAM card now pops up over whatever surface you are on, so a command held for memory no longer waits unseen
   behind Jarvis or the Cockpit; press its number to answer, **Open agent** to go to it, or **Later** (`Esc`) to leave
   it on the agent's own card.

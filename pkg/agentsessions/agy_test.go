@@ -127,8 +127,10 @@ func TestAgyProviderListsConversationsWithDBTitleAndCwd(t *testing.T) {
 		t.Fatalf("listed %d sessions, want 2 (the migrated row has no transcript): %+v", len(got), got)
 	}
 	a := agySessionByID(t, got, agyConvA)
-	if a.Task != "Fix login" || a.ProjectPath != "/Users/x/repo" || a.ProjectName != "repo" {
-		t.Errorf("A = task %q path %q name %q; want the DB title and the last workspace", a.Task, a.ProjectPath, a.ProjectName)
+	// the provider returns a native path (fileURIToPath goes through filepath.FromSlash)
+	wantA := filepath.FromSlash("/Users/x/repo")
+	if a.Task != "Fix login" || a.ProjectPath != wantA || a.ProjectName != "repo" {
+		t.Errorf("A = task %q path %q name %q; want the DB title and the last workspace %q", a.Task, a.ProjectPath, a.ProjectName, wantA)
 	}
 	if a.Runtime != "agy" || a.TranscriptPath != pathA || a.ResumeCommand != "agy --conversation "+agyConvA {
 		t.Errorf("A = runtime %q transcript %q resume %q", a.Runtime, a.TranscriptPath, a.ResumeCommand)
@@ -141,8 +143,9 @@ func TestAgyProviderListsConversationsWithDBTitleAndCwd(t *testing.T) {
 	}
 	// Review focus 3: a URI with %20 shows the decoded path
 	b := agySessionByID(t, got, agyConvB)
-	if b.ProjectPath != "/Users/x/My Project" || b.ProjectName != "My Project" {
-		t.Errorf("B path %q name %q; want the decoded /Users/x/My Project", b.ProjectPath, b.ProjectName)
+	wantB := filepath.FromSlash("/Users/x/My Project")
+	if b.ProjectPath != wantB || b.ProjectName != "My Project" {
+		t.Errorf("B path %q name %q; want the decoded %q", b.ProjectPath, b.ProjectName, wantB)
 	}
 }
 
@@ -255,7 +258,7 @@ func TestExtractSessionAgyReadsItsDatabaseBesideBrain(t *testing.T) {
 	if err != nil || s == nil {
 		t.Fatalf("ExtractSession = %v, %v", s, err)
 	}
-	if s.ID != agyConvA || s.Task != "Fix login" || s.ProjectPath != "/Users/x/repo" || s.Runtime != "agy" {
+	if s.ID != agyConvA || s.Task != "Fix login" || s.ProjectPath != filepath.FromSlash("/Users/x/repo") || s.Runtime != "agy" {
 		t.Errorf("got id %q task %q path %q runtime %q", s.ID, s.Task, s.ProjectPath, s.Runtime)
 	}
 	if len(s.Events) == 0 || s.Events[0].Type != "started" {
