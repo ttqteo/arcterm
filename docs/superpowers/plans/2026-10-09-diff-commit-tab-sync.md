@@ -7,7 +7,7 @@
 `docs/superpowers/plans/2026-10-09-diff-commit-log-redesign.md`. Its Tasks 1–7 landed in `22b34e25`.
 
 **What is already on main, so do not rebuild it:**
-- Go and RPC: `GitCommitCommand`, `GitHeadMessageCommand`, `GitPullCommand`, `GitPushCommand`, and the upstream
+- Go and RPC: `GitCommitCommand`, `GitCommitMessageCommand` (`ref: ""` reads HEAD's message), `GitPullCommand`, `GitPushCommand`, and the upstream
   fields on `GitChangesCommand`.
 - Pure models: `commitselection.ts`, `syncstate.ts`.
 - The panel: `diffpanel.tsx`, `sourcepicker.tsx`, `changesstatus.ts`, `filestep.ts`.
@@ -23,14 +23,14 @@ every worker should read.
 **Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: diff-commit-tab, diff-sync need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs diff-commit-tab diff-sync diff-log-tab diff-compare`
 **Prototype:** D:/arc-proto/diff-commit-log/project
 
-Board → scenario step: `Main` → `diff-commit-tab` step 1. `States` → `diff-commit-tab` steps 3–5 and `diff-sync` steps
-2–4. `Log`, `Loading`, `Rail` and `Compare` → `diff-log-tab`, already on main.
+Board → scenario step: `Main` → `diff-commit-tab` steps 1–3 (step 3 toggles Amend) and `diff-sync` step 5. `States` →
+`diff-commit-tab` steps 5–7 and `diff-sync` steps 2–4. `Log`, `Loading`, `Rail` and `Compare` → `diff-log-tab`, already on main.
 
 ---
 
 ### Task 1: The Commit tab
 **Depends on:** none
-**Files:** `frontend/app/view/agents/commitstore.ts`, `frontend/app/view/agents/committab.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/filessurface.tsx`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/commitstore.ts`, `frontend/app/view/agents/committab.tsx`, `frontend/app/view/agents/syncstate.ts`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/filessurface.tsx`, `scripts/cdp/scenarios.mjs`
 
 Build `Main.dc.html` and the commit half of `States.dc.html`.
 
@@ -51,7 +51,8 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
     - `loadCommitList(cwd)`: prunes ticks against the new list, and selects the first file when nothing is selected;
     - `startCommitPoll(cwd)`, at `FILES_POLL_MS`;
     - `toggleTick`, `setAllTicked`, `setDraft`, `selectCommitTabFile`;
-    - `setAmend(cwd, on)`: on → fetch `GitHeadMessageCommand` and put its message in the draft; off → clear the draft
+    - `setAmend(cwd, on)`: on → fetch `GitCommitMessageCommand({ cwd, ref: "" })` (`wshrpctypes_git.go:237`) and put
+      its message in the draft; off → clear the draft
       only if it still equals HEAD's message;
     - `commitNow(cwd)`: calls `GitCommitCommand` with `tickedPaths`, `{ timeout: 65000 }`. On failure it stores the
       failure and keeps the draft and ticks. On success it clears the draft, amend and ticks, then reloads the list,
@@ -59,7 +60,8 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
       \`${n} ${n === 1 ? "file" : "files"}\`, level: "info", onOpen })`. `onOpen` switches to the Log tab and calls
       `selectCommit(cwd, hash)`, so the new commit's row is selected and its first file open.
 - Create: `frontend/app/view/agents/committab.tsx`, as drawn in `Main.dc.html`:
-  - The header row: a tri-state checkbox (`role="checkbox"`, `aria-checked="mixed"` for some), `Changes n`,
+  - The header row: a tri-state checkbox (`data-commit-tick-all`, `role="checkbox"`, `aria-checked="mixed"` for some;
+    a click ticks every committable row, or unticks all when all are ticked; disabled rows are never ticked), `Changes n`,
     `TreeModeToggle`, and a refresh icon button (`data-commit-refresh`, `aria-label="Refresh"`, `RefreshCw`) that calls
     `loadCommitList(cwd)` and spins while it runs.
   - The **Changes** group, then **Unversioned files** (folded by default), each built with `buildFileTree` /
@@ -73,14 +75,21 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
       `commitNow`;
     - the Amend checkbox `data-commit-amend`, disabled with the title "Already pushed: amending would need a force
       push" when `!amendAllowed`;
-    - the muted note `data-commit-agents-note`: "n agents running here", from `agentsWorkingIn` with
-      `agentCwdsAtom` and `model.agentsAtom`;
+    - the muted note `data-commit-agents-note`: "n agents running here", shown only when n > 0, from `agentsWorkingIn`
+      with `agentCwdsAtom` and `model.agentsAtom`. `agentCwdsAtom` is `Record<string, string | null>` and
+      `agentsWorkingIn` takes `Record<string, string>`: widen `agentsWorkingIn`'s parameter to
+      `Record<string, string | null>` in `syncstate.ts` (it already skips a falsy dir). In DEV only,
+      `window.__syncWorkingAgents` (a string array) replaces the computed list; Task 1 declares it in a
+      `declare global` block in `commitstore.ts`, and Task 2's Pull confirm reuses it;
     - the button `data-commit-button`: `commitLabel`, disabled unless `canCommit`, with the hint `Ctrl+Enter`.
   - A failure renders under the button as `data-commit-failure`: git's command, exit code and stderr in mono, then
     "Your message and ticks are kept."
   - A clean tree renders `data-commit-empty`: "No uncommitted changes", "The working tree matches HEAD." and a link
     "Open the Log (Shift+H)".
-- Modify: `diffpanel.tsx`: the Commit body renders `CommitTab` in place of the read-only `CommitList` placeholder (~line 129); delete `CommitList`. Modify `filessurface.tsx`: when `panelTabAtom` is
+- Modify: `diffpanel.tsx`: the Commit body renders `CommitTab` in place of the read-only `CommitList` placeholder (~line 129); delete `CommitList`.
+  Remove the tab strip's own `TreeModeToggle` on the Commit tab (~line 393, `tab === "commit" ? <TreeModeToggle />`):
+  the Commit tab's header row carries the one toggle.
+- Modify: `syncstate.ts`: widen `agentsWorkingIn`'s `agentCwds` to `Record<string, string | null>` (above). Modify `filessurface.tsx`: when `panelTabAtom` is
   `"commit"`, the diff shows `commitSelectedAtom[cwd]` with `{ kind: "worktree", anchorRef: "" }`, `editorCwd = cwd`,
   and the header measured "vs HEAD" (or "new file" for `?`).
 - Modify: `scripts/cdp/scenarios.mjs`. Add `diff-commit-tab`, registered right after `diff-worktrees`. Its arrange
@@ -102,13 +111,20 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
      message into `[data-commit-message]` and press `Ctrl+Enter` there. A toast shows "Committed <hash>"; `git show
      --name-only HEAD` lists a.txt and new.txt, and `git diff --cached --name-only` is still b.txt. Click the toast's
      `[data-notification-open]`: the Log tab is selected and the `[data-history-row="<hash>"]` row is selected.
-  3. Switch to the Log tab, then press `Shift+C`: the Commit tab is selected and `document.activeElement` is
+  3. Header checkbox: click `[data-commit-tick-all]` until it reads `aria-checked="true"` (at most twice): every
+     enabled `[data-commit-tick]` reads `"true"` and `vendor/tool/`'s disabled tick stays `"false"`. Click it once
+     more: every tick reads `"false"`. Set `window.__syncWorkingAgents = ["fixture agent"]` and click
+     `[data-commit-refresh]` (`loadCommitList` always stores a new entry, so the box rerenders and re-reads the
+     override): `[data-commit-agents-note]` reads "1 agent running here"; delete the override and refresh again. Amend (no upstream yet, so it is allowed): tick
+     `[data-commit-amend]`: `[data-commit-message]` holds HEAD's message (step 2's commit) and `[data-commit-button]`
+     reads "Amend with n files". Shot `cdp-shots/diff-commit-amend.png`. Untick it: the textarea is empty again.
+  4. Switch to the Log tab, then press `Shift+C`: the Commit tab is selected and `document.activeElement` is
      `[data-commit-message]`. Write `x.txt` in node and click `[data-commit-refresh]`: an x.txt row appears in
      Unversioned.
-  4. Write a failing `pre-commit` hook, modify a.txt and commit: `[data-commit-failure]` holds the hook's text and the
+  5. Write a failing `pre-commit` hook, modify a.txt and commit: `[data-commit-failure]` holds the hook's text and the
      message is still in the box. Shot `cdp-shots/diff-commit-failed.png`. Remove the hook.
-  5. Add a bare remote and `git push -u`: Amend is disabled with its title. Shot `cdp-shots/diff-commit-amend-locked.png`.
-  6. Commit everything left (`git add -A && git commit` in node, unticking the nested repo first by ignoring it in
+  6. Add a bare remote and `git push -u`: Amend is disabled with its title. Shot `cdp-shots/diff-commit-amend-locked.png`.
+  7. Commit everything left (`git add -A && git commit` in node, unticking the nested repo first by ignoring it in
      `.git/info/exclude`): `[data-commit-empty]` shows. Shot `cdp-shots/diff-commit-empty.png`.
 
   Teardown removes the project and the temp dirs.
@@ -125,7 +141,7 @@ Build `Main.dc.html` and the commit half of `States.dc.html`.
 
 ### Task 2: The sync bar
 **Depends on:** Task 1
-**Files:** `frontend/app/view/agents/syncstore.ts`, `frontend/app/view/agents/syncbar.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/diffpane.tsx`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/agents/syncstore.ts`, `frontend/app/view/agents/syncbar.tsx`, `frontend/app/view/agents/gitstatepanels.tsx`, `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/diffpanel.tsx`, `frontend/app/view/agents/diffpane.tsx`, `scripts/cdp/scenarios.mjs`
 
 Build the sync cluster of `Main.dc.html` and the sync half of `States.dc.html`.
 
@@ -139,26 +155,39 @@ Build the sync cluster of `Main.dc.html` and the sync half of `States.dc.html`.
   - an RPC throw becomes a failure with exit code -1 and "the pull did not complete" / "the push did not complete";
   - Fetch stays `comparestore.runFetch`, with its `fetchStatesAtom`.
 - Create: `frontend/app/view/agents/syncbar.tsx`:
+  - Where the numbers come from: `syncView` takes `branch`, `upstream`, `upstreamAhead` and `upstreamBehind` from
+    `filesStateAtom`, as `diffpane.tsx:103` already does (`commitListAtom` has no `upstreamBehind`; don't add one);
+    `running` from `syncRunAtom[cwd]`, and Fetch's state from `comparestore.fetchStatesAtom`.
   - `syncView` drives the counts span (`data-sync-counts`, `title`) and three icon buttons, each `data-sync=fetch|pull|push`
     with an `aria-label`, `RefreshCw` / `ArrowDownToLine` / `ArrowUpFromLine`, and an `animate-spin` spinner while it
     runs. Publish is a text button.
   - **Pull confirm:** when `agentsWorkingIn(cwd, …)` is non-empty, Pull opens a popover (`data-pull-confirm`,
     `role="dialog"`) titled "Pull n commits into <branch>?". It names the agents and offers Cancel / "Pull n commits".
-    For the scenario, in DEV only, `window.__syncWorkingAgents` (a string array) replaces the computed list; declare it in
-    a `declare global` block in `syncbar.tsx`.
-  - **Failure:** `GitFailureNotice` under the top bar (`data-sync-failure`), preceded by `explainSyncFailure`'s
-    sentence when it is not empty.
+    For the scenario, in DEV only, `window.__syncWorkingAgents` (declared by Task 1 in `commitstore.ts`) replaces the
+    computed list.
+  - **Failure:** do not reuse `GitFailureNotice` (`gitstatepanels.tsx:94`): it hardcodes "Fetch failed · showing refs
+    as of the last fetch" and a Retry action. Add `SyncFailureNotice` beside it in `gitstatepanels.tsx`, on the same
+    `SurfaceBanner` (`data-sync-failure`, `data-sync-failure-kind="pull|push"`): titled "Pull failed" or "Push failed"
+    by kind, then `explainSyncFailure`'s sentence when it is not empty, then git's stderr (truncated, full text in
+    `title`). Its action is "Open a terminal here" (`data-sync-open-terminal`), which opens a plain terminal in the
+    worktree: export `quickTerminal` from `agenttree.tsx:1506` and call it with the cwd and its project name, rather
+    than copying it. Its Dismiss clears `syncRunAtom[cwd].failure`. Rendered under the top bar.
 - Modify: `diffpanel.tsx`. The top bar renders `SyncBar` in place of `FetchButton` (~line 103); delete `FetchButton`. Modify `diffpane.tsx` so
-  the folded header shows `data-sync-counts` only.
+  the folded header shows the counts span (`data-sync-counts`, the same text and `title` as the bar's) and no sync
+  buttons.
 - Modify: `scripts/cdp/scenarios.mjs`. Add `diff-sync`, registered right after `diff-compare`. Its arrange is a bare
   remote, clone A (registered as the project) and clone B, both with an identity. Steps:
   1. A commits once: `[data-sync-counts]` reads "↑1 ↓0". Click Push: a toast shows and the counts read "↑0 ↓0".
   2. B commits and pushes, and A commits: click Fetch, then Pull. `[data-sync-failure]` says main and origin/main have
-     diverged. Shot `cdp-shots/diff-sync-diverged.png`. Reset A to origin/main.
+     diverged, its title reads "Pull failed" (not "Fetch failed"), and `[data-sync-open-terminal]` is present. Shot
+     `cdp-shots/diff-sync-diverged.png`. Click the banner's Dismiss: `[data-sync-failure]` is gone. Reset A to
+     origin/main.
   3. B pushes again, and set `window.__syncWorkingAgents = ["fixture agent"]`: click Pull. `[data-pull-confirm]` names
      the agent. Shot `cdp-shots/diff-sync-confirm.png`. Confirm: a toast shows "Pulled 1 commit".
   4. A checks out a new branch `feature` with a commit: the counts read "no upstream" and the push button reads
      Publish. Shot `cdp-shots/diff-sync-publish.png`. Click it: the counts become "↑0 ↓0".
+  5. Press `Shift+B` to fold the panel: the folded header's `[data-sync-counts]` reads "↑0 ↓0" and no `[data-sync]`
+     button shows. Shot `cdp-shots/diff-sync-folded.png`. Press `Shift+B` again to unfold.
 
   Teardown removes the project and the temp dirs.
 
