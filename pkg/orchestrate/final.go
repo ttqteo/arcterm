@@ -17,6 +17,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jobqueue"
+	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -306,7 +308,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	if g.Check != "" {
 		var out string
 		if !step(FinalStep_Check, func(progress planProgress) bool {
-			out, err = runPlanCommand(ctx, tree, g.Check, nil, VerifyTimeout, progress)
+			out, err = runPlanCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Check"}), tree, g.Check, nil, VerifyTimeout, progress)
 			return err == nil
 		}) {
 			if !baseCheckFailed(g) {
@@ -322,7 +324,7 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 		var out string
 		var flaky []string
 		if !step(FinalStep_Verify, func(progress planProgress) bool {
-			out, flaky, err = runVerifyCommand(ctx, tree, g.Verify, unscopedEnv, progress)
+			out, flaky, err = runVerifyCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Verify", Always: true}), tree, g.Verify, unscopedEnv, progress)
 			return err == nil
 		}) {
 			res.detail = fmt.Sprintf("Verify `%s` failed on the merged result (%s):\n%s", g.Verify, commandReason(err), out)
@@ -341,7 +343,8 @@ func runFinalSteps(ctx context.Context, dagID string, owner *waveobj.Run) finalR
 	var exit int
 	var tail string
 	step(FinalStep_Final, func(progress planProgress) bool {
-		exit, tail, err = runFinalCommand(ctx, tree, g.FinalCmd, g.Final.OutDir, finalCommandTimeout, progress)
+		finalCtx := jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Final", Always: true, Peak: memgate.DevBytes})
+		exit, tail, err = runFinalCommand(finalCtx, tree, g.FinalCmd, g.Final.OutDir, finalCommandTimeout, progress)
 		return err == nil && exit == 0
 	})
 	// whatever the exit: a failing scenario's screenshots are the ones worth seeing
@@ -727,7 +730,7 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 		}
 	}
 	if g.Setup != "" {
-		if _, err := runPlanCommand(ctx, wt, g.Setup, nil, SetupTimeout, nil); err != nil {
+		if _, err := runPlanCommand(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), wt, g.Setup, nil, SetupTimeout, nil); err != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("Setup failed in the final tree: %s", failureDetail(err))
 		}
