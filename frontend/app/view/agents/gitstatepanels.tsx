@@ -10,6 +10,7 @@
 import { cn, fireAndForget } from "@/util/util";
 import { CircleAlert, Copy, Folder, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { explainSyncFailure } from "./syncstate";
 
 // -1 means the failure was not an exit status at all (git missing, a timeout, a dropped socket).
 // Showing "no exit code" beats printing -1 as though git had returned it.
@@ -25,37 +26,65 @@ export function SurfaceBanner({
     children,
     action,
     onDismiss,
+    stacked,
+    className,
     ...rest
 }: {
     tone: "error" | "neutral";
     icon: ReactNode;
     children: ReactNode;
-    action?: { label: string; onClick: () => void };
+    // `attrs` marks the button for a test or a script
+    action?: { label: string; onClick: () => void; attrs?: { [data: `data-${string}`]: boolean } };
     onDismiss: () => void;
-} & { [data: `data-${string}`]: boolean }) {
+    // the text in a column with the action under it, for a strip too narrow to hold both on one line (the Diff panel's)
+    stacked?: boolean;
+    // laid over the strip's own margins and alignment
+    className?: string;
+} & { [data: `data-${string}`]: boolean | string }) {
+    const actionButton = action ? (
+        <button
+            {...action.attrs}
+            onClick={action.onClick}
+            className={cn(
+                "flex-none rounded-[6px] border px-[9px] py-[3px] text-[11.5px] font-semibold",
+                tone === "error"
+                    ? "border-error/40 text-error hover:bg-error/12"
+                    : "border-edge-mid text-ink-mid hover:border-edge-strong hover:text-foreground"
+            )}
+        >
+            {action.label}
+        </button>
+    ) : null;
     return (
         <div
             {...rest}
             className={cn(
                 "mx-[18px] mb-[10px] flex flex-none items-center gap-[10px] rounded-[9px] border px-[12px] py-[8px]",
-                tone === "error" ? "border-error/25 bg-error/12" : "border-edge-mid bg-surface"
+                tone === "error" ? "border-error/25 bg-error/12" : "border-edge-mid bg-surface",
+                stacked && "items-start",
+                className
             )}
         >
-            <span className={cn("flex flex-none", tone === "error" ? "text-error" : "text-ink-mid")}>{icon}</span>
-            <div className="flex min-w-0 flex-1 items-center gap-[8px] text-[12px]">{children}</div>
-            {action ? (
-                <button
-                    onClick={action.onClick}
-                    className={cn(
-                        "flex-none rounded-[6px] border px-[9px] py-[3px] text-[11.5px] font-semibold",
-                        tone === "error"
-                            ? "border-error/40 text-error hover:bg-error/12"
-                            : "border-edge-mid text-ink-mid hover:border-edge-strong hover:text-foreground"
-                    )}
-                >
-                    {action.label}
-                </button>
-            ) : null}
+            <span
+                className={cn(
+                    "flex flex-none",
+                    stacked && "mt-[1px]",
+                    tone === "error" ? "text-error" : "text-ink-mid"
+                )}
+            >
+                {icon}
+            </span>
+            {stacked ? (
+                <div className="flex min-w-0 flex-1 flex-col items-start gap-[6px] text-[12px]">
+                    {children}
+                    {actionButton}
+                </div>
+            ) : (
+                <>
+                    <div className="flex min-w-0 flex-1 items-center gap-[8px] text-[12px]">{children}</div>
+                    {actionButton}
+                </>
+            )}
             <button
                 onClick={onDismiss}
                 title="Dismiss"
@@ -117,6 +146,58 @@ export function GitFailureNotice({
             >
                 {failure.stderr || exitLabel(failure)}
             </span>
+        </SurfaceBanner>
+    );
+}
+
+// A Pull or Push git refused, under the Diff panel's top bar. Not GitFailureNotice: that one is about a fetch ("showing refs
+// as of the last fetch") and offers a Retry, while a refused pull is settled by what the person does next (merge or rebase
+// in a terminal), so its action opens one in the worktree. The sentence is `explainSyncFailure`'s, when git's words are one
+// a person can act on; git's own follow, cut to a line with the whole text a hover away.
+export function SyncFailureNotice({
+    kind,
+    failure,
+    branch,
+    upstream,
+    onOpenTerminal,
+    onDismiss,
+}: {
+    kind: "pull" | "push";
+    failure: GitFailure;
+    branch: string;
+    upstream: string;
+    onOpenTerminal: () => void;
+    onDismiss: () => void;
+}) {
+    const sentence = explainSyncFailure(kind, failure, branch, upstream);
+    return (
+        <SurfaceBanner
+            data-sync-failure
+            data-sync-failure-kind={kind}
+            tone="error"
+            stacked
+            className="mx-[8px] mb-0 mt-[8px]"
+            icon={<CircleAlert size={14} />}
+            action={{
+                label: "Open a terminal here",
+                onClick: onOpenTerminal,
+                attrs: { "data-sync-open-terminal": true },
+            }}
+            onDismiss={onDismiss}
+        >
+            <span className="font-semibold text-error">{kind === "pull" ? "Pull failed" : "Push failed"}</span>
+            {sentence ? <span className="leading-[1.5] text-ink-hi">{sentence}</span> : null}
+            <span className="max-w-full truncate font-mono text-[10.5px] text-muted">
+                {failure.command} · {exitLabel(failure)}
+            </span>
+            {failure.stderr ? (
+                <span
+                    title={failure.stderr}
+                    className="max-w-full select-text truncate font-mono text-[10.5px] text-ink-mid"
+                >
+                    {failure.stderr}
+                </span>
+            ) : null}
         </SurfaceBanner>
     );
 }

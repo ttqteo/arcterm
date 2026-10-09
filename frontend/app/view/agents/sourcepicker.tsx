@@ -68,7 +68,7 @@ export function SourcePicker(props: SourceTreeProps) {
                 )}
             >
                 <GitBranch size={14} className="flex-none text-ink-mid" />
-                <span className="max-w-[65%] flex-none truncate text-[12.5px] font-semibold text-ink-hi">
+                <span className="min-w-0 max-w-[65%] shrink truncate text-[12.5px] font-semibold text-ink-hi">
                     {title.name}
                 </span>
                 {title.branch ? (

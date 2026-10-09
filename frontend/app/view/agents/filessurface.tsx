@@ -20,6 +20,7 @@ import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentDiffScope, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
+import { commitListAtom, commitSelectedAtom, selectCommitTabFile } from "./commitstore";
 import { AGGREGATE, buildCompareRows, compareNavIds } from "./comparerows";
 import {
     compareActiveChangesAtom,
@@ -51,14 +52,7 @@ import {
     type DiffOrigin,
 } from "./diffscope";
 import { defaultFocusId, focusFollowAgent } from "./diffsource";
-import {
-    filesErrorAtom,
-    filesStateAtom,
-    loadFilesForScope,
-    startChangesPoll,
-    type FilesProject,
-    type FilesState,
-} from "./filesstore";
+import { filesErrorAtom, filesStateAtom, loadFilesForScope, startChangesPoll, type FilesProject } from "./filesstore";
 import {
     activeChangesAtom,
     dismissRestoreNotice,
@@ -78,6 +72,7 @@ import {
     startFromTop,
 } from "./githistorystore";
 import { GitFailureNotice, GitFailurePanel, NotARepoPanel, SurfaceBanner } from "./gitstatepanels";
+import type { GitChange } from "./gitstatus";
 import { RESTORE_DISMISS_MS } from "./historyquery";
 import { WORKING_TREE } from "./historyrows";
 import { openLauncher } from "./launcherstore";
@@ -89,8 +84,8 @@ import { diffSurfaceWidthAtom, panelShownFoldedAtom } from "./worktreesidebarsto
 
 // What the change poll saw, as one string: Review re-reads the whole patch only when this moves, not on
 // every tick the way the single-file diff does (that one reads a single file).
-function liveChangesKey(s: FilesState): string {
-    return `${s.head}|${(s.changes?.files ?? []).map((f) => `${f.path}:${f.status}:${f.adds}:${f.dels}`).join(",")}`;
+function liveChangesKey(head: string, files: GitChange[] | undefined): string {
+    return `${head}|${(files ?? []).map((f) => `${f.path}:${f.status}:${f.adds}:${f.dels}`).join(",")}`;
 }
 
 export function FilesSurface({ model }: { model: AgentsViewModel }) {
@@ -115,6 +110,9 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
     const compareFile = useAtomValue(compareSelectedFileAtom);
     const compareChanges = useAtomValue(compareActiveChangesAtom);
     const panelFolded = useAtomValue(panelShownFoldedAtom);
+    const panelTab = useAtomValue(panelTabAtom);
+    const commitLists = useAtomValue(commitListAtom);
+    const commitSelecteds = useAtomValue(commitSelectedAtom);
     // a file clicked in a list, for Review to scroll to; n tells two clicks on one file apart
     const [reviewScroll, setReviewScroll] = useState<{ path: string; n: number } | null>(null);
 
@@ -297,17 +295,35 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
 
     // What the diff pane is showing. The header's +/- come from the row that is already loaded, so
     // opening a file costs no extra read.
-    const shownPath = compareOn ? compareFile : selectedFile;
-    const shownChanges = compareOn ? compareChanges : activeChanges;
+    // The Commit tab owns the diff while it is open: the working tree against HEAD, whichever file its list has selected.
+    // Its list is its own read (commitstore.ts), since an agent scope's change list is anchored at the session start.
+    const commitMode = panelTab === "commit" && !compareOn;
+    const commitCwd = state?.cwd ?? null;
+    const commitEntry = commitMode && commitCwd ? commitLists[commitCwd] : undefined;
+    const shownPath = commitMode
+        ? commitCwd
+            ? (commitSelecteds[commitCwd] ?? null)
+            : null
+        : compareOn
+          ? compareFile
+          : selectedFile;
+    const shownChanges = commitMode ? (commitEntry?.changes ?? null) : compareOn ? compareChanges : activeChanges;
     const selectedChange = shownChanges?.files.find((f) => f.path === shownPath) ?? null;
     // The working-tree side is live — an agent editing under this surface must not leave a stale diff
     // on screen. The change poll replaces filesStateAtom on every tick, so its identity IS the tick;
     // a commit or a comparison is immutable and stays out of the dep so it is read exactly once.
-    const liveTick = !compareOn && selectedCommit === WORKING_TREE ? state : null;
+    const liveTick = !commitMode && !compareOn && selectedCommit === WORKING_TREE ? state : null;
 
     // A file clicked in a list (or stepped to from the folded header) opens in the diff, and Review scrolls to it.
     const revealFile = (path: string) => setReviewScroll((prev) => ({ path, n: (prev?.n ?? 0) + 1 }));
     const selectShownFile = (path: string) => {
+        if (commitMode) {
+            if (commitCwd) {
+                selectCommitTabFile(commitCwd, path);
+            }
+            revealFile(path);
+            return;
+        }
         if (compareOn) {
             selectCompareFile(path);
             return;
@@ -363,19 +379,21 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         }
         // In compare mode only the aggregate row means "the whole comparison"; a commit row there is
         // still one commit against its parent, exactly as in history.
-        const sel: DiffSelection = compareOn
-            ? compareSelection === AGGREGATE
-                ? {
-                      kind: "compare",
-                      base: compareRefs?.base ?? "",
-                      head: compareRefs?.head ?? "",
-                      mergeBase: compareSides?.mergeBase ?? "",
-                      form: compareForm,
-                  }
-                : { kind: "commit", hash: compareSelection ?? "" }
-            : selectedCommit === WORKING_TREE
-              ? { kind: "worktree", anchorRef: state?.ref ?? "" }
-              : { kind: "commit", hash: selectedCommit ?? "" };
+        const sel: DiffSelection = commitMode
+            ? { kind: "worktree", anchorRef: "" }
+            : compareOn
+              ? compareSelection === AGGREGATE
+                  ? {
+                        kind: "compare",
+                        base: compareRefs?.base ?? "",
+                        head: compareRefs?.head ?? "",
+                        mergeBase: compareSides?.mergeBase ?? "",
+                        form: compareForm,
+                    }
+                  : { kind: "commit", hash: compareSelection ?? "" }
+              : selectedCommit === WORKING_TREE
+                ? { kind: "worktree", anchorRef: state?.ref ?? "" }
+                : { kind: "commit", hash: selectedCommit ?? "" };
         fireAndForget(() => loadDiffPair(cwd, shownPath, sel));
     }, [
         state?.cwd,
@@ -389,6 +407,8 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
         compareForm,
         selectedCommit,
         liveTick,
+        commitMode,
+        commitEntry,
     ]);
 
     if (agents.length === 0 && projects.length === 0) {
@@ -420,6 +440,7 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
             <div ref={rootRef} className="absolute inset-0 flex min-h-0">
                 {showPanel ? (
                     <DiffPanel
+                        model={model}
                         agents={agents}
                         projects={projects}
                         scope={scope}
@@ -471,7 +492,11 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                             adds={selectedChange?.adds ?? 0}
                             dels={selectedChange?.dels ?? 0}
                             // "Open in editor" only makes sense for a path that exists in the working tree
-                            editorCwd={!compareOn && selectedCommit === WORKING_TREE ? (state?.cwd ?? null) : null}
+                            editorCwd={
+                                commitMode || (!compareOn && selectedCommit === WORKING_TREE)
+                                    ? (state?.cwd ?? null)
+                                    : null
+                            }
                             // "Open in Code" wants only the repository: the Code surface always shows the
                             // working-tree file, and says so itself when the path is gone
                             repoCwd={state?.cwd ?? null}
@@ -484,19 +509,40 @@ export function FilesSurface({ model }: { model: AgentsViewModel }) {
                                     : null
                             }
                             model={model}
-                            against={scope ? measuredAgainst({ range: scope.range, commit: commitShown }) : ""}
+                            against={
+                                commitMode
+                                    ? selectedChange?.status === "?"
+                                        ? "new file"
+                                        : "vs HEAD"
+                                    : scope
+                                      ? measuredAgainst({ range: scope.range, commit: commitShown })
+                                      : ""
+                            }
                             folded={panelFolded}
                             onStepFile={selectShownFile}
                             review={
-                                compareOn || selectedCommit == null
-                                    ? null
-                                    : {
-                                          source: selectedCommit === WORKING_TREE ? "worktree" : selectedCommit,
-                                          // the file list's own base, so Review shows what the list shows
-                                          base: state?.ref ?? "",
-                                          refreshKey: liveTick == null ? "" : liveChangesKey(liveTick),
+                                commitMode
+                                    ? {
+                                          source: "worktree",
+                                          base: "",
+                                          refreshKey: liveChangesKey(
+                                              commitEntry?.head ?? "",
+                                              commitEntry?.changes.files
+                                          ),
                                           scrollTo: reviewScroll,
                                       }
+                                    : compareOn || selectedCommit == null
+                                      ? null
+                                      : {
+                                            source: selectedCommit === WORKING_TREE ? "worktree" : selectedCommit,
+                                            // the file list's own base, so Review shows what the list shows
+                                            base: state?.ref ?? "",
+                                            refreshKey:
+                                                liveTick == null
+                                                    ? ""
+                                                    : liveChangesKey(liveTick.head, liveTick.changes?.files),
+                                            scrollTo: reviewScroll,
+                                        }
                             }
                         />
                     )}

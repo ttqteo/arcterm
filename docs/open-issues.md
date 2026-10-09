@@ -120,8 +120,9 @@ Cockpit and surfaces:
 - **Cross-surface Back history and its context strip** (2026-09-17) — the parked branch
   `feat/surface-integration` and its commit `09e86573` are gone (2026-10-09); reviving means rebuilding it.
 - **Composer attachments** (2026-09-18) — revive when attaching a file to a goal or steer is wanted.
-- **Diff surface repository actions (Spec B)** (2026-09-04) — checkout, cherry-pick, revert. Needs its
-  own spec; revive when a write from the Diff surface is wanted. The orphaned revert path was deleted
+- **Diff surface repository actions (Spec B)** (2026-09-04) — checkout, cherry-pick, revert. Commit, fetch, pull
+  and push shipped 2026-10-09 (`docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md`). Needs its
+  own spec; revive when one of those three is wanted from the Diff surface. The orphaned revert path was deleted
   2026-10-05, recovery commands in `docs/deferred.md`.
 - **Diff surface: hiding whitespace-only files from the change list** (2026-09-11).
 - **Incremental stateful transcript projection** — only if the capped re-project profiles hot (CDP /
