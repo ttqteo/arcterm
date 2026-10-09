@@ -425,10 +425,11 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
         const c = globalStore.get(listNavAtom);
         return c != null && c.surface === ctx.surface;
     };
-    // ↑/↓ with focus in the Diff surface's changed-file list step through its files (changedfilelist.tsx), not the
-    // history rows; j/k stay the history cursor
+    // ↑/↓ with focus in the Diff surface's changed-file list step through its files (changedfilelist.tsx), or in the
+    // Commit tab's tick list (committab.tsx), not the history rows; j/k stay the history cursor
     const inFileList = () =>
-        typeof document !== "undefined" && document.activeElement?.closest?.("[data-file-list]") != null;
+        typeof document !== "undefined" &&
+        document.activeElement?.closest?.("[data-file-list], [data-commit-list]") != null;
     const rowPeek = () => globalStore.get(listNavAtom)?.peekTarget?.() ?? null;
     const move = (delta: number) => {
         const c = globalStore.get(listNavAtom);

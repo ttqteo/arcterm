@@ -10,6 +10,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ## Unreleased
 
+### Added
+
+- Diff can commit and sync. The Commit tab lists the working tree's files with a tick each (Changes ticked,
+  Unversioned not): write a message and press **Commit** or `Ctrl`+`Enter`, and only the ticked files are committed, so
+  what another session staged stays staged. **Amend** loads the last commit's message and turns off once that commit is
+  pushed. Beside the source picker, **Fetch**, **Pull** and **Push** work on the branch against its upstream and show
+  how many commits it is ahead and behind: Pull only fast-forwards and asks first when an agent is working in that
+  folder, Push never forces, and a refusal from git is shown instead of changing anything.
+
 ### Changed
 
 - New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long

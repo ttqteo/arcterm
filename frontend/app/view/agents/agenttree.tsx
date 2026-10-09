@@ -1502,8 +1502,9 @@ function FolderRow({
 }
 
 // Opens a plain terminal in a registered project, the New launcher's Terminal pick without the dialog. Like the
-// launcher's, it starts in the background and lands in the Terminals section.
-function quickTerminal(model: AgentsViewModel, project: string, path: string) {
+// launcher's, it starts in the background and lands in the Terminals section. The Diff panel's sync failure opens one
+// in its worktree, so it is exported.
+export function quickTerminal(model: AgentsViewModel, project: string, path: string) {
     fireAndForget(() =>
         launchAgent(model, {
             runtime: "terminal",
