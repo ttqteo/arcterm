@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,
+  type at a laptop or dribble a ball, picked at random each time, as well as standing or sitting still.
 - `Alt`+`C` switches an agent between Terminal, Canvas and Review from inside its terminal, where a bare `c` is
   typed into the agent.
 - `Alt`+`1`…`9` jumps to an agent in the Agent surface's Active list, even from inside its terminal; hold `Alt` a

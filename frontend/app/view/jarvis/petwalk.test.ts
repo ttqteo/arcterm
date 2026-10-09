@@ -11,12 +11,15 @@ import {
     HOP_LIFT_PX,
     initialWalker,
     nextTick,
+    PASTIMES,
     REST_MAX_MS,
     REST_MIN_MS,
+    REST_POSES,
     SLEEP_AFTER_MS,
     stepWalker,
     TIRED_FRAME_MS,
     type Ledge,
+    type RestPose,
     type WalkerInput,
     type WalkerState,
     type WalkerStep,
@@ -70,6 +73,7 @@ function seeded(seed: number): () => number {
 }
 
 const half = () => 0.5;
+const tenth = () => 0.1;
 
 function overlaps(x: number, avoid: readonly [number, number][]): boolean {
     return avoid.some(([a0, a1]) => x < a1 && x + PX > a0);
@@ -340,31 +344,72 @@ describe("rest", () => {
             walker({ name: "walk", x: 400, target: 430 }),
             input(),
             T0,
-            half,
+            tenth,
             (s) => s.state.name !== "walk"
         );
         expect(arrived.state.name).toBe("rest");
         expect(arrived.x).toBe(430);
-        // rand 0.5: halfway through 5-15 s
-        expect(arrived.delayMs).toBe(10_000);
-        expect(["stand", "sit"]).toContain(arrived.pose);
+        // rand 0.1: a tenth into 5-15 s, standing still
+        expect(arrived.delayMs).toBe(6_000);
+        expect(arrived.pose).toBe("stand");
 
-        const mid = stepWalker(arrived.state, input(), now + 4_000, half);
+        const mid = stepWalker(arrived.state, input(), now + 4_000, tenth);
         expect(mid.state.name).toBe("rest");
-        expect(mid.delayMs).toBe(6_000);
+        expect(mid.delayMs).toBe(2_000);
         expect(mid.x).toBe(430);
 
-        const end = stepWalker(mid.state, input(), now + 10_000, half);
+        const end = stepWalker(mid.state, input(), now + 6_000, tenth);
         expect(end.state.name).toBe("walk");
         expect(end.delayMs).toBe(FRAME_MS);
     });
 
     it("lasts 5-15 s", () => {
         const shortest = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0);
-        expect(shortest.delayMs).toBe(REST_MIN_MS);
+        expect(shortest.state.due - T0).toBe(REST_MIN_MS);
         const longest = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0.999_999);
-        expect(longest.delayMs).toBeGreaterThan(REST_MAX_MS - 1);
-        expect(longest.delayMs).toBeLessThanOrEqual(REST_MAX_MS);
+        expect(longest.state.due - T0).toBeGreaterThan(REST_MAX_MS - 1);
+        expect(longest.state.due - T0).toBeLessThanOrEqual(REST_MAX_MS);
+    });
+
+    it.each(REST_POSES.map((pose, i) => [pose, (i + 0.5) / REST_POSES.length] as const))(
+        "is spent doing %s for rand %d",
+        (pose, r) => {
+            const step = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => r);
+            expect(step.state.restPose).toBe(pose);
+        }
+    );
+
+    it.each(Object.entries(PASTIMES))("loops %s's frames, stepping at each one", (name, pastime) => {
+        const resting = walker({ name: "rest", x: 400, due: T0 + 10 * pastime!.frameMs, restPose: name as RestPose });
+        const seen: string[] = [];
+        let now = T0;
+        while (now < resting.due) {
+            const step = stepWalker(resting, input(), now, half);
+            expect(step.state.name).toBe("rest");
+            // never past a frame, and never past the rest's end
+            expect(step.delayMs).toBeGreaterThan(0);
+            expect(step.delayMs).toBeLessThanOrEqual(pastime!.frameMs);
+            seen.push(step.pose);
+            now += step.delayMs!;
+        }
+        expect(seen).toHaveLength(10);
+        expect(new Set(seen)).toEqual(new Set(pastime!.frames));
+        expect(seen[0]).not.toBe(seen[1]);
+    });
+
+    it("draws an early step in the frame already showing", () => {
+        const resting = walker({ name: "rest", x: 400, due: T0 + 10 * PASTIMES.ball!.frameMs, restPose: "ball" });
+        const a = stepWalker(resting, input(), T0 + 10, half);
+        const b = stepWalker(resting, input(), T0 + 20, half);
+        expect(b.pose).toBe(a.pose);
+        expect(b.delayMs).toBe(a.delayMs! - 10);
+    });
+
+    it("rests tired, not at its pastime, when tired", () => {
+        const resting = walker({ name: "rest", x: 400, due: T0 + 8_000, restPose: "music" });
+        const step = stepWalker(resting, input({ expression: "tired" }), T0, half);
+        expect(step.pose).toBe("tired");
+        expect(step.delayMs).toBe(8_000);
     });
 
     it("leaves a spot a terminal opened over", () => {
