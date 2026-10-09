@@ -47,6 +47,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - In a narrow sidebar, an agent row with subagents no longer runs past the row's right edge: its subagents chip shows
   just the count, and a long model name is cut short.
 - A subagent that has finished no longer stays listed as running under its agent in the sidebar.
+- After opening a subagent from the sidebar, clicking its agent's row brings the agent's terminal back.
 
 ## 0.15.7 — 2026-10-09
 
