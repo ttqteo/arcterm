@@ -95,6 +95,29 @@ export function eventFromNotify(
     };
 }
 
+// The machine slept (pkg/sleepwatch, system:slept). Said only when agents were working through it, because then the
+// gap is what stalled them, and a run that sat still for forty minutes otherwise reads as a hung agent. The times
+// are local and each within the watcher's 30-second tick of the real moment.
+export function eventFromSlept(d: SleptData | null | undefined, working: number, isMac: boolean): PetEvent | null {
+    if (d == null || !(d.to > d.from) || working <= 0) {
+        return null;
+    }
+    const mins = Math.round((d.to - d.from) / 60_000);
+    const span = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    const clock = (ms: number) => {
+        const t = new Date(ms);
+        return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    };
+    const who = working === 1 ? "1 agent was" : `${working} agents were`;
+    return {
+        id: `slept:${d.from}`,
+        at: d.to,
+        kind: "notify",
+        level: "warn",
+        text: `The ${isMac ? "Mac" : "PC"} slept for ${span}, from ${clock(d.from)} to ${clock(d.to)}, while ${who} working.`,
+    };
+}
+
 // A run's branch merged back into its base. The run rides as the source, so the update peeks it from whatever
 // surface the user is on. Keyed by run: a run lands once, so a re-delivered event cannot speak twice.
 export function eventFromRunLanded(d: RunEventData | null | undefined): PetEvent | null {

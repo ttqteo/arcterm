@@ -42,6 +42,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   popup. In Float, where the pet is hidden, the toast still says it. **Finished** toasts are unchanged.
 - In Float, a small Sprout in the bar shows when something waits on you (`?`, `!` or the review eye); click it, or
   press `g` `w`, to open the pet's popup below it.
+- When the computer sleeps while agents are working, Jarvis's pet says so on waking: how long it slept, from when to
+  when, and how many agents it held up, so a run that sat still reads as a sleep rather than a hung agent.
 
 ### Fixed
 

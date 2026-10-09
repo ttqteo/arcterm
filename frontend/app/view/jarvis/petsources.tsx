@@ -24,6 +24,7 @@ import { floatModeAtom } from "@/app/view/agents/floatstore";
 import { toastSaysAsk } from "@/app/view/agents/notifyevents";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { focusedBlockId } from "@/util/focusutil";
+import { isMacOS } from "@/util/platformutil";
 import { useEffect } from "react";
 import { readUntilLanded } from "./petboot";
 import {
@@ -32,6 +33,7 @@ import {
     eventFromNotify,
     eventFromResume,
     eventFromRunLanded,
+    eventFromSlept,
     eventFromVolunteer,
     shouldSpeakAsk,
     type AskGateCtx,
@@ -177,8 +179,21 @@ export function PetSources({ model }: { model: AgentsViewModel }) {
                 }
             },
         });
+        // the machine slept: news only when agents were working through it. A status from before the sleep is still the
+        // roster's when this lands, so "working" is what they were doing when it fell asleep.
+        const unsubSlept = waveEventSubscribeSingle({
+            eventType: "system:slept",
+            handler: (event) => {
+                const working = globalStore.get(model.agentsAtom).filter((a) => a.state === "working").length;
+                const mapped = eventFromSlept(event?.data as SleptData | undefined, working, isMacOS());
+                if (mapped != null) {
+                    pushPetEvent(mapped);
+                }
+            },
+        });
         return () => {
             mounted = false;
+            unsubSlept();
             unsubLanded();
             unsubVolunteer();
             unsubNotify();

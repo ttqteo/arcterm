@@ -16,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/authkey"
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
@@ -30,6 +31,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
 	"github.com/wavetermdev/waveterm/pkg/service"
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
+	"github.com/wavetermdev/waveterm/pkg/sleepwatch"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/util/sigutil"
@@ -362,6 +364,10 @@ func main() {
 	go tempAttachmentCleanupLoop()
 	// trashed sessions older than 7 days are removed: now, then daily
 	sessiontrash.StartPurgeLoop(context.Background())
+	// the machine slept: the pet says so when agents were working through it
+	sleepwatch.StartLoop(context.Background(), func(d baseds.SleptData) {
+		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_Slept, Data: d})
+	})
 	orchestrate.SealRunEvidenceHook = wshserver.SealDoneRunEvidenceAsync // a run the engine closed itself gets the same evidence snapshot `wsh jarvis complete` produces; before StartWatchdog, whose first tick is immediate and can be the tick that closes one
 	orchestrate.LaunchLeadHook = wshserver.LaunchPlanLead                // a run submitted with no lead gets one at its first judgment event; before StartWatchdog, whose first tick can deliver one
 	orchestrate.MarkInterruptedRuns(context.Background())                // no worker survives a restart; the previous wavesrv's non-dag runs would otherwise read executing forever

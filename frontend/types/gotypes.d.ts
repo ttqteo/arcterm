@@ -2935,6 +2935,12 @@ declare global {
         mode?: string;
     };
 
+    // baseds.SleptData
+    type SleptData = {
+        from: number;
+        to: number;
+    };
+
     // wshrpc.SourceHealth
     type SourceHealth = {
         runs: boolean;

@@ -121,6 +121,7 @@ import {
     eventFromAsk,
     eventFromNotify,
     eventFromRunLanded,
+    eventFromSlept,
     shouldSpeakAsk,
     type AskGateCtx,
 } from "./petjoin";
@@ -314,5 +315,45 @@ describe("agentFinishedFromDiff", () => {
         expect(agentFinishedFromDiff([bg({ name: "" })], [], new Set(), 3000)[0]?.text).toBe(
             "A background agent finished"
         );
+    });
+});
+
+// A run that stalls through a sleep reads as a hung agent; the gap says it was the machine. Local times, so the
+// expectations are built from the same local clock the line is written in.
+describe("eventFromSlept", () => {
+    const from = new Date(2026, 9, 9, 14, 2).getTime();
+    const to = new Date(2026, 9, 9, 14, 42).getTime();
+
+    it("says how long the Mac slept, when, and how many agents it held up", () => {
+        expect(eventFromSlept({ from, to }, 2, true)).toEqual({
+            id: `slept:${from}`,
+            at: to,
+            kind: "notify",
+            level: "warn",
+            text: "The Mac slept for 40 min, from 14:02 to 14:42, while 2 agents were working.",
+        });
+    });
+
+    it("counts one agent in the singular, and calls another machine a PC", () => {
+        expect(eventFromSlept({ from, to }, 1, false)?.text).toBe(
+            "The PC slept for 40 min, from 14:02 to 14:42, while 1 agent was working."
+        );
+    });
+
+    it("words a long sleep in hours", () => {
+        const late = new Date(2026, 9, 9, 16, 17).getTime();
+        expect(eventFromSlept({ from, to: late }, 1, true)?.text).toBe(
+            "The Mac slept for 2h 15m, from 14:02 to 16:17, while 1 agent was working."
+        );
+    });
+
+    // a sleep with nothing running cost nothing, so it is not news
+    it("says nothing when no agent was working", () => {
+        expect(eventFromSlept({ from, to }, 0, true)).toBeNull();
+    });
+
+    it("says nothing for a payload it cannot read", () => {
+        expect(eventFromSlept(undefined, 2, true)).toBeNull();
+        expect(eventFromSlept({ from: to, to: from }, 2, true)).toBeNull();
     });
 });

@@ -18,6 +18,7 @@ declare global {
         | "openfile"
         | "agent:ask"
         | "jarvis:volunteer"
+        | "system:slept"
         | "dag:child-done"
         | "dag:gate-open"
         | "dag:dag-blocked"
@@ -47,6 +48,7 @@ declare global {
         { event: "openfile"; data?: OpenFileData; } | 
         { event: "agent:ask"; data?: AgentAskData; } | 
         { event: "jarvis:volunteer"; data?: VolunteerData; } | 
+        { event: "system:slept"; data?: SleptData; } | 
         { event: "dag:child-done"; data?: string; } | 
         { event: "dag:gate-open"; data?: string; } | 
         { event: "dag:dag-blocked"; data?: string; } | 

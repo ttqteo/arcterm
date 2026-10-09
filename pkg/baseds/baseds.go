@@ -79,6 +79,13 @@ type AgentStatusData struct {
 // re-emitted identical fact must carry an identical pair or the creature repeats itself forever.
 // Ref/Anchor are frontend navigation addresses only; they carry vault node ids and must never be
 // passed to waveobj.ParseORef.
+// SleptData is the payload of Event_Slept: the machine slept from From to To (UnixMilli), each within the
+// watcher's tick of the real moment (pkg/sleepwatch).
+type SleptData struct {
+	From int64 `json:"from"`
+	To   int64 `json:"to"`
+}
+
 type VolunteerData struct {
 	Class      string `json:"class"` // recall | connection | loose-end
 	Id         string `json:"id"`
