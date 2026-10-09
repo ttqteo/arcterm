@@ -233,14 +233,17 @@ function UnderOrigin({ children }: { children: React.ReactNode }) {
     );
 }
 
+// `word` follows the label only where its @container line has room for it, so a narrow sidebar keeps just the count
 function FoldChip({
     label,
+    word,
     open,
     onToggle,
     ariaShow,
     ariaHide,
 }: {
     label: string;
+    word?: string;
     open: boolean;
     onToggle: () => void;
     ariaShow: string;
@@ -255,10 +258,12 @@ function FoldChip({
             }}
             aria-label={open ? ariaHide : ariaShow}
             aria-expanded={open}
+            title={word ? `${label} ${word}` : undefined}
             className="inline-flex h-[18px] flex-none items-center gap-[3px] rounded-[5px] border border-edge-mid bg-surface-hover pl-[3px] pr-[6px] text-[10.5px] font-semibold tabular-nums text-ink-mid hover:border-accent hover:text-accent-soft"
         >
             {open ? <ChevronDown size={10} aria-hidden /> : <ChevronRight size={10} aria-hidden />}
             {label}
+            {word ? <span className="hidden @[200px]:inline">{word}</span> : null}
         </button>
     );
 }
@@ -458,7 +463,8 @@ function ParentRow({
     const subsChip =
         subs.length > 0 ? (
             <FoldChip
-                label={`${subs.length} ${subs.length === 1 ? "subagent" : "subagents"}`}
+                label={String(subs.length)}
+                word={subs.length === 1 ? "subagent" : "subagents"}
                 open={expanded}
                 onToggle={() => toggleSubagentExpand(oref, expanded)}
                 ariaShow="Show subagents"
@@ -630,8 +636,9 @@ function ParentRow({
                     <RunSubline run={lead.run} open={lead.open} live={lead.live} trailing={badges} />
                 ) : (
                     // under the name: its model, a branch other than the default, its subagents chip and its badges
-                    <div className={cn(CONVERSATION_META, "mt-[3px]", UNDER_GLYPH)}>
-                        {agent.model ? <span className="flex-none whitespace-nowrap">{agent.model}</span> : null}
+                    // @container: the subagents chip drops its word when this line is narrow, and the model truncates
+                    <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH)}>
+                        {agent.model ? <span className="min-w-0 truncate">{agent.model}</span> : null}
                         {agent.model && shownBranch ? (
                             <span aria-hidden className="flex-none text-ink-faint">
                                 ·

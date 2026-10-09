@@ -21,6 +21,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The Agent panel's Files changed can list the whole branch: on a branch off the default one, a Session / Branch vs
   main switch shows everything the branch carries against where it left main, committed or not, and View diff opens
   that comparison.
+- The agent header has a **Redraw** button (also in its right-click menu) for a terminal whose text came out garbled
+  or overlapping: it repaints the pane and has the agent draw its whole screen again at the pane's size, without
+  restarting the session.
 
 ### Changed
 
@@ -39,6 +42,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and
   coming back lands on the same spot instead of the top.
+- In a narrow sidebar, an agent row with subagents no longer runs past the row's right edge: its subagents chip shows
+  just the count, and a long model name is cut short.
 
 ## 0.15.7 — 2026-10-09
 

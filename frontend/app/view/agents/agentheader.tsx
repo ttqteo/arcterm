@@ -13,6 +13,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
 import { openOrPeek } from "@/app/view/jarvis/openref";
+import { redrawTerminal } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -26,6 +27,7 @@ import {
     PanelRight,
     PictureInPicture2,
     Plus,
+    RotateCw,
     Workflow,
     X,
 } from "lucide-react";
@@ -233,6 +235,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const done = doneSuggestion(agent, useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0);
     const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";
+    // garbled text in the pane: repaint it and have the TUI draw itself again, without restarting the session
+    const redraw = () => {
+        if (blockId != null) {
+            redrawTerminal(blockId);
+        }
+    };
 
     // Right-click the header for the same controls as the button row (plus the details toggle).
     const onContextMenu = (e: React.MouseEvent) => {
@@ -251,6 +259,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 icon: <PictureInPicture2 size={15} />,
                 click: () => fireAndForget(() => toggleFloat(model)),
             });
+            items.push({ label: "Redraw terminal", icon: <RotateCw size={15} />, click: redraw });
         }
         items.push({
             label: railVisible ? "Hide details" : "Show details",
@@ -460,6 +469,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 Close
                             </button>
                         ) : null}
+                        <button
+                            type="button"
+                            data-agent-redraw
+                            onClick={redraw}
+                            title="Redraw terminal: repaint garbled text; the session keeps running"
+                            aria-label="Redraw terminal"
+                            className={cn(ICON_BTN, "hover:border-edge-strong")}
+                        >
+                            <RotateCw size={16} strokeWidth={1.8} />
+                        </button>
                         <button
                             type="button"
                             data-agent-float

@@ -63,6 +63,22 @@ const MaxRepaintTransactionMs = 2000;
 // how long a pane stays hidden before it gives its WebGL context back (see handleResize): long enough that flipping
 // between agents does not rebuild a context each time
 const WebGLParkDelayMs = 30_000;
+// how long redraw holds the PTY one column narrower: long enough that the TUI sees two size changes, not one it
+// can skip as a no-op
+const RedrawNudgeMs = 120;
+
+// the mounted terminal of each block, so a control outside the pane (the agent header's Redraw) can reach it
+const liveTermWraps = new Map<string, TermWrap>();
+
+// Redraw the block's terminal: see TermWrap.redraw. False when the block has no mounted terminal.
+export function redrawTerminal(blockId: string): boolean {
+    const wrap = liveTermWraps.get(blockId);
+    if (wrap == null) {
+        return false;
+    }
+    wrap.redraw();
+    return true;
+}
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
@@ -149,6 +165,7 @@ export class TermWrap {
         this.loaded = false;
         this.tabId = tabId;
         this.blockId = blockId;
+        liveTermWraps.set(blockId, this);
         this.sendDataHandler = waveOptions.sendDataHandler;
         this.nodeModel = waveOptions.nodeModel;
         this.ptyOffset = 0;
@@ -532,6 +549,9 @@ export class TermWrap {
     }
 
     dispose() {
+        if (liveTermWraps.get(this.blockId) === this) {
+            liveTermWraps.delete(this.blockId);
+        }
         this.promptMarkers.forEach((marker) => {
             try {
                 marker.dispose();
@@ -725,6 +745,34 @@ export class TermWrap {
             this.hasResized = true;
             this.resyncController("initial resize");
         }
+    }
+
+    // The pane's text can come out garbled: a lost glyph texture, or a TUI that drew for a size other than the pane's
+    // and repaints only the lines it changes, so the stale ones stay. Fit to the pane, rebuild the glyphs and repaint
+    // xterm, then narrow the PTY one column and give it back: a TUI repaints whole on a resize, at the right size.
+    redraw() {
+        if (this.isHidden()) {
+            return;
+        }
+        this.fitAddon.fit();
+        this.webglAddon?.clearTextureAtlas();
+        this.terminal.refresh(0, this.terminal.rows - 1);
+        const rows = this.terminal.rows;
+        const cols = this.terminal.cols;
+        fireAndForget(() =>
+            RpcApi.ControllerInputCommand(TabRpcClient, {
+                blockid: this.blockId,
+                termsize: { rows, cols: Math.max(cols - 1, 1) },
+            })
+        );
+        setTimeout(() => {
+            fireAndForget(() =>
+                RpcApi.ControllerInputCommand(TabRpcClient, {
+                    blockid: this.blockId,
+                    termsize: { rows: this.terminal.rows, cols: this.terminal.cols },
+                })
+            );
+        }, RedrawNudgeMs);
     }
 
     processAndCacheData() {
