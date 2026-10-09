@@ -17,6 +17,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   it on the agent's own card.
 - The Agent rail shows the project's instructions file under the project and branch, `CLAUDE.md` for a Claude agent
   (or `AGENTS.md` when there is none) and `AGENTS.md` for pi and the others; click it to read it in the rail.
+- An **Outline** button lists a document's headings and jumps to the one you pick, with the section you are reading
+  marked: in the Spec and Plan review, and over the Code surface's Markdown and LaTeX previews.
 - In a Spec or Plan review, resting the pointer on a finding scrolls the document to the task it names and dims
   the rest, so you read only the part it changes; click the finding to keep it shown while you read.
 - Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,

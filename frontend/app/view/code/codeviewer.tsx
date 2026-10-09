@@ -23,6 +23,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 import { useEffect, useRef, type ReactNode } from "react";
+import { OUTLINE_SELECTOR, WithOutline } from "../agents/docoutlineview";
 import { isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
@@ -284,15 +285,17 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
             if (isTexPath(file.path) && mode === "preview") {
                 return (
                     <KeptScroll key={abs} id={scrollKey("tex", abs)}>
-                        <TexPreview
-                            text={draft?.text ?? file.text}
-                            onSource={(line) => {
-                                // mode first: a pending line that lands while the preview still shows is consumed
-                                globalStore.set(codeViewModeAtom, "source");
-                                globalStore.set(codePendingLineAtom, line);
-                            }}
-                            onLink={(href) => fireAndForget(() => openLink(href))}
-                        />
+                        <WithOutline selector={OUTLINE_SELECTOR.tex} textKey={draft?.text ?? file.text}>
+                            <TexPreview
+                                text={draft?.text ?? file.text}
+                                onSource={(line) => {
+                                    // mode first: a pending line that lands while the preview still shows is consumed
+                                    globalStore.set(codeViewModeAtom, "source");
+                                    globalStore.set(codePendingLineAtom, line);
+                                }}
+                                onLink={(href) => fireAndForget(() => openLink(href))}
+                            />
+                        </WithOutline>
                     </KeptScroll>
                 );
             }
@@ -302,35 +305,37 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                 const doc = splitFrontmatter(draft?.text ?? file.text);
                 return (
                     <KeptScroll key={abs} id={scrollKey("preview", abs)}>
-                        <Markdown
-                            text={doc.body}
-                            header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
-                            scrollable
-                            className="markdown-doc h-full"
-                            contentClassName="px-8 pb-12 pt-7"
-                            fontSizeOverride={DOC_FONT_SIZE}
-                            resolveOpts={{
-                                connName: "local",
-                                baseDir: (project != null ? joinRepoPath(project.path, file.path) : file.path).replace(
-                                    /[\\/][^\\/]*$/,
-                                    ""
-                                ),
-                            }}
-                            onClickLink={(href) => {
-                                const target = project != null ? resolveDocLink(file.path, href) : null;
-                                if (target == null) {
-                                    return false;
-                                }
-                                fireAndForget(() =>
-                                    openInCode(model, {
-                                        projectPath: project.path,
-                                        rel: target.rel,
-                                        line: target.line ?? undefined,
-                                    })
-                                );
-                                return true;
-                            }}
-                        />
+                        <WithOutline selector={OUTLINE_SELECTOR.markdown} textKey={doc.body}>
+                            <Markdown
+                                text={doc.body}
+                                header={doc.fields.length > 0 ? <FrontmatterCard fields={doc.fields} /> : null}
+                                scrollable
+                                className="markdown-doc h-full"
+                                contentClassName="px-8 pb-12 pt-7"
+                                fontSizeOverride={DOC_FONT_SIZE}
+                                resolveOpts={{
+                                    connName: "local",
+                                    baseDir: (project != null
+                                        ? joinRepoPath(project.path, file.path)
+                                        : file.path
+                                    ).replace(/[\\/][^\\/]*$/, ""),
+                                }}
+                                onClickLink={(href) => {
+                                    const target = project != null ? resolveDocLink(file.path, href) : null;
+                                    if (target == null) {
+                                        return false;
+                                    }
+                                    fireAndForget(() =>
+                                        openInCode(model, {
+                                            projectPath: project.path,
+                                            rel: target.rel,
+                                            line: target.line ?? undefined,
+                                        })
+                                    );
+                                    return true;
+                                }}
+                            />
+                        </WithOutline>
                     </KeptScroll>
                 );
             }

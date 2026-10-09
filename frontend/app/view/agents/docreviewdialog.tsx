@@ -23,6 +23,7 @@ import { askSentKey, type AgentVM } from "./agentsviewmodel";
 import { cleanLabel } from "./answerbar";
 import { parseCanvasPath } from "./canvasmodel";
 import { canvasOwner } from "./canvasstore";
+import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { docReviewAtom, parseDocReview, type DocReview, type DocReviewKind } from "./docreview";
 import { findingRef, taskOfHeading, type FindingRef } from "./docreviewlinks";
 import {
@@ -421,7 +422,7 @@ function splitPath(path: string): { file: string; dir: string } {
     return { file: path.slice(cut + 1), dir: cut > 0 ? path.slice(0, cut) : "" };
 }
 
-function FileCard(p: { path: string; icon: LucideIcon; action: string; onOpen: () => void }) {
+function FileCard(p: { path: string; icon: LucideIcon; action: string; onOpen: () => void; extra?: ReactNode }) {
     const { file, dir } = splitPath(p.path);
     return (
         <div className="flex-none border-b border-edge-faint px-[22px] py-3">
@@ -431,6 +432,7 @@ function FileCard(p: { path: string; icon: LucideIcon; action: string; onOpen: (
                     <div className="truncate text-[12px] font-semibold text-primary">{file}</div>
                     <div className="truncate text-[10.5px] text-muted">{dir}</div>
                 </div>
+                {p.extra}
                 <button
                     type="button"
                     onClick={p.onOpen}
@@ -476,7 +478,17 @@ function DocumentPane(p: { path: string; quoting: Quoting; focus: string | null;
     };
     return (
         <div className="flex min-w-0 flex-1 flex-col border-r border-edge-mid">
-            <FileCard path={path} icon={FileText} action="Open in Code" onOpen={onOpen} />
+            <FileCard
+                path={path}
+                icon={FileText}
+                action="Open in Code"
+                onOpen={onOpen}
+                extra={
+                    load.status === "ok" ? (
+                        <OutlineButton rootRef={docRef} selector={OUTLINE_SELECTOR.message} textKey={load.text} />
+                    ) : null
+                }
+            />
             <div
                 ref={scrollRef}
                 onMouseUp={onMouseUp}
