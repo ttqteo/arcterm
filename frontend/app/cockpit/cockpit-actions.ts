@@ -19,6 +19,7 @@ export interface LaunchAgentOpts {
     startupCommand: string;
     startupArgs?: string[]; // exact argv (pi resume path); forwarded verbatim when present
     task: string;
+    extraArgs?: string[]; // argv after the task (codex --image); forwarded to buildLaunchMeta
     projectPath: string;
     projectName: string; // labels the roster row + carries project scope
     branch?: string;
@@ -74,6 +75,7 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
             startupCommand: opts.startupCommand,
             startupArgs: opts.startupArgs,
             task: opts.task,
+            extraArgs: opts.extraArgs,
             cwd,
         }),
     });
