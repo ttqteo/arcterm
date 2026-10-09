@@ -271,9 +271,7 @@ func TestCommitRename(t *testing.T) {
 func TestCommitFailureUnstagesAddedPaths(t *testing.T) {
 	dir := commitRepo(t)
 	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
-	os.WriteFile(hook, []byte("#!/bin/sh
-exit 1
-"), 0o755)
+	os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755)
 	r, err := Commit(context.Background(), dir, "add b", []string{"b.txt"}, false)
 	if err != nil || r.Failure == nil {
 		t.Fatalf("want a Failure, got %v %+v", err, r)

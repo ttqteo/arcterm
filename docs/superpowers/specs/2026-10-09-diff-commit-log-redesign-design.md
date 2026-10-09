@@ -47,7 +47,7 @@ on a commit row (checkout, cherry-pick, revert, new branch).
 ## 1. Layout
 
 ```
-┌[arcterm · main ▾]   main → origin/main ↑2 ↓0  ⟳ ↓ ↑ ┬ docs/deferred.md  +83 −3   ↑↓  File|Review ⋯ ┐
+┌[arcterm · main ▾]   ↑2 ↓0  ⟳ ↓ ↑                    ┬ docs/deferred.md  +83 −3   ↑↓  File|Review ⋯ ┐
 │ [Commit]  Log                                       │                                              │
 ├─────────────────────────────────────────────────────┤  10 10 > Pruned 2026-10-05 ...               │
 │ Commit tab: change tree + message box               │  13    +## (arcterm) Saved actions           │
@@ -131,7 +131,8 @@ type CommandGitCommitRtnData struct {
 
 ## 3. Sync
 
-- **Status:** `main → origin/main ↑2 ↓0`, counted against the upstream with
+- **Status:** the counts alone, `↑2 ↓0`, with the upstream in their tooltip ("Against origin/main"): the
+  branch already shows in the source dropdown. They are counted against the upstream with
   `git rev-list --left-right --count @{u}...HEAD`.
   - These counts differ from the dropdown's ahead/behind, which compares against the main checkout's
     branch.
@@ -142,9 +143,12 @@ type CommandGitCommitRtnData struct {
 - **Fetch:** the existing `GitFetchCommand`. It runs only when clicked, and again after a Pull or Push.
 - **Pull: `GitPullCommand`** runs `git pull --ff-only`.
   - A diverged branch returns a `GitFailure` whose message says the branch and its upstream have
-    diverged and must be reconciled in a terminal.
-  - When live agents run in that worktree, the surface confirms first: "Pull will change files in a
-    worktree where 2 agents are working. Continue?"
+    diverged and must be reconciled in a terminal. Its panel offers "Open a terminal here" (a terminal in
+    that worktree) and Dismiss.
+  - When live agents run in that worktree, the surface confirms first in a popover titled "Pull n commits
+    into <branch>?", which names the agents and offers Cancel and "Pull n commits".
+  - The commits it reports moving are counted after the pull (`git rev-list <old HEAD>..HEAD`), since the
+    pull fetches first and the counts read before it can be stale.
 - **Push: `GitPushCommand`** runs `git push`, or `git push -u origin <branch>` to publish.
   - It never forces.
   - A rejection says to pull first.
