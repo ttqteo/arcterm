@@ -466,7 +466,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 type="button"
                                 data-agent-header-done
                                 onClick={closeTerminal}
-                                title={DONE_TITLE}
+                                title={`${DONE_TITLE} (${formatChordString("Alt:w")})`}
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success"
                             >
                                 <Check size={14} strokeWidth={2.2} aria-hidden />

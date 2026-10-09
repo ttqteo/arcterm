@@ -8,10 +8,12 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
-## Unreleased
+## 0.15.8 — 2026-10-09
 
 ### Added
 
+- `Alt`+`W` closes the focused agent when its header shows **Done — Close**, also from inside its terminal; the button's
+  tooltip names the key.
 - **Mark for later** in a session's menu, in the Agents tree or under Conversations, flags it with a bookmark until you
   pick **Done**; the mark stays when you close the agent, puts the conversation first in its project's list, and is back
   on the row when you resume it.
@@ -59,6 +61,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Diff: choosing a source, a commit, the session row or a comparison opens its first file at once, and `↑`/`↓` in a
   file list open the next or previous file without Enter.
 - Rename opens on the session's current name, all of it selected, so you can type a new one or edit the old one.
+- Hold `Ctrl` (`⌘` on a Mac) or `Alt` a moment and the bottom bar lists every shortcut on that key that works right
+  now, so from inside an agent's terminal you can see each way out without leaving it.
+- The Agent rail's top row shows only the counts you can click (lists with something in them, and Attach), so its
+  icons no longer run past the rail's edge.
 - New agent and New run: the Task and Goal boxes grow as you type, to about eleven lines before they scroll, instead
   of staying a fixed few lines tall.
 - A run started from a session is no longer listed one level in under that session, in the sidebar or in
@@ -87,18 +93,20 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A run in its final stage now reads **Verifying** in the run sheet, with the step it is on and for how long, instead
   of **Executing** over a full strip; a run's progress line in the Agents tree shows its full text on hover when cut
   off.
-- A run held because the checkout has uncommitted edits to a file it changes now says so and names the files,
-  instead of quoting git's whole merge command and error.
 - An orchestrator lead no longer collects an unread count once its plan is running: the turns the engine wakes it
   for (a task done, a merge, a handoff) are not news for you, and what it needs from you still arrives as a question.
+- A run held because its final stage failed names the step that failed in Needs you, and says `wsh runs land
+  <run> --force` is the way to land it, instead of advising to clear a reason that Land again can never clear.
+- A run held because the checkout has uncommitted edits to a file it changes now says so and names the files,
+  instead of quoting git's whole merge command and error.
 - The Cockpit's nav badge (and the Dock badge on a Mac) counts an agent at a permission prompt or a question asked in
   its terminal, so it no longer reads 0 while the Cockpit's "need you" tab says 3.
 - A card waiting on you with no choices it can show (a permission prompt, or a question asked in the terminal) says
   so and offers **Open terminal**, instead of "Waiting on you" over nothing to answer.
-- An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
-  that run, nested under it, is still going; the offer comes back once the run ends.
 - An agent that committed and then ran a few more commands with long output in the same turn now offers ✓ Close;
   before, a commit more than 64 KB back in its transcript went unseen.
+- An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
+  that run, nested under it, is still going; the offer comes back once the run ends.
 - New run: Cancel or Esc while a run is starting now cancels that run and frees the dialog at once, instead of
   leaving it stuck on Starting… when reopened. Its key legend reads `Tab` for next.
 - An agent's terminal on Windows garbles far less often, so Redraw is rarely needed: a pane that grows taller no
