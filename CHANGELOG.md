@@ -65,6 +65,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   size instead of showing its old output stacked out of line.
 - Code's sidebar keeps one width across Files, Search and Changed, so switching between them no longer moves the
   editor's edge; dragging it in any mode sets it for all three.
+- Changed-file lists (Code's Changed and the Diff surface) no longer show `+0 −0` for a change git cannot count in
+  lines: a binary file reads `bin`, a nested git repository `repo`, and a submodule with changes inside it `dirty`. A
+  file with a non-ASCII name (`tên.txt`) now shows its real counts.
 - In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and
   coming back lands on the same spot instead of the top.
 - In a narrow sidebar, an agent row with subagents no longer runs past the row's right edge: its subagents chip shows

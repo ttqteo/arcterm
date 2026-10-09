@@ -8,12 +8,13 @@
 // codeRowsAtom stays the single source of what rows exist; this only answers "what is this path's
 // status", so the tree and the Changed column cannot disagree about which files there are.
 
-import type { GitChanges } from "@/app/view/agents/gitstatus";
+import type { ChangeNote, GitChanges } from "@/app/view/agents/gitstatus";
 
 export interface CodeStatus {
     status: string; // a porcelain letter: M, A, D, ?, R, C
     adds: number;
     dels: number;
+    note?: ChangeNote;
 }
 
 // git emits forward slashes and so does the index (git ls-files), so no separator normalization is
@@ -22,7 +23,7 @@ export function statusByPath(changes: GitChanges): Map<string, CodeStatus> {
     const out = new Map<string, CodeStatus>();
     for (const f of changes.files ?? []) {
         if (f.path) {
-            out.set(f.path, { status: f.status, adds: f.adds, dels: f.dels });
+            out.set(f.path, { status: f.status, adds: f.adds, dels: f.dels, ...(f.note ? { note: f.note } : {}) });
         }
     }
     return out;

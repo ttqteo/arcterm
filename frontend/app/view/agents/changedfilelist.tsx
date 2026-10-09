@@ -14,7 +14,7 @@ import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { buildFileTree, collapsedDirsAtom, treeModeAtom, type FileTreeRow } from "./filetree";
-import { statusColor, type GitChange, type GitChanges } from "./gitstatus";
+import { CHANGE_NOTE_TITLE, statusColor, type GitChange, type GitChanges } from "./gitstatus";
 
 const INDENT_PX = 14;
 const ROW_PAD_PX = 8;
@@ -82,8 +82,20 @@ function FileRow({
             >
                 {label}
             </span>
-            <span className="flex-none text-[10.5px] font-semibold tabular-nums text-diff-added">+{change.adds}</span>
-            <span className="flex-none text-[10.5px] font-semibold tabular-nums text-diff-removed">−{change.dels}</span>
+            {change.note ? (
+                <span title={CHANGE_NOTE_TITLE[change.note]} className="flex-none text-[10.5px] text-muted">
+                    {change.note}
+                </span>
+            ) : (
+                <>
+                    <span className="flex-none text-[10.5px] font-semibold tabular-nums text-diff-added">
+                        +{change.adds}
+                    </span>
+                    <span className="flex-none text-[10.5px] font-semibold tabular-nums text-diff-removed">
+                        −{change.dels}
+                    </span>
+                </>
+            )}
         </button>
     );
 }

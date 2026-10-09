@@ -33,9 +33,28 @@ describe("parseGitChanges", () => {
         expect(r.files).toEqual([{ path: "new.ts", status: "R", adds: 0, dels: 0 }]);
     });
 
-    it("treats binary numstat (-/-) as zero counts", () => {
+    it("treats binary numstat (-/-) as zero counts and notes it", () => {
         const r = parseGitChanges(` M logo.png${NUL}`, "-\t-\tlogo.png\n");
-        expect(r.files[0]).toEqual({ path: "logo.png", status: "M", adds: 0, dels: 0 });
+        expect(r.files[0]).toEqual({ path: "logo.png", status: "M", adds: 0, dels: 0, note: "bin" });
+    });
+
+    // gitinfo's synthetic row for an untracked binary: "-" adds, "0" dels
+    it("notes an untracked binary", () => {
+        const r = parseGitChanges(`?? paper.pdf${NUL}`, "-\t0\tpaper.pdf\n");
+        expect(r.files[0]).toMatchObject({ status: "?", adds: 0, note: "bin" });
+    });
+
+    // -uall still collapses an untracked directory holding its own .git; gitinfo writes no row for it
+    it("notes an untracked directory as a nested repository", () => {
+        const r = parseGitChanges(`?? vendor/tool/${NUL}`, "");
+        expect(r.files[0]).toMatchObject({ path: "vendor/tool/", note: "repo" });
+    });
+
+    // a submodule whose own working tree changed: status says M, `diff --numstat HEAD` prints nothing
+    it("notes a tracked path with no numstat row as dirty", () => {
+        const r = parseGitChanges(` M reference/PoCGen${NUL} M a.ts${NUL}`, "2\t1\ta.ts\n");
+        expect(r.files[0]).toMatchObject({ path: "reference/PoCGen", adds: 0, dels: 0, note: "dirty" });
+        expect(r.files[1].note).toBeUndefined();
     });
 
     it("returns empty for a clean tree", () => {

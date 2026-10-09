@@ -124,6 +124,27 @@ func TestGetChanges(t *testing.T) {
 	}
 }
 
+// A non-ASCII name must come out of numstat spelled the way `status -z` spells it, or the frontend
+// joins no row to it and the file reads as uncounted.
+func TestGetChangesNumstatKeepsNonASCIIPath(t *testing.T) {
+	dir := repoWithChange(t)
+	if err := os.WriteFile(filepath.Join(dir, "tên.txt"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "add", "tên.txt")
+	git(t, dir, "commit", "-m", "vi")
+	if err := os.WriteFile(filepath.Join(dir, "tên.txt"), []byte("1\n2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := GetChanges(context.Background(), dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ch.Numstat, "1\t0\ttên.txt\n") {
+		t.Fatalf("numstat lost the raw non-ASCII path: %q", ch.Numstat)
+	}
+}
+
 // The Diff surface polls the change list while it is on screen, and that poll is the only thing
 // reading the repository on a timer. HEAD rides along with it so a commit landing under the open
 // surface is noticed without a second RPC and without re-reading the log every tick.

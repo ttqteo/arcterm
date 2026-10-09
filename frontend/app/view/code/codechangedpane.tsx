@@ -7,6 +7,7 @@
 // that opened diffs would be the Diff surface with a worse layout.
 
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { CHANGE_NOTE_TITLE } from "@/app/view/agents/gitstatus";
 import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { statusGlyph } from "./codestatus";
@@ -67,8 +68,18 @@ export function CodeChangedPane({ model }: { model: AgentsViewModel }) {
                             <span className="text-muted">{dir}</span>
                             <span className="text-secondary">{name}</span>
                         </span>
-                        <span className="flex-none text-[10.5px] tabular-nums text-diff-added">+{s.adds}</span>
-                        <span className="flex-none text-[10.5px] tabular-nums text-diff-removed">-{s.dels}</span>
+                        {s.note ? (
+                            <span title={CHANGE_NOTE_TITLE[s.note]} className="flex-none text-[10.5px] text-muted">
+                                {s.note}
+                            </span>
+                        ) : (
+                            <>
+                                <span className="flex-none text-[10.5px] tabular-nums text-diff-added">+{s.adds}</span>
+                                <span className="flex-none text-[10.5px] tabular-nums text-diff-removed">
+                                    -{s.dels}
+                                </span>
+                            </>
+                        )}
                     </div>
                 );
             })}
