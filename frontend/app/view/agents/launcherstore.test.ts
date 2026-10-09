@@ -26,11 +26,13 @@ import {
     launcherProjectAtom,
     launcherPrototypeAtom,
     launcherRestoredAtom,
+    launcherResumeAtom,
     launcherRuntimeAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
     openLauncher,
     pickLauncherProject,
+    pickLauncherRuntime,
     reopenLauncher,
 } from "./launcherstore";
 import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
@@ -165,6 +167,11 @@ describe("closing, clearing and launching", () => {
         expect(globalStore.get(launcherProjectAtom)).toBe("thesis");
         expect(globalStore.get(launcherCommandAtom)).toEqual({ claude: "claude --verbose" });
     });
+    it("clearLauncherDraft clears the resume pick", () => {
+        globalStore.set(launcherResumeAtom, "sess-1");
+        clearLauncherDraft();
+        expect(globalStore.get(launcherResumeAtom)).toBeNull();
+    });
     it("a launch also drops hand-edited commands", () => {
         globalStore.set(launcherCommandAtom, { claude: "claude --verbose" });
         globalStore.set(launcherTaskAtom, "a");
@@ -208,6 +215,29 @@ describe("pickLauncherProject", () => {
         globalStore.set(launcherBranchAtom, "feat/x");
         pickLauncherProject("arcterm", "arcterm");
         expect(globalStore.get(launcherBranchAtom)).toBe("feat/x");
+    });
+    it("pickLauncherProject resets the resume pick", () => {
+        globalStore.set(launcherResumeAtom, "sess-1");
+        pickLauncherProject("b", "a");
+        expect(globalStore.get(launcherResumeAtom)).toBeNull();
+        // the project already on show keeps the pick
+        globalStore.set(launcherResumeAtom, "sess-1");
+        pickLauncherProject("b", "b");
+        expect(globalStore.get(launcherResumeAtom)).toBe("sess-1");
+    });
+});
+
+describe("pickLauncherRuntime", () => {
+    it("pickLauncherRuntime resets the resume pick", () => {
+        globalStore.set(launcherRuntimeAtom, "claude");
+        globalStore.set(launcherResumeAtom, "sess-1");
+        pickLauncherRuntime("codex");
+        expect(globalStore.get(launcherRuntimeAtom)).toBe("codex");
+        expect(globalStore.get(launcherResumeAtom)).toBeNull();
+        // picking the runtime already on show keeps the pick
+        globalStore.set(launcherResumeAtom, "sess-2");
+        pickLauncherRuntime("codex");
+        expect(globalStore.get(launcherResumeAtom)).toBe("sess-2");
     });
 });
 

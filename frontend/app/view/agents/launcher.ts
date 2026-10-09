@@ -70,8 +70,11 @@ export function launcherTitle(kind: LauncherKind): string {
     return kind === "run" ? "New run" : "New agent";
 }
 
-export function primaryLabel(kind: LauncherKind, runtime: Runtime): string {
-    return kind === "run" ? "Start run" : runtimeLaunchLabel(runtime);
+export function primaryLabel(kind: LauncherKind, runtime: Runtime, resuming = false): string {
+    if (kind === "run") {
+        return "Start run";
+    }
+    return resuming ? "Resume agent" : runtimeLaunchLabel(runtime);
 }
 
 export interface FooterInput {
@@ -83,6 +86,8 @@ export interface FooterInput {
     branchNote: string;
     // a run's launchBlocker; always null for an agent
     blocker: string | null;
+    // the session an agent launch resumes; null or left out starts a new one
+    resume?: { title: string; branch: string } | null;
 }
 
 export interface FooterLine {
@@ -99,6 +104,14 @@ export function footerLine(input: FooterInput): FooterLine {
     }
     if (input.blocker != null) {
         return { lead: input.blocker, strong: "", tail: "", blocked: true };
+    }
+    if (input.kind === "agent" && input.resume) {
+        return {
+            lead: "Resumes ",
+            strong: input.resume.title,
+            tail: input.resume.branch ? ` · ${input.resume.branch}` : "",
+            blocked: false,
+        };
     }
     if (input.kind === "agent") {
         const tail = input.branchNote ? ` · ${input.branchNote}` : "";
@@ -153,7 +166,8 @@ export function draftShown(draft: LauncherDraft): boolean {
     return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "");
 }
 
-export type FocusZone = "start" | "project" | "textarea" | "input" | "other";
+// "resume" is the Resume list: it takes ↑↓ itself (launcheragentfields), so only Enter is the dialog's
+export type FocusZone = "start" | "project" | "resume" | "textarea" | "input" | "other";
 
 // What an Escape can close before the dialog, innermost first
 export type LauncherInner = "flags" | "branches" | "filter";
@@ -209,7 +223,9 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
         return NONE;
     }
     if (k.key === "Enter") {
-        return zone === "start" || zone === "project" || zone === "input" ? { kind: "launch" } : NONE;
+        return zone === "start" || zone === "project" || zone === "resume" || zone === "input"
+            ? { kind: "launch" }
+            : NONE;
     }
     if (zone !== "start" && zone !== "project") {
         return NONE;

@@ -6,6 +6,8 @@
 // typed. In memory only, as New agent's state was: a draft outlives a close and a surface switch, not an app restart.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { prefillToLaunch, type NewRunPrefill } from "@/app/view/jarvis/newrun";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { Runtime } from "./launch";
@@ -32,6 +34,10 @@ export const launcherBranchAtom = atom<string | null>(null) as PrimitiveAtom<str
 // the open one on Escape wherever focus is (the flag menu opens while focus sits in the Task box).
 export const launcherFlagMenuAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBranchListAtom = atom(false) as PrimitiveAtom<boolean>;
+// the recent sessions the agent half offers to resume; null until this open's load lands
+export const launcherSessionsAtom = atom<SessionInfo[] | null>(null) as PrimitiveAtom<SessionInfo[] | null>;
+// the session to resume, by id; honored only while it is among the choices (launcherresume.ts pickedResume)
+export const launcherResumeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 // this open showed a draft a close had kept
 export const launcherRestoredAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBusyAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -80,6 +86,7 @@ export function clearLauncherDraft(): void {
     globalStore.set(launcherPrototypeAtom, "");
     globalStore.set(launcherWorktreeAtom, false);
     globalStore.set(launcherBranchAtom, null);
+    globalStore.set(launcherResumeAtom, null);
     globalStore.set(launcherRestoredAtom, false);
 }
 
@@ -97,6 +104,27 @@ export function pickLauncherProject(name: string, current: string): void {
     }
     globalStore.set(launcherProjectAtom, name);
     globalStore.set(launcherBranchAtom, null);
+    // a session belongs to one project: coming back to this one starts on "New session"
+    globalStore.set(launcherResumeAtom, null);
+}
+
+// Another runtime offers other sessions, so the resume pick goes with the switch. The runtime already on show keeps it.
+export function pickLauncherRuntime(runtime: Runtime): void {
+    if (runtime === globalStore.get(launcherRuntimeAtom)) {
+        return;
+    }
+    globalStore.set(launcherRuntimeAtom, runtime);
+    globalStore.set(launcherResumeAtom, null);
+}
+
+// Once per open: the list is a scan of transcripts on disk, and a stale one offers a session that has moved on.
+export async function loadLauncherSessions(): Promise<void> {
+    try {
+        const rtn = await RpcApi.GetRecentSessionsCommand(TabRpcClient, { windowdays: 14, limit: 50 });
+        globalStore.set(launcherSessionsAtom, rtn.sessions ?? []);
+    } catch {
+        globalStore.set(launcherSessionsAtom, []); // a failed scan offers no resume, never breaks the dialog
+    }
 }
 
 // A prefill waits for the project list: read too early, its project would not be found and would be dropped for good.

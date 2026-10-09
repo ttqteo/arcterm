@@ -24,6 +24,8 @@ import {
     worktreeOutcome,
     type Runtime,
 } from "./launch";
+import { resumeLaunchSpec } from "./launcherresume";
+import { ResumeList } from "./launcherresumelist";
 import {
     launcherBranchAtom,
     launcherBranchListAtom,
@@ -95,9 +97,12 @@ interface AgentFieldsProps {
     currentBranch: string;
     branches: BranchInfo[];
     ramWarning: string | null;
+    // the picked agent's recent sessions in the picked project, and the one picked to resume (null: a new session)
+    resumeChoices: SessionInfo[];
+    resume: SessionInfo | null;
 }
 
-export function AgentFields({ runtime, currentBranch, branches, ramWarning }: AgentFieldsProps) {
+export function AgentFields({ runtime, currentBranch, branches, ramWarning, resumeChoices, resume }: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
@@ -113,12 +118,15 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
         globalStore.set(launcherFlagMenuAtom, false);
         globalStore.set(launcherBranchListAtom, false);
     }, [runtime]);
-    const startup = commands[runtime] ?? runtimeStartupCommand(runtime);
     const setStartup = (value: string) =>
         globalStore.set(launcherCommandAtom, (prev) => ({ ...prev, [runtime]: value }));
     // flag state is per runtime: read and write only the picked runtime's record
     const flagCatalog = RUNTIME_FLAGS[runtime];
     const runtimeFlags = naFlags[runtime] ?? {};
+    // a resume runs the session's own command, which the field previews and does not take edits to
+    const startup = resume
+        ? resumeLaunchSpec(resume, runtime, runtimeFlags).startupCommand
+        : (commands[runtime] ?? runtimeStartupCommand(runtime));
     const enabledFlags = flagCatalog.filter((f) => runtimeFlags[f.id]);
     const setFlag = (id: string, on: boolean) =>
         globalStore.set(naFlagsAtom, (prev) => ({ ...prev, [runtime]: { ...prev[runtime], [id]: on } }));
@@ -133,7 +141,9 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                         <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
                             Task
                         </label>
-                        <span className="text-[11px] text-muted">optional · sent as the first prompt</span>
+                        <span className="text-[11px] text-muted">
+                            {resume ? "optional · sent as the next message" : "optional · sent as the first prompt"}
+                        </span>
                     </div>
                     <textarea
                         id="launcher-task"
@@ -144,6 +154,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                     />
                 </div>
             ) : null}
+            {runtimeShowsTask(runtime) ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
             <div className="flex flex-col gap-2">
                 <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
                     Command
@@ -153,6 +164,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                     <input
                         id="launcher-cmd"
                         value={startup}
+                        readOnly={resume != null}
                         onChange={(e) => setStartup(e.target.value)}
                         placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
                         style={{
@@ -252,7 +264,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning }: Ag
                     A plain shell in the project folder. No agent, no task.
                 </span>
             ) : null}
-            {runtimeSupportsWorktree(runtime) ? (
+            {runtimeSupportsWorktree(runtime) && resume == null ? (
                 <div className="flex flex-col gap-[7px]">
                     <div className="flex min-h-[34px] items-center gap-3">
                         <button

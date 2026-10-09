@@ -85,6 +85,11 @@ describe("the words for a pick", () => {
         expect(primaryLabel("agent", "terminal")).toBe("Open terminal");
         expect(primaryLabel("run", "claude")).toBe("Start run");
     });
+    it("primaryLabel says Resume agent for an agent with a session picked", () => {
+        expect(primaryLabel("agent", "claude", true)).toBe("Resume agent");
+        expect(primaryLabel("agent", "claude", false)).toBe("Launch agent");
+        expect(primaryLabel("run", "claude", true)).toBe("Start run");
+    });
 });
 
 describe("footerLine", () => {
@@ -107,6 +112,18 @@ describe("footerLine", () => {
     });
     it("drops the branch part when the branch is unknown", () => {
         expect(footerLine({ ...base, branchNote: "" }).tail).toBe("");
+    });
+    it("says which session a resume picks up, and on which branch", () => {
+        expect(footerLine({ ...base, resume: { title: "fix the build", branch: "main" } })).toEqual({
+            lead: "Resumes ",
+            strong: "fix the build",
+            tail: " · main",
+            blocked: false,
+        });
+        expect(footerLine({ ...base, resume: { title: "fix the build", branch: "" } }).tail).toBe("");
+    });
+    it("a resume does not hide a missing project", () => {
+        expect(footerLine({ ...base, project: null, resume: { title: "x", branch: "" } }).blocked).toBe(true);
     });
     it("asks for a project before anything else", () => {
         expect(footerLine({ ...base, project: null })).toEqual({
@@ -245,6 +262,13 @@ describe("launcherKey", () => {
         expect(launcherKey(at("input"), key("Enter"))).toEqual({ kind: "launch" });
         expect(launcherKey(at("textarea"), key("Enter"))).toEqual({ kind: "none" });
         expect(launcherKey(at("other"), key("Enter"))).toEqual({ kind: "none" });
+    });
+    it("Enter in the resume zone launches", () => {
+        expect(launcherKey(at("resume"), key("Enter"))).toEqual({ kind: "launch" });
+        // the list handles its own arrows; the dialog's column navigation must not see them
+        expect(launcherKey(at("resume"), key("ArrowDown"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("resume"), key("ArrowUp"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("resume"), key("3"))).toEqual({ kind: "none" });
     });
     it("Tab is no action: the dialog's focus trap takes it before asking", () => {
         expect(launcherKey(at("textarea"), key("Tab"))).toEqual({ kind: "none" });

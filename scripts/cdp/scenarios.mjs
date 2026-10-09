@@ -15736,6 +15736,265 @@ const launcherEmpty = {
     },
 };
 
+// --- launcher-resume: the agent half's Resume list (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md).
+// The backend scan reads a Claude transcript this scenario writes under ~/.claude/projects, so Claude must be an
+// offered row. It never presses Launch or Resume: that would start a real agent.
+const LAUNCHER_RESUME_PROJECT = "verify-launcher-resume";
+const LAUNCHER_RESUME_PROJECT_B = "verify-launcher-resume-b";
+const LAUNCHER_RESUME_TASK = "verify resume session";
+// naFlagsAtom's storage key (naflagsstore.ts): a flag the profile remembers is composed into a resume's command, which
+// step 2 matches exactly, so the scenario runs on none and puts the developer's back in teardown
+const NA_FLAGS_KEY = "agent.launch.flags";
+
+const launcherResumeState = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const list = d.querySelector('[data-launcher-resume]');
+    const active = document.activeElement;
+    const primary = [...d.querySelectorAll('button')].find((b) =>
+        /^(Launch agent|Resume agent|Open terminal|Start run|Starting…)/.test(flat(b))
+    );
+    return {
+        startRows: [...d.querySelectorAll('[data-start-row]')].map((r) => r.getAttribute('data-start-row')),
+        start: d.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
+        project: d.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? null,
+        list: !!list,
+        newPicked: list?.querySelector('[data-resume-new]')?.getAttribute('aria-checked') === 'true',
+        picked: list?.querySelector('[data-resume-id][aria-checked="true"]')?.getAttribute('data-resume-id') ?? null,
+        rows: [...(list?.querySelectorAll('[data-resume-id]') ?? [])].map((r) => ({
+            id: r.getAttribute('data-resume-id'),
+            text: flat(r),
+        })),
+        focusRow: active?.hasAttribute('data-resume-new') ? 'new' : (active?.getAttribute('data-resume-id') ?? null),
+        primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
+        footer: flat(d.querySelector('[data-launcher-footer]')),
+        cmd: d.querySelector('#launcher-cmd')?.value ?? null,
+        cmdReadOnly: d.querySelector('#launcher-cmd')?.readOnly ?? null,
+        taskHint: flat(d.querySelector('label[for="launcher-task"]')?.parentElement),
+        worktreeSwitch: /Isolated git worktree/.test(flat(d)),
+    };
+})()`;
+
+const launcherResume = {
+    name: "launcher-resume",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            for (const name of [LAUNCHER_RESUME_PROJECT, LAUNCHER_RESUME_PROJECT_B]) {
+                // not under the temp dir: the session scan drops a session whose project sits there (parseCandidates)
+                const dir = mkdtempSync(join(homedir(), `.${name}-`));
+                ctx.dirs.push(dir);
+                await h.rpc("createproject", { name, path: dir });
+                ctx.projects.push(name);
+                await waitForProjectInConfig(h, name);
+            }
+            // one transcript the backend scan reads as a Claude session of the first project: a user prompt with the
+            // project dir as its cwd (claudeSessionFrom), filed under a folder of its own
+            ctx.sessionId = randomUUID();
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-launcher-resume-${randomUUID().slice(0, 8)}`);
+            mkdirSync(ctx.transcriptDir, { recursive: true });
+            writeFileSync(
+                join(ctx.transcriptDir, `${ctx.sessionId}.jsonl`),
+                JSON.stringify({
+                    type: "user",
+                    cwd: ctx.dirs[0],
+                    gitBranch: "verify-resume-branch",
+                    timestamp: new Date().toISOString(),
+                    message: { role: "user", content: LAUNCHER_RESUME_TASK },
+                }) + "\n"
+            );
+            // recent-first puts the first project on top; put the developer's own list back in teardown
+            ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
+            const recent = [LAUNCHER_RESUME_PROJECT, LAUNCHER_RESUME_PROJECT_B, ...JSON.parse(ctx.prevRecent ?? "[]")];
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(RECENT_PROJECTS_KEY)}, ${JSON.stringify(JSON.stringify(recent))})`
+            );
+            ctx.prevFlags = await h.ev(`localStorage.getItem(${JSON.stringify(NA_FLAGS_KEY)})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(NA_FLAGS_KEY)}, "{}")`);
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. two projects were registered and a Claude transcript was written", false, ctx.arrangeError);
+            return steps;
+        }
+        const state = () => h.ev(launcherResumeState);
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        await h.goto("cockpit");
+
+        await h.ev(OPEN_NEW_AGENT);
+        await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        let s = await state();
+        if (s == null || !s.startRows.includes("claude")) {
+            rec("0. the dialog opens with Claude offered", false, JSON.stringify(s));
+            return steps;
+        }
+        const digit = (id) => String(s.startRows.indexOf(id) + 1);
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, digit("claude"));
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-resume]')`, 8000);
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-resume-1-list.png");
+        rec(
+            "1. New agent with the verify project and Claude picked lists the verify session under Resume, New session picked",
+            s.start === "claude" &&
+                s.project === LAUNCHER_RESUME_PROJECT &&
+                s.list &&
+                s.newPicked &&
+                s.rows.some((r) => r.id === ctx.sessionId && r.text.includes(LAUNCHER_RESUME_TASK)),
+            JSON.stringify(s)
+        );
+
+        await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
+        await polishNap(300);
+        s = await state();
+        await h.shot("cdp-shots/launcher-resume-2-picked.png");
+        rec(
+            "2. clicking the session: Resume agent, the footer starts Resumes, the command is claude --resume <id>, the Task hint says next message, and there is no worktree switch",
+            s.picked === ctx.sessionId &&
+                s.primary?.text.startsWith("Resume agent") &&
+                s.footer.startsWith("Resumes") &&
+                s.cmd === `claude --resume ${ctx.sessionId}` &&
+                s.cmdReadOnly === true &&
+                s.taskHint.includes("optional · sent as the next message") &&
+                !s.worktreeSwitch,
+            JSON.stringify(s)
+        );
+
+        await h.ev(focusColumn("project"));
+        await launcherPress(h, "ArrowDown");
+        await polishNap(300);
+        s = await state();
+        rec(
+            "3. picking the second project drops the Resume section and the button reads Launch agent",
+            s.project === LAUNCHER_RESUME_PROJECT_B && !s.list && s.primary?.text.startsWith("Launch agent"),
+            JSON.stringify(s)
+        );
+
+        await launcherPress(h, "ArrowUp");
+        await polishNap(300);
+        s = await state();
+        rec(
+            "4a. back on the first project the list is back with New session picked: the pick did not survive the round trip",
+            s.project === LAUNCHER_RESUME_PROJECT &&
+                s.list &&
+                s.newPicked &&
+                s.picked === null &&
+                s.primary?.text.startsWith("Launch agent"),
+            JSON.stringify(s)
+        );
+        await h.ev(`${LAUNCHER}?.querySelector('[data-resume-new]')?.focus()`);
+        await launcherPress(h, "ArrowDown");
+        const down = await state();
+        await launcherPress(h, "ArrowUp");
+        const up = await state();
+        rec(
+            "4b. ArrowDown in the list moves the pick (and focus) to the session, ArrowUp back to New session",
+            down.picked === ctx.sessionId &&
+                down.focusRow === ctx.sessionId &&
+                down.primary?.text.startsWith("Resume agent") &&
+                up.newPicked &&
+                up.picked === null &&
+                up.focusRow === "new" &&
+                up.primary?.text.startsWith("Launch agent"),
+            JSON.stringify({ down, up })
+        );
+
+        await h.ev(focusColumn("start"));
+        await launcherPress(h, digit("terminal"));
+        await polishNap(300);
+        s = await state();
+        rec("5a. picking Terminal removes the Resume list", s.start === "terminal" && !s.list, JSON.stringify(s));
+        await launcherPress(h, digit("claude"));
+        await polishNap(300);
+        s = await state();
+        rec(
+            "5b. picking Claude again brings the list back on New session",
+            s.start === "claude" && s.list && s.newPicked,
+            JSON.stringify(s)
+        );
+        // Escape from the Start column closes the dialog; Launch and Resume are never pressed
+        await launcherPress(h, "Escape");
+        const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+        rec("5c. Escape closes the dialog", closed, `closed=${closed}`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`launcher-resume teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.transcriptDir) {
+            await step("remove the transcript", () => rmSync(ctx.transcriptDir, { recursive: true, force: true }));
+        }
+        if (ctx.prevFlags !== undefined) {
+            const key = JSON.stringify(NA_FLAGS_KEY);
+            await step("restore the remembered flags", () =>
+                h.ev(
+                    ctx.prevFlags === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevFlags)})`
+                )
+            );
+        }
+        if (ctx.prevRecent !== undefined) {
+            const key = JSON.stringify(RECENT_PROJECTS_KEY);
+            await step("restore the recent projects", () =>
+                h.ev(
+                    ctx.prevRecent === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevRecent)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            // the store replaces projects.json by rename, which Windows refuses while something else holds the file
+            await step(`delete ${name}`, async () => {
+                for (let attempt = 1; ; attempt++) {
+                    try {
+                        return await h.rpc("deleteproject", { name });
+                    } catch (e) {
+                        if (attempt >= 3) throw e;
+                        await new Promise((r) => setTimeout(r, 400));
+                    }
+                }
+            });
+        }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        // the dialog's draft lives in memory; a reload hands the next scenario a fresh one
+        await step("reload", async () => {
+            await h.ev("location.reload()");
+            await new Promise((r) => setTimeout(r, 2500));
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step("remove a project dir", () => rmSync(dir, { recursive: true, force: true }));
+        }
+    },
+};
+
 // --- palette-actions, palette-goal: Ctrl+P acting on things (docs/superpowers/specs/2026-09-30-palette-actions-design.md)
 // Every query is scoped to the palette's own dialog: the app bar's search button and the Brief also render rows.
 const PALETTE_INPUT = `document.querySelector('input[data-palette-input]')`;
@@ -25154,6 +25413,7 @@ export const SCENARIOS = [
     launcherEmpty,
     newRunWindow,
     launcherScenario,
+    launcherResume,
     paletteActions,
     paletteGoal,
     modelPicks,
