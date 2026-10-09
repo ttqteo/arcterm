@@ -1334,6 +1334,18 @@ declare global {
         files: ReviewPatchFile[];
     };
 
+    // wshrpc.CommandGitSyncData
+    type CommandGitSyncData = {
+        cwd: string;
+    };
+
+    // wshrpc.CommandGitSyncRtnData
+    type CommandGitSyncRtnData = {
+        moved: number;
+        branch?: string;
+        failure?: GitFailure;
+    };
+
     // wshrpc.CommandJarvisCtxData
     type CommandJarvisCtxData = {
         blockoref?: string;

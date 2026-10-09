@@ -26,6 +26,8 @@ type GitCommands interface {
 	GitFetchCommand(ctx context.Context, data CommandGitFetchData) (*CommandGitFetchRtnData, error)
 	GitCommitCommand(ctx context.Context, data CommandGitCommitData) (*CommandGitCommitRtnData, error)
 	GitCommitMessageCommand(ctx context.Context, data CommandGitCommitMessageData) (*CommandGitCommitMessageRtnData, error)
+	GitPullCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
+	GitPushCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
 }
 
 type CommandGitHistoryData struct {
@@ -240,4 +242,17 @@ type CommandGitCommitMessageData struct {
 
 type CommandGitCommitMessageRtnData struct {
 	Message string `json:"message"`
+}
+
+type CommandGitSyncData struct {
+	Cwd string `json:"cwd"`
+}
+
+// Shared by GitPullCommand and GitPushCommand. As with Fetch, the client must raise opts.timeout past gitinfo's
+// pullTimeout (55 s) or pushTimeout (120 s), or the call is cancelled underneath the git it is waiting on. A refusal
+// (a diverged pull, a rejected push, a missing credential) is Failure, not an RPC error.
+type CommandGitSyncRtnData struct {
+	Moved   int                 `json:"moved"`
+	Branch  string              `json:"branch,omitempty"` // a push's branch, so a publish can name what it created
+	Failure *gitinfo.GitFailure `json:"failure,omitempty"`
 }

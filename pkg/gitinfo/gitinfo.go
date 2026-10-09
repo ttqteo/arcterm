@@ -1302,12 +1302,83 @@ func Fetch(ctx context.Context, cwd, remote string) (*FetchResult, error) {
 		}}, nil
 	}
 	args := []string{"fetch", "--prune", remote}
-	// run, not runErr: runErr folds git's output into its error text, which left failureOf no stderr
-	// and the banner printing the command and "exit status 128" ahead of git's own message
-	if _, err := run(ctx, cwd, args...); err != nil {
+	// runNet keeps run's Output(), not runErr: runErr folds git's output into its error text, which left failureOf
+	// no stderr and the banner printing the command and "exit status 128" ahead of git's own message
+	if _, err := runNet(ctx, cwd, args...); err != nil {
 		return &FetchResult{IsRepo: true, Failure: failureOf(args, err)}, nil
 	}
 	return &FetchResult{IsRepo: true, FetchedAt: time.Now().Unix()}, nil
+}
+
+const (
+	pullTimeout = 55 * time.Second
+	pushTimeout = 120 * time.Second
+)
+
+// SyncResult is a pull's or push's outcome: how many commits moved, or git's refusal as data.
+type SyncResult struct {
+	Moved   int         `json:"moved"`
+	Branch  string      `json:"branch,omitempty"`
+	Failure *GitFailure `json:"failure,omitempty"`
+}
+
+// runNet is run for a command that talks to a remote (fetch, pull, push): GIT_TERMINAL_PROMPT=0 makes a missing
+// credential fail at once instead of waiting on a prompt nobody can see. A credential manager's own window still
+// appears. It keeps run's cmd.Output(), so failureOf finds git's stderr on the ExitError. No network git command
+// runs any other way.
+func runNet(ctx context.Context, cwd string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false", "-C", cwd}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func syncFailure(args []string, err error) *SyncResult {
+	return &SyncResult{Failure: failureOf(args, err)}
+}
+
+// Pull fast-forwards to the upstream and nothing else: no merge commit, no rebase, so no conflict can leave the
+// tree half-done under an agent. A diverged branch is refused with git's own words. Moved is counted after the pull
+// (the pull fetches first, so a count read before it can be stale).
+func Pull(ctx context.Context, cwd string) (*SyncResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, pullTimeout)
+	defer cancel()
+	up, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil || strings.TrimSpace(up) == "" {
+		return &SyncResult{Failure: &GitFailure{Command: "git pull --ff-only", ExitCode: -1, Stderr: "this branch has no upstream to pull from"}}, nil
+	}
+	old, _ := run(ctx, cwd, "rev-parse", "HEAD")
+	old = strings.TrimSpace(old)
+	args := []string{"pull", "--ff-only"}
+	if _, err := runNet(ctx, cwd, args...); err != nil {
+		return syncFailure(args, err), nil
+	}
+	moved := 0
+	if old != "" {
+		n, _ := run(ctx, cwd, "rev-list", "--count", old+"..HEAD")
+		moved, _ = strconv.Atoi(strings.TrimSpace(n))
+	}
+	return &SyncResult{Moved: moved}, nil
+}
+
+// Push sends the branch to its upstream, or publishes it to origin when it has none. It never forces.
+func Push(ctx context.Context, cwd string) (*SyncResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
+	b, err := run(ctx, cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	branch := strings.TrimSpace(b)
+	if err != nil || branch == "HEAD" || branch == "" {
+		return &SyncResult{Failure: &GitFailure{Command: "git push", ExitCode: -1, Stderr: "HEAD is detached: check out a branch to push"}}, nil
+	}
+	up, ahead, _ := upstreamCounts(ctx, cwd)
+	args := []string{"push"}
+	if up == "" {
+		args = []string{"push", "-u", "origin", branch}
+	}
+	if _, err := runNet(ctx, cwd, args...); err != nil {
+		return syncFailure(args, err), nil
+	}
+	return &SyncResult{Moved: ahead, Branch: branch}, nil
 }
 
 // GitFailure describes a git invocation that failed, in the shape the Diff surface's failure panel

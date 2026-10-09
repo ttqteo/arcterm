@@ -726,6 +726,18 @@ export class RpcApiType {
         return client.wshRpcCall("gitlistworktrees", data, opts);
     }
 
+    // command "gitpull" [call]
+    GitPullCommand(client: WshClient, data: CommandGitSyncData, opts?: RpcOpts): Promise<CommandGitSyncRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitpull", data, opts);
+        return client.wshRpcCall("gitpull", data, opts);
+    }
+
+    // command "gitpush" [call]
+    GitPushCommand(client: WshClient, data: CommandGitSyncData, opts?: RpcOpts): Promise<CommandGitSyncRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitpush", data, opts);
+        return client.wshRpcCall("gitpush", data, opts);
+    }
+
     // command "gitreviewpatch" [call]
     GitReviewPatchCommand(client: WshClient, data: CommandGitReviewPatchData, opts?: RpcOpts): Promise<CommandGitReviewPatchRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitreviewpatch", data, opts);

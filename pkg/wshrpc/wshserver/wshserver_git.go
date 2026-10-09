@@ -152,3 +152,19 @@ func (ws *WshServer) GitCommitMessageCommand(ctx context.Context, data wshrpc.Co
 	}
 	return &wshrpc.CommandGitCommitMessageRtnData{Message: msg}, nil
 }
+
+func (ws *WshServer) GitPullCommand(ctx context.Context, data wshrpc.CommandGitSyncData) (*wshrpc.CommandGitSyncRtnData, error) {
+	r, err := gitinfo.Pull(ctx, data.Cwd)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandGitSyncRtnData{Moved: r.Moved, Branch: r.Branch, Failure: r.Failure}, nil
+}
+
+func (ws *WshServer) GitPushCommand(ctx context.Context, data wshrpc.CommandGitSyncData) (*wshrpc.CommandGitSyncRtnData, error) {
+	r, err := gitinfo.Push(ctx, data.Cwd)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandGitSyncRtnData{Moved: r.Moved, Branch: r.Branch, Failure: r.Failure}, nil
+}

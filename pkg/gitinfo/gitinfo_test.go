@@ -2502,3 +2502,107 @@ func TestCommitMessageRefusesAnOptionShapedRef(t *testing.T) {
 		t.Fatal("the option reached git and wrote a file")
 	}
 }
+
+// two clones of one bare remote: a is the source the surface shows, b stands in for a colleague
+func twoClones(t *testing.T) (a, b string) {
+	t.Helper()
+	seed, _ := repoWithUpstream(t) // pushed main to a bare origin
+	bare := gitOutT(t, seed, "remote", "get-url", "origin")
+	parent := t.TempDir()
+	git(t, parent, "clone", "-q", bare, "a")
+	git(t, parent, "clone", "-q", bare, "b")
+	a, b = filepath.Join(parent, "a"), filepath.Join(parent, "b")
+	for _, d := range []string{a, b} {
+		git(t, d, "config", "user.name", "t")
+		git(t, d, "config", "user.email", "t@t")
+	}
+	return a, b
+}
+
+func TestPullFastForwards(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	git(t, a, "fetch", "-q")
+	r, err := Pull(context.Background(), a)
+	if err != nil || r.Failure != nil || r.Moved != 1 {
+		t.Fatalf("pull: %v %+v", err, r)
+	}
+}
+
+// The pull fetches first, so the behind count read before it can be stale: Moved is what HEAD actually advanced by.
+func TestPullWithoutFetchCountsMoved(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	r, err := Pull(context.Background(), a) // a has not fetched: its @{u} still points at the old tip
+	if err != nil || r.Failure != nil || r.Moved != 1 {
+		t.Fatalf("pull: %v %+v", err, r)
+	}
+	if got := gitOutT(t, a, "rev-parse", "HEAD"); got != gitOutT(t, b, "rev-parse", "HEAD") {
+		t.Fatalf("HEAD %s did not reach b's commit", got)
+	}
+}
+
+func TestPullRefusesDiverged(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "from a")
+	before := gitOutT(t, a, "rev-parse", "HEAD")
+	r, err := Pull(context.Background(), a)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+	if gitOutT(t, a, "rev-parse", "HEAD") != before {
+		t.Fatal("a refused pull moved HEAD")
+	}
+}
+
+func TestPushRejectedIsData(t *testing.T) {
+	a, b := twoClones(t)
+	git(t, b, "commit", "-q", "--allow-empty", "-m", "from b")
+	git(t, b, "push", "-q")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "from a")
+	r, err := Push(context.Background(), a)
+	if err != nil || r.Failure == nil {
+		t.Fatalf("want a Failure, got %v %+v", err, r)
+	}
+}
+
+func TestPushPublishesANewBranch(t *testing.T) {
+	a, _ := twoClones(t)
+	git(t, a, "checkout", "-q", "-b", "feature")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "feature work")
+	r, err := Push(context.Background(), a)
+	if err != nil || r.Failure != nil {
+		t.Fatalf("publish: %v %+v", err, r)
+	}
+	if up := gitOutT(t, a, "rev-parse", "--abbrev-ref", "@{u}"); up != "origin/feature" {
+		t.Fatalf("upstream %q", up)
+	}
+}
+
+// Nothing listens on port 1, so no credential prompt can appear: all three network commands must hand git's refusal
+// back as data, well inside their budgets.
+func TestNetCommandsFailAsData(t *testing.T) {
+	a, _ := twoClones(t)
+	git(t, a, "remote", "set-url", "origin", "http://127.0.0.1:1/nope.git")
+	git(t, a, "commit", "-q", "--allow-empty", "-m", "local")
+	start := time.Now()
+	f, err := Fetch(context.Background(), a, "")
+	if err != nil || f.Failure == nil {
+		t.Fatalf("fetch: want a Failure, got %v %+v", err, f)
+	}
+	p, err := Pull(context.Background(), a)
+	if err != nil || p.Failure == nil {
+		t.Fatalf("pull: want a Failure, got %v %+v", err, p)
+	}
+	s, err := Push(context.Background(), a)
+	if err != nil || s.Failure == nil {
+		t.Fatalf("push: want a Failure, got %v %+v", err, s)
+	}
+	if took := time.Since(start); took > 20*time.Second {
+		t.Fatalf("three refused network commands took %v", took)
+	}
+}

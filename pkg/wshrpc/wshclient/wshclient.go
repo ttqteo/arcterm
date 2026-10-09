@@ -720,6 +720,18 @@ func GitListWorktreesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitListWorktr
 	return resp, err
 }
 
+// command "gitpull", wshserver.GitPullCommand
+func GitPullCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSyncData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitSyncRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitSyncRtnData](w, "gitpull", data, opts)
+	return resp, err
+}
+
+// command "gitpush", wshserver.GitPushCommand
+func GitPushCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSyncData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitSyncRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitSyncRtnData](w, "gitpush", data, opts)
+	return resp, err
+}
+
 // command "gitreviewpatch", wshserver.GitReviewPatchCommand
 func GitReviewPatchCommand(w *wshutil.WshRpc, data wshrpc.CommandGitReviewPatchData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitReviewPatchRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitReviewPatchRtnData](w, "gitreviewpatch", data, opts)
