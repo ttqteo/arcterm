@@ -221,39 +221,44 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
     // the field shows the project's checked-out branch until one is typed or picked
     const effectiveBranch = branchPick ?? currentBranch;
     const branchNames = branches.map((b) => b.name);
+    const taskHint = resume
+        ? "optional · sent as the next message · paste or drop images"
+        : "optional · sent as the first prompt · paste or drop images";
+    // with sessions to resume, Task and Resume sit side by side so the dialog fits without scrolling
+    const withResume = runtimeShowsTask(runtime) && resumeChoices.length > 0;
     return (
         <>
             {runtimeShowsTask(runtime) ? (
-                <div className="flex flex-col gap-2">
-                    <div className="flex items-baseline gap-2">
-                        <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
-                            Task
-                        </label>
-                        <span className="text-[11px] text-muted">
-                            {resume
-                                ? "optional · sent as the next message · paste or drop images"
-                                : "optional · sent as the first prompt · paste or drop images"}
-                        </span>
+                <div className={cn(withResume && "grid grid-cols-2 gap-4")}>
+                    <div className="flex min-w-0 flex-col gap-2">
+                        <div className="flex items-baseline gap-2">
+                            <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
+                                Task
+                            </label>
+                            <span title={taskHint} className="min-w-0 truncate text-[11px] text-muted">
+                                {taskHint}
+                            </span>
+                        </div>
+                        {/* grows with what is typed, up to about eleven lines, then scrolls; beside Resume it fills the row */}
+                        <textarea
+                            id="launcher-task"
+                            value={task}
+                            onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
+                            onPaste={pasteIntoTask}
+                            onDragOver={(e) => {
+                                if (dragHasFiles(e.dataTransfer)) {
+                                    e.preventDefault();
+                                }
+                            }}
+                            onDrop={dropIntoTask}
+                            placeholder="What should it work on? Leave empty to just open the session."
+                            className="block field-sizing-content min-h-16 max-h-[240px] w-full grow resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
+                        />
+                        <TaskImages />
                     </div>
-                    {/* grows with what is typed, up to about eleven lines, then scrolls */}
-                    <textarea
-                        id="launcher-task"
-                        value={task}
-                        onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
-                        onPaste={pasteIntoTask}
-                        onDragOver={(e) => {
-                            if (dragHasFiles(e.dataTransfer)) {
-                                e.preventDefault();
-                            }
-                        }}
-                        onDrop={dropIntoTask}
-                        placeholder="What should it work on? Leave empty to just open the session."
-                        className="block field-sizing-content min-h-16 max-h-[240px] w-full resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
-                    />
-                    <TaskImages />
+                    {withResume ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
                 </div>
             ) : null}
-            {runtimeShowsTask(runtime) ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
             <div className="flex flex-col gap-2">
                 <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
                     Command

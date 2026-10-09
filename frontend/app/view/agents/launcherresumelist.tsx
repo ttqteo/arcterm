@@ -55,7 +55,7 @@ export function ResumeList({ choices, pickedId }: ResumeListProps) {
     );
 
     return (
-        <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
             <span id="launcher-resume-label" className={LAUNCHER_LABEL}>
                 Resume
             </span>
@@ -65,7 +65,7 @@ export function ResumeList({ choices, pickedId }: ResumeListProps) {
                 aria-labelledby="launcher-resume-label"
                 data-launcher-resume
                 onKeyDown={onKeyDown}
-                className="flex flex-col gap-px rounded-[10px] border border-edge-mid bg-surface p-1"
+                className="flex max-h-[216px] flex-col gap-px overflow-y-auto rounded-[10px] border border-edge-mid bg-surface p-1"
             >
                 <div
                     role="radio"

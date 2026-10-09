@@ -8,6 +8,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Changed
+
+- New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long
+  list scrolls inside itself.
+
 ## 0.15.8 — 2026-10-09
 
 ### Added
