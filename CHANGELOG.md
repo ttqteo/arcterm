@@ -26,6 +26,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Holding `Ctrl` or `Alt` shows the shortcut bar and the rail and agent numbers at once instead of after a short pause;
   pressing any other key with it, as in `Ctrl`+`C`, hides them again.
 
+### Fixed
+
+- Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
+
 ## 0.15.8 — 2026-10-09
 
 ### Added

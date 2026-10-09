@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectorFor } from "./transcriptregistry";
+import { projectorFor, resolveAgentIdentity } from "./transcriptregistry";
 
 // A line each format understands; the other format projects it to nothing — so which entries come
 // back tells us which projector the resolver picked, without coupling to the registry internals.
@@ -118,5 +118,20 @@ describe("projectorFor", () => {
         const titleLine = JSON.stringify({ type: "ai-title", aiTitle: "Fix it" });
         expect(projectorFor("claude").extractTitle?.([titleLine])).toBe("Fix it");
         expect(projectorFor("codex").extractTitle).toBeUndefined();
+    });
+});
+
+describe("roster identity fallback", () => {
+    it("uses launch metadata when a status omits its runtime", () => {
+        expect(resolveAgentIdentity(undefined, "codex")).toBe("codex");
+    });
+    it("recognizes Windows Codex transcript paths", () => {
+        expect(resolveAgentIdentity(undefined, undefined, "C:\\Users\\u\\.codex\\sessions\\rollout.jsonl")).toBe(
+            "codex"
+        );
+    });
+    it("keeps an explicit runtime and leaves absent identity unknown", () => {
+        expect(resolveAgentIdentity("pi", "codex", "/u/.codex/sessions/r.jsonl")).toBe("pi");
+        expect(resolveAgentIdentity(undefined, undefined, "/unknown/r.jsonl")).toBeUndefined();
     });
 });

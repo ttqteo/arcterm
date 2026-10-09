@@ -36,7 +36,7 @@ const DEFAULT_AGENT = "claude";
 // `.claude`, so this ordering disambiguates correctly. Separators are normalized to `/` before
 // matching so a Windows `.pi/agent/sessions/` path resolves the same as a POSIX one. agy's brain
 // path (`.gemini/antigravity-cli/brain/<id>/`) names no project, so it is tested before all of these.
-function agentFromPath(path?: string): string | undefined {
+export function agentFromPath(path?: string): string | undefined {
     if (!path) {
         return undefined;
     }
@@ -64,4 +64,13 @@ function agentFromPath(path?: string): string | undefined {
 export function projectorFor(agent?: string, transcriptPath?: string): TranscriptProjector {
     const key = (agent && PROJECTORS[agent] ? agent : undefined) ?? agentFromPath(transcriptPath) ?? DEFAULT_AGENT;
     return PROJECTORS[key] ?? PROJECTORS[DEFAULT_AGENT];
+}
+
+/** Resolve roster identity without defaulting an unidentified session to Claude. */
+export function resolveAgentIdentity(
+    agent?: string,
+    launchedAgent?: string,
+    transcriptPath?: string
+): string | undefined {
+    return agent || launchedAgent || agentFromPath(transcriptPath);
 }
