@@ -60,7 +60,6 @@ import {
     liveBranches,
     notableBranch,
     registeredConversations,
-    runsBesideOrigins,
     runTokens,
     sessionAgeLabel,
     splitActive,
@@ -229,17 +228,6 @@ function Guides({ depth }: { depth: 1 | 2 }) {
                 <span key={left} className={cn("absolute inset-y-0 w-px bg-edge-strong", left)} />
             ))}
         </>
-    );
-}
-
-// A row of a run a session started, set one level in under that session's row with a guide down its leading column,
-// so the session and its run read as one group
-function UnderOrigin({ children }: { children: React.ReactNode }) {
-    return (
-        <div className="relative pl-[17px]">
-            <span className={cn("absolute inset-y-0 w-px bg-edge-strong", GUIDE_LEFT[0])} />
-            {children}
-        </div>
     );
 }
 
@@ -1629,24 +1617,13 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     );
     // a clock that moves once a day, so the run views below do not rebuild on every tick
     const today = startOfDay(now);
-    const paged = useMemo(
+    const rows = useMemo(
         () => conversationTree(ended, filter, new Set(collapsedList), presses),
         [ended, filter, collapsedList, presses]
     );
     // each shown run's view, from its own objects (loaded on first read); an ended run's dag no longer moves
-    const shownRuns = useMemo(() => paged.filter((r): r is EndedRunRow => r.kind === "run"), [paged]);
+    const shownRuns = useMemo(() => rows.filter((r): r is EndedRunRow => r.kind === "run"), [rows]);
     const runObjs = useRunObjects(shownRuns.map((r) => r.group.runId));
-    // a run a session started sits under that session, once the run's object says which session it was
-    const rows = useMemo(() => {
-        const origins = new Map<string, string>();
-        for (const r of shownRuns) {
-            const path = runObjs[r.group.runId]?.run?.origintranscript;
-            if (path) {
-                origins.set(r.group.runId, path);
-            }
-        }
-        return origins.size > 0 ? runsBesideOrigins(paged, origins) : paged;
-    }, [paged, shownRuns, runObjs]);
     const runViews = useMemo(() => {
         const out = new Map<string, RunView>();
         for (const r of shownRuns) {
@@ -1705,22 +1682,18 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                         <ShowMoreConversations project={r.project} hidden={r.hidden} less={r.less} />
                                     </div>
                                 );
-                            case "run": {
-                                const row = (
-                                    <RunConversationRow
-                                        model={model}
-                                        row={r}
-                                        view={runViews.get(r.key)}
-                                        age={sessionAgeLabel(r.lastactivets, now)}
-                                        selected={mode === "run" && sel === r.key}
-                                    />
-                                );
+                            case "run":
                                 return (
                                     <div key={r.key} className={rowIndent(filtered)}>
-                                        {r.under ? <UnderOrigin>{row}</UnderOrigin> : row}
+                                        <RunConversationRow
+                                            model={model}
+                                            row={r}
+                                            view={runViews.get(r.key)}
+                                            age={sessionAgeLabel(r.lastactivets, now)}
+                                            selected={mode === "run" && sel === r.key}
+                                        />
                                     </div>
                                 );
-                            }
                             case "session":
                                 return (
                                     <div key={r.key} className={rowIndent(filtered)}>
@@ -2008,7 +1981,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         animate="animate"
                                         exit="exit"
                                     >
-                                        {r.under ? <UnderOrigin>{body}</UnderOrigin> : body}
+                                        {body}
                                     </motion.div>
                                 );
                             })}

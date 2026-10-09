@@ -46,6 +46,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- New agent and New run: the Task and Goal boxes grow as you type, to about eleven lines before they scroll, instead
+  of staying a fixed few lines tall.
+- A run started from a session is no longer listed one level in under that session, in the sidebar or in
+  Conversations: it sits on its own row in its project, so closing the session no longer moves the run.
 - A Claude agent asks you before it starts a subagent, naming it and warning that one can cost millions of tokens
   (agents in an engine run are not asked); the 10-subagent cap per session, which had stopped holding, holds again.
 - The app bar is slimmer: 38px instead of 46px, with a narrower search box and smaller buttons, and the 5-hour

@@ -235,6 +235,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                                 : "optional · sent as the first prompt · paste or drop images"}
                         </span>
                     </div>
+                    {/* grows with what is typed, up to about eleven lines, then scrolls */}
                     <textarea
                         id="launcher-task"
                         value={task}
@@ -247,7 +248,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                         }}
                         onDrop={dropIntoTask}
                         placeholder="What should it work on? Leave empty to just open the session."
-                        className="block h-16 w-full resize-none rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
+                        className="block field-sizing-content min-h-16 max-h-[240px] w-full resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
                     />
                     <TaskImages />
                 </div>
