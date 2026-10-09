@@ -50,6 +50,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - New run: Cancel or Esc while a run is starting now cancels that run and frees the dialog at once, instead of
   leaving it stuck on Starting… when reopened. Its key legend reads `Tab` for next.
+- An agent's terminal on Windows garbles far less often, so Redraw is rarely needed: a pane that grows taller no
+  longer draws Claude's screen on the wrong rows, and an agent opened after a restart repaints itself at the pane's
+  size instead of showing its old output stacked out of line.
 - Code's sidebar keeps one width across Files, Search and Changed, so switching between them no longer moves the
   editor's edge; dragging it in any mode sets it for all three.
 - In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and
