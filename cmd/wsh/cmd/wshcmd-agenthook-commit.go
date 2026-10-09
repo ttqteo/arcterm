@@ -72,7 +72,35 @@ func turnCommitted(lines []string) bool {
 	return committed
 }
 
-// readTurnCommitted reads turnCommitted from the transcript's tail.
+// the furthest back readTurnCommitted reads for the turn's prompt
+const turnTailMaxBytes = 16 * 1024 * 1024
+
+// readTurnCommitted reads turnCommitted from the transcript's tail, read back far enough to hold the turn's prompt:
+// the window doubles from transcriptTailBytes until it does, up to turnTailMaxBytes. A turn's tool output easily
+// outgrows 64 KB, and a commit before the window read as no commit (an agent that committed, then checked the commit
+// with a few long git commands, never offered Close).
 func readTurnCommitted(path string) bool {
-	return turnCommitted(tailLines(path))
+	for n := int64(transcriptTailBytes); ; n *= 2 {
+		lines, whole := tailLinesN(path, n)
+		if whole || n >= turnTailMaxBytes || hasTurnStart(lines) {
+			return turnCommitted(lines)
+		}
+	}
+}
+
+// hasTurnStart reports whether lines hold a user record that carries human prose, where turnCommitted starts a turn.
+func hasTurnStart(lines []string) bool {
+	for _, ln := range lines {
+		var rec struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(ln)), &rec) == nil && rec.Type == "user" &&
+			userText(rec.Message.Content) != "" {
+			return true
+		}
+	}
+	return false
 }

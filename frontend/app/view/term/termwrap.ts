@@ -52,6 +52,7 @@ import {
     normalizeCursorStyle,
     trimTerminalSelection,
 } from "./termutil";
+import { readPlatformVersion, windowsPtyFor } from "./termwinpty";
 
 const dlog = debug("wave:termwrap");
 
@@ -120,6 +121,8 @@ export class TermWrap {
     hasResized: boolean;
     // set while the pane is hidden, so showing it again rebuilds the WebGL glyph atlas (see handleResize)
     hiddenSinceShown = false;
+    // set when output was replayed into a pane that was hidden, so it nudges the PTY when it shows (see initTerminal)
+    nudgeOnShow = false;
     sendDataHandler: (data: string) => void;
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
@@ -175,7 +178,7 @@ export class TermWrap {
         this.promptMarkers = [];
         this.shellIntegrationStatusAtom = jotai.atom(null) as jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
         this.webglEnabledAtom = jotai.atom(false) as jotai.PrimitiveAtom<boolean>;
-        this.terminal = new Terminal(options);
+        this.terminal = new Terminal({ ...options, windowsPty: windowsPtyFor(PLATFORM, null) });
         this.fitAddon = new FitAddon();
         this.serializeAddon = new SerializeAddon();
         this.searchAddon = new SearchAddon();
@@ -534,11 +537,26 @@ export class TermWrap {
         } catch (e) {
             console.log("Error loading runtime info:", e);
         }
+        // the Windows build decides whether xterm or ConPTY reflows a resized screen; set before any output is written
+        const windowsPty = windowsPtyFor(PLATFORM, await readPlatformVersion());
+        if (windowsPty != null) {
+            this.terminal.options.windowsPty = windowsPty;
+        }
 
+        let replayed = false;
         try {
-            await this.loadInitialTerminalData();
+            replayed = await this.loadInitialTerminalData();
         } finally {
             this.loaded = true;
+        }
+        // the replayed output was drawn at whatever sizes the PTY had while it ran, and the PTY is already this pane's
+        // size, so no resize would come to make a TUI repaint the lines that came out garbled: nudge one
+        if (replayed) {
+            if (this.isHidden()) {
+                this.nudgeOnShow = true;
+            } else {
+                this.nudgePtySize();
+            }
         }
         // a prompt replayed after the runtime info was read (a command that ended, or a shell started, while this
         // loaded) clears the running mark; a replayed command never sets it, since its shell may be gone
@@ -631,14 +649,17 @@ export class TermWrap {
         return prtn;
     }
 
-    async loadInitialTerminalData(): Promise<void> {
+    // true when it wrote any saved output into the terminal
+    async loadInitialTerminalData(): Promise<boolean> {
         const startTs = Date.now();
         const zoneId = this.getZoneId();
         const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(zoneId, TermCacheFileName);
         let ptyOffset = 0;
+        let replayed = false;
         if (cacheFile != null) {
             ptyOffset = cacheFile.meta["ptyoffset"] ?? 0;
             if (cacheData.byteLength > 0) {
+                replayed = true;
                 const curTermSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
                 const fileTermSize: TermSize = cacheFile.meta["termsize"];
                 let didResize = false;
@@ -650,7 +671,9 @@ export class TermWrap {
                     this.terminal.resize(fileTermSize.cols, fileTermSize.rows);
                     didResize = true;
                 }
-                this.doTerminalWrite(cacheData, ptyOffset);
+                // xterm parses a write on a later tick: resizing back before it lands parsed the cache at the
+                // current size, not the one it was saved at
+                await this.doTerminalWrite(cacheData, ptyOffset);
                 if (didResize) {
                     this.terminal.resize(curTermSize.cols, curTermSize.rows);
                 }
@@ -662,7 +685,9 @@ export class TermWrap {
         );
         if (mainFile != null) {
             await this.doTerminalWrite(mainData, null);
+            replayed ||= mainData.byteLength > 0;
         }
+        return replayed;
     }
 
     // the status of the run an engine worker belongs to when a remount must not relaunch it (the run is over,
@@ -745,6 +770,10 @@ export class TermWrap {
             this.hasResized = true;
             this.resyncController("initial resize");
         }
+        if (this.nudgeOnShow) {
+            this.nudgeOnShow = false;
+            this.nudgePtySize();
+        }
     }
 
     // The pane's text can come out garbled: a lost glyph texture, or a TUI that drew for a size other than the pane's
@@ -757,6 +786,11 @@ export class TermWrap {
         this.fitAddon.fit();
         this.webglAddon?.clearTextureAtlas();
         this.terminal.refresh(0, this.terminal.rows - 1);
+        this.nudgePtySize();
+    }
+
+    // Narrow the PTY one column and give it back, so a TUI repaints whole at the pane's size
+    private nudgePtySize() {
         const rows = this.terminal.rows;
         const cols = this.terminal.cols;
         fireAndForget(() =>

@@ -5,12 +5,25 @@
 // Pure: join `git status --porcelain=v1 -z` with `git diff --numstat HEAD` into the Files render
 // model. No React, no Wave imports. Fixture-tested.
 
+// Why a row has no line counts to show, where +0 −0 would claim an empty change:
+//   bin   — git counts no lines in a binary file (numstat "-")
+//   repo  — an untracked directory porcelain collapses even under -uall: a nested git repository
+//   dirty — a tracked path with no numstat row: a submodule whose own working tree changed
+export type ChangeNote = "bin" | "repo" | "dirty";
+
 export interface GitChange {
     path: string;
     status: string; // "M" | "A" | "D" | "?" | "R" | "C" ...
     adds: number;
     dels: number;
+    note?: ChangeNote;
 }
+
+export const CHANGE_NOTE_TITLE: Record<ChangeNote, string> = {
+    bin: "Binary file: git counts no lines",
+    repo: "A nested git repository: its own changes are not counted here",
+    dirty: "A submodule with uncommitted changes inside it",
+};
 
 export interface GitChanges {
     files: GitChange[];
@@ -48,8 +61,8 @@ export function numstatPath(raw: string): string {
     return arrow === -1 ? expanded : expanded.slice(arrow + " => ".length);
 }
 
-function parseNumstat(numstat: string): Map<string, { adds: number; dels: number }> {
-    const m = new Map<string, { adds: number; dels: number }>();
+function parseNumstat(numstat: string): Map<string, { adds: number; dels: number; binary: boolean }> {
+    const m = new Map<string, { adds: number; dels: number; binary: boolean }>();
     for (const line of numstat.split("\n")) {
         if (!line.trim()) {
             continue;
@@ -64,6 +77,7 @@ function parseNumstat(numstat: string): Map<string, { adds: number; dels: number
         m.set(path, {
             adds: a === "-" ? 0 : parseInt(a, 10) || 0,
             dels: d === "-" ? 0 : parseInt(d, 10) || 0,
+            binary: a === "-" || d === "-",
         });
     }
     return m;
@@ -75,10 +89,18 @@ export function parseGitChanges(statusZ: string, numstat: string): GitChanges {
     let adds = 0;
     let dels = 0;
     for (const { path, status } of parseStatusZ(statusZ)) {
-        const n = stat.get(path) ?? { adds: 0, dels: 0 };
-        files.push({ path, status, adds: n.adds, dels: n.dels });
-        adds += n.adds;
-        dels += n.dels;
+        const n = stat.get(path);
+        const change: GitChange = { path, status, adds: n?.adds ?? 0, dels: n?.dels ?? 0 };
+        if (path.endsWith("/")) {
+            change.note = "repo";
+        } else if (n?.binary) {
+            change.note = "bin";
+        } else if (n == null && status !== "?") {
+            change.note = "dirty";
+        }
+        files.push(change);
+        adds += change.adds;
+        dels += change.dels;
     }
     return { files, adds, dels };
 }

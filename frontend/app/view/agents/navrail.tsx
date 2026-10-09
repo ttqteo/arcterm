@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { digitHintAtom } from "@/app/cockpit/digithints";
+import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -17,12 +18,14 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { workingCount } from "./agentsviewmodel";
 import { attentionAtom, splitAttention } from "./attentionstore";
 import { DigitHint } from "./digithint";
 import { navRailCollapsed } from "./navrailwidth";
-import { unreadLabel } from "./unreadagents";
+import { focusSubagentAtom } from "./subagentsstore";
+import { latestUnreadId, unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 
 // Cockpit navigation icons. Runtime logos stay as image assets; app controls use Lucide components.
@@ -74,7 +77,21 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     };
     // Agent also says how many agents are working while you are on another surface, so a run doing its work is
     // visible from Code or Diff; on Agent itself the rows already show it
-    const working = workingCount(useAtomValue(model.agentsAtom));
+    const agents = useAtomValue(model.agentsAtom);
+    const working = workingCount(agents);
+    // On Agent itself the badge is a shortcut: it opens the agent that finished last, as choosing its row does, and
+    // viewing it marks it read, so each click takes the next one
+    const jumpToUnread = (e: React.MouseEvent) => {
+        const id = latestUnreadId(unread, agents);
+        if (id == null) {
+            return;
+        }
+        e.stopPropagation();
+        globalStore.set(model.focusIdAtom, id);
+        globalStore.set(model.focusReplyAtom, false);
+        globalStore.set(focusSubagentAtom, null);
+        showTerminal();
+    };
     // while Ctrl is held each surface shows the digit Ctrl+1..7 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
     const ctrlHeld = useAtomValue(digitHintAtom) === "ctrl";
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
@@ -87,6 +104,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
         const Icon = ICON[key];
         const isActive = active === key;
         const busy = key === "agent" && !isActive ? working : 0;
+        const jumps = key === "agent" && isActive;
         const at = ITEMS.findIndex((it) => it.key === key);
         const digit = ctrlHeld && at >= 0 ? at + 1 : undefined;
         return (
@@ -116,9 +134,12 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                     {badge > 0 ? (
                         <span
                             data-nav-badge={key}
+                            onClick={jumps ? jumpToUnread : undefined}
+                            title={jumps ? "Open the agent that finished last" : undefined}
                             className={cn(
                                 "absolute -right-2 -top-1.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 text-[9px] font-bold tabular-nums text-background",
-                                BADGE_FILL[key] ?? "bg-asking"
+                                BADGE_FILL[key] ?? "bg-asking",
+                                jumps && "hover:brightness-110"
                             )}
                         >
                             {unreadLabel(badge)}

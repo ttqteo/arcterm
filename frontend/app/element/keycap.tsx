@@ -14,17 +14,23 @@ export function KeyCap({
     chord,
     variant = "chips",
     className,
+    title,
 }: {
     chord: string;
     variant?: "chips" | "inline";
     className?: string;
+    title?: string;
 }) {
     const parts = formatChord(chord);
     if (variant === "inline") {
-        return <span className={cn(BOX, "text-muted", className)}>{formatChordString(chord)}</span>;
+        return (
+            <span title={title} className={cn(BOX, "text-muted", className)}>
+                {formatChordString(chord)}
+            </span>
+        );
     }
     return (
-        <span className={cn("inline-flex items-center gap-1", className)}>
+        <span title={title} className={cn("inline-flex items-center gap-1", className)}>
             {parts.map((p, i) => (
                 <span key={i} className={cn(BOX, "text-primary")}>
                     {p}

@@ -218,6 +218,7 @@ was.
 | Keys | Action |
 |---|---|
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
+| `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have. Works from inside the terminal, where a bare `c` is typed into it |
 | `[` / `]` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Mod`+`Enter` | Send the marks to the agent (from mark mode) |
@@ -229,6 +230,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `r` | Back to the terminal |
+| `Alt`+`C` | Next of Terminal, Canvas, Review (as in canvas mode) |
 | `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
 | `c` | Comment on the selected text |
 | `e` | Suggest an edit: open the selected text's paragraph as source; `Mod`+`Enter` saves the suggestion, `Esc` cancels. The file is not changed; the agent is sent `Edit: replace "…" with "…"` |

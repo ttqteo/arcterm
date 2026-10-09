@@ -8,7 +8,24 @@
 // A grid is 16 rows of 16 cell codes, `.` empty. Each code is a theme token rather than a colour, so a
 // runtime theme repaints the creature through the same --color-* properties it overrides everywhere else.
 
-export type PetPose = "walk1" | "walk2" | "stand" | "sit" | "sleep" | "tired" | "speak" | "dangle";
+export type PetPose =
+    | "walk1"
+    | "walk2"
+    | "stand"
+    | "sit"
+    | "sleep"
+    | "tired"
+    | "speak"
+    | "dangle"
+    // the pastimes a rest is spent in (petwalk.ts PASTIMES), two frames each
+    | "read1"
+    | "read2"
+    | "music1"
+    | "music2"
+    | "work1"
+    | "work2"
+    | "ball1"
+    | "ball2";
 
 export type PetMark = "gate" | "escalation" | "blocked" | "z" | "drop" | "unread";
 
@@ -185,6 +202,157 @@ export const POSES: Record<PetPose, readonly string[]> = {
         "....d......d....",
         "....d......d....",
         "....d......d....",
+    ],
+    // Pastimes. None draws a `k` outside the face, which dressInFlag reads as the eyes, and each keeps the unread
+    // mark's cells clear.
+    // studying: sat with an open book on its lap, eyes running along the lines
+    read1: [
+        E,
+        E,
+        E,
+        E,
+        ".......d........",
+        "......dddd......",
+        ".......d........",
+        ".......d........",
+        "....llbbbbbb....",
+        "...lbbbbbbbbb...",
+        "..bbbbbbbbbbbb..",
+        "..bbbbbbbbbbbb..",
+        "..bbbbkbbbbkbb..",
+        "..brwwwwrwwwwr..",
+        "..brmmwwrmmwwr..",
+        "...rrrrrrrrrrdd.",
+    ],
+    read2: [
+        E,
+        E,
+        E,
+        E,
+        ".......d........",
+        "......dddd......",
+        ".......d........",
+        ".......d........",
+        "....llbbbbbb....",
+        "...lbbbbbbbbb...",
+        "..bbbbbbbbbbbb..",
+        "..bbbbbbbbbbbb..",
+        "..bbbkbbbbkbbb..",
+        "..brwwwwrwwwwr..",
+        "..brwwmmrwwmmr..",
+        "...rrrrrrrrrrdd.",
+    ],
+    // listening to music: headphones on, eyes shut, notes drifting up while the sprout sways
+    music1: [
+        "............yy..",
+        "..yy........y...",
+        "..y.........y...",
+        ".yy....d...yy...",
+        "......dddd......",
+        ".......d........",
+        "....mmmdmmmm....",
+        "...mllbbbbbbm...",
+        "..mlbbbbbbbbbm..",
+        ".rrbbbbbbbbbbrr.",
+        ".rrbbbbbbbbbbrr.",
+        ".rrbkkbbbbkkbrr.",
+        "..bbbbbbbbbbbb..",
+        "..bbbbbbbbbbbb..",
+        "...bbbbbbbbbb...",
+        "....dd....dd....",
+    ],
+    music2: [
+        "..yy............",
+        "..y..........yy.",
+        ".yy..........y..",
+        "......d......y..",
+        "......dddd..yy..",
+        ".......d........",
+        "....mmmdmmmm....",
+        "...mllbbbbbbm...",
+        "..mlbbbbbbbbbm..",
+        ".rrbbbbbbbbbbrr.",
+        ".rrbbbbbbbbbbrr.",
+        ".rrbkkbbbbkkbrr.",
+        "..bbbbbbbbbbbb..",
+        "..bbbbbbbbbbbb..",
+        "...bbbbbbbbbb...",
+        "....dd....dd....",
+    ],
+    // working: sat at a laptop seen side-on, its screen lighting the face, a key lit as it types and the code mark
+    // blinking over its head
+    work1: [
+        ".......w...w.w..",
+        "......w...w...w.",
+        ".......w.w...w..",
+        E,
+        ".......d........",
+        "......dddd......",
+        ".......d........",
+        ".......d........",
+        "....llbbbbbb....",
+        "...lbbbbbbbbb.m.",
+        "..bbbbbbbbbbblm.",
+        "..bbbbkbbbbkblm.",
+        "..bbbbkbbbbkblm.",
+        "..bbbbbbbbbbblm.",
+        "..bbbbbbbmwmmmm.",
+        "...bbbbbbbbbbdd.",
+    ],
+    work2: [
+        ".......m...m.m..",
+        "......m...m...m.",
+        ".......m.m...m..",
+        E,
+        ".......d........",
+        "......dddd......",
+        ".......d........",
+        ".......d........",
+        "....llbbbbbb....",
+        "...lbbbbbbbbb.m.",
+        "..bbbbbbbbbbbwm.",
+        "..bbbbkbbbbkbwm.",
+        "..bbbbkbbbbkbwm.",
+        "..bbbbbbbbbbbwm.",
+        "..bbbbbbbmmmwmm.",
+        "...bbbbbbbbbbdd.",
+    ],
+    // playing sport: dribbling a basketball at its side, high then low
+    ball1: [
+        E,
+        E,
+        E,
+        ".......d........",
+        "......dddd......",
+        ".......d........",
+        ".......d........",
+        "....llbbbbbb....",
+        "...lbbbbbbbbb...",
+        "..bbbbbbbbbbbyy.",
+        "..bbbbkbbbbkyyyy",
+        "..bbbbkbbbbkyyyy",
+        "..bbbbbbbbbbbyy.",
+        "..bbbbbbbbbbbb..",
+        "...bbbbbbbbbb...",
+        "....dd....dd....",
+    ],
+    ball2: [
+        E,
+        E,
+        E,
+        ".......d........",
+        "......dddd......",
+        ".......d........",
+        ".......d........",
+        "....llbbbbbb....",
+        "...lbbbbbbbbb...",
+        "..bbbbbbbbbbbb..",
+        "..bbbbkbbbbkbb..",
+        "..bbbbkbbbbkbb..",
+        "..bbbbbbbbbbbyy.",
+        "..bbbbbbbbbbyyyy",
+        "...bbbbbbbbbyyyy",
+        "....dd....dd.yy.",
     ],
 };
 

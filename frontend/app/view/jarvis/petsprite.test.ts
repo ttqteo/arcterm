@@ -53,9 +53,26 @@ describe("the grid", () => {
         expect(PET_GRID * PET_CELL_PX).toBe(PET_PX);
     });
 
-    it("has exactly the eight poses of the spec", () => {
+    it("has exactly the eight poses of the spec, and two frames of each pastime", () => {
         expect([...POSE_NAMES].sort()).toEqual(
-            ["dangle", "sit", "sleep", "speak", "stand", "tired", "walk1", "walk2"].sort()
+            [
+                "dangle",
+                "sit",
+                "sleep",
+                "speak",
+                "stand",
+                "tired",
+                "walk1",
+                "walk2",
+                "read1",
+                "read2",
+                "music1",
+                "music2",
+                "work1",
+                "work2",
+                "ball1",
+                "ball2",
+            ].sort()
         );
     });
 
@@ -225,7 +242,9 @@ describe("the Vietnam flag shirt", () => {
         });
     });
 
-    it.each(POSE_NAMES.filter((p) => p !== "speak"))("draws the whole star on %s", (pose) => {
+    // reading, the book on its lap covers the shirt
+    const starred = POSE_NAMES.filter((p) => p !== "speak" && p !== "read1" && p !== "read2");
+    it.each(starred)("draws the whole star on %s", (pose) => {
         expect(cellsOf(dressed(pose), "Y")).toHaveLength(STAR_CELLS);
     });
 

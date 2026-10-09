@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { setAgentView } from "./agentview";
+import { nextAgentView, setAgentView } from "./agentview";
 import { attachCanvas, detachCanvas, getCanvas } from "./canvasstore";
 import { getDocReview, syncDocReview } from "./docreviewstore";
 
@@ -63,5 +63,24 @@ describe("setAgentView", () => {
         detachCanvas("a1");
         setAgentView("a1", "canvas", 8);
         expect(getDocReview("a1")?.mode).toBe("review");
+    });
+});
+
+describe("nextAgentView", () => {
+    it("walks terminal, canvas, review in the header's order", () => {
+        expect(nextAgentView("terminal", true, true)).toBe("canvas");
+        expect(nextAgentView("canvas", true, true)).toBe("review");
+        expect(nextAgentView("review", true, true)).toBe("terminal");
+    });
+
+    it("skips a view the agent doesn't have", () => {
+        expect(nextAgentView("terminal", true, false)).toBe("canvas");
+        expect(nextAgentView("canvas", true, false)).toBe("terminal");
+        expect(nextAgentView("terminal", false, true)).toBe("review");
+        expect(nextAgentView("review", false, true)).toBe("terminal");
+    });
+
+    it("has nothing to switch to with the terminal alone", () => {
+        expect(nextAgentView("terminal", false, false)).toBeNull();
     });
 });

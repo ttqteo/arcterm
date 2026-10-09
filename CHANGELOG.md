@@ -13,9 +13,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Added
 
 - New agent: paste or drop images into the task, and resume a recent session of the picked agent and project.
+- Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,
+  type at a laptop or dribble a ball, picked at random each time, as well as standing or sitting still.
+- `Alt`+`C` switches an agent between Terminal, Canvas and Review from inside its terminal, where a bare `c` is
+  typed into the agent.
 - `Alt`+`1`…`9` jumps to an agent in the Agent surface's Active list, even from inside its terminal; hold `Alt` a
   moment and each agent row shows its number. Holding `Ctrl` (`Cmd` on a Mac) likewise numbers the rail's surfaces
   for `Ctrl`+`1`…`7`.
+- On the Agent surface, clicking the unread count on the rail's Agent icon opens the agent that finished last; click
+  again for the next one.
 - In Float, a small Sprout in the bar shows when something waits on you (`?`, `!` or the review eye); click it, or
   press `g` `w`, to open the pet's popup below it.
 - When the computer sleeps while agents are working, Jarvis's pet says so on waking: how long it slept, from when to
@@ -49,10 +55,20 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- An agent whose last turn committed a plan and started an orchestrator run with it no longer offers ✓ Close while
+  that run, nested under it, is still going; the offer comes back once the run ends.
+- An agent that committed and then ran a few more commands with long output in the same turn now offers ✓ Close;
+  before, a commit more than 64 KB back in its transcript went unseen.
 - New run: Cancel or Esc while a run is starting now cancels that run and frees the dialog at once, instead of
   leaving it stuck on Starting… when reopened. Its key legend reads `Tab` for next.
+- An agent's terminal on Windows garbles far less often, so Redraw is rarely needed: a pane that grows taller no
+  longer draws Claude's screen on the wrong rows, and an agent opened after a restart repaints itself at the pane's
+  size instead of showing its old output stacked out of line.
 - Code's sidebar keeps one width across Files, Search and Changed, so switching between them no longer moves the
   editor's edge; dragging it in any mode sets it for all three.
+- Changed-file lists (Code's Changed and the Diff surface) no longer show `+0 −0` for a change git cannot count in
+  lines: a binary file reads `bin`, a nested git repository `repo`, and a submodule with changes inside it `dirty`. A
+  file with a non-ASCII name (`tên.txt`) now shows its real counts.
 - In Code, a markdown or TeX file's Preview keeps where you scrolled it: switching to another file or surface and
   coming back lands on the same spot instead of the top.
 - In a narrow sidebar, an agent row with subagents no longer runs past the row's right edge: its subagents chip shows

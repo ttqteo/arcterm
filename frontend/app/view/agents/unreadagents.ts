@@ -52,6 +52,24 @@ export function nextUnread(
     return out;
 }
 
+/** Pure: the unread agent the Agent badge jumps to, the one that finished last (latest `idleSince`; one without it
+ *  ranks oldest, and a tie keeps roster order). Undefined when no agent in the roster is unread. */
+export function latestUnreadId(
+    unread: ReadonlyMap<string, number>,
+    agents: readonly { id: string; idleSince?: number }[]
+): string | undefined {
+    let best: { id: string; idleSince?: number } | undefined;
+    for (const a of agents) {
+        if (!unread.has(a.id)) {
+            continue;
+        }
+        if (best == null || (a.idleSince ?? 0) > (best.idleSince ?? 0)) {
+            best = a;
+        }
+    }
+    return best?.id;
+}
+
 /** Pure: a count as a badge shows it, capped so the badge stays one small circle. */
 export function unreadLabel(n: number): string {
     return n > 9 ? "9+" : String(n);

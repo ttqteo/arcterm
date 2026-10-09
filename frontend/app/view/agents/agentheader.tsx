@@ -5,6 +5,7 @@
 // Extracted from the former AgentTranscript header (now removed): the real Claude Code TUI has no
 // chrome of its own, so this keeps name/status/model/context% + the details-rail toggle visible.
 
+import { KeyCap } from "@/app/element/keycap";
 import { useSettle } from "@/app/element/motionhooks";
 import { MOTION } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
@@ -233,9 +234,13 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // Close the whole session (a tab, per launchAgent) — shared with the double-Ctrl+C handler. The
     // header also fronts background terminals, so the noun follows what is actually focused.
     const closeTerminal = () => confirmCloseSession(agent, model);
-    // its last turn committed and you have read it: the header offers Close with the session's token total, the
-    // figure its sidebar row shows (donesuggest.ts)
-    const done = doneSuggestion(agent, useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0);
+    // its last turn committed, you have read it and no run it started is still going: the header offers Close with the
+    // session's token total, the figure its sidebar row shows (donesuggest.ts)
+    const done = doneSuggestion(
+        agent,
+        useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0,
+        useAtomValue(model.lineageAtom).runs
+    );
     const sessionTokens = useAtomValue(liveTokensAtom).get(agent.id);
     const closeLabel = agent.kind === "terminal" ? "Close terminal" : "Close agent";
     // garbled text in the pane: repaint it and have the TUI draw itself again, without restarting the session
@@ -371,6 +376,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     </button>
                 ) : null}
                 {canvas != null || docReview != null ? (
+                    // the bare c and r are typed into the TUI while it holds focus, so the chord that switches from
+                    // inside it sits on screen beside the control
+                    <KeyCap
+                        chord="Alt:c"
+                        variant="inline"
+                        className="cursor-default"
+                        title="Switch Terminal, Canvas and Review, also from inside the terminal"
+                    />
+                ) : null}
+                {canvas != null || docReview != null ? (
                     // one control for whatever can stand in the terminal's place: a canvas, a Doc review, or both
                     <Segmented<AgentView>
                         role="group"
@@ -386,7 +401,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             {
                                 key: "terminal",
                                 label: "Terminal",
-                                title: `Terminal (${formatChordString(docReview != null ? "r" : "c")})`,
+                                title: `Terminal (${formatChordString(docReview != null ? "r" : "c")}, ${formatChordString("Alt:c")} from the terminal)`,
                             },
                             ...(canvas != null
                                 ? [
@@ -403,7 +418,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                                   ) : null}
                                               </>
                                           ),
-                                          title: `Canvas (${formatChordString("c")})`,
+                                          title: `Canvas (${formatChordString("c")}, ${formatChordString("Alt:c")} from the terminal)`,
                                       },
                                   ]
                                 : []),
@@ -422,7 +437,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                                   ) : null}
                                               </>
                                           ),
-                                          title: `Review (${formatChordString("r")})`,
+                                          title: `Review (${formatChordString("r")}, ${formatChordString("Alt:c")} from the terminal)`,
                                       },
                                   ]
                                 : []),

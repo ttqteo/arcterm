@@ -37,8 +37,10 @@ type Changes struct {
 	Head string
 }
 
+// quotePath off: without -z, git octal-escapes a non-ASCII path ("t\303\252n.txt") in numstat, so its
+// row never matched the raw path `status -z` prints and the file read as uncounted.
 func run(ctx context.Context, cwd string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", cwd}, args...)...)
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false", "-C", cwd}, args...)...)
 	out, err := cmd.Output()
 	return string(out), err
 }

@@ -54,8 +54,8 @@ export interface WalkerState {
     frame: number;
     // walk and hop: when the next frame is due; rest: when the rest ends
     due: number;
-    // the pose a rest is spent in when not tired, picked when the rest starts
-    restPose: "stand" | "sit";
+    // what a rest is spent doing when not tired, picked when the rest starts
+    restPose: RestPose;
     // the posture seen at the last step, so a posture's arrival can be told from its standing
     posture: PetPosture;
 }
@@ -86,6 +86,18 @@ export const TARGET_MAX_PX = 400;
 // How long a rest lasts; tired rests twice as long.
 export const REST_MIN_MS = 5_000;
 export const REST_MAX_MS = 15_000;
+
+// What a rest is spent doing, picked at random as it starts: standing or sitting still, or a pastime — studying,
+// music, work, sport — whose frames loop for the length of the rest.
+export const REST_POSES = ["stand", "sit", "read", "music", "work", "ball"] as const;
+export type RestPose = (typeof REST_POSES)[number];
+
+export const PASTIMES: Partial<Record<RestPose, { frames: readonly PetPose[]; frameMs: number }>> = {
+    read: { frames: ["read1", "read2"], frameMs: 1_200 },
+    music: { frames: ["music1", "music2"], frameMs: 450 },
+    work: { frames: ["work1", "work2"], frameMs: 250 },
+    ball: { frames: ["ball1", "ball2"], frameMs: 300 },
+};
 
 // No utterance, posture change or interaction for this long, and it goes to sleep.
 export const SLEEP_AFTER_MS = 10 * 60_000;
@@ -235,8 +247,34 @@ function rest(s: WalkerState, input: WalkerInput, now: number, rand: () => numbe
     return {
         ...still(s, "rest"),
         due: now + (wearsTired(input.expression) ? 2 * length : length),
-        restPose: rand() < 0.5 ? "stand" : "sit",
+        restPose: REST_POSES[Math.min(REST_POSES.length - 1, Math.floor(rand() * REST_POSES.length))],
     };
+}
+
+// A rest's pastime, unless tired (which rests in its own still pose).
+function pastimeOf(s: WalkerState, input: WalkerInput) {
+    return wearsTired(input.expression) ? undefined : PASTIMES[s.restPose];
+}
+
+// A pastime's frame is counted back from the rest's end, so it needs no clock of its own and an early step
+// draws the frame already showing.
+function restPoseAt(s: WalkerState, input: WalkerInput, now: number): PetPose {
+    const pastime = pastimeOf(s, input);
+    if (pastime == null) {
+        return wearsTired(input.expression) ? "tired" : (s.restPose as "stand" | "sit");
+    }
+    const i = Math.floor(Math.max(0, s.due - now) / pastime.frameMs) % pastime.frames.length;
+    return pastime.frames[i];
+}
+
+// Until the rest ends, or until a pastime's next frame when that comes first.
+function restDelay(s: WalkerState, input: WalkerInput, now: number): number {
+    const left = Math.max(0, s.due - now);
+    const pastime = pastimeOf(s, input);
+    if (pastime == null || left === 0) {
+        return left;
+    }
+    return Math.min(left, left % pastime.frameMs || pastime.frameMs);
 }
 
 // A walk starts by drawing its first frame where it stands, and moves on the next: whatever it was doing
@@ -279,12 +317,12 @@ function advance(s: WalkerState, input: WalkerInput, now: number, land: (s: Walk
     return { ...s, x, flip: dx < 0, frame: s.frame + 1, due: now + frameMsFor(input) };
 }
 
-function poseOf(s: WalkerState, input: WalkerInput): PetPose {
+function poseOf(s: WalkerState, input: WalkerInput, now: number): PetPose {
     switch (s.name) {
         case "walk":
             return Math.floor(s.frame / 2) % 2 === 0 ? "walk1" : "walk2";
         case "rest":
-            return wearsTired(input.expression) ? "tired" : s.restPose;
+            return restPoseAt(s, input, now);
         case "sleep":
             return "sleep";
         case "hold":
@@ -296,8 +334,8 @@ function poseOf(s: WalkerState, input: WalkerInput): PetPose {
     }
 }
 
-function view(s: WalkerState, input: WalkerInput, delayMs: number | null): WalkerStep {
-    const pose = poseOf(s, input);
+function view(s: WalkerState, input: WalkerInput, now: number, delayMs: number | null): WalkerStep {
+    const pose = poseOf(s, input, now);
     const marks: PetMark[] = [];
     const postureMark = POSTURE_MARK[input.posture];
     if (postureMark != null) {
@@ -363,7 +401,7 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
     };
 
     if (input.dragging) {
-        return view(still(s, "dragged"), input, null);
+        return view(still(s, "dragged"), input, now, null);
     }
     if (state.name === "dragged") {
         s = { ...s, x: homeX(input.home, ledge) };
@@ -373,20 +411,20 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
     if (input.reduce) {
         const x = clearSpot(homeX(input.home, ledge), ledge, avoid);
         const name = isHolding(input) ? "hold" : isIdle(input, now) ? "sleep" : "rest";
-        return view({ ...still(s, name), x, restPose: "stand" }, input, null);
+        return view({ ...still(s, name), x, restPose: "stand" }, input, now, null);
     }
 
     const frameMs = frameMsFor(input);
     if (isHolding(input)) {
         if (arrived) {
-            return view({ ...still(s, "hop"), due: now + frameMs }, input, frameMs);
+            return view({ ...still(s, "hop"), due: now + frameMs }, input, now, frameMs);
         }
         if (s.name === "hop") {
             if (now < s.due) {
-                return view(s, input, s.due - now);
+                return view(s, input, now, s.due - now);
             }
             if (s.frame < HOP_FRAMES - 1) {
-                return view({ ...s, frame: s.frame + 1, due: now + frameMs }, input, frameMs);
+                return view({ ...s, frame: s.frame + 1, due: now + frameMs }, input, now, frameMs);
             }
         }
         // A posture can stand for minutes, so it is not held on a terminal: hopped in place, the creature walks
@@ -398,17 +436,17 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
             s = s.name === "walk" ? { ...s, target: spot } : startWalk(s, spot, input, now);
             s = advance(s, input, now, (s) => still(s, "hold"));
             if (s.name === "walk") {
-                return view(s, input, Math.max(0, s.due - now));
+                return view(s, input, now, Math.max(0, s.due - now));
             }
         }
-        return view(still(s, "hold"), input, null);
+        return view(still(s, "hold"), input, now, null);
     }
 
     if (isIdle(input, now)) {
         // it sleeps where it stands when that is clear, and walks off the span to sleep when it is not
         const spot = clearSpot(s.x, ledge, avoid);
         if (spot === s.x) {
-            return view(still(s, "sleep"), input, null);
+            return view(still(s, "sleep"), input, now, null);
         }
         s = s.name === "walk" ? { ...s, target: spot } : startWalk(s, spot, input, now);
     } else if (s.name === "rest") {
@@ -416,7 +454,7 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
             // a terminal opened under it: a rest is never spent on one
             s = startWalk(s, clearSpot(s.x, ledge, avoid), input, now);
         } else if (now < s.due) {
-            return view(s, input, s.due - now);
+            return view(s, input, now, restDelay(s, input, now));
         } else {
             s = startWalk(s, pickTarget(s.x, input, rand), input, now);
         }
@@ -433,9 +471,10 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
     }
     switch (s.name) {
         case "walk":
+            return view(s, input, now, Math.max(0, s.due - now));
         case "rest":
-            return view(s, input, Math.max(0, s.due - now));
+            return view(s, input, now, restDelay(s, input, now));
         default:
-            return view(s, input, null);
+            return view(s, input, now, null);
     }
 }
