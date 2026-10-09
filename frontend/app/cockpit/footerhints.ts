@@ -75,7 +75,9 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["files:change-refs"], glyph: "c", label: "change refs" }, // compare-only via its binding
         { ids: ["files:swap-refs"], keys: "Shift:s", label: "swap" }, // compare-only via its binding
         { ids: ["files:next-change", "files:prev-change"], keys: "Shift:n Shift:p", label: "next / prev change" },
-        { ids: ["files:toggle-history"], keys: "Shift:h", label: "history" },
+        { ids: ["files:commit-tab"], keys: "Shift:c", label: "commit" },
+        { ids: ["files:toggle-history"], keys: "Shift:h", label: "log" },
+        { ids: ["files:toggle-sidebar"], keys: "Shift:b", label: "panel" },
         { ids: ["files:compare"], glyph: "c", label: "compare" }, // history-only via its binding
         { ids: ["files:refresh"], glyph: "r", label: "refresh" },
         { ids: ["files:switch-side"], glyph: "⇥", label: "side" }, // compare-only via its binding

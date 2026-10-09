@@ -48,3 +48,67 @@ export function paneOptions(split: boolean, ignoreWs: boolean, wrap: boolean): M
         scrollbar: { useShadows: false, verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
     };
 }
+
+export type OptionId = "split" | "whitespace" | "wrap" | "editor" | "code";
+
+export interface OptionItem {
+    id: OptionId;
+    label: string;
+    // a switch (aria-checked) or an action (undefined)
+    checked?: boolean;
+    disabled?: boolean;
+    // why a disabled item is, as its tooltip
+    reason?: string;
+    // the binding that does the same thing, as a chord string for formatChordString
+    chord?: string;
+}
+
+export interface OptionsState {
+    split: boolean;
+    // the pane is wide enough for two editors (paneHeaderLayout)
+    splitAllowed: boolean;
+    ignoreWs: boolean;
+    wrap: boolean;
+    // a file is open in File mode (Review has no single file to wrap)
+    wrapAllowed: boolean;
+    // the file exists in the working tree
+    editorAllowed: boolean;
+    // a repository is resolved
+    codeAllowed: boolean;
+}
+
+// The header's `⋯` menu: what the old header spread over four labelled buttons. Always the same five items, in the same
+// order, so a disabled one says why instead of vanishing and the menu never changes shape under the pointer.
+export function optionItems(s: OptionsState): OptionItem[] {
+    return [
+        {
+            id: "split",
+            label: "Side by side",
+            checked: s.split && s.splitAllowed,
+            disabled: !s.splitAllowed,
+            reason: s.splitAllowed ? undefined : "The pane is too narrow for two editors",
+            chord: "Shift:d",
+        },
+        { id: "whitespace", label: "Hide whitespace changes", checked: s.ignoreWs, chord: "Shift:w" },
+        {
+            id: "wrap",
+            label: "Wrap long lines",
+            checked: s.wrap,
+            disabled: !s.wrapAllowed,
+            reason: s.wrapAllowed ? undefined : "Open a file to wrap its lines",
+            chord: "Alt:z",
+        },
+        {
+            id: "editor",
+            label: "Open in editor",
+            disabled: !s.editorAllowed,
+            reason: s.editorAllowed ? undefined : "Only a file in the working tree can be opened",
+        },
+        {
+            id: "code",
+            label: "Open in Code",
+            disabled: !s.codeAllowed,
+            reason: s.codeAllowed ? undefined : "No repository is open",
+        },
+    ];
+}

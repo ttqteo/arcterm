@@ -2,24 +2,15 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Diff surface's leftmost column: every registered project with its checkouts, and each agent under the checkout
-// it runs in. The one place a source is picked. Rows come from worktreesidebar.ts, the reads from
-// worktreesidebarstore.ts; this file only draws them and turns clicks into picks.
+// The source tree the panel's dropdown opens (sourcepicker.tsx): every registered project with its checkouts, and each
+// agent under the checkout it runs in. The one place a source is picked. Rows come from worktreesidebar.ts, the reads
+// from worktreesidebarstore.ts; this file only draws them and turns clicks into picks.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import {
-    ChevronRight,
-    Folder,
-    FolderGit2,
-    GitBranch,
-    PanelLeftClose,
-    PanelLeftOpen,
-    Search,
-    TriangleAlert,
-} from "lucide-react";
+import { ChevronRight, Folder, FolderGit2, GitBranch, Search, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { scopeKey, type DiffScope } from "./diffscope";
@@ -39,21 +30,12 @@ import {
     refreshSidebar,
     resolveAgentCwds,
     sidebarExpandedAtom,
-    sidebarFoldedAtom,
-    sidebarShownFoldedAtom,
     withLiveCount,
     worktreeErrorsAtom,
     worktreesByProjectAtom,
 } from "./worktreesidebarstore";
 
 type WorktreeRow = Extract<SidebarRow, { kind: "worktree" }>;
-
-// The not-a-repository panel's "Choose a source": unfold the sidebar and put the cursor in its filter. The filter is
-// mounted only once the unfold renders, hence the frame.
-export function revealSidebarFilter(): void {
-    globalStore.set(sidebarFoldedAtom, false);
-    requestAnimationFrame(() => document.querySelector<HTMLInputElement>("[data-worktree-filter]")?.focus());
-}
 
 function expand(project: FilesProject): void {
     globalStore.set(sidebarExpandedAtom, (prev) => new Set(prev).add(project.name));
@@ -158,7 +140,7 @@ function AgentRow({
     );
 }
 
-export function WorktreeSidebar({
+export function SourceTree({
     agents,
     projects,
     scope,
@@ -167,6 +149,7 @@ export function WorktreeSidebar({
     onPickAgent,
     onPickProject,
     onPickWorktree,
+    onPicked,
 }: {
     agents: AgentVM[];
     projects: FilesProject[];
@@ -176,14 +159,15 @@ export function WorktreeSidebar({
     onPickAgent: (id: string) => void;
     onPickProject: (p: FilesProject) => void;
     onPickWorktree: (project: string, wt: GitWorktree) => void;
+    // called after any pick, so the dropdown that holds the tree closes
+    onPicked: () => void;
 }) {
-    const folded = useAtomValue(sidebarShownFoldedAtom);
     const expanded = useAtomValue(sidebarExpandedAtom);
     const byProject = useAtomValue(worktreesByProjectAtom);
     const errors = useAtomValue(worktreeErrorsAtom);
     const agentCwds = useAtomValue(agentCwdsAtom);
     const [query, setQuery] = useState("");
-    const searching = !folded && query.trim() !== "";
+    const searching = query.trim() !== "";
 
     // only the loaded lists are defined: undefined is what tells the model a group has not been read
     const worktrees: Record<string, GitWorktree[]> = {};
@@ -204,7 +188,7 @@ export function WorktreeSidebar({
             origin: scope?.repo.origin ?? (focusId ? { kind: "agent", id: focusId } : undefined),
             cwd: filesState?.cwd,
         },
-        query: folded ? "" : query,
+        query,
     };
     const rows = sidebarRows(input);
     const holder = currentProject(input);
@@ -242,7 +226,6 @@ export function WorktreeSidebar({
         }
     }, [searching]);
 
-    const toggleFold = () => globalStore.set(sidebarFoldedAtom, !folded);
     // the user's set, never the query-forced state a row reports while filtering
     const toggleGroup = (p: FilesProject) => {
         if (expanded.has(p.name)) {
@@ -260,77 +243,24 @@ export function WorktreeSidebar({
         if (row.wt.ismain) {
             if (p != null) {
                 onPickProject(p);
+                onPicked();
             }
             return;
         }
         onPickWorktree(row.project, row.wt);
+        onPicked();
     };
     const mainOf = (project: string) => worktrees[project]?.find((wt) => wt.ismain);
     const otherAt = rows.findIndex((r) => r.kind === "other-agents");
 
-    if (folded) {
-        return (
-            <div
-                data-worktree-sidebar="folded"
-                className="flex w-[36px] flex-none flex-col border-r border-edge-faint bg-surface"
-            >
-                <button
-                    onClick={toggleFold}
-                    title="Expand worktrees"
-                    aria-label="Expand worktrees"
-                    className="flex flex-none items-center justify-center py-[8px] text-ink-faint hover:text-foreground"
-                >
-                    <PanelLeftOpen size={15} />
-                </button>
-                <div className="min-h-0 flex-1 overflow-y-auto py-[4px]">
-                    {rows
-                        .filter((r): r is WorktreeRow => r.kind === "worktree")
-                        .map((r) => (
-                            <button
-                                key={r.wt.path}
-                                data-worktree-rail-item={r.wt.path}
-                                title={`${r.project} · ${r.label}`}
-                                onClick={() => pickCheckout(r)}
-                                className={cn(
-                                    "relative flex h-[30px] w-full items-center justify-center hover:bg-surface-hover",
-                                    r.current && "bg-surface-selected"
-                                )}
-                            >
-                                <CheckoutIcon row={r} size={14} />
-                                {(r.wt.changed ?? 0) > 0 ? (
-                                    <span
-                                        data-worktree-dirty
-                                        aria-label="uncommitted changes"
-                                        className="absolute right-[7px] top-[6px] h-[6px] w-[6px] rounded-full bg-warning"
-                                    />
-                                ) : null}
-                            </button>
-                        ))}
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div
-            data-worktree-sidebar="open"
-            className="flex w-[240px] flex-none flex-col border-r border-edge-faint bg-surface"
-        >
-            <div className="flex flex-none items-center gap-[6px] pl-[12px] pr-[6px] pt-[8px]">
-                <span className={cn(REGION_LABEL, "flex-1 text-muted")}>Worktrees</span>
-                <button
-                    onClick={toggleFold}
-                    title="Collapse worktrees"
-                    aria-label="Collapse worktrees"
-                    className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-foreground"
-                >
-                    <PanelLeftClose size={15} />
-                </button>
-            </div>
-            <label className="mx-[8px] my-[6px] flex h-[28px] flex-none items-center gap-[7px] rounded-[7px] border border-edge-mid bg-background px-[8px] focus-within:border-accent">
+        <div data-source-tree className="flex w-full flex-col">
+            <label className="mb-[4px] flex h-[28px] flex-none items-center gap-[7px] rounded-[7px] border border-edge-strong px-[8px] focus-within:border-accent">
                 <Search size={12} className="flex-none text-muted" />
                 <input
                     data-worktree-filter
+                    // the tree mounts only while the dropdown is open, so this is the "focus the filter on open"
+                    autoFocus
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
@@ -348,7 +278,7 @@ export function WorktreeSidebar({
                     className="min-w-0 flex-1 bg-transparent text-[11.5px] text-ink-hi outline-none placeholder:text-ink-faint"
                 />
             </label>
-            <div className="min-h-0 flex-1 overflow-y-auto pb-[12px]">
+            <div className="max-h-[60vh] min-h-0 overflow-y-auto">
                 {rows.map((r, i) => {
                     switch (r.kind) {
                         case "group": {
@@ -403,7 +333,10 @@ export function WorktreeSidebar({
                                     row={r}
                                     // Other agents trails every group, so an agent before it sits under a checkout
                                     indent={otherAt < 0 || i < otherAt}
-                                    onPick={() => onPickAgent(r.agent.id)}
+                                    onPick={() => {
+                                        onPickAgent(r.agent.id);
+                                        onPicked();
+                                    }}
                                 />
                             );
                         case "other-agents":

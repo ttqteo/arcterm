@@ -18,7 +18,7 @@ import { focusedCanvas, focusedCanvasMode, setMarking, stepCanvasBoard } from "@
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { sideJumpTarget, type CompareRow } from "@/app/view/agents/comparerows";
 import { compareOnAtom, compareSelectionAtom, leaveCompare, swapCompareRefs } from "@/app/view/agents/comparestore";
-import { historyCollapsedAtom } from "@/app/view/agents/difflayout";
+import { panelFoldedAtom, panelTabAtom } from "@/app/view/agents/difflayout";
 import { gotoChange } from "@/app/view/agents/diffnav";
 import { diffWrapPathAtom, ignoreWsAtom, splitViewAtom } from "@/app/view/agents/diffoptions";
 import { parseDocReview } from "@/app/view/agents/docreview";
@@ -40,7 +40,7 @@ import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/rails
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
-import { refreshSidebar, sidebarFoldedAtom, sidebarShownFoldedAtom } from "@/app/view/agents/worktreesidebarstore";
+import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
     codeCursorAtom,
@@ -423,6 +423,10 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
         const c = globalStore.get(listNavAtom);
         return c != null && c.surface === ctx.surface;
     };
+    // ↑/↓ with focus in the Diff surface's changed-file list step through its files (changedfilelist.tsx), not the
+    // history rows; j/k stay the history cursor
+    const inFileList = () =>
+        typeof document !== "undefined" && document.activeElement?.closest?.("[data-file-list]") != null;
     const rowPeek = () => globalStore.get(listNavAtom)?.peekTarget?.() ?? null;
     const move = (delta: number) => {
         const c = globalStore.get(listNavAtom);
@@ -465,7 +469,7 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowDown",
             group: "Navigation",
             label: "Next item",
-            when: active,
+            when: (ctx) => active(ctx) && !inFileList(),
             paletteHidden: true,
             run: () => move(1),
         },
@@ -474,7 +478,7 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowUp",
             group: "Navigation",
             label: "Previous item",
-            when: active,
+            when: (ctx) => active(ctx) && !inFileList(),
             paletteHidden: true,
             run: () => move(-1),
         },
@@ -1300,23 +1304,34 @@ export function buildFilesBindings(): Binding[] {
             id: "files:toggle-history",
             keys: "Shift:h",
             group: "Diff",
-            label: "Collapse / expand history",
+            label: "Log tab",
             when: on,
             run: () => {
-                const cur = globalStore.get(historyCollapsedAtom);
-                // from "follow the width", an explicit toggle means "collapse it" — that is the
-                // state the user can see and is reacting to
-                globalStore.set(historyCollapsedAtom, cur == null ? true : !cur);
+                globalStore.set(panelTabAtom, "log");
+                globalStore.set(panelFoldedAtom, false);
+            },
+        },
+        {
+            id: "files:commit-tab",
+            keys: "Shift:c",
+            group: "Diff",
+            label: "Commit tab",
+            when: on,
+            run: () => {
+                globalStore.set(panelTabAtom, "commit");
+                globalStore.set(panelFoldedAtom, false);
+                // the box is mounted by the render this just asked for, hence the frame
+                requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-commit-message]")?.focus());
             },
         },
         {
             id: "files:toggle-sidebar",
             keys: "Shift:b",
             group: "Diff",
-            label: "Fold / unfold worktrees",
+            label: "Show / hide the panel",
             when: on,
             // the fold that shows, flipped and kept as the person's own choice
-            run: () => globalStore.set(sidebarFoldedAtom, !globalStore.get(sidebarShownFoldedAtom)),
+            run: () => globalStore.set(panelFoldedAtom, !globalStore.get(panelShownFoldedAtom)),
         },
         {
             // Escape's order on this surface: clear filters, else leave compare, else go home. The
@@ -1351,11 +1366,17 @@ export function buildFilesBindings(): Binding[] {
             label: "Compare refs",
             when: inHistory,
             run: () => {
-                const el = document.querySelector<HTMLElement>('[data-range-chip="compare"]');
-                if (el == null) {
-                    return false; // no repository scoped -> nothing to compare; let the key pass
+                // Compare lives in the Log tab: show it (and the panel) first, then press its button. When the tab is
+                // already on screen the button is there to press at once.
+                const shown = document.querySelector<HTMLElement>("[data-compare-button]");
+                globalStore.set(panelTabAtom, "log");
+                globalStore.set(panelFoldedAtom, false);
+                if (shown != null) {
+                    shown.click();
+                    return;
                 }
-                el.click();
+                // the button is mounted by the render this just asked for, hence the frame
+                requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-compare-button]")?.click());
             },
         },
         {

@@ -3016,19 +3016,27 @@ const git = (dir, ...args) =>
         },
     });
 
-// the worktree sidebar's persisted fold (worktreesidebarstore.ts): absent = follow the width, else the person's choice
-const SIDEBAR_FOLD_KEY = "cockpit.files.sidebar.folded";
-// A scenario that folds or unfolds the sidebar by hand keeps the value it found and puts it back in teardown.
-const restoreSidebarFold = (h, prev) =>
+// the Diff panel's persisted fold (difflayout.ts): absent = follow the width, else the person's choice
+const PANEL_FOLD_KEY = "cockpit.files.panel.folded";
+// the panel's persisted width and the Log tab's split (difflayout.ts)
+const PANEL_WIDTH_KEY = "cockpit.files.panel.width";
+const LOG_SPLIT_KEY = "cockpit.files.log.split";
+// A scenario that moves one of these by hand keeps the value it found and puts it back in teardown.
+const restoreStored = (h, key, prev) =>
     h.ev(
         prev == null
-            ? `localStorage.removeItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`
-            : `localStorage.setItem(${JSON.stringify(SIDEBAR_FOLD_KEY)}, ${JSON.stringify(prev)})`
+            ? `localStorage.removeItem(${JSON.stringify(key)})`
+            : `localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(prev)})`
     );
+const restorePanelFold = (h, prev) => restoreStored(h, PANEL_FOLD_KEY, prev);
 
-// Picks a Diff surface source the way a person does, in the worktree sidebar: unfold it, open `group` when the row
-// is not shown (a collapsed group hides its checkouts and their agents), then click the row whose
-// data-files-source-option is `name`. False when no such row turns up.
+// The Log tab, for a scenario that picked a source with uncommitted changes: that opens on Commit, and these steps read
+// the history.
+const showLogTab = (h) => h.ev(`document.querySelector('[data-panel-tab="log"]')?.click()`);
+
+// Picks a Diff surface source the way a person does, in the panel's source dropdown: bring the panel back if it is
+// folded away, open the dropdown, open `group` when the row is not shown (a collapsed group hides its checkouts and
+// their agents), then click the row whose data-files-source-option is `name`. False when no such row turns up.
 async function pickFilesSource(h, name, group = name) {
     const option = JSON.stringify(`[data-files-source-option=${JSON.stringify(name)}]`);
     const header = JSON.stringify(`[data-worktree-group=${JSON.stringify(group)}]`);
@@ -3037,8 +3045,12 @@ async function pickFilesSource(h, name, group = name) {
             for (let t = 0; t < ms && !fn(); t += 100) await new Promise((r) => setTimeout(r, 100));
             return fn();
         };
-        document.querySelector('[data-worktree-sidebar="folded"] [title="Expand worktrees"]')?.click();
-        if (!(await until(() => document.querySelector('[data-worktree-sidebar="open"]'), 3000))) return false;
+        document.querySelector('[data-folded-source]')?.click();
+        if (!document.querySelector('[data-source-picker="open"]')) {
+            if (!(await until(() => document.querySelector('[data-source-picker-trigger]'), 3000))) return false;
+            document.querySelector('[data-source-picker-trigger]').click();
+        }
+        if (!(await until(() => document.querySelector('[data-source-picker="open"]'), 3000))) return false;
         if (!(await until(() => document.querySelector(${option}), 1500))) {
             const g = await until(() => document.querySelector(${header}), 5000);
             if (g?.getAttribute("aria-expanded") === "false") g.click();
@@ -3081,16 +3093,16 @@ const gitHistory = {
         await h.rpc("createproject", { name: names.good, path: good });
         await h.rpc("createproject", { name: names.broken, path: broken });
         await h.rpc("createproject", { name: names.notRepo, path: notRepo });
-        // step 10 folds and unfolds the worktree sidebar by hand
-        const prevSidebarFold = await h.ev(`localStorage.getItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
-        return { dirs: [good, broken, notRepo], names, prevSidebarFold };
+        // step 10 opens the panel from the not-a-repository screen
+        const prevPanelFold = await h.ev(`localStorage.getItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
+        return { dirs: [good, broken, notRepo], names, prevPanelFold };
     },
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const pick = async (name) => {
-            if (!(await pickFilesSource(h, name))) throw new Error(`source option "${name}" not in the sidebar`);
+            if (!(await pickFilesSource(h, name))) throw new Error(`source option "${name}" not in the source dropdown`);
             await sleep(1200); // change list + history page
         };
         const rowCount = () => h.ev(`document.querySelectorAll('[data-history-row]').length`);
@@ -3167,43 +3179,44 @@ const gitHistory = {
             `scrollTop=${scrollBack}`
         );
 
-        // The range strip. A chip is drawn only when it has something to switch to: a project has no
-        // session and no run, so exactly two ranges apply. The bar this replaced drew three chips
-        // regardless of context, two of them permanently inert.
-        const chips = await h.ev(
-            `Array.from(document.querySelectorAll('[data-range-chip]')).map(e => e.dataset.rangeChip + ':' + (e.disabled ? 'off' : 'on')).join(',')`
+        // The Log tab carries Compare…, and there is no range strip or right-hand summary any more: the ranges that
+        // applied to a project (working tree, compare) are the tab and the button.
+        const strip = await h.ev(`!!document.querySelector('[data-range-chip], [data-files-range-summary]')`);
+        const compareBtn = await present("[data-compare-button]");
+        rec(
+            "6. the Log tab offers Compare… and the range strip is gone",
+            compareBtn && !strip,
+            `compareButton=${compareBtn} rangeStrip=${strip}`
         );
-        rec("6. a project draws exactly two range chips, both live", chips === "working:on,compare:on", chips);
 
-        // Every chip drawn must be operable — the whole point of the change.
-        const deadChips = await h.ev(
-            `Array.from(document.querySelectorAll('[data-range-chip]')).filter(e => !e.disabled && e.offsetParent === null).length`
+        // The panel and the diff sit side by side, and the diff is the wide one.
+        const layout7 = await h.ev(
+            `(() => { const p = document.querySelector('[data-diff-panel="open"]'); const d = document.querySelector('[data-diff-pane]');
+              return p && d ? { panel: Math.round(p.getBoundingClientRect().width), diff: Math.round(d.getBoundingClientRect().width) } : null; })()`
         );
-        rec("7. no chip is drawn enabled but invisible", deadChips === 0, `hiddenButEnabled=${deadChips}`);
+        rec(
+            "7. one panel beside the diff, which gets the rest of the width",
+            layout7 != null && layout7.panel <= 560 && layout7.diff > layout7.panel * 2,
+            JSON.stringify(layout7)
+        );
 
-        // Switching range is a chip click, it restates the read in words, and the reader keeps their
-        // place across it: the history read is keyed on directory and filters, so a range change costs
-        // one change-list call and zero history calls.
+        // Entering a comparison is a button click, the bar restates the read in words, and the reader keeps their
+        // place across it: the history read is keyed on directory and filters, so a comparison costs no history call.
         await h.ev(`(() => { const el = document.querySelector('[data-history-scroll]'); el.scrollTop = 900; })()`);
         await sleep(400);
         const scrollBeforeRange = await h.ev(`document.querySelector('[data-history-scroll]').scrollTop`);
-        const summaryWorking = await text("[data-files-range-summary]");
-        await h.ev(`document.querySelector('[data-range-chip="compare"]').click()`);
+        await h.ev(`document.querySelector('[data-compare-button]').click()`);
         await sleep(1800);
-        const summaryCompare = await text("[data-files-range-summary]");
+        const barCompare = await text("[data-compare-bar]");
         const comparingNow = await present("[data-compare-column]");
-        await h.ev(`document.querySelector('[data-range-chip="working"]').click()`);
+        await h.ev(`document.querySelector('[data-compare-bar] [aria-label="Leave compare"]').click()`);
         await sleep(1800);
-        const summaryBack = await text("[data-files-range-summary]");
+        const barGone = !(await present("[data-compare-bar]"));
         const scrollAfterRange = await h.ev(`document.querySelector('[data-history-scroll]').scrollTop`);
         rec(
-            "8. the chips switch the read, say so in words, and keep the reader's place",
-            summaryWorking.length > 0 &&
-                comparingNow &&
-                summaryCompare !== summaryWorking &&
-                summaryBack === summaryWorking &&
-                scrollAfterRange === scrollBeforeRange,
-            `working="${summaryWorking}" compare="${summaryCompare}" back="${summaryBack}" scroll=${scrollBeforeRange} -> ${scrollAfterRange}`
+            "8. Compare… opens the compare bar and column, leaving returns to the log, and the reader keeps their place",
+            comparingNow && barCompare.includes("ahead") && barGone && scrollAfterRange === scrollBeforeRange,
+            `bar="${barCompare}" column=${comparingNow} barGone=${barGone} scroll=${scrollBeforeRange} -> ${scrollAfterRange}`
         );
 
         await pick(ctx.names.notRepo);
@@ -3216,25 +3229,22 @@ const gitHistory = {
         );
         await h.shot("cdp-shots/git-history-notrepo.png");
 
-        // "Choose a source" hands the person to the sidebar: folded first, so the unfold is the panel's doing
-        await h.ev(`document.querySelector('[data-worktree-sidebar="open"] [title="Collapse worktrees"]')?.click()`);
-        await sleep(300);
-        const foldedFirst = await present('[data-worktree-sidebar="folded"]');
+        // "Choose a source" hands the person to the source dropdown, with the cursor in its filter
         const chose = await h.ev(
             `(() => { const b = [...document.querySelectorAll('[data-not-a-repo] button')].find((e) => e.textContent.trim() === 'Choose a source');
               if (!b) return false; b.click(); return true; })()`
         );
-        // the filter mounts with the unfold and takes focus on the next frame
+        // the filter mounts with the dropdown and takes focus
         let filterFocused = false;
         for (let waited = 0; waited < 3000 && !filterFocused; waited += 100) {
             await sleep(100);
             filterFocused = await h.ev(`document.activeElement?.hasAttribute('data-worktree-filter') ?? false`);
         }
-        const unfolded = await present('[data-worktree-sidebar="open"]');
+        const dropdownOpen = await present('[data-source-picker="open"]');
         rec(
-            "10. Choose a source unfolds the worktree sidebar and puts the cursor in its filter",
-            foldedFirst && chose && unfolded && filterFocused,
-            `foldedFirst=${foldedFirst} clicked=${chose} unfolded=${unfolded} filterFocused=${filterFocused}`
+            "10. Choose a source opens the source dropdown and puts the cursor in its filter",
+            chose && dropdownOpen && filterFocused,
+            `clicked=${chose} dropdownOpen=${dropdownOpen} filterFocused=${filterFocused}`
         );
         await h.shot("cdp-shots/git-history-choose-source.png");
         await h.ev(`document.activeElement?.blur()`);
@@ -3252,7 +3262,7 @@ const gitHistory = {
         return steps;
     },
     async teardown(h, ctx) {
-        await restoreSidebarFold(h, ctx.prevSidebarFold);
+        await restorePanelFold(h, ctx.prevPanelFold);
         for (const name of Object.values(ctx.names)) {
             try {
                 await h.rpc("deleteproject", { name });
@@ -3266,11 +3276,407 @@ const gitHistory = {
     },
 };
 
+// --- diff-log-tab: the panel's Log tab, the quick look, the folded header, the ⋯ menu and the drags ------
+// docs/superpowers/specs/2026-10-09-diff-commit-log-redesign-design.md §1 and decision 0. A temp repo whose `feature`
+// branch is four commits ahead of `main` (the newest touching two files, one of the others empty), registered as a
+// project, and a fixture agent that works in it and started its session before the newest commit. The boards
+// (.superpowers/design/diff-commit-log/project): step 1 is the quick look, step 2 the Log board (the rail's View diff),
+// step 3 the Loading board, step 5 the Rail board (the folded panel) and step 6 the Compare board.
+const DLT_PROJECT = "verify-dlt-repo";
+const DLT_AGENT = { id: "fx-dlt-agent", name: "dlt-agent" };
+const RAIL_RANGE_KEY = "agent.rail.changesRange";
+
+// a commit at a given moment, so the agent's session can start between the older commits and the newest
+const gitAt = (dir, when, ...args) =>
+    execFileSync("git", ["-C", dir, ...args], {
+        stdio: "pipe",
+        env: {
+            ...process.env,
+            GIT_AUTHOR_NAME: "dana k",
+            GIT_AUTHOR_EMAIL: "dana@example.com",
+            GIT_COMMITTER_NAME: "dana k",
+            GIT_COMMITTER_EMAIL: "dana@example.com",
+            GIT_AUTHOR_DATE: when,
+            GIT_COMMITTER_DATE: when,
+        },
+    });
+
+const diffLogTab = {
+    name: "diff-log-tab",
+    surface: "files",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "verify-dlt-"));
+        const ctx = { cwd: base, repo: join(base, "repo") };
+        try {
+            const stored = (key) => h.ev(`localStorage.getItem(${JSON.stringify(key)})`);
+            ctx.prev = {
+                fold: await stored(PANEL_FOLD_KEY),
+                width: await stored(PANEL_WIDTH_KEY),
+                split: await stored(LOG_SPLIT_KEY),
+                rail: await stored(RAIL_VISIBLE_KEY),
+                range: await stored(RAIL_RANGE_KEY),
+            };
+            mkdirSync(ctx.repo);
+            const ago = (hours) => new Date(Date.now() - hours * 3600_000).toISOString();
+            const put = (name, text) => writeFileSync(join(ctx.repo, name), text);
+            const commit = (when, message, ...flags) => {
+                gitAt(ctx.repo, when, "add", "-A");
+                gitAt(ctx.repo, when, "commit", "-q", ...flags, "-m", message);
+            };
+            gitAt(ctx.repo, ago(5), "init", "-q", "--initial-branch=main");
+            put("a.txt", "a one\n");
+            put("b.txt", "b one\n");
+            put("c.txt", "c one\n");
+            commit(ago(5), "seed the files");
+            gitAt(ctx.repo, ago(4), "checkout", "-q", "-b", "feature");
+            gitAt(ctx.repo, ago(4), "commit", "-q", "--allow-empty", "-m", "an empty commit");
+            put("a.txt", "a one\na two\n");
+            commit(ago(3), "tweak a");
+            put("c.txt", "c one\nc two\n");
+            commit(ago(2), "tweak c");
+            put("a.txt", "a one\na two\na three\n");
+            put("b.txt", "b one\nb two\n");
+            commit(new Date().toISOString(), "touch a and b");
+
+            await h.rpc("createproject", { name: DLT_PROJECT, path: ctx.repo });
+            ctx.project = DLT_PROJECT;
+            await waitForProjectInConfig(h, DLT_PROJECT);
+
+            // outside the repo's file list, so the transcript is not an uncommitted file; it starts the session after
+            // the three older commits and before the newest
+            const transcripts = join(base, "transcripts");
+            mkdirSync(transcripts);
+            const transcriptPath = join(transcripts, "dlt-agent.jsonl");
+            writeFileSync(
+                transcriptPath,
+                JSON.stringify({
+                    type: "user",
+                    cwd: ctx.repo,
+                    timestamp: ago(1),
+                    message: { role: "user", content: "change a and b" },
+                }) + "\n"
+            );
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: DLT_AGENT.id,
+                            name: DLT_AGENT.name,
+                            project: DLT_PROJECT,
+                            task: "change a and b",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            blockId: "fx-blk-dlt",
+                            transcriptPath,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the rail is off by default and persisted, the fixture roster is read once at boot, and View diff must
+            // list the session's changes rather than the branch's
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_RANGE_KEY)}, ${JSON.stringify('"session"')})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
+            try {
+                await h.ev("location.reload()");
+            } catch {
+                /* the evaluate is cut off by the navigation it just started */
+            }
+            await h.ev(`(async () => {
+                for (let i = 0; i < 60 && !document.querySelector("nav button"); i++) {
+                    await new Promise((r) => setTimeout(r, 500));
+                }
+            })()`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            return [{ step: "0. the repo, its project, the fixture agent and the roster", ok: false, detail: ctx.arrangeError }];
+        }
+        try {
+            await this.steps(h, ctx, rec);
+        } catch (e) {
+            // the steps already recorded stay, so the table shows where the run stopped
+            rec("the run stopped", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async steps(h, ctx, rec) {
+        const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+        const ev = (expr) => h.ev(expr);
+        const wait = async (expr, ms = 8000) => {
+            for (let waited = 0; waited < ms; waited += 200) {
+                if (await h.ev(`!!(${expr})`)) return true;
+                await nap(200);
+            }
+            return !!(await h.ev(`!!(${expr})`));
+        };
+        const press = async (key, code, keyCode, modifiers = 0) => {
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", { type, key, code, modifiers, windowsVirtualKeyCode: keyCode });
+            }
+            await nap(300);
+        };
+        const header = () => ev(`(document.querySelector("[data-diff-header]")?.textContent || "").trim()`);
+        const filesCount = () => ev(`(document.querySelector("[data-files-count]")?.textContent || "").trim()`);
+        const zeroFiles = () => ev(`/\\b0 files\\b/i.test(document.body.innerText)`);
+        const tab = () => ev(`document.querySelector('[data-panel-tab][aria-selected="true"]')?.dataset.panelTab ?? null`);
+        const historyBtn = (i) => `document.querySelectorAll("[data-history-row]")[${i}]?.querySelector("button")`;
+        const blur = () => ev(`document.activeElement?.blur?.()`);
+        // a real pointer drag: press on the element's centre, move in steps, release
+        const drag = async (selector, dx, dy) => {
+            const c = await ev(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+                return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+            const mouse = (type, x, y, buttons) =>
+                h.cdp("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y });
+            await mouse("mousePressed", c.x, c.y, 1);
+            for (let i = 1; i <= 5; i++) {
+                await mouse("mouseMoved", c.x + (dx * i) / 5, c.y + (dy * i) / 5, 1);
+            }
+            await mouse("mouseReleased", c.x + dx, c.y + dy, 0);
+            await nap(400);
+        };
+        const pickProject = async () => {
+            const picked = await pickFilesSource(h, DLT_PROJECT);
+            // the agent scope's rows stay on screen until the project's load replaces them: wait for the clean tree's
+            await wait(`document.querySelectorAll("[data-history-row]").length >= 5 && !document.querySelector('[data-history-row="worktree"]')`, 15000);
+            return picked;
+        };
+
+        // 1. a clean project opens on Log with the top commit selected and its first file already showing
+        const picked1 = await pickProject();
+        const files1 = await wait(`document.querySelectorAll("[data-changed-file-row]").length === 2`, 10000);
+        const monaco1 = await wait(`document.querySelector("[data-diff-pane] .monaco-diff-editor")`, 15000);
+        const tab1 = await tab();
+        const topSelected1 = await ev(`${historyBtn(0)}?.className.includes("bg-surface-selected") ?? false`);
+        const pickText1 = await ev(`document.body.innerText.includes("Pick a file")`);
+        const first1 = (await header()).includes("a.txt");
+        await ev(`document.querySelector("[data-file-list]")?.focus()`);
+        await press("ArrowDown", "ArrowDown", 40);
+        const second1 = await wait(`(document.querySelector("[data-diff-header]")?.textContent || "").includes("b.txt")`, 5000);
+        await h.shot("cdp-shots/diff-log-project.png");
+        rec(
+            "1. a clean project opens on Log, the top commit is selected, its first file is open, and ↓ in the list opens the next",
+            picked1 && tab1 === "log" && topSelected1 && files1 && monaco1 && !pickText1 && first1 && second1,
+            JSON.stringify({ picked1, tab1, topSelected1, files1, monaco1, pickText1, first1, second1 })
+        );
+
+        // 2. the agent rail's View diff lands on Log with the session row selected and its first file open
+        await h.goto("agent");
+        await nap(600);
+        const viewed2 = await ev(`(async () => {
+            ${RAIL_LINK_LIB}
+            const row = () => {
+                const tree = document.querySelector("[data-agent-tree]");
+                const name = tree && [...tree.querySelectorAll("div")].find(
+                    (d) => d.textContent.trim() === ${JSON.stringify(DLT_AGENT.name)} && d.children.length === 0
+                );
+                return name ? name.closest(".cursor-pointer") : null;
+            };
+            if (!(await until(row))) return "no agent row in the tree";
+            row().click();
+            const view = () => [...(${RAIL_LINK_RAIL}?.querySelectorAll("button") ?? [])].find((b) => (b.textContent || "").trim().startsWith("View diff"));
+            if (!(await until(view))) return "no View diff in the rail";
+            view().click();
+            return "ok";
+        })()`);
+        const sessionRow2 = await wait(
+            `(document.querySelector('[data-history-row="worktree"]')?.textContent || "").includes("Since session start") &&
+             document.querySelector('[data-history-row="worktree"] button')?.className.includes("bg-surface-selected")`,
+            15000
+        );
+        const monaco2 = await wait(`document.querySelector("[data-diff-pane] .monaco-diff-editor")`, 15000);
+        const first2 = (await header()).includes("a.txt");
+        const tab2 = await tab();
+        await h.shot("cdp-shots/diff-log-tab.png");
+        rec(
+            "2. View diff on the agent's rail opens the Diff surface on Log, with Since session start selected and its first file open",
+            viewed2 === "ok" && tab2 === "log" && sessionRow2 && monaco2 && first2,
+            JSON.stringify({ viewed2, tab2, sessionRow2, monaco2, first2 })
+        );
+
+        // 3. a commit whose files are still being read says so, and never reads 0 files
+        const picked3 = await pickProject();
+        await ev(`window.__commitChangesFault = "hang"`);
+        await ev(`${historyBtn(1)}?.click()`);
+        await nap(600);
+        const loading3 = await filesCount();
+        const zero3 = await zeroFiles();
+        await h.shot("cdp-shots/diff-log-loading.png");
+        rec(
+            "3. while a commit's files load, data-files-count reads Reading this commit's files… and the page has no 0 files",
+            picked3 && loading3 === "Reading this commit's files…" && !zero3,
+            JSON.stringify({ picked3, loading3, zero3 })
+        );
+
+        // 4. a read that fails says so and offers Retry, which loads the list
+        await ev(`window.__commitChangesFault = "error"`);
+        await ev(`${historyBtn(2)}?.click()`);
+        const retry4 = await wait(`document.querySelector("[data-files-retry]")`, 5000);
+        const failed4 = await filesCount();
+        await ev(`document.querySelector("[data-files-retry]")?.click()`);
+        const loaded4 = await wait(`!document.querySelector("[data-files-retry]") && document.querySelector("[data-files-count]")?.textContent.trim() === "1 file"`, 8000);
+        rec(
+            "4. a failed read shows Couldn't read with data-files-retry; Retry loads the list",
+            retry4 && failed4.includes("Couldn't read") && loaded4,
+            JSON.stringify({ retry4, failed4, loaded4 })
+        );
+
+        // 4b. an empty commit has no file to open and says so
+        await ev(`${historyBtn(3)}?.click()`);
+        const empty4 = await wait(`document.querySelector("[data-diff-pane]")?.innerText.includes("This commit changes no files")`, 8000);
+        rec("4b. an empty commit's diff pane reads This commit changes no files", empty4, JSON.stringify({ empty4 }));
+
+        // 5. Shift+B folds the panel away; the header carries the source, the tabs and a file stepper
+        await ev(`${historyBtn(0)}?.click()`);
+        await wait(`document.querySelectorAll("[data-changed-file-row]").length === 2 && (document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt")`, 10000);
+        await press("B", "KeyB", 66, 8);
+        const folded5 = await wait(
+            `document.querySelector('[data-diff-panel="folded"]') && !document.querySelector('[data-diff-panel="open"]') &&
+             document.querySelector("[data-folded-source]") && document.querySelector('[data-folded-tab="commit"]') &&
+             document.querySelector('[data-folded-tab="log"]') && document.querySelector("[data-file-step]")`,
+            4000
+        );
+        await press("D", "KeyD", 68, 8);
+        const split5 = await wait(`document.querySelector("[data-diff-pane] .monaco-diff-editor.side-by-side")`, 5000);
+        await h.shot("cdp-shots/diff-panel-folded.png");
+        const step1 = (await ev(`document.querySelector("[data-file-step]")?.textContent.trim() ?? ""`));
+        await ev(`document.querySelector('[data-file-step] [aria-label="Next file"]')?.click()`);
+        const next5 = await wait(
+            `(document.querySelector("[data-diff-header]")?.textContent || "").includes("b.txt") &&
+             document.querySelector("[data-file-step]")?.textContent.trim() === "file 2 of 2"`,
+            5000
+        );
+        await ev(`document.querySelector('[data-folded-tab="commit"]')?.click()`);
+        const commitTab5 = await wait(`document.querySelector('[data-diff-panel="open"]') && document.querySelector('[data-panel-tab="commit"][aria-selected="true"]')`, 4000);
+        await blur();
+        await press("H", "KeyH", 72, 8);
+        const logTab5 = await wait(`document.querySelector('[data-panel-tab="log"][aria-selected="true"]')`, 3000);
+        // back to unified, which is where the next scenario expects it
+        await press("D", "KeyD", 68, 8);
+        rec(
+            "5. Shift+B folds the panel away: source button, tabs and file i of n show; ‹ › steps the file; a tab unfolds the panel on it; Shift+H is Log",
+            folded5 && split5 && step1 === "file 1 of 2" && next5 && commitTab5 && logTab5,
+            JSON.stringify({ folded5, split5, step1, next5, commitTab5, logTab5 })
+        );
+
+        // 6. c opens the comparison in the Log tab with the first shown file open; ↓ in the list opens the next
+        await press("c", "KeyC", 67);
+        const bar6 = await wait(`document.querySelector("[data-compare-bar]")`, 10000);
+        const listed6 = await wait(`document.querySelectorAll("[data-changed-file-row]").length >= 2`, 10000);
+        const first6 = await wait(`(document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt")`, 8000);
+        // c opened the ref editor with the cursor in it
+        await blur();
+        await ev(`document.querySelector("[data-file-list]")?.focus()`);
+        await press("ArrowDown", "ArrowDown", 40);
+        const second6 = await wait(`(document.querySelector("[data-diff-header]")?.textContent || "").includes("b.txt")`, 5000);
+        await h.shot("cdp-shots/diff-log-compare.png");
+        // and a compare commit whose files are still being read says so too
+        await ev(`window.__commitChangesFault = "hang"`);
+        await ev(`[...document.querySelectorAll("[data-compare-column] button")][1]?.click()`);
+        await nap(600);
+        const loading6 = await filesCount();
+        const zero6 = await zeroFiles();
+        await ev(`document.querySelector("[data-compare-column] button")?.click()`);
+        await blur();
+        await press("Escape", "Escape", 27);
+        const left6 = await wait(`!document.querySelector("[data-compare-bar]")`, 5000);
+        rec(
+            "6. c opens the compare bar with the first file open, ↓ opens the next, a loading compare commit never reads 0 files, Escape leaves",
+            bar6 && listed6 && first6 && second6 && loading6 === "Reading this commit's files…" && !zero6 && left6,
+            JSON.stringify({ bar6, listed6, first6, second6, loading6, zero6, left6 })
+        );
+
+        // 7. the ⋯ menu holds the view options
+        await ev(`${historyBtn(0)}?.click()`);
+        await wait(`document.querySelectorAll("[data-changed-file-row]").length === 2 && (document.querySelector("[data-diff-header]")?.textContent || "").includes("a.txt")`, 10000);
+        await ev(`document.querySelector("[data-diff-options]")?.click()`);
+        const menu7 = await wait(`document.querySelector('[role="menu"]')`, 3000);
+        const items7 = await ev(`[...document.querySelectorAll("[data-diff-options-item]")].map((e) => e.dataset.diffOptionsItem)`);
+        await h.shot("cdp-shots/diff-options.png");
+        const wrap = `document.querySelector('[data-diff-options-item="wrap"]')`;
+        await ev(`${wrap}?.click()`);
+        const on7 = await wait(`${wrap}?.getAttribute("aria-checked") === "true"`, 3000);
+        await ev(`${wrap}?.click()`);
+        const off7 = await wait(`${wrap}?.getAttribute("aria-checked") === "false"`, 3000);
+        await press("Escape", "Escape", 27);
+        const closed7 = await wait(`!document.querySelector('[role="menu"]')`, 3000);
+        rec(
+            "7. data-diff-options lists split, whitespace, wrap, Open in editor and Open in Code; wrap reads on, then off; Escape closes the menu",
+            menu7 && items7.join() === "split,whitespace,wrap,editor,code" && on7 && off7 && closed7,
+            JSON.stringify({ menu7, items7, on7, off7, closed7 })
+        );
+
+        // 8. the panel and the Log split drag
+        await blur();
+        const panelW = () => ev(`Math.round(document.querySelector('[data-diff-panel="open"]').getBoundingClientRect().width)`);
+        const w0 = await panelW();
+        await drag("[data-panel-resize]", 100, 0);
+        const w1 = await panelW();
+        const storedW = await ev(`localStorage.getItem(${JSON.stringify(PANEL_WIDTH_KEY)})`);
+        const histH = () => ev(`Math.round(document.querySelector("[data-history-scroll]").getBoundingClientRect().height)`);
+        const h0 = await histH();
+        await drag("[data-log-split]", 0, 80);
+        const h1 = await histH();
+        const storedS = await ev(`localStorage.getItem(${JSON.stringify(LOG_SPLIT_KEY)})`);
+        rec(
+            "8. dragging data-panel-resize 100px right widens the panel by about 100px; dragging data-log-split 80px down grows the history; both persist",
+            Math.abs(w1 - w0 - 100) <= 4 && storedW != null && storedW !== ctx.prev.width && h1 > h0 && storedS != null && storedS !== ctx.prev.split,
+            JSON.stringify({ w0, w1, storedW, h0, h1, storedS })
+        );
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`diff-log-tab teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the DEV hook", () => h.ev(`(window.__commitChangesFault = undefined, true)`));
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        // the roster fixture goes, the page reloads onto the live roster, and the repo goes with the temp dir
+        await teardownFixtureRun(h, ctx, "diff-log-tab", {
+            what: "restore the panel's fold, width, split and the rail's settings",
+            fn: async () => {
+                if (ctx.prev == null) return;
+                await restorePanelFold(h, ctx.prev.fold);
+                await restoreStored(h, PANEL_WIDTH_KEY, ctx.prev.width);
+                await restoreStored(h, LOG_SPLIT_KEY, ctx.prev.split);
+                await restoreStored(h, RAIL_VISIBLE_KEY, ctx.prev.rail);
+                await restoreStored(h, RAIL_RANGE_KEY, ctx.prev.range);
+            },
+        });
+    },
+};
+
 // --- diff surface: a comparison at the shipped window size ---------------------------------------
-// The layout claim the parity plan was written for: at 1000x700 the history column has to fold to a
-// rail, or a fixed 460px of commits plus the file list leaves the diff pane about 240px and nothing
-// in it can be read. Pinned to that size on purpose - at the harness's roomy 1600x950 default there
-// is room for all three columns and the assertion proves nothing.
+// The layout claim the parity plan was written for: at 1000x700 the left panel has to fold away, or a
+// 340px panel beside the diff leaves the pane about 580px and a long line wraps. Pinned to that size on
+// purpose - at the harness's roomy 1600x950 default there is room for both and the assertion proves nothing.
 const diffCompare = {
     name: "diff-compare",
     surface: "files",
@@ -3313,14 +3719,12 @@ func Submit(id string) error {
         const name = "verify-diff-compare";
         await h.rpc("createproject", { name, path: dir });
 
-        // Deterministic entry. historyCollapsedAtom is an explicit override that a resize deliberately
-        // cannot undo (difflayout.ts), and it is module-level, so it outlives the surface for the whole
-        // life of the page. An earlier run of this scenario would otherwise be the thing that decides
-        // what "at 1000x700" means below, and a reload is the only route back to "follow the width".
-        // The worktree sidebar's fold is the same kind of override, persisted: cleared before the reload, so the
-        // width decides it, and put back in teardown.
-        const prevSidebarFold = await h.ev(`localStorage.getItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
-        await h.ev(`localStorage.removeItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
+        // Deterministic entry. The panel's fold is an explicit override that a resize deliberately cannot undo
+        // (difflayout.ts), and it is persisted, so an earlier run of this scenario would otherwise be the thing that
+        // decides what "at 1000x700" means below. Cleared before the reload, so the width decides it, and put back
+        // in teardown.
+        const prevPanelFold = await h.ev(`localStorage.getItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
+        await h.ev(`localStorage.removeItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
         try {
             await h.ev("location.reload()");
         } catch {
@@ -3333,7 +3737,7 @@ func Submit(id string) error {
             if (up) break;
             await new Promise((r) => setTimeout(r, 500));
         }
-        return { dir, name, prevSidebarFold };
+        return { dir, name, prevPanelFold };
     },
     async assert(h, ctx) {
         const steps = [];
@@ -3362,9 +3766,9 @@ func Submit(id string) error {
             return false;
         };
 
-        // Picked at the harness's roomy size, where the width leaves the sidebar open: unfolding it by hand at
+        // Picked at the harness's roomy size, where the width leaves the panel open: unfolding it by hand at
         // 1000x700 would be an explicit choice, which the narrow width then must not undo.
-        if (!(await pickFilesSource(h, ctx.name))) throw new Error(`source option "${ctx.name}" not in the sidebar`);
+        if (!(await pickFilesSource(h, ctx.name))) throw new Error(`source option "${ctx.name}" not in the source dropdown`);
 
         // the shipped window (src-tauri/tauri.conf.json), which is the whole point of this scenario
         await h.cdp("Emulation.setDeviceMetricsOverride", {
@@ -3375,13 +3779,14 @@ func Submit(id string) error {
         });
         await sleep(1600); // change list + history page
 
-        const railWidth = await widthOf("[data-history-rail]");
-        const expandedRow = await present("[data-history-row]");
-        const sidebarWidth = await widthOf('[data-worktree-sidebar="folded"]');
+        const folded = await present('[data-diff-panel="folded"]');
+        const panelOpen = await present('[data-diff-panel="open"]');
+        const entry = await present("[data-folded-source]");
+        const foldedWidth = await widthOf("[data-diff-pane]");
         rec(
-            "1. at 1000x700 the commit column and the worktree sidebar fold to rails",
-            railWidth > 0 && railWidth <= 48 && !expandedRow && sidebarWidth > 0 && sidebarWidth <= 40,
-            `railWidth=${railWidth} expandedRows=${expandedRow} sidebarRailWidth=${sidebarWidth}`
+            "1. at 1000x700 the panel folds away and the diff takes the whole width",
+            folded && !panelOpen && entry && foldedWidth >= 800,
+            `folded=${folded} panelOpen=${panelOpen} sourceButton=${entry} diffWidth=${foldedWidth}`
         );
 
         await h.cdp("Input.dispatchKeyEvent", {
@@ -3393,23 +3798,28 @@ func Submit(id string) error {
         });
         await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "c", code: "KeyC", windowsVirtualKeyCode: 67 });
         await sleep(2200); // divergence, then the aggregate's own change list
-        const chipOn = await h.ev(
-            `document.querySelector('[data-range-chip="compare"]')?.getAttribute('aria-pressed') === 'true'`
+        const barOn = await present("[data-compare-bar]");
+        rec(
+            "2. c brings the panel back on its Log tab and opens the two-ref comparison there",
+            barOn && (await present('[data-diff-panel="open"]')),
+            `compareBar=${barOn}`
         );
-        rec("2. c switches the range to a two-ref comparison", chipOn, `compareChipPressed=${chipOn}`);
 
-        // the rail stands in for the compare column at this width too, so prove the column is what it
-        // unfolds into rather than a separate history-only affordance
-        await click('[data-history-rail] button[title="Expand history"]');
+        // the comparison survives the panel folding away and coming back: the folded header's source button is the way in.
+        // c opened the ref editor with the cursor in it, where Shift+B would be text
+        await h.ev(`document.activeElement?.blur?.()`);
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "B", code: "KeyB", modifiers: 8, windowsVirtualKeyCode: 66 });
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "B", code: "KeyB", modifiers: 8, windowsVirtualKeyCode: 66 });
+        await sleep(500);
+        const foldedAgain = await present('[data-diff-panel="folded"]');
+        await click("[data-folded-source]");
         await sleep(500);
         const column = await present("[data-compare-column]");
-        await click('button[title="Collapse history"]');
-        await sleep(500);
-        const railBack = await present("[data-history-rail]");
+        const barBack = await present("[data-compare-bar]");
         rec(
-            "3. the rail unfolds into the compare column and back",
-            column && railBack,
-            `column=${column} railBack=${railBack}`
+            "3. the panel folds away and back with the comparison intact",
+            foldedAgain && column && barBack,
+            `foldedAgain=${foldedAgain} column=${column} bar=${barBack}`
         );
 
         await waitFor('[data-changed-file-row="policy.go"]', 8000);
@@ -3442,14 +3852,13 @@ func Submit(id string) error {
     },
     async teardown(h, ctx) {
         // This scenario is the only one that drives module-level Diff state, and both bits it touches
-        // OUTLIVE the surface: compare mode, and an explicit collapse that a resize deliberately cannot
-        // undo (difflayout.ts). Leaving the column explicitly collapsed makes the next Diff scenario read
-        // a rail at 1600x950 and find no [data-history-scroll] at all, which is how this was found.
+        // OUTLIVE the surface: compare mode, and an explicit panel fold that a resize deliberately cannot
+        // undo (difflayout.ts). Leaving the panel explicitly folded makes the next Diff scenario find no
+        // [data-history-scroll] at all at 1600x950, which is how this was found.
         const esc = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
         await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...esc });
         await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...esc });
-        await h.ev(`document.querySelector('[data-history-rail] button[title="Expand history"]')?.click()`);
-        await restoreSidebarFold(h, ctx.prevSidebarFold);
+        await restorePanelFold(h, ctx.prevPanelFold);
         try {
             await h.rpc("deleteproject", { name: ctx.name });
         } catch {
@@ -3464,7 +3873,7 @@ func Submit(id string) error {
     },
 };
 
-// --- diff-worktrees: the Diff surface's worktree sidebar --------------------------------------------
+// --- diff-worktrees: the Diff surface's source dropdown --------------------------------------------
 // A temp repo on main with two linked worktrees beside it: `feature` (one commit ahead, a modified and an untracked
 // file) and `broken` (its .git file names a gitdir that does not exist, so its status read fails). The repo and a plain
 // directory are registered as projects; the fixture roster holds an agent whose transcript says it runs in `feature`
@@ -3482,7 +3891,7 @@ const diffWorktrees = {
         const base = mkdtempSync(join(tmpdir(), "verify-wt-"));
         const ctx = { cwd: base, repo: join(base, "repo"), feature: join(base, "feature"), broken: join(base, "broken") };
         try {
-            ctx.prevFolded = await h.ev(`localStorage.getItem(${JSON.stringify(SIDEBAR_FOLD_KEY)})`);
+            ctx.prevFolded = await h.ev(`localStorage.getItem(${JSON.stringify(PANEL_FOLD_KEY)})`);
             mkdirSync(ctx.repo);
             git(ctx.repo, "init", "-q", "--initial-branch=main");
             writeFileSync(join(ctx.repo, "README.md"), "# worktrees\n");
@@ -3599,11 +4008,11 @@ const diffWorktrees = {
         // git reports a path with either slash; compare lowercased with forward slashes
         const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
         const N = JSON.stringify({ repo: norm(ctx.repo), feature: norm(ctx.feature), broken: norm(ctx.broken), plain: norm(ctx.plain) });
-        // in the page: each sidebar row after a group header, by group, as { group, kind, path, option, text }
+        // in the page: each dropdown row after a group header, by group, as { group, kind, path, option, text }
         const SIDEBAR = `(() => {
             const n = ${N};
             const norm = (p) => (p || "").replace(/\\\\/g, "/").replace(/\\/+$/, "").toLowerCase();
-            const list = document.querySelector('[data-worktree-sidebar="open"] [data-worktree-group]')?.parentElement?.parentElement;
+            const list = document.querySelector('[data-source-tree] [data-worktree-group]')?.parentElement?.parentElement;
             const rows = [];
             let group = null;
             for (const el of list ? list.children : []) {
@@ -3629,11 +4038,20 @@ const diffWorktrees = {
         const ours = async () => (await sidebar()).filter((r) => r.group === DWT_PROJECT);
         const rowFor = (which) => `[...document.querySelectorAll("[data-worktree-row]")].find((e) => ${JSON.stringify(ctx[which] && norm(ctx[which]))} === e.dataset.worktreeRow.replace(/\\\\/g, "/").replace(/\\/+$/, "").toLowerCase())`;
         const groupHeader = (name) => `document.querySelector('[data-worktree-group=${JSON.stringify(name)}]')`;
-        const summary = () => h.ev(`(document.querySelector("[data-files-range-summary]")?.textContent || "").trim()`);
-        // the focusId prop the sidebar renders with: FilesSurface passes focusIdAtom's value straight through
+        // what the source button names (the project or agent, then the branch)
+        const trigger = () => h.ev(`(document.querySelector("[data-source-picker-trigger]")?.textContent || "").trim()`);
+        // the dropdown closes after a pick, so each step that reads the tree opens it again first
+        const openPicker = async () => {
+            await h.ev(`document.querySelector('[data-folded-source]')?.click()`);
+            if (!(await h.ev(`!!document.querySelector('[data-source-picker="open"]')`))) {
+                await h.ev(`document.querySelector("[data-source-picker-trigger]")?.click()`);
+            }
+            return wait(`document.querySelector('[data-source-picker="open"]')`, 3000);
+        };
+        // the focusId prop the panel renders with: FilesSurface passes focusIdAtom's value straight through
         const focusId = () =>
             h.ev(`(() => {
-                const el = document.querySelector("[data-worktree-sidebar]");
+                const el = document.querySelector('[data-diff-panel="open"]');
                 const key = el && Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
                 for (let f = key ? el[key] : null; f; f = f.return) {
                     const p = f.memoizedProps;
@@ -3642,8 +4060,9 @@ const diffWorktrees = {
                 return "unreadable";
             })()`);
 
-        // the sidebar is persisted folded or open; these steps start open, with the project's group expanded
-        await h.ev(`document.querySelector('[data-worktree-sidebar="folded"] [title="Expand worktrees"]')?.click()`);
+        // the panel is persisted folded or open and the dropdown starts closed; these steps start with it open and the
+        // project's group expanded
+        await openPicker();
         if (!(await wait(groupHeader(DWT_PROJECT), 15000))) {
             rec("0. the sidebar lists the fixture project", false, JSON.stringify(await sidebar()));
             return;
@@ -3694,48 +4113,43 @@ const diffWorktrees = {
             JSON.stringify(rows4.filter((r) => r.group === DWT_PROJECT || r.group === "other").map((r) => `${r.group}/${r.which ?? r.option}`))
         );
 
-        // 5. clicking the feature row scopes the surface to that branch; its Uncommitted row lists both files. The
-        // history may settle on the head commit first, so the working tree is picked the way line-review picks it.
+        // 5. clicking the feature row scopes the surface to that checkout. It has uncommitted changes, so the panel
+        // opens on its Commit tab, which lists both files.
         await h.ev(`${rowFor("feature")}.click()`);
-        await wait(`document.querySelector('[data-history-row="worktree"] button')`, 10000);
-        await h.ev(`document.querySelector('[data-history-row="worktree"] button')?.click()`);
         const scoped5 = await wait(
-            `(document.querySelector("[data-files-range-summary]")?.textContent || "").includes("feature") &&
+            `(document.querySelector("[data-source-picker-trigger]")?.textContent || "").includes("feature") &&
              document.querySelector('[data-changed-file-row="feature.txt"]') && document.querySelector('[data-changed-file-row="notes.txt"]')`,
             10000
         );
-        const summary5 = await summary();
+        const trigger5 = await trigger();
+        const tab5 = await h.ev(`document.querySelector('[data-panel-tab][aria-selected="true"]')?.dataset.panelTab ?? null`);
         const files5 = await h.ev(`[...document.querySelectorAll("[data-changed-file-row]")].map((e) => e.dataset.changedFileRow)`);
         await shot("05-feature");
         rec(
-            "5. clicking the feature row names feature in data-files-range-summary and lists both uncommitted files",
-            scoped5,
-            JSON.stringify({ summary5, files5 })
+            "5. clicking the feature row names feature on the source button and lists both uncommitted files on the Commit tab",
+            scoped5 && tab5 === "commit",
+            JSON.stringify({ trigger5, tab5, files5 })
         );
 
-        // 6. clicking wt-agent scopes to the agent and focuses it. As in step 5 the history may settle on a commit, so
-        // its top row is picked to read the session range itself.
+        // 6. clicking wt-agent scopes to the agent and focuses it; its Log tab's top row reads the session range
+        await openPicker();
         await h.ev(`document.querySelector('[data-files-source-option=${JSON.stringify(DWT_AGENT.name)}]')?.click()`);
-        await wait(
-            `(document.querySelector("[data-files-range-summary]")?.textContent || "").trim() !== ${JSON.stringify(summary5)}`,
-            10000
-        );
-        await wait(`document.querySelector('[data-history-row="worktree"] button')`, 10000);
-        await h.ev(`document.querySelector('[data-history-row="worktree"] button')?.click()`);
         const scoped6 = await wait(
-            `(document.querySelector("[data-files-range-summary]")?.textContent || "").trim().startsWith("worktree against ")`,
+            `(document.querySelector("[data-source-picker-trigger]")?.textContent || "").includes(${JSON.stringify(DWT_AGENT.name)}) &&
+             (document.querySelector('[data-history-row="worktree"]')?.textContent || "").includes("Since session start")`,
             10000
         );
-        const summary6 = await summary();
+        const trigger6 = await trigger();
         const focus6 = await focusId();
         await shot("06-agent");
         rec(
-            "6. clicking wt-agent changes the range summary to its session and sets focusIdAtom to its id",
+            "6. clicking wt-agent names it on the source button, reads Since session start on the Log tab and sets focusIdAtom to its id",
             scoped6 && focus6 === DWT_AGENT.id,
-            JSON.stringify({ summary5, summary6, focus6 })
+            JSON.stringify({ trigger5, trigger6, focus6 })
         );
 
         // 7. the group header folds and unfolds the group's rows
+        await openPicker();
         await h.ev(`${groupHeader(DWT_PROJECT)}.click()`);
         const hidden7 = await wait(`!${rowFor("repo")} && !${rowFor("feature")} && !${rowFor("broken")}`, 3000);
         await shot("07-collapsed");
@@ -3793,21 +4207,17 @@ const diffWorktrees = {
             JSON.stringify({ blurred8, failed10, consumed10, cleared10 })
         );
 
-        // 11. Shift+B folds to the rail, where the changed checkout carries the dot, and unfolds again
+        // 11. Shift+B folds the whole panel away, leaving the diff's header to name the source; Shift+B again restores it
         await press("B", "KeyB", 66, 8);
-        const folded11 = await wait(`document.querySelector('[data-worktree-sidebar="folded"]')`, 3000);
-        const dirty11 = await h.ev(
-            `[...document.querySelectorAll("[data-worktree-rail-item]")].some((e) =>
-                e.dataset.worktreeRailItem.replace(/\\\\/g, "/").replace(/\\/+$/, "").toLowerCase() === ${JSON.stringify(norm(ctx.feature))} &&
-                !!e.querySelector("[data-worktree-dirty]"))`
-        );
-        await shot("11-rail");
+        const folded11 = await wait(`document.querySelector('[data-diff-panel="folded"]') && !document.querySelector('[data-diff-panel="open"]')`, 3000);
+        const named11 = await h.ev(`(document.querySelector("[data-folded-source]")?.textContent || "").includes(${JSON.stringify(DWT_AGENT.name)})`);
+        await shot("11-folded");
         await press("B", "KeyB", 66, 8);
-        const open11 = await wait(`document.querySelector('[data-worktree-sidebar="open"]')`, 3000);
+        const open11 = await wait(`document.querySelector('[data-diff-panel="open"]')`, 3000);
         rec(
-            "11. Shift+B folds to the rail, where the feature item carries data-worktree-dirty; Shift+B again restores the sidebar",
-            folded11 && dirty11 && open11,
-            JSON.stringify({ folded11, dirty11, open11 })
+            "11. Shift+B folds the panel away, where the source button names wt-agent; Shift+B again restores the panel",
+            folded11 && named11 && open11,
+            JSON.stringify({ folded11, named11, open11 })
         );
     },
     async teardown(h, ctx) {
@@ -3829,11 +4239,11 @@ const diffWorktrees = {
                 console.error(`diff-worktrees teardown: remove project ${p.name} failed: ${e?.message ?? e}`);
             }
         }
-        // the roster fixture goes, the page reloads onto the live roster with the sidebar's fold as it was, and the
+        // the roster fixture goes, the page reloads onto the live roster with the panel's fold as it was, and the
         // repo with its worktrees goes with the temp dir
         await teardownFixtureRun(h, ctx, "diff-worktrees", {
-            what: "restore the sidebar's fold",
-            fn: () => restoreSidebarFold(h, ctx.prevFolded),
+            what: "restore the panel's fold",
+            fn: () => restorePanelFold(h, ctx.prevFolded),
         });
         if (ctx.plain) rmSync(ctx.plain, { recursive: true, force: true });
     },
@@ -12896,9 +13306,9 @@ const lineReview = {
         );
 
         // 12. compare hides the control; leaving it brings it back
-        await click(`document.querySelector('[data-range-chip="compare"]')`);
+        await click(`document.querySelector('[data-compare-button]')`);
         const hidden12 = await wait(
-            `document.querySelector("[data-compare-column], [data-history-rail]") && !document.querySelector("[data-diff-mode]")`,
+            `document.querySelector("[data-compare-bar]") && !document.querySelector("[data-diff-mode]")`,
             8000
         );
         await shot("12-compare");
@@ -13071,6 +13481,9 @@ const lineReview = {
         // 19. scoped to the project, two live agents: Send opens a menu of both; picking one sends to it
         await reloadRoster({ live: LR_LIVE });
         const scoped19 = await pickFilesSource(h, LR_PROJECT);
+        // the project has uncommitted changes, so the panel opens on Commit; the steps below read the history
+        await wait(`!!document.querySelector('[data-panel-tab="log"]')`, 5000);
+        await showLogTab(h);
         await nap(500); // the agent scope's history rows stay on screen until the project's load replaces them
         const history19 = await wait(`document.querySelectorAll("[data-history-row]").length >= 3`, 15000);
         const list19 = await toUncommittedReview();
@@ -25096,6 +25509,7 @@ export const SCENARIOS = [
     tuiLeader,
     tuiFullscreen,
     gitHistory,
+    diffLogTab,
     diffCompare,
     diffWorktrees,
     surfaceSmoke,

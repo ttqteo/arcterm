@@ -17,6 +17,7 @@ import { devCommitFault, type ChangesStatus } from "./changesstatus";
 import { compareActiveChangesAtom, compareActiveChangesStatusAtom, compareOnAtom } from "./comparestore";
 import { historyKey, type LoadHistoryOpts } from "./diffscope";
 import { consumeFileLink, filesStateAtom, selectFile } from "./filesstore";
+import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 import {
     FILTER_DEBOUNCE_MS,
@@ -416,7 +417,8 @@ export async function selectCommit(cwd: string, hash: string): Promise<void> {
     if (hash === WORKING_TREE) {
         // the working tree's file list is already loaded by filesstore for the active scope; just pick
         // its first file so pane 3 is never blank
-        const first = globalStore.get(filesStateAtom)?.changes?.files[0]?.path;
+        const working = globalStore.get(filesStateAtom)?.changes;
+        const first = working ? firstShownPath(working.files) : undefined;
         if (first) {
             globalStore.set(selectedFileAtom, first);
             selectFile(first);
@@ -438,7 +440,7 @@ export async function selectCommit(cwd: string, hash: string): Promise<void> {
         const changes = parseGitChanges(ch.statusz, ch.numstat);
         globalStore.set(commitChangesAtom, changes);
         globalStore.set(commitChangesStatusAtom, "ready");
-        const first = changes.files[0]?.path;
+        const first = firstShownPath(changes.files);
         if (first) {
             selectCommitFile(hash, first);
         }

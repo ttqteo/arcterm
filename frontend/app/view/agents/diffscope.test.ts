@@ -7,6 +7,7 @@ import {
     defaultRangeFor,
     historyKey,
     historyOptsFor,
+    measuredAgainst,
     originCwd,
     originKey,
     rangeKey,
@@ -314,5 +315,46 @@ describe("scopeProjectName", () => {
         expect(scopeProjectName(agentScope.repo.origin, projects, "D:\\repo")).toBe("waveterm");
         expect(scopeProjectName(agentScope.repo.origin, projects, "D:/elsewhere")).toBe("");
         expect(scopeProjectName(undefined, projects, "")).toBe("");
+    });
+});
+
+describe("measuredAgainst", () => {
+    const working: DiffRange = { kind: "working" };
+    const session: DiffRange = { kind: "session", agentId: "a1" };
+    const compare = (form: "mergebase" | "tips"): DiffRange => ({
+        kind: "compare",
+        base: "main",
+        head: "feat/x",
+        form,
+        from: working,
+    });
+
+    it("names a selected commit by its short hash", () => {
+        expect(measuredAgainst({ range: working, commit: "310d518abcdef" })).toBe("in 310d518");
+        expect(measuredAgainst({ range: session, commit: "310d518abcdef" })).toBe("in 310d518");
+    });
+
+    it("says what a working-tree file is measured against", () => {
+        expect(measuredAgainst({ range: working, commit: null })).toBe("vs HEAD");
+    });
+
+    it("says a session row reaches back to the session start", () => {
+        expect(measuredAgainst({ range: session, commit: null })).toBe("since session start");
+    });
+
+    it("says a run row reaches back to the run's base", () => {
+        expect(measuredAgainst({ range: { kind: "run", runId: "r1", baseCommit: "9f2c1de0" }, commit: null })).toBe(
+            "since run base 9f2c1de"
+        );
+        expect(measuredAgainst({ range: { kind: "run", runId: "r1", baseCommit: "" }, commit: null })).toBe("vs HEAD");
+    });
+
+    it("names both refs of a comparison, head first, as the compare bar does", () => {
+        expect(measuredAgainst({ range: compare("mergebase"), commit: null })).toBe("feat/x vs main");
+        expect(measuredAgainst({ range: compare("tips"), commit: null })).toBe("feat/x vs main, tip to tip");
+    });
+
+    it("names a compare commit by its hash, not the comparison", () => {
+        expect(measuredAgainst({ range: compare("mergebase"), commit: "abcdef1234" })).toBe("in abcdef1");
     });
 });

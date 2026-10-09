@@ -271,19 +271,20 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 
 | Keys | Action |
 |---|---|
-| `j` / `k` (or `↓` / `↑`) | Next / previous commit or file |
+| `j` / `k` (or `↓` / `↑`) | Next / previous commit. In a file list, `↓` / `↑` open the next / previous file at once |
 | `Enter` | Open the file under the cursor |
 | `/` | Filter history (`Esc` clears) |
 | `Shift`+`G` | Toggle the history graph |
 | `Mod`+`G` `g` | Top of history |
-| `Shift`+`H` | Collapse / expand history |
-| `Shift`+`B` | Fold the worktree sidebar to a rail / unfold it (it starts folded in a narrow window; your choice is kept) |
+| `Shift`+`C` | Commit tab |
+| `Shift`+`H` | Log tab |
+| `Shift`+`B` | Hide / show the left panel (it starts hidden in a narrow window; your choice is kept) |
 | `Shift`+`N` / `Shift`+`P` | Next / previous change in the open diff |
 | `Shift`+`D` | Split / unified |
 | `Shift`+`W` | Ignore whitespace |
 | `Alt`+`Z` | Toggle word wrap for the open file (shared with Code) |
-| `r` | Refresh changes, history and the worktree sidebar |
-| `c` | In history: compare refs. In compare: change the compared refs |
+| `r` | Refresh changes, history and the source tree |
+| `c` | In the log: compare refs (the Log tab's Compare…). In compare: change the compared refs |
 | `Shift`+`S` | Swap compare refs (in compare) |
 | `Tab` | Switch compare side (in compare) |
 | `Mod`+`Enter` | Send the line comments to the agent (outside a comment box; inside one it adds the comment, `Esc` cancels) |

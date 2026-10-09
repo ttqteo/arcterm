@@ -2,33 +2,28 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pane 2 of the Diff surface (Wave-git-review.dc.html): who made the selected commit, when, and which
-// files it touched. Read-only — no stage control, no message box, nothing that authors a commit.
+// The bottom half of the panel's Log tab: who made the selected commit, when, and which files it touched. Authoring a
+// commit is the Commit tab's job, not this pane's.
 
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
-import { Copy } from "lucide-react";
+import { Copy, Loader2 } from "lucide-react";
 import { formatAgo } from "./agentsviewmodel";
 import { ChangedFileList, TreeModeToggle } from "./changedfilelist";
 import { type ChangesStatus } from "./changesstatus";
 import { filesListLabel } from "./fileslistlabel";
 import { type GitChanges } from "./gitstatus";
 import { WORKING_TREE, refChipClass, type HistoryRow } from "./historyrows";
-import { SubLabel } from "./sectionlabel";
-
-function initials(name: string): string {
-    return name.slice(0, 2).toUpperCase();
-}
 
 function WorkingTreeHeader({ row, caption }: { row: HistoryRow; caption?: string }) {
     return (
         <>
-            <div className={cn(REGION_LABEL, "mb-[8px] flex items-center gap-[7px] text-warning")}>
+            <div className={cn(REGION_LABEL, "mb-[6px] flex items-center gap-[7px] text-warning")}>
                 <span className="h-[9px] w-[9px] rounded-full border border-dashed border-warning" />
                 Working tree
             </div>
-            <div className="text-[14px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
-            {caption ? <div className="mt-[6px] text-[12px] text-ink-mid">{caption}</div> : null}
+            <div className="text-[12.5px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
+            {caption ? <div className="mt-[4px] text-[11px] leading-[1.45] text-muted">{caption}</div> : null}
         </>
     );
 }
@@ -36,35 +31,29 @@ function WorkingTreeHeader({ row, caption }: { row: HistoryRow; caption?: string
 function CommitHeader({ row }: { row: HistoryRow }) {
     return (
         <>
-            <div className="mb-[9px] flex items-center gap-[8px]">
-                <span className="rounded-[5px] border border-accent/30 bg-accentbg px-[7px] py-[2px] font-mono text-[12px] font-semibold text-accent-soft">
-                    {row.hash.slice(0, 7)}
-                </span>
+            <div className="mb-[6px] flex items-center gap-[4px] text-[11px] text-muted">
                 <button
                     onClick={() => fireAndForget(() => navigator.clipboard.writeText(row.hash))}
                     title="Copy hash"
                     aria-label="Copy hash"
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded-[5px] text-muted hover:bg-surface hover:text-foreground"
+                    className="group flex items-center gap-[4px] rounded-[4px] font-mono text-ink-mid hover:text-ink-hi"
                 >
-                    <Copy size={13} />
+                    {row.hash.slice(0, 7)}
+                    <Copy size={11} className="opacity-0 group-hover:opacity-100" />
                 </button>
-                <div className="flex-1" />
-                <span className="text-[11px] tabular-nums text-muted">{formatAgo(Date.now() - row.ts)}</span>
+                <span>·</span>
+                <span className="min-w-0 truncate">{row.author}</span>
+                <span>·</span>
+                <span className="flex-none tabular-nums">{formatAgo(Date.now() - row.ts)}</span>
             </div>
-            <div className="mb-[8px] text-[14px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
-            <div className="flex items-center gap-[8px]">
-                <span className="flex h-[20px] w-[20px] items-center justify-center rounded-full bg-surface-raised text-[10.5px] font-bold text-ink-mid">
-                    {initials(row.author)}
-                </span>
-                <span className="text-[12px] text-ink-mid">{row.author}</span>
-            </div>
+            <div className="text-[12.5px] font-semibold leading-[1.4] text-ink-hi">{row.subject}</div>
             {row.refs.length > 0 ? (
-                <div className="mt-[9px] flex flex-wrap gap-[6px]">
+                <div className="mt-[7px] flex flex-wrap gap-[6px]">
                     {row.refs.map((r) => (
                         <span
                             key={r.label}
                             className={cn(
-                                "rounded-[4px] border px-[6px] py-[2px] text-[10.5px] font-semibold",
+                                "rounded-[5px] border px-[5px] text-[10px] font-semibold leading-[16px]",
                                 refChipClass(r.kind)
                             )}
                         >
@@ -108,13 +97,21 @@ export function CommitPane({
     const label = filesListLabel(listStatus, changes);
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex-none border-b border-edge-faint px-[15px] pb-[12px] pt-[14px]">
+            <div className="flex-none border-b border-edge-faint px-[12px] pb-[9px] pt-[8px]">
                 {isWorkingTree ? <WorkingTreeHeader row={row} caption={caption} /> : <CommitHeader row={row} />}
             </div>
-            <div className="flex flex-none items-center gap-[9px] px-[15px] pb-[8px] pt-[10px]">
-                <SubLabel>
-                    <span data-files-count>{label.text}</span>
-                </SubLabel>
+            <div className="flex flex-none items-center gap-[8px] px-[12px] pb-[6px] pt-[8px]">
+                <span
+                    data-files-count
+                    role={listStatus === "loading" ? "status" : undefined}
+                    className={cn(
+                        "flex items-center gap-[7px] text-[11px] text-ink-mid",
+                        listStatus !== "loading" && "font-semibold"
+                    )}
+                >
+                    {listStatus === "loading" ? <Loader2 size={12} className="animate-spin" /> : null}
+                    {label.text}
+                </span>
                 <div className="flex-1" />
                 {label.counts ? (
                     <>
@@ -128,7 +125,7 @@ export function CommitPane({
                 ) : null}
                 <TreeModeToggle />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-[8px] pb-[20px]">
+            <div className="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[12px]">
                 {listStatus === "failed" ? (
                     <div className="flex flex-col items-start gap-[8px] px-[7px] py-[6px]">
                         <button

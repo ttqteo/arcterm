@@ -121,20 +121,20 @@ export function RefPicker({
         // The swap sits outside the chip's own button rather than inside it — nesting a button in a
         // button is invalid, and clicking swap must not also open the editor.
         return (
-            <div className={cn("flex items-center", CHIP)}>
+            <div className={cn("flex min-w-0 flex-1 items-center", CHIP)}>
                 {/* base first, the order `git diff base...head` reads in and the order the summary
                     line beside this chip prints — the two used to name the same pair backwards */}
                 <button
                     data-ref-pair
                     onClick={onEdit}
                     title="Change compare refs (c)"
-                    className="flex items-center gap-[8px] rounded-l-[9px] px-[10px] py-[6px] text-[12px] hover:bg-surface-hover"
+                    className="flex min-w-0 flex-1 items-center gap-[8px] rounded-l-[9px] px-[10px] py-[5px] text-[12px] hover:bg-surface-hover"
                 >
                     <span className={cn("h-[7px] w-[7px] flex-none rounded-full", SIDE_DOT.base)} />
-                    <span className={SIDE_TEXT.base}>{base || "—"}</span>
+                    <span className={cn("min-w-0 truncate", SIDE_TEXT.base)}>{base || "—"}</span>
                     <span className="text-muted">…</span>
                     <span className={cn("h-[7px] w-[7px] flex-none rounded-full", SIDE_DOT.head)} />
-                    <span className={SIDE_TEXT.head}>{head || "—"}</span>
+                    <span className={cn("min-w-0 truncate", SIDE_TEXT.head)}>{head || "—"}</span>
                     <ChevronDown size={12} className="flex-none text-muted" />
                 </button>
                 <span className="h-[18px] w-px flex-none bg-accent/30" />
@@ -155,12 +155,11 @@ export function RefPicker({
             onCancel();
         }
     };
-    const field = "w-[150px] bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-ink-faint";
+    const field = "w-full min-w-0 bg-transparent text-[12px] text-ink-hi outline-none placeholder:text-ink-faint";
 
     return (
-        <div className={cn("relative flex items-center gap-[8px] px-[11px] py-[6px]", CHIP)}>
-            <span className={cn(REGION_LABEL, "text-muted")}>Compare</span>
-            <div className="relative">
+        <div className={cn("relative flex min-w-0 flex-1 items-center gap-[6px] px-[8px] py-[5px]", CHIP)}>
+            <div className="relative min-w-0 flex-1">
                 <input
                     ref={baseRef}
                     value={draftBase}
@@ -184,7 +183,7 @@ export function RefPicker({
                     setDraftHead(draftBase);
                 }}
             />
-            <div className="relative">
+            <div className="relative min-w-0 flex-1">
                 <input
                     value={draftHead}
                     onChange={(e) => setDraftHead(e.target.value)}

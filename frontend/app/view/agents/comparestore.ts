@@ -21,6 +21,7 @@ import { AGGREGATE } from "./comparerows";
 import type { CompareForm } from "./diffcontent";
 import type { DiffRange } from "./diffscope";
 import { diffScopeAtom } from "./diffscopeatom";
+import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 
 export interface CompareRefs {
@@ -188,7 +189,7 @@ export async function setCompareRefs(cwd: string, base: string, head: string): P
         });
         const changes = parseGitChanges(agg.statusz, agg.numstat);
         globalStore.set(compareAggregateAtom, changes);
-        const first = changes.files[0]?.path;
+        const first = firstShownPath(changes.files);
         if (first) {
             selectCompareFile(first);
         }
@@ -285,7 +286,8 @@ export async function selectCompareRow(cwd: string, rowId: string): Promise<void
     globalStore.set(compareSelectionAtom, rowId);
     globalStore.set(compareSelectedFileAtom, null);
     if (rowId === AGGREGATE) {
-        const first = globalStore.get(compareAggregateAtom)?.files[0]?.path;
+        const aggregate = globalStore.get(compareAggregateAtom);
+        const first = aggregate ? firstShownPath(aggregate.files) : undefined;
         if (first) {
             selectCompareFile(first);
         }
@@ -306,7 +308,7 @@ export async function selectCompareRow(cwd: string, rowId: string): Promise<void
         const changes = parseGitChanges(ch.statusz, ch.numstat);
         globalStore.set(commitChangesAtom, changes);
         globalStore.set(commitChangesStatusAtom, "ready");
-        const first = changes.files[0]?.path;
+        const first = firstShownPath(changes.files);
         if (first) {
             selectCompareFile(first);
         }

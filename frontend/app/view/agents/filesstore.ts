@@ -13,6 +13,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { resolveCwd } from "./agentcwdresolve";
 import { ensureSessionStart } from "./agentsessionstore";
 import { originCwd, scopeKey, type DiffOrigin, type DiffRange, type DiffScope } from "./diffscope";
+import { firstShownPath } from "./filestep";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 
 export interface FilesState {
@@ -110,7 +111,7 @@ async function loadChangesForCwd(token: string, cwd: string | null, opts: LoadOp
             // Deliberately always the first file: a deep link is claimed by the history store, which owns
             // the *visible* selection. Honouring it here as well would load one file's diff and then have
             // the history load pick another, so the pane showed whichever RPC landed last.
-            const first = changes?.files[0]?.path;
+            const first = changes ? firstShownPath(changes.files) : undefined;
             if (first) {
                 selectFile(first);
             }

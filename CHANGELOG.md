@@ -36,6 +36,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- Diff is one panel beside a wide diff instead of four columns. At the panel's top a source dropdown (the project,
+  worktree and agent tree) replaces the Worktrees column; under it, Commit and Log tabs. Log holds the history graph
+  over the selected commit, split by a divider you can drag, and Compare… lives there; the range strip and the
+  right-hand summary are gone, and the diff's header is one line with a `⋯` menu for the view options. Drag the
+  panel's right edge to resize it. `Shift`+`B` hides the whole panel: the diff then takes the full width and its
+  header carries the source, the tabs and a file stepper. `Shift`+`H` opens the Log tab and `Shift`+`C` the Commit
+  tab.
+- Diff: choosing a source, a commit, the session row or a comparison opens its first file at once, and `↑`/`↓` in a
+  file list open the next or previous file without Enter.
 - A Claude agent asks you before it starts a subagent, naming it and warning that one can cost millions of tokens
   (agents in an engine run are not asked); the 10-subagent cap per session, which had stopped holding, holds again.
 - The app bar is slimmer: 38px instead of 46px, with a narrower search box and smaller buttons, and the 5-hour
