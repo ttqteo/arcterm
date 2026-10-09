@@ -136,3 +136,19 @@ func (ws *WshServer) GitFetchCommand(ctx context.Context, data wshrpc.CommandGit
 	}
 	return &wshrpc.CommandGitFetchRtnData{FetchedAt: r.FetchedAt, Failure: r.Failure, IsRepo: r.IsRepo}, nil
 }
+
+func (ws *WshServer) GitCommitCommand(ctx context.Context, data wshrpc.CommandGitCommitData) (*wshrpc.CommandGitCommitRtnData, error) {
+	r, err := gitinfo.Commit(ctx, data.Cwd, data.Message, data.Paths, data.Amend)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandGitCommitRtnData{Hash: r.Hash, Failure: r.Failure}, nil
+}
+
+func (ws *WshServer) GitCommitMessageCommand(ctx context.Context, data wshrpc.CommandGitCommitMessageData) (*wshrpc.CommandGitCommitMessageRtnData, error) {
+	msg, err := gitinfo.CommitMessage(ctx, data.Cwd, data.Ref)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandGitCommitMessageRtnData{Message: msg}, nil
+}

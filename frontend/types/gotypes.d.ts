@@ -1161,6 +1161,31 @@ declare global {
         isrepo: boolean;
     };
 
+    // wshrpc.CommandGitCommitData
+    type CommandGitCommitData = {
+        cwd: string;
+        message: string;
+        paths: string[];
+        amend?: boolean;
+    };
+
+    // wshrpc.CommandGitCommitMessageData
+    type CommandGitCommitMessageData = {
+        cwd: string;
+        ref?: string;
+    };
+
+    // wshrpc.CommandGitCommitMessageRtnData
+    type CommandGitCommitMessageRtnData = {
+        message: string;
+    };
+
+    // wshrpc.CommandGitCommitRtnData
+    type CommandGitCommitRtnData = {
+        hash?: string;
+        failure?: GitFailure;
+    };
+
     // wshrpc.CommandGitCompareChangesData
     type CommandGitCompareChangesData = {
         cwd: string;

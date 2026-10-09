@@ -648,9 +648,21 @@ func GitChangesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitChangesData, opt
 	return resp, err
 }
 
+// command "gitcommit", wshserver.GitCommitCommand
+func GitCommitCommand(w *wshutil.WshRpc, data wshrpc.CommandGitCommitData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitCommitRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitCommitRtnData](w, "gitcommit", data, opts)
+	return resp, err
+}
+
 // command "gitcommitchanges", wshserver.GitCommitChangesCommand
 func GitCommitChangesCommand(w *wshutil.WshRpc, data wshrpc.CommandGitCommitChangesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitCommitChangesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitCommitChangesRtnData](w, "gitcommitchanges", data, opts)
+	return resp, err
+}
+
+// command "gitcommitmessage", wshserver.GitCommitMessageCommand
+func GitCommitMessageCommand(w *wshutil.WshRpc, data wshrpc.CommandGitCommitMessageData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGitCommitMessageRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGitCommitMessageRtnData](w, "gitcommitmessage", data, opts)
 	return resp, err
 }
 

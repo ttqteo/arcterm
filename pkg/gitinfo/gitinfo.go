@@ -1346,6 +1346,119 @@ func failureOf(args []string, err error) *GitFailure {
 	return f
 }
 
+const commitTimeout = 60 * time.Second // hooks run inside it
+
+// CommitResult is a commit's outcome. A refusal from git (a hook, a lock, nothing to commit) is data, as with Fetch:
+// the surface draws git's own words.
+type CommitResult struct {
+	Hash    string      `json:"hash,omitempty"`
+	Failure *GitFailure `json:"failure,omitempty"`
+}
+
+// runInput is run with stdin and git's whole output: a commit message travels on stdin so no quoting or argument
+// limit touches it, and a hook may write its reason to either stream. Paths are literal: a ticked
+// "app/[id]/page.tsx" must not also match "app/i/page.tsx" and carry that change into the commit.
+func runInput(ctx context.Context, cwd, input string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"--literal-pathspecs", "-c", "core.quotePath=false", "-C", cwd}, args...)...)
+	cmd.Stdin = strings.NewReader(input)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// statusPaths reads a porcelain -z listing into the paths it names (a rename's source included) and the untracked
+// ones.
+func statusPaths(statusZ string) (known, untracked map[string]bool) {
+	known, untracked = map[string]bool{}, map[string]bool{}
+	parts := strings.Split(statusZ, "\x00")
+	for i := 0; i < len(parts); i++ {
+		e := parts[i]
+		if len(e) < 4 {
+			continue
+		}
+		known[e[3:]] = true
+		if e[:2] == "??" {
+			untracked[e[3:]] = true
+		}
+		if (e[0] == 'R' || e[0] == 'C') && i+1 < len(parts) {
+			i++
+			known[parts[i]] = true
+		}
+	}
+	return known, untracked
+}
+
+func refused(command, why string) *CommitResult {
+	return &CommitResult{Failure: &GitFailure{Command: command, ExitCode: -1, Stderr: why}}
+}
+
+// Commit records exactly paths (cwd-relative, as GetChanges lists them) with --only, so what another session
+// staged for other paths stays in the index and out of this commit. Untracked paths are added first, since --only
+// takes only paths git knows, and unstaged again when the commit fails. A path the status does not list, or a nested
+// repository, is refused before git runs.
+func Commit(ctx context.Context, cwd, message string, paths []string, amend bool) (*CommitResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, commitTimeout)
+	defer cancel()
+	if strings.TrimSpace(message) == "" {
+		return refused("git commit", "the commit message is empty"), nil
+	}
+	if len(paths) == 0 {
+		return refused("git commit", "no files are ticked"), nil
+	}
+	prefix, _ := run(ctx, cwd, "rev-parse", "--show-prefix")
+	statusZ, err := run(ctx, cwd, "status", "--porcelain=v1", "-z", "-uall", "--", ".")
+	if err != nil {
+		return nil, err
+	}
+	known, untracked := statusPaths(stripPrefixZ(statusZ, strings.TrimSpace(prefix)))
+	var add []string
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/") {
+			return refused("git commit", p+" is a nested repository; commit it in its own repository"), nil
+		}
+		if !known[p] {
+			return refused("git commit", p+" has no uncommitted change"), nil
+		}
+		if untracked[p] {
+			add = append(add, p)
+		}
+	}
+	if len(add) > 0 {
+		args := append([]string{"add", "--"}, add...)
+		if out, err := runInput(ctx, cwd, "", args...); err != nil {
+			return &CommitResult{Failure: &GitFailure{Command: "git add", ExitCode: exitCodeOf(err), Stderr: strings.TrimSpace(out)}}, nil
+		}
+	}
+	args := []string{"commit", "--only", "-F", "-"}
+	if amend {
+		args = append(args, "--amend")
+	}
+	args = append(append(args, "--"), paths...)
+	if out, err := runInput(ctx, cwd, message, args...); err != nil {
+		// put the index back as it was: a path this call added must not wait, staged, for someone else's commit
+		if len(add) > 0 {
+			runInput(ctx, cwd, "", append([]string{"reset", "-q", "--"}, add...)...)
+		}
+		cmd := fmt.Sprintf("git commit --only -F - -- %d paths", len(paths))
+		return &CommitResult{Failure: &GitFailure{Command: cmd, ExitCode: exitCodeOf(err), Stderr: strings.TrimSpace(out)}}, nil
+	}
+	hash, _ := run(ctx, cwd, "rev-parse", "--short", "HEAD")
+	return &CommitResult{Hash: strings.TrimSpace(hash)}, nil
+}
+
+// CommitMessage is a commit's whole message (HEAD's for ref ""), which Amend loads into the box and the Log tab shows
+// under a selected commit; the history read carries subjects only. The text ends with git's newline.
+func CommitMessage(ctx context.Context, cwd, ref string) (string, error) {
+	if strings.HasPrefix(ref, "-") {
+		return "", fmt.Errorf("refusing to read the message of %q: a revision cannot begin with '-'", ref)
+	}
+	if ref == "" {
+		ref = "HEAD"
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	return run(ctx, cwd, "log", "-1", "--format=%B", ref, "--")
+}
+
 // maxListFiles caps the enumeration so a pathological repo cannot hand the frontend a
 // multi-megabyte path array. Truncated tells the caller it happened, because a silently
 // partial index reads as a complete one.

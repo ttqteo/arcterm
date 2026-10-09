@@ -654,10 +654,22 @@ export class RpcApiType {
         return client.wshRpcCall("gitchanges", data, opts);
     }
 
+    // command "gitcommit" [call]
+    GitCommitCommand(client: WshClient, data: CommandGitCommitData, opts?: RpcOpts): Promise<CommandGitCommitRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitcommit", data, opts);
+        return client.wshRpcCall("gitcommit", data, opts);
+    }
+
     // command "gitcommitchanges" [call]
     GitCommitChangesCommand(client: WshClient, data: CommandGitCommitChangesData, opts?: RpcOpts): Promise<CommandGitCommitChangesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitcommitchanges", data, opts);
         return client.wshRpcCall("gitcommitchanges", data, opts);
+    }
+
+    // command "gitcommitmessage" [call]
+    GitCommitMessageCommand(client: WshClient, data: CommandGitCommitMessageData, opts?: RpcOpts): Promise<CommandGitCommitMessageRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitcommitmessage", data, opts);
+        return client.wshRpcCall("gitcommitmessage", data, opts);
     }
 
     // command "gitcomparechanges" [call]
