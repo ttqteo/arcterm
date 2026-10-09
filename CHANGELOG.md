@@ -12,6 +12,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- A Low RAM card now pops up over whatever surface you are on, so a command held for memory no longer waits unseen
+  behind Jarvis or the Cockpit; press its number to answer, **Open agent** to go to it, or **Later** (`Esc`) to leave
+  it on the agent's own card.
+- The Agent rail shows the project's instructions file under the project and branch, `CLAUDE.md` for a Claude agent
+  (or `AGENTS.md` when there is none) and `AGENTS.md` for pi and the others; click it to read it in the rail.
 - In a Spec or Plan review, resting the pointer on a finding scrolls the document to the task it names and dims
   the rest, so you read only the part it changes; click the finding to keep it shown while you read.
 - Jarvis's pet keeps busy between walks: when it stops to rest it may read a book, listen to music on headphones,

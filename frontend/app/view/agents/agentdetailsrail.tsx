@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { toRel } from "@/app/cockpit/openfileroute";
 import { CollapsibleRail, type RailSection } from "@/app/element/collapsiblerail";
 import { easeFluidCss, MOTION, popoverReveal } from "@/app/element/motiontokens";
 import { railSectionOpenAtom } from "@/app/element/railsections";
@@ -54,6 +55,7 @@ import { ASK_OWNER_USER } from "./childaskmodel";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
 import { capFiles, statusColor } from "./gitstatus";
+import { instructionsFileAtom, instructionsKey, loadInstructionsFile } from "./instructionsfile";
 import { entriesAtomFor, liveEntriesByIdAtom } from "./livetranscriptatoms";
 import { prettyModel } from "./modellabel";
 import { artifactsView } from "./railartifacts";
@@ -545,6 +547,15 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
     }, [agent.id, agent.transcriptPath, agent.blockId]);
 
+    // the project's CLAUDE.md or AGENTS.md, whichever the agent's harness reads (instructionsfile.ts)
+    const instrCwd = sub == null ? (railState?.cwd ?? null) : null;
+    const instructions = useAtomValue(instructionsFileAtom)[instrCwd ? instructionsKey(instrCwd, agent.agent) : ""];
+    useEffect(() => {
+        if (instrCwd) {
+            fireAndForget(() => loadInstructionsFile(instrCwd, agent.agent));
+        }
+    }, [instrCwd, agent.agent]);
+
     // re-read while focused: every turn writes the cache again, so a status read once at focus
     // counts down to "expired" under an agent that is still working
     useEffect(() => {
@@ -740,6 +751,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                                         <bdi dir="ltr">{worktree}</bdi>
                                     </span>
                                 </span>
+                            ) : null}
+                            {instructions && instrCwd ? (
+                                <button
+                                    type="button"
+                                    data-rail-instructions
+                                    title={`Project instructions ${instructions}`}
+                                    onClick={() =>
+                                        openFileInPanel(model, agent.id, { abs: instructions, root: instrCwd })
+                                    }
+                                    className="-ml-[4px] flex w-fit min-w-0 cursor-pointer items-center gap-[4px] rounded-[6px] px-[4px] py-[1px] text-[11.5px] font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+                                >
+                                    <FileText size={11} aria-hidden className="flex-none text-muted" />
+                                    <span className="min-w-0 truncate">{toRel(instrCwd, instructions)}</span>
+                                </button>
                             ) : null}
                         </>
                     )}

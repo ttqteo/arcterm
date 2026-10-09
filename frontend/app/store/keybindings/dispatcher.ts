@@ -7,6 +7,7 @@ import { modalsModel } from "@/app/store/modalmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import { heldAskOpenAtom } from "@/app/view/agents/heldaskpopup";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -92,6 +93,8 @@ export function deriveKeyContext(): KeyContext {
         // outlives a switch away, since opening a worker from the graph lands on the Agent surface.
         (surface === "jarvis" && globalStore.get(dagModalStateAtom) != null) ||
         globalStore.get(docReviewAtom) != null ||
+        // the Low RAM card over any surface: its digits answer it, not the surface underneath
+        globalStore.get(heldAskOpenAtom) != null ||
         // the avatar popup is window chrome over any surface, and its own keys (Enter, f, Space, Escape) are
         // surface keys too; uncounted, the Agent surface's f toggled fullscreen under an open item
         globalStore.get(petPeekOpenAtom) ||
