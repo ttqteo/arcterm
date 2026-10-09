@@ -33,10 +33,9 @@ Deviations from the spec, decided while planning:
 
 **Depends on:** none
 
-**Files:**
-- Create: `pkg/jobqueue/jobqueue.go`
-- Create: `pkg/jobqueue/jobqueue_test.go`
-- Modify: `pkg/memgate/memgate.go` (add `LongRunning`)
+**Files:** `pkg/jobqueue/jobqueue.go`, `pkg/jobqueue/jobqueue_test.go`, `pkg/memgate/memgate.go`, `pkg/memgate/memgate_test.go`
+
+Create the two `pkg/jobqueue` files; add `LongRunning` to `pkg/memgate/memgate.go`.
 
 **Step 1: Write the failing tests** in `pkg/jobqueue/jobqueue_test.go`:
 
@@ -486,10 +485,9 @@ git commit -m "feat(jobqueue): one FIFO for heavy jobs, a slot at a time and onl
 
 `wsh` in a terminal talks to wavesrv over the domain socket. When it disconnects, `handleDomainSocketClient` (`pkg/wshutil/wshutil.go:180`) unregisters the link but never cancels the streaming handlers that entered on it, which `pkg/web/ws.go:235,258` does for a websocket. A held slot would outlive its `wsh jobslot`.
 
-**Files:**
-- Modify: `pkg/wshutil/wshutil.go` (teardown in `handleDomainSocketClient`, ~line 199)
-- Modify: `cmd/server/main-server.go` (~line 164, after `rpc := wshserver.GetMainRpcClient()`)
-- Test: `pkg/wshutil/wshutil_domainlink_test.go`
+**Files:** `pkg/wshutil/wshutil.go`, `pkg/wshutil/wshutil_domainlink_test.go`, `cmd/server/main-server.go`
+
+Where: the teardown in `handleDomainSocketClient` (`pkg/wshutil/wshutil.go` ~line 199); `cmd/server/main-server.go` ~line 164, after `rpc := wshserver.GetMainRpcClient()`.
 
 **Step 1: Failing test.** With `net.Pipe()`, call `handleDomainSocketClient(serverEnd, nil)`, set `DomainLinkClosedHook` to record the link id it gets, close `clientEnd`, and assert the hook ran once with a non-`baseds.NoLinkId` id (poll up to 1 s). Restore the hook with `t.Cleanup`. Check how `readCallback` is used: pass a no-op if nil panics.
 
@@ -532,16 +530,10 @@ git commit -m "fix(wshutil): a wsh that disconnects from the domain socket ends 
 
 **Depends on:** Task 1, Task 2
 
-**Files:**
-- Create: `pkg/wshrpc/wshrpctypes_jobqueue.go`
-- Modify: `pkg/wshrpc/wshrpctypes.go` (embed `JobQueueCommands` beside `DagCommands`, line ~45)
-- Create: `pkg/wshrpc/wshserver/wshserver_jobqueue.go`, `wshserver_jobqueue_test.go`
-- Modify: `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`
-- Modify: `pkg/wconfig/settingsconfig.go` (+ `schema/settings.json` if `task generate` does not write it)
-- Modify: `cmd/server/main-server.go`
-- Create: `cmd/wsh/cmd/wshcmd-jobslot.go`
-- Modify: `cmd/wsh/cmd/wshcmd-agyhook.go:144`
-- Delete: `cmd/wsh/cmd/wshcmd-memgate.go`, `cmd/wsh/cmd/wshcmd-memgate-decide.go`, `pkg/memgate/card.go`, `pkg/memgate/card_test.go`
+**Files:** `pkg/wshrpc/wshrpctypes_jobqueue.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_jobqueue.go`, `pkg/wshrpc/wshserver/wshserver_jobqueue_test.go`, `pkg/wps/wpstypes.go`, `pkg/tsgen/tsgenevent.go`, `pkg/wconfig/settingsconfig.go`, `cmd/server/main-server.go`, `cmd/wsh/cmd/wshcmd-jobslot.go`, `cmd/wsh/cmd/wshcmd-agyhook.go`, `cmd/wsh/cmd/wshcmd-memgate.go`, `cmd/wsh/cmd/wshcmd-memgate-decide.go`, `pkg/memgate/card.go`, `pkg/memgate/card_test.go`
+**Files:** `frontend/types/gotypes.d.ts`, `frontend/types/waveevent.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`, `schema/settings.json`
+
+Create `wshrpctypes_jobqueue.go`, the server handler and its test, and `wshcmd-jobslot.go`. Embed `JobQueueCommands` beside `DagCommands` in `pkg/wshrpc/wshrpctypes.go` (~line 45). Change `cmd/wsh/cmd/wshcmd-agyhook.go:144`. Delete `wshcmd-memgate.go`, `wshcmd-memgate-decide.go`, `pkg/memgate/card.go` and `card_test.go`. The second Files line is what `task generate` writes (add `jobs:slots` to `schema/settings.json` by hand if it does not).
 
 **Step 1: Wire types** — `pkg/wshrpc/wshrpctypes_jobqueue.go`:
 
@@ -744,10 +736,9 @@ git commit -m "feat(jobqueue): wsh jobslot holds a queue slot over a stream; the
 
 Every Setup, Check, Verify, Final and land check runs through `execPlanCommandEnv` (`pkg/orchestrate/plancmd.go:194`; `runPlanCommand` is a var tests replace, `runFinalCommand` calls `execPlanCommandEnv` directly).
 
-**Files:**
-- Modify: `pkg/orchestrate/plancmd.go`
-- Modify the call sites to label the job: `final.go:309` (Check), `final.go:325` (Verify, final stage), `final.go:344` (Final), `verify.go:371` and `verify.go:452` (Verify at a merge), `engine.go:636` and `final.go:730` (Setup), `basecheck.go:106` (Setup) and `:116` (Check), `land.go:334` (land check)
-- Test: `pkg/orchestrate/plancmd_jobqueue_test.go`
+**Files:** `pkg/orchestrate/plancmd.go`, `pkg/orchestrate/final.go`, `pkg/orchestrate/verify.go`, `pkg/orchestrate/engine.go`, `pkg/orchestrate/basecheck.go`, `pkg/orchestrate/land.go`, `pkg/orchestrate/plancmd_jobqueue_test.go`
+
+Change `plancmd.go`, and label the job at each call site: `final.go:309` (Check), `final.go:325` (Verify, final stage), `final.go:344` (Final), `verify.go:371` and `verify.go:452` (Verify at a merge), `engine.go:636` and `final.go:730` (Setup), `basecheck.go:106` (Setup) and `:116` (Check), `land.go:334` (land check).
 
 **Step 1: Failing test.** Set `jobqueue.Default` to a 1-slot queue (restore after). Hold its slot with an `Acquire` from the test. Run `execPlanCommandEnv(jobqueue.WithSource(ctx, jobqueue.Source{Label: "Verify", Always: true}), t.TempDir(), "echo ok", nil, time.Minute, nil)` in a goroutine; assert it has not returned after 100 ms and the snapshot shows it queued with `Engine` true and label `Verify`; release the test slot; assert it returns `ok`. A second case: `"echo light"` with no `Always` source runs at once while the slot is held.
 
@@ -802,10 +793,9 @@ git commit -m "feat(orchestrate): Verify, Final and heavy Setup wait their turn 
 
 **Depends on:** Task 3
 
-**Files:**
-- Rename: `claude/arc-mod/hooks/memgate-core.ts` → `jobslot-core.ts`, `memgate-core.test.ts` → `jobslot-core.test.ts`
-- Modify: `claude/arc-mod/hooks/register.ts` (`ramHold` ~line 98, `shellRefusal` ~131, the Bash/PowerShell `tool.call` hooks ~203–211)
-- Modify: `pi/extensions/waveterm-tools-core.ts`, `pi/extensions/waveterm-tools-core.test.ts`, `pi/extensions/waveterm-tools.ts` (~line 129)
+**Files:** `claude/arc-mod/hooks/memgate-core.ts`, `claude/arc-mod/hooks/memgate-core.test.ts`, `claude/arc-mod/hooks/jobslot-core.ts`, `claude/arc-mod/hooks/jobslot-core.test.ts`, `claude/arc-mod/hooks/register.ts`, `pi/extensions/waveterm-tools-core.ts`, `pi/extensions/waveterm-tools-core.test.ts`, `pi/extensions/waveterm-tools.ts`
+
+Rename `memgate-core.ts` → `jobslot-core.ts` and its test (`git mv`). In `register.ts`: `ramHold` ~line 98, `shellRefusal` ~131, the Bash/PowerShell `tool.call` hooks ~203–211. In `waveterm-tools.ts`: the `tool_call` hook ~line 129.
 
 **Step 1: Failing tests** for the pure core, `claude/arc-mod/hooks/jobslot-core.test.ts`:
 
@@ -916,11 +906,9 @@ git commit -m "feat(agents): an agent's heavy command waits in the job queue and
 
 Read `DESIGN.md` (popovers, chips, tokens) before styling. Colors from `@theme` tokens only.
 
-**Files:**
-- Create: `frontend/app/cockpit/jobqueue.ts`, `jobqueue.test.ts`, `jobqueuestore.ts`, `jobqueuechip.tsx`, `jobqueuepanel.tsx`
-- Modify: `frontend/app/cockpit/app-bar.tsx:79` (the chip between `<VersionMismatchPill />` and `<WorkerCapacityChip />`)
-- Modify: `frontend/app/cockpit/cockpit-root.tsx:163` (mount `<JobQueuePanel model={model} />` beside `<ConsumersPanel />`)
-- Modify: `scripts/cdp/scenarios.mjs` (scenario `jobqueue-chip`)
+**Files:** `frontend/app/cockpit/jobqueue.ts`, `frontend/app/cockpit/jobqueue.test.ts`, `frontend/app/cockpit/jobqueuestore.ts`, `frontend/app/cockpit/jobqueuechip.tsx`, `frontend/app/cockpit/jobqueuepanel.tsx`, `frontend/app/cockpit/app-bar.tsx`, `frontend/app/cockpit/cockpit-root.tsx`, `scripts/cdp/scenarios.mjs`
+
+Where: the chip goes in `app-bar.tsx:79`, between `<VersionMismatchPill />` and `<WorkerCapacityChip />`; mount `<JobQueuePanel model={model} />` in `cockpit-root.tsx:163` beside `<ConsumersPanel />`; the scenario `jobqueue-chip` goes in `scripts/cdp/scenarios.mjs`.
 
 **Step 1: Failing tests** — `jobqueue.test.ts` for the pure helpers:
 
@@ -1013,9 +1001,7 @@ git commit -m "feat(cockpit): a Jobs chip in the app bar shows the heavy-job que
 
 **Depends on:** Task 4, Task 5, Task 6
 
-**Files:**
-- Modify: `AGENTS.md` (the gotcha "A heavy shell command can come back "Not run: …" while RAM is short")
-- Modify: `CHANGELOG.md` (top section)
+**Files:** `AGENTS.md`, `CHANGELOG.md`
 
 **Step 1:** Rewrite the AGENTS.md gotcha for the queue: before every Bash command an agent runs, the Claude mod and the pi extension call `wsh jobslot`; a heavy command (the table in `pkg/memgate/memgate.go`; dev servers excluded) waits its turn in wavesrv's queue (`pkg/jobqueue`) — `jobs:slots` at once, default 1, and only when its RAM fits — and holds the slot while it runs; the engine's Verify, Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't retry it, carry on and report it skipped. A single test file or `-run` filter is light and never queues.
 
