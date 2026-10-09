@@ -69,8 +69,8 @@ function count(items: AttentionItem[], kind: string): number {
     return items.reduce((n, i) => (i.kind === kind ? n + 1 : n), 0);
 }
 
-// Every signal the creature reads.
-function usePetSignals(model: AgentsViewModel): PetSignals {
+// Every signal the creature reads. Shared with the float bar's still Sprout (petfloatmark.tsx).
+export function usePetSignals(model: AgentsViewModel): PetSignals {
     const attention = useAtomValue(attentionAtom);
     const cap = useWorkerCapacity();
     const rateLimit = tightestWindow(usePlanDonuts(model));

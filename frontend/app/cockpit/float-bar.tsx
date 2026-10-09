@@ -6,6 +6,7 @@ import { ICON_BTN } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
+import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
@@ -40,6 +41,8 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                     {agent?.name ?? "arcterm"}
                 </span>
             </div>
+            {/* the footer and its walking pet are gone in float mode; what waits on you shows here */}
+            <PetFloatMark model={model} />
             <button
                 type="button"
                 data-float-pin

@@ -94,7 +94,8 @@ export const SLEEP_AFTER_MS = 10 * 60_000;
 export const HOP_FRAMES = 2;
 export const HOP_LIFT_PX = 2 * PET_CELL_PX;
 
-const POSTURE_MARK: Record<PetPosture, PetMark | null> = {
+// the mark a posture draws over the creature's head, shared with the float bar's still Sprout (petfloat.ts)
+export const POSTURE_MARK: Record<PetPosture, PetMark | null> = {
     "review-gate": "gate",
     escalation: "escalation",
     "blocked-worker": "blocked",

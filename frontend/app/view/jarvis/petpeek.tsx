@@ -71,14 +71,20 @@ import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom } from "
 import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 
-const PLACEMENT: Record<PetCorner, Placement> = {
+// Where the peek opens from: the walking creature's corner, or the float bar's top right (petfloatmark.tsx), where
+// it drops down.
+export type PeekCorner = PetCorner | "top-right";
+
+const PLACEMENT: Record<PeekCorner, Placement> = {
     "bottom-right": "top-end",
     "bottom-left": "top-start",
+    "top-right": "bottom-end",
 };
 
-const ORIGIN: Record<PetCorner, string> = {
+const ORIGIN: Record<PeekCorner, string> = {
     "bottom-right": "bottom right",
     "bottom-left": "bottom left",
+    "top-right": "top right",
 };
 
 // A standing condition's dot. Tone is never the only carrier — the line states the fact in words, and an
@@ -537,7 +543,7 @@ export function PetPeek({
 }: {
     model: AgentsViewModel;
     anchor: HTMLElement | null;
-    corner: PetCorner;
+    corner: PeekCorner;
     signals: PetSignals;
 }) {
     const open = useAtomValue(petPeekOpenAtom);

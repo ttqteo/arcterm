@@ -40,6 +40,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - A question or a decision waiting on you shows in Jarvis's pet bubble instead of a **Needs you** toast, naming the
   agent that asks. The bubble stays 15 seconds, and as long as the pointer is on it; click it to answer in the pet's
   popup. In Float, where the pet is hidden, the toast still says it. **Finished** toasts are unchanged.
+- In Float, a small Sprout in the bar shows when something waits on you (`?`, `!` or the review eye); click it, or
+  press `g` `w`, to open the pet's popup below it.
 
 ### Fixed
 
