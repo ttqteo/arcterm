@@ -394,7 +394,18 @@ export function mergeActiveWork(input: {
             ts: a.startedTs,
         })),
     ];
+    // A row's key is its identity alone. With its position appended, one row arriving or leaving re-keyed every
+    // row below it, and the animated Runs list remounted them all: the list jumped on every roster tick. A
+    // duplicate identity keeps its first row, so the keys stay unique without the position.
+    const seen = new Set<string>();
     return rows
+        .filter((r) => {
+            if (seen.has(r.key)) {
+                return false;
+            }
+            seen.add(r.key);
+            return true;
+        })
         .sort((x, y) => {
             const s = (r: ActiveWorkRow) =>
                 r.kind === "blocker" || (r.chip != null && (r.chip.tone === "blocked" || r.chip.tone === "asking"))
@@ -409,8 +420,7 @@ export function mergeActiveWork(input: {
                 return t;
             }
             return x.key < y.key ? -1 : x.key > y.key ? 1 : 0;
-        })
-        .map((r, i) => ({ ...r, key: r.key + ":" + i }));
+        });
 }
 export interface SourceHealthSummary {
     complete: boolean;
@@ -534,7 +544,10 @@ export function projectBriefing(input: BriefingModelInput): BriefingModel {
                 runtime: a.agent ?? "",
                 project: a.project ?? null,
                 state: a.state as "working" | "asking",
-                startedTs: queryStartedAt - (a.state === "asking" ? (a.blockedMs ?? 0) : (a.activeMs ?? 0)),
+                // the fixed start when the roster has one: an age grows with every roster tick, so a start derived
+                // from it slid each tick and walked the row past the runs around it
+                startedTs:
+                    a.stateSince ?? queryStartedAt - (a.state === "asking" ? (a.blockedMs ?? 0) : (a.activeMs ?? 0)),
             })),
         (a) => (a.state === "asking" ? 0 : 1),
         (a) => a.startedTs,

@@ -87,6 +87,7 @@ export interface AgentVM {
     activity?: string; // working: live activity line; idle: reason
     blockedMs?: number; // asking: how long blocked (sort + age)
     activeMs?: number; // working: elapsed (sort)
+    stateSince?: number; // working/asking: when that state began (UnixMilli); fixed, where the two ages above grow with now
     previousInfo?: AgentEntry[]; // asking: messages + actions leading to the question
     ask?: AgentAsk; // present iff state === "asking"
     transcriptPath?: string; // source for on-demand previous-info (not rendered directly)
@@ -536,6 +537,9 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     if (input.status === "waiting" || input.status === "idle") {
         vm.atPrompt = true;
     }
+    if ((state === "working" || state === "asking") && input.ts != null) {
+        vm.stateSince = input.ts;
+    }
     if (state === "working") {
         vm.activeMs = age;
     } else if (state === "asking") {
@@ -932,6 +936,7 @@ export function withAsk(vm: AgentVM, ask: AgentAskData | null, now: number): Age
         state: "asking",
         activeMs: undefined,
         blockedMs: ask.ts != null ? Math.max(0, now - ask.ts) : vm.blockedMs,
+        stateSince: ask.ts ?? vm.stateSince,
         ask: {
             questions: toAskQuestions(ask.questions),
             askId: ask.askid,
@@ -1058,6 +1063,7 @@ export function pendingToVM(p: PendingLaunch, now: number): AgentVM {
         project: p.project,
         blockId: p.blockId,
         activeMs: Math.max(0, now - p.ts),
+        stateSince: p.ts,
     };
 }
 
@@ -1086,6 +1092,7 @@ export function backgroundAgentToVM(bg: BackgroundAgentData, projectName: string
         cwd: bg.cwd,
         needsInput: bg.state === "blocked",
         activeMs: bg.startedts ? Math.max(0, now - bg.startedts) : undefined,
+        stateSince: bg.startedts || undefined,
     };
 }
 

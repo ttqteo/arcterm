@@ -257,6 +257,7 @@ describe("agentVMFromInput", () => {
             model: "sonnet",
             activity: "go test ./pkg/wconfig/…",
             activeMs: 120_000,
+            stateSince: NOW - 120_000,
             transcriptPath: "/p/t.jsonl",
         });
     });

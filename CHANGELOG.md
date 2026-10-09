@@ -49,6 +49,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   coming back lands on the same spot instead of the top.
 - In a narrow sidebar, an agent row with subagents no longer runs past the row's right edge: its subagents chip shows
   just the count, and a long model name is cut short.
+- Jarvis's Runs list no longer jumps around while agents start and stop: rows keep their place instead of all
+  re-sliding each time one agent's state changes.
 - A subagent that has finished no longer stays listed as running under its agent in the sidebar.
 - After opening a subagent from the sidebar, clicking its agent's row brings the agent's terminal back.
 

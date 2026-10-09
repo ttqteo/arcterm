@@ -137,6 +137,16 @@ describe("briefing projection", () => {
         expect(m.directAgents.map((a) => a.id)).toEqual(["tab-2", "tab-3", "tab-1"]);
     });
 
+    it("dates a direct agent by the fixed start of its state, not by an age that grows each tick", () => {
+        const state = workState([]);
+        const at = (activeMs: number) =>
+            projectBriefing(input(state, [agent({ id: "t", state: "working", activeMs, stateSince: T0 - HOUR })]))
+                .directAgents[0].startedTs;
+        // two roster ticks a minute apart: the age grew, the start did not move
+        expect(at(HOUR)).toBe(T0 - HOUR);
+        expect(at(HOUR + 60_000)).toBe(T0 - HOUR);
+    });
+
     it("windows delta to actualCursor and words events honestly", () => {
         const delta: TimelineEvent[] = [
             { ts: T0 - DAY, kind: "run-created", title: "g1", detail: "status: executing", navtarget: "run:r-1" },
@@ -441,6 +451,27 @@ describe("unified active work", () => {
         expect(names({ task: "" })).toBe("loom");
         expect(names({ task: "  loom " })).toBe("loom");
         expect(names({ task: "the task" })).toBe("loom · the task");
+    });
+
+    it("keys a row by its identity alone, so a row arriving above does not re-key the rows below", () => {
+        const runs = [run({ oref: "run:a", ts: T0 - HOUR }), run({ oref: "run:b", ts: T0 - 2 * HOUR })];
+        const before = mergeActiveWork({ activeRuns: runs, blockers: [], directAgents: [] });
+        const after = mergeActiveWork({
+            activeRuns: [run({ oref: "run:new", ts: T0 }), ...runs],
+            blockers: [],
+            directAgents: [],
+        });
+        expect(before.map((r) => r.key)).toEqual(["run:run:a", "run:run:b"]);
+        expect(after.map((r) => r.key)).toEqual(["run:run:new", "run:run:a", "run:run:b"]);
+    });
+
+    it("keeps one row per identity", () => {
+        const rows = mergeActiveWork({
+            activeRuns: [run({ oref: "run:a", ts: T0 }), run({ oref: "run:a", ts: T0 - HOUR })],
+            blockers: [],
+            directAgents: [],
+        });
+        expect(rows.map((r) => r.key)).toEqual(["run:run:a"]);
     });
 
     it("stays deterministic when timestamps collide", () => {

@@ -188,7 +188,7 @@ describe("splitIdeas", () => {
 
 describe("sessionLine", () => {
     const run: ActiveWorkRow = {
-        key: "run:run:r1:0",
+        key: "run:run:r1",
         kind: "run",
         oref: "run:r1",
         name: "execute the plan",
@@ -199,7 +199,7 @@ describe("sessionLine", () => {
 
     it("folds a run silent past seven days, and dates it by its age", () => {
         expect(sessionLine(run, NOW)).toMatchObject({
-            id: "sessions:run:run:r1:0",
+            id: "sessions:run:run:r1",
             kind: "▶ run",
             title: "execute the plan",
             meta: "waveterm · executing",
@@ -213,7 +213,7 @@ describe("sessionLine", () => {
 
     it("never folds what needs eyes, and names its state instead of its age", () => {
         const agent: ActiveWorkRow = {
-            key: "agent:t1:1",
+            key: "agent:t1",
             kind: "agent",
             oref: "agent:t1",
             name: "lead · SIEM status",
