@@ -25,7 +25,8 @@ terminal, although the person is already looking at exactly those files.
    files, and moving through the list with `↑`/`↓` changes the diff without Enter. While a list loads,
    its header says it is loading and never `0 files · +0 −0`. On 2026-10-09 the surface showed commit
    `63736f8`, which has 4 files (+65 −6), as `0 FILES +0 −0` over skeleton rows beside an empty diff.
-1. **Two regions:** a left panel (about 340px, resizable, folds to a rail) and the diff, which gets the rest.
+1. **Two regions:** a left panel (about 340px, resizable, foldable) and the diff, which gets the rest. Folded, the
+   panel is not drawn: the diff header takes over its entry points (§1).
 2. **The panel has two tabs, Commit and Log.** Commit holds the source's uncommitted changes. Log
    holds the graph and the selected commit.
 3. **The worktree sidebar folds into a source dropdown** at the top of the panel. It shows the same tree
@@ -68,8 +69,11 @@ on a commit row (checkout, cherry-pick, revert, new branch).
   The split is draggable.
 - **The diff header is one line:** path, `+83 −3`, previous and next change, `File | Review`, and a `⋯`
   menu that gathers the view options (whitespace, wrap, side-by-side).
-- **Width rules:** `difflayout.ts` keeps one rule. Below `PANEL_FOLD_PX` the panel starts folded to a
-  rail, and an explicit choice wins, as `resolveSidebarFolded` does today. The history-collapse
+- **Folded panel:** the panel is not drawn and the diff takes the whole width. The diff header then starts
+  with a source button that unfolds the panel, the upstream counts, `Commit n | Log` tab buttons that unfold
+  it on that tab, and `‹ file i of n ›`, which steps through the shown file list.
+- **Width rules:** `difflayout.ts` keeps one rule. Below `PANEL_FOLD_PX` the panel starts folded, and an
+  explicit choice wins, as `resolveSidebarFolded` does today. The history-collapse
   threshold goes away with the History column.
 
 ## 2. The Commit tab
@@ -120,6 +124,8 @@ type CommandGitCommitRtnData struct {
   refused as a `GitFailure`, never passed through.
 - A hook failure, an `index.lock`, or an empty commit comes back as `GitFailure`, the same shape Fetch
   already returns.
+- When the commit fails after untracked paths were added, those paths are unstaged again
+  (`git reset -q -- <those paths>`), so a failed commit leaves the shared index as it found it.
 - On success the surface clears the message, refreshes, and toasts `Committed a1b2c3d` with a link
   that opens the commit in Log.
 
@@ -180,7 +186,7 @@ type CommandGitCommitRtnData struct {
 
 - **Go** (`pkg/gitinfo`, temp repos plus a bare remote):
   - `--only` leaves another path's staged change in the index and out of the commit;
-  - committing an untracked file;
+  - committing an untracked file, and a failed commit leaves it untracked;
   - a rename commits both ends;
   - amend;
   - a failing `pre-commit` hook returns `GitFailure`;
@@ -190,8 +196,8 @@ type CommandGitCommitRtnData struct {
   - Publish sets the upstream;
   - the upstream counts with and without an upstream.
 - **Vitest**, with pure models beside their tests:
-  - `commitselection.ts`: defaults, toggling, pruning, disabled notes, the button label;
-  - `syncstate.ts`: button states from the upstream, a detached HEAD, busy, ahead/behind, and Amend's enablement;
+  - `commitselection.ts`: defaults, toggling, pruning, disabled notes, the button label, and Amend's enablement;
+  - `syncstate.ts`: button states from the upstream, a detached HEAD, busy, ahead/behind;
   - the default-tab rule.
 - **CDP:**
   - new scenarios `diff-commit-tab` and `diff-log-tab`;
