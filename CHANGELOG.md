@@ -63,6 +63,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- An orchestrator lead no longer collects an unread count once its plan is running: the turns the engine wakes it
+  for (a task done, a merge, a handoff) are not news for you, and what it needs from you still arrives as a question.
 - The Cockpit's nav badge (and the Dock badge on a Mac) counts an agent at a permission prompt or a question asked in
   its terminal, so it no longer reads 0 while the Cockpit's "need you" tab says 3.
 - A card waiting on you with no choices it can show (a permission prompt, or a question asked in the terminal) says

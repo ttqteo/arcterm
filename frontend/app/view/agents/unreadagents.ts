@@ -4,25 +4,28 @@
 // Pure: how many turns each agent finished while you were not looking, for the Agent surface's nav badge and the
 // count on a sidebar row. Each move from working to idle out of view adds one, so an agent that goes back to work
 // unseen keeps its count and the next finish adds to it. It is read once it is in view (viewingIds), or once it asks,
-// which the Cockpit's attention badge already counts. An agent that left the roster is dropped. Only top-level agents
-// count: a run's workers and stage sessions report to their lead, so their turns are the lead's business, not yours.
+// which the Cockpit's attention badge already counts. An agent that left the roster is dropped. A run's workers and
+// stage sessions never count: they report to their lead, so their turns are the lead's business, not yours. Nor does
+// a lead once its plan is running: the engine wakes it, and those turns are the engine's business.
 // No React, no store.
 
 import type { CenterMode } from "./agentcenter";
 import type { GridState } from "./agentgrid";
 import type { AgentState } from "./agentsviewmodel";
-import type { RunRole } from "./runlineage";
+import type { Lineage } from "./runlineage";
 
 export interface UnreadAgent {
     id: string;
     state: AgentState;
 }
 
-/** Pure: the agents that sit under another in the tree (a run's workers and stage sessions), which never count. */
-export function nestedIds(roles: Readonly<Record<string, RunRole>>): Set<string> {
+/** Pure: the agents whose turns never count: a run's workers and stage sessions, and a lead once its run has a dag.
+ *  From then on the engine wakes the lead for each task, merge and question, and what it needs from you arrives as an
+ *  ask; before it, a lead from a goal is still talking its spec and plan through with you. */
+export function nestedIds(lineage: Lineage): Set<string> {
     const out = new Set<string>();
-    for (const [id, role] of Object.entries(roles)) {
-        if (role.kind === "worker" || role.kind === "stage") {
+    for (const [id, role] of Object.entries(lineage.roles)) {
+        if (role.kind === "worker" || role.kind === "stage" || lineage.runs[role.runId]?.dag != null) {
             out.add(id);
         }
     }

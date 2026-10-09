@@ -36,7 +36,7 @@ export function useUnreadTracking(model: AgentsViewModel): void {
             prevStates.current,
             agents,
             viewingIds(focused, surface === "agent", center, focusId, grid),
-            nestedIds(lineage.roles)
+            nestedIds(lineage)
         );
         prevStates.current = new Map(agents.map((a) => [a.id, a.state]));
         if (!sameCounts(prev, next)) {
