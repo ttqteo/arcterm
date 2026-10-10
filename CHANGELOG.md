@@ -27,8 +27,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The Low RAM card is gone: a heavy command waits in the job queue instead.
 - New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long
   list scrolls inside itself.
-- Holding `Ctrl` or `Alt` shows the shortcut bar and the rail and agent numbers at once instead of after a short pause;
-  pressing any other key with it, as in `Ctrl`+`C`, hides them again.
+- Pressing any other key while holding `Ctrl` or `Alt`, as in `Ctrl`+`C`, hides the shortcut bar and the rail and
+  agent numbers again.
 - Those rail and agent numbers are a small badge in the icon's corner instead of covering the whole icon.
 - The **Agent** item in the left rail keeps its count of working agents while you are on Agent, not only from other
   surfaces.
