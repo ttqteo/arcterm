@@ -178,8 +178,12 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <PulseDriver />
             <PetSources model={model} />
             {/* folded into Sprout: everything else stays mounted under display:none, so the terminal never refits to
-                the small window (floatstore.ts enterMini) */}
-            <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", folded && "hidden")}>
+                the small window (floatstore.ts foldToSprout). The fold scales this into Sprout; it paints its own
+                background, since the page goes see-through around it as it leaves. */}
+            <div
+                data-window-content
+                className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-background", folded && "hidden")}
+            >
                 {floating ? <FloatBar model={model} /> : <CockpitAppBar model={model} />}
                 <div className="min-h-0 flex-1">
                     <CockpitShell model={model} tabId={tabIdRef.current} />

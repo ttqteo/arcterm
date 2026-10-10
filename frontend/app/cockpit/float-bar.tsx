@@ -6,7 +6,7 @@ import { CTX_TEXT, ICON_BTN, ICON_BTN_ON, STATE_COLOR, STATE_LABEL } from "@/app
 import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
-import { enterMini, exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
+import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
@@ -88,7 +88,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                 data-float-minimize
                 aria-label={`Minimize to ${PET_CHARACTER_NAME[character]}`}
                 title={`Minimize to ${PET_CHARACTER_NAME[character]}`}
-                onClick={() => fireAndForget(enterMini)}
+                onClick={() => fireAndForget(foldToSprout)}
                 className={cn(ICON_BTN, "gap-[5px] pr-2 text-[11px] font-semibold")}
             >
                 <SproutSvg sprite={MINIMIZE_SPRITE[character]} cellPx={1} />

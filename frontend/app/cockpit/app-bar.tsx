@@ -6,7 +6,7 @@ import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { enterMini, floatModeAtom } from "@/app/view/agents/floatstore";
+import { floatModeAtom, foldToSprout } from "@/app/view/agents/floatstore";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
@@ -121,13 +121,13 @@ function withChord(label: string, keys: string | undefined): string {
 export function WindowControls() {
     const win = getCurrentWindow();
     const maximized = useWindowMaximized();
-    // floating, minimize folds the window into Sprout (floatstore.ts enterMini) rather than into the taskbar
+    // floating, minimize folds the window into Sprout (floatstore.ts foldToSprout) rather than into the taskbar
     const floating = useAtomValue(floatModeAtom);
     const character = petCharacter(useAtomValue(petCharacterAtom));
     return (
         <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
             <button
-                onClick={() => (floating ? fireAndForget(enterMini) : win.minimize())}
+                onClick={() => (floating ? fireAndForget(foldToSprout) : win.minimize())}
                 aria-label={floating ? `Minimize to ${PET_CHARACTER_NAME[character]}` : "Minimize"}
                 className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >

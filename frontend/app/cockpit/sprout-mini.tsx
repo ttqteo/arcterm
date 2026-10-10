@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The float folded into Sprout (floatstore.ts enterMini): the see-through window holds only this. Sprout sits in the
+// The window folded into Sprout (floatstore.ts foldToSprout): the see-through window holds only this. Sprout sits in the
 // window's corner away from where things open (floatwindow.ts miniSides), bobs, wears what waits on you (petmini.ts),
 // and is dragged by a press that moves. A click opens the Jarvis chat (the pet peek) from it; a double-click, or
-// Terminal, gives the float window back. A reply that lands while the chat is folded shows in a bubble beside it.
+// Terminal, restores the size it was folded from. A reply that lands while the chat is folded shows in a bubble beside
+// it.
 // Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it. Nothing
 // here carries a title or a drop shadow: over a light app behind the see-through window, a popover shadow (the tooltip
 // chip's, or the hover chip's own) reads as a dark smear. A border keeps each one apart from what is behind it.
@@ -15,7 +16,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
-import { exitMini, miniResizingAtom, miniSidesAtom, resizeMini } from "@/app/view/agents/floatstore";
+import { miniResizingAtom, miniSidesAtom, resizeMini, restoreFromSprout } from "@/app/view/agents/floatstore";
 import type { MiniSides } from "@/app/view/agents/floatwindow";
 import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
 import { StatusDot } from "@/app/view/agents/statusdot";
@@ -41,8 +42,8 @@ const BOB_MS = 700;
 const DRAG_PX = 4;
 // a second click inside this is a double-click, which restores rather than opens
 const CLICK_MS = 220;
-// 4px a cell: the 16-cell sprite is 64px
-const CELL_PX = 4;
+// 3px a cell: the same 48px Sprout as on the footer and the float's ledge (petsprite.ts PET_CELL_PX)
+const CELL_PX = 3;
 // Spike result 1 or 2 failed on a platform: draw Sprout on a tile there (make this `isWindows()` or `isMacOS()`)
 const MINI_TILE = false;
 
@@ -61,14 +62,14 @@ function useBobFrame(): 0 | 1 {
     return frame;
 }
 
-// Sprout's 80px box: the window's corner away from where the chip, the bubble and the chat open
+// Sprout's 64px box: the window's corner away from where the chip, the bubble and the chat open
 function boxCorner(sides: MiniSides): string {
     return cn(sides.h === "left" ? "right-0" : "left-0", sides.v === "up" ? "bottom-0" : "top-0");
 }
 
 // the chip and the bubble: beside Sprout toward the middle of the screen, level with its feet or its head
 export function besideSprout(sides: MiniSides): string {
-    return cn(sides.h === "left" ? "right-[88px]" : "left-[88px]", sides.v === "up" ? "bottom-3" : "top-3");
+    return cn(sides.h === "left" ? "right-[72px]" : "left-[72px]", sides.v === "up" ? "bottom-2" : "top-2");
 }
 
 function chatPlacement(sides: MiniSides): Placement {
@@ -157,7 +158,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     };
     const restore = () => {
         clearTimeout(clickTimer.current);
-        fireAndForget(exitMini);
+        fireAndForget(() => restoreFromSprout(model));
     };
     const told = unread && !chatOpen && errand != null;
 
@@ -166,7 +167,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
             <div
                 data-mini-hit="sprout"
                 className={cn(
-                    "absolute h-20 w-20",
+                    "absolute h-16 w-16",
                     boxCorner(sides),
                     MINI_TILE && "rounded-[18px] border border-edge-strong bg-surface"
                 )}
@@ -195,7 +196,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     <SproutSvg sprite={sprite} cellPx={CELL_PX} />
                 </button>
                 {look.chip != null ? (
-                    <span className="pointer-events-none absolute left-1 top-3 min-w-[18px] rounded-full bg-warning px-[5px] text-center text-[11px] font-bold leading-[18px] text-on-warning tabular-nums">
+                    <span className="pointer-events-none absolute left-1 top-3 min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums">
                         {look.chip}
                     </span>
                 ) : null}

@@ -16,6 +16,7 @@ import { atoms } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
+import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
@@ -155,6 +156,9 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     const events = useAtomValue(petEventsAtom);
     const watermark = useAtomValue(petWatermarkAtom);
     const surface = useAtomValue(model.surfaceAtom);
+    // folded, the shell is hidden but this stays mounted (its voice keeps running); the bubble and the peek portal to
+    // the body, past the hidden shell, so the folded Sprout draws its own (cockpit/sprout-mini.tsx)
+    const folded = useAtomValue(floatMiniAtom);
     const reduce = useReducedMotion() === true;
     // state, not a ref: the bubble and the peek re-position when it lands
     const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
@@ -237,22 +241,24 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 onCorner={setCorner}
                 openPeek={openPeek}
             />
-            <PetBubble
-                event={bubble}
-                anchor={anchor}
-                corner={corner}
-                onOpen={openPeek}
-                onDismiss={() => {
-                    const said = globalStore.get(petBubbleAtom);
-                    globalStore.set(petBubbleAtom, null);
-                    if (said?.kind !== "quote") {
-                        globalStore.set(petUnreadAtom, true);
-                    }
-                }}
-            />
+            {folded ? null : (
+                <PetBubble
+                    event={bubble}
+                    anchor={anchor}
+                    corner={corner}
+                    onOpen={openPeek}
+                    onDismiss={() => {
+                        const said = globalStore.get(petBubbleAtom);
+                        globalStore.set(petBubbleAtom, null);
+                        if (said?.kind !== "quote") {
+                            globalStore.set(petUnreadAtom, true);
+                        }
+                    }}
+                />
+            )}
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is
                 the creature's single face, and passing it here would cap the panel at one condition */}
-            <PetPeek model={model} anchor={anchor} corner={corner} signals={signals} />
+            {folded ? null : <PetPeek model={model} anchor={anchor} corner={corner} signals={signals} />}
         </>
     );
 }
@@ -498,6 +504,8 @@ function PetSprite({
     return (
         <motion.div
             ref={setAnchor}
+            // where a fold starts (floatstore.ts foldToSprout reads its box)
+            data-pet-sprite
             drag
             dragMomentum={false}
             // the walker owns left and top; motion's drag owns only the transform, reset on release
