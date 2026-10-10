@@ -12,7 +12,9 @@ import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
+import { spriteFor } from "@/app/view/jarvis/petsprite";
 import { petCharacterAtom } from "@/app/view/jarvis/petstore";
+import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
@@ -33,8 +35,15 @@ import { versionInfoAtom } from "./versioninfo";
 // Window dragging: a bare data-tauri-drag-region only fires on a press directly on its own element,
 // so every non-interactive piece carries one. Not "deep" on the bar: the switchers' click-away
 // backdrops and dropdowns render inside it and would start a drag instead of closing.
+// the creature sitting, on the buttons that fold the window into it (here and the float bar)
+export const FOLD_SPRITE = {
+    sprout: spriteFor("sit", [], null, "sprout"),
+    minion: spriteFor("sit", [], null, "minion"),
+};
+
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
+    const character = petCharacter(useAtomValue(petCharacterAtom));
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
     const newAgentKeys = useBindingKeys("new-agent");
@@ -100,6 +109,18 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                         id="new-agent"
                         className={clsx(HINT_SM, HINT_FIT, "border-background/30 text-background/75")}
                     />
+                </button>
+                {/* one click from the cockpit to Sprout alone, over every app (floatstore.ts foldToSprout) */}
+                <button
+                    type="button"
+                    data-app-sprout
+                    aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
+                    title={`Fold into ${PET_CHARACTER_NAME[character]}`}
+                    onClick={() => fireAndForget(foldToSprout)}
+                    className="flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised pl-1.5 pr-2 text-[11.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
+                >
+                    <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
+                    {PET_CHARACTER_NAME[character]}
                 </button>
 
                 {mac ? null : <WindowControls />}

@@ -10,7 +10,6 @@ import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
-import { spriteFor } from "@/app/view/jarvis/petsprite";
 import { petCharacterAtom } from "@/app/view/jarvis/petstore";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
@@ -18,10 +17,7 @@ import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { PictureInPicture2, Pin } from "lucide-react";
-import { WindowControls } from "./app-bar";
-
-// the creature sitting, on the button that folds the float into it
-const MINIMIZE_SPRITE = { sprout: spriteFor("sit", [], null, "sprout"), minion: spriteFor("sit", [], null, "minion") };
+import { FOLD_SPRITE, WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
@@ -86,13 +82,13 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             <button
                 type="button"
                 data-float-minimize
-                aria-label={`Minimize to ${PET_CHARACTER_NAME[character]}`}
-                title={`Minimize to ${PET_CHARACTER_NAME[character]}`}
+                aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
+                title={`Fold into ${PET_CHARACTER_NAME[character]}`}
                 onClick={() => fireAndForget(foldToSprout)}
                 className={cn(ICON_BTN, "gap-[5px] pr-2 text-[11px] font-semibold")}
             >
-                <SproutSvg sprite={MINIMIZE_SPRITE[character]} cellPx={1} />
-                Minimize
+                <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
+                {PET_CHARACTER_NAME[character]}
             </button>
             <button
                 type="button"
