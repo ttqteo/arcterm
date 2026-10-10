@@ -6,7 +6,8 @@
 // that decides.
 
 import { inlineAnswerOptions } from "@/app/cockpit/palette-needs";
-import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { hasAnswerableAsk, type AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { parseDocReview } from "@/app/view/agents/docreview";
 import { escalationAgent } from "@/app/view/agents/needsyoustripmodel";
 import { actsForAttention, type PetAct, type PetTarget } from "./petacts";
 import { conditionsFor, type PetExpression, type PetSignals } from "./petcondition";
@@ -28,6 +29,9 @@ export interface PeekRow {
     links: PetAct[];
     // a question one key answers: its options, in order, so digit n sends answers[n - 1]. [] for every other row
     answers: PetAct[];
+    // a question one key cannot answer (several questions, or several picks): the agent whose ask the row's answer
+    // form sends to (peekanswer.ts). null for every other row
+    form: string | null;
 }
 
 // pkg/jarvis/attention.go writes Text per kind, and only these put anything in it that the row's own verb
@@ -95,6 +99,15 @@ function answersFor(item: AttentionItem, agent: AgentVM | undefined): PetAct[] {
     }));
 }
 
+// The agent a question one key cannot answer is answered in, through the Cockpit's answer form. A doc review is not
+// one: its answer is the review, which opens on its own surface through the escort.
+function formFor(agent: AgentVM | undefined): string | null {
+    if (agent == null || !hasAnswerableAsk(agent) || parseDocReview(agent.ask) != null) {
+        return null;
+    }
+    return inlineAnswerOptions(agent).length === 0 ? agent.id : null;
+}
+
 // Radar triage is the one attention kind the creature has no business holding. It names no channel and no
 // run, so it arrives with no act behind it (petacts.actsForAttention) and renders as a project name, an age
 // and nothing to press; the avatar's own signals never counted it either (petview.usePetSignals reads
@@ -113,11 +126,14 @@ export function queueRows(
             // actsForAttention returns [] with no runid, [in-place act, escort] for a dag gate, a retryable failed
             // task or an unverified run, [land, dismiss, escort] for a held land, [escort] otherwise
             const [first, ...links] = actsForAttention(item);
-            const answers = answersFor(item, askingAgent(item, agents, messages));
+            const asker = askingAgent(item, agents, messages);
+            const answers = answersFor(item, asker);
+            const form = formFor(asker);
             // "Review" / "Decide" / "Answer" is the same navigation as "Open", named by what it is for. An
             // in-place act keeps its own label: the item's action ("Review") names the escort, not the
-            // approve, retry, ack or land. Where the options answer, the escort is only the way to read it.
-            const escortLabel = answers.length > 0 ? "Open" : item.action;
+            // approve, retry, ack or land. Where the options or the form answer, the escort is only the way to
+            // read it.
+            const escortLabel = answers.length > 0 || form != null ? "Open" : item.action;
             const primary = first ?? answerInAgent(item, agents);
             return {
                 key: item.key,
@@ -128,6 +144,7 @@ export function queueRows(
                 primary: primary?.verb === "open" ? { ...primary, label: escortLabel } : primary,
                 links,
                 answers,
+                form,
             };
         });
 }
@@ -140,6 +157,12 @@ export function dedupeUpdates(events: PetEvent[], items: AttentionItem[]): PetEv
     return (events ?? []).filter(
         (event) => !(event.kind === "ask" && event.ref != null && queued.has(`ask:${event.ref}`))
     );
+}
+
+// The queue row a spoken update is about, which opening the peek from its bubble lands the cursor on: an ask's, keyed
+// by its block oref the way the queue keys it (dedupeUpdates). undefined for every other update.
+export function bubbleRowKey(event: PetEvent | null | undefined): string | undefined {
+    return event?.kind === "ask" && event.ref != null ? `ask:${event.ref}` : undefined;
 }
 
 export type PeekKeyCommand = "next" | "previous" | "open" | "peek" | "composer" | "close";
