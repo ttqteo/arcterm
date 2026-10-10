@@ -527,3 +527,11 @@ svg [aria-label="tip"] g path {
     margin-right: 6px;
     accent-color: var(--color-accent);
 }
+
+/* The float folded into Sprout (floatstore.ts enterMini): the window is see-through, so nothing may paint the page.
+   !important beats index.html's inline body background. */
+html[data-float-mini],
+html[data-float-mini] body,
+html[data-float-mini] #main {
+    background: transparent !important;
+}

@@ -22,7 +22,7 @@ import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
-import { floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
+import { floatMiniAtom, floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
 // dev-only spike hook for float mini; removed by the plan's last task
 import "@/app/view/agents/miniprobe";
@@ -31,6 +31,7 @@ import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";
 import { WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
 import { makeWaveEnvImpl } from "@/app/waveenv/waveenvimpl";
+import { cn } from "@/util/util";
 import { Provider, useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef } from "react";
 import { CockpitAppBar } from "./app-bar";
@@ -47,6 +48,7 @@ import {
     type HintEvent,
 } from "./digithints";
 import { ShortcutsCheatSheet } from "./shortcuts-cheatsheet";
+import { SproutMini } from "./sprout-mini";
 import { makeSyntheticNodeModel } from "./synthetic-node-model";
 import { HintsFooter } from "./hints-footer";
 import { JobQueuePanel } from "./jobqueuepanel";
@@ -104,6 +106,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     // in float mode the window is the focused terminal: the float bar stands in for the app bar, the footer and the
     // creature step out
     const floating = useAtomValue(floatModeAtom);
+    const folded = useAtomValue(floatMiniAtom);
     // remember every switch, so the next launch can reopen where this one left off
     useEffect(
         () =>
@@ -176,29 +179,34 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
             <AttentionPoller />
             <PulseDriver />
             <PetSources model={model} />
-            {floating ? <FloatBar model={model} /> : <CockpitAppBar model={model} />}
-            <div className="min-h-0 flex-1">
-                <CockpitShell model={model} tabId={tabIdRef.current} />
+            {/* folded into Sprout: everything else stays mounted under display:none, so the terminal never refits to
+                the small window (floatstore.ts enterMini) */}
+            <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", folded && "hidden")}>
+                {floating ? <FloatBar model={model} /> : <CockpitAppBar model={model} />}
+                <div className="min-h-0 flex-1">
+                    <CockpitShell model={model} tabId={tabIdRef.current} />
+                </div>
+                {floating ? null : <HintsFooter model={model} />}
+                {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
+                <ConsumersPanel model={model} />
+                {/* the app bar's Jobs chip opens this; it also owns the one feed of the heavy-job queue the chip reads */}
+                <JobQueuePanel model={model} />
+                {/* the footer's Servers chip opens this; it also owns the one poll that feeds the chip */}
+                <MachineServersPanel model={model} />
+                <NewProjectModal model={model} />
+                <LauncherModal model={model} />
+                <NewInitiativeHost model={model} />
+                <CommandPalette model={model} />
+                <ShortcutsCheatSheet model={model} />
+                {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the
+                    creature is the one object in the app that has to survive that */}
+                {floating ? null : <PetView model={model} />}
+                <ModalsRenderer />
+                <ContextMenuHost />
+                <NotificationToasts />
             </div>
-            {floating ? null : <HintsFooter model={model} />}
-            {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
-            <ConsumersPanel model={model} />
-            {/* the app bar's Jobs chip opens this; it also owns the one feed of the heavy-job queue the chip reads */}
-            <JobQueuePanel model={model} />
-            {/* the footer's Servers chip opens this; it also owns the one poll that feeds the chip */}
-            <MachineServersPanel model={model} />
-            <NewProjectModal model={model} />
-            <LauncherModal model={model} />
-            <NewInitiativeHost model={model} />
-            <CommandPalette model={model} />
-            <ShortcutsCheatSheet model={model} />
-            {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the
-                creature is the one object in the app that has to survive that */}
-            {floating ? null : <PetView model={model} />}
-            <ModalsRenderer />
-            <ContextMenuHost />
+            {folded ? <SproutMini model={model} /> : null}
             <TitleTipHost />
-            <NotificationToasts />
         </div>
     );
 }
