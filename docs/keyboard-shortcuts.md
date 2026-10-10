@@ -221,7 +221,7 @@ was.
 |---|---|
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
 | `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have. Works from inside the terminal, where a bare `c` is typed into it |
-| `Alt`+`W` | Close the agent whose header shows **Done — Close** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Done, the key goes to the terminal |
+| `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
 | `[` / `]` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Mod`+`Enter` | Send the marks to the agent (from mark mode) |

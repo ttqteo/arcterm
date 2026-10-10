@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// When the cockpit offers to close an agent: its sidebar row's ✓ Close chip and its header's Done — Close button
+// When the cockpit offers to close an agent: its sidebar row's ✓ Close chip and its header's ✓ Close · N tok button
 // both read doneSuggestion, so they show and hide together (docs/superpowers/specs/2026-10-08-done-close-suggestion-design.md).
 
 import type { AgentVM } from "./agentsviewmodel";

@@ -106,7 +106,7 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 Header phía trên terminal là một hàng gọn:
 
 - chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
-- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **Done · N tok — Close** khi agent trông như đã xong; nút **Redraw**; nút **Float**; nút toàn màn hình; nút `×` đóng.
+- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút **Redraw**; nút **Float**; nút toàn màn hình; nút `×` đóng.
 
 Chuột phải vào header: **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Float window** / **Leave float**, **Redraw terminal**, **Show details** / **Hide details**, **Close agent**.
 
@@ -289,7 +289,7 @@ Với phiên Claude đã kết thúc: chuột phải hàng → **Delete session*
 
 ## Đóng và khôi phục agent
 
-- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Ctrl+C` hai lần liên tiếp trong 500 ms khi đang ở terminal của agent (lần đầu vẫn đi tới agent, lần hai mở hộp xác nhận), nút **✓ Close** / **Done · N tok — Close** khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và `Ctrl+C` hai lần không đóng nó (trong shell, đó là cách dừng một lệnh cứng đầu).
+- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Ctrl+C` hai lần liên tiếp trong 500 ms khi đang ở terminal của agent (lần đầu vẫn đi tới agent, lần hai mở hộp xác nhận), nút **✓ Close** (ở dòng sidebar và ở header, kèm số token) khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và `Ctrl+C` hai lần không đóng nó (trong shell, đó là cách dừng một lệnh cứng đầu).
 - **Đóng lead của run có worker:** hộp thoại hỏi **Close run** (đóng tất cả) hay **Close lead only** (worker vẫn chạy).
 - **Đánh thức agent đang rảnh:** nút **Resume** ở chân rail gõ `continue` vào terminal.
 - **Sau khi tắt hoặc cập nhật app:** các agent claude, codex, opencode, pi và agy đang chạy lúc đó tự mở lại, mỗi cái vào phiên của nó, mà không phải mở từng cái từ lịch sử. Agent chưa báo phiên của nó lên cockpit (ví dụ Codex khi hook chưa được trust) không tự mở lại; hãy mở từ **Conversations**. Lượt đang dở của một agent bị cắt lúc app tắt, nên nó thường ngồi ở trạng thái rảnh sau khi mở lại; dùng **Resume** ở chân rail để bảo nó tiếp tục. Worker của run được khôi phục theo run, xem [Orchestrator](orchestrator.md).

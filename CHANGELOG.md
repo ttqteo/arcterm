@@ -40,6 +40,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The header button for a finished agent reads **✓ Close · 8.7M tok**, like its sidebar row's ✓ Close, instead of
+  repeating itself as Done — Close.
 - A float window stays above your other apps from the moment it opens; its pin button turns that off.
 - The Low RAM card is gone: a heavy command waits in the job queue instead.
 - On a Mac the job queue judges RAM by macOS's own memory pressure, which counts compressed memory and swap, so heavy

@@ -556,16 +556,12 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success"
                             >
                                 <Check size={14} strokeWidth={2.2} aria-hidden />
-                                Done
+                                Close
                                 {sessionTokens ? (
                                     <span className="font-normal tabular-nums text-muted">
                                         · {formatTokens(sessionTokens)} tok
                                     </span>
                                 ) : null}
-                                <span aria-hidden className="font-normal text-muted">
-                                    —
-                                </span>
-                                Close
                             </button>
                         ) : null}
                         <button
