@@ -40,7 +40,7 @@ func TestPlan(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			start, reason := plan(c.jobs, c.slots, ModeSlots, c.available, t0)
+			start, reason := plan(c.jobs, c.slots, ModeSlots, c.available, PressureUnknown, t0)
 			if len(start) != len(c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}
@@ -78,7 +78,7 @@ func TestPlanModes(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// one slot throughout: neither mode reads it
-			start, reason := plan(c.jobs, 1, c.mode, c.available, t0)
+			start, reason := plan(c.jobs, 1, c.mode, c.available, PressureUnknown, t0)
 			if !slices.Equal(start, c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}
@@ -86,6 +86,85 @@ func TestPlanModes(t *testing.T) {
 				t.Fatalf("reason = %q, want %q", reason, c.reason)
 			}
 		})
+	}
+}
+
+// Where the OS reads its own memory pressure (macOS), the pressure decides instead of the free-RAM count, which leaves
+// out the compressor and swap: these cases all have far too little "free" RAM for the free-RAM rule.
+func TestPlanPressure(t *testing.T) {
+	run := func(id string, bytes uint64, started time.Time) Job {
+		return Job{Id: id, Request: Request{Name: id, Bytes: bytes}, Running: true, StartedAt: started}
+	}
+	wait := func(id string, bytes uint64) Job { return Job{Id: id, Request: Request{Name: id, Bytes: bytes}} }
+	old := t0.Add(-2 * RampUp)
+	cases := []struct {
+		name     string
+		jobs     []Job
+		mode     string
+		pressure Pressure
+		start    []string
+		reason   string
+	}{
+		{"normal starts every job whatever the free count", []Job{wait("a", 3*gb), wait("b", 3*gb)}, ModeAuto, PressureNormal, []string{"a", "b"}, ""},
+		{"warn starts one at a time", []Job{wait("a", 3*gb), wait("b", 3*gb)}, ModeAuto, PressureWarn, []string{"a"}, ReasonPressureHigh},
+		{"warn waits while a job ramps up", []Job{run("r", gb, t0), wait("a", gb)}, ModeAuto, PressureWarn, nil, ReasonPressureHigh},
+		{"warn starts once the last start has ramped", []Job{run("r", gb, old), wait("a", gb)}, ModeAuto, PressureWarn, []string{"a"}, ""},
+		{"critical starts nothing", []Job{wait("a", gb)}, ModeAuto, PressureCritical, nil, ReasonPressureCritical},
+		{"the slot count still caps", []Job{run("r", gb, old), wait("a", gb)}, ModeSlots, PressureNormal, nil, "slot busy"},
+		{"off starts past critical", []Job{wait("a", gb)}, ModeOff, PressureCritical, []string{"a"}, ""},
+		{"forced starts past critical", []Job{{Id: "f", Request: Request{Name: "f", Bytes: gb}, Forced: true}}, ModeAuto, PressureCritical, []string{"f"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			start, reason := plan(c.jobs, 1, c.mode, 512<<20, c.pressure, t0)
+			if !slices.Equal(start, c.start) {
+				t.Fatalf("start = %v, want %v", start, c.start)
+			}
+			if reason != c.reason {
+				t.Fatalf("reason = %q, want %q", reason, c.reason)
+			}
+		})
+	}
+}
+
+func TestPressureFromLevel(t *testing.T) {
+	// kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical; anything else is no reading
+	for level, want := range map[uint32]Pressure{0: PressureUnknown, 1: PressureNormal, 2: PressureWarn, 3: PressureUnknown, 4: PressureCritical} {
+		if got := PressureFromLevel(level); got != want {
+			t.Errorf("PressureFromLevel(%d) = %v, want %v", level, got, want)
+		}
+	}
+}
+
+func TestPauseStartsEveryJobUntilItEnds(t *testing.T) {
+	var until atomic.Value
+	until.Store(time.Now().Add(time.Hour))
+	q := New(Config{
+		PausedUntil: func() time.Time { return until.Load().(time.Time) },
+		// no RAM at all: only the pause lets a job start
+		Available: func(context.Context) (uint64, error) { return 0, nil },
+	})
+	ctx := context.Background()
+	a, err := q.Acquire(ctx, Request{Name: "a", Bytes: gb}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Release()
+	if p := q.Snapshot().PausedUntil; !p.Equal(until.Load().(time.Time)) {
+		t.Fatalf("snapshot paused until %v, want %v", p, until.Load())
+	}
+	until.Store(time.Now().Add(-time.Second))
+	q.evaluate(ctx)
+	if p := q.Snapshot().PausedUntil; !p.IsZero() {
+		t.Fatalf("an ended pause still shows: %v", p)
+	}
+	got := make(chan *Slot, 1)
+	go func() { s, _ := q.Acquire(ctx, Request{Name: "b", Bytes: gb}, nil); got <- s }()
+	waitFor(t, func() bool { return len(q.Snapshot().Jobs) == 2 })
+	select {
+	case <-got:
+		t.Fatal("b started with no RAM after the pause ended")
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

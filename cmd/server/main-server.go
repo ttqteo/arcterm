@@ -163,12 +163,20 @@ func harnessUpdateCheckEnabled() bool {
 }
 
 // startJobQueue builds the heavy-job queue every agent's shell hook and every engine run waits in, and publishes
-// its state to the cockpit. The slot count and the mode are read on each evaluation, so a jobs:slots or jobs:mode
-// change takes hold at the next one (ConfigHook pokes it).
+// its state to the cockpit. The slot count, the mode and the pause are read on each evaluation, so a jobs:* change
+// takes hold at the next one (ConfigHook pokes it), and a pause ends by itself at the next Tick past it. On macOS the
+// memory pressure decides instead of the free RAM, which there leaves out the compressor and swap.
 func startJobQueue() {
 	jobqueue.Default = jobqueue.New(jobqueue.Config{
 		Slots: func() int { return jobqueue.ClampSlots(wconfig.GetWatcher().GetFullConfig().Settings.JobsSlots) },
 		Mode:  func() string { return wconfig.GetWatcher().GetFullConfig().Settings.JobsMode },
+		PausedUntil: func() time.Time {
+			if ms := wconfig.GetWatcher().GetFullConfig().Settings.JobsPauseUntil; ms != nil && *ms > 0 {
+				return time.UnixMilli(*ms)
+			}
+			return time.Time{}
+		},
+		Pressure: jobqueue.ReadPressure,
 		Available: func(ctx context.Context) (uint64, error) {
 			vm, err := mem.VirtualMemoryWithContext(ctx)
 			if err != nil {
@@ -380,7 +388,7 @@ func main() {
 	wconfig.ConfigHook = func(fc wconfig.FullConfigType) {
 		wshserver.SyncProjectChannels(context.Background(), fc.Projects)
 		claudeaccount.ApplyEnv(fc.Settings.ClaudeActiveAccount)
-		jobqueue.Poke() // a changed jobs:slots or jobs:mode is effective at once, not at the queue's next tick
+		jobqueue.Poke() // a changed jobs:* setting is effective at once, not at the queue's next tick
 	}
 	err = startConfigWatcher()
 	if err != nil {

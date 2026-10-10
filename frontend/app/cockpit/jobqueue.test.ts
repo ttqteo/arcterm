@@ -4,13 +4,18 @@
 import { describe, expect, it } from "vitest";
 import {
     chipLabel,
+    chipText,
+    chipTitle,
     formatElapsed,
+    formatLeft,
     LONG_WAIT_MS,
     longWait,
     openTargetFor,
     ordered,
     pacePatch,
     paceValue,
+    pauseLeft,
+    pausePatch,
     queuedJobFor,
     queuedTag,
     queueTitle,
@@ -177,5 +182,36 @@ describe("jobqueue", () => {
         expect(pacePatch("3")).toEqual({ "jobs:mode": "slots", "jobs:slots": 3 });
         expect(pacePatch("auto")).toEqual({ "jobs:mode": "auto" });
         expect(pacePatch("off")).toEqual({ "jobs:mode": "off" });
+    });
+    it("reads a pause's time left, and none once it has ended", () => {
+        const d = { slots: 1, mode: "auto", pauseduntil: 10_000, jobs: [] };
+        expect(pauseLeft(d, 4_000)).toBe(6_000);
+        expect(pauseLeft(d, 10_000)).toBeNull();
+        expect(pauseLeft({ slots: 1, mode: "auto", jobs: [] }, 0)).toBeNull();
+        expect(pauseLeft(null, 0)).toBeNull();
+    });
+    it("formats a pause's time left, rounded up to the minute", () => {
+        expect(formatLeft(4 * 3_600_000)).toBe("4h");
+        expect(formatLeft(3 * 3_600_000 + 11 * 60_000 + 1)).toBe("3h 12m");
+        expect(formatLeft(58 * 60_000)).toBe("58m");
+        expect(formatLeft(20_000)).toBe("1m");
+    });
+    it("shows the chip while paused, even with nothing running, with the time left", () => {
+        const paused = { slots: 1, mode: "auto", pauseduntil: 3_600_000, jobs: [] as JobQueueJob[] };
+        expect(chipText(paused, 0)).toBe("paused 1h");
+        expect(chipText({ ...paused, jobs: [job({ running: true })] }, 0)).toBe("paused 1h · 1 running");
+        expect(chipTitle(paused, 0)).toBe(
+            "Heavy jobs: queue paused for 1h, every job starts at once (resume in the popover)"
+        );
+    });
+    it("reads the chip as the queue once a pause has ended", () => {
+        const d = { slots: 1, mode: "auto", pauseduntil: 1_000, jobs: [job({ running: true })] };
+        expect(chipText(d, 2_000)).toBe(chipLabel(d));
+        expect(chipTitle(d, 2_000)).toBe(queueTitle(d));
+        expect(chipText({ ...d, jobs: [] }, 2_000)).toBeNull();
+    });
+    it("writes a pause's end, and Resume clears it", () => {
+        expect(pausePatch(3_600_000, 1_000)).toEqual({ "jobs:pauseuntil": 3_601_000 });
+        expect(pausePatch(null, 1_000)).toEqual({ "jobs:pauseuntil": 0 });
     });
 });

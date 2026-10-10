@@ -173,6 +173,9 @@
         },
         "jobs:mode": {
           "type": "string"
+        },
+        "jobs:pauseuntil": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,

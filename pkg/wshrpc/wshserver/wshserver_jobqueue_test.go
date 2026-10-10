@@ -233,6 +233,17 @@ func TestGetJobQueueCarriesTheMode(t *testing.T) {
 	}
 }
 
+func TestGetJobQueueCarriesThePause(t *testing.T) {
+	saved := jobqueue.Default
+	t.Cleanup(func() { jobqueue.Default = saved })
+	until := time.Now().Add(time.Hour).Truncate(time.Millisecond)
+	jobqueue.Default = jobqueue.New(jobqueue.Config{PausedUntil: func() time.Time { return until }})
+	data, err := (&WshServer{}).GetJobQueueCommand(context.Background())
+	if err != nil || data.PausedUntil != until.UnixMilli() {
+		t.Fatalf("queue = %+v, %v; want paused until %d", data, err, until.UnixMilli())
+	}
+}
+
 // the wire framing of one stream response: the update sits in Data of a message answering ResId
 type streamReader struct {
 	t       *testing.T

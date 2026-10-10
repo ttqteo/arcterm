@@ -66,10 +66,11 @@ Other useful commands:
 - **A heavy shell command waits its turn, and can come back "Not run: …".** Before every Bash command an agent
   runs, the Claude mod and the pi tools extension call `wsh jobslot`; a heavy one (a build, the typecheck, a whole test
   suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until its RAM fits (by default,
-  `jobs:mode` `auto`; `slots` also caps them at `jobs:slots` at once, `off` never waits), and holds its slot while it
-  runs. The engine's Verify, Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes
-  back "Not run: …": don't retry it — carry on and report it skipped. The commands and their RAM estimates are one
-  table in `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never queues.
+  `jobs:mode` `auto`; `slots` also caps them at `jobs:slots` at once, `off` never waits, and `jobs:pauseuntil` is off
+  for a while; on macOS "fits" reads the OS memory pressure), and holds its slot while it runs. The engine's Verify,
+  Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't
+  retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
+  `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never queues.
 - **Say what a fan-out will cost before starting it.** Token cost grows as context size × tool calls × agents,
   and almost all of it is cache reads: on 2026-10-08 a docs rewrite with four research subagents and a few real Claude
   agents staged for screenshots took the account from ~20M to ~220M tokens in an hour. Before you launch several

@@ -76,6 +76,54 @@ export function pacePatch(value: string): SettingsType {
     return { "jobs:mode": "slots", "jobs:slots": Number(value) };
 }
 
+/** How long the pause on at `now` (Unix ms) has left, in ms; null when none is on. wavesrv drops an ended pause at its
+ * next tick, so the clock decides in the meantime. */
+export function pauseLeft(d: JobQueueData | null, now: number): number | null {
+    const until = d?.pauseduntil ?? 0;
+    return until > now ? until - now : null;
+}
+
+/** "4h", "3h 12m", "58m": a pause's time left, rounded up to the minute so it never reads 0 while the pause is on. */
+export function formatLeft(ms: number): string {
+    const total = Math.max(1, Math.ceil(ms / 60_000));
+    if (total < 60) {
+        return `${total}m`;
+    }
+    const h = Math.floor(total / 60);
+    return total % 60 === 0 ? `${h}h` : `${h}h ${total % 60}m`;
+}
+
+/** The chip's text: while a pause is on, the time it has left (and what runs), so a paused queue is never forgotten;
+ * else chipLabel. */
+export function chipText(d: JobQueueData, now: number): string | null {
+    const left = pauseLeft(d, now);
+    if (left == null) {
+        return chipLabel(d);
+    }
+    const running = runningCount(d);
+    return running > 0 ? `paused ${formatLeft(left)} · ${running} running` : `paused ${formatLeft(left)}`;
+}
+
+/** The chip's tooltip: the pause while one is on, else queueTitle. */
+export function chipTitle(d: JobQueueData, now: number): string {
+    const left = pauseLeft(d, now);
+    if (left == null) {
+        return queueTitle(d);
+    }
+    return `Heavy jobs: queue paused for ${formatLeft(left)}, every job starts at once (resume in the popover)`;
+}
+
+/** The popover's Pause choices: how long the queue stays off. */
+export const PAUSE_CHOICES: readonly { label: string; ms: number }[] = [
+    { label: "1h", ms: 3_600_000 },
+    { label: "4h", ms: 4 * 3_600_000 },
+];
+
+/** The settings a Pause writes: the queue off for `ms` from `now`; null (Resume) ends the pause. */
+export function pausePatch(ms: number | null, now: number): SettingsType {
+    return { "jobs:pauseuntil": ms == null ? 0 : now + ms };
+}
+
 /** Whether a queued job has waited past LONG_WAIT_MS at `now` (Unix ms). A running job has stopped waiting. */
 export function longWait(d: JobQueueData, now: number): boolean {
     return d.jobs.some((j) => !j.running && now - j.queuedts > LONG_WAIT_MS);

@@ -104,7 +104,12 @@ func (ws *WshServer) JobQueueSkipCommand(ctx context.Context, data wshrpc.Comman
 // JobQueueData is the snapshot as the cockpit and the jobqueue event carry it: times in Unix ms, never a null
 // job list.
 func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
-	out := wshrpc.JobQueueData{Slots: s.Slots, Mode: s.Mode, Jobs: make([]wshrpc.JobQueueJob, 0, len(s.Jobs))}
+	out := wshrpc.JobQueueData{
+		Slots:       s.Slots,
+		Mode:        s.Mode,
+		PausedUntil: unixMilli(s.PausedUntil),
+		Jobs:        make([]wshrpc.JobQueueJob, 0, len(s.Jobs)),
+	}
 	for _, j := range s.Jobs {
 		out.Jobs = append(out.Jobs, wshrpc.JobQueueJob{
 			Id:        j.Id,

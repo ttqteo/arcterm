@@ -165,7 +165,12 @@ Mỗi hàng có:
 - **lệnh shell của agent** khi nó nặng. Trước mỗi lệnh, mod Claude, extension pi và hook Antigravity hỏi `wsh jobslot`: lệnh thường chạy ngay, lệnh nặng chờ đến lượt rồi giữ chỗ trong lúc chạy;
 - **Verify** và **Final** của một run (luôn luôn), cùng **Setup** và **Check** khi lệnh của chúng nặng. Chúng xếp chung hàng với lệnh của agent.
 
-"RAM đủ" nghĩa là RAM trống đủ cho đỉnh RAM của lệnh cộng 512 MB chừa cho phần còn lại của máy. Đến trước chạy trước. Lệnh thiếu RAM chờ ở đầu hàng và tự chạy khi RAM trống lại; bạn cũng có thể duyệt cho nó chạy ngay (**Run now**) hoặc bỏ nó (**Skip**) trong popover. Một lệnh chờ bao lâu cũng được; không có hạn.
+"RAM đủ" tùy hệ điều hành:
+
+- **macOS**: theo **memory pressure** của chính macOS (biểu đồ xanh/vàng/đỏ trong Activity Monitor), vì nó đã tính bộ nhớ nén và swap. Con số "RAM trống" trên Mac thì bỏ sót cả hai nên luôn thấp, kể cả khi máy còn chạy mượt. Xanh: lệnh chạy ngay. Vàng: vẫn chạy nhưng từng cái một, lệnh sau chờ lệnh trước chạy được 60 giây (lý do `memory pressure high, one at a time`). Đỏ: lệnh mới chờ (`memory pressure critical`).
+- **Windows** (và khi không đọc được pressure): RAM trống đủ cho đỉnh RAM của lệnh cộng 512 MB chừa cho phần còn lại của máy (lý do `needs 3 GB, 1.2 GB free`).
+
+Đến trước chạy trước. Lệnh thiếu RAM chờ ở đầu hàng và tự chạy khi RAM trống lại; bạn cũng có thể duyệt cho nó chạy ngay (**Run now**) hoặc bỏ nó (**Skip**) trong popover. Một lệnh chờ bao lâu cũng được; không có hạn.
 
 Bộ chọn **Slots** ở đầu popover bên dưới đặt cách hàng đợi cho lệnh chạy, có tác dụng ngay:
 
@@ -175,13 +180,15 @@ Bộ chọn **Slots** ở đầu popover bên dưới đặt cách hàng đợi 
 | **1–4** | số lệnh đang chạy ít hơn số đã chọn, và RAM đủ | `jobs:slots`, cùng `jobs:mode` = `slots` |
 | **Off** | ngay lập tức: không lệnh nào phải chờ, kể cả khi thiếu RAM | `jobs:mode` = `off` |
 
-Ở **Auto**, lệnh vừa bắt đầu vẫn tính đủ đỉnh RAM của nó trong 60 giây đầu, nên hai build lớn không cùng lúc lấy hết chỗ RAM còn trống. Auto chỉ canh RAM, không canh CPU và đĩa: khi vài build cùng chạy làm máy chậm dù RAM còn đủ, chọn **1** hoặc **2**. Ở **Off**, các lệnh vẫn hiện trên chip và trong popover để bạn thấy cái gì đang chạy.
+Ở **Auto**, lệnh vừa bắt đầu vẫn tính đủ đỉnh RAM của nó trong 60 giây đầu (trên Windows), nên hai build lớn không cùng lúc lấy hết chỗ RAM còn trống. Auto chỉ canh RAM, không canh CPU và đĩa: khi vài build cùng chạy làm máy chậm dù RAM còn đủ, chọn **1** hoặc **2**. Ở **Off**, các lệnh vẫn hiện trên chip và trong popover để bạn thấy cái gì đang chạy.
+
+Muốn tạm tắt hàng đợi, bấm **1h** hoặc **4h** ở dòng **Pause the queue for** trong popover. Trong thời gian đó mọi lệnh nặng chạy ngay như ở **Off**, chip ghi `paused 3h 12m` (kèm số lệnh đang chạy, nếu có), và khi hết giờ hàng đợi tự bật lại với lựa chọn Slots cũ. **Resume** bật lại sớm. Pause ghi giờ hết hạn vào `jobs:pauseuntil` (Unix ms), nên vẫn còn sau khi khởi động lại app.
 
 Khi lệnh nặng của một agent đang chờ, hàng của agent đó trong cây agent và header của nó ghi `queued #2` thay cho working; rê chuột lên để xem lệnh và lý do chờ, bấm để mở popover.
 
 ### Chip Jobs và popover
 
-Chip **Jobs** nằm trên app bar, bên trái chip RAM. Nó chỉ hiện khi có lệnh đang chạy hoặc đang chờ: `1 running`, hoặc `1 · 2 queued`. Khi có lệnh đã chờ quá 5 phút, chip chuyển vàng kèm ⚠: thường là thứ đang giữ chỗ bị kẹt. Bấm chip mở popover **Heavy jobs**; `Esc` hoặc bấm ra ngoài để đóng.
+Chip **Jobs** nằm trên app bar, bên trái chip RAM. Nó chỉ hiện khi có lệnh đang chạy hoặc đang chờ (`1 running`, hoặc `1 · 2 queued`), hoặc khi hàng đợi đang pause (`paused 58m`, kèm ⏸). Khi có lệnh đã chờ quá 5 phút, chip chuyển vàng kèm ⚠: thường là thứ đang giữ chỗ bị kẹt. Bấm chip mở popover **Heavy jobs**; `Esc` hoặc bấm ra ngoài để đóng.
 
 <!-- shot: usage-job-queue.png | Popover Heavy jobs mở từ chip Jobs: bộ chọn Slots ở đầu, một lệnh đang chạy (`task check:ts`, chấm accent) và ba lệnh đang chờ (`npm install`, `go test ./...`, `cargo build`) đánh số 2–4, mỗi hàng có RAM đỉnh, thời gian chờ, nguồn và lý do `slot busy`, nút Run now / Skip | Scenario CDP `jobqueue-chip` (`task verify:ui -- jobqueue-chip`); ảnh `cdp-shots/jobqueue-chip-panel.png`, chip là `[data-job-queue-chip]`, popover là `[data-job-queue-panel]` -->
 

@@ -26670,6 +26670,7 @@ const jobqueueChip = {
             const settingsBefore = (await h.rpc("getfullconfig", null))?.settings ?? {};
             ctx.slotsBefore = settingsBefore["jobs:slots"] ?? null;
             ctx.modeBefore = settingsBefore["jobs:mode"] ?? null;
+            ctx.pauseBefore = settingsBefore["jobs:pauseuntil"] ?? null;
             await h.rpc("setconfig", { "jobs:slots": 1, "jobs:mode": "slots" });
             ctx.slotsChanged = true;
             // the run step 9 opens: deferred, so no lead and no worker starts
@@ -26958,6 +26959,60 @@ const jobqueueChip = {
             opened && landed && surface === SURFACE_LABEL.jarvis && sheet?.goal === true,
             JSON.stringify({ opened, landed, surface, sheet })
         );
+
+        // 10. Pause 1h: written to jobs:pauseuntil, read back from the queue's own snapshot, counted down on the chip,
+        // and Resume ends it. A running job is injected only so the chip is there to open the popover from
+        await h.ev(`window.__jobQueueInject({
+            slots: 1, mode: "auto",
+            jobs: [{ id: "jp", name: "task check:ts", bytes: 3221225472, running: true, queuedts: Date.now(), startedts: Date.now() }],
+        })`);
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-chip]")`, 3000);
+        await click("[data-job-queue-chip]");
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-pause-for='1h']")`, 3000);
+        const before = Date.now();
+        await click("[data-job-queue-pause-for='1h']");
+        let pauseUntil = null;
+        for (let waited = 0; waited < 3000 && !(pauseUntil > before); waited += 250) {
+            pauseUntil = (await h.rpc("getfullconfig", null))?.settings?.["jobs:pauseuntil"] ?? null;
+            if (!(pauseUntil > before)) await polishNap(250);
+        }
+        const pausedShown = await polishWaitFor(
+            h,
+            `document.querySelector("[data-job-queue-chip]")?.hasAttribute("data-job-queue-paused") === true && !!document.querySelector("[data-job-queue-resume]")`,
+            3000
+        );
+        const paused = await h.ev(`(() => ({
+            chip: document.querySelector("[data-job-queue-chip]")?.textContent?.trim() ?? null,
+            left: document.querySelector("[data-job-queue-paused-left]")?.textContent ?? null,
+        }))()`);
+        await h.shot("cdp-shots/jobqueue-chip-paused.png");
+        rec(
+            "10a. Pause 1h saves jobs:pauseuntil an hour out, and the chip and the popover say paused 1h",
+            pauseUntil != null &&
+                pauseUntil - before > 59 * 60_000 &&
+                pauseUntil - before <= 61 * 60_000 &&
+                pausedShown &&
+                String(paused.chip).startsWith("paused 1h") &&
+                String(paused.left).includes("1h left"),
+            JSON.stringify({ pauseUntil, before, pausedShown, paused })
+        );
+        await click("[data-job-queue-resume]");
+        let resumed = null;
+        for (let waited = 0; waited < 3000 && resumed !== 0; waited += 250) {
+            resumed = (await h.rpc("getfullconfig", null))?.settings?.["jobs:pauseuntil"] ?? null;
+            if (resumed !== 0) await polishNap(250);
+        }
+        const offAgain = await polishWaitFor(
+            h,
+            `!!document.querySelector("[data-job-queue-pause-for='1h']") && !document.querySelector("[data-job-queue-chip][data-job-queue-paused]")`,
+            3000
+        );
+        rec(
+            "10b. Resume clears the pause: the popover offers Pause again and the chip no longer reads paused",
+            resumed === 0 && offAgain,
+            JSON.stringify({ resumed, offAgain })
+        );
+        await escape();
         return steps;
     },
     async teardown(h, ctx) {
@@ -26973,10 +27028,14 @@ const jobqueueChip = {
         // cancels the run, deletes its channel, reloads the page (the websocket closes, so wavesrv cancels any stream
         // still held) and removes the temp dir
         await teardownFixtureRun(h, ctx, "jobqueue-chip", {
-            what: "restore jobs:slots and jobs:mode",
+            what: "restore jobs:slots, jobs:mode and jobs:pauseuntil",
             fn: async () => {
                 if (ctx.slotsChanged) {
-                    await h.rpc("setconfig", { "jobs:slots": ctx.slotsBefore, "jobs:mode": ctx.modeBefore });
+                    await h.rpc("setconfig", {
+                        "jobs:slots": ctx.slotsBefore,
+                        "jobs:mode": ctx.modeBefore,
+                        "jobs:pauseuntil": ctx.pauseBefore,
+                    });
                 }
             },
         });

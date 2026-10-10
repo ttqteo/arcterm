@@ -22,6 +22,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   working, with why it waits (RAM or a busy slot) in the tooltip; a click opens the Jobs popover.
 - The Jobs popover's Slots picker sets how the queue runs: **Auto** (the default) as many at once as the free RAM
   allows, **1–4** no more than that many at once, **Off** never makes one wait.
+- **Pause the queue for 1h or 4h** in the Jobs popover: every heavy job starts at once until then, the chip counts the
+  pause down, and **Resume** ends it early.
 - Diff can commit and sync. The Commit tab lists the working tree's files with a tick each (Changes ticked,
   Unversioned not): write a message and press **Commit** or `Ctrl`+`Enter`, and only the ticked files are committed, so
   what another session staged stays staged. **Amend** loads the last commit's message and turns off once that commit is
@@ -36,6 +38,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Changed
 
 - The Low RAM card is gone: a heavy command waits in the job queue instead.
+- On a Mac the job queue judges RAM by macOS's own memory pressure, which counts compressed memory and swap, so heavy
+  jobs no longer wait on a machine that only looks full: they run at green, one at a time at yellow, and wait at red.
 - New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long
   list scrolls inside itself.
 - Pressing any other key while holding `Ctrl` or `Alt`, as in `Ctrl`+`C`, hides the shortcut bar and the rail and

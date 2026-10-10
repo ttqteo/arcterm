@@ -2351,6 +2351,7 @@ declare global {
     type JobQueueData = {
         slots: number;
         mode: string;
+        pauseduntil?: number;
         jobs: JobQueueJob[];
     };
 
@@ -3008,6 +3009,7 @@ declare global {
         "usage:insightslang"?: string;
         "jobs:slots"?: number;
         "jobs:mode"?: string;
+        "jobs:pauseuntil"?: number;
     };
 
     // wshrpc.ShippedItem
