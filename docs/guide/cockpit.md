@@ -345,7 +345,9 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
 
 - Bấm vào nó, hoặc `Ctrl+G` rồi `w`, để mở popup **việc đang chờ**: duyệt, retry, acknowledge, land again hoặc trả lời câu hỏi một lựa chọn bằng `1`–`9` ngay tại đó; `Space` xem trước nơi nút **Open** sẽ dẫn tới; `Esc` đóng.
 - Ở chế độ **Float**, con vật đi trên một gờ dưới đáy cửa sổ, không bao giờ đứng lên dấu nhắc của terminal, kèm chip
-  số việc đang chờ, và chấm "…" cùng số agent đang chạy cạnh đầu nó; bấm vào nó mở cùng popup.
+  số việc đang chờ, và chấm "…" cùng số agent đang chạy cạnh đầu nó; bấm vào nó mở cùng popup. Bên trái gờ là các tab
+  để chuyển Float sang agent khác hoặc một terminal thường (quá năm tab thì **+N** mở danh sách còn lại); `Ctrl+Tab` /
+  `Ctrl+Shift+Tab` đi qua hết các tab, cả khi đang gõ trong terminal. Con vật chỉ đi trong phần gờ các tab chừa lại.
 - **Thu vào Sprout:** nút **Sprout** trên app bar hoặc trên thanh Float, nút minimize (nút vàng trên macOS), hay `⌘M`
   (`Ctrl+M` trên Windows, chạy cả khi đang gõ trong terminal) thu cả cửa sổ vào con vật ngay chỗ nó đang đứng. Nó bay
   trên mọi app, đeo dấu và số việc đang chờ, chấm "…" cùng số agent đang chạy, kéo đi đâu cũng được. Rê chuột lên nó

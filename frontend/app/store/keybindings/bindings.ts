@@ -25,7 +25,7 @@ import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
-import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
+import { floatModeAtom, minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
     graphOnAtom,
@@ -40,6 +40,7 @@ import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
+import { stepFloatTab } from "@/app/view/agents/sproutroster";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
@@ -174,6 +175,19 @@ export function closeTargetForDoubleCtrlC(
     }
     const target = agents.find((x) => x.id === id);
     return target != null && target.kind !== "terminal" ? target : null;
+}
+
+// Ctrl+Tab in a float: show the tab beside the one in view, as a click on it does
+function stepFloat(model: AgentsViewModel, delta: 1 | -1): void {
+    const id = stepFloatTab(
+        globalStore.get(model.agentsAtom),
+        globalStore.get(model.terminalsAtom),
+        globalStore.get(model.focusIdAtom) ?? null,
+        delta
+    );
+    if (id != null) {
+        model.openTerminal(id);
+    }
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
@@ -332,7 +346,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "Ctrl:Tab",
             group: "Agent",
             label: "Next agent",
-            when: (ctx) => ctx.surface === "agent",
+            when: (ctx) => ctx.surface === "agent" && !globalStore.get(floatModeAtom),
             run: () => model.cycleFocus(false),
         },
         {
@@ -342,8 +356,26 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "Ctrl:Shift:Tab",
             group: "Agent",
             label: "Previous agent",
-            when: (ctx) => ctx.surface === "agent",
+            when: (ctx) => ctx.surface === "agent" && !globalStore.get(floatModeAtom),
             run: () => model.cycleFocus(true),
+        },
+        {
+            // In Float the window is one terminal over its tabs (float-ledge.tsx), plain terminals among them, and has
+            // no rail: Ctrl+Tab steps through those tabs instead of the agents alone. From inside a terminal too.
+            id: "float:next-tab",
+            keys: "Ctrl:Tab",
+            group: "Agent",
+            label: "Next tab in a float",
+            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
+            run: () => stepFloat(model, 1),
+        },
+        {
+            id: "float:prev-tab",
+            keys: "Ctrl:Shift:Tab",
+            group: "Agent",
+            label: "Previous tab in a float",
+            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
+            run: () => stepFloat(model, -1),
         },
         {
             id: "close-agent",

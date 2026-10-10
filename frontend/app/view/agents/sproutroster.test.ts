@@ -3,30 +3,56 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { foldedList, switcherAgents, workingCount } from "./sproutroster";
+import { FLOAT_TAB_MAX, floatTabs, foldedList, stepFloatTab, workingCount } from "./sproutroster";
 
 const a = (id: string, state: AgentVM["state"], kind?: string): AgentVM =>
     ({ id, name: id, task: "", state, kind }) as AgentVM;
 const ids = (list: AgentVM[]) => list.map((x) => x.id);
 
-describe("switcherAgents", () => {
-    it("lists every agent in roster order", () => {
-        const agents = [a("x", "idle"), a("y", "asking"), a("z", "working")];
-        expect(switcherAgents(agents, [], "x")).toEqual({ shown: agents, more: 0 });
+describe("floatTabs", () => {
+    const t = (id: string) => a(id, "idle", "terminal");
+    it("lists every agent in roster order, then every plain terminal", () => {
+        const tabs = floatTabs([a("x", "idle"), a("y", "asking")], [t("t1"), t("t2")], "x");
+        expect(ids(tabs.shown)).toEqual(["x", "y", "t1", "t2"]);
+        expect(tabs.rest).toEqual([]);
     });
-    it("leads with a floated terminal, which is not an agent", () => {
-        expect(ids(switcherAgents([a("x", "idle")], [a("t", "idle", "terminal")], "t").shown)).toEqual(["t", "x"]);
+    it("reaches a plain terminal while an agent floats", () =>
+        expect(ids(floatTabs([a("x", "idle")], [t("t1")], "x").shown)).toContain("t1"));
+    it("lists a terminal once when it is also an agent's", () =>
+        expect(ids(floatTabs([a("x", "idle"), a("y", "idle")], [a("x", "idle", "terminal")], "x").shown)).toEqual([
+            "x",
+            "y",
+        ]));
+    it("shows no tabs for a float with nothing to switch to", () =>
+        expect(floatTabs([a("x", "idle")], [], "x")).toEqual({ shown: [], rest: [] }));
+    it("cuts at FLOAT_TAB_MAX and keeps the rest for the +N menu", () => {
+        const agents = "abcdefg".split("").map((id) => a(id, "idle"));
+        const tabs = floatTabs(agents, [], "a");
+        expect(tabs.shown).toHaveLength(FLOAT_TAB_MAX);
+        expect(ids([...tabs.shown, ...tabs.rest])).toEqual("abcdefg".split(""));
     });
-    it("cuts at six and counts the rest", () => {
-        const agents = "abcdefgh".split("").map((id) => a(id, "idle"));
-        const cut = switcherAgents(agents, [], "a");
-        expect(ids(cut.shown)).toEqual(["a", "b", "c", "d", "e", "f"]);
-        expect(cut.more).toBe(2);
+    it("keeps the tab in view among those shown past the cut", () => {
+        const agents = "abcdefg".split("").map((id) => a(id, "idle"));
+        const tabs = floatTabs(agents, [], "g");
+        expect(ids(tabs.shown)).toContain("g");
+        expect(ids(tabs.rest)).not.toContain("g");
     });
-    it("keeps the agent in view among the dots past the cut", () => {
-        const agents = "abcdefgh".split("").map((id) => a(id, "idle"));
-        expect(ids(switcherAgents(agents, [], "h").shown)).toEqual(["a", "b", "c", "d", "e", "h"]);
+});
+
+describe("stepFloatTab", () => {
+    const agents = [a("x", "idle"), a("y", "idle")];
+    const terminals = [a("t", "idle", "terminal")];
+    it("steps from the last agent to the first terminal", () =>
+        expect(stepFloatTab(agents, terminals, "y", 1)).toBe("t"));
+    it("wraps around both ends", () => {
+        expect(stepFloatTab(agents, terminals, "t", 1)).toBe("x");
+        expect(stepFloatTab(agents, terminals, "x", -1)).toBe("t");
     });
+    it("reaches tabs past the cut", () => {
+        const many = "abcdefg".split("").map((id) => a(id, "idle"));
+        expect(stepFloatTab(many, [], "f", 1)).toBe("g");
+    });
+    it("has nowhere to go with one tab", () => expect(stepFloatTab([a("x", "idle")], [], "x", 1)).toBeNull());
 });
 
 describe("foldedList", () => {

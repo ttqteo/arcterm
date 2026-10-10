@@ -30,6 +30,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
+import { floatModeAtom } from "@/app/view/agents/floatstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -72,6 +73,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     renamingRowAtom, // buildAgentBindings: subagent:back
     focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:leave-center
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
+    floatModeAtom, // buildGlobalBindings: cycle-agent-next / -prev stand down for float:next-tab / prev-tab
 ];
 
 function bumpWhenVersion() {

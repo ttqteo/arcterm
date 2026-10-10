@@ -51,7 +51,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Dock or taskbar instead.
 - In a float, Sprout walks a ledge under the terminal, with a count of what waits on you; click it for the Jarvis chat.
   In a float and folded, a "…" beside Sprout's head says how many agents are working.
-  Dots on the float bar, one an agent, switch the float to another agent's terminal.
+  Tabs on the ledge, beside Sprout, switch the float to another agent's terminal or to a plain terminal; past five, a
+  **+N** menu lists the rest, and `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` step through them all, even from inside a terminal.
   In a float and folded into Sprout, what used to be a toast is Sprout's bubble, a permission prompt included; folded,
   it shows even while another app is in front, and what needs you also reaches the system notifications.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
@@ -98,6 +99,7 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - On macOS, folding into Sprout or floating from a maximized window no longer shows the window jumping to an old size
   and place before it shrinks.
+- The float bar shows the arrow cursor over the agent's name, as a title bar does, instead of the text cursor.
 - A Terminal opened from New with a command in its Command field runs that command when it opens, at the shell's
   first prompt, and stays a shell afterwards; the command was ignored before.
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
