@@ -17,15 +17,26 @@ export interface Box {
     bottom: number;
 }
 
+// A ledge element's box, and whether the ledge holds the whole sprite (Float's, cockpit/float-ledge.tsx): the sprite
+// stands inside it rather than on its top edge, and nothing above it is in its way.
+export interface LedgeBox extends Box {
+    holds?: boolean;
+}
+
 export interface MeasuredLedge {
     // the y the sprite's bottom row stands on
     top: number;
     left: number;
     right: number;
+    // the ledge holds the sprite, so there is nothing to avoid (avoidSpans does not apply)
+    holds: boolean;
 }
 
 // The ledge stops this far short of the window's right edge.
 export const LEDGE_RIGHT_INSET_PX = 8;
+
+// A ledge that holds the sprite stands it this far above its bottom.
+export const LEDGE_HOLD_PAD_PX = 2;
 
 // A terminal or composer counts when its box comes within this far above the ledge.
 export const AVOID_REACH_PX = 80;
@@ -36,8 +47,8 @@ function shown(b: Box): boolean {
 }
 
 /** The lowest shown ledge element's box, or null when none is shown. */
-export function lowestLedge(boxes: readonly Box[]): Box | null {
-    let best: Box | null = null;
+export function lowestLedge<B extends Box>(boxes: readonly B[]): B | null {
+    let best: B | null = null;
     for (const b of boxes) {
         if (shown(b) && (best == null || b.top > best.top)) {
             best = b;
@@ -50,10 +61,11 @@ export function lowestLedge(boxes: readonly Box[]): Box | null {
  * The ledge: the top of the lowest shown `[data-pet-ledge]` box (the window's bottom when there is none),
  * running from the nav rail's right edge (0 without one) to the window's right edge less 8 px — and never
  * past the ledge box's own ends. The footer spans the window, but the Cockpit's HintsBar stops at the
- * Cockpit rail, and a creature walking past its end would stand on nothing.
+ * Cockpit rail, and a creature walking past its end would stand on nothing. A ledge that holds the sprite (`holds`)
+ * stands it inside, LEDGE_HOLD_PAD_PX above its bottom.
  */
 export function measureLedge(
-    ledgeBoxes: readonly Box[],
+    ledgeBoxes: readonly LedgeBox[],
     navRight: number | null,
     viewport: { width: number; height: number }
 ): MeasuredLedge {
@@ -61,9 +73,15 @@ export function measureLedge(
     const left = navRight ?? 0;
     const right = viewport.width - LEDGE_RIGHT_INSET_PX;
     if (lowest == null) {
-        return { top: viewport.height, left, right };
+        return { top: viewport.height, left, right, holds: false };
     }
-    return { top: lowest.top, left: Math.max(left, lowest.left), right: Math.min(right, lowest.right) };
+    const holds = lowest.holds === true;
+    return {
+        top: holds ? lowest.bottom - LEDGE_HOLD_PAD_PX : lowest.top,
+        left: Math.max(left, lowest.left),
+        right: Math.min(right, lowest.right),
+        holds,
+    };
 }
 
 /**

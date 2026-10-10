@@ -16,21 +16,23 @@ import { atoms } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
-import { floatMiniAtom } from "@/app/view/agents/floatstore";
+import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
+import { floatMiniAtom, floatModeAtom } from "@/app/view/agents/floatstore";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
 import { animate, motion, useMotionValue, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { closePeek, openPetPeek } from "./peekstore";
 import { PetBubble } from "./petbubble";
 import { petCharacter } from "./petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
 import { landing, ledgeShift, type LedgeAt } from "./petfall";
-import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner } from "./petledge";
+import { avoidSpans, cornerFor, measureLedge, type LedgeBox, type MeasuredLedge, type PetCorner } from "./petledge";
 import { petOutfit, petOutfitChoice } from "./petoutfit";
 import { PetPeek } from "./petpeek";
+import { queueRows } from "./petpeekmodel";
 import { tightestWindow } from "./petquota";
 import { canQuote, pickQuote, QUOTE_RETRY_MS, quoteDelayMs, quoteEvent, type QuoteMoment } from "./petquotes";
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
@@ -75,7 +77,7 @@ function count(items: AttentionItem[], kind: string): number {
     return items.reduce((n, i) => (i.kind === kind ? n + 1 : n), 0);
 }
 
-// Every signal the creature reads. Shared with the float bar's still Sprout (petfloatmark.tsx).
+// Every signal the creature reads. Shared with the folded Sprout (cockpit/sprout-mini.tsx).
 export function usePetSignals(model: AgentsViewModel): PetSignals {
     const attention = useAtomValue(attentionAtom);
     const cap = useWorkerCapacity();
@@ -101,6 +103,14 @@ export function usePetSignals(model: AgentsViewModel): PetSignals {
     };
 }
 
+// How many things wait on you, the count on Sprout's chip in Float and folded (the nav badge's in Full)
+export function useWaitingCount(model: AgentsViewModel): number {
+    const items = useAtomValue(attentionAtom);
+    const agents = useAtomValue(model.agentsAtom);
+    const messages = useAtomValue(channelMessagesAtom);
+    return useMemo(() => queueRows(items, agents, messages).length, [items, agents, messages]);
+}
+
 // The DEV contract's override (sprout spec §4): replaces those walker inputs until force(null).
 type PetForce = {
     expression?: PetExpression["kind"];
@@ -116,7 +126,16 @@ interface PetFrame {
 }
 
 function readLedge(): MeasuredLedge {
-    const boxes = Array.from(document.querySelectorAll("[data-pet-ledge]"), (e) => e.getBoundingClientRect());
+    const boxes = Array.from(document.querySelectorAll("[data-pet-ledge]"), (e): LedgeBox => {
+        const r = e.getBoundingClientRect();
+        return {
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+            holds: e.hasAttribute("data-pet-ledge-holds"),
+        };
+    });
     // the nav rail's <nav> is the app's only one
     const nav = document.querySelector("nav")?.getBoundingClientRect();
     return measureLedge(boxes, nav != null && nav.width > 0 ? nav.right : null, {
@@ -159,6 +178,9 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // folded, the shell is hidden but this stays mounted (its voice keeps running); the bubble and the peek portal to
     // the body, past the hidden shell, so the folded Sprout draws its own (cockpit/sprout-mini.tsx)
     const folded = useAtomValue(floatMiniAtom);
+    // in Float the nav badge is gone: the count of what waits rides beside Sprout
+    const floating = useAtomValue(floatModeAtom);
+    const waiting = useWaitingCount(model);
     const reduce = useReducedMotion() === true;
     // state, not a ref: the bubble and the peek re-position when it lands
     const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
@@ -240,6 +262,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 setAnchor={setAnchor}
                 onCorner={setCorner}
                 openPeek={openPeek}
+                chip={floating && waiting > 0 ? waiting : null}
             />
             {folded ? null : (
                 <PetBubble
@@ -276,6 +299,7 @@ function PetSprite({
     setAnchor,
     onCorner,
     openPeek,
+    chip,
 }: {
     expression: PetExpression["kind"];
     posture: PetPosture;
@@ -288,6 +312,8 @@ function PetSprite({
     setAnchor: (el: HTMLDivElement | null) => void;
     onCorner: (corner: PetCorner) => void;
     openPeek: () => void;
+    // the count chip, Float only
+    chip: number | null;
 }) {
     const [frame, setFrame] = useState<PetFrame | null>(null);
     const [forced, setForced] = useState<PetForce | null>(null);
@@ -325,7 +351,8 @@ function PetSprite({
         clearTimeout(timerRef.current);
         timerRef.current = undefined;
         const ledge = readLedge();
-        const avoid = readAvoid(ledge.top);
+        // a ledge that holds the sprite keeps it off the terminal already
+        const avoid = ledge.holds ? [] : readAvoid(ledge.top);
         const now = Date.now();
         const live = liveRef.current;
         const f = forceRef.current;
@@ -606,6 +633,11 @@ function PetSprite({
                 <g transform={step.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>{sprite.body.map(cellRect)}</g>
                 {sprite.overlay.map(cellRect)}
             </motion.svg>
+            {chip != null ? (
+                <span className="pointer-events-none absolute -left-1 top-1 min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums">
+                    {chip}
+                </span>
+            ) : null}
         </motion.div>
     );
 }

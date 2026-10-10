@@ -9,7 +9,6 @@ import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
-import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
 import { petCharacterAtom } from "@/app/view/jarvis/petstore";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
@@ -78,8 +77,6 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                     </span>
                 ) : null}
             </div>
-            {/* the footer and its walking pet are gone in float mode; what waits on you shows here */}
-            <PetFloatMark model={model} />
             <button
                 type="button"
                 data-float-minimize

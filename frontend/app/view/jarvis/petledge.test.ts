@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { avoidSpans, cornerFor, lowestLedge, measureLedge, type Box } from "./petledge";
+import { avoidSpans, cornerFor, LEDGE_HOLD_PAD_PX, lowestLedge, measureLedge, type Box } from "./petledge";
 
 const box = (left: number, top: number, right: number, bottom: number): Box => ({ left, top, right, bottom });
 const VIEWPORT = { width: 1600, height: 900 };
@@ -26,16 +26,31 @@ describe("lowestLedge", () => {
 
 describe("measureLedge", () => {
     it("runs from the nav rail to the window's right edge less 8 px, on the lowest ledge's top", () => {
-        expect(measureLedge([box(0, 872, 1600, 900)], 78, VIEWPORT)).toEqual({ top: 872, left: 78, right: 1592 });
+        expect(measureLedge([box(0, 872, 1600, 900)], 78, VIEWPORT)).toEqual({
+            top: 872,
+            left: 78,
+            right: 1592,
+            holds: false,
+        });
     });
 
     it("never runs past the ledge box's own ends", () => {
         // the Cockpit's HintsBar: from the surface's left to the Cockpit rail
-        expect(measureLedge([box(90, 860, 1240, 890)], 78, VIEWPORT)).toEqual({ top: 860, left: 90, right: 1240 });
+        expect(measureLedge([box(90, 860, 1240, 890)], 78, VIEWPORT)).toEqual({
+            top: 860,
+            left: 90,
+            right: 1240,
+            holds: false,
+        });
     });
 
     it("falls back to the window's bottom, and to the window's left without a nav rail", () => {
-        expect(measureLedge([box(0, 0, 0, 0)], null, VIEWPORT)).toEqual({ top: 900, left: 0, right: 1592 });
+        expect(measureLedge([box(0, 0, 0, 0)], null, VIEWPORT)).toEqual({
+            top: 900,
+            left: 0,
+            right: 1592,
+            holds: false,
+        });
     });
 });
 
@@ -69,5 +84,21 @@ describe("cornerFor", () => {
         expect(cornerFor(775, 1600)).toBe("bottom-left");
         expect(cornerFor(776, 1600)).toBe("bottom-right");
         expect(cornerFor(1500, 1600)).toBe("bottom-right");
+    });
+});
+
+describe("a ledge that holds the sprite", () => {
+    // Float's 52px ledge under the terminal (cockpit/float-ledge.tsx)
+    const ledge = { left: 0, top: 408, right: 720, bottom: 460, holds: true };
+    it("stands the sprite inside it, just above its bottom", () => {
+        expect(measureLedge([ledge], null, { width: 720, height: 460 })).toEqual({
+            top: 460 - LEDGE_HOLD_PAD_PX,
+            left: 0,
+            right: 712,
+            holds: true,
+        });
+    });
+    it("is an edge like any other without the mark", () => {
+        expect(measureLedge([{ ...ledge, holds: false }], null, { width: 720, height: 460 }).top).toBe(408);
     });
 });

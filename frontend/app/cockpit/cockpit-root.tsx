@@ -48,6 +48,7 @@ import {
 import { ShortcutsCheatSheet } from "./shortcuts-cheatsheet";
 import { SproutMini } from "./sprout-mini";
 import { makeSyntheticNodeModel } from "./synthetic-node-model";
+import { FloatLedge } from "./float-ledge";
 import { HintsFooter } from "./hints-footer";
 import { JobQueuePanel } from "./jobqueuepanel";
 import { setupOpenFileSubscription } from "./openfilestore";
@@ -101,8 +102,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     }, [model]);
     useEffect(() => setupUiClient(model), [model]);
     useEffect(() => setupFloatMode(model), [model]);
-    // in float mode the window is the focused terminal: the float bar stands in for the app bar, the footer and the
-    // creature step out
+    // in Float the window is the focused terminal: the float bar stands in for the app bar and a ledge for the footer,
+    // which Sprout walks
     const floating = useAtomValue(floatModeAtom);
     const folded = useAtomValue(floatMiniAtom);
     // remember every switch, so the next launch can reopen where this one left off
@@ -188,7 +189,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <div className="min-h-0 flex-1">
                     <CockpitShell model={model} tabId={tabIdRef.current} />
                 </div>
-                {floating ? null : <HintsFooter model={model} />}
+                {floating ? <FloatLedge /> : <HintsFooter model={model} />}
                 {/* opened from the app bar's RAM chip and usage meters: one panel for both */}
                 <ConsumersPanel model={model} />
                 {/* the app bar's Jobs chip opens this; it also owns the one feed of the heavy-job queue the chip reads */}
@@ -202,7 +203,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <ShortcutsCheatSheet model={model} />
                 {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the
                     creature is the one object in the app that has to survive that */}
-                {floating ? null : <PetView model={model} />}
+                <PetView model={model} />
                 <ModalsRenderer />
                 <ContextMenuHost />
                 <NotificationToasts />
