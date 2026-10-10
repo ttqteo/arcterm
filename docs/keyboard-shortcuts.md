@@ -40,7 +40,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`Shift`+`N` | Launch a Pi tab |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
-| `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back). In a float: next / previous tab on the ledge, plain terminals included |
+| `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back). In a float: next / previous tab on the ledge, plain terminals included; `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac |
 | `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
 | `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal (on Windows it takes Ctrl+M from the terminal). Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
 

@@ -378,6 +378,24 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             run: () => stepFloat(model, -1),
         },
         {
+            // Option+Tab on a Mac, where nothing else takes it; on Windows Alt+Tab is the system's app switcher and
+            // never reaches the window.
+            id: "float:next-tab-alt",
+            keys: "Alt:Tab",
+            group: "Agent",
+            label: "Next tab in a float",
+            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
+            run: () => stepFloat(model, 1),
+        },
+        {
+            id: "float:prev-tab-alt",
+            keys: "Alt:Shift:Tab",
+            group: "Agent",
+            label: "Previous tab in a float",
+            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
+            run: () => stepFloat(model, -1),
+        },
+        {
             id: "close-agent",
             keys: "Ctrl:c",
             group: "Agent",
