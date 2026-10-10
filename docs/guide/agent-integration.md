@@ -14,7 +14,7 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này làm mới c
 | pi | extension của pi (và theme `arc`) | Trạng thái, câu hỏi, usage, hàng đợi lệnh nặng |
 | OpenCode | plugin trạng thái | Trạng thái trên rail |
 | Antigravity | khóa `arcterm` trong `~/.gemini/config/hooks.json` | Xem [Antigravity](#antigravity-agy) |
-| Codex | không có hook | Mở, resume, lịch sử và token đọc từ transcript |
+| Codex | handler `wsh codex-hook` trong `~/.codex/hooks.json` | Xem [Codex](#codex) |
 
 Các tích hợp chỉ hoạt động bên trong terminal của arcterm: chúng cần biến môi trường mà arcterm đặt cho terminal của nó, nên chạy `claude` hay `pi` ở terminal khác thì không có gì thay đổi. Khóa lạ trong file cấu hình được giữ nguyên; file hỏng được báo lỗi và để yên.
 
@@ -22,7 +22,7 @@ Muốn một phiên dev không động vào các file này, đặt `ARC_DEV_NO_G
 
 ## Trạng thái, tên và usage
 
-- **Trạng thái** (`working`, `idle`, `asking`, chờ quyền) đến từ hook vòng đời của harness, qua `wsh agent-hook` (Claude), `wsh agy-hook` (Antigravity) hoặc extension của pi. Agent đang làm mà terminal im quá 3 phút thì hàng của nó đọc `hung · no output Nm` (chỉ claude).
+- **Trạng thái** (`working`, `idle`, `asking`, chờ quyền) đến từ hook vòng đời của harness, qua `wsh agent-hook` (Claude), `wsh agy-hook` (Antigravity), `wsh codex-hook` (Codex) hoặc extension của pi. Agent đang làm mà terminal im quá 3 phút thì hàng của nó đọc `hung · no output Nm` (chỉ claude).
 - **Tên phiên** trên sidebar là tiêu đề Claude Code tự đặt (`ai-title`), đi cùng sự kiện trạng thái. Đổi tên tay luôn thắng và không bị ghi đè.
 - **Usage** (thanh context, chi phí phiên, quota 5 giờ và tuần): với Claude Code 2.1.287 trở lên, mod Claude báo qua `wsh agentstatus --usage` mỗi khi context, quota hay chi phí đổi; `statusLine` của bạn để nguyên. Bản cũ hơn thì arcterm bọc `statusLine.command` trong `wsh statusline`, chạy lệnh gốc của bạn với cùng stdin. Quota của tài khoản Claude khi không có phiên nào chạy do backend tự hỏi Anthropic (tối đa 5 phút một lần), xem [Usage](usage.md).
 
@@ -37,6 +37,15 @@ Muốn một phiên dev không động vào các file này, đặt `ARC_DEV_NO_G
 - **Hàng đợi lệnh nặng**: trước mỗi lệnh shell nó gọi `wsh jobslot`. Lệnh nặng (build, typecheck, cả bộ test, `npm install`) chờ đến lượt trong hàng đợi chung của wavesrv và giữ chỗ trong lúc chạy; bạn bấm **Skip** ở popover Jobs thì agent nhận "Not run: …" và nên tiếp tục mà báo là đã bỏ qua. Xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng). pi và Antigravity đi qua cùng hàng đợi.
 
 `claude/arc-view-mod` là mod thứ hai, chỉ để vẽ các hàng transcript của prompt mà mod arc gửi vào. Kiểm tra mod bằng `claude plugin validate claude/arc-mod`.
+
+## Codex
+
+Codex báo trạng thái lên rail (working, idle, **chờ quyền** khi Codex hỏi duyệt một lệnh), kèm model, tên phiên (prompt đầu tiên) và việc đang làm (`running …`, `editing …`); sau khi arcterm khởi động lại, agent Codex đang chạy tự mở lại vào đúng phiên bằng `codex resume <id>`.
+
+- **Cài gì**: khi có `~/.codex/`, arcterm thêm một handler `wsh codex-hook` vào `~/.codex/hooks.json` cho `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`, `Interrupt`, `PreCompact` và `PostCompact`. Hook của công cụ khác giữ nguyên chỗ: handler của arcterm được nối vào cuối mỗi event, hoặc ghi đè đúng chỗ cũ của nó.
+- **Lần đầu: trust hook.** Codex chỉ chạy hook người dùng sau khi bạn duyệt nó. Mở `codex` trong một terminal của arcterm, gõ `/hooks` và trust các handler `codex-hook`. Lệnh hook không đổi giữa các lần cập nhật nên chỉ cần làm một lần; chưa trust thì Codex vẫn chạy bình thường, chỉ là rail không có trạng thái.
+- **Chỉ báo, không chặn**: hook không in gì và luôn thoát 0, nên không đổi hành vi của Codex. Ngoài terminal của arcterm (kể cả app Codex desktop, dùng chung file này) nó không làm gì. Một `codex exec` chạy lồng trong block của agent khác không ghi đè trạng thái của agent đó.
+- **Chưa có**: trả lời hộp duyệt quyền từ cockpit, hàng đợi lệnh nặng, và Codex làm worker của run.
 
 ## Antigravity (agy)
 

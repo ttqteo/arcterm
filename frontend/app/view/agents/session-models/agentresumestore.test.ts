@@ -9,29 +9,39 @@ vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { SetMetaCommand: (...a: an
 const agyBlocks = new Set(["block:agy-1", "block:agy-2", "block:agy-3"]);
 vi.mock("@/app/store/wos", () => ({
     getObjectValue: (oref: string) =>
-        agyBlocks.has(oref)
+        oref.startsWith("block:codex")
             ? {
                   meta: {
                       controller: "cmd",
-                      cmd: "agy",
-                      "agent:baseargs": ["--continue", "--sandbox"],
-                      "cmd:args": ["--continue", "--sandbox", "-i", "task"],
+                      cmd: "codex",
+                      "agent:baseargs": ["--full-auto"],
+                      "cmd:args": ["--full-auto", "fix the bug"],
                   },
               }
-            : {
-                  meta: {
-                      controller: "cmd",
-                      cmd: "pi",
-                      "agent:baseargs": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
-                      "cmd:args": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
-                  },
-              },
+            : agyBlocks.has(oref)
+              ? {
+                    meta: {
+                        controller: "cmd",
+                        cmd: "agy",
+                        "agent:baseargs": ["--continue", "--sandbox"],
+                        "cmd:args": ["--continue", "--sandbox", "-i", "task"],
+                    },
+                }
+              : {
+                    meta: {
+                        controller: "cmd",
+                        cmd: "pi",
+                        "agent:baseargs": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
+                        "cmd:args": ["--session", "C:\\old\\s.jsonl", "--model", "x"],
+                    },
+                },
     reloadWaveObject: (...a: any[]) => reloadWaveObject(...a),
 }));
 
 describe("shouldPersistResume", () => {
-    it("resumes a claude, opencode, or pi agent when Remember flags is on", () => {
+    it("resumes a claude, codex, opencode, pi or agy agent when Remember flags is on", () => {
         expect(shouldPersistResume("claude", true)).toBe(true);
+        expect(shouldPersistResume("codex", true)).toBe(true);
         expect(shouldPersistResume("opencode", true)).toBe(true);
         expect(shouldPersistResume("pi", true)).toBe(true);
         expect(shouldPersistResume("agy", true)).toBe(true);
@@ -42,8 +52,8 @@ describe("shouldPersistResume", () => {
         expect(shouldPersistResume("pi", false)).toBe(false);
     });
 
-    it("never resumes codex or unknown providers", () => {
-        expect(shouldPersistResume("codex", true)).toBe(false);
+    it("never resumes unknown providers", () => {
+        expect(shouldPersistResume("aider", true)).toBe(false);
         expect(shouldPersistResume(undefined, true)).toBe(false);
     });
 
@@ -145,5 +155,27 @@ describe("shouldRelaunchWorker", () => {
     it("relaunches a hand-launched agent that carries no agent:runid, whatever the status", () => {
         expect(shouldRelaunchWorker({ cmd: "claude" }, "done")).toBe(true);
         expect(shouldRelaunchWorker(undefined, undefined)).toBe(true);
+    });
+});
+
+describe("persistResume (codex)", () => {
+    const rollout = "/Users/x/.codex/sessions/2026/10/10/rollout-2026-10-10T15-57-36-019f.jsonl";
+
+    beforeEach(() => {
+        setMeta.mockClear();
+        reloadWaveObject.mockClear();
+    });
+
+    it("bakes `resume <sessionid>` before the launch flags, dropping the task", async () => {
+        await persistResume("block:codex-1", "codex", rollout, "019f");
+        expect(setMeta.mock.calls[0][1]).toEqual({
+            oref: "block:codex-1",
+            meta: { "cmd:args": ["resume", "019f", "--full-auto"] },
+        });
+    });
+
+    it("waits for the rollout: a session id with no transcript path writes nothing", async () => {
+        await persistResume("block:codex-2", "codex", undefined, "019f");
+        expect(setMeta).not.toHaveBeenCalled();
     });
 });

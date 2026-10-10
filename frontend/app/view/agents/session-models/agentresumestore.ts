@@ -1,20 +1,21 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Resume-on-reopen (Claude only, v1). Agent blocks already survive quit+reopen: the tab/block/layout
+// Resume-on-reopen. Agent blocks already survive quit+reopen: the tab/block/layout
 // are DB-backed and ResyncController relaunches each block from its persisted cmd:args when the term
 // view mounts. But that replay is a *fresh* session — it re-runs the original task prompt. As a running
-// Claude agent reports its live transcript via agent:status, we bake that session's `--resume <id>`
-// into the block's persisted cmd:args, so the very same relaunch reattaches to the session instead of
-// starting over. FE-only, no backend change; codex keeps restarting fresh.
+// agent reports its live session via agent:status, we bake that session's resume key (`--resume <id>`,
+// `codex resume <id>`, ...) into the block's persisted cmd:args, so the very same relaunch reattaches to the
+// session instead of starting over.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { RpcApi } from "@/app/store/wshclientapi";
 import * as WOS from "@/app/store/wos";
+import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import {
     resumeArgsForAgy,
     resumeArgsForClaude,
+    resumeArgsForCodex,
     resumeArgsForOpencode,
     resumeArgsForPi,
     sessionIdFromTranscript,
@@ -24,13 +25,14 @@ import { naRememberFlagsAtom } from "../naflagsstore";
 // oref -> resume key already baked into the block this session, to skip redundant SetMeta writes
 const bakedResumeId = new Map<string, string>();
 
-// Pure: resume-on-reopen is Claude-, opencode-, Pi-, and agy-only, gated on the user's "Remember flags" New
-// Agent default. When that setting is off the user wants a clean slate, so the agent relaunches
-// fresh on reopen; when on (the default) reopening reattaches to the live session. codex
-// always restarts fresh.
+// the harnesses whose session a relaunch can reattach to
+const RESUMABLE = ["claude", "codex", "opencode", "pi", "agy"];
+
+// Pure: resume-on-reopen is gated on the user's "Remember flags" New Agent default. When that setting is off the
+// user wants a clean slate, so the agent relaunches fresh on reopen; when on (the default) reopening reattaches to
+// the live session.
 export function shouldPersistResume(provider: string | undefined, rememberFlags: boolean): boolean {
-    const p = (provider ?? "").toLowerCase();
-    return (p === "claude" || p === "opencode" || p === "pi" || p === "agy") && rememberFlags === true;
+    return RESUMABLE.includes((provider ?? "").toLowerCase()) && rememberFlags === true;
 }
 
 // a blocked run's worker stopped (the app restarted, or its process exited): it comes back through the run's
@@ -69,11 +71,7 @@ export async function persistResume(
     const block = WOS.getObjectValue<Block>(oref);
     const meta = block?.meta as Record<string, unknown> | undefined;
     const cmd = meta?.["cmd"];
-    if (
-        !meta ||
-        meta["controller"] !== "cmd" ||
-        (cmd !== "claude" && cmd !== "opencode" && cmd !== "pi" && cmd !== "agy")
-    ) {
+    if (!meta || meta["controller"] !== "cmd" || !RESUMABLE.includes(cmd as string)) {
         return;
     }
     const baseArgs = meta["agent:baseargs"] as string[] | undefined;
@@ -83,8 +81,15 @@ export async function persistResume(
     // pi's resume key is the full transcript path (--session takes a path, never an id), so the dedup
     // cache key is the path too — sessionIdFromTranscript must never run on a pi path.
     // agy's is the status's session id: every agy transcript is named transcript_full.jsonl, so its stem is no key.
+    // codex's is too (its rollout's stem has a timestamp before the id), once the rollout it resumes from exists.
     const cacheKey =
-        cmd === "pi" ? transcriptPath : cmd === "agy" ? sessionId : sessionIdFromTranscript(transcriptPath);
+        cmd === "pi"
+            ? transcriptPath
+            : cmd === "agy"
+              ? sessionId
+              : cmd === "codex"
+                ? transcriptPath && sessionId
+                : sessionIdFromTranscript(transcriptPath);
     if (!cacheKey || bakedResumeId.get(oref) === cacheKey) {
         return;
     }
@@ -95,7 +100,9 @@ export async function persistResume(
               ? resumeArgsForOpencode(cacheKey, baseArgs)
               : cmd === "agy"
                 ? resumeArgsForAgy(cacheKey, baseArgs)
-                : resumeArgsForClaude(cacheKey, baseArgs);
+                : cmd === "codex"
+                  ? resumeArgsForCodex(cacheKey, baseArgs)
+                  : resumeArgsForClaude(cacheKey, baseArgs);
     const curArgs = (meta["cmd:args"] as string[] | undefined) ?? [];
     if (sameArgs(nextArgs, curArgs)) {
         bakedResumeId.set(oref, cacheKey);

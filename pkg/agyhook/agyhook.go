@@ -206,23 +206,6 @@ func Neutral(event string) []byte {
 	return []byte("{}")
 }
 
-// OwnsBlock reports whether an agy hook may report on a block with this meta controller and cmd. A nested
-// `agy -p` run inside a claude or pi worker's block inherits its WAVETERM_BLOCKID, and reporting there would
-// overwrite that worker's status and transcript path. A cmd block is agy's only when its program is agy; a shell
-// block (a person typed `agy`) is.
-func OwnsBlock(controller, cmd string) bool {
-	if controller != "cmd" {
-		return true
-	}
-	name := cmd
-	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
-		name = name[i+1:]
-	}
-	name = strings.ToLower(name)
-	name = strings.TrimSuffix(name, ".exe")
-	return name == "agy"
-}
-
 // FirstUserRequest is the text of the first USER_INPUT step's <USER_REQUEST> in the head of a transcript, "" when
 // the head holds none. A line that does not parse (a head cut mid-line, a future format) is skipped.
 func FirstUserRequest(head []byte) string {

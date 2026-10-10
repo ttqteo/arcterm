@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1264,5 +1265,133 @@ func TestInstallAgyHooksQuotesWshPath(t *testing.T) {
 		if !reflect.DeepEqual(got["arcterm"], agyWantHooks(wsh)) {
 			t.Fatalf("%s: commands not quoted intact: %v", wsh, got["arcterm"])
 		}
+	}
+}
+
+func TestCodexHookCommand(t *testing.T) {
+	const wsh = `C:\Users\Jane Doe\.arc\bin\wsh.exe`
+	if got := codexHookCommand(wsh, "windows"); got != `& "C:\Users\Jane Doe\.arc\bin\wsh.exe" codex-hook` {
+		t.Errorf("windows command = %q", got)
+	}
+	if got := codexHookCommand("/Users/a b/.arc/bin/wsh", "darwin"); got != `"/Users/a b/.arc/bin/wsh" codex-hook` {
+		t.Errorf("posix command = %q", got)
+	}
+	for _, c := range []struct {
+		command string
+		want    bool
+	}{
+		{codexHookCommand(wsh, "windows"), true},
+		{codexHookCommand("/old/wsh-0.9.0-darwin.arm64", "darwin"), true},
+		{"C:/Users/x/.orca/agent-hooks/codex-hook.cmd", false},
+		{`"C:\x\wsh.exe" agent-hook`, false},
+	} {
+		if got := isCodexManagedCommand(c.command); got != c.want {
+			t.Errorf("isCodexManagedCommand(%q) = %v, want %v", c.command, got, c.want)
+		}
+	}
+}
+
+func codexTestDoc(t *testing.T, s string) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(s), &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+func codexEventCommands(doc map[string]any, event string) []string {
+	hooks, _ := doc["hooks"].(map[string]any)
+	groups, _ := hooks[event].([]any)
+	var out []string
+	for _, g := range groups {
+		for _, h := range g.(map[string]any)["hooks"].([]any) {
+			out = append(out, h.(map[string]any)["command"].(string))
+		}
+	}
+	return out
+}
+
+func TestMergeCodexHooksKeepsOtherGroupsInPlace(t *testing.T) {
+	const orca = "C:/Users/x/.orca/agent-hooks/codex-hook.cmd"
+	seed := codexTestDoc(t, `{"description":"mine","hooks":{
+		"Stop":[{"hooks":[{"type":"command","command":"`+orca+`","timeout":10}]}],
+		"PreToolUse":[{"hooks":[{"type":"command","command":"& \"C:/old/wsh-0.1.exe\" codex-hook","timeout":5}]},
+			{"hooks":[{"type":"command","command":"`+orca+`","timeout":10}]}],
+		"SessionEnd":[{"hooks":[{"type":"command","command":"\"/old/wsh\" codex-hook"}]}],
+		"SubagentStart":[{"hooks":[{"type":"command","command":"`+orca+`"}]}]}}`)
+	const wsh = `C:\h\.arc\bin\wsh.exe`
+	got := mergeCodexHooks(seed, wsh, "windows")
+	ours := codexHookCommand(wsh, "windows")
+
+	if got["description"] != "mine" {
+		t.Errorf("top-level description lost: %v", got["description"])
+	}
+	// appended after Orca's group, which keeps index 0 and so its trust
+	if c := codexEventCommands(got, "Stop"); !reflect.DeepEqual(c, []string{orca, ours}) {
+		t.Errorf("Stop = %v", c)
+	}
+	// rewritten where it stood: Orca's group stays at index 1
+	if c := codexEventCommands(got, "PreToolUse"); !reflect.DeepEqual(c, []string{ours, orca}) {
+		t.Errorf("PreToolUse = %v", c)
+	}
+	pre := got["hooks"].(map[string]any)["PreToolUse"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if pre["async"] != true || pre["timeout"] != 10 {
+		t.Errorf("PreToolUse handler = %v, want async with timeout 10", pre)
+	}
+	if _, ok := got["hooks"].(map[string]any)["SessionEnd"]; ok {
+		t.Error("an arcterm group under an event it no longer manages should be removed")
+	}
+	if c := codexEventCommands(got, "SubagentStart"); !reflect.DeepEqual(c, []string{orca}) {
+		t.Errorf("SubagentStart = %v", c)
+	}
+	for _, ch := range codexHooks {
+		if c := codexEventCommands(got, ch.Event); len(c) == 0 || !slices.Contains(c, ours) {
+			t.Errorf("%s has no arcterm handler: %v", ch.Event, c)
+		}
+	}
+	if seed["hooks"].(map[string]any)["SessionEnd"] == nil {
+		t.Error("merge mutated its input")
+	}
+}
+
+func TestInstallCodexHooks(t *testing.T) {
+	home := t.TempDir()
+	const wsh = "/h/.arc/bin/wsh"
+	if err := installCodexHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex")); !os.IsNotExist(err) {
+		t.Fatalf("nothing should be created before Codex has run, stat err = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".codex", "hooks.json")
+	if err := installCodexHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(first), `\u0026`) {
+		t.Errorf("hooks.json escapes the command: %s", first)
+	}
+	if err := installCodexHooks(home, wsh); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := os.ReadFile(path)
+	if string(first) != string(second) {
+		t.Errorf("second install changed the file\nfirst: %s\nsecond: %s", first, second)
+	}
+	if err := os.WriteFile(path, []byte("[1]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installCodexHooks(home, wsh); err == nil {
+		t.Error("a hooks.json that is not an object should be reported")
+	}
+	if b, _ := os.ReadFile(path); string(b) != "[1]" {
+		t.Errorf("a bad hooks.json should be left alone, got %s", b)
 	}
 }

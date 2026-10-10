@@ -707,35 +707,177 @@ func installAgyHooks(home, wshExe string) error {
 		return nil
 	}
 	path := filepath.Join(home, ".gemini", "config", "hooks.json")
-	existing := map[string]any{}
-	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) > 0 {
-		var doc any
-		if err := json.Unmarshal(b, &doc); err != nil {
-			return fmt.Errorf("parsing %s: %w", path, err)
-		}
-		obj, ok := doc.(map[string]any)
-		if !ok {
-			return fmt.Errorf("%s is not a JSON object; leaving it alone", path)
-		}
-		existing = obj
+	existing, err := readJSONObject(path)
+	if err != nil {
+		return err
 	}
 	existing[agyHooksKey] = agyHookEntries(wshExe)
+	changed, err := writeJSONIfChanged(path, existing)
+	if changed {
+		fmt.Printf("installed agy (Antigravity) hooks into %s\n", path)
+	}
+	return err
+}
 
+// readJSONObject reads a JSON config file that must hold one object; a missing or empty file is an empty object.
+// Anything else is an error, and the caller leaves the file alone.
+func readJSONObject(path string) (map[string]any, error) {
+	b, err := os.ReadFile(path)
+	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+		return map[string]any{}, nil
+	}
+	var doc any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	obj, ok := doc.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s is not a JSON object; leaving it alone", path)
+	}
+	return obj, nil
+}
+
+// writeJSONIfChanged writes obj as indented JSON, without HTML escaping, only when the bytes differ from the file's.
+func writeJSONIfChanged(path string, obj map[string]any) (bool, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(existing); err != nil {
-		return fmt.Errorf("encoding %s: %w", path, err)
+	if err := enc.Encode(obj); err != nil {
+		return false, fmt.Errorf("encoding %s: %w", path, err)
 	}
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, buf.Bytes()) {
-		return nil
+		return false, nil
 	}
 	if err := writeFileIfChanged(path, buf.String()); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// codexHooks are the events arcterm's `wsh codex-hook` handler is written under in ~/.codex/hooks.json, with their
+// timeouts in seconds. The two that fire on every tool call run in the background, so Codex never waits on them.
+// Interrupt hooks get 3 seconds at most from Codex.
+var codexHooks = []struct {
+	Event   string
+	Timeout int
+	Async   bool
+}{
+	{Event: "SessionStart", Timeout: 10},
+	{Event: "UserPromptSubmit", Timeout: 10},
+	{Event: "PreToolUse", Timeout: 10, Async: true},
+	{Event: "PermissionRequest", Timeout: 10},
+	{Event: "PostToolUse", Timeout: 10, Async: true},
+	{Event: "Stop", Timeout: 10},
+	{Event: "Interrupt", Timeout: 3},
+	{Event: "PreCompact", Timeout: 10},
+	{Event: "PostCompact", Timeout: 10},
+}
+
+// codexHookCommand is the handler's command line. Codex on Windows runs it through cmd.exe, which fails on any
+// command that starts with a quote (probed on Codex 0.162), so there the quoted path follows `& `: an empty first
+// command to cmd.exe and the call operator to PowerShell. A POSIX shell takes the quoted path as it is.
+func codexHookCommand(wshExe, goos string) string {
+	command := quotePath(wshExe) + " codex-hook"
+	if goos == "windows" {
+		return "& " + command
+	}
+	return command
+}
+
+// isCodexManagedCommand reports whether a Codex hook command is arcterm's, whatever wsh path it names.
+func isCodexManagedCommand(command string) bool {
+	exe, rest := splitFirstToken(strings.TrimPrefix(strings.TrimSpace(command), "& "))
+	return strings.HasPrefix(strings.ToLower(filepath.Base(exe)), "wsh") && rest == "codex-hook"
+}
+
+func codexGroupIsManaged(group any) bool {
+	gm, _ := group.(map[string]any)
+	hs, _ := gm["hooks"].([]any)
+	for _, h := range hs {
+		hm, _ := h.(map[string]any)
+		if c, ok := hm["command"].(string); ok && isCodexManagedCommand(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeCodexHooks returns a copy of a hooks.json document with arcterm's handler under each of codexHooks' events.
+// Codex trusts a handler by its place (event, group index, handler index), so an arcterm group already in an event
+// is rewritten where it stands and a new one goes at the end: no other tool's group (Orca's, say) ever moves and
+// loses the trust the person gave it. A second arcterm group in one event, or one under an event arcterm no longer
+// manages, is removed.
+func mergeCodexHooks(existing map[string]any, wshExe, goos string) map[string]any {
+	out := map[string]any{}
+	if b, err := json.Marshal(existing); err == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	hooks, _ := out["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+		out["hooks"] = hooks
+	}
+	want := map[string]map[string]any{}
+	for _, ch := range codexHooks {
+		handler := map[string]any{"type": "command", "command": codexHookCommand(wshExe, goos), "timeout": ch.Timeout}
+		if ch.Async {
+			handler["async"] = true
+		}
+		want[ch.Event] = map[string]any{"hooks": []any{handler}}
+	}
+	events := make([]string, 0, len(hooks)+len(want))
+	for e := range hooks {
+		events = append(events, e)
+	}
+	for e := range want {
+		if _, ok := hooks[e]; !ok {
+			events = append(events, e)
+		}
+	}
+	for _, event := range events {
+		groups, _ := hooks[event].([]any)
+		var kept []any
+		placed := false
+		for _, g := range groups {
+			if !codexGroupIsManaged(g) {
+				kept = append(kept, g)
+				continue
+			}
+			if w, ok := want[event]; ok && !placed {
+				kept = append(kept, w)
+				placed = true
+			}
+		}
+		if w, ok := want[event]; ok && !placed {
+			kept = append(kept, w)
+		}
+		if len(kept) == 0 {
+			delete(hooks, event)
+			continue
+		}
+		hooks[event] = kept
+	}
+	return out
+}
+
+// installCodexHooks points Codex's user hooks (~/.codex/hooks.json) at `wsh codex-hook`, keeping every other hook.
+// No-op until Codex has run (~/.codex exists): arcterm never provisions a harness the person never used. Codex runs
+// a user hook only once the person has trusted it with /hooks; the command never changes, so that is once.
+func installCodexHooks(home, wshExe string) error {
+	if fi, err := os.Stat(filepath.Join(home, ".codex")); err != nil || !fi.IsDir() {
+		return nil
+	}
+	path := filepath.Join(home, ".codex", "hooks.json")
+	existing, err := readJSONObject(path)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("installed agy (Antigravity) hooks into %s\n", path)
-	return nil
+	changed, err := writeJSONIfChanged(path, mergeCodexHooks(existing, wshExe, runtime.GOOS))
+	if changed {
+		fmt.Printf("installed Codex hooks into %s (trust them once with /hooks in Codex)\n", path)
+	}
+	return err
 }
 
 // installPiStatusExtension writes the Wave status extension into pi's global extension directory
@@ -1084,5 +1226,5 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 			fmt.Println("pi keybindings: skipped (user file present)")
 		}
 	}
-	return nil
+	return installCodexHooks(home, wsh)
 }

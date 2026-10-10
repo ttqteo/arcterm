@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/agyhook"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -23,7 +24,7 @@ const (
 	agyAgent = "agy"
 	// the transcript's first user step sits at its head; a bounded read keeps a hook cheap on a long conversation
 	agyTranscriptHeadBytes = 256 * 1024
-	agyMetaTimeoutMs       = 2000
+	hookMetaTimeoutMs      = 2000
 )
 
 // agyHookCmd is the command agy's global hooks.json calls: `wsh agy-hook <PreInvocation|PreToolUse|PostToolUse|
@@ -88,7 +89,7 @@ func decideAgyHook(event string, raw []byte) []byte {
 	if err != nil {
 		return nil
 	}
-	if !agyOwnsBlock(oref) {
+	if !hookOwnsBlock(oref, agyAgent) {
 		return nil
 	}
 	if p.TranscriptPath != "" {
@@ -96,7 +97,7 @@ func decideAgyHook(event string, raw []byte) []byte {
 		_ = wshclient.SetMetaCommand(RpcClient, wshrpc.CommandSetMetaData{
 			ORef: *oref,
 			Meta: waveobj.MetaMapType{waveobj.MetaKey_AgentTranscriptPath: p.TranscriptPath},
-		}, &wshrpc.RpcOpts{Timeout: agyMetaTimeoutMs})
+		}, &wshrpc.RpcOpts{Timeout: hookMetaTimeoutMs})
 	}
 
 	title, titleRead := "", false
@@ -157,15 +158,15 @@ func agyAskData(oref string, questions []baseds.AgentAskQuestion) wshrpc.Command
 	return wshrpc.CommandAskData{ORef: oref, Questions: questions, Wait: true, Hold: true}
 }
 
-// agyOwnsBlock is false for a block another agent runs in: a nested `agy -p` inside a claude or pi worker inherits
-// its WAVETERM_BLOCKID. An unreadable block counts as foreign.
-func agyOwnsBlock(oref *waveobj.ORef) bool {
+// hookOwnsBlock is false for a block another agent runs in: a nested `agy -p` or `codex exec` inside a claude or pi
+// worker inherits its WAVETERM_BLOCKID. An unreadable block counts as foreign.
+func hookOwnsBlock(oref *waveobj.ORef, program string) bool {
 	meta, err := wshclient.GetMetaCommand(RpcClient, wshrpc.CommandGetMetaData{ORef: *oref},
-		&wshrpc.RpcOpts{Timeout: agyMetaTimeoutMs})
+		&wshrpc.RpcOpts{Timeout: hookMetaTimeoutMs})
 	if err != nil {
 		return false
 	}
-	return agyhook.OwnsBlock(meta.GetString(waveobj.MetaKey_Controller, ""), meta.GetString(waveobj.MetaKey_Cmd, ""))
+	return harness.OwnsBlock(meta.GetString(waveobj.MetaKey_Controller, ""), meta.GetString(waveobj.MetaKey_Cmd, ""), program)
 }
 
 // agyTitle is the conversation's first request, cut as `wsh agent-hook` cuts a prompt.

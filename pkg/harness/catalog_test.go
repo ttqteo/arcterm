@@ -196,3 +196,27 @@ func TestConfigRootIsSteeringParent(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnsBlock(t *testing.T) {
+	cases := []struct {
+		controller, cmd, program string
+		want                     bool
+	}{
+		{"cmd", "claude", "agy", false},
+		{"cmd", "pi", "agy", false},
+		{"cmd", "agy", "agy", true},
+		{"cmd", `C:\Users\x\.local\bin\agy.exe`, "agy", true},
+		{"cmd", "/Users/a b/.local/bin/agy", "agy", true},
+		{"cmd", "codex", "codex", true},
+		{"cmd", `C:\Users\x\AppData\Roaming\npm\Codex.EXE`, "codex", true},
+		{"cmd", "claude", "codex", false},
+		{"cmd", "", "agy", false},
+		{"shell", "", "codex", true},
+		{"", "", "agy", true},
+	}
+	for _, c := range cases {
+		if got := OwnsBlock(c.controller, c.cmd, c.program); got != c.want {
+			t.Errorf("OwnsBlock(%q, %q, %q) = %v, want %v", c.controller, c.cmd, c.program, got, c.want)
+		}
+	}
+}
