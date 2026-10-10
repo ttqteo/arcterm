@@ -5,7 +5,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Layers, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { chipLabel, longWait, queueTitle } from "./jobqueue";
+import { chipLabel, longWait, queuedTag, queueTitle } from "./jobqueue";
 import { jobQueueAtom, toggleJobQueue } from "./jobqueuestore";
 
 // how often a waiting queue re-reads the clock, so the chip turns to its warning without an event to say so
@@ -44,6 +44,38 @@ export function JobQueueChip() {
         >
             <Icon data-job-queue-warn={warn ? "" : undefined} size={12} aria-hidden />
             {label}
+        </button>
+    );
+}
+
+// An agent's tag while its heavy command waits its turn: its place in the queue, why in the tooltip. A click opens the
+// Jobs popover from the tag, where Run now and Skip are, and never reaches the row it sits on. It keeps its own clock,
+// as the chip does, so it turns to its warning past LONG_WAIT_MS without its row or header ticking every second.
+export function QueuedJobTag({ job }: { job: JobQueueJob }) {
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const timer = setInterval(() => setTick((n) => n + 1), LONG_WAIT_CHECK_MS);
+        return () => clearInterval(timer);
+    }, []);
+    const tag = queuedTag(job, Date.now());
+    const Icon = tag.warn ? TriangleAlert : Layers;
+    return (
+        <button
+            type="button"
+            data-agent-queued={job.id}
+            aria-haspopup="dialog"
+            title={`${tag.title}. Click for Run now or Skip.`}
+            onClick={(e) => {
+                e.stopPropagation();
+                toggleJobQueue(e.currentTarget);
+            }}
+            className={cn(
+                "flex flex-none cursor-pointer items-center gap-[3px] whitespace-nowrap rounded-[5px] px-[3px] py-[1px] text-[10.5px] font-semibold tabular-nums hover:bg-surface-hover",
+                tag.warn ? "text-warning" : "text-muted"
+            )}
+        >
+            <Icon size={10} aria-hidden />
+            {tag.label}
         </button>
     );
 }

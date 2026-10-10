@@ -9,6 +9,8 @@ import {
     longWait,
     openTargetFor,
     ordered,
+    queuedJobFor,
+    queuedTag,
     queueTitle,
     sourceLabel,
 } from "./jobqueue";
@@ -98,5 +100,52 @@ describe("jobqueue", () => {
         expect(queueTitle({ ...d, slots: 3 })).toBe(
             "Heavy jobs: 1 running, 2 queued (3 at a time; set in the popover)"
         );
+    });
+    it("finds the job an agent's block waits on, the one served first", () => {
+        const d = {
+            slots: 1,
+            jobs: [
+                job({ id: "r", running: true, blockid: "b1" }),
+                job({ id: "q3", position: 3, blockid: "b1" }),
+                job({ id: "q2", position: 2, blockid: "b1" }),
+                job({ id: "q1", position: 1, blockid: "b2" }),
+            ],
+        };
+        expect(queuedJobFor(d, "b1")?.id).toBe("q2");
+        expect(queuedJobFor(d, "b2")?.id).toBe("q1");
+    });
+    it("finds nothing for a block that only runs, a block with no job, or no block", () => {
+        const d = { slots: 1, jobs: [job({ id: "r", running: true, blockid: "b1" }), job({ id: "e", position: 1 })] };
+        expect(queuedJobFor(d, "b1")).toBeNull();
+        expect(queuedJobFor(d, "b9")).toBeNull();
+        expect(queuedJobFor(d, undefined)).toBeNull();
+        expect(queuedJobFor(null, "b1")).toBeNull();
+    });
+    it("tags the head of the queue with why it waits", () => {
+        const tag = queuedTag(job({ position: 1, reason: "needs 3.0 GB, 1.2 GB free", queuedts: 0 }), 20_000);
+        expect(tag).toEqual({
+            label: "queued #1",
+            title: "task check:ts waits its turn in the heavy-job queue: needs 3.0 GB, 1.2 GB free",
+            warn: false,
+        });
+    });
+    it("tags a job further back with how many wait ahead of it", () => {
+        expect(queuedTag(job({ position: 3, reason: "slot busy" }), 0).title).toBe(
+            "task check:ts waits its turn in the heavy-job queue: 2 jobs ahead of it"
+        );
+        expect(queuedTag(job({ position: 2, reason: "slot busy" }), 0).title).toBe(
+            "task check:ts waits its turn in the heavy-job queue: 1 job ahead of it"
+        );
+    });
+    it("tags a job with no position or reason plainly", () => {
+        expect(queuedTag(job({}), 0)).toEqual({
+            label: "queued",
+            title: "task check:ts waits its turn in the heavy-job queue",
+            warn: false,
+        });
+    });
+    it("warns on a tag once its job has waited past LONG_WAIT_MS", () => {
+        expect(queuedTag(job({ position: 1, queuedts: 1_000 }), 1_000 + LONG_WAIT_MS - 1).warn).toBe(false);
+        expect(queuedTag(job({ position: 1, queuedts: 1_000 }), 1_000 + LONG_WAIT_MS + 1).warn).toBe(true);
     });
 });

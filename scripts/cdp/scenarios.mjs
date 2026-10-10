@@ -26941,6 +26941,155 @@ const jobqueueChip = {
     },
 };
 
+// --- jobqueue-agent-tag: an agent whose heavy command waits its turn in the job queue says so on its row, where it would
+// otherwise read as working. A fixture roster holds the one agent; its job is set through the dev hook
+// window.__jobQueueInject, with its block's id, so no real agent has to run a build.
+const JQT_AGENT = "fx-jq-tag";
+const JQT_BLOCK = "fx-blk-jq-tag";
+const JQT_NAME = "queue-tag worker";
+const JQT_TAG = `[data-agent-row="${JQT_AGENT}"] [data-agent-queued]`;
+// a snapshot with a build running for no agent and the fixture agent's typecheck waiting on RAM, queued `ago` ms back
+const jqtSnapshot = (ago) => `window.__jobQueueInject({
+    slots: 1,
+    jobs: [
+        { id: "jqt-run", name: "cargo build", bytes: 3221225472, running: true, queuedts: Date.now() - 60_000, startedts: Date.now() - 60_000 },
+        { id: "jqt-wait", name: "task check:ts", bytes: 3221225472, position: 1, reason: "needs 3.0 GB, 1.2 GB free", queuedts: Date.now() - ${ago}, blockid: ${JSON.stringify(JQT_BLOCK)} },
+    ],
+})`;
+
+const jobqueueAgentTag = {
+    name: "jobqueue-agent-tag",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null };
+        try {
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: JQT_AGENT,
+                            name: JQT_NAME,
+                            project: "waveterm",
+                            task: "run the typecheck",
+                            state: "working",
+                            agent: "claude",
+                            model: "sonnet",
+                            activeMs: 60_000,
+                            blockId: JQT_BLOCK,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the roster fixture is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster", false, ctx.arrangeError);
+            return steps;
+        }
+        const readTag = () =>
+            h.ev(`(() => {
+                const t = document.querySelector(${JSON.stringify(JQT_TAG)});
+                return t
+                    ? {
+                          text: t.textContent.trim(),
+                          title: t.title,
+                          amber: t.classList.contains("text-warning"),
+                          triangle: !!t.querySelector("svg.lucide-triangle-alert"),
+                      }
+                    : null;
+            })()`);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${JQT_AGENT}"]')`, 8000);
+
+        // 1. the waiting agent's row reads queued #1, why in its tooltip
+        await h.ev(jqtSnapshot(20_000));
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(JQT_TAG)})`, 3000);
+        let tag = await readTag();
+        await h.shot("cdp-shots/jobqueue-agent-tag.png");
+        rec(
+            "1. the agent's row says queued #1, its tooltip the command and the RAM it waits on",
+            tag?.text === "queued #1" &&
+                tag.title.includes("task check:ts") &&
+                tag.title.includes("needs 3.0 GB, 1.2 GB free") &&
+                !tag.amber,
+            JSON.stringify(tag)
+        );
+
+        // 2. its click opens the Jobs popover on that job, and the row it sits on stays as it was
+        await h.ev(`document.querySelector(${JSON.stringify(JQT_TAG)})?.click()`);
+        const opened = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-job-queue-panel] [data-job-row="jqt-wait"]')`,
+            3000
+        );
+        const source = await h.ev(
+            `document.querySelector('[data-job-queue-panel] [data-job-row="jqt-wait"] [data-job-source]')?.textContent ?? null`
+        );
+        await h.shot("cdp-shots/jobqueue-agent-tag-popover.png");
+        rec(
+            "2. a click on the tag opens the Jobs popover, whose queued row names the agent",
+            opened && typeof source === "string" && source.includes(JQT_NAME),
+            JSON.stringify({ opened, source })
+        );
+        await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`);
+        await polishWaitFor(h, `!document.querySelector("[data-job-queue-panel]")`, 3000);
+
+        // 3. past five minutes the tag warns, as the chip does
+        await h.ev(jqtSnapshot(6 * 60_000));
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(JQT_TAG)} + " svg.lucide-triangle-alert")`, 3000);
+        tag = await readTag();
+        await h.shot("cdp-shots/jobqueue-agent-tag-long-wait.png");
+        rec(
+            "3. a job waiting 6 minutes turns the tag amber with a TriangleAlert",
+            tag?.text === "queued #1" && tag.amber && tag.triangle,
+            JSON.stringify(tag)
+        );
+
+        // 4. once its job starts, the tag goes and the row reads working again
+        await h.ev(`window.__jobQueueInject({
+            slots: 1,
+            jobs: [{ id: "jqt-wait", name: "task check:ts", bytes: 3221225472, running: true, queuedts: Date.now() - 60_000, startedts: Date.now(), blockid: ${JSON.stringify(JQT_BLOCK)} }],
+        })`);
+        const gone = await polishWaitFor(h, `!document.querySelector(${JSON.stringify(JQT_TAG)})`, 3000);
+        rec("4. once its job runs, the row has no queued tag", gone, JSON.stringify(await readTag()));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jobqueue-agent-tag teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the injected snapshot", () => h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })"));
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null
+                    ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                    : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("reload onto the restored roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -27036,4 +27185,5 @@ export const SCENARIOS = [
     capacityWarn,
     notifyToast,
     jobqueueChip,
+    jobqueueAgentTag,
 ];

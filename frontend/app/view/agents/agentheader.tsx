@@ -5,6 +5,9 @@
 // Extracted from the former AgentTranscript header (now removed): the real Claude Code TUI has no
 // chrome of its own, so this keeps name/status/model/context% + the details-rail toggle visible.
 
+import { queuedJobFor } from "@/app/cockpit/jobqueue";
+import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
+import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { KeyCap } from "@/app/element/keycap";
 import { useSettle } from "@/app/element/motionhooks";
 import { MOTION } from "@/app/element/motiontokens";
@@ -152,6 +155,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
     const stateText = ended ? (landed ? "landed" : "done") : liveText;
     const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
+    // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
+    const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);
+    const queued = !ended && agent.state === "working" ? queuedJob : null;
     // m4: one-shot settle on the state pill when the focused agent reaches idle
     const settling = useSettle(!ended && agent.state === "idle");
     const review = parseDocReview(agent.ask);
@@ -308,15 +314,19 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
                     <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
                 </span>
-                <span
-                    className={cn(
-                        "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
-                        settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
-                    )}
-                    style={{ color: stateColor }}
-                >
-                    {stateText}
-                </span>
+                {queued ? (
+                    <QueuedJobTag job={queued} />
+                ) : (
+                    <span
+                        className={cn(
+                            "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
+                            settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                        )}
+                        style={{ color: stateColor }}
+                    >
+                        {stateText}
+                    </span>
+                )}
                 {agent.model ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
                 {agent.usage?.contextpct != null ? (
                     <span

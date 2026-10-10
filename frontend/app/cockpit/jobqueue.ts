@@ -89,3 +89,32 @@ export function openTargetFor(job: JobQueueJob, agents: readonly JobAgent[]): Op
     const agent = agents.find((a) => job.blockid && a.blockId === job.blockid);
     return agent ? { kind: "agent", tabId: agent.id } : null;
 }
+
+/** The job an agent's block waits on: its queued job served first, or null when it has none waiting. A running job has
+ * stopped waiting, and an engine step belongs to no block. */
+export function queuedJobFor(d: JobQueueData | null, blockId: string | undefined): JobQueueJob | null {
+    if (d == null || !blockId) {
+        return null;
+    }
+    const waiting = d.jobs.filter((j) => !j.running && j.blockid === blockId);
+    return ordered(waiting)[0] ?? null;
+}
+
+/** What an agent's row and header say while its heavy command waits its turn: the head of the queue says why it waits
+ * (the queue's reason is the head's), a job further back how many wait ahead of it. It warns past LONG_WAIT_MS, as the
+ * chip does. */
+export function queuedTag(job: JobQueueJob, now: number): { label: string; title: string; warn: boolean } {
+    const pos = job.position ?? 0;
+    const title = `${job.name} waits its turn in the heavy-job queue`;
+    let why = "";
+    if (pos > 1) {
+        why = `${pos - 1} ${pos === 2 ? "job" : "jobs"} ahead of it`;
+    } else if (pos === 1 && job.reason) {
+        why = job.reason;
+    }
+    return {
+        label: pos > 0 ? `queued #${pos}` : "queued",
+        title: why ? `${title}: ${why}` : title,
+        warn: now - job.queuedts > LONG_WAIT_MS,
+    };
+}
