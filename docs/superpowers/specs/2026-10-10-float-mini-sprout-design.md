@@ -61,8 +61,8 @@ and are not part of this change.
   - something waits on you: the posture's mark from `POSTURE_MARK` (review gate eye, escalation `!`, blocked `?`) and
     an amber count chip with the number of waiting rows. A plain question has no mark today and gets only the chip.
   - Always: a 2-frame 4px bob every 700 ms with a ground shadow that narrows as Sprout rises; still under reduced
-    motion. Driven by the existing 12 fps pulse driver (`element/pulsedriver.tsx`), not an infinite CSS animation
-    (DESIGN.md: an infinite CSS animation holds the page at display rate).
+    motion. A 700 ms interval in the component flips the frame (the work pose's two frames ride the same tick), not
+    an infinite CSS animation (DESIGN.md: an infinite CSS animation holds the page at display rate).
 - **The reply bubble.** An errand reply that finishes while the chat is collapsed shows beside Sprout: `claude ·
   replied` and the first three lines. Clicking it opens the chat; its `×` hides it and the reply stays in the chat. It
   stays until one of those, rather than timing out like the walking pet's bubble: a folded window is where a reply is
