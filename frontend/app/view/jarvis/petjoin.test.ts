@@ -203,7 +203,7 @@ function gateCtx(over: Partial<AskGateCtx> = {}): AskGateCtx {
         focusTabId: undefined,
         askTabId: undefined,
         focusedBlockId: null,
-        toastSays: false,
+        folded: false,
         ...over,
     };
 }
@@ -235,15 +235,14 @@ describe("shouldSpeakAsk", () => {
         expect(shouldSpeakAsk(undefined, gateCtx({ focusedBlockId: "abc" }))).toBe(true);
     });
 
-    // With arcterm in front, the Needs-you toast already says the question in the same corner, over the pet and its
-    // bubble; the pet keeps its question mark and leaves the saying to the toast (report once).
-    it("stays quiet when the in-app toast says the question", () => {
-        expect(shouldSpeakAsk("block:abc", gateCtx({ toastSays: true }))).toBe(false);
-        expect(shouldSpeakAsk(undefined, gateCtx({ toastSays: true }))).toBe(false);
-    });
-
-    it("speaks when no toast says it: arcterm in the background, or toasts turned off", () => {
-        expect(shouldSpeakAsk("block:abc", gateCtx({ toastSays: false }))).toBe(true);
+    // folded, the terminal is hidden: the floated agent's question is Sprout's to say, as any other's
+    it("speaks for the agent in focus while folded", () => {
+        expect(
+            shouldSpeakAsk(
+                "block:abc",
+                gateCtx({ folded: true, surface: "agent", askTabId: "t1", focusTabId: "t1", focusedBlockId: "abc" })
+            )
+        ).toBe(true);
     });
 });
 

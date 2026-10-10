@@ -10,11 +10,10 @@ import {
     notifyEventOf,
     osText,
     parseTarget,
-    petEventOfNeeds,
+    petEventOf,
     routeNotify,
     snapshotOf,
     toastOf,
-    toastSaysAsk,
     type NotifyEvent,
     type RouteCtx,
 } from "./notifyevents";
@@ -132,7 +131,7 @@ describe("parseTarget", () => {
 
 const ctx = (over: Partial<RouteCtx> = {}): RouteCtx => ({
     focused: true,
-    floating: false,
+    size: "full",
     viewing: new Set(),
     settings: { os: true, toast: true, reply: true },
     ...over,
@@ -154,11 +153,29 @@ describe("routeNotify", () => {
     it("leaves it to the pet even with in-app toasts off", () =>
         expect(routeNotify(ev("request"), ctx({ settings: { os: true, toast: false, reply: true } }))).toBe("avatar"));
     it("toasts a focused finished turn", () => expect(routeNotify(ev("reply"), ctx())).toBe("toast"));
-    // float mode hides the pet, so the toast says what the pet would have
-    it("toasts a request while floating", () =>
-        expect(routeNotify(ev("request"), ctx({ floating: true }))).toBe("toast"));
-    it("toasts a wsh notify while floating", () =>
-        expect(routeNotify(ev("notify"), ctx({ floating: true }))).toBe("toast"));
+    // in Float, Sprout walks the ledge and says what a toast said, a finished turn included
+    it("leaves a request in Float to Sprout", () =>
+        expect(routeNotify(ev("request"), ctx({ size: "float" }))).toBe("avatar"));
+    it("leaves a wsh notify in Float to Sprout", () =>
+        expect(routeNotify(ev("notify"), ctx({ size: "float" }))).toBe("avatar"));
+    it("says a finished turn in Float as Sprout's bubble", () =>
+        expect(routeNotify(ev("reply"), ctx({ size: "float" }))).toBe("avatar"));
+    it("still sends a backgrounded Float's news to the OS", () =>
+        expect(routeNotify(ev("request"), ctx({ size: "float", focused: false }))).toBe("os"));
+    // folded, Sprout floats over every app: it says everything, whichever app is in front
+    it("sends everything to the folded Sprout, focused or not", () => {
+        for (const kind of ["request", "reply", "notify", "attention"] as const) {
+            expect(routeNotify(ev(kind), ctx({ size: "sprout", focused: false }))).toBe("avatar");
+            expect(routeNotify(ev(kind), ctx({ size: "sprout" }))).toBe("avatar");
+        }
+    });
+    // the floated terminal is hidden while folded: its agent is not in view
+    it("has nothing in view while folded", () =>
+        expect(routeNotify(ev("request"), ctx({ size: "sprout", viewing: new Set(["a"]) }))).toBe("avatar"));
+    it("honours notify:reply off while folded", () =>
+        expect(
+            routeNotify(ev("reply"), ctx({ size: "sprout", settings: { os: true, toast: true, reply: false } }))
+        ).toBe("none"));
     it("goes to the OS while backgrounded", () =>
         expect(routeNotify(ev("request"), ctx({ focused: false }))).toBe("os"));
     it("says nothing about the agent in view", () =>
@@ -179,16 +196,7 @@ describe("routeNotify", () => {
     });
 });
 
-describe("toastSaysAsk", () => {
-    it("is true only while focused and floating with toasts on, where the toast says the question", () => {
-        expect(toastSaysAsk(ctx({ floating: true }))).toBe(true);
-        expect(toastSaysAsk(ctx())).toBe(false);
-        expect(toastSaysAsk(ctx({ floating: true, focused: false }))).toBe(false);
-        expect(toastSaysAsk(ctx({ floating: true, settings: { os: true, toast: false, reply: true } }))).toBe(false);
-    });
-});
-
-describe("petEventOfNeeds", () => {
+describe("petEventOf", () => {
     const decision: NotifyEvent = {
         kind: "attention",
         target: { kind: "attention", key: "gate:r1" },
@@ -200,7 +208,7 @@ describe("petEventOfNeeds", () => {
     };
 
     it("says a decision as a Needs-you utterance keyed by its item", () => {
-        expect(petEventOfNeeds(decision, 1000)).toEqual({
+        expect(petEventOf(decision, 1000)).toEqual({
             id: "needs:gate:r1",
             at: 1000,
             kind: "ask",
@@ -208,10 +216,22 @@ describe("petEventOfNeeds", () => {
         });
     });
 
-    // an agent's question already reaches the pet from its agent:ask event, with the retract when it is answered
-    it("leaves an agent's request to the pet's own ask source", () => {
-        expect(petEventOfNeeds(ev("request"), 1000)).toBeNull();
-        expect(petEventOfNeeds(ev("reply"), 1000)).toBeNull();
+    // an agent's question and a wsh notify already reach the pet from their own events
+    it("leaves an agent's request and a wsh notify to the pet's own sources", () => {
+        expect(petEventOf(ev("request"), 1000)).toBeNull();
+        expect(petEventOf(ev("notify"), 1000)).toBeNull();
+    });
+
+    it("says a finished turn, which opens its agent", () => {
+        const done: NotifyEvent = { ...ev("reply", "t1"), title: "loom", body: "Fix the race" };
+        expect(petEventOf(done, 1000)).toEqual({
+            id: "reply:t1:1000",
+            at: 1000,
+            kind: "notify",
+            text: "loom finished",
+            detail: "Fix the race",
+            sources: [{ ref: "agent:t1", title: "loom", sourceType: "" }],
+        });
     });
 });
 

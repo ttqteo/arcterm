@@ -14,14 +14,12 @@
 //                       buffer is in-memory, so a wavesrv restart replays nothing — the durable half of
 //                       Voice is the launch narrative above, which is why that one reads the DB.
 
-import { atoms, getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { floatModeAtom } from "@/app/view/agents/floatstore";
-import { toastSaysAsk } from "@/app/view/agents/notifyevents";
+import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { focusedBlockId } from "@/util/focusutil";
 import { isMacOS } from "@/util/platformutil";
@@ -143,15 +141,8 @@ export function PetSources({ model }: { model: AgentsViewModel }) {
                     focusTabId: globalStore.get(model.focusIdAtom),
                     askTabId: agent?.id,
                     focusedBlockId: focusedBlockId(),
-                    // routeNotify's own rule: a toast says it only in float mode, focused, with toasts on (the setting
-                    // defaults to on); otherwise the question is the pet's to say
-                    toastSays: toastSaysAsk({
-                        focused: globalStore.get(atoms.documentHasFocus),
-                        floating: globalStore.get(floatModeAtom),
-                        settings: {
-                            toast: (globalStore.get(getSettingsKeyAtom("notify:toast")) as boolean | undefined) ?? true,
-                        },
-                    }),
+                    // folded, the floated terminal is hidden: its question is Sprout's to say
+                    folded: globalStore.get(floatMiniAtom),
                 };
                 if (!shouldSpeakAsk(data?.oref, ctx)) {
                     return;

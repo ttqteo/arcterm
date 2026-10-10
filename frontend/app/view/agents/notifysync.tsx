@@ -24,7 +24,7 @@ import { useEffect, useRef } from "react";
 import { centerModeAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { attentionAtom, attentionLoadedAtom } from "./attentionstore";
-import { floatModeAtom } from "./floatstore";
+import { floatMiniAtom, floatModeAtom } from "./floatstore";
 import { agentGridAtom } from "./gridstore";
 import {
     answerLine,
@@ -34,7 +34,7 @@ import {
     notifyEventOf,
     osText,
     parseTarget,
-    petEventOfNeeds,
+    petEventOf,
     routeNotify,
     snapshotOf,
     toastOf,
@@ -45,6 +45,7 @@ import {
     type RouteCtx,
 } from "./notifyevents";
 import { viewingIds } from "./unreadagents";
+import { windowSize } from "./windowsize";
 
 const ACTIVATED_EVENT = "os-notify-activated"; // notify.rs ACTIVATED_EVENT
 
@@ -95,6 +96,7 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
     const attentionLoaded = useAtomValue(attentionLoadedAtom);
     const focused = useAtomValue(atoms.documentHasFocus);
     const floating = useAtomValue(floatModeAtom);
+    const folded = useAtomValue(floatMiniAtom);
     const focusId = useAtomValue(model.focusIdAtom);
     const surface = useAtomValue(model.surfaceAtom);
     const center = useAtomValue(centerModeAtom);
@@ -107,7 +109,7 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
     const ctx = useRef<RouteCtx>(null);
     ctx.current = {
         focused,
-        floating,
+        size: windowSize(floating, folded),
         viewing: viewingIds(focused, surface === "agent", center, focusId, grid),
         settings: { os, toast, reply },
     };
@@ -144,8 +146,9 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
             if (route === "os" || route === "toast") {
                 buffer.current.push({ route, event });
             } else if (route === "avatar") {
-                // the pet says a decision in place of its toast; its other avatar events come from its own sources
-                const said = petEventOfNeeds(event, Date.now());
+                // Sprout says a decision, and a finished turn, in place of its toast; its other avatar events come from
+                // its own sources
+                const said = petEventOf(event, Date.now());
                 if (said != null) {
                     pushPetEvent(said);
                 }

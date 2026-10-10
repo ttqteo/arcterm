@@ -3,12 +3,13 @@
 //
 // Pure: what is worth telling you, and where. diffEvents turns two snapshots of the roster and the attention list into
 // edge events (an agent starts asking, finishes a turn, a decision item appears); routeNotify sends each to an OS toast
-// while arcterm is in the background, an in-app toast while it is focused, or nowhere for the agent you are looking at;
-// coalesce folds a burst into one summary. NotifySync (notifysync.tsx) wires it up. No React, no store.
+// while arcterm is in the background, an in-app toast or Sprout's bubble while it is focused, Sprout's bubble while
+// folded, or nowhere for the agent you are looking at; coalesce folds a burst into one summary. NotifySync (notifysync.tsx) wires it up. No React, no store.
 
 import type { ToastEyebrow, ToastNotification } from "@/app/cockpit/notificationstore";
 import type { PetEvent } from "@/app/view/jarvis/petvoice";
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import type { WindowSize } from "./windowsize";
 
 export type NotifyTarget =
     | { kind: "agent"; agentId: string }
@@ -174,20 +175,24 @@ export function parseTarget(raw: unknown): NotifyTarget {
 
 export interface RouteCtx {
     focused: boolean;
-    // float mode (floatstore.ts): the window is one terminal and the pet is not drawn
-    floating: boolean;
+    // the window's size (windowsize.ts): in Float and folded, Sprout says what a toast said
+    size: WindowSize;
     viewing: ReadonlySet<string>;
     settings: { os: boolean; toast: boolean; reply: boolean };
 }
 
 export type NotifyRoute = "os" | "toast" | "avatar" | "none";
 
-/** Pure: where one event goes. While focused, a `wsh notify` and anything that needs you are the avatar's (the pet's
- *  bubble, petsources.tsx), so the two never say the same thing in the same corner; you are already looking at the
- *  pet's "?". Float mode does not draw the pet, so there the toast says it. */
+/** Pure: where one event goes. While focused, a `wsh notify` and anything that needs you are the avatar's (Sprout's
+ *  bubble, petsources.tsx), so the two never say the same thing in the same corner; in Float, where Sprout walks the
+ *  ledge, a finished turn is too. Folded, Sprout floats over every app, so it says everything, whichever app is in
+ *  front, and the hidden terminal is not in view. */
 export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
     if (e.kind === "reply" && !ctx.settings.reply) {
         return "none";
+    }
+    if (ctx.size === "sprout") {
+        return "avatar";
     }
     if (!ctx.focused) {
         return ctx.settings.os ? "os" : "none";
@@ -196,25 +201,30 @@ export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
         return "none";
     }
     const pets = e.kind === "notify" || e.kind === "request" || e.kind === "attention";
-    if (pets && !ctx.floating) {
+    if (pets || ctx.size === "float") {
         return "avatar";
     }
     return ctx.settings.toast ? "toast" : "none";
 }
 
-/** Pure: whether a toast says an agent's question, so the pet's ask source keeps quiet (petjoin.ts shouldSpeakAsk).
- *  The other half of routeNotify's request rule: only in float mode, focused, with toasts on. */
-export function toastSaysAsk(ctx: { focused: boolean; floating: boolean; settings: { toast: boolean } }): boolean {
-    return ctx.focused && ctx.floating && ctx.settings.toast;
-}
-
-/** Pure: a decision the pet says in place of its toast. An agent's request is not one: it reaches the pet from its own
- *  agent:ask event, which also retracts it once answered. */
-export function petEventOfNeeds(e: NotifyEvent, nowMs: number): PetEvent | null {
-    if (e.kind !== "attention" || e.target.kind !== "attention") {
-        return null;
+/** Pure: what Sprout says in place of a toast. A decision, and (in Float and folded) a finished turn, which opens its
+ *  agent. An agent's request is not one: it reaches the pet from its own agent:ask event, which also retracts it once
+ *  answered; a `wsh notify` from its own notify event. */
+export function petEventOf(e: NotifyEvent, nowMs: number): PetEvent | null {
+    if (e.kind === "attention" && e.target.kind === "attention") {
+        return { id: `needs:${e.target.key}`, at: nowMs, kind: "ask", text: e.title };
     }
-    return { id: `needs:${e.target.key}`, at: nowMs, kind: "ask", text: e.title };
+    if (e.kind === "reply" && e.target.kind === "agent") {
+        return {
+            id: `reply:${e.target.agentId}:${nowMs}`,
+            at: nowMs,
+            kind: "notify",
+            text: `${e.title} finished`,
+            detail: e.body || undefined,
+            sources: [{ ref: `agent:${e.target.agentId}`, title: e.title, sourceType: "" }],
+        };
+    }
+    return null;
 }
 
 export const COALESCE_MS = 2000;
