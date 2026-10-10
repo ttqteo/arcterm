@@ -22005,18 +22005,10 @@ const agentGrid = {
                     lay.cells.filter((c) => c.focused).length === 1,
                 { reloaded, back, lay }
             );
-            // the saved focus is resumed only when its agent is among the first the roster delivers: until the roster is
-            // seeded the surface shows the first saved cell that has arrived (resolveShownAgent), and that agent keeps
-            // the focus. So a different focused cell is not a failure of the grid, and is not scored as one
+            // until the roster is seeded the surface holds for the saved focused cell's agent (gridHold), whatever order
+            // the roster delivers the cells in
             const resumed = gridFocused(lay);
-            steps.push(
-                resumed === D
-                    ? { step: "10b. the focus saved with the grid (D) is the focused cell again", ok: true, detail: `focused=${resumed}` }
-                    : skipStep(
-                          "10b. the focus saved with the grid (D) is the focused cell again",
-                          `the focused cell came back as ${resumed} (D is ${D}): the surface resumes on the first saved cell the roster delivers when the saved focus has not arrived yet, so this depends on arrival order`
-                      )
-            );
+            rec("10b. the focus saved with the grid (D) is the focused cell again", resumed === D, { resumed, D });
             await h.shot("cdp-shots/agent-grid-reloaded.png");
 
             // The steps below press keys in the live app, and a key acts on whatever the page shows, so each one first

@@ -155,11 +155,18 @@ describe("resolveShownAgent", () => {
     it("resumes on the grid's focused cell rather than the roster's first agent", () => {
         expect(resolveShownAgent(input({ grid: grid(["a", "b"], "b") })).agent).toBe(b);
     });
-    it("falls to the first live cell of an unseeded grid, and to the neighbour of an exited cell once seeded", () => {
+    // resuming on a cell that arrived before the focused one made it the focused agent for good
+    it("holds an unseeded grid for its focused cell, and falls to the neighbour of an exited cell once seeded", () => {
         const saved = grid(["a", "b", "c"], "b");
         const live = new Set(["a", "c"]);
-        expect(resolveShownAgent(input({ grid: saved, eligible: live, seeded: false })).agent).toBe(a);
+        expect(resolveShownAgent(input({ grid: saved, eligible: live, seeded: false }))).toEqual({
+            agent: undefined,
+            hold: true,
+        });
         expect(resolveShownAgent(input({ grid: saved, eligible: live, seeded: true })).agent).toBe(c);
+        expect(
+            resolveShownAgent(input({ grid: grid(["a", "b", "c"], "a"), eligible: live, seeded: false })).agent
+        ).toBe(a);
     });
     it("holds, showing nothing, while the roster loads and none of the saved cells has arrived", () => {
         const held = { grid: grid(["x", "y"]), eligible: new Set(["a"]), seeded: false };
