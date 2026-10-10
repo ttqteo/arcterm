@@ -6,6 +6,7 @@ package agentobserve
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -56,7 +57,8 @@ func TestSameCwdCaseInsensitiveAndClean(t *testing.T) {
 	if !sameCwd(`C:\Users\Kael\Proj`, `c:\users\kael\proj`) {
 		t.Fatal("expected case-insensitive match")
 	}
-	if !sameCwd(`C:\a\b\..\b`, `C:\a\b`) {
+	// filepath.Clean reads a backslash as a separator only on Windows
+	if runtime.GOOS == "windows" && !sameCwd(`C:\a\b\..\b`, `C:\a\b`) {
 		t.Fatal("expected clean to normalize")
 	}
 	if sameCwd(`C:\a`, `C:\b`) {
@@ -95,6 +97,9 @@ func TestActiveTranscriptEndToEnd(t *testing.T) {
 		t.Fatalf("ActiveTranscript(missing) = %q, want empty", got)
 	}
 	// a trailing separator on the block cwd (observed from process Cwd on Windows) must still resolve
+	if runtime.GOOS != "windows" {
+		return
+	}
 	if got := ActiveTranscript(root, blockCwd+`\`); got != want {
 		t.Fatalf("ActiveTranscript(trailing sep) = %q, want %q", got, want)
 	}
