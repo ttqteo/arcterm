@@ -93,3 +93,92 @@ export function parseRestore(raw: unknown): FloatRestore | null {
     }
     return { rect, maximized: r.maximized, terminalFullscreen: r.terminalFullscreen };
 }
+
+// Float folded into Sprout (floatstore.ts enterMini). The window becomes a see-through box around Sprout and grows
+// for the chat, always around Sprout's own place on screen, so Sprout never moves when the chat opens or closes.
+// Sizes are logical here and physical in the rects, like the float's.
+export const MINI_SPROUT_BOX = 80; // the 64px sprite with room for its bob, its shadow and the count chip
+export const MINI_REST_SIZE = { width: 340, height: 112 }; // room beside Sprout for the hover chip and the reply bubble
+export const MINI_CHAT_SIZE = { width: 380, height: 620 };
+const MINI_MARGIN = 24;
+
+// which way from Sprout the chip, the bubble and the chat open: toward the middle of the screen
+export interface MiniSides {
+    h: "left" | "right";
+    v: "up" | "down";
+}
+
+// what giving the float window back needs
+export interface MiniRestore {
+    rect: WinRect;
+    pinned: boolean;
+}
+
+export function miniSides(sprout: WinRect, work: WinRect): MiniSides {
+    const cx = sprout.x + sprout.width / 2;
+    const cy = sprout.y + sprout.height / 2;
+    return {
+        h: cx >= work.x + work.width / 2 ? "left" : "right",
+        v: cy >= work.y + work.height / 2 ? "up" : "down",
+    };
+}
+
+// Sprout's box on screen: where it was last dropped, pulled back on screen, or in the work area's bottom-right
+// corner, out of the way like a first float
+export function miniSproutRect(last: WinRect | null, work: WinRect, scale: number): WinRect {
+    const size = MINI_SPROUT_BOX * scale;
+    const margin = MINI_MARGIN * scale;
+    const x = last?.x ?? work.x + work.width - size - margin;
+    const y = last?.y ?? work.y + work.height - size - margin;
+    return {
+        x: clamp(x, work.x, work.x + work.width - size),
+        y: clamp(y, work.y, work.y + work.height - size),
+        width: size,
+        height: size,
+    };
+}
+
+// The window around Sprout's box at a logical size, Sprout in the corner away from where things open, cut to the room
+// the work area has on those sides rather than moving Sprout
+export function miniWindowRect(
+    sprout: WinRect,
+    size: { width: number; height: number },
+    sides: MiniSides,
+    work: WinRect,
+    scale: number
+): WinRect {
+    const roomX = sides.h === "left" ? sprout.x + sprout.width - work.x : work.x + work.width - sprout.x;
+    const roomY = sides.v === "up" ? sprout.y + sprout.height - work.y : work.y + work.height - sprout.y;
+    const width = Math.min(Math.round(size.width * scale), roomX);
+    const height = Math.min(Math.round(size.height * scale), roomY);
+    return {
+        x: sides.h === "left" ? sprout.x + sprout.width - width : sprout.x,
+        y: sides.v === "up" ? sprout.y + sprout.height - height : sprout.y,
+        width,
+        height,
+    };
+}
+
+// Sprout's box from the window around it, the inverse of miniWindowRect: a drag moves the window, and this is where
+// it put Sprout
+export function sproutFromWindow(win: WinRect, sides: MiniSides, scale: number): WinRect {
+    const size = MINI_SPROUT_BOX * scale;
+    return {
+        x: sides.h === "left" ? win.x + win.width - size : win.x,
+        y: sides.v === "up" ? win.y + win.height - size : win.y,
+        width: size,
+        height: size,
+    };
+}
+
+export function parseMiniRestore(raw: unknown): MiniRestore | null {
+    const r = raw as Partial<MiniRestore> | null;
+    if (r == null || typeof r !== "object") {
+        return null;
+    }
+    const rect = parseRect(r.rect);
+    if (rect == null || typeof r.pinned !== "boolean") {
+        return null;
+    }
+    return { rect, pinned: r.pinned };
+}
