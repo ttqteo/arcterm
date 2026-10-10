@@ -11,8 +11,9 @@
 
 import { MOTION } from "@/app/element/motiontokens";
 import { atoms } from "@/app/store/global";
+import { DEFAULT_PET_CHARACTER, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { DEFAULT_PET_OUTFIT, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
-import { DEFAULT_PET_QUOTES, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
+import { DEFAULT_PET_QUOTES, petCharacterAtom, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { Search } from "lucide-react";
@@ -76,6 +77,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [mono, setMono] = useAtom(fontMonoAtom);
     const [startup, setStartup] = useAtom(startupSurfaceAtom);
     const [rail, setRail] = useAtom(railVisibleAtom);
+    const [character, setCharacter] = useAtom(petCharacterAtom);
     const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
     const [quotes, setQuotes] = useAtom(petQuotesOnAtom);
     const [flags, setFlags] = useAtom(naFlagsAtom);
@@ -93,6 +95,10 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
             revert: () => setStartup(DEFAULT_STARTUP_SURFACE),
         },
         "general.rail": { changed: rail !== DEFAULT_RAIL_VISIBLE, revert: () => setRail(DEFAULT_RAIL_VISIBLE) },
+        "appearance.petcharacter": {
+            changed: petCharacter(character) !== DEFAULT_PET_CHARACTER,
+            revert: () => setCharacter(DEFAULT_PET_CHARACTER),
+        },
         "appearance.petoutfit": {
             changed: petOutfitChoice(outfit) !== DEFAULT_PET_OUTFIT,
             revert: () => setOutfit(DEFAULT_PET_OUTFIT),

@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Jarvis can be a one-eyed Minion instead of Sprout: pick it in **Settings → Appearance → Jarvis → Character**. It
+  walks, rests and plays like Sprout, wears the same marks, and the flag shirt turns its overalls red.
+
 - The Jarvis pet's popup answers every agent question in place, not only one-pick ones: a question with several
   parts or several picks opens its answer form under the row (**Answer**, or `Enter`), where `1`–`9` pick, `←` / `→`
   change question and `Enter` sends. Clicking a "Needs you" bubble lands on that question with its form open.

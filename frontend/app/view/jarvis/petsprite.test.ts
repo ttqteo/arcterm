@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
     MARKS,
+    MINION_POSES,
     outfitRows,
     PET_CELL_PX,
     PET_FLAG_RISE,
@@ -91,7 +92,11 @@ describe("the grid", () => {
 
 describe("tokens", () => {
     const used = new Set<string>();
-    for (const rows of [...Object.values(POSES), ...Object.values(MARKS).map((m) => m.rows)]) {
+    for (const rows of [
+        ...Object.values(POSES),
+        ...Object.values(MINION_POSES),
+        ...Object.values(MARKS).map((m) => m.rows),
+    ]) {
         for (const row of rows) {
             for (const code of row) {
                 if (code !== ".") {
@@ -109,7 +114,7 @@ describe("tokens", () => {
         expect(THEME_BLOCK).toMatch(new RegExp(`(?:^|[\\s;{])${token}\\s*:`, "m"));
     });
 
-    it("maps exactly the eight codes of the spec, and the flag's two", () => {
+    it("maps exactly the eight codes of the spec, the flag's two, and the Minion's five", () => {
         expect(PET_TOKENS).toEqual({
             b: "--color-accent",
             d: "--color-accent-600",
@@ -121,6 +126,11 @@ describe("tokens", () => {
             y: "--color-asking",
             R: "--color-flag-red",
             Y: "--color-flag-star",
+            j: "--color-minion-skin",
+            h: "--color-minion-shine",
+            o: "--color-minion-denim",
+            O: "--color-minion-denim-dark",
+            s: "--color-minion-hair",
         });
     });
 });
@@ -333,5 +343,127 @@ describe("the Vietnam flag", () => {
             expect(spriteFor(pose, []).back).toEqual([]);
             expect(spriteFor(pose, [], "vn-shirt").back).toEqual([]);
         }
+    });
+});
+
+describe("the Minion", () => {
+    it("has every pose Sprout has, so the walker can name any of them", () => {
+        expect(Object.keys(MINION_POSES).sort()).toEqual([...POSE_NAMES].sort());
+    });
+
+    it.each(POSE_NAMES)("%s is 16 rows of 16 cells and stands on the bottom row", (pose) => {
+        expect(MINION_POSES[pose]).toHaveLength(PET_GRID);
+        for (const row of MINION_POSES[pose]) {
+            expect(row).toHaveLength(PET_GRID);
+        }
+        expect(MINION_POSES[pose][PET_GRID - 1]).not.toBe(".".repeat(PET_GRID));
+    });
+
+    // the marks sit at Sprout's cells, so every pose keeps them clear the way Sprout's do
+    const stamped: [PetMark, PetPose][] = [
+        ["gate", "stand"],
+        ["escalation", "stand"],
+        ["blocked", "stand"],
+        ["z", "sleep"],
+        ["drop", "tired"],
+        ...POSE_NAMES.map((pose): [PetMark, PetPose] => ["unread", pose]),
+    ];
+
+    it.each(stamped)("%s on %s never lands on a drawn body cell", (mark, pose) => {
+        const body = drawnCells(MINION_POSES[pose]);
+        const { overlay } = spriteFor(pose, [mark], null, "minion");
+        expect(overlay.length).toBeGreaterThan(0);
+        for (const cell of overlay) {
+            expect(body.has(`${cell.x},${cell.y}`), `${mark} at ${cell.x},${cell.y}`).toBe(false);
+        }
+    });
+
+    it.each(POSE_NAMES)("is what spriteFor draws for %s when chosen, and Sprout stays the default", (pose) => {
+        const { body } = spriteFor(pose, [], null, "minion");
+        expect(body).toHaveLength(drawnCells(MINION_POSES[pose]).size);
+        for (const cell of body) {
+            const code = MINION_POSES[pose][cell.y][cell.x];
+            expect(cell.token).toBe(PET_TOKENS[code as keyof typeof PET_TOKENS]);
+        }
+        expect(spriteFor(pose, [])).toEqual(spriteFor(pose, [], null, "sprout"));
+    });
+
+    it("wears its own skin and overalls, not the accent", () => {
+        const tokens = new Set(spriteFor("stand", [], null, "minion").body.map((c) => c.token));
+        expect(tokens.has("--color-minion-skin")).toBe(true);
+        expect(tokens.has("--color-minion-denim")).toBe(true);
+        expect(tokens.has("--color-accent")).toBe(false);
+    });
+
+    it.each(POSE_NAMES)("holds Sprout's flag behind %s, and leaves its body and marks alone", (pose) => {
+        const bare = spriteFor(pose, ["unread"], null, "minion");
+        const flagged = spriteFor(pose, ["unread"], "vn-flag", "minion");
+        expect(flagged.back).toEqual(spriteFor("stand", [], "vn-flag").back);
+        expect(flagged.body).toEqual(bare.body);
+        expect(flagged.overlay).toEqual(bare.overlay);
+    });
+});
+
+describe("the Minion's flag shirt", () => {
+    const dressed = (pose: PetPose) => outfitRows(pose, "vn-shirt", "minion");
+
+    // the overalls are the shirt: the goggle, the mouth and the outline stay where they are
+    it.each(POSE_NAMES)("recolours only the overalls of %s", (pose) => {
+        const bare = MINION_POSES[pose];
+        dressed(pose).forEach((row, y) => {
+            [...row].forEach((code, x) => {
+                const was = bare[y][x];
+                if (was === "o" || was === "O") {
+                    expect(["R", "Y"], `${x},${y}`).toContain(code);
+                } else {
+                    expect(code, `${x},${y}`).toBe(was);
+                }
+            });
+        });
+    });
+
+    // three rows of overalls hold a 5×3 star: the point, the arms, two legs
+    const starred: PetPose[] = [
+        "walk1",
+        "walk2",
+        "stand",
+        "sit",
+        "sleep",
+        "speak",
+        "music1",
+        "music2",
+        "ball1",
+        "ball2",
+    ];
+    it.each(starred)("draws the whole star on %s", (pose) => {
+        expect(cellsOf(dressed(pose), "Y")).toHaveLength(8);
+    });
+
+    it("centres the star's point on the bib, standing", () => {
+        expect(dressed("stand").slice(12, 15)).toEqual(["...jjRRYRRRjj...", "...RRYYYYYRRR...", "...RRRYRYRRRR..."]);
+    });
+
+    it("is hidden while reading: the book on its lap covers the overalls", () => {
+        expect(dressed("read1")).toEqual(MINION_POSES.read1);
+        expect(dressed("read2")).toEqual(MINION_POSES.read2);
+    });
+
+    it("leaves a pose bare without the shirt, the flag included", () => {
+        for (const pose of POSE_NAMES) {
+            expect(outfitRows(pose, null, "minion")).toBe(MINION_POSES[pose]);
+            expect(outfitRows(pose, "vn-flag", "minion")).toBe(MINION_POSES[pose]);
+        }
+    });
+
+    it("fills the shirt with the flag tokens through spriteFor, and leaves the marks alone", () => {
+        const bare = spriteFor("stand", ["blocked"], null, "minion");
+        const shirt = spriteFor("stand", ["blocked"], "vn-shirt", "minion");
+        expect(shirt.overlay).toEqual(bare.overlay);
+        expect(shirt.back).toEqual([]);
+        const tokens = new Set(shirt.body.map((c) => c.token));
+        expect(tokens.has("--color-flag-red")).toBe(true);
+        expect(tokens.has("--color-flag-star")).toBe(true);
+        expect(tokens.has("--color-minion-denim")).toBe(false);
+        expect(shirt.body).toHaveLength(bare.body.length);
     });
 });

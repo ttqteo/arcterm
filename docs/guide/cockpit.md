@@ -348,7 +348,7 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   lúc chat đang thu hiện thành bong bóng cạnh nó. **Terminal** (trên chat, hoặc trên chip khi rê chuột) hay bấm đúp
   mở lại cửa sổ Float.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
-- Đổi trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
+- Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 
 Chi tiết các hành động và cách con vật "nói" nằm ở [Jarvis](jarvis.md).
 

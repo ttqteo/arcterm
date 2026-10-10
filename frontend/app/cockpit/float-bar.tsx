@@ -8,8 +8,10 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { enterMini, exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
+import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
+import { petCharacterAtom } from "@/app/view/jarvis/petstore";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
@@ -18,8 +20,8 @@ import { useAtomValue } from "jotai";
 import { PictureInPicture2, Pin } from "lucide-react";
 import { WindowControls } from "./app-bar";
 
-// a sitting Sprout on the button that folds the float into it
-const MINIMIZE_SPRITE = spriteFor("sit", []);
+// the creature sitting, on the button that folds the float into it
+const MINIMIZE_SPRITE = { sprout: spriteFor("sit", [], null, "sprout"), minion: spriteFor("sit", [], null, "minion") };
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
@@ -28,6 +30,7 @@ const MINIMIZE_SPRITE = spriteFor("sit", []);
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
+    const character = petCharacter(useAtomValue(petCharacterAtom));
     const focusId = useAtomValue(model.focusIdAtom);
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
@@ -83,12 +86,12 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             <button
                 type="button"
                 data-float-minimize
-                aria-label="Minimize to Sprout"
-                title="Minimize to Sprout"
+                aria-label={`Minimize to ${PET_CHARACTER_NAME[character]}`}
+                title={`Minimize to ${PET_CHARACTER_NAME[character]}`}
                 onClick={() => fireAndForget(enterMini)}
                 className={cn(ICON_BTN, "gap-[5px] pr-2 text-[11px] font-semibold")}
             >
-                <SproutSvg sprite={MINIMIZE_SPRITE} cellPx={1} />
+                <SproutSvg sprite={MINIMIZE_SPRITE[character]} cellPx={1} />
                 Minimize
             </button>
             <button

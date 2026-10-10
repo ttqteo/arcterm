@@ -24,6 +24,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { flushSync } from "react-dom";
 import { closePeek, openPetPeek } from "./peekstore";
 import { PetBubble } from "./petbubble";
+import { petCharacter } from "./petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
 import { landing, ledgeShift, type LedgeAt } from "./petfall";
 import { avoidSpans, cornerFor, measureLedge, type MeasuredLedge, type PetCorner } from "./petledge";
@@ -34,6 +35,7 @@ import { canQuote, pickQuote, QUOTE_RETRY_MS, quoteDelayMs, quoteEvent, type Quo
 import { PET_CELL_PX, PET_PX, spriteFor, type PetCell, type PetMark } from "./petsprite";
 import {
     petBubbleAtom,
+    petCharacterAtom,
     petEventsAtom,
     petHomeAtom,
     petOutfitChoiceAtom,
@@ -451,7 +453,8 @@ function PetSprite({
     const marks: PetMark[] = frame == null ? [] : unread ? [...frame.step.marks, "unread"] : frame.step.marks;
     // read per frame, so a flag day dresses it on the first step past midnight
     const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
-    const sprite = frame == null ? null : spriteFor(frame.step.pose, marks, outfit);
+    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const sprite = frame == null ? null : spriteFor(frame.step.pose, marks, outfit, character);
 
     // Dev-only: the CDP harness asserts on this (sprout spec §4, "The DEV contract"). Folded out of production
     // builds — import.meta.env.DEV is statically false there.

@@ -20,13 +20,14 @@ import type { MiniSides } from "@/app/view/agents/floatwindow";
 import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
+import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { postureFor } from "@/app/view/jarvis/petcondition";
 import { miniLook, nextUnread } from "@/app/view/jarvis/petmini";
 import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import { PetPeek } from "@/app/view/jarvis/petpeek";
 import { queueRows } from "@/app/view/jarvis/petpeekmodel";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
-import { petErrandAtom, petOutfitChoiceAtom, petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { petCharacterAtom, petErrandAtom, petOutfitChoiceAtom, petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { usePetSignals } from "@/app/view/jarvis/petview";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { cn, fireAndForget } from "@/util/util";
@@ -88,10 +89,11 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const focusId = useAtomValue(model.focusIdAtom);
     const messages = useAtomValue(channelMessagesAtom);
     const outfitChoice = useAtomValue(petOutfitChoiceAtom);
+    const character = petCharacter(useAtomValue(petCharacterAtom));
     const frame = useBobFrame();
     const waiting = useMemo(() => queueRows(items, agents, messages).length, [items, agents, messages]);
     const look = miniLook({ posture: postureFor(signals), waiting, errand, unread, chatOpen, frame });
-    const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()));
+    const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
     const agent = agents.find((a) => a.id === focusId) ?? terminals.find((a) => a.id === focusId);
     // state, not a ref: the chat positions itself once this lands
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);

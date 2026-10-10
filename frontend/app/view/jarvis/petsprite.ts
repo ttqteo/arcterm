@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Sprout's pixels: every pose and mark as data, and the one function that turns them into cells. The grids
-// live here and nowhere else (sprout spec §2, §4). Pure — no React, no atoms — so the walker can name a pose
-// without knowing what it looks like, and the renderer can draw one without knowing why.
+// Jarvis's pixels: every pose of both creatures (Sprout and the Minion) and every mark as data, and the one function
+// that turns them into cells. The grids live here and nowhere else (sprout spec §2, §4). Pure — no React, no atoms —
+// so the walker can name a pose without knowing what it looks like, and the renderer can draw one without knowing why.
 //
 // A grid is 16 rows of 16 cell codes, `.` empty. Each code is a theme token rather than a colour, so a
 // runtime theme repaints the creature through the same --color-* properties it overrides everywhere else.
@@ -33,6 +33,10 @@ export type PetMark = "gate" | "escalation" | "blocked" | "z" | "drop" | "unread
 // its hand behind one.
 export type PetOutfit = "vn-shirt" | "vn-flag";
 
+// Which creature Jarvis is drawn as, chosen in Settings (petcharacter.ts). Both have every pose, and the marks and
+// outfits fit either.
+export type PetCharacter = "sprout" | "minion";
+
 export const PET_GRID = 16;
 export const PET_CELL_PX = 3;
 export const PET_PX = PET_GRID * PET_CELL_PX;
@@ -49,6 +53,11 @@ export const PET_TOKENS = {
     y: "--color-asking", // the blocked-worker ?
     R: "--color-flag-red", // the flag shirt
     Y: "--color-flag-star", // the shirt's star
+    j: "--color-minion-skin", // the Minion's body
+    h: "--color-minion-shine", // its highlight
+    o: "--color-minion-denim", // its overalls
+    O: "--color-minion-denim-dark", // the bib pocket
+    s: "--color-minion-hair", // its hair and shoes
 } as const satisfies Record<string, `--color-${string}`>;
 
 type PetCode = keyof typeof PET_TOKENS;
@@ -356,6 +365,307 @@ export const POSES: Record<PetPose, readonly string[]> = {
     ],
 };
 
+// The Minion: a yellow body, one goggle, overalls. The goggle's rim and the headphones are muted like Sprout's, the eye
+// is primary, and the pupil, the goggle strap and the mouth are the background, as Sprout's eyes are. Rows 0-2 stay
+// clear for the marks, and every pose keeps the unread mark's cells (x 1-2, y 5-6) clear, so the marks land on it at
+// Sprout's cells.
+export const MINION_POSES: Record<PetPose, readonly string[]> = {
+    walk1: [
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwwkkmkk...",
+        "...jjmwwkkmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjkjjjjkj...",
+        "...jjjjkkkkjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        "...ss......ss...",
+    ],
+    walk2: [
+        E,
+        E,
+        E,
+        "....s.s..s......",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwwkkmkk...",
+        "...jjmwwkkmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjkjjjjkj...",
+        "...jjjjkkkkjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        ".....ss..ss.....",
+    ],
+    stand: [
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwkkwmkk...",
+        "...jjmwkkwmjj...",
+        "...jjjmmmmjjj...",
+        "...jjkjjjjkjj...",
+        "...jjjkkkkjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        "....ss....ss....",
+    ],
+    sit: [
+        E,
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwkkwmkk...",
+        "...jjmwkkwmjj...",
+        "...jjjmmmmjjj...",
+        "...jjkjjjjkjj...",
+        "...jjjkkkkjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...ooooooooooss.",
+    ],
+    sleep: [
+        E,
+        E,
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmjjjjmkk...",
+        "...kkmjjjjmkk...",
+        "...jjmkkkkmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjjkkjjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...ooooooooooss.",
+    ],
+    tired: [
+        E,
+        E,
+        E,
+        E,
+        "....ss.s.s......",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmjjjjmkk...",
+        "...kkmwkkwmkk...",
+        "...jjmwwwwmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjjjjjjjj...",
+        "...jjjkkkkjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "....ss....ss....",
+    ],
+    speak: [
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwkkwmkk...",
+        "...jjmwkkwmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjkkkkjjj...",
+        "...jjjjkkjjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        "....ss....ss....",
+    ],
+    // held up by its hair, legs hanging
+    dangle: [
+        E,
+        ".......ss.......",
+        "......s..s......",
+        ".....s.ss.s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwkkwmkk...",
+        "...jjmwkkwmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjjkkjjjj...",
+        "...jjjjkkjjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "....o......o....",
+        "....s......s....",
+    ],
+    // Pastimes, as Sprout's. Reading: sat with a book on its lap, which covers the overalls
+    read1: [
+        E,
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwwwwmkk...",
+        "...jjmkkwwmjj...",
+        "...jjjmmmmjjj...",
+        "...jjkjjjjkjj...",
+        "...jjjkkkkjjj...",
+        "..jrwwwwrwwwwrj.",
+        "...rmmwwrmmwwr..",
+        "...rrrrrrrrrrss.",
+    ],
+    read2: [
+        E,
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwwwwmkk...",
+        "...jjmwwkkmjj...",
+        "...jjjmmmmjjj...",
+        "...jjkjjjjkjj...",
+        "...jjjkkkkjjj...",
+        "..jrwwwwrwwwwrj.",
+        "...rwwmmrwwmmr..",
+        "...rrrrrrrrrrss.",
+    ],
+    // listening to music: the headphones' band over its hair, the cups over the goggle strap, the eye shut happy
+    music1: [
+        "............yy..",
+        "..yy........y...",
+        "..y.........y...",
+        ".yy..mmmmmmyy...",
+        "....mjjjjjjm....",
+        "...hmjmmmmjmj...",
+        "...rrmjjjjmrr...",
+        "...rrmjkkjmrr...",
+        "...rrmkjjkmrr...",
+        "...jjjmmmmjjj...",
+        "...jjkjjjjkjj...",
+        "...jjjkkkkjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        "....ss....ss....",
+    ],
+    music2: [
+        "..yy............",
+        "..y..........yy.",
+        ".yy..........y..",
+        ".....mmmmmm..y..",
+        "....mjjjjjjmyy..",
+        "...hmjmmmmjmj...",
+        "...rrmjjjjmrr...",
+        "...rrmjkkjmrr...",
+        "...rrmkjjkmrr...",
+        "...jjjmmmmjjj...",
+        "...jjkjjjjkjj...",
+        "...jjjkkkkjjj...",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        "....ss....ss....",
+    ],
+    // working: sat at a laptop seen side-on, its screen lit, a key lit as it types and the code mark over its head
+    work1: [
+        ".......w...w.w..",
+        "......w...w...w.",
+        ".......w.w...w..",
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk.m.",
+        "...kkmwwkkmkklm.",
+        "...jjmwwkkmjjlm.",
+        "...jjjmmmmjjjlm.",
+        "...jjjkjjjjkjlm.",
+        "...jjjjkkkkjjlm.",
+        "...jjooOOoojjlm.",
+        "...oooooomwmmmm.",
+        "...ooooooooooss.",
+    ],
+    work2: [
+        ".......m...m.m..",
+        "......m...m...m.",
+        ".......m.m...m..",
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk.m.",
+        "...kkmwwkkmkkwm.",
+        "...jjmwwkkmjjwm.",
+        "...jjjmmmmjjjwm.",
+        "...jjjkjjjjkjwm.",
+        "...jjjjkkkkjjwm.",
+        "...jjooOOoojjwm.",
+        "...oooooommmwmm.",
+        "...ooooooooooss.",
+    ],
+    // playing sport: dribbling a ball at its side, high then low. Coral, not amber: amber beside the yellow body would
+    // not read as a ball
+    ball1: [
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwwkkmkk...",
+        "...jjmwwkkmjjrr.",
+        "...jjjmmmmjjrrrr",
+        "...jjjkjjjjkrrrr",
+        "...jjjjkkkkjjrr.",
+        "...jjooOOoojj...",
+        "...oooooooooo...",
+        "...oooooooooo...",
+        "....ss....ss....",
+    ],
+    ball2: [
+        E,
+        E,
+        E,
+        ".....s.s..s.....",
+        "....hjjjjjjj....",
+        "...hjjmmmmjjj...",
+        "...kkmwwwwmkk...",
+        "...kkmwwwwmkk...",
+        "...jjmwwkkmjj...",
+        "...jjjmmmmjjj...",
+        "...jjjkjjjjkj...",
+        "...jjjjkkkkjj...",
+        "...jjooOOoojjrr.",
+        "...ooooooooorrrr",
+        "...ooooooooorrrr",
+        "....ss....ss.rr.",
+    ],
+};
+
 // Each mark is a shape stamped at a fixed cell, never a count: the creature does not draw a number (pet spec
 // §3), and each pairs its colour with a shape because status is never colour alone (DESIGN.md). Every one
 // sits clear of the body of the pose it is stamped on (sprout spec §2), so stamping never hides a pixel.
@@ -378,6 +688,21 @@ const isBody = (code: string | undefined) => code === "b" || code === "l";
 
 // The shirt's star: a point up, the arms across, two legs.
 const FLAG_STAR = ["..Y..", "..Y..", "YYYYY", ".YYY.", ".Y.Y."];
+// The Minion's overalls are three rows, so its star is the point, the arms and the legs.
+const MINION_STAR = ["..Y..", "YYYYY", ".Y.Y."];
+
+// Stamps a star onto the shirt's red cells, its point centred on the shirt's first row.
+function stampStar(g: string[][], top: number, star: readonly string[]): void {
+    const shirt = g[top].flatMap((code, x) => (code === "R" ? [x] : []));
+    const x0 = Math.floor((shirt[0] + shirt[shirt.length - 1]) / 2) - Math.floor(star[0].length / 2);
+    star.forEach((row, dy) =>
+        [...row].forEach((code, dx) => {
+            if (code === "Y" && g[top + dy]?.[x0 + dx] === "R") {
+                g[top + dy][x0 + dx] = "Y";
+            }
+        })
+    );
+}
 
 // The flag shirt over a pose. Below today's face the body is three rows, too short for a star that reads as one, so
 // the face (eyes, and the mouth while speaking) moves up two rows and every body cell below it becomes the shirt,
@@ -403,25 +728,38 @@ function dressInFlag(rows: readonly string[]): string[] {
             }
         }
     }
-    const shirt = g[top].flatMap((code, x) => (code === "R" ? [x] : []));
-    const x0 = Math.floor((shirt[0] + shirt[shirt.length - 1]) / 2) - Math.floor(FLAG_STAR[0].length / 2);
-    FLAG_STAR.forEach((row, dy) =>
-        [...row].forEach((code, dx) => {
-            if (code === "Y" && g[top + dy]?.[x0 + dx] === "R") {
-                g[top + dy][x0 + dx] = "Y";
-            }
-        })
-    );
+    stampStar(g, top, FLAG_STAR);
+    return g.map((row) => row.join(""));
+}
+
+// The flag shirt on the Minion: its overalls are the shirt, so only they turn red and the face stays where it is. A
+// pose with no overalls showing (reading, the book on its lap) is left as it is.
+function dressMinionInFlag(rows: readonly string[]): readonly string[] {
+    const g = rows.map((row) => [...row].map((code) => (code === "o" || code === "O" ? "R" : code)));
+    const top = g.findIndex((row) => row.includes("R"));
+    if (top < 0) {
+        return rows;
+    }
+    stampStar(g, top, MINION_STAR);
     return g.map((row) => row.join(""));
 }
 
 const DRESSED = {} as Record<PetPose, readonly string[]>;
+const MINION_DRESSED = {} as Record<PetPose, readonly string[]>;
 for (const pose of Object.keys(POSES) as PetPose[]) {
     DRESSED[pose] = dressInFlag(POSES[pose]);
+    MINION_DRESSED[pose] = dressMinionInFlag(MINION_POSES[pose]);
 }
 
 /** A pose's grid in an outfit: dressed in the shirt, else the pose itself (the flag is held, not worn). */
-export function outfitRows(pose: PetPose, outfit: PetOutfit | null): readonly string[] {
+export function outfitRows(
+    pose: PetPose,
+    outfit: PetOutfit | null,
+    character: PetCharacter = "sprout"
+): readonly string[] {
+    if (character === "minion") {
+        return outfit === "vn-shirt" ? MINION_DRESSED[pose] : MINION_POSES[pose];
+    }
     return outfit === "vn-shirt" ? DRESSED[pose] : POSES[pose];
 }
 
@@ -468,17 +806,19 @@ function stamp(rows: readonly string[], x0: number, y0: number, out: PetCell[]):
  * The pose's cells and the marks' cells come back apart because the renderer mirrors only the body when the
  * creature walks left: a `?` drawn inside the mirrored group would read backwards. Marks are a set — naming
  * one twice draws it once — so there is no way to stack them into a tally. `back` is drawn under the body and,
- * like the marks, never mirrored: the flag in hand, whose cloth rises above row 0 (PET_FLAG_RISE).
+ * like the marks, never mirrored: the flag in hand, whose cloth rises above row 0 (PET_FLAG_RISE). `character` picks
+ * whose grids the pose is drawn from; the marks and the flag are the same for both.
  */
 export function spriteFor(
     pose: PetPose,
     marks: readonly PetMark[],
-    outfit: PetOutfit | null = null
+    outfit: PetOutfit | null = null,
+    character: PetCharacter = "sprout"
 ): { back: PetCell[]; body: PetCell[]; overlay: PetCell[] } {
     // drawn first, under the body: the flag in hand
     const back = outfit === "vn-flag" ? [...FLAG_CELLS] : [];
     const body: PetCell[] = [];
-    stamp(outfitRows(pose, outfit), 0, 0, body);
+    stamp(outfitRows(pose, outfit, character), 0, 0, body);
     const overlay: PetCell[] = [];
     for (const mark of new Set(marks)) {
         const { x, y, rows } = MARKS[mark];

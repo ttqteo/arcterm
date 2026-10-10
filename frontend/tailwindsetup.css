@@ -93,6 +93,15 @@
     --color-flag-red: #da251d;
     --color-flag-star: #ffff00;
 
+    /* The Jarvis pet's Minion (petsprite.ts MINION_POSES): its yellow skin, denim overalls and dark hair are the
+       character itself, identity, never theme-derived. The hair is a grey, not black, so it still shows on every dark
+       theme's background */
+    --color-minion-skin: #f5d327;
+    --color-minion-shine: #fbe68a;
+    --color-minion-denim: #3f6fb8;
+    --color-minion-denim-dark: #2b4f8a;
+    --color-minion-hair: #4a4a4a;
+
     /* Connection status icon palette (legacy block/connectionbutton; identity, never theme-derived) */
     --color-conn-1: #53b4ea;
     --color-conn-2: #aa67ff;

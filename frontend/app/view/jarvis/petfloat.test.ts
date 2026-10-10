@@ -31,6 +31,12 @@ describe("floatMarkSprite", () => {
         );
     });
 
+    it("is the character that walks the footer", () => {
+        const tokens = floatMarkSprite("blocked-worker", null, "minion")!.body.map((c) => c.token);
+        expect(tokens).toContain("--color-minion-skin");
+        expect(floatMarkSprite("blocked-worker", null)).toEqual(floatMarkSprite("blocked-worker", null, "sprout"));
+    });
+
     it("wears the outfit the walking creature wears", () => {
         const plain = floatMarkSprite("blocked-worker", null)!;
         const flag = floatMarkSprite("blocked-worker", "vn-flag")!;

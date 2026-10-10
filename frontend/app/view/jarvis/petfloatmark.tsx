@@ -9,11 +9,12 @@ import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
 import { openPetPeek } from "./peekstore";
+import { petCharacter } from "./petcharacter";
 import { postureFor, postureLine } from "./petcondition";
 import { floatMarkSprite } from "./petfloat";
 import { petOutfit, petOutfitChoice } from "./petoutfit";
 import { PetPeek } from "./petpeek";
-import { petOutfitChoiceAtom } from "./petstore";
+import { petCharacterAtom, petOutfitChoiceAtom } from "./petstore";
 import { usePetSignals } from "./petview";
 import { SproutSvg } from "./sproutsvg";
 
@@ -24,7 +25,7 @@ export function PetFloatMark({ model }: { model: AgentsViewModel }) {
     const signals = usePetSignals(model);
     const posture = postureFor(signals);
     const outfit = petOutfit(petOutfitChoice(useAtomValue(petOutfitChoiceAtom)), new Date());
-    const sprite = floatMarkSprite(posture, outfit);
+    const sprite = floatMarkSprite(posture, outfit, petCharacter(useAtomValue(petCharacterAtom)));
     // state, not a ref: the peek positions itself once this lands
     const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
     const label = postureLine(posture);
