@@ -815,7 +815,10 @@ export function PetPeek({
                                         transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
                                     }}
                                     className={cn(
-                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border border-border bg-surface-raised shadow-popover",
+                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border bg-surface-raised",
+                                        // folded: no drop shadow, which smears the app behind the see-through window;
+                                        // a stronger edge parts the panel from it instead
+                                        corner === "mini" ? "border-edge-strong" : "border-border shadow-popover",
                                         // folded: Sprout's 80px box and the offset share the window with the panel
                                         corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
                                         item != null ? "max-w-[560px]" : quiet ? "max-w-[300px]" : "max-w-[420px]"

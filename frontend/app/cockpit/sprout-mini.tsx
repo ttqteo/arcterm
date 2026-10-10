@@ -6,8 +6,8 @@
 // and is dragged by a press that moves. A click opens the Jarvis chat (the pet peek) from it; a double-click, or
 // Terminal, gives the float window back. A reply that lands while the chat is folded shows in a bubble beside it.
 // Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it. Nothing
-// here carries a title: the app's tooltip chip throws a popover shadow that, over a light app behind the see-through
-// window, reads as a dark smear; the hover chip already says what Sprout is.
+// here carries a title or a drop shadow: over a light app behind the see-through window, a popover shadow (the tooltip
+// chip's, or the hover chip's own) reads as a dark smear. A border keeps each one apart from what is behind it.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
@@ -166,7 +166,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                 className={cn(
                     "absolute h-20 w-20",
                     boxCorner(sides),
-                    MINI_TILE && "rounded-[18px] border border-edge-strong bg-surface shadow-popover-sm"
+                    MINI_TILE && "rounded-[18px] border border-edge-strong bg-surface"
                 )}
             >
                 <span
@@ -213,7 +213,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         }
                     }}
                     className={cn(
-                        "absolute flex w-[240px] cursor-pointer flex-col gap-1 rounded-[12px] border border-edge-mid bg-surface-raised px-2.5 pb-[9px] pt-2 shadow-popover-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        "absolute flex w-[240px] cursor-pointer flex-col gap-1 rounded-[12px] border border-edge-mid bg-surface-raised px-2.5 pb-[9px] pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                         besideSprout(sides)
                     )}
                 >
@@ -249,7 +249,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                 <div
                     data-mini-hit="chip"
                     className={cn(
-                        "absolute flex h-[30px] items-center gap-2 whitespace-nowrap rounded-full border border-edge-mid bg-surface-raised pl-2.5 pr-1 shadow-popover-sm",
+                        "absolute flex h-[30px] items-center gap-2 whitespace-nowrap rounded-full border border-edge-mid bg-surface-raised pl-2.5 pr-1",
                         besideSprout(sides)
                     )}
                 >
