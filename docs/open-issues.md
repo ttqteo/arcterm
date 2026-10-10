@@ -181,8 +181,9 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 - Codex/OpenAI 5h-window bars — Codex has no such window.
 - Codex subagents + depth>1 subagent nesting — no per-subagent files exist; closed no-go.
 - Usage pricing family-substring drift (historical Opus billed at current tier) — accepted estimate error.
-- Codex and opencode as run workers — declined 2026-09-17: this install only uses claude and pi.
-  Recovery path: `docs/deferred.md` 2026-09-14 entry.
+- OpenCode as a run worker — declined 2026-09-17: this install only uses claude and pi. Codex came back as a task
+  worker on 2026-10-10 (`docs/superpowers/specs/2026-10-10-codex-run-worker-design.md`). Recovery path for
+  opencode: `docs/deferred.md` 2026-09-14 entry.
 - Final stage: persisting a verifier's verdict held during Checking — declined 2026-09-30.
 - The memory subsystem and the Jarvis recall arm (Ask, proactive cards, embeddings) — removed
   2026-09-22/23 on measured usage. Revive only on evidence that note bodies, not index lines, change an

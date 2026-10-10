@@ -23,7 +23,7 @@ Plan file đi vào engine bằng ba đường (xem [Chạy một plan](#chạy-m
 
 ### Task 1: <tiêu đề>
 **Depends on:** none
-**Model:** <model-id>
+**Model:** <model-id hoặc harness:model>
 **Chunk:** <nhãn chunk>
 **Files:** `<path>`, `<path khác>`
 <việc cần làm, và các test chứng minh nó>
@@ -144,7 +144,7 @@ Ngay dưới tiêu đề là **khối đầu**: các dòng `**Depends on:**`, `*
 | `**Depends on:** none` | Task độc lập, chạy được ngay. |
 | `**Depends on:** Task 1, Task 3` | Chạy sau khi các task đó xong. |
 | (không có dòng Depends) | Chạy sau task ngay trước nó. |
-| `**Model:** <model>` | Model của worker cho task này. |
+| `**Model:** <model>` | Model của worker cho task này; có thể nêu cả harness (`codex:gpt-5.5`, `agy`). |
 | `**Chunk:** <nhãn>` | Chunk của initiative mà task đóng khi land (cần `**Effort:**`). |
 | ``**Files:** `a.go`, `b.go` `` | Mọi path task tạo, sửa hoặc xóa. |
 
@@ -156,8 +156,16 @@ Ngay dưới tiêu đề là **khối đầu**: các dòng `**Depends on:**`, `*
 
 **Model**
 
-- Một model id hoặc alias, **không** trong backtick, không có khoảng trắng: `sonnet`, `claude-opus-5-5`, hoặc `provider/model` của pi. Một dòng cho mỗi task; rỗng hay chứa khoảng trắng/backtick thì bị từ chối.
-- Chỉ có tác dụng khi run đặt *workers setting* là **Reviewer picks**; ở các chế độ khác nó bị bỏ qua (nhưng vẫn bị kiểm tra: model mà máy này không chạy được làm submit thất bại, nêu tên task). Cách engine chọn model cho từng task nằm ở [Orchestrator](orchestrator.md#chọn-route-và-model).
+- Một token, **không** trong backtick, không có khoảng trắng. Một dòng cho mỗi task; rỗng hay chứa khoảng trắng/backtick thì bị từ chối. Giá trị được đọc theo thứ tự này:
+
+  | Giá trị | Harness | Model | Ví dụ |
+  |---|---|---|---|
+  | `<harness>:<model>`, với `<harness>` là tên một harness arcterm biết (`claude`, `pi`, `agy`, `codex`, …) | `<harness>` | `<model>` | `codex:gpt-5.5`, `agy:gemini-3-pro`, `pi:openrouter/x:free` |
+  | chỉ một tên harness | harness đó | mặc định của nó | `codex`, `agy` |
+  | còn lại | của lead (như trước) | giá trị đó | `sonnet`, `claude-opus-5-5`, `openrouter/qwen/qwen3:free` |
+
+  Dấu `:` chỉ tách ở chỗ đầu tiên và chỉ khi phần trước nó là tên một harness mà arcterm biết, nên model id của pi có dấu hai chấm (`openrouter/qwen/qwen3:free`) vẫn là một model. `nosuch:model` cũng được đọc là một model (tên lạ), và bị kiểm tra lúc submit như mọi model.
+- Chỉ có tác dụng khi run đặt *workers setting* là **Reviewer picks**; ở các chế độ khác nó bị bỏ qua (nhưng vẫn bị kiểm tra: harness hay model mà máy này không chạy được làm submit thất bại, nêu tên task; ví dụ dòng `codex:…` trên máy không có codex, hoặc `opencode:…` vì OpenCode không làm worker). Muốn một task chạy trên Codex thì viết dòng đó trong plan rồi bắt đầu run ở Reviewer picks. Plan reviewer chỉ chọn `sonnet` hoặc `lead` cho task không có dòng Model; nó không bao giờ chuyển task sang Codex hay agy. Cách engine chọn model cho từng task nằm ở [Orchestrator](orchestrator.md#chọn-route-và-model).
 
 **Files**
 
@@ -238,7 +246,7 @@ và bước thấy một check lỗi (chỉ mở surface thì không đủ).
 Thêm một dòng dưới `Added` của mục Unreleased, viết cho người dùng.
 ```
 
-Plan này có `4 tasks · 3 lanes · longest chain 3`: lane 1 là Task 1 → Task 2, lane 2 là Task 3, lane 3 là Task 4 (hai dependency nên mở lane riêng). Task 4 có dòng `Model` nhưng nó chỉ có tác dụng khi workers setting là **Reviewer picks**.
+Plan này có `4 tasks · 3 lanes · longest chain 3`: lane 1 là Task 1 → Task 2, lane 2 là Task 3, lane 3 là Task 4 (hai dependency nên mở lane riêng). Task 4 có dòng `Model` nhưng nó chỉ có tác dụng khi workers setting là **Reviewer picks**. Dòng đó cũng có thể nêu harness: đổi thành `**Model:** codex:gpt-5.5` thì Task 4 chạy trên Codex (vẫn chỉ ở Reviewer picks, và máy phải có codex).
 
 ![Hộp New ở Orchestrate → Start from "A plan file" với đường dẫn plan đã parse: tiêu đề, dòng "N tasks · M lanes · longest chain K", cảnh báo "serial"/"unverified" nếu có, và bảng task/title/lane/needs/model](images/plan-launcher-preview.png)
 
@@ -250,7 +258,7 @@ Hộp **New** parse plan ngay khi bạn gõ đường dẫn (có độ trễ ng�
 
 - tiêu đề và dòng hình dạng `N tasks · M lanes · longest chain K`;
 - các cảnh báo: **serial** (chỉ một lane mà có hơn một task: plan không có Depends nào) và **unverified** (plan không có dòng Verify, nên không có gì được test ở chỗ các lane merge);
-- bảng task: `task`, `title`, `lane`, `needs` (các dependency), `model`. Cột model đi theo ô **Workers**. Với *Reviewer picks*, task có dòng Model hiện `<model> · plan`, task không có hiện `at review`, và dòng tổng kết là `N set by the plan · M picked at review`. Với các cài đặt workers khác, task không có dòng Model hiện model của workers, dòng Model bị gạch ngang, và dòng tổng kết là `all on <model>`, thêm ` · plan lines ignored` nếu plan có dòng Model.
+- bảng task: `task`, `title`, `lane`, `needs` (các dependency), `model`. Cột model đi theo ô **Workers**. Với *Reviewer picks*, task có dòng Model hiện `<model> · plan` (dòng nêu harness hiện nguyên như đã viết: `codex:gpt-5.5 · plan`, `codex · plan`), task không có hiện `at review`, và dòng tổng kết là `N set by the plan · M picked at review`. Với các cài đặt workers khác, task không có dòng Model hiện model của workers, dòng Model bị gạch ngang, và dòng tổng kết là `all on <model>`, thêm ` · plan lines ignored` nếu plan có dòng Model.
 
 Đường dẫn plan trong hộp **New** có thể là tuyệt đối hoặc tương đối với project. `wsh runs start --plan` đổi đường dẫn tương đối (tính từ thư mục hiện tại của shell) thành tuyệt đối trước khi gửi, vì `wavesrv` không dùng chung thư mục làm việc.
 
@@ -264,12 +272,12 @@ Những lỗi parse hay gặp (engine in nguyên văn, bằng tiếng Anh):
 | `plan has more than one **Verify:** line` | Hai dòng cùng loại (áp dụng cho Setup, Check, Final, Effort, Prototype). |
 | `task N depends on Task M, which is not an earlier task` | `Depends on` trỏ tới task sau hoặc chính nó. |
 | `task N: **Depends on:** is empty; write none, or list earlier tasks like "Task 1, Task 2"` | Dòng Depends để trống. |
-| `task N: **Model:** must be one model id, not in backticks, got …` | Model có backtick hoặc khoảng trắng; hoặc hai dòng Model. |
+| `task N: **Model:** must be one model id, not in backticks, got …` | Model có backtick hoặc khoảng trắng; hoặc hai dòng Model. Dạng `harness:model` hay tên harness trần không phải lỗi parse. |
 | `task N: **Files:** must list paths in backticks separated by commas, …` | Dòng Files sai dạng. |
 | `task N (…) names a chunk but the plan has no **Effort:** line …` | Có `Chunk` mà không có `Effort`. |
 | `tasks A (…) and B (…) can run at the same time and both list <path> in **Files:** …` | Hai task cùng sở hữu một path, không task nào chờ task kia. |
 
-Sau parse, lúc submit thật còn có các phép kiểm tra cần trạng thái: effort/chunk phải tồn tại, `--spec` phải là file có thật, Model phải chạy được trên máy này, và `.arc/setup` phải đúng một lệnh.
+Sau parse, lúc submit thật còn có các phép kiểm tra cần trạng thái: effort/chunk phải tồn tại, `--spec` phải là file có thật, Model (và harness của nó, nếu dòng Model nêu: `codex:…` cần codex trên máy này, `opencode:…` luôn bị từ chối) phải chạy được trên máy này, và `.arc/setup` phải đúng một lệnh.
 
 ## Chạy một plan
 

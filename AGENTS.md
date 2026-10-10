@@ -160,7 +160,7 @@ Load-bearing rules:
   `docs/keyboard-shortcuts.md` mirrors the bindings.
 - **`pkg/orchestrate`** is the deterministic DAG engine behind orchestrator runs (worktrees, lanes,
   merges, Setup/Verify); UI in `frontend/app/view/orchestrate`. The plan gate, task cap, adaptive
-  orchestration, and pipeline mode are gone; leads are claude + pi, and task workers are claude, pi and agy —
+  orchestration, and pipeline mode are gone; leads are claude + pi, and task workers are claude, pi, agy and codex —
   older specs still describe the removed model; `docs/guide/orchestrator.md` is current.
 
 ### Frontend conventions
