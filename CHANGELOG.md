@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- An agent idle for 30 minutes goes to sleep: its process ends and its RAM is freed, but its row and conversation
+  stay; **Wake**, or a message to it, picks it up where it was. When RAM runs low the longest-idle one sleeps early.
+  Settings → Agents → **Sleep idle agents** sets the time or turns it off; **Sleep** is also in the RAM panel and the
+  row's menu.
 - Codex agents show working, idle and "needs you" on the rail with their session's title and model, and come back in
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.
@@ -99,10 +103,6 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The agent header has a **Redraw** button (also in its right-click menu) for a terminal whose text came out garbled
   or overlapping: it repaints the pane and has the agent draw its whole screen again at the pane's size, without
   restarting the session.
-- An agent idle for 30 minutes goes to sleep: its process ends and its RAM is freed, but its row and conversation
-  stay; **Wake**, or a message to it, picks it up where it was. When RAM runs low the longest-idle one sleeps early.
-  Settings → Agents → **Sleep idle agents** sets the time or turns it off; **Sleep** is also in the RAM panel and the
-  row's menu.
 
 ### Changed
 
