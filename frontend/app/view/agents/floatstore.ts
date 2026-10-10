@@ -171,6 +171,16 @@ async function giveFrameBack(win: Window, restore: FloatRestore | null): Promise
 }
 
 let busy = false;
+const MAC = isMacOS();
+
+// Out of maximized before the window takes a smaller frame. Windows needs the restore first. macOS runs unmaximize as
+// an animated zoom back to the frame it was last zoomed from (an old float's, often): the window was seen jumping there
+// before it shrank, so there the frame set next takes it out of the zoom alone.
+async function leaveMaximized(win: Window): Promise<void> {
+    if (!MAC) {
+        await win.unmaximize();
+    }
+}
 
 // The window part of entering Float, from the Full frame, which it keeps to give back. Inside busy.
 async function floatTheWindow(model: AgentsViewModel): Promise<void> {
@@ -192,7 +202,7 @@ async function floatTheWindow(model: AgentsViewModel): Promise<void> {
         const screen = screenFor(last, monitors.map(screenOf), screenOf(current));
         const rect = floatRect(last, screen.area, screen.scale);
         if (maximized) {
-            await win.unmaximize();
+            await leaveMaximized(win);
         }
         await win.setMinSize(new LogicalSize(FLOAT_MIN_SIZE.width, FLOAT_MIN_SIZE.height));
         await win.setSize(new PhysicalSize(rect.width, rect.height));
@@ -272,7 +282,6 @@ let sprout: WinRect | null = null;
 // Every window call of the fold goes through this, one at a time: a restore and the chat's resize, or a fold and a leave,
 // interleaving left the window at the wrong size and the terminal refit to it.
 const miniOps = serialQueue();
-const MAC = isMacOS();
 
 function nextFrame(): Promise<void> {
     return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -349,7 +358,7 @@ function rectText(r: WinRect | null): string {
     return r == null ? "none" : `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
 }
 
-// A frame set can still be overridden by an animation macOS runs on its own (an unmaximize's zoom, begun just before):
+// A frame set can still be overridden by an animation macOS runs on its own (a fullscreen exit still settling):
 // read it back and set it again until it holds, for up to a second. Each drift is logged.
 async function holdFrame(win: Window, want: WinRect): Promise<void> {
     for (let i = 1; i <= 10; i++) {
@@ -480,7 +489,7 @@ export function foldToSprout(): Promise<void> {
             await nextFrame();
             clearContentMotion();
             if (maximized) {
-                await win.unmaximize();
+                await leaveMaximized(win);
             }
             const spot = foldSpot(inner, spaceScale(scale, MAC), sprite, viewport);
             const screen = await screenOfRect(spot);

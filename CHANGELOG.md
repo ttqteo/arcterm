@@ -96,6 +96,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- On macOS, folding into Sprout or floating from a maximized window no longer shows the window jumping to an old size
+  and place before it shrinks.
 - A Terminal opened from New with a command in its Command field runs that command when it opens, at the shell's
   first prompt, and stays a shell afterwards; the command was ignored before.
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
