@@ -279,6 +279,7 @@ fn install_agent_hooks(app_path: &std::path::Path, child_path: Option<&str>) {
 }
 
 fn main() {
+    applog::install_panic_hook();
     let scrubbed_env = shellenv::scrub_inherited_agent_env();
     let path_probe = shellenv::PathProbe::start();
     let context = tauri::generate_context!();

@@ -83,6 +83,65 @@ pub fn log_line(line: &str) {
     }
 }
 
+// A panic inside an AppKit callback cannot unwind out of it (tao's sendEvent: is extern "C"), so the process aborts and
+// macOS's crash report keeps only "abort() called": the message and the frames that panicked went to stderr, which a
+// packaged launch discards. This writes them to the log first, then runs the default hook.
+pub fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let lines = panic_lines(
+            thread.name().unwrap_or("<unnamed>"),
+            panic_message(info.payload()),
+            info.location().map(|l| l.to_string()).as_deref(),
+            &std::backtrace::Backtrace::force_capture().to_string(),
+        );
+        write_panic(&lines);
+        default_hook(info);
+    }));
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s
+    } else {
+        "<non-string panic payload>"
+    }
+}
+
+fn panic_lines(thread: &str, message: &str, location: Option<&str>, backtrace: &str) -> Vec<String> {
+    let mut lines = vec![format!(
+        "[tauri] panic in thread '{}' at {}: {}",
+        thread,
+        location.unwrap_or("<unknown>"),
+        message
+    )];
+    lines.extend(backtrace.lines().map(|l| format!("[tauri]   {}", l)));
+    lines
+}
+
+fn write_panic(lines: &[String]) {
+    let Some(log) = LOG.get() else { return };
+    // never block: the panic may have come from inside write_line on this thread, which holds the lock, so wait only a
+    // moment for another thread's write to finish
+    for _ in 0..40 {
+        let mut log = match log.try_lock() {
+            Ok(log) => log,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                continue;
+            }
+        };
+        for line in lines {
+            let _ = log.write_line(line);
+        }
+        return;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +198,34 @@ mod tests {
         assert!(rotated.contains("gen-b") && !rotated.contains("gen-a"));
         assert!(fs::read_to_string(dir.join(LOG_FILE_NAME)).unwrap().contains("gen-c"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_panic_names_its_thread_place_and_message_then_its_frames() {
+        let lines = panic_lines(
+            "main",
+            "already borrowed: BorrowMutError",
+            Some("src/lib.rs:12:5"),
+            "   0: tao::send_event\n   1: main",
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "[tauri] panic in thread 'main' at src/lib.rs:12:5: already borrowed: BorrowMutError",
+                "[tauri]      0: tao::send_event",
+                "[tauri]      1: main",
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_str_and_string_panic_payloads() {
+        let payload = std::panic::catch_unwind(|| panic!("static text")).unwrap_err();
+        assert_eq!(panic_message(payload.as_ref()), "static text");
+        let payload = std::panic::catch_unwind(|| panic!("formatted {}", 7)).unwrap_err();
+        assert_eq!(panic_message(payload.as_ref()), "formatted 7");
+        let payload = std::panic::catch_unwind(|| std::panic::panic_any(7u8)).unwrap_err();
+        assert_eq!(panic_message(payload.as_ref()), "<non-string panic payload>");
     }
 
     #[test]
