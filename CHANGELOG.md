@@ -106,6 +106,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
   not on its bottom edge. The arrow keys still scroll a row at a time.
 - The agent panel's file tab shows a long file name in full when the panel has room, instead of cutting it at a fixed
   width; a narrow panel cuts the name, never the counts beside it.
+- On macOS, `Ctrl`+`Enter` sends your markdown comments from the File tab's Source view too, not only from Preview.
+- A Claude session you send to the background from a terminal started as plain `claude`, `claude --continue` or a
+  `--resume` picked from the list keeps showing its status and subagents in that tab.
+- After a reload, the agent grid comes back focused on the cell you left focused, not on whichever agent loaded first.
+- Picking an agent from the search palette while typing in another agent's terminal moves the keyboard to the picked
+  agent instead of dropping it, so keys work without a click.
+- With a dialog open over Agent, Diff or Code (the shortcuts sheet, a confirm), `Esc` closes the dialog and `j`/`k`,
+  `d` and `f` no longer act on the surface behind it.
 
 ## 0.15.9 — 2026-10-11
 
