@@ -52,7 +52,8 @@ import { terminalFullscreenAtom } from "./railstore";
 import { serialQueue } from "./serialqueue";
 
 export const floatModeAtom = atom(false) as PrimitiveAtom<boolean>;
-// always on top; off on every entry, by choice: a float you did not pin does not cover your other apps
+// always on top; on at every entry: a float is for watching an agent while you work in another app, so it starts above
+// them, and its pin turns that off
 export const floatPinnedAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // where the last float was, for the next one
@@ -173,10 +174,10 @@ export async function enterFloat(model: AgentsViewModel): Promise<void> {
         await win.setMinSize(new LogicalSize(FLOAT_MIN_SIZE.width, FLOAT_MIN_SIZE.height));
         await win.setSize(new PhysicalSize(rect.width, rect.height));
         await win.setPosition(new PhysicalPosition(rect.x, rect.y));
-        await win.setAlwaysOnTop(false);
+        await win.setAlwaysOnTop(true);
         globalStore.set(model.surfaceAtom, "agent");
         globalStore.set(terminalFullscreenAtom, true);
-        globalStore.set(floatPinnedAtom, false);
+        globalStore.set(floatPinnedAtom, true);
         globalStore.set(floatModeAtom, true);
         // the yellow button folds the float into Sprout rather than sending it to the Dock (macOS only)
         await redirectMinimize(true).catch((e) => console.error("redirecting the minimize button failed", e));
