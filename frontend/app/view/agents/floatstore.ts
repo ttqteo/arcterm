@@ -73,6 +73,7 @@ import {
     type FoldOrigin,
     type Pt,
     type SizeState,
+    type Viewport,
 } from "./windowsize";
 
 export const floatModeAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -523,6 +524,9 @@ interface Unfold {
     at: Pt | null;
     // the window was in macOS native fullscreen when it folded
     fullscreen: boolean;
+    // Sprout's box on screen, for a growth into a frame other than the one given back (an agent picked while folded
+    // from Full goes on to Float)
+    sprout?: WinRect | null;
 }
 
 // Give back the frame, size limits and pin of the size the fold was made from, the shell still hidden so the terminal
@@ -558,12 +562,44 @@ async function leaveMini(win: Window): Promise<Unfold> {
     return {
         at: unfoldCenter(was, { x: frame.x, y: frame.y }, scale, viewport),
         fullscreen: origin === "full" && restore.fullscreen,
+        sprout: was,
     };
+}
+
+// Where the content grows out of Sprout's box in the window's frame as it stands now, in its CSS px
+async function growCenter(win: Window, from: WinRect): Promise<Pt> {
+    const [frame, scaleFactor] = await Promise.all([spaceFrame(win), win.scaleFactor()]);
+    const scale = spaceScale(scaleFactor, MAC);
+    return unfoldCenter(from, { x: frame.x, y: frame.y }, scale, {
+        width: frame.width / scale,
+        height: frame.height / scale,
+    });
+}
+
+// The page takes a new window size some frames after the window does (WKWebView hands it on to its web process): a
+// growth begun before that ran on the folded layout and was not seen. Wait for it, half a second at most. frames is how
+// many it took, -1 when it never came.
+async function pageTakesWindow(win: Window): Promise<{ frames: number; want: Viewport }> {
+    const [size, scale] = await Promise.all([win.innerSize(), win.scaleFactor()]);
+    const want = { width: size.width / scale, height: size.height / scale };
+    for (let i = 0; i < 30; i++) {
+        if (Math.abs(window.innerWidth - want.width) <= 2 && Math.abs(window.innerHeight - want.height) <= 2) {
+            return { frames: i, want };
+        }
+        await nextFrame();
+    }
+    return { frames: -1, want };
 }
 
 // Show the shell again, grown out of Sprout's spot when there is one, then give the window its own chrome back.
 async function showContent(win: Window, unfold: Unfold): Promise<void> {
     if (unfold.at != null) {
+        const { frames, want } = await pageTakesWindow(win);
+        foldLog(
+            `restore: page ${window.innerWidth}x${window.innerHeight} after ${frames} frames, window ` +
+                `${Math.round(want.width)}x${Math.round(want.height)}, growing from ` +
+                `${Math.round(unfold.at.x)},${Math.round(unfold.at.y)}`
+        );
         holdContentFolded(unfold.at);
     }
     globalStore.set(floatMiniAtom, false);
@@ -607,7 +643,9 @@ export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Pro
                 } finally {
                     busy = false;
                 }
-                await showContent(win, { at: null, fullscreen: false });
+                // grown out of Sprout into the float, as a restore grows into the frame it gives back
+                const at = unfold.sprout == null ? null : await growCenter(win, unfold.sprout);
+                await showContent(win, { at, fullscreen: false });
                 return;
             }
             await showContent(win, unfold);
