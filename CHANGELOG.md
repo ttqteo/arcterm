@@ -30,6 +30,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Holding `Ctrl` or `Alt` shows the shortcut bar and the rail and agent numbers at once instead of after a short pause;
   pressing any other key with it, as in `Ctrl`+`C`, hides them again.
 - Those rail and agent numbers are a small badge in the icon's corner instead of covering the whole icon.
+- The **Agent** item in the left rail keeps its count of working agents while you are on Agent, not only from other
+  surfaces.
 
 ### Fixed
 

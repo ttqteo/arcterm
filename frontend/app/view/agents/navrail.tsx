@@ -72,8 +72,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const attention = useAtomValue(attentionAtom);
     const split = splitAttention(attention);
     const unread = useAtomValue(unreadAgentsAtom);
-    // Agent also says how many agents are working while you are on another surface, so a run doing its work is
-    // visible from Code or Diff; on Agent itself the rows already show it
+    // Agent also says how many agents are working, so a run doing its work is visible from Code or Diff, and the count
+    // stays on Agent itself, where the focused terminal can hide the rows that show it
     const agents = useAtomValue(model.agentsAtom);
     const answered = answeredAskIdsAcross(Object.values(useAtomValue(channelMessagesAtom)));
     const badges: Partial<Record<SurfaceKey, number>> = {
@@ -106,7 +106,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const renderItem = (key: SurfaceKey, label: string, badge = 0, tool = false) => {
         const Icon = ICON[key];
         const isActive = active === key;
-        const busy = key === "agent" && !isActive ? working : 0;
+        const busy = key === "agent" ? working : 0;
         const jumps = key === "agent" && isActive;
         const at = ITEMS.findIndex((it) => it.key === key);
         const digit = ctrlHeld && at >= 0 ? at + 1 : undefined;
