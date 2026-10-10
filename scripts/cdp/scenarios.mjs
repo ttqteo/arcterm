@@ -27154,11 +27154,15 @@ const floatMini = {
         const rest = await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
         // the float bar is still mounted, under the hidden shell
         const barGone = await h.ev(`!document.querySelector("[data-float-bar]")?.offsetParent`);
+        // nothing from the page root down may paint, or the see-through window shows a dark box around Sprout
+        const painted = await h.ev(`["html", "body", "#main", ".cockpit-shell"]
+            .map((sel) => [sel, getComputedStyle(document.querySelector(sel)).backgroundColor])
+            .filter(([, bg]) => bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")`);
         await h.shot("cdp-shots/float-mini-rest.png");
         steps.push({
-            step: "2. Minimize folds the window into Sprout's 340x112 box",
-            ok: folded && rest.w <= 340 && rest.h <= 112 && barGone,
-            detail: JSON.stringify({ folded, rest, barGone }),
+            step: "2. Minimize folds the window into Sprout's 340x112 box, see-through around it",
+            ok: folded && rest.w <= 340 && rest.h <= 112 && barGone && painted.length === 0,
+            detail: JSON.stringify({ folded, rest, barGone, painted }),
         });
 
         await h.ev(`document.querySelector('[data-mini-hit="sprout"] button')?.click()`);
