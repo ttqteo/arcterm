@@ -12,6 +12,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- A chunk of an initiative can carry a due day (`wsh effort chunk due <effort> <chunk> 2026-10-20`, or `+14d`).
+  From that day it waits in Needs you, in the Brief's queue and in Sprout's list, with **Work on** to start an agent
+  on what its notes say, and Sprout tells you once when it comes due. It leaves when the chunk is done, deferred or
+  skipped, or its date moves on; the chunk's row on the Brief shows the day.
+
 - **Sync now** in **Settings → General → Vault & sync** syncs the vault at once, without waiting for the window to
   regain focus; a failed sync shows in the card's status line in red, and the button stays ready to retry.
 

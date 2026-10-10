@@ -15,10 +15,12 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -41,6 +43,9 @@ const (
 	// radar triage is the only kind that names no channel: a scan belongs to a project, not a
 	// conversation, so its row addresses the report through ORef instead.
 	AttentionRadarTriage = "radar-triage"
+	// a chunk whose due date has come, still open: it names no channel either, so it addresses the
+	// initiative through ORef and the chunk through ChunkLabel.
+	AttentionChunkDue = "chunk-due"
 )
 
 // mirrors orchestrate.TaskState_* and the two RadarReport/RadarFinding vocabularies, spelled here
@@ -81,6 +86,10 @@ type AttentionInput struct {
 	// Radar is every scan report, newest-first, as GetRadarReports returns them. radarTriageItems
 	// depends on that order to pick the current report per project, so a caller must not re-sort it.
 	Radar []*waveobj.RadarReport
+	// Efforts are every initiative, for their due chunks; Today is the local date to hold their Due
+	// against (DueLayout). Passed in, not read off the clock, so the builder stays pure.
+	Efforts []*waveobj.Effort
+	Today   string
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -391,7 +400,8 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	// Kind is the priority claim — a gate blocks a whole pipeline, an ask blocks one worker. Age only
 	// breaks ties inside a kind. Key is the final tiebreak so map iteration cannot reorder equal items.
 	triage := radarTriageItems(in.Radar)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified} {
+	due := chunkDueItems(in.Efforts, in.Today)
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, triage, unverified, due} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -401,7 +411,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(triage)+len(unverified)+len(due))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
@@ -410,6 +420,48 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, triage...)
 	// an unverified outcome holds nothing at all: the run is done
 	out = append(out, unverified...)
+	// a due chunk is a date you set yourself, about work nothing is running yet
+	out = append(out, due...)
+	return out
+}
+
+// chunkDueItems are the open chunks whose due date has come, in initiatives still in play. A chunk leaves
+// the list when it is done, deferred or skipped, or its date moves on; the date is in the key, so a date
+// moved on that comes due again is news again.
+func chunkDueItems(efforts []*waveobj.Effort, today string) []wshrpc.AttentionItem {
+	if today == "" {
+		return nil
+	}
+	var out []wshrpc.AttentionItem
+	for _, e := range efforts {
+		if e == nil || (e.Status != "active" && e.Status != "paused") {
+			continue
+		}
+		for _, c := range e.Chunks {
+			if c.Due == "" || c.Due > today {
+				continue
+			}
+			if c.Status != "pending" && c.Status != "active" && c.Status != "blocked" {
+				continue
+			}
+			var since int64
+			if d, err := time.ParseInLocation(DueLayout, c.Due, time.Local); err == nil {
+				since = d.UnixMilli()
+			}
+			out = append(out, wshrpc.AttentionItem{
+				Kind:         AttentionChunkDue,
+				Key:          "chunk-due:" + e.OID + ":" + c.Label + ":" + c.Due,
+				Source:       e.Title,
+				Text:         c.Label,
+				Action:       "Open",
+				ORef:         waveobj.MakeORef(waveobj.OType_Effort, e.OID).String(),
+				EffortOID:    e.OID,
+				ChunkLabel:   c.Label,
+				WaitingSince: since,
+				Why:          "Due " + c.Due + ".",
+			})
+		}
+	}
 	return out
 }
 
@@ -792,6 +844,13 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 	} else {
 		in.Radar = reports
 	}
+	// the same posture for initiatives: unreadable means no due rows, logged
+	if efforts, eerr := effortstore.GetAll(ctx); eerr != nil {
+		log.Printf("jarvis attention: efforts unreadable, due rows omitted: %v", eerr)
+	} else {
+		in.Efforts = efforts
+	}
+	in.Today = time.Now().Format(DueLayout)
 	return BuildAttention(in), nil
 }
 

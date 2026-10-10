@@ -22,6 +22,7 @@ export type ChunkRowModel = {
     latestNote?: string;
     trail: EffortNote[];
     owner?: string;
+    due?: string; // YYYY-MM-DD, `wsh effort chunk due`
     workrefs: ChunkWorkRef[];
 };
 
@@ -37,6 +38,7 @@ export function effortChunkRows(effort: Effort): ChunkRowModel[] {
             latestNote: trail.length > 0 ? trail[trail.length - 1].text : undefined,
             trail,
             owner: c.owner,
+            due: c.due,
             workrefs: c.workrefs ?? [],
         };
     });

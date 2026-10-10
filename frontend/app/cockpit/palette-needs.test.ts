@@ -125,3 +125,14 @@ describe("palette-needs", () => {
         });
     });
 });
+
+describe("palette-needs: a chunk that came due", () => {
+    const due = { ...item("chunk-due", "chunk-due:e1:m:2026-10-20"), oref: "effort:e1" } as AttentionItem;
+    it("groups last, as Due", () => {
+        const g = needsGroups(needsRows([due, item("dag-gate")], []));
+        expect(g.map((x) => x.group)).toEqual(["reviews", "due"]);
+    });
+    it("lands on its initiative", () => {
+        expect(needsTarget(needsRows([due], [])[0])).toEqual({ kind: "effort", effortId: "e1" });
+    });
+});

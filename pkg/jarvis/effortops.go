@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -177,6 +178,9 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if op.At != nil && (*op.At < 1 || *op.At > len(e.Chunks)+1) {
 				return fmt.Errorf("EC-INVALID-INDEX: at %d out of range", *op.At)
 			}
+			if err := validDue(op.Due); err != nil {
+				return err
+			}
 		case "removeChunk":
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
@@ -184,11 +188,15 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if len(e.Chunks) == 1 {
 				return fmt.Errorf("EC-LAST-CHUNK: cannot remove the last chunk")
 			}
-		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setOwner":
+		case "renameChunk", "moveChunk", "setChunkStatus", "setChunkStage", "setChunkDue", "setOwner":
 			if _, err := ResolveChunkIndex(e, op.Chunk); err != nil {
 				return err
 			}
 			switch op.Op {
+			case "setChunkDue":
+				if err := validDue(op.Due); err != nil {
+					return err
+				}
 			case "setChunkStatus":
 				if !effortChunkStatuses[op.Status] {
 					return fmt.Errorf("EC-INVALID-STATUS: %q not one of pending|active|done|deferred|blocked|skipped", op.Status)
@@ -303,7 +311,7 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			if op.At != nil {
 				idx = *op.At - 1
 			}
-			c := waveobj.EffortChunk{Label: op.Label, Status: "pending", Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, UpdatedTs: now}
+			c := waveobj.EffortChunk{Label: op.Label, Status: "pending", Stage: strings.TrimSpace(op.Stage), Owner: op.Owner, Due: op.Due, UpdatedTs: now}
 			e.Chunks = append(e.Chunks[:idx], append([]waveobj.EffortChunk{c}, e.Chunks[idx:]...)...)
 			effortNote(e, "chunk added: "+op.Label+noteSuffix(cmdNote), now)
 			effortEvent(e, "chunk-added", op.Label, "", now)
@@ -373,6 +381,11 @@ func ApplyEffortOpsAs(e *waveobj.Effort, ops []wshrpc.EffortOp, cmdNote string, 
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			e.Chunks[idx].Stage = strings.TrimSpace(op.Stage)
 			chunkNote(e, idx, "stage set to "+orNone(e.Chunks[idx].Stage), now, by)
+		case "setChunkDue":
+			// trail-only too: a date completes nothing. The note keeps the history of a date moved on.
+			idx, _ := ResolveChunkIndex(e, op.Chunk)
+			e.Chunks[idx].Due = op.Due
+			chunkNote(e, idx, "due set to "+orNone(op.Due), now, by)
 		case "setOwner":
 			idx, _ := ResolveChunkIndex(e, op.Chunk)
 			e.Chunks[idx].Owner = op.Owner
@@ -469,6 +482,21 @@ func orNone(s string) string {
 	}
 	return s
 }
+
+// validDue accepts "" (no date) or a calendar date spelled YYYY-MM-DD. A past date is allowed: the chunk is
+// simply due at once. Relative forms like "+14d" are resolved by the client, against its own local today.
+func validDue(due string) error {
+	if due == "" {
+		return nil
+	}
+	if _, err := time.Parse(DueLayout, due); err != nil {
+		return fmt.Errorf("EC-INVALID-DUE: %q is not a date (YYYY-MM-DD)", due)
+	}
+	return nil
+}
+
+// DueLayout is how a chunk's due date is spelled, and how the attention list spells today to compare it.
+const DueLayout = "2006-01-02"
 
 func derefAt(p *int) int {
 	if p == nil {

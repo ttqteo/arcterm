@@ -329,3 +329,13 @@ describe("answerLine", () => {
         expect(answerLine("  \n ```\n")).toBe("");
     });
 });
+
+describe("diffEvents: a chunk that came due", () => {
+    it("is told once, as Due, naming its initiative", () => {
+        const due = { ...item("chunk-due:e1:m:2026-10-20", "chunk-due"), text: "m", source: "Nav rail" };
+        const [e, ...rest] = diffEvents(snap([], []), snap([], [due]));
+        expect(rest).toEqual([]);
+        expect(e).toMatchObject({ kind: "attention", label: "Due", title: "m", body: "Nav rail" });
+        expect(diffEvents(snap([], [due]), snap([], [due]))).toEqual([]);
+    });
+});

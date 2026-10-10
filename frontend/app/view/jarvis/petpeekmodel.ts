@@ -39,7 +39,7 @@ export interface PeekRow {
 // was held, which is what the human has to clear before Land again can merge (or that says to dismiss it).
 // A dag-gate's "Approve <task> before the DAG proceeds." says what its verb already does, so it is dropped and
 // the width goes to the source — the part that differs.
-const DETAIL_KINDS = new Set(["escalation", "dag-blocked", "ask", "run-land-held"]);
+const DETAIL_KINDS = new Set(["escalation", "dag-blocked", "ask", "run-land-held", "chunk-due"]);
 
 // A row names its kind in a word beside its dot, so the kind never rides on colour alone.
 const ROW_KIND_LABEL: Record<string, string> = {
@@ -48,6 +48,7 @@ const ROW_KIND_LABEL: Record<string, string> = {
     "dag-blocked": "Blocked",
     ask: "Question",
     "run-land-held": "Land held",
+    "chunk-due": "Due",
 };
 
 export function rowKindLabel(kind: string): string {

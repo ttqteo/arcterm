@@ -79,7 +79,7 @@ type CommandEffortDeleteData struct {
 // EffortOp is one typed mutation. Op selects the behavior; the remaining fields are the op's
 // arguments (validation picks which are required per op).
 type EffortOp struct {
-	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | moveChunk | setChunkStatus | setChunkStage | appendNote | editNote | removeNote | setOwner | advance | reopen
+	Op        string `json:"op"`                  // rename | setProject | setTicket | setStatus | unarchive | link | addChunk | removeChunk | renameChunk | moveChunk | setChunkStatus | setChunkStage | setChunkDue | appendNote | editNote | removeNote | setOwner | advance | reopen
 	Title     string `json:"title,omitempty"`     // rename
 	Project   string `json:"project,omitempty"`   // setProject ("" clears)
 	Ticket    string `json:"ticket,omitempty"`    // setTicket ("" clears)
@@ -90,6 +90,7 @@ type EffortOp struct {
 	At        *int   `json:"at,omitempty"`        // addChunk insert position / moveChunk target / editNote,removeNote note index (1-based)
 	Owner     string `json:"owner,omitempty"`     // addChunk / setOwner ("" clears)
 	Stage     string `json:"stage,omitempty"`     // addChunk / setChunkStage ("" clears)
+	Due       string `json:"due,omitempty"`       // addChunk / setChunkDue: a local date, YYYY-MM-DD ("" clears)
 	Note      string `json:"note,omitempty"`      // appendNote text; also honored by setChunkStatus/advance/reopen as extra text; editNote new text
 	NoteTs    int64  `json:"notets,omitempty"`    // editNote/removeNote: the note's ts, a stale guard beside At
 	Kind      string `json:"kind,omitempty"`      // attachWork: "run" | "agent"

@@ -2038,6 +2038,7 @@ declare global {
         status: string;
         stage?: string;
         owner?: string;
+        due?: string;
         workrefs?: ChunkWorkRef[];
         notes?: EffortNote[];
         updatedts: number;
@@ -2092,6 +2093,7 @@ declare global {
         at?: number;
         owner?: string;
         stage?: string;
+        due?: string;
         note?: string;
         notets?: number;
         kind?: string;

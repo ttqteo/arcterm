@@ -48,3 +48,12 @@ describe("attentionAct", () => {
         expect(attentionAct(a({ wireKind: "dag-blocked", taskId: "t-4", retry: true, runId: null }))).toEqual(open);
     });
 });
+
+describe("attentionAct: a chunk that came due", () => {
+    it("offers Work on, which needs no run", () => {
+        expect(attentionAct({ wireKind: "chunk-due", channelId: "", runId: null, taskId: "", retry: false })).toEqual({
+            label: "Work on",
+            kind: "work-on",
+        });
+    });
+});

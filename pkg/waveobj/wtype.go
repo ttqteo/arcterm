@@ -737,8 +737,12 @@ type EffortChunk struct {
 	// Stage is a grouping label, not a container: consecutive chunks sharing one stage render under
 	// a single header. Every chunk keeps its own status and its own right to block, so nothing about
 	// counts, ordering or the attention queue changes when a stage is set.
-	Stage     string         `json:"stage,omitempty"`
-	Owner     string         `json:"owner,omitempty"`
+	Stage string `json:"stage,omitempty"`
+	Owner string `json:"owner,omitempty"`
+	// Due is a local date, "YYYY-MM-DD": from that day on, while the chunk is still open, it waits in
+	// Needs you (a re-measure, a decision to revisit). A day, not a time, because that is what such a
+	// decision names. Nothing fires at the date; the attention list sees it on its next read.
+	Due       string         `json:"due,omitempty"`
 	WorkRefs  []ChunkWorkRef `json:"workrefs,omitempty"` // runs/agent sessions currently working this chunk (populated by Task 9+)
 	Notes     []EffortNote   `json:"notes,omitempty"`    // append-only trail
 	UpdatedTs int64          `json:"updatedts"`

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -22,7 +23,7 @@ func TestEffortSubcommandsRegistered(t *testing.T) {
 			t.Fatalf("`effort %s` subcommand is not registered", want)
 		}
 	}
-	for _, want := range []string{"add", "rename", "move", "remove", "status", "note", "owner", "stage"} {
+	for _, want := range []string{"add", "rename", "move", "remove", "status", "note", "owner", "stage", "due"} {
 		if !hasSub(effortChunkCmd, want) {
 			t.Fatalf("`effort chunk %s` subcommand is not registered", want)
 		}
@@ -92,5 +93,33 @@ func TestFormatEffortShowGroupsConsecutiveStages(t *testing.T) {
 		"  5. [pending] e\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestResolveDue(t *testing.T) {
+	now := time.Date(2026, 10, 10, 23, 30, 0, 0, time.Local)
+	cases := map[string]string{
+		"":           "",
+		"2026-10-20": "2026-10-20",
+		" +0d ":      "2026-10-10",
+		"+14d":       "2026-10-24",
+		"+30d":       "2026-11-09",
+	}
+	for in, want := range cases {
+		got, err := resolveDue(in, now)
+		if err != nil || got != want {
+			t.Fatalf("resolveDue(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"+d", "+2w", "+-3d", "+3"} {
+		if _, err := resolveDue(bad, now); err == nil {
+			t.Fatalf("resolveDue(%q) should fail", bad)
+		}
+	}
+}
+
+func TestEffortChunkAddDueFlag(t *testing.T) {
+	if effortChunkAddCmd.Flags().Lookup("due") == nil {
+		t.Fatal("`effort chunk add --due` is not registered")
 	}
 }

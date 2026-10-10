@@ -158,3 +158,24 @@ export function trackerRows(args: {
 export function trackerNavIds(rows: TrackerRow[]): string[] {
     return rows.filter((r) => r.kind === "line" || r.kind === "chunk").map((r) => r.id);
 }
+
+// today as a chunk's due date is spelled (YYYY-MM-DD), in local time: the day the server holds Due against
+export function localDay(now: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// A chunk's due date as its row shows it, in the asking tone once the day has come while the chunk is still open
+// (the rule pkg/jarvis/attention.go chunkDueItems puts it in Needs you by). The year is dropped when it is this
+// one. null: no date, or the chunk is settled and its date says nothing any more.
+export function chunkDueChip(
+    due: string | undefined,
+    status: string,
+    today: string
+): { text: string; come: boolean } | null {
+    if (!due || (status !== "pending" && status !== "active" && status !== "blocked")) {
+        return null;
+    }
+    const day = due.slice(0, 4) === today.slice(0, 4) ? due.slice(5) : due;
+    return { text: "due " + day, come: due <= today };
+}

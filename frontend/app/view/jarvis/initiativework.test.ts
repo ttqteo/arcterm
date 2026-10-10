@@ -1,6 +1,7 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
 import {
+    dueChunkPrompt,
     initiativeLinkText,
     initiativeResume,
     noteStamp,
@@ -147,5 +148,14 @@ describe("resumeIsBlank", () => {
             false
         );
         expect(resumeIsBlank({ kind: "go", agentId: "a1", status: "open · working" })).toBe(false);
+    });
+});
+
+describe("dueChunkPrompt", () => {
+    it("names the chunk and the initiative, and how to close the loop", () => {
+        const p = dueChunkPrompt("Nav rail", "e1", "re-measure");
+        expect(p).toContain('the chunk "re-measure" of the initiative Nav rail (effort:e1) has come due');
+        expect(p).toContain("mark the chunk done");
+        expect(p).toContain("wsh effort chunk due");
     });
 });

@@ -146,7 +146,7 @@ import { freshKeys } from "./freshrows";
 import { type PeekFocus } from "./graphfocus";
 import { GraphPeek } from "./graphpeek";
 import { initiativeResume, noteStamp, type InitiativeResume } from "./initiativework";
-import { workOnInitiative } from "./initiativeworkaction";
+import { workOnDueChunk, workOnInitiative } from "./initiativeworkaction";
 import {
     chunkRowId,
     expandableORef,
@@ -1267,6 +1267,13 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         if (act.kind === "open") {
             if (l.target != null) {
                 openLine(l.target);
+            }
+            return;
+        }
+        if (act.kind === "work-on") {
+            if (q.nav?.kind === "effort") {
+                const oref = q.nav.oref;
+                fireAndForget(() => workOnDueChunk(model, oref, q.title));
             }
             return;
         }

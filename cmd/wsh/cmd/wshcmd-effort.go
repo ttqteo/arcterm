@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -255,12 +256,16 @@ var effortReopenCmd = &cobra.Command{
 }
 
 var effortChunkAddCmd = &cobra.Command{
-	Use:     "add <effort> \"<label>\" [--at N] [--owner X] [--stage S]",
+	Use:     "add <effort> \"<label>\" [--at N] [--owner X] [--stage S] [--due YYYY-MM-DD|+Nd]",
 	Short:   "add a chunk (phase)",
 	Args:    cobra.ExactArgs(2),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		op := wshrpc.EffortOp{Op: "addChunk", Label: args[1], Owner: mustFlagString(cmd, "owner"), Stage: mustFlagString(cmd, "stage")}
+		due, err := resolveDue(mustFlagString(cmd, "due"), time.Now())
+		if err != nil {
+			return err
+		}
+		op := wshrpc.EffortOp{Op: "addChunk", Label: args[1], Owner: mustFlagString(cmd, "owner"), Stage: mustFlagString(cmd, "stage"), Due: due}
 		if at, err := cmd.Flags().GetInt("at"); err == nil && at > 0 {
 			op.At = &at
 		}
@@ -342,6 +347,40 @@ var effortChunkStageCmd = &cobra.Command{
 		chunkRef(&op, args[1])
 		return mutateOne(args[0], op, isJSON(cmd))
 	},
+}
+
+var effortChunkDueCmd = &cobra.Command{
+	Use:   "due <effort> <chunk> <YYYY-MM-DD|+Nd|\"\">",
+	Short: "set or clear the day a chunk comes due (it then waits in Needs you until it is done, deferred or skipped)",
+	Long: `Set or clear the day a chunk comes due. From that local date on, while the chunk is pending, active or
+blocked, it waits in the cockpit's Needs you; marking it done, deferred or skipped, or moving the date on,
+takes it out. +Nd counts N days from today: "+14d" is two weeks from now. Use it for a decision to
+revisit or a measurement to retake, and say in a chunk note what to measure and what the result decides.`,
+	Args:    cobra.ExactArgs(3),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		due, err := resolveDue(args[2], time.Now())
+		if err != nil {
+			return err
+		}
+		op := wshrpc.EffortOp{Op: "setChunkDue", Due: due}
+		chunkRef(&op, args[1])
+		return mutateOne(args[0], op, isJSON(cmd))
+	},
+}
+
+// resolveDue turns a due argument into the YYYY-MM-DD the server stores: "" clears, a date passes through
+// (the server validates it), and "+Nd" counts N days from now's local date.
+func resolveDue(s string, now time.Time) (string, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "+") {
+		return s, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(s, "+"), "d"))
+	if err != nil || n < 0 || !strings.HasSuffix(s, "d") {
+		return "", fmt.Errorf("EC-INVALID-DUE: %q is not YYYY-MM-DD or +Nd", s)
+	}
+	return now.AddDate(0, 0, n).Format("2006-01-02"), nil
 }
 
 var effortChunkOwnerCmd = &cobra.Command{
@@ -458,7 +497,7 @@ func formatEffortShow(e *waveobj.Effort) string {
 				fmt.Fprintf(&b, "  -- %s --\n", stage)
 			}
 		}
-		fmt.Fprintf(&b, "  %d. [%s] %s%s\n", i+1, c.Status, c.Label, ownerSuffix(c.Owner))
+		fmt.Fprintf(&b, "  %d. [%s] %s%s%s\n", i+1, c.Status, c.Label, ownerSuffix(c.Owner), dueSuffix(c.Due))
 		for _, n := range c.Notes {
 			fmt.Fprintf(&b, "      · %s: %s\n", timeStr(n.Ts), n.Text)
 		}
@@ -483,6 +522,13 @@ func ownerSuffix(owner string) string {
 	return " (owner: " + owner + ")"
 }
 
+func dueSuffix(due string) string {
+	if due == "" {
+		return ""
+	}
+	return " (due " + due + ")"
+}
+
 func timeStr(ms int64) string {
 	return time.UnixMilli(ms).Format("01-02 15:04")
 }
@@ -503,6 +549,7 @@ func init() {
 	effortChunkAddCmd.Flags().Int("at", 0, "1-based insert position")
 	effortChunkAddCmd.Flags().String("owner", "", "chunk owner")
 	effortChunkAddCmd.Flags().String("stage", "", "grouping label")
+	effortChunkAddCmd.Flags().String("due", "", "the day it comes due: YYYY-MM-DD or +Nd")
 	effortChunkStatusCmd.Flags().String("note", "", "annotation")
 	effortChunkNoteCmd.Flags().String("note", "", "annotation text (required)")
 	effortChunkNoteCmd.MarkFlagRequired("note")
@@ -516,6 +563,6 @@ func init() {
 		effortDeleteCmd, effortAdvanceCmd, effortReopenCmd, effortChunkCmd)
 	effortChunkCmd.AddCommand(effortChunkAddCmd, effortChunkRenameCmd, effortChunkMoveCmd,
 		effortChunkRemoveCmd, effortChunkStatusCmd, effortChunkNoteCmd, effortChunkOwnerCmd,
-		effortChunkStageCmd, effortChunkAttachCmd, effortChunkDetachCmd)
+		effortChunkStageCmd, effortChunkDueCmd, effortChunkAttachCmd, effortChunkDetachCmd)
 	rootCmd.AddCommand(effortCmd)
 }

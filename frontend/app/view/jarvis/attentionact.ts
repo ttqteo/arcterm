@@ -14,8 +14,8 @@ export interface AttentionActInput {
 }
 
 export type AttentionAct = {
-    label: "Approve" | "Retry" | "Acknowledge" | "Land again" | "Open";
-    kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "open";
+    label: "Approve" | "Retry" | "Acknowledge" | "Land again" | "Work on" | "Open";
+    kind: "approve-dag" | "retry-dag" | "ack-run" | "land-run" | "work-on" | "open";
 };
 
 // Approve and Retry need the exact task the server named; without it, and for anything that needs a
@@ -34,6 +34,11 @@ export function attentionAct(x: AttentionActInput): AttentionAct {
     // a held land: the retry `wsh runs land` makes, once the human has cleared the reason the row names
     if (x.wireKind === "run-land-held" && x.channelId !== "" && x.runId != null) {
         return { label: "Land again", kind: "land-run" };
+    }
+    // a chunk that came due: the row itself opens the initiative, so the button starts the work the chunk's
+    // notes describe (initiativeworkaction.ts workOnDueChunk); it needs the cockpit, so callers run it
+    if (x.wireKind === "chunk-due") {
+        return { label: "Work on", kind: "work-on" };
     }
     return { label: "Open", kind: "open" };
 }

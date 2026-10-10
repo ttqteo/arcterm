@@ -386,6 +386,54 @@ func TestApplyOpsSetChunkStageUnknownChunk(t *testing.T) {
 	expectErrCode(t, err, "EC-UNKNOWN-CHUNK")
 }
 
+func TestApplyOpsSetChunkDue(t *testing.T) {
+	e := mkEffort()
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkDue", Chunk: "Phase 2", Due: "2026-10-20"}}, "", effortNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[1].Due != "2026-10-20" {
+		t.Fatalf("due: %q", e.Chunks[1].Due)
+	}
+	notes := e.Chunks[1].Notes
+	if len(notes) != 1 || !strings.Contains(notes[0].Text, "2026-10-20") {
+		t.Fatalf("trail: %+v", notes)
+	}
+	// a date completes nothing, so it stays out of the delta
+	if len(e.Events) != 0 {
+		t.Fatalf("expected no delta events, got %+v", e.Events)
+	}
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkDue", Chunk: "2", Due: ""}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[1].Due != "" {
+		t.Fatalf("due not cleared: %q", e.Chunks[1].Due)
+	}
+}
+
+func TestApplyOpsSetChunkDueRejectsNonDate(t *testing.T) {
+	for _, due := range []string{"10-20", "2026-13-01", "+14d", "tomorrow"} {
+		e := mkEffort()
+		err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "setChunkDue", Chunk: "Phase 2", Due: due}}, "", effortNow)
+		expectErrCode(t, err, "EC-INVALID-DUE")
+		if e.Chunks[1].Due != "" {
+			t.Fatalf("%q: a rejected batch changed the chunk", due)
+		}
+	}
+}
+
+func TestApplyOpsAddChunkWithDue(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Re-measure", Due: "2026-10-20"}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if e.Chunks[3].Due != "2026-10-20" {
+		t.Fatalf("due: %q", e.Chunks[3].Due)
+	}
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Bad", Due: "soon"}}, "", effortNow)
+	expectErrCode(t, err, "EC-INVALID-DUE")
+}
+
 func TestApplyOpsAddChunkWithStage(t *testing.T) {
 	e := mkEffort()
 	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Phase 4", Stage: " Rollout "}}, "", effortNow)

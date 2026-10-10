@@ -7,17 +7,24 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { parseDocReview } from "@/app/view/agents/docreview";
 
-export type NeedsGroup = "asks" | "reviews" | "blocked";
+export type NeedsGroup = "asks" | "reviews" | "blocked" | "due";
 
-export const NEEDS_GROUP_LABELS: Record<NeedsGroup, string> = { asks: "Asks", reviews: "Reviews", blocked: "Blocked" };
+export const NEEDS_GROUP_LABELS: Record<NeedsGroup, string> = {
+    asks: "Asks",
+    reviews: "Reviews",
+    blocked: "Blocked",
+    due: "Due",
+};
 
-const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "blocked"];
+// a chunk that came due blocks nothing, so it reads last
+const GROUP_ORDER: NeedsGroup[] = ["asks", "reviews", "blocked", "due"];
 
 // anything not named here lands in Blocked, so nothing the badge counts is missing from the scope
 const KIND_GROUP: Record<string, NeedsGroup> = {
     ask: "asks",
     escalation: "asks",
     "dag-gate": "reviews",
+    "chunk-due": "due",
 };
 
 // radar findings keep their own badge
@@ -79,7 +86,8 @@ export type NeedsTarget =
     | { kind: "review"; agentId: string } // the agent, with its doc review open
     | { kind: "dag"; channelId: string; runId: string; dagId: string; taskId?: string }
     | { kind: "run"; channelId: string; runId: string }
-    | { kind: "channel"; channelId: string };
+    | { kind: "channel"; channelId: string }
+    | { kind: "effort"; effortId: string }; // a due chunk's initiative
 
 // Where Enter on a Needs you row lands. A dag item's key names its dag ("dag-gate:<dag>[:<task>]",
 // "dag-blocked:<dag>", pkg/jarvis/attention.go); an ask whose agent left the roster falls back to its
@@ -88,7 +96,10 @@ export function needsTarget(row: NeedsRow): NeedsTarget | null {
     if (row.agent != null) {
         return { kind: row.review ? "review" : "agent", agentId: row.agent.id };
     }
-    const { kind, key, channelid, runid, taskid } = row.item;
+    const { kind, key, channelid, runid, taskid, oref } = row.item;
+    if (kind === "chunk-due" && oref?.startsWith("effort:")) {
+        return { kind: "effort", effortId: oref.slice("effort:".length) };
+    }
     if (!channelid) {
         return null;
     }

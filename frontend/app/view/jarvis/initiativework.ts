@@ -27,6 +27,12 @@ export function planIdeaPrompt(title: string, effortOid: string): string {
     return `plan the idea ${title} (effort:${effortOid}): break it into chunks with \`wsh effort chunk add\`, then stop so I can review the plan before any work starts`;
 }
 
+// A chunk that came due (wsh effort chunk due) carries in its notes what to check and what the result decides;
+// the agent does that and closes the loop on the chunk itself, so the reminder leaves Needs you.
+export function dueChunkPrompt(title: string, effortOid: string, chunk: string): string {
+    return `the chunk "${chunk}" of the initiative ${title} (effort:${effortOid}) has come due. Read its notes for what to check and what the result decides, do that, add the result as a chunk note, then mark the chunk done, or move its date with \`wsh effort chunk due\``;
+}
+
 const STATE_RANK: Record<AgentVM["state"], number> = { asking: 0, working: 1, idle: 2 };
 
 // A run's agents answer to their run, and a terminal is not an agent session: neither is "the session on
