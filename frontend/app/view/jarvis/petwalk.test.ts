@@ -16,6 +16,8 @@ import {
     REST_MIN_MS,
     REST_POSES,
     SLEEP_AFTER_MS,
+    slideFrom,
+    STEP_PX,
     stepWalker,
     TIRED_FRAME_MS,
     type Ledge,
@@ -723,4 +725,19 @@ describe("nextTick", () => {
         expect(nextTick(FRAME_MS, false)).toBe(FRAME_MS);
         expect(nextTick(null, false)).toBeNull();
     });
+});
+
+describe("slideFrom", () => {
+    // the ledge narrowed under it (a tab or the usage grew in Float): drawn at once, it jumped
+    it("slides back the whole way when the walker moved it more than a step without walking", () => {
+        expect(slideFrom({ x: 400, name: "rest" }, 260)).toBe(140);
+        expect(slideFrom({ x: 100, name: "sleep" }, 180)).toBe(-80);
+    });
+    it("leaves a walk step and a landing within a step alone", () => {
+        expect(slideFrom({ x: 400, name: "walk" }, 400 - STEP_PX)).toBe(0);
+        expect(slideFrom({ x: 400, name: "rest" }, 400)).toBe(0);
+    });
+    it("never slides a drop, which is placed where the pointer let go", () =>
+        expect(slideFrom({ x: 400, name: "dragged" }, 100)).toBe(0));
+    it("has nothing to slide from on the first frame", () => expect(slideFrom(null, 300)).toBe(0));
 });

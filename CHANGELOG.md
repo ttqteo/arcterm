@@ -104,6 +104,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - On macOS, folding into Sprout or floating from a maximized window no longer shows the window jumping to an old size
   and place before it shrinks.
 - The float bar shows the arrow cursor over the agent's name, as a title bar does, instead of the text cursor.
+- Sprout slides over when the floor it walks narrows under it (a tab or the usage growing in a float, the window
+  shrinking) instead of jumping there.
 - A Terminal opened from New with a command in its Command field runs that command when it opens, at the shell's
   first prompt, and stays a shell afterwards; the command was ignored before.
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.

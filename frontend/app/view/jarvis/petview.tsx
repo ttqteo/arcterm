@@ -12,6 +12,7 @@
 // It never draws a number. The nav badge owns the count; the creature owns the kind (pet spec §3).
 
 import { toastsAtom } from "@/app/cockpit/notificationstore";
+import { MOTION } from "@/app/element/motiontokens";
 import { atoms } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -57,6 +58,7 @@ import {
     homeFraction,
     initialWalker,
     nextTick,
+    slideFrom,
     stepWalker,
     type WalkerInput,
     type WalkerState,
@@ -362,6 +364,10 @@ function PetSprite({
     // drag's transform, so the two never fight over one value.
     const ledgeY = useMotionValue(0);
     const ledgeAnimRef = useRef<AnimationPlaybackControls | null>(null);
+    // and one the ledge narrows under (petwalk.ts slideFrom) slides over to where the walker put it
+    const slideX = useMotionValue(0);
+    const slideAnimRef = useRef<AnimationPlaybackControls | null>(null);
+    const prevStepRef = useRef<{ x: number; name: WalkerState["name"] } | null>(null);
     const prevLedgeRef = useRef<LedgeAt | null>(null);
 
     // Step the walker to now against a fresh measure, draw what comes back, and schedule the next step. Safe to
@@ -493,11 +499,29 @@ function PetSprite({
         ledgeAnimRef.current = animate(ledgeY, way.y, { duration: way.duration, times: way.times, ease: way.ease });
     }, [ledgeTop, reduce, ledgeY]);
 
+    // Before the paint that moves it: a step the walker took without walking (the ledge narrowed under it) starts the
+    // svg where it stood and eases it over, from wherever a slide still under way had got to.
+    const stepName = frame?.step.state.name ?? null;
+    useLayoutEffect(() => {
+        if (x == null || stepName == null) {
+            return;
+        }
+        const shift = slideFrom(prevStepRef.current, x);
+        prevStepRef.current = { x, name: stepName };
+        if (shift === 0 || reduce || draggingNowRef.current) {
+            return;
+        }
+        slideAnimRef.current?.stop();
+        slideX.set(slideX.get() + shift);
+        slideAnimRef.current = animate(slideX, 0, { duration: MOTION.durMacro, ease: MOTION.easeFluid });
+    }, [x, stepName, reduce, slideX]);
+
     useEffect(
         () => () => {
             fallSeqRef.current++;
             fallRef.current.forEach((a) => a.stop());
             ledgeAnimRef.current?.stop();
+            slideAnimRef.current?.stop();
         },
         []
     );
@@ -643,7 +667,7 @@ function PetSprite({
                 aria-hidden="true"
                 // the flag in hand rises above the sprite's box (PET_FLAG_RISE), so the svg draws past its top
                 overflow="visible"
-                style={{ y: ledgeY }}
+                style={{ x: slideX, y: ledgeY }}
                 className="block"
             >
                 {/* under the body and never mirrored, like the marks: the flag stays at its left either way */}

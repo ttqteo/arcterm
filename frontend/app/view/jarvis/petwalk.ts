@@ -359,6 +359,20 @@ function view(s: WalkerState, input: WalkerInput, now: number, delayMs: number |
 }
 
 /**
+ * How far the drawn sprite slides back to where it stood when the walker moved it more than a walk step without
+ * walking: the ledge narrowed under it (in Float a tab or the usage grew, or the window shrank) and the clamp placed
+ * it at once. The renderer starts the sprite that far off and eases it in, so it is never seen to jump. A drop is
+ * placed where the pointer let go, so it never slides. 0 when nothing jumped.
+ */
+export function slideFrom(prev: { x: number; name: WalkerStateName } | null, nextX: number): number {
+    if (prev == null || prev.name === "dragged") {
+        return 0;
+    }
+    const dx = prev.x - nextX;
+    return Math.abs(dx) > STEP_PX ? dx : 0;
+}
+
+/**
  * The walker at boot: at home, walking toward a clear target — or, under reduced motion, standing at the
  * clear spot nearest home.
  */
