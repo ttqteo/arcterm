@@ -5,6 +5,7 @@ import { PET_PX } from "@/app/view/jarvis/petsprite";
 import { describe, expect, it } from "vitest";
 import { MINI_SPRITE_INSET, MINI_SPROUT_BOX, miniSproutRect, screenFor } from "./floatwindow";
 import {
+    afterOpen,
     FOLD_FALLBACK_MARGIN,
     foldCenter,
     foldSpot,
@@ -85,6 +86,19 @@ describe("onSurfaceChange", () => {
         expect(onSurfaceChange(foldedFromFloat, "agent")).toBeNull();
     });
     it("leaves Full alone", () => expect(onSurfaceChange(full, "usage")).toBeNull());
+});
+
+// Open on a waiting item in the folded chat, or `wsh ui`, often lands on the surface already shown: the surface does not
+// change, so onSurfaceChange never fires, and the landing must still bring the window back
+describe("afterOpen", () => {
+    it("brings the window back when a route lands while folded, from either origin", () => {
+        expect(afterOpen(foldedFromFull)).toBe("restore");
+        expect(afterOpen(foldedFromFloat)).toBe("restore");
+    });
+    it("leaves Full and Float alone", () => {
+        expect(afterOpen(full)).toBeNull();
+        expect(afterOpen(float)).toBeNull();
+    });
 });
 
 describe("minimize", () => {

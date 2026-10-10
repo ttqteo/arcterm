@@ -12,6 +12,7 @@ import {
     parseTarget,
     petEventOf,
     routeNotify,
+    saysOnSprout,
     snapshotOf,
     toastOf,
     type NotifyEvent,
@@ -28,6 +29,12 @@ const snap = (agents: AgentVM[], attention: AttentionItem[] = [], loaded = true)
 describe("diffEvents", () => {
     it("emits nothing for the first snapshot", () => {
         expect(diffEvents(null, snap([agent("a", "asking")], [item("g1")]))).toEqual([]);
+    });
+    it("marks a request from an agent stopped at a prompt", () => {
+        const [e] = diffEvents(snap([agent("a", "working")]), snap([agent("a", "asking", { atPrompt: true })]));
+        expect(e).toMatchObject({ kind: "request", atPrompt: true });
+        const [q] = diffEvents(snap([agent("b", "working")]), snap([agent("b", "asking")]));
+        expect(q.atPrompt).toBeFalsy();
     });
     it("emits a loud request when a known agent starts asking", () => {
         const [e] = diffEvents(snap([agent("a", "working")]), snap([agent("a", "asking")]));
@@ -162,13 +169,27 @@ describe("routeNotify", () => {
         expect(routeNotify(ev("reply"), ctx({ size: "float" }))).toBe("avatar"));
     it("still sends a backgrounded Float's news to the OS", () =>
         expect(routeNotify(ev("request"), ctx({ size: "float", focused: false }))).toBe("os"));
-    // folded, Sprout floats over every app: it says everything, whichever app is in front
-    it("sends everything to the folded Sprout, focused or not", () => {
+    // folded, Sprout floats over every app and says it all; in the background it may be on another Space or under a
+    // fullscreen app, so what needs you goes to the OS as well (saysOnSprout keeps the bubble)
+    it("leaves everything to the folded Sprout while arcterm is in front", () => {
         for (const kind of ["request", "reply", "notify", "attention"] as const) {
-            expect(routeNotify(ev(kind), ctx({ size: "sprout", focused: false }))).toBe("avatar");
             expect(routeNotify(ev(kind), ctx({ size: "sprout" }))).toBe("avatar");
         }
     });
+    it("also sends what needs you to the OS while folded in the background", () => {
+        const loud = (kind: NotifyEvent["kind"]) => ({ ...ev(kind), loud: true });
+        expect(routeNotify(loud("request"), ctx({ size: "sprout", focused: false }))).toBe("os");
+        expect(routeNotify(loud("attention"), ctx({ size: "sprout", focused: false }))).toBe("os");
+        expect(routeNotify(ev("reply"), ctx({ size: "sprout", focused: false }))).toBe("avatar");
+        expect(routeNotify(ev("notify"), ctx({ size: "sprout", focused: false }))).toBe("avatar");
+    });
+    it("keeps a folded background notice on Sprout with OS notifications off", () =>
+        expect(
+            routeNotify(
+                { ...ev("request"), loud: true },
+                ctx({ size: "sprout", focused: false, settings: { os: false, toast: true, reply: true } })
+            )
+        ).toBe("avatar"));
     // the floated terminal is hidden while folded: its agent is not in view
     it("has nothing in view while folded", () =>
         expect(routeNotify(ev("request"), ctx({ size: "sprout", viewing: new Set(["a"]) }))).toBe("avatar"));
@@ -196,6 +217,16 @@ describe("routeNotify", () => {
     });
 });
 
+describe("saysOnSprout", () => {
+    it("is Sprout's when routed to it, and folded whatever the route but none", () => {
+        expect(saysOnSprout("avatar", "full")).toBe(true);
+        expect(saysOnSprout("os", "sprout")).toBe(true);
+        expect(saysOnSprout("os", "float")).toBe(false);
+        expect(saysOnSprout("toast", "full")).toBe(false);
+        expect(saysOnSprout("none", "sprout")).toBe(false);
+    });
+});
+
 describe("petEventOf", () => {
     const decision: NotifyEvent = {
         kind: "attention",
@@ -208,7 +239,7 @@ describe("petEventOf", () => {
     };
 
     it("says a decision as a Needs-you utterance keyed by its item", () => {
-        expect(petEventOf(decision, 1000)).toEqual({
+        expect(petEventOf(decision, 1000, "full")).toEqual({
             id: "needs:gate:r1",
             at: 1000,
             kind: "ask",
@@ -218,13 +249,33 @@ describe("petEventOf", () => {
 
     // an agent's question and a wsh notify already reach the pet from their own events
     it("leaves an agent's request and a wsh notify to the pet's own sources", () => {
-        expect(petEventOf(ev("request"), 1000)).toBeNull();
-        expect(petEventOf(ev("notify"), 1000)).toBeNull();
+        expect(petEventOf(ev("request"), 1000, "float")).toBeNull();
+        expect(petEventOf(ev("notify"), 1000, "float")).toBeNull();
+    });
+
+    // a permission prompt raises no agent:ask, so in Float and folded nothing else would say it
+    it("says a request from an agent at a prompt in Float and folded, not in Full", () => {
+        const prompt: NotifyEvent = {
+            ...ev("request", "t1"),
+            title: "loom",
+            body: "Waiting for your input",
+            atPrompt: true,
+        };
+        const said = {
+            id: "request:t1:1000",
+            at: 1000,
+            kind: "ask",
+            text: "Waiting for your input",
+            sources: [{ ref: "agent:t1", title: "loom", sourceType: "" }],
+        };
+        expect(petEventOf(prompt, 1000, "float")).toEqual(said);
+        expect(petEventOf(prompt, 1000, "sprout")).toEqual(said);
+        expect(petEventOf(prompt, 1000, "full")).toBeNull();
     });
 
     it("says a finished turn, which opens its agent", () => {
         const done: NotifyEvent = { ...ev("reply", "t1"), title: "loom", body: "Fix the race" };
-        expect(petEventOf(done, 1000)).toEqual({
+        expect(petEventOf(done, 1000, "float")).toEqual({
             id: "reply:t1:1000",
             at: 1000,
             kind: "notify",

@@ -121,7 +121,8 @@ function writeJson(storage: () => Storage, key: string, value: unknown): void {
 const local = () => window.localStorage;
 const session = () => window.sessionStorage;
 
-function currentSize(): SizeState {
+// the window's size now (windowsize.ts), from the atoms
+export function currentSize(): SizeState {
     return sizeState(globalStore.get(floatModeAtom), globalStore.get(floatMiniAtom), globalStore.get(foldOriginAtom));
 }
 

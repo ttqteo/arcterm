@@ -49,8 +49,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   folds too. **Settings → General → Window → Minimize** sends minimize to the Dock or taskbar instead.
 - In a float, Sprout walks a ledge under the terminal, with a count of what waits on you; click it for the Jarvis chat.
   Dots on the float bar, one an agent, switch the float to another agent's terminal.
-  In a float and folded into Sprout, what used to be a toast is Sprout's bubble; folded, it shows even while another
-  app is in front.
+  In a float and folded into Sprout, what used to be a toast is Sprout's bubble, a permission prompt included; folded,
+  it shows even while another app is in front, and what needs you also reaches the system notifications.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
   as the free RAM allows, so several runs no longer push the machine into swap; the new Jobs chip in the app bar shows
   what runs and what waits, with Run now and Skip.

@@ -21,7 +21,9 @@ import { canvasDir, canvasProjectDir } from "../agents/canvasmodel";
 import { attachCanvas, canvasOwner, getCanvas, selectCanvasBoard } from "../agents/canvasstore";
 import { jumpToAgent } from "../agents/channelsprimitives";
 import { selectChannel } from "../agents/channelsstore";
+import { currentSize, restoreFromSprout } from "../agents/floatstore";
 import { initRadarScope, radarScopeAtom, radarSelectedIdAtom, scopeOfReport, selectReport } from "../agents/radarstore";
+import { afterOpen } from "../agents/windowsize";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
 import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
@@ -118,6 +120,10 @@ export async function openTarget(
         result = current() ? failed(target, errorText(e)) : SUPERSEDED;
     }
     deliver(result, report);
+    // folded into Sprout, a landing shows nothing until the window comes back, even on the surface already shown
+    if (result.ok && afterOpen(currentSize()) === "restore") {
+        void restoreFromSprout(model);
+    }
     return result;
 }
 

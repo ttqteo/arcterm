@@ -36,6 +36,7 @@ import {
     parseTarget,
     petEventOf,
     routeNotify,
+    saysOnSprout,
     snapshotOf,
     toastOf,
     type NotifyEvent,
@@ -145,10 +146,11 @@ export function NotifySync({ model }: { model: AgentsViewModel }): null {
             const route = routeNotify(event, ctx.current!);
             if (route === "os" || route === "toast") {
                 buffer.current.push({ route, event });
-            } else if (route === "avatar") {
-                // Sprout says a decision, and a finished turn, in place of its toast; its other avatar events come from
-                // its own sources
-                const said = petEventOf(event, Date.now());
+            }
+            if (saysOnSprout(route, ctx.current!.size)) {
+                // Sprout says a decision, a finished turn and a permission prompt in place of a toast (folded, beside
+                // the OS's); its other avatar events come from its own sources
+                const said = petEventOf(event, Date.now(), ctx.current!.size);
                 if (said != null) {
                     pushPetEvent(said);
                 }

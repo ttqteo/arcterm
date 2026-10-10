@@ -34,6 +34,8 @@ export interface NotifyEvent {
     runtime?: string;
     // a sound and a taskbar flash: something is blocked on you
     loud: boolean;
+    // a request from an agent stopped at a prompt (a permission prompt): no agent:ask carries it to the pet
+    atPrompt?: boolean;
 }
 
 interface AgentSnap {
@@ -44,6 +46,7 @@ interface AgentSnap {
     runtime?: string;
     runId?: string;
     question?: string;
+    atPrompt?: boolean;
 }
 
 export interface NotifySnapshot {
@@ -82,6 +85,7 @@ export function snapshotOf(
                     runtime: a.agent,
                     runId: a.runId,
                     question: a.ask?.questions?.[0]?.question?.split("\n")[0],
+                    atPrompt: a.atPrompt,
                 },
             ])
         ),
@@ -113,6 +117,7 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
                 meta: a.project,
                 runtime: a.runtime,
                 loud: true,
+                atPrompt: a.atPrompt,
             });
         } else if (a.state === "idle" && before.state === "working" && a.runId == null) {
             out.push({
@@ -195,7 +200,9 @@ export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
         return "none";
     }
     if (ctx.size === "sprout") {
-        return "avatar";
+        // in the background, Sprout may be on another Space or under a fullscreen app: what needs you reaches the OS
+        // too (saysOnSprout keeps the bubble)
+        return !ctx.focused && e.loud && ctx.settings.os ? "os" : "avatar";
     }
     if (!ctx.focused) {
         return ctx.settings.os ? "os" : "none";
@@ -211,9 +218,9 @@ export function routeNotify(e: NotifyEvent, ctx: RouteCtx): NotifyRoute {
 }
 
 /** Pure: what Sprout says in place of a toast. A decision, and (in Float and folded) a finished turn, which opens its
- *  agent. An agent's request is not one: it reaches the pet from its own agent:ask event, which also retracts it once
- *  answered; a `wsh notify` from its own notify event. */
-export function petEventOf(e: NotifyEvent, nowMs: number): PetEvent | null {
+ *  agent, and a permission prompt. An agent's question is not one: it reaches the pet from its own agent:ask event,
+ *  which also retracts it once answered; a `wsh notify` from its own notify event. */
+export function petEventOf(e: NotifyEvent, nowMs: number, size: WindowSize): PetEvent | null {
     if (e.kind === "attention" && e.target.kind === "attention") {
         return { id: `needs:${e.target.key}`, at: nowMs, kind: "ask", text: e.title };
     }
@@ -227,7 +234,23 @@ export function petEventOf(e: NotifyEvent, nowMs: number): PetEvent | null {
             sources: [{ ref: `agent:${e.target.agentId}`, title: e.title, sourceType: "" }],
         };
     }
+    // a permission prompt: in Full the agent's row and the nav badge say it, in Float and folded only Sprout can
+    if (e.kind === "request" && e.atPrompt && size !== "full" && e.target.kind === "agent") {
+        return {
+            id: `request:${e.target.agentId}:${nowMs}`,
+            at: nowMs,
+            kind: "ask",
+            text: e.body,
+            sources: [{ ref: `agent:${e.target.agentId}`, title: e.title, sourceType: "" }],
+        };
+    }
     return null;
+}
+
+/** Pure: whether Sprout says an event: what routeNotify gave it, and folded anything not dropped, since the bubble is
+ *  how a folded window speaks even when the OS speaks too. */
+export function saysOnSprout(route: NotifyRoute, size: WindowSize): boolean {
+    return route === "avatar" || (size === "sprout" && route !== "none");
 }
 
 export const COALESCE_MS = 2000;
