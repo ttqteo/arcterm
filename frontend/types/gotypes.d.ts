@@ -2350,6 +2350,7 @@ declare global {
     // wshrpc.JobQueueData
     type JobQueueData = {
         slots: number;
+        mode: string;
         jobs: JobQueueJob[];
     };
 
@@ -3006,6 +3007,7 @@ declare global {
         "radar:auditmodel"?: string;
         "usage:insightslang"?: string;
         "jobs:slots"?: number;
+        "jobs:mode"?: string;
     };
 
     // wshrpc.ShippedItem

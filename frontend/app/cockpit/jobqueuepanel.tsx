@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Jobs popover (spec 2026-10-09-heavy-job-queue-design.md): every heavy shell job running or waiting its turn, with
-// Run now and Skip on a queued one and the Slots picker for how many run at once. It hangs from the app bar's Jobs
+// Run now and Skip on a queued one and the Slots picker for how many run at once (or Auto, as RAM allows, or Off). It hangs from the app bar's Jobs
 // chip and shares the Consumers panel's shell. jobqueue.ts decides; this draws. Mounted once in cockpit-root, which
 // also keeps the one feed of the queue (useJobQueueFeed) the chip reads.
 
@@ -20,10 +20,17 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
-import { formatElapsed, openTargetFor, ordered, sourceLabel, type JobAgent } from "./jobqueue";
+import {
+    formatElapsed,
+    openTargetFor,
+    ordered,
+    PACE_CHOICES,
+    pacePatch,
+    paceValue,
+    sourceLabel,
+    type JobAgent,
+} from "./jobqueue";
 import { jobQueueAtom, jobQueueOpenAtom, jobQueueOpenerAtom, useJobQueueFeed } from "./jobqueuestore";
-
-const SLOT_CHOICES = [1, 2, 3, 4];
 
 function close(): void {
     globalStore.set(jobQueueOpenAtom, false);
@@ -40,8 +47,8 @@ function act(what: string, call: () => Promise<void>): void {
     });
 }
 
-function setSlots(n: number): void {
-    act("change the slots", () => RpcApi.SetConfigCommand(TabRpcClient, { "jobs:slots": n }));
+function setPace(value: string): void {
+    act("change the slots", () => RpcApi.SetConfigCommand(TabRpcClient, pacePatch(value)));
 }
 
 // the clock the rows' elapsed times read, ticking once a second while the popover is open
@@ -192,14 +199,14 @@ export function JobQueuePanel({ model }: { model: AgentsViewModel }) {
                             Slots
                             <select
                                 data-job-queue-slots
-                                title="How many heavy jobs run at once"
-                                value={data?.slots ?? 1}
-                                onChange={(e) => setSlots(Number(e.target.value))}
+                                title="How many heavy jobs run at once. Auto starts each as soon as the RAM it needs is free; Off never makes one wait"
+                                value={paceValue(data)}
+                                onChange={(e) => setPace(e.target.value)}
                                 className="h-6 cursor-pointer rounded-[7px] border border-border bg-surface px-1.5 text-[11.5px] text-secondary hover:border-edge-mid hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                             >
-                                {SLOT_CHOICES.map((n) => (
-                                    <option key={n} value={n}>
-                                        {n}
+                                {PACE_CHOICES.map((c) => (
+                                    <option key={c.value} value={c.value}>
+                                        {c.label}
                                     </option>
                                 ))}
                             </select>

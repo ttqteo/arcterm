@@ -3,6 +3,7 @@ package jobqueue
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestPlan(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			start, reason := plan(c.jobs, c.slots, c.available, t0)
+			start, reason := plan(c.jobs, c.slots, ModeSlots, c.available, t0)
 			if len(start) != len(c.start) {
 				t.Fatalf("start = %v, want %v", start, c.start)
 			}
@@ -52,6 +53,82 @@ func TestPlan(t *testing.T) {
 				t.Fatalf("reason = %q, want %q", reason, c.reason)
 			}
 		})
+	}
+}
+
+func TestPlanModes(t *testing.T) {
+	run := func(id string, bytes uint64, started time.Time) Job {
+		return Job{Id: id, Request: Request{Name: id, Bytes: bytes}, Running: true, StartedAt: started}
+	}
+	wait := func(id string, bytes uint64) Job { return Job{Id: id, Request: Request{Name: id, Bytes: bytes}} }
+	old := t0.Add(-2 * RampUp)
+	cases := []struct {
+		name      string
+		jobs      []Job
+		mode      string
+		available uint64
+		start     []string
+		reason    string
+	}{
+		{"auto starts past a full slot count", []Job{run("r", gb, old), wait("a", gb), wait("b", gb)}, ModeAuto, 8 * gb, []string{"a", "b"}, ""},
+		{"auto still waits on RAM", []Job{run("r", gb, old), wait("a", 3*gb)}, ModeAuto, 2 * gb, nil, "needs 3 GB, 2 GB free"},
+		{"auto counts a ramping job's peak", []Job{run("r", 3*gb, t0), wait("a", 3*gb)}, ModeAuto, 6 * gb, nil, "needs 3 GB, 3 GB free"},
+		{"off starts every job, whatever runs and whatever RAM is free", []Job{run("r", gb, old), wait("a", 9*gb), wait("b", gb)}, ModeOff, gb, []string{"a", "b"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// one slot throughout: neither mode reads it
+			start, reason := plan(c.jobs, 1, c.mode, c.available, t0)
+			if !slices.Equal(start, c.start) {
+				t.Fatalf("start = %v, want %v", start, c.start)
+			}
+			if reason != c.reason {
+				t.Fatalf("reason = %q, want %q", reason, c.reason)
+			}
+		})
+	}
+}
+
+func TestNormMode(t *testing.T) {
+	for in, want := range map[string]string{"": ModeAuto, "slots": ModeSlots, "auto": ModeAuto, "off": ModeOff, "fast": ModeAuto} {
+		if got := NormMode(in); got != want {
+			t.Errorf("NormMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestModeIsReadOnEveryEvaluation(t *testing.T) {
+	var mode atomic.Value
+	mode.Store(ModeSlots)
+	q := New(Config{
+		Slots:     func() int { return 1 },
+		Mode:      func() string { return mode.Load().(string) },
+		Available: func(context.Context) (uint64, error) { return 64 * gb, nil },
+	})
+	ctx := context.Background()
+	held, _ := q.Acquire(ctx, Request{Name: "a", Bytes: gb}, nil)
+	defer held.Release()
+	got := make(chan *Slot, 1)
+	go func() { s, _ := q.Acquire(ctx, Request{Name: "b", Bytes: gb}, nil); got <- s }()
+	waitFor(t, func() bool { return len(q.Snapshot().Jobs) == 2 })
+	if m := q.Snapshot().Mode; m != ModeSlots {
+		t.Fatalf("snapshot mode = %q, want %q", m, ModeSlots)
+	}
+	select {
+	case <-got:
+		t.Fatal("b started on a full slot")
+	case <-time.After(50 * time.Millisecond):
+	}
+	mode.Store(ModeAuto)
+	q.evaluate(ctx)
+	select {
+	case s := <-got:
+		s.Release()
+	case <-time.After(time.Second):
+		t.Fatal("b still queued after the mode turned auto")
+	}
+	if m := q.Snapshot().Mode; m != ModeAuto {
+		t.Fatalf("snapshot mode = %q, want %q", m, ModeAuto)
 	}
 }
 

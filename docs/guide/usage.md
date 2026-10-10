@@ -160,14 +160,24 @@ Mỗi hàng có:
 
 ## Hàng đợi lệnh nặng
 
-`go build`, `cargo`, `tsc` và cả bộ test đều chiếm hết CPU và đĩa của máy, nên vài run chạy chung là máy đứng. Vì vậy mọi lệnh **nặng** xếp vào **một hàng đợi chung** và chạy **từng cái một** (mặc định). Hàng đợi nhận:
+`go build`, `cargo`, `tsc` và cả bộ test đều ngốn RAM, nên vài run chạy chung là máy swap rồi đứng. Vì vậy mọi lệnh **nặng** xếp vào **một hàng đợi chung**, và mặc định máy tự điều phối: lệnh chạy ngay khi còn đủ RAM, chỉ phải chờ khi chạy nó sẽ đẩy máy sát mức lag. Hàng đợi nhận:
 
 - **lệnh shell của agent** khi nó nặng. Trước mỗi lệnh, mod Claude, extension pi và hook Antigravity hỏi `wsh jobslot`: lệnh thường chạy ngay, lệnh nặng chờ đến lượt rồi giữ chỗ trong lúc chạy;
 - **Verify** và **Final** của một run (luôn luôn), cùng **Setup** và **Check** khi lệnh của chúng nặng. Chúng xếp chung hàng với lệnh của agent.
 
-Lệnh đứng đầu hàng bắt đầu khi cả hai điều sau đúng: số lệnh đang chạy ít hơn **Slots**, và RAM trống đủ cho đỉnh RAM của nó cộng 512 MB chừa cho phần còn lại của máy. Đến trước chạy trước. Một lệnh chờ bao lâu cũng được; không có hạn.
+"RAM đủ" nghĩa là RAM trống đủ cho đỉnh RAM của lệnh cộng 512 MB chừa cho phần còn lại của máy. Đến trước chạy trước. Lệnh thiếu RAM chờ ở đầu hàng và tự chạy khi RAM trống lại; bạn cũng có thể duyệt cho nó chạy ngay (**Run now**) hoặc bỏ nó (**Skip**) trong popover. Một lệnh chờ bao lâu cũng được; không có hạn.
 
-Số lệnh chạy cùng lúc đặt bằng bộ chọn **Slots** (1–4, mặc định 1) ở đầu popover bên dưới; nó ghi vào `jobs:slots` và có tác dụng ngay.
+Bộ chọn **Slots** ở đầu popover bên dưới đặt cách hàng đợi cho lệnh chạy, có tác dụng ngay:
+
+| Chọn | Lệnh đứng đầu hàng bắt đầu khi | Ghi vào |
+|---|---|---|
+| **Auto** (mặc định) | RAM đủ, chạy cùng lúc bao nhiêu cũng được | `jobs:mode` = `auto` |
+| **1–4** | số lệnh đang chạy ít hơn số đã chọn, và RAM đủ | `jobs:slots`, cùng `jobs:mode` = `slots` |
+| **Off** | ngay lập tức: không lệnh nào phải chờ, kể cả khi thiếu RAM | `jobs:mode` = `off` |
+
+Ở **Auto**, lệnh vừa bắt đầu vẫn tính đủ đỉnh RAM của nó trong 60 giây đầu, nên hai build lớn không cùng lúc lấy hết chỗ RAM còn trống. Auto chỉ canh RAM, không canh CPU và đĩa: khi vài build cùng chạy làm máy chậm dù RAM còn đủ, chọn **1** hoặc **2**. Ở **Off**, các lệnh vẫn hiện trên chip và trong popover để bạn thấy cái gì đang chạy.
+
+Khi lệnh nặng của một agent đang chờ, hàng của agent đó trong cây agent và header của nó ghi `queued #2` thay cho working; rê chuột lên để xem lệnh và lý do chờ, bấm để mở popover.
 
 ### Chip Jobs và popover
 

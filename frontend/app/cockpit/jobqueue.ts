@@ -31,11 +31,49 @@ export function chipLabel(d: JobQueueData): string | null {
     return queued > 0 ? `${queued} queued` : null;
 }
 
+/** How the queue starts its jobs (pkg/jobqueue's Mode): `auto` (the default) starts each as RAM allows, `slots`
+ * also counts them, `off` never waits. wavesrv sends one of the three. */
+function paceText(d: JobQueueData): string {
+    if (d.mode === "auto") {
+        return "as RAM allows";
+    }
+    if (d.mode === "off") {
+        return "queue off: each starts at once";
+    }
+    return d.slots === 1 ? "one at a time" : `${d.slots} at a time`;
+}
+
 /** The chip's tooltip. */
 export function queueTitle(d: JobQueueData): string {
     const running = runningCount(d);
-    const pace = d.slots === 1 ? "one at a time" : `${d.slots} at a time`;
-    return `Heavy jobs: ${running} running, ${d.jobs.length - running} queued (${pace}; set in the popover)`;
+    return `Heavy jobs: ${running} running, ${d.jobs.length - running} queued (${paceText(d)}; set in the popover)`;
+}
+
+/** The popover's pace picker: Auto, a slot count or Off. */
+export const PACE_CHOICES: readonly { value: string; label: string }[] = [
+    { value: "auto", label: "Auto" },
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3" },
+    { value: "4", label: "4" },
+    { value: "off", label: "Off" },
+];
+
+/** The picker's value: the slot count while the queue counts slots, else its mode; Auto before the first reading. */
+export function paceValue(d: JobQueueData | null): string {
+    if (d == null) {
+        return "auto";
+    }
+    return d.mode === "auto" || d.mode === "off" ? d.mode : String(d.slots);
+}
+
+/** The settings a picked value writes. A slot count writes the slots mode with it, so picking 2 after Auto counts
+ * slots again. */
+export function pacePatch(value: string): SettingsType {
+    if (value === "auto" || value === "off") {
+        return { "jobs:mode": value };
+    }
+    return { "jobs:mode": "slots", "jobs:slots": Number(value) };
 }
 
 /** Whether a queued job has waited past LONG_WAIT_MS at `now` (Unix ms). A running job has stopped waiting. */

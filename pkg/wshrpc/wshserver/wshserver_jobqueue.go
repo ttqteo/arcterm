@@ -81,7 +81,7 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 
 func (ws *WshServer) GetJobQueueCommand(ctx context.Context) (*wshrpc.JobQueueData, error) {
 	if jobqueue.Default == nil {
-		return &wshrpc.JobQueueData{Slots: jobqueue.DefaultSlots, Jobs: []wshrpc.JobQueueJob{}}, nil
+		return &wshrpc.JobQueueData{Slots: jobqueue.DefaultSlots, Mode: jobqueue.NormMode(""), Jobs: []wshrpc.JobQueueJob{}}, nil
 	}
 	data := JobQueueData(jobqueue.Default.Snapshot())
 	return &data, nil
@@ -104,7 +104,7 @@ func (ws *WshServer) JobQueueSkipCommand(ctx context.Context, data wshrpc.Comman
 // JobQueueData is the snapshot as the cockpit and the jobqueue event carry it: times in Unix ms, never a null
 // job list.
 func JobQueueData(s jobqueue.Snapshot) wshrpc.JobQueueData {
-	out := wshrpc.JobQueueData{Slots: s.Slots, Jobs: make([]wshrpc.JobQueueJob, 0, len(s.Jobs))}
+	out := wshrpc.JobQueueData{Slots: s.Slots, Mode: s.Mode, Jobs: make([]wshrpc.JobQueueJob, 0, len(s.Jobs))}
 	for _, j := range s.Jobs {
 		out.Jobs = append(out.Jobs, wshrpc.JobQueueJob{
 			Id:        j.Id,

@@ -163,11 +163,12 @@ func harnessUpdateCheckEnabled() bool {
 }
 
 // startJobQueue builds the heavy-job queue every agent's shell hook and every engine run waits in, and publishes
-// its state to the cockpit. The slot count is read on each evaluation, so a jobs:slots change takes hold at the
-// next one (ConfigHook pokes it).
+// its state to the cockpit. The slot count and the mode are read on each evaluation, so a jobs:slots or jobs:mode
+// change takes hold at the next one (ConfigHook pokes it).
 func startJobQueue() {
 	jobqueue.Default = jobqueue.New(jobqueue.Config{
 		Slots: func() int { return jobqueue.ClampSlots(wconfig.GetWatcher().GetFullConfig().Settings.JobsSlots) },
+		Mode:  func() string { return wconfig.GetWatcher().GetFullConfig().Settings.JobsMode },
 		Available: func(ctx context.Context) (uint64, error) {
 			vm, err := mem.VirtualMemoryWithContext(ctx)
 			if err != nil {
@@ -379,7 +380,7 @@ func main() {
 	wconfig.ConfigHook = func(fc wconfig.FullConfigType) {
 		wshserver.SyncProjectChannels(context.Background(), fc.Projects)
 		claudeaccount.ApplyEnv(fc.Settings.ClaudeActiveAccount)
-		jobqueue.Poke() // a changed jobs:slots is effective at once, not at the queue's next tick
+		jobqueue.Poke() // a changed jobs:slots or jobs:mode is effective at once, not at the queue's next tick
 	}
 	err = startConfigWatcher()
 	if err != nil {

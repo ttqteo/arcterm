@@ -9,6 +9,8 @@ import {
     longWait,
     openTargetFor,
     ordered,
+    pacePatch,
+    paceValue,
     queuedJobFor,
     queuedTag,
     queueTitle,
@@ -25,25 +27,27 @@ const job = (o: Partial<JobQueueJob>): JobQueueJob => ({
 
 describe("jobqueue", () => {
     it("hides the chip when nothing runs or waits", () => {
-        expect(chipLabel({ slots: 1, jobs: [] })).toBeNull();
+        expect(chipLabel({ slots: 1, mode: "slots", jobs: [] })).toBeNull();
     });
     it("counts running and queued", () => {
-        expect(chipLabel({ slots: 1, jobs: [job({ running: true })] })).toBe("1 running");
-        expect(chipLabel({ slots: 1, jobs: [job({ running: true }), job({ id: "j2" }), job({ id: "j3" })] })).toBe(
-            "1 · 2 queued"
-        );
-        expect(chipLabel({ slots: 1, jobs: [job({ id: "j2" })] })).toBe("1 queued");
+        expect(chipLabel({ slots: 1, mode: "slots", jobs: [job({ running: true })] })).toBe("1 running");
+        expect(
+            chipLabel({ slots: 1, mode: "slots", jobs: [job({ running: true }), job({ id: "j2" }), job({ id: "j3" })] })
+        ).toBe("1 · 2 queued");
+        expect(chipLabel({ slots: 1, mode: "slots", jobs: [job({ id: "j2" })] })).toBe("1 queued");
     });
     it("counts every running job when the slots allow several", () => {
-        expect(chipLabel({ slots: 3, jobs: [job({ running: true }), job({ id: "j2", running: true })] })).toBe(
-            "2 running"
-        );
+        expect(
+            chipLabel({ slots: 3, mode: "slots", jobs: [job({ running: true }), job({ id: "j2", running: true })] })
+        ).toBe("2 running");
     });
     it("warns once a job has waited past LONG_WAIT_MS", () => {
-        const d = { slots: 1, jobs: [job({ queuedts: 1_000 })] };
+        const d = { slots: 1, mode: "slots", jobs: [job({ queuedts: 1_000 })] };
         expect(longWait(d, 1_000 + LONG_WAIT_MS - 1)).toBe(false);
         expect(longWait(d, 1_000 + LONG_WAIT_MS + 1)).toBe(true);
-        expect(longWait({ slots: 1, jobs: [job({ running: true, queuedts: 0 })] }, LONG_WAIT_MS * 2)).toBe(false);
+        expect(
+            longWait({ slots: 1, mode: "slots", jobs: [job({ running: true, queuedts: 0 })] }, LONG_WAIT_MS * 2)
+        ).toBe(false);
     });
     it("formats elapsed time", () => {
         expect(formatElapsed(20_000)).toBe("20s");
@@ -95,7 +99,7 @@ describe("jobqueue", () => {
         expect(openTargetFor(job({}), [])).toBeNull();
     });
     it("words the chip's tooltip", () => {
-        const d = { slots: 1, jobs: [job({ running: true }), job({ id: "j2" }), job({ id: "j3" })] };
+        const d = { slots: 1, mode: "slots", jobs: [job({ running: true }), job({ id: "j2" }), job({ id: "j3" })] };
         expect(queueTitle(d)).toBe("Heavy jobs: 1 running, 2 queued (one at a time; set in the popover)");
         expect(queueTitle({ ...d, slots: 3 })).toBe(
             "Heavy jobs: 1 running, 2 queued (3 at a time; set in the popover)"
@@ -104,6 +108,7 @@ describe("jobqueue", () => {
     it("finds the job an agent's block waits on, the one served first", () => {
         const d = {
             slots: 1,
+            mode: "slots",
             jobs: [
                 job({ id: "r", running: true, blockid: "b1" }),
                 job({ id: "q3", position: 3, blockid: "b1" }),
@@ -115,7 +120,11 @@ describe("jobqueue", () => {
         expect(queuedJobFor(d, "b2")?.id).toBe("q1");
     });
     it("finds nothing for a block that only runs, a block with no job, or no block", () => {
-        const d = { slots: 1, jobs: [job({ id: "r", running: true, blockid: "b1" }), job({ id: "e", position: 1 })] };
+        const d = {
+            slots: 1,
+            mode: "slots",
+            jobs: [job({ id: "r", running: true, blockid: "b1" }), job({ id: "e", position: 1 })],
+        };
         expect(queuedJobFor(d, "b1")).toBeNull();
         expect(queuedJobFor(d, "b9")).toBeNull();
         expect(queuedJobFor(d, undefined)).toBeNull();
@@ -147,5 +156,26 @@ describe("jobqueue", () => {
     it("warns on a tag once its job has waited past LONG_WAIT_MS", () => {
         expect(queuedTag(job({ position: 1, queuedts: 1_000 }), 1_000 + LONG_WAIT_MS - 1).warn).toBe(false);
         expect(queuedTag(job({ position: 1, queuedts: 1_000 }), 1_000 + LONG_WAIT_MS + 1).warn).toBe(true);
+    });
+    it("words the chip's tooltip in Auto and Off", () => {
+        const jobs = [job({ running: true }), job({ id: "j2" })];
+        expect(queueTitle({ slots: 1, mode: "auto", jobs })).toBe(
+            "Heavy jobs: 1 running, 1 queued (as RAM allows; set in the popover)"
+        );
+        expect(queueTitle({ slots: 1, mode: "off", jobs })).toBe(
+            "Heavy jobs: 1 running, 1 queued (queue off: each starts at once; set in the popover)"
+        );
+    });
+    it("shows the picker on the slot count, or on Auto or Off", () => {
+        expect(paceValue({ slots: 2, mode: "slots", jobs: [] })).toBe("2");
+        expect(paceValue({ slots: 2, mode: "auto", jobs: [] })).toBe("auto");
+        expect(paceValue({ slots: 2, mode: "off", jobs: [] })).toBe("off");
+        // before the first reading: the setting's default
+        expect(paceValue(null)).toBe("auto");
+    });
+    it("writes a slot count with the slots mode, so leaving Auto counts again", () => {
+        expect(pacePatch("3")).toEqual({ "jobs:mode": "slots", "jobs:slots": 3 });
+        expect(pacePatch("auto")).toEqual({ "jobs:mode": "auto" });
+        expect(pacePatch("off")).toEqual({ "jobs:mode": "off" });
     });
 });

@@ -103,7 +103,8 @@ type SettingsType struct {
 
 	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
 
-	JobsSlots *int `json:"jobs:slots,omitempty"` // heavy jobs run at once (pkg/jobqueue), 1–4; unset is 1
+	JobsSlots *int   `json:"jobs:slots,omitempty"` // heavy jobs run at once (pkg/jobqueue), 1–4; unset is 1
+	JobsMode  string `json:"jobs:mode,omitempty"`  // how the queue starts them: "auto" (unset; as RAM allows), "slots" (jobs:slots at once), "off" (at once)
 }
 
 type ConfigError struct {

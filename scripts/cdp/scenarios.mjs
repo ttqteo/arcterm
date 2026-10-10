@@ -26667,8 +26667,10 @@ const jobqueueChip = {
     async arrange(h) {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-jobqueue-")) };
         try {
-            ctx.slotsBefore = (await h.rpc("getfullconfig", null))?.settings?.["jobs:slots"] ?? null;
-            await h.rpc("setconfig", { "jobs:slots": 1 });
+            const settingsBefore = (await h.rpc("getfullconfig", null))?.settings ?? {};
+            ctx.slotsBefore = settingsBefore["jobs:slots"] ?? null;
+            ctx.modeBefore = settingsBefore["jobs:mode"] ?? null;
+            await h.rpc("setconfig", { "jobs:slots": 1, "jobs:mode": "slots" });
             ctx.slotsChanged = true;
             // the run step 9 opens: deferred, so no lead and no worker starts
             const wslist = await h.rpc("workspacelist", null);
@@ -26833,6 +26835,44 @@ const jobqueueChip = {
             JSON.stringify({ picked, slots, npm: npmNow && [npmNow.state, npmNow.text] })
         );
 
+        // 6b. Auto and Off: the picker writes jobs:mode, and the chip's tooltip reads the pace back from the queue
+        const pickPace = async (value) => {
+            const picked = await h.ev(`(() => {
+                const s = document.querySelector("[data-job-queue-slots]");
+                if (!s) return false;
+                s.value = ${JSON.stringify(value)};
+                s.dispatchEvent(new Event("change", { bubbles: true }));
+                return true;
+            })()`);
+            let mode = null;
+            for (let waited = 0; waited < 3000 && mode !== value; waited += 250) {
+                mode = (await h.rpc("getfullconfig", null))?.settings?.["jobs:mode"] ?? null;
+                if (mode !== value) await polishNap(250);
+            }
+            const shown = await polishWaitFor(
+                h,
+                `document.querySelector("[data-job-queue-slots]")?.value === ${JSON.stringify(value)}`,
+                3000
+            );
+            const title = await h.ev(`document.querySelector("[data-job-queue-chip]")?.title ?? null`);
+            return { picked, mode, shown, title };
+        };
+        const auto = await pickPace("auto");
+        const off = await pickPace("off");
+        await h.shot("cdp-shots/jobqueue-chip-pace-off.png");
+        rec(
+            "6b. Auto and Off are saved to jobs:mode, stay picked, and the chip's tooltip says as RAM allows / queue off",
+            auto.picked &&
+                auto.mode === "auto" &&
+                auto.shown &&
+                String(auto.title).includes("as RAM allows") &&
+                off.picked &&
+                off.mode === "off" &&
+                off.shown &&
+                String(off.title).includes("queue off"),
+            JSON.stringify({ auto, off })
+        );
+
         // 7. drain: each return() sends a wire cancel, so wavesrv ends the stream and frees its slot
         await h.ev("(window.__jq.forEach((g) => g.return()), true)");
         const emptied = await polishWaitFor(h, `!!document.querySelector("[data-job-queue-empty]")`, 3000);
@@ -26933,9 +26973,11 @@ const jobqueueChip = {
         // cancels the run, deletes its channel, reloads the page (the websocket closes, so wavesrv cancels any stream
         // still held) and removes the temp dir
         await teardownFixtureRun(h, ctx, "jobqueue-chip", {
-            what: "restore jobs:slots",
+            what: "restore jobs:slots and jobs:mode",
             fn: async () => {
-                if (ctx.slotsChanged) await h.rpc("setconfig", { "jobs:slots": ctx.slotsBefore });
+                if (ctx.slotsChanged) {
+                    await h.rpc("setconfig", { "jobs:slots": ctx.slotsBefore, "jobs:mode": ctx.modeBefore });
+                }
             },
         });
     },

@@ -170,6 +170,9 @@
         },
         "jobs:slots": {
           "type": "integer"
+        },
+        "jobs:mode": {
+          "type": "string"
         }
       },
       "additionalProperties": false,

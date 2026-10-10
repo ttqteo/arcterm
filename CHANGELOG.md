@@ -12,11 +12,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
-- Builds, typechecks and whole test suites from every agent and run now wait their turn in one queue, one at a time by
-  default, so several runs no longer stall the machine; the new Jobs chip in the app bar shows what runs and what waits,
-  with Run now and Skip.
+- Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
+  as the free RAM allows, so several runs no longer push the machine into swap; the new Jobs chip in the app bar shows
+  what runs and what waits, with Run now and Skip.
 - An agent whose build or test waits in the job queue says so on its row and in its header, as `queued #2` instead of
   working, with why it waits (RAM or a busy slot) in the tooltip; a click opens the Jobs popover.
+- The Jobs popover's Slots picker sets how the queue runs: **Auto** (the default) as many at once as the free RAM
+  allows, **1–4** no more than that many at once, **Off** never makes one wait.
 - Diff can commit and sync. The Commit tab lists the working tree's files with a tick each (Changes ticked,
   Unversioned not): write a message and press **Commit** or `Ctrl`+`Enter`, and only the ticked files are committed, so
   what another session staged stays staged. **Amend** loads the last commit's message and turns off once that commit is

@@ -48,6 +48,7 @@ type JobQueueJob struct {
 
 type JobQueueData struct {
 	Slots int           `json:"slots"`
+	Mode  string        `json:"mode"` // jobqueue.ModeAuto, ModeSlots or ModeOff
 	Jobs  []JobQueueJob `json:"jobs"`
 }
 
