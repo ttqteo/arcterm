@@ -3,8 +3,10 @@
 
 // The strip under the terminal in Float (docs/superpowers/specs/2026-10-10-jarvis-modes-design.md §2), 52px, tall enough
 // to hold the whole 48px sprite so Sprout never stands on the terminal's prompt (petledge.ts LedgeBox.holds). On its
-// left, the tabs Float can switch to, plain terminals included (sproutroster.ts floatTabs), when there is more than one;
-// what they leave is the floor Sprout walks. A press on the strip, away from a tab, drags the window like the float bar.
+// left, the tabs Float can switch to, plain terminals included (sproutroster.ts floatTabs), when there is more than one,
+// their dots pulsing while that agent works or asks; on its right, the plan usage (usagemeters.tsx FloatUsage), since
+// Float has no app bar. What lies between is the floor Sprout walks. A press on the strip, away from a tab, drags the
+// window like the float bar.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { STATE_LABEL } from "@/app/view/agents/agentheader";
@@ -12,6 +14,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { floatTabs } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
+import { FloatUsage } from "@/app/view/agents/usagemeters";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { SquareTerminal } from "lucide-react";
@@ -61,7 +64,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                                 {a.kind === "terminal" ? (
                                     <SquareTerminal size={12} strokeWidth={2} className="flex-none text-muted" />
                                 ) : (
-                                    <StatusDot state={a.state} />
+                                    <StatusDot state={a.state} pulse={a.state !== "idle"} />
                                 )}
                                 <span className="min-w-0 truncate">{a.name}</span>
                             </button>
@@ -80,8 +83,9 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                     ) : null}
                 </div>
             ) : null}
-            {/* the floor Sprout walks: what the tabs leave, never less than the sprite and a step */}
+            {/* the floor Sprout walks: what the tabs and the usage leave, never less than the sprite and a step */}
             <div data-pet-ledge data-pet-ledge-holds data-tauri-drag-region className="min-w-[64px] flex-1" />
+            <FloatUsage model={model} />
         </div>
     );
 }

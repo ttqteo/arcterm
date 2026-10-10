@@ -54,6 +54,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   In a float and folded, a "…" beside Sprout's head says how many agents are working.
   Tabs on the ledge, beside Sprout, switch the float to another agent's terminal or to a plain terminal; past five, a
   **+N** menu lists the rest, and `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` step through them all, even from inside a terminal.
+  A tab's dot pulses while its agent works or asks, as on the float bar and in folded Sprout's list. The ledge's right
+  end shows the plan usage, each provider's 5-hour window with its countdown; hover it for the weekly one.
   In a float and folded into Sprout, what used to be a toast is Sprout's bubble, a permission prompt included; folded,
   it shows even while another app is in front, and what needs you also reaches the system notifications.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon

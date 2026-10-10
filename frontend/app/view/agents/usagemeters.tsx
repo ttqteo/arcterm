@@ -4,7 +4,8 @@
 // The app bar's plan-usage meters, beside the RAM chip: each provider's logo, then its 5-hour and weekly windows as two
 // small bars, each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
 // by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
-// the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
+// the button opens the Consumers panel sorted by tokens (consumerspanel.tsx). Float has no app bar: its ledge shows
+// FloatUsage, each provider's first window alone (the 5-hour one), the rest in its tooltip.
 
 import { Meter } from "@/app/element/meter";
 import { cn, fireAndForget } from "@/util/util";
@@ -61,7 +62,20 @@ export function usePlanDonuts(model: AgentsViewModel): ReturnType<typeof planDon
     return planDonuts(agents, saved, activeKey, identity, now);
 }
 
-export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
+interface MeterItem {
+    key: string;
+    provider: string;
+    // the provider's first window shown, which carries its logo
+    first: boolean;
+    short: string;
+    pct: number;
+    elapsed: number | null;
+    countdown: string | null;
+    title: string;
+}
+
+// Every window worth a bar, each provider's 5-hour one first, with the tokens for the tooltips loaded as windows reset.
+function useMeterItems(model: AgentsViewModel): MeterItem[] {
     const windowTokens = useAtomValue(windowTokensAtom);
     const now = useAtomValue(model.nowAtom);
     const donuts = usePlanDonuts(model);
@@ -72,28 +86,60 @@ export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
         }
         fireAndForget(() => loadWindowTokens(claude.fivehour.reset, claude.week.reset));
     }, [claude?.fivehour.reset, claude?.week.reset]);
+    return meterItems(donuts, windowTokens, now);
+}
+
+export function HeaderUsageMeters({ model }: { model: AgentsViewModel }) {
+    const items = useMeterItems(model);
+    return <UsageMeters items={items} onOpen={(opener) => toggleConsumers("tokens", opener)} />;
+}
+
+/** Float's usage, on the ledge (float-ledge.tsx): each provider's first window, its logo, a short bar, the percent and
+ *  the 5-hour countdown, and every window in the tooltip. No border and no button: the float is small, and the
+ *  Consumers panel it would open is not. */
+export function FloatUsage({ model }: { model: AgentsViewModel }) {
+    const items = useMeterItems(model);
+    const shown = items.filter((m) => m.first);
+    if (shown.length === 0) {
+        return null;
+    }
     return (
-        <UsageMeters
-            donuts={donuts}
-            windowTokens={windowTokens}
-            now={now}
-            onOpen={(opener) => toggleConsumers("tokens", opener)}
-        />
+        <span
+            data-float-usage
+            title={items.map((m) => m.title).join("\n")}
+            className="flex flex-none items-center gap-2 pr-3"
+        >
+            {shown.map((m) => {
+                const lvl = usageLevel(m.pct);
+                return (
+                    <span key={m.key} className="flex items-center gap-1.5">
+                        <RuntimeMark
+                            runtime={m.provider}
+                            imageClassName="h-3 w-3 shrink-0"
+                            className={cn("h-1.5 w-1.5 shrink-0 rounded-full", providerDot(m.provider))}
+                        />
+                        <Meter pct={m.pct} fill={LEVEL_BAR[lvl]} height={4} radius={2} className="w-7" />
+                        <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
+                            {Math.round(m.pct)}%
+                        </span>
+                        {m.countdown != null ? (
+                            <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
+                                {m.countdown}
+                            </span>
+                        ) : null}
+                    </span>
+                );
+            })}
+        </span>
     );
 }
 
-function UsageMeters({
-    donuts,
-    windowTokens,
-    now,
-    onOpen,
-}: {
-    donuts: ReturnType<typeof planDonuts>;
-    windowTokens: WindowTokens | null;
-    now: number;
-    onOpen: (opener: Element) => void;
-}) {
-    const items = donuts.flatMap((d) =>
+function meterItems(
+    donuts: ReturnType<typeof planDonuts>,
+    windowTokens: WindowTokens | null,
+    now: number
+): MeterItem[] {
+    return donuts.flatMap((d) =>
         WINDOWS.filter(([w]) => usageBarVisible(d[w].pct, d.stale != null, d[w].reset)).map(
             ([w, short, label, windowMs], i) => {
                 const reset = d[w].reset;
@@ -111,6 +157,9 @@ function UsageMeters({
             }
         )
     );
+}
+
+function UsageMeters({ items, onOpen }: { items: MeterItem[]; onOpen: (opener: Element) => void }) {
     // no refresh button here: the poll keeps the reading current and an account switch asks at once
     // (claudequota.ts); the Usage surface keeps the manual one
     if (items.length === 0) {

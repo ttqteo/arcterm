@@ -280,7 +280,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                             onClick={() => restore(a.id)}
                             className={cn(ROW, "h-[30px] text-[12px] text-primary")}
                         >
-                            <StatusDot state={a.state} />
+                            <StatusDot state={a.state} pulse={a.state !== "idle"} />
                             <span className="min-w-0 flex-1 truncate">{a.name}</span>
                             {a.kind !== "terminal" ? (
                                 <span className="text-[11px]" style={{ color: STATE_COLOR[a.state] }}>

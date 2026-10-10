@@ -45,7 +45,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             )}
         >
             <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
-                {agent != null ? <StatusDot state={agent.state} /> : null}
+                {agent != null ? <StatusDot state={agent.state} pulse={agent.state !== "idle"} /> : null}
                 <span data-tauri-drag-region className="min-w-0 truncate text-[13px] font-semibold text-primary">
                     {agent?.name ?? "arcterm"}
                 </span>
