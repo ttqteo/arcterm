@@ -27306,13 +27306,13 @@ const floatMini = {
             .filter(([, bg]) => bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")`);
         await h.shot("cdp-shots/float-mini-rest.png");
         steps.push({
-            step: "2. Minimize folds the window into Sprout's 340x112 box, see-through around it",
-            ok: folded && rest.w <= 340 && rest.h <= 112 && barGone && painted.length === 0,
+            step: "2. Minimize folds the window into Sprout's 320x232 box, see-through around it",
+            ok: folded && rest.w <= 320 && rest.h <= 232 && barGone && painted.length === 0,
             detail: JSON.stringify({ folded, rest, barGone, painted }),
         });
 
         await h.ev(`document.querySelector('[data-mini-hit="sprout"] button')?.click()`);
-        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 112`);
+        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 232`);
         await h.ev("new Promise((r) => setTimeout(r, 600))");
         await h.shot("cdp-shots/float-mini-chat.png");
         steps.push({
@@ -27342,6 +27342,144 @@ const floatMini = {
                 await fn();
             } catch (e) {
                 console.error(`float-mini teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore from Sprout", () => h.ev(`document.querySelector("[data-mini-restore]")?.click()`));
+        await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
+        await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+    },
+};
+
+// --- Jarvis across the window's three sizes ----------------------------------------------------------------------
+// Full folds into Sprout in one click and Restore lands in Full; Float folds and Restore lands in Float; the chat opens
+// from Sprout in all three; the terminal's PTY size never moves across a fold (the shell is hidden before the window
+// shrinks). docs/superpowers/specs/2026-10-10-jarvis-modes-design.md. Windows only: WKWebView answers no CDP.
+const JARVIS_MODES_PROJECT = "verify-jarvis-modes";
+
+const jarvisModes = {
+    name: "jarvis-modes",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [] };
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, JARVIS_MODES_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        if (ctx.arrangeError) {
+            steps.push({ step: "0. arrange", ok: false, detail: ctx.arrangeError });
+            return steps;
+        }
+        const term = ctx.terminals[0];
+        const wait = (expr, ms) => floatMiniWait(h, expr, ms);
+        const size = () => h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
+        const shown = (sel) => `!!document.querySelector(${JSON.stringify(sel)})?.offsetParent`;
+        const dblclickSprout = `document.querySelector('[data-mini-hit="sprout"] button')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`;
+        const clickSprout = `document.querySelector('[data-mini-hit="sprout"] button')?.click()`;
+
+        await h.goto("agent");
+        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const fullBefore = await floatMiniTermSize(h, term.blockId);
+
+        // 1. the walking Sprout opens the chat in Full
+        await h.ev(`document.querySelector("[data-pet-sprite]")?.click()`);
+        const fullChat = await wait(`!!document.querySelector("[data-pet-peek]")`);
+        await h.shot("cdp-shots/jarvis-modes-full-chat.png");
+        await h.ev(`document.querySelector("[data-pet-sprite]")?.click()`);
+        await wait(`!document.querySelector("[data-pet-peek]")`);
+        steps.push({ step: "1. a click on the walking Sprout opens the chat in Full", ok: fullChat, detail: "" });
+
+        // 2. one click folds Full into Sprout
+        await h.ev(`document.querySelector("[data-app-sprout]")?.click()`);
+        const folded = await wait(`!!document.querySelector("[data-sprout-mini]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 900))");
+        const rest = await size();
+        const barHidden = await h.ev(`!${shown("[data-app-bar]")}`);
+        await h.shot("cdp-shots/jarvis-modes-folded-full.png");
+        steps.push({
+            step: "2. the app bar's Sprout button folds Full into Sprout's 320x232 box",
+            ok: folded && barHidden && rest.w <= 320 && rest.h <= 232,
+            detail: JSON.stringify({ folded, barHidden, rest }),
+        });
+
+        // 3. the chat opens from the folded Sprout
+        await h.ev(clickSprout);
+        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > 232`);
+        await h.shot("cdp-shots/jarvis-modes-folded-chat.png");
+        await h.ev(clickSprout);
+        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= 232`);
+        steps.push({ step: "3. a click on the folded Sprout opens the chat", ok: foldedChat, detail: "" });
+
+        // 4. restore lands in Full, the PTY untouched
+        await h.ev(dblclickSprout);
+        const backFull = await wait(`!document.querySelector("[data-sprout-mini]") && ${shown("[data-app-bar]")}`);
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const fullAfter = await floatMiniTermSize(h, term.blockId);
+        await h.shot("cdp-shots/jarvis-modes-restored-full.png");
+        steps.push({
+            step: "4. a double-click restores Full, and the PTY size never moved",
+            ok: backFull && JSON.stringify(fullAfter) === JSON.stringify(fullBefore),
+            detail: JSON.stringify({ backFull, fullBefore, fullAfter }),
+        });
+
+        // 5. Float: Sprout walks the ledge and opens the chat
+        await h.ev(`document.querySelector("[data-agent-float]")?.click()`);
+        const floated = await wait(shown("[data-float-bar]"));
+        await h.ev("new Promise((r) => setTimeout(r, 1500))");
+        const onLedge = await h.ev(`(() => {
+            const s = document.querySelector("[data-pet-sprite]")?.getBoundingClientRect();
+            const l = document.querySelector("[data-pet-ledge-holds]")?.getBoundingClientRect();
+            return !!s && !!l && s.top >= l.top - 1 && s.bottom <= l.bottom + 1;
+        })()`);
+        const floatBefore = await floatMiniTermSize(h, term.blockId);
+        await h.ev(`document.querySelector("[data-pet-sprite]")?.click()`);
+        const floatChat = await wait(`!!document.querySelector("[data-pet-peek]")`);
+        await h.shot("cdp-shots/jarvis-modes-float-chat.png");
+        await h.ev(`document.querySelector("[data-pet-sprite]")?.click()`);
+        await wait(`!document.querySelector("[data-pet-peek]")`);
+        steps.push({
+            step: "5. in Float, Sprout stands inside the ledge and opens the chat",
+            ok: floated && onLedge && floatChat,
+            detail: JSON.stringify({ floated, onLedge, floatChat }),
+        });
+
+        // 6. Float folds and restores to Float, the PTY untouched
+        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
+        const foldedFloat = await wait(`!!document.querySelector("[data-sprout-mini]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 900))");
+        await h.ev(dblclickSprout);
+        const backFloat = await wait(`!document.querySelector("[data-sprout-mini]") && ${shown("[data-float-bar]")}`);
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const floatAfter = await floatMiniTermSize(h, term.blockId);
+        await h.shot("cdp-shots/jarvis-modes-restored-float.png");
+        steps.push({
+            step: "6. Float folds into Sprout and restores to Float, and the PTY size never moved",
+            ok: foldedFloat && backFloat && JSON.stringify(floatAfter) === JSON.stringify(floatBefore),
+            detail: JSON.stringify({ foldedFloat, backFloat, floatBefore, floatAfter }),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jarvis-modes teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
         await step("restore from Sprout", () => h.ev(`document.querySelector("[data-mini-restore]")?.click()`));
@@ -27452,4 +27590,5 @@ export const SCENARIOS = [
     jobqueueChip,
     jobqueueAgentTag,
     floatMini,
+    jarvisModes,
 ];
