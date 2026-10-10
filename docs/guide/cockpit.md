@@ -343,6 +343,10 @@ Bật/tắt ở **Settings → General → Notifications**: **OS notifications**
 Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surface. Nó là cách nhìn nhanh việc đang chờ bạn: nét mặt và tư thế đổi theo tình hình, nhưng không bao giờ hiện số (số nằm ở huy hiệu của nav rail).
 
 - Bấm vào nó, hoặc `Ctrl+G` rồi `w`, để mở popup **việc đang chờ**: duyệt, retry, acknowledge, land again hoặc trả lời câu hỏi một lựa chọn bằng `1`–`9` ngay tại đó; `Space` xem trước nơi nút **Open** sẽ dẫn tới; `Esc` đóng.
+- Khi cửa sổ **Float** được thu nhỏ, con vật là thứ duy nhất còn lại: nó bay ở góc màn hình, trên mọi app, đeo dấu của
+  việc đang chờ và số việc chờ. Bấm vào để mở chat (hàng chờ và ô **Ask Jarvis**), `Esc` để thu lại; câu trả lời đến
+  lúc chat đang thu hiện thành bong bóng cạnh nó. **Terminal** (trên chat, hoặc trên chip khi rê chuột) hay bấm đúp
+  mở lại cửa sổ Float.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
 - Đổi trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 
