@@ -36,6 +36,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Fixed
 
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
+- The app bar's 5-hour meter shows again at 0% when Claude's usage reading says the window is unused, and its
+  countdown to the reset is back beside it instead of only in the tooltip.
 
 ## 0.15.8 — 2026-10-09
 

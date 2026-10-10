@@ -3,7 +3,7 @@
 //
 // The app bar's plan-usage meters, beside the RAM chip: each provider's logo, then its 5-hour and weekly windows as two
 // small bars, each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
-// by pace: a fast start read red at 27%). Tokens and both resets are on hover, so the bar stays short;
+// by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
 // the button opens the Consumers panel sorted by tokens (consumerspanel.tsx).
 
 import { Meter } from "@/app/element/meter";
@@ -12,7 +12,14 @@ import { useAtomValue } from "jotai";
 import { Fragment, useEffect } from "react";
 import type { AgentsViewModel } from "./agents";
 import { usageLevel } from "./agentsviewmodel";
-import { meterTitle, providerDot, usageBarVisible, windowElapsed, windowUsedTokens } from "./cockpitrailmodel";
+import {
+    formatResetShort,
+    meterTitle,
+    providerDot,
+    usageBarVisible,
+    windowElapsed,
+    windowUsedTokens,
+} from "./cockpitrailmodel";
 import { toggleConsumers } from "./consumersstore";
 import {
     activeClaudeKeyAtom,
@@ -87,18 +94,22 @@ function UsageMeters({
     onOpen: (opener: Element) => void;
 }) {
     const items = donuts.flatMap((d) =>
-        WINDOWS.filter(([w]) => usageBarVisible(d[w].pct, d.stale != null)).map(([w, short, label, windowMs], i) => {
-            const reset = d[w].reset;
-            return {
-                key: `${d.provider}:${w}`,
-                provider: d.provider,
-                first: i === 0,
-                short,
-                pct: d[w].pct!,
-                elapsed: windowElapsed(reset, windowMs, now),
-                title: meterTitle(label, d[w].pct!, windowUsedTokens(d.provider, windowTokens, w), reset, now),
-            };
-        })
+        WINDOWS.filter(([w]) => usageBarVisible(d[w].pct, d.stale != null, d[w].reset)).map(
+            ([w, short, label, windowMs], i) => {
+                const reset = d[w].reset;
+                return {
+                    key: `${d.provider}:${w}`,
+                    provider: d.provider,
+                    first: i === 0,
+                    short,
+                    pct: d[w].pct!,
+                    elapsed: windowElapsed(reset, windowMs, now),
+                    // the weekly window is days out and nobody waits it out: its tick says the pace, the tooltip the time
+                    countdown: w === "fivehour" && reset ? formatResetShort(reset, now) : null,
+                    title: meterTitle(label, d[w].pct!, windowUsedTokens(d.provider, windowTokens, w), reset, now),
+                };
+            }
+        )
     );
     // no refresh button here: the poll keeps the reading current and an account switch asks at once
     // (claudequota.ts); the Usage surface keeps the manual one
@@ -140,6 +151,11 @@ function UsageMeters({
                         <span className={cn("text-[11px] font-semibold tabular-nums", LEVEL_TXT[lvl])}>
                             {Math.round(m.pct)}%
                         </span>
+                        {m.countdown != null ? (
+                            <span className="whitespace-nowrap text-[10.5px] tabular-nums text-muted">
+                                {m.countdown}
+                            </span>
+                        ) : null}
                     </Fragment>
                 );
             })}

@@ -40,10 +40,11 @@ export function windowUsedTokens(
     return provider === "claude" ? windowTokens?.[window] : undefined;
 }
 
-// a null pct (api-key auth or a window not yet reported) renders no bar. a saved snapshot at 0% is
-// almost always a window that rolled over while nothing ran that provider — no data, not a reading.
-export function usageBarVisible(pct: number | undefined, stale: boolean): boolean {
-    return pct != null && !(stale && pct === 0);
+// a null pct (api-key auth or a window not yet reported) renders no bar. a saved 0% with no reset is a
+// window that rolled over while nothing ran that provider (windowFromSaved drops the reset) — no data,
+// not a reading; a saved 0% that still names its reset is a real one, the usage endpoint's unused window.
+export function usageBarVisible(pct: number | undefined, stale: boolean, reset: number | undefined): boolean {
+    return pct != null && !(stale && pct === 0 && !reset);
 }
 
 /** Pure: a meter's hover text, the detail the compact meter leaves out. */
@@ -71,4 +72,12 @@ export function windowElapsed(reset: number | undefined, windowMs: number, now: 
     }
     const left = reset * 1000 - now;
     return Math.min(1, Math.max(0, 1 - left / windowMs));
+}
+
+/** Pure: formatReset for the app bar, where every pixel counts: "1h55", "3h", "42m", "3d4h". */
+export function formatResetShort(resetSec: number, now: number): string {
+    return formatReset(resetSec, now)
+        .replace(/ 0[mh]$/, "")
+        .replace(" ", "")
+        .replace(/(h\d+)m$/, "$1");
 }
