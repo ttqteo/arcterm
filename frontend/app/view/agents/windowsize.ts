@@ -58,6 +58,12 @@ export function onSurfaceChange(s: SizeState, surface: string): "exit-float" | "
     return s.size === "sprout" ? "restore" : null;
 }
 
+/** What a click on the Dock icon does to the window (macOS reopen, floatstore.ts): folded, it comes back, since Sprout
+ *  can be out of sight on another Space; Full and Float are left to macOS. */
+export function onReopen(s: SizeState): "restore" | null {
+    return s.size === "sprout" ? "restore" : null;
+}
+
 /** What a landing does to the window (openref.ts openTarget): folded, the window comes back to show it. A landing on the
  *  surface already shown changes no surface, so onSurfaceChange alone would leave it behind the fold. */
 export function afterOpen(s: SizeState): "restore" | null {

@@ -14,6 +14,7 @@ import {
     minimizeAction,
     minimizeChoice,
     move,
+    onReopen,
     onSurfaceChange,
     sizeState,
     unfoldCenter,
@@ -92,6 +93,18 @@ describe("onSurfaceChange", () => {
 
 // Open on a waiting item in the folded chat, or `wsh ui`, often lands on the surface already shown: the surface does not
 // change, so onSurfaceChange never fires, and the landing must still bring the window back
+describe("onReopen", () => {
+    // folded, Sprout can be on another Space or behind a full-screen app; the Dock icon is the way back that is always there
+    it("brings the window back from either origin when the Dock icon is clicked while folded", () => {
+        expect(onReopen(foldedFromFull)).toBe("restore");
+        expect(onReopen(foldedFromFloat)).toBe("restore");
+    });
+    it("leaves Full and Float to macOS", () => {
+        expect(onReopen(full)).toBeNull();
+        expect(onReopen({ size: "float", origin: null })).toBeNull();
+    });
+});
+
 describe("afterOpen", () => {
     it("brings the window back when a route lands while folded, from either origin", () => {
         expect(afterOpen(foldedFromFull)).toBe("restore");

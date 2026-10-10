@@ -405,6 +405,13 @@ fn main() {
                     let _ = child.kill();
                 }
             }
+            // A click on the Dock icon: the frontend brings a window folded into Sprout back (floatstore.ts), since
+            // Sprout may be on another Space. macOS still does its own part (un-minimizing a minimized window).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                use tauri::Emitter;
+                let _ = app_handle.emit("app-reopen", ());
+            }
         });
 }
 

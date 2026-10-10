@@ -48,7 +48,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   to see every agent and float on one; click it to answer what waits on you or ask Jarvis; drag it anywhere; and
   double-click it or press **Restore** to get back the window you folded, at the same size and place. `⌘M` (`Ctrl`+`M`
   on Windows) folds too, even from inside a terminal. **Settings → General → Window → Minimize** sends minimize to the
-  Dock or taskbar instead.
+  Dock or taskbar instead. On macOS, a click on arcterm's Dock icon brings a folded window back, for when Sprout is out
+  of sight on another Space.
 - In a float, Sprout walks a ledge under the terminal, with a count of what waits on you; click it for the Jarvis chat.
   In a float and folded, a "…" beside Sprout's head says how many agents are working.
   Tabs on the ledge, beside Sprout, switch the float to another agent's terminal or to a plain terminal; past five, a

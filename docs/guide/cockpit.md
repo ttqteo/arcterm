@@ -354,7 +354,8 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   để thấy mọi agent và trạng thái: bấm một agent để mở Float trên agent đó, **Restore**
   (hoặc bấm đúp con vật) để về đúng chế độ trước khi thu, đầy đủ hay Float, đúng khung cũ. Bấm vào nó để mở chat (hàng
   chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
-  cạnh nó. Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
+  cạnh nó. Không thấy con vật đâu (đang ở Space khác chẳng hạn) thì bấm icon arcterm trên Dock để cửa sổ quay về (macOS).
+  Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
 - Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 

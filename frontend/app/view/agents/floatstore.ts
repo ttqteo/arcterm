@@ -52,7 +52,7 @@ import {
     type Screen,
     type WinRect,
 } from "./floatwindow";
-import { MINIMIZE_EVENT, redirectMinimize, setTrafficLightsHidden } from "./macwindow";
+import { MINIMIZE_EVENT, redirectMinimize, REOPEN_EVENT, setTrafficLightsHidden } from "./macwindow";
 import { startClickThrough, stopClickThrough } from "./miniclickthrough";
 import { terminalFullscreenAtom } from "./railstore";
 import { serialQueue } from "./serialqueue";
@@ -65,6 +65,7 @@ import {
     minimizeAction,
     minimizeChoice,
     move,
+    onReopen,
     onSurfaceChange,
     sizeState,
     unfoldCenter,
@@ -731,6 +732,12 @@ export function setupFloatMode(model: AgentsViewModel): () => void {
     syncRedirect();
     const unsubMinimize = globalStore.sub(minimizeSetting, syncRedirect);
     const unlistenMinimize = listen(MINIMIZE_EVENT, minimizeRequested);
+    // the Dock icon brings a folded window back: Sprout may be on another Space, or lost from sight
+    const unlistenReopen = listen(REOPEN_EVENT, () => {
+        if (onReopen(currentSize()) === "restore") {
+            void restoreFromSprout(model);
+        }
+    });
     return () => {
         unsubSurface();
         unsubFullscreen();
@@ -738,5 +745,6 @@ export function setupFloatMode(model: AgentsViewModel): () => void {
         clearTimeout(moveTimer);
         void unlistenMoved.then((f) => f());
         void unlistenMinimize.then((f) => f());
+        void unlistenReopen.then((f) => f());
     };
 }
