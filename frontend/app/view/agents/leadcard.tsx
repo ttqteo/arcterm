@@ -674,7 +674,7 @@ function TaskRow({
                 focused ? "bg-surface-selected" : row.needsYou ? "bg-warning/[0.06]" : "hover:bg-surface-hover"
             )}
         >
-            <div className="grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-3 px-2.5 py-[9px]">
+            <div className="grid select-none grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-3 px-2.5 py-[9px]">
                 <span className={cn("h-[7px] w-[7px] rounded-full", TONE_DOT[row.tone])} />
                 <span className={cn("truncate text-[13px]", wait ? "text-ink-mid" : "font-medium text-primary")}>
                     {row.label}

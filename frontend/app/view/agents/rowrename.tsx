@@ -66,7 +66,7 @@ export function RenameBox({ tabId, shown }: { tabId: string; shown: string }) {
             onBlur={() => finish(true)}
             placeholder="Name this session"
             aria-label="Session name"
-            className="w-full min-w-0 rounded-[5px] border border-accent bg-surface px-[5px] text-[13px] font-medium text-primary focus:outline-none"
+            className="w-full min-w-0 select-text rounded-[5px] border border-accent bg-surface px-[5px] text-[13px] font-medium text-primary focus:outline-none"
         />
     );
 }

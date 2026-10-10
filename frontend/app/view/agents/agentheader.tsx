@@ -362,7 +362,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         <div
             data-agent-header
             onContextMenu={onContextMenu}
-            className="flex shrink-0 items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
+            className="flex shrink-0 select-none items-center gap-[10px] border-b border-border bg-background px-[18px] py-[8px]"
         >
             {ended ? (
                 <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />

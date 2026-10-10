@@ -275,7 +275,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     fireAndForget(checkStale);
                 }}
                 onBlur={() => globalStore.set(codeTreeFocusedAtom, false)}
-                className="min-h-0 flex-1 overflow-y-auto py-2 outline-none"
+                className="min-h-0 flex-1 select-none overflow-y-auto py-2 outline-none"
             >
                 {rows.flatMap((row, i) => {
                     const out: React.ReactNode[] = [];
@@ -328,7 +328,7 @@ function NameInput({
                         onCommit(trimmed);
                     }
                 }}
-                className="min-w-0 flex-1 rounded-[4px] border border-border bg-surface px-1 py-[1px] text-[12px] text-primary outline-none"
+                className="min-w-0 flex-1 select-text rounded-[4px] border border-border bg-surface px-1 py-[1px] text-[12px] text-primary outline-none"
             />
             {err != null ? (
                 <span title={nameErrorMessage(err)} className="flex-none text-[10px] text-error">
