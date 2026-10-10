@@ -17768,9 +17768,23 @@ const CODEX_WORKERS_TITLE = "verify codex workers chip";
 // the group header's workers chip is a bare span
 const DAG_WORKERS_CHIP = `([...document.querySelectorAll('[data-dag-modal-kind] span')].map((s) => s.textContent.trim()).find((t) => t.startsWith('workers · ')) ?? null)`;
 
+// A scenario that follows one ending in location.reload() starts before boot-core.ts has set window.TabRpcClient, so
+// its first RPC finds it undefined. Waits like verify.mjs's render wait: a failed evaluate (the execution context a
+// reload in flight destroyed) is not ready yet, and past the deadline the app did not boot, which fails the scenario.
+async function waitForAppBoot(h, maxMs = 120000) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+        const up = await h.ev(`!!window.TabRpcClient && !!document.querySelector('nav button')`).catch(() => false);
+        if (up) return;
+        await polishNap(500);
+    }
+    throw new Error(`the app did not boot in ${maxMs / 1000}s: window.TabRpcClient or the nav is still missing`);
+}
+
 // The first catalog enumeration in a fresh app can outlast one CDP evaluate (30 s), so the call is left running in the
 // page and polled for.
 async function listHarnessesPatiently(h, maxMs = 180000) {
+    await waitForAppBoot(h);
     await h.ev(`(() => {
         window.__cdpHarnesses = null;
         window.TabRpcClient.wshRpcCall("listharnesses", null, { timeout: ${maxMs} }).then(
@@ -17827,6 +17841,7 @@ const codexWorkerRoute = {
     surface: "jarvis",
     async arrange(h) {
         // only a missing codex skips: an installed codex that is not a run worker is the change failing
+        await waitForAppBoot(h);
         const started = Date.now();
         const harnesses = await listHarnessesPatiently(h);
         console.error(`codex-worker-route: listharnesses answered in ${Date.now() - started} ms`);
