@@ -76,6 +76,7 @@ Trang **About**, thẻ **Coding agents** liệt kê mỗi harness đã cài vớ
 | **Notifications** | **OS notifications** (`notify:os`) | Thông báo hệ thống khi arcterm ở nền; bấm vào mở agent. |
 | | **In-app toasts** (`notify:toast`) | Toast khi arcterm ở trước, trừ khi bạn đang nhìn đúng agent đó. |
 | | **When an agent finishes** (`notify:reply`) | Báo cả khi agent xong một lượt, không chỉ khi nó cần bạn. Worker của run không bao giờ báo. |
+| **Window** | **Minimize** (`window:minimize`) | Nút minimize (cả nút vàng và `⌘M` trên macOS) thu cửa sổ vào Sprout (`sprout`, mặc định) hay đưa xuống Dock hoặc taskbar (`dock`). Nút **Sprout** trên app bar luôn thu vào Sprout. |
 | **Vault & sync** | **Vault path**, **Sync remote** | Xem trên. |
 
 Cả ba công tắc thông báo mặc định bật.

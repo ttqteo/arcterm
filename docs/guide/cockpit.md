@@ -332,7 +332,7 @@ Nếu chữ bạn gõ không trùng với thứ nào, palette hiểu đó là m�
 arcterm báo khi một agent cần bạn hoặc vừa xong lượt, ở bất kỳ surface nào:
 
 - **Bong bóng của con vật Jarvis** khi arcterm đang ở phía trước và có việc cần bạn: câu hỏi của agent (dạng `<tên agent>: <câu hỏi>`) hoặc việc chờ quyết định như cổng duyệt hay task bị chặn. Bong bóng đứng 15 giây, và đứng yên khi con trỏ ở trên nó; bấm vào để mở popup và trả lời ngay tại đó. Tin do agent gửi bằng `wsh notify` cũng hiện ở đây.
-- **Toast** ở góc phải dưới khi một agent vừa xong lượt (**Finished**), với tên agent, project và logo harness. Bấm vào toast để mở agent; `×` đóng mà không mở. Toast nằm yên khi con trỏ đang ở trên nó và biến mất sau 6 giây. Ở chế độ Float, con vật bị ẩn nên những việc trên hiện thành toast: **Needs you** và **Decision** đứng 15 giây, **Message** 6 giây. Không có toast hay bong bóng cho agent bạn đang nhìn.
+- **Toast** ở góc phải dưới khi một agent vừa xong lượt (**Finished**), với tên agent, project và logo harness. Bấm vào toast để mở agent; `×` đóng mà không mở. Toast nằm yên khi con trỏ đang ở trên nó và biến mất sau 6 giây. Ở chế độ Float và khi đã thu vào Sprout, con vật nói thay toast: mọi việc trên, kể cả **Finished**, hiện thành bong bóng của nó; khi đã thu vào Sprout, bong bóng hiện cả lúc bạn đang ở app khác, thay cho thông báo hệ thống. Không có toast hay bong bóng cho agent bạn đang nhìn.
 - **Thông báo hệ điều hành** khi arcterm ở nền, tiêu đề dạng `[<project>] Finished: <agent>` (hoặc `Needs you: <agent>`); bấm vào để mở agent (trên Windows và macOS). Thông báo "xong" kèm câu đầu tiên của câu trả lời cuối của agent (tối đa 80 ký tự).
 - Một loạt sự kiện đến cùng lúc được gộp thành một thông báo tóm tắt.
 
@@ -343,10 +343,14 @@ Bật/tắt ở **Settings → General → Notifications**: **OS notifications**
 Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surface. Nó là cách nhìn nhanh việc đang chờ bạn: nét mặt và tư thế đổi theo tình hình, nhưng không bao giờ hiện số (số nằm ở huy hiệu của nav rail).
 
 - Bấm vào nó, hoặc `Ctrl+G` rồi `w`, để mở popup **việc đang chờ**: duyệt, retry, acknowledge, land again hoặc trả lời câu hỏi một lựa chọn bằng `1`–`9` ngay tại đó; `Space` xem trước nơi nút **Open** sẽ dẫn tới; `Esc` đóng.
-- Khi cửa sổ **Float** được thu nhỏ, con vật là thứ duy nhất còn lại: nó bay ở góc màn hình, trên mọi app, đeo dấu của
-  việc đang chờ và số việc chờ. Bấm vào để mở chat (hàng chờ và ô **Ask Jarvis**), `Esc` để thu lại; câu trả lời đến
-  lúc chat đang thu hiện thành bong bóng cạnh nó. **Terminal** (trên chat, hoặc trên chip khi rê chuột) hay bấm đúp
-  mở lại cửa sổ Float.
+- Ở chế độ **Float**, con vật đi trên một gờ dưới đáy cửa sổ, không bao giờ đứng lên dấu nhắc của terminal, kèm chip
+  số việc đang chờ; bấm vào nó mở cùng popup.
+- **Thu vào Sprout:** nút **Sprout** trên app bar hoặc trên thanh Float, hay nút minimize (nút vàng và `⌘M` trên
+  macOS), thu cả cửa sổ vào con vật ngay chỗ nó đang đứng. Nó bay trên mọi app, đeo dấu và số việc đang chờ, kéo đi đâu
+  cũng được. Rê chuột lên nó để thấy mọi agent và trạng thái: bấm một agent để mở Float trên agent đó, **Restore**
+  (hoặc bấm đúp con vật) để về đúng chế độ trước khi thu, đầy đủ hay Float, đúng khung cũ. Bấm vào nó để mở chat (hàng
+  chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
+  cạnh nó. Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
 - Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
 

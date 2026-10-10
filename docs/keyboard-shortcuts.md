@@ -42,6 +42,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back) |
 | `Ctrl`+`C` `Ctrl`+`C` (double, within 500ms) | Close the focused agent |
+| `Cmd`+`M` (macOS) | Fold the window into Sprout, from the cockpit or a float (Settings → General → Window → Minimize: Dock sends it to the Dock instead) |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `Mod`+`G` `.` and Settings with `Mod`+`G` `,`.
