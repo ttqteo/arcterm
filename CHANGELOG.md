@@ -28,10 +28,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.
 - The **Sprout** button on the app bar and on the float bar, and minimize (the yellow button on macOS), fold the
-  window into Sprout right where Sprout stood, from the cockpit or a float: Sprout floats over your other apps; click it
-  to answer what waits on you or ask Jarvis, drag it anywhere, and double-click it or press **Restore** to get back the
-  window you folded, at the same size and place. On macOS `⌘M` folds too. **Settings → General → Window → Minimize**
-  sends minimize to the Dock or taskbar instead.
+  window into Sprout right where Sprout stood, from the cockpit or a float: Sprout floats over your other apps; hover it
+  to see every agent and float on one; click it to answer what waits on you or ask Jarvis; drag it anywhere; and
+  double-click it or press **Restore** to get back the window you folded, at the same size and place. On macOS `⌘M`
+  folds too. **Settings → General → Window → Minimize** sends minimize to the Dock or taskbar instead.
 - In a float, Sprout walks a ledge under the terminal, with a count of what waits on you; click it for the Jarvis chat.
   Dots on the float bar, one an agent, switch the float to another agent's terminal.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon

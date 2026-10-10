@@ -20,10 +20,11 @@ const PLACEMENT: Record<PetCorner, Placement> = {
     "bottom-left": "top-start",
 };
 
-const ORIGIN: Record<PetCorner, string> = {
-    "bottom-right": "bottom right",
-    "bottom-left": "bottom left",
-};
+// the corner a bubble grows from: its edge on the anchor's side, at the aligned end
+function originOf(p: Placement): string {
+    const [side, align] = p.split("-");
+    return `${side === "top" ? "bottom" : "top"} ${align === "start" ? "left" : "right"}`;
+}
 
 // Only a notification's level and a question get a dot, because those are the ones asking for something.
 // Accent stays reserved for things you can act on, so every other label reads muted.
@@ -61,12 +62,17 @@ export function PetBubble({
     event,
     anchor,
     corner,
+    placement,
+    flat,
     onOpen,
     onDismiss,
 }: {
     event: PetEvent | null;
     anchor: HTMLElement | null;
     corner: PetCorner;
+    // folded (cockpit/sprout-mini.tsx): which way from Sprout it opens, and no drop shadow over the app behind
+    placement?: Placement;
+    flat?: boolean;
     onOpen: () => void;
     onDismiss: () => void;
 }) {
@@ -97,9 +103,10 @@ export function PetBubble({
         return () => clearTimeout(t);
     }, [id, ms, hovered]);
 
+    const where = placement ?? PLACEMENT[corner];
     const { refs, floatingStyles } = useFloating({
         open: event != null,
-        placement: PLACEMENT[corner],
+        placement: where,
         // fixed, like the creature it hangs off: the cockpit body clips its overflow, and an
         // absolutely-positioned bubble in a corner is exactly what that clip would cut in half
         strategy: "fixed",
@@ -111,13 +118,17 @@ export function PetBubble({
     }, [anchor, refs]);
 
     return (
-        <div ref={refs.setFloating} style={floatingStyles} className="z-[61]">
+        // data-mini-hit: folded, the click-through poll lets the cursor reach it (miniclickthrough.ts)
+        <div ref={refs.setFloating} data-mini-hit="bubble" style={floatingStyles} className="z-[61]">
             {/* unconditional, driven by `open` — a `{open ? … : null}` caller defeats PopoverReveal's
                 AnimatePresence and the exit never plays */}
             <PopoverReveal
                 open={event != null}
-                origin={ORIGIN[corner]}
-                className="w-[268px] rounded-[12px] border border-border bg-surface-raised shadow-popover-md has-[button:hover]:border-edge-strong"
+                origin={originOf(where)}
+                className={cn(
+                    "w-[268px] rounded-[12px] border bg-surface-raised has-[button:hover]:border-edge-strong",
+                    flat ? "border-edge-strong" : "border-border shadow-popover-md"
+                )}
             >
                 {said != null ? (
                     <button

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// While the float is folded into Sprout, the window is see-through and larger than what it draws. Fifteen times a
+// While folded into Sprout, the window is see-through and larger than what it draws. Fifteen times a
 // second this asks where the cursor is: over a drawn element ([data-mini-hit]) the window takes the cursor, anywhere
 // else it lets it through to the app behind. A window ignoring the cursor gets no mouseenter, so this is also what
 // knows Sprout is hovered.
@@ -13,7 +13,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { hitAny, toPagePoint } from "./minihit";
 
 const POLL_MS = 1000 / 15;
-// the hover chip stays this long after the cursor leaves Sprout, so the cursor can travel to its button
+// the agent list stays this long after the cursor leaves Sprout, so the cursor can travel to it
 const HOVER_LEAVE_MS = 200;
 
 export const miniHoverAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -58,7 +58,8 @@ export function startClickThrough(): void {
                 ignoring = ignore;
                 await win.setIgnoreCursorEvents(ignore);
             }
-            const onSprout = hitAny(p, boxes('[data-mini-hit="sprout"], [data-mini-hit="chip"]'));
+            // the agent list stays while the cursor travels from Sprout to it
+            const onSprout = hitAny(p, boxes('[data-mini-hit="sprout"], [data-mini-hit="agents"]'));
             if (onSprout) {
                 leftAt = 0;
                 if (!globalStore.get(miniHoverAtom)) {

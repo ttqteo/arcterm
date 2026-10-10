@@ -111,6 +111,24 @@ export function useWaitingCount(model: AgentsViewModel): number {
     return useMemo(() => queueRows(items, agents, messages).length, [items, agents, messages]);
 }
 
+// A click on the bubble: a quote is not news, so clicking it only puts it away; anything else opens the chat.
+export function openPetBubble(): void {
+    if (globalStore.get(petBubbleAtom)?.kind === "quote") {
+        globalStore.set(petBubbleAtom, null);
+        return;
+    }
+    openPetPeek();
+}
+
+// The bubble's time ran out or its × was pressed: what it said stays unread, a quote leaves nothing behind.
+export function dismissPetBubble(): void {
+    const said = globalStore.get(petBubbleAtom);
+    globalStore.set(petBubbleAtom, null);
+    if (said?.kind !== "quote") {
+        globalStore.set(petUnreadAtom, true);
+    }
+}
+
 // The DEV contract's override (sprout spec §4): replaces those walker inputs until force(null).
 type PetForce = {
     expression?: PetExpression["kind"];
@@ -241,13 +259,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     }, [quotesOn]);
 
     // a quote is not news: clicking it only puts it away, and it leaves no unread marker behind
-    const openPeek = useCallback(() => {
-        if (globalStore.get(petBubbleAtom)?.kind === "quote") {
-            globalStore.set(petBubbleAtom, null);
-            return;
-        }
-        openPetPeek();
-    }, []);
+    const openPeek = useCallback(openPetBubble, []);
 
     return (
         <>
@@ -270,13 +282,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                     anchor={anchor}
                     corner={corner}
                     onOpen={openPeek}
-                    onDismiss={() => {
-                        const said = globalStore.get(petBubbleAtom);
-                        globalStore.set(petBubbleAtom, null);
-                        if (said?.kind !== "quote") {
-                            globalStore.set(petUnreadAtom, true);
-                        }
-                    }}
+                    onDismiss={dismissPetBubble}
                 />
             )}
             {/* the peek derives its own ranked condition LIST from the same signals — expressionFor is
