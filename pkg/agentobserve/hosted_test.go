@@ -70,6 +70,9 @@ const (
 	hostedPty    = `C:\Users\dev\.local\bin\claude.exe --bg-pty-host \.\pipe\cc-daemon-f90c9f087339555f-pty-e840f210 160 50 -- ` + hostedFork
 	hostedOther  = `C:\Users\dev\.local\bin\claude.exe --session-id 1903f81a-1111-4222-8333-444455556666 --fork-session --resume C:\Users\dev\.claude\projects\p\228cb325-aaaa-4bbb-8ccc-ddddeeeeffff.jsonl --reply-on-resume`
 	tuiResumeCmd = `C:\Users\dev\.local\bin\claude.exe --resume ` + srcB587
+	ownE840      = "e840f210-c01d-446f-8967-01271d3ef2d7"
+	tuiBareCmd   = `C:\Users\dev\.local\bin\claude.exe --model opus`
+	daemonCmd    = `C:\Users\dev\.local\bin\claude.exe daemon run --origin transient`
 )
 
 func TestForkSource(t *testing.T) {
@@ -140,7 +143,7 @@ func TestDisplayBlock(t *testing.T) {
 
 	t.Run("the terminal that started the fork", func(t *testing.T) {
 		procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "94ba3e7e", Cmdline: tuiResumeCmd, CreateMs: 100})
-		if got := DisplayBlock(procs, key, srcB587); got != "94ba3e7e" {
+		if got := DisplayBlock(procs, key, srcB587, ownE840, nil); got != "94ba3e7e" {
 			t.Fatalf("DisplayBlock = %q, want 94ba3e7e", got)
 		}
 	})
@@ -148,7 +151,7 @@ func TestDisplayBlock(t *testing.T) {
 		procs := append(daemonProcs(),
 			ProcInfo{Pid: 4, BlockID: "94ba3e7e", Cmdline: tuiResumeCmd, CreateMs: 900},
 			ProcInfo{Pid: 5, BlockID: "attach-tab", Cmdline: `claude.exe attach ` + key, CreateMs: 100})
-		if got := DisplayBlock(procs, key, srcB587); got != "attach-tab" {
+		if got := DisplayBlock(procs, key, srcB587, ownE840, nil); got != "attach-tab" {
 			t.Fatalf("DisplayBlock = %q, want attach-tab", got)
 		}
 	})
@@ -157,30 +160,71 @@ func TestDisplayBlock(t *testing.T) {
 			ProcInfo{Pid: 4, BlockID: "first", Cmdline: tuiResumeCmd, CreateMs: 100},
 			ProcInfo{Pid: 5, BlockID: "second", Cmdline: `claude.exe --resume=` + srcB587, CreateMs: 200},
 			ProcInfo{Pid: 6, BlockID: "", Cmdline: tuiResumeCmd, CreateMs: 300}) // outside arcterm
-		if got := DisplayBlock(procs, key, srcB587); got != "second" {
+		if got := DisplayBlock(procs, key, srcB587, ownE840, nil); got != "second" {
 			t.Fatalf("DisplayBlock = %q, want second", got)
 		}
 	})
 	t.Run("a terminal on another session is not the source", func(t *testing.T) {
 		procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "elsewhere", Cmdline: `claude.exe --resume 228cb325-aaaa-4bbb-8ccc-ddddeeeeffff`, CreateMs: 100})
-		if got := DisplayBlock(procs, key, srcB587); got != "" {
+		if got := DisplayBlock(procs, key, srcB587, ownE840, nil); got != "" {
 			t.Fatalf("DisplayBlock = %q, want empty (no terminal shows %s)", got, srcB587)
 		}
 	})
 	t.Run("nothing shows the source, so the report is dropped", func(t *testing.T) {
-		if got := DisplayBlock(daemonProcs(), "1903f81a", "228cb325-aaaa-4bbb-8ccc-ddddeeeeffff"); got != "" {
+		if got := DisplayBlock(daemonProcs(), "1903f81a", "228cb325-aaaa-4bbb-8ccc-ddddeeeeffff", "1903f81a-1111-4222-8333-444455556666", nil); got != "" {
 			t.Fatalf("DisplayBlock = %q, want empty", got)
 		}
 	})
 	t.Run("a hosted fork of the source is not a viewer", func(t *testing.T) {
 		procs := []ProcInfo{{Pid: 4, BlockID: "forker", Cmdline: `claude.exe --fork-session --resume ` + srcB587, CreateMs: 100}}
-		if got := DisplayBlock(procs, key, srcB587); got != "" {
+		if got := DisplayBlock(procs, key, srcB587, ownE840, nil); got != "" {
 			t.Fatalf("DisplayBlock = %q, want empty", got)
+		}
+	})
+	// a TUI whose command line names no session (bare, --continue, --resume picked from the list) is known by the
+	// session its hooks last stamped on its block; reports from this session move that stamp to its own id
+	sessions := func(m map[string]string) func(string) string {
+		return func(block string) string { return m[block] }
+	}
+	t.Run("a terminal naming no session, by what its block last reported", func(t *testing.T) {
+		for _, cmd := range []string{tuiBareCmd, `claude.exe --continue`, `claude.exe --resume`} {
+			procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "bare-tab", Cmdline: cmd, CreateMs: 100})
+			if got := DisplayBlock(procs, key, srcB587, ownE840, sessions(map[string]string{"bare-tab": srcB587})); got != "bare-tab" {
+				t.Fatalf("%s: DisplayBlock = %q, want bare-tab", cmd, got)
+			}
+		}
+	})
+	t.Run("the same terminal once this session reported into it", func(t *testing.T) {
+		procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "bare-tab", Cmdline: tuiBareCmd, CreateMs: 100})
+		if got := DisplayBlock(procs, key, srcB587, ownE840, sessions(map[string]string{"bare-tab": ownE840})); got != "bare-tab" {
+			t.Fatalf("DisplayBlock = %q, want bare-tab", got)
+		}
+	})
+	t.Run("a terminal naming no session that last reported another one is not the source", func(t *testing.T) {
+		procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "bare-tab", Cmdline: tuiBareCmd, CreateMs: 100})
+		if got := DisplayBlock(procs, key, srcB587, ownE840, sessions(map[string]string{"bare-tab": "228cb325-aaaa-4bbb-8ccc-ddddeeeeffff"})); got != "" {
+			t.Fatalf("DisplayBlock = %q, want empty", got)
+		}
+	})
+	// the daemon, its pty host and the hosted fork carry the environment of the tab that first started the daemon:
+	// that tab's stamp names the source, but none of them shows it, and its own TUI has exited
+	t.Run("the daemon's processes are not viewers, whatever their block reported", func(t *testing.T) {
+		procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "old-tab", Cmdline: daemonCmd, CreateMs: 100})
+		if got := DisplayBlock(procs, key, srcB587, ownE840, sessions(map[string]string{"old-tab": srcB587})); got != "" {
+			t.Fatalf("DisplayBlock = %q, want empty", got)
+		}
+	})
+	t.Run("a terminal naming the source beats one known by its block", func(t *testing.T) {
+		procs := append(daemonProcs(),
+			ProcInfo{Pid: 4, BlockID: "bare-tab", Cmdline: tuiBareCmd, CreateMs: 900},
+			ProcInfo{Pid: 5, BlockID: "94ba3e7e", Cmdline: tuiResumeCmd, CreateMs: 100})
+		if got := DisplayBlock(procs, key, srcB587, ownE840, sessions(map[string]string{"bare-tab": srcB587})); got != "94ba3e7e" {
+			t.Fatalf("DisplayBlock = %q, want 94ba3e7e", got)
 		}
 	})
 	t.Run("no fork source: only attach clients count", func(t *testing.T) {
 		procs := append(daemonProcs(), ProcInfo{Pid: 4, BlockID: "94ba3e7e", Cmdline: tuiResumeCmd, CreateMs: 100})
-		if got := DisplayBlock(procs, key, ""); got != "" {
+		if got := DisplayBlock(procs, key, "", ownE840, nil); got != "" {
 			t.Fatalf("DisplayBlock = %q, want empty", got)
 		}
 	})
