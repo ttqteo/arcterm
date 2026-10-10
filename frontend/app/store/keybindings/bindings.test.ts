@@ -26,6 +26,7 @@ import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
+import { minimizeRequested } from "@/app/view/agents/floatstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -54,6 +55,11 @@ import type { KeyContext } from "./types";
 vi.mock("@/app/view/jarvis/openref", async (orig) => ({
     ...(await orig<typeof import("@/app/view/jarvis/openref")>()),
     peekTarget: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock("@/app/view/agents/floatstore", async (orig) => ({
+    ...(await orig<typeof import("@/app/view/agents/floatstore")>()),
+    minimizeRequested: vi.fn(),
 }));
 
 vi.mock("@/app/view/agents/agentactions", async (orig) => ({
@@ -714,6 +720,20 @@ describe("new agent chord", () => {
         expect(b.keys).toBe("Mod:n");
         b.run(ctx());
         expect(globalStore.get(model.launcherAtom)).toBe("agent");
+    });
+});
+
+// ⌘M on a Mac, Ctrl+M on Windows: from the cockpit or a float straight into Sprout, as the yellow button does
+describe("fold chord", () => {
+    it("is Mod+M, works from inside a terminal, and minimizes the way window:minimize says", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
+        const b = buildGlobalBindings(model).find((x) => x.id === "window:fold")!;
+        expect(b.keys).toBe("Mod:m");
+        expect(b.when?.({ ...ctx("agent"), editable: true }) ?? true).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+        vi.mocked(minimizeRequested).mockClear();
+        b.run(ctx());
+        expect(minimizeRequested).toHaveBeenCalledTimes(1);
     });
 });
 

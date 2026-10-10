@@ -25,7 +25,7 @@ import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
-import { toggleFloat } from "@/app/view/agents/floatstore";
+import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
     graphOnAtom,
@@ -297,6 +297,16 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             // open (the search palette) and pulled focus out of it
             when: (ctx) => !ctx.modalOpen,
             run: () => openLauncher(model, "agent"),
+        },
+        {
+            // ⌘M on a Mac, Ctrl+M on Windows: from the cockpit or a float straight into Sprout, or to the Dock when
+            // window:minimize says so (floatstore.ts). Works from a focused terminal, like the yellow button.
+            id: "window:fold",
+            keys: "Mod:m",
+            group: "Global",
+            label: "Fold the window into Sprout",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => minimizeRequested(),
         },
         {
             // Not Mod+R: on Windows that is Ctrl+R, the shell's reverse search in a focused terminal.
