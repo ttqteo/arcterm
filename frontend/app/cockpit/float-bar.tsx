@@ -7,6 +7,7 @@ import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
 import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/view/agents/floatstore";
+import { switcherAgents } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petCharacterAtom } from "@/app/view/jarvis/petstore";
@@ -16,6 +17,7 @@ import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { PictureInPicture2, Pin } from "lucide-react";
+import { useMemo } from "react";
 import { FOLD_SPRITE, useFoldTitle, WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
@@ -31,6 +33,9 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const agent = agents.find((a) => a.id === focusId) ?? terminals.find((a) => a.id === focusId);
+    const roster = useMemo(() => switcherAgents(agents, terminals, focusId ?? null), [agents, terminals, focusId]);
+    // a dot shows that agent's terminal: Float shows the focused one
+    const show = (id: string) => model.openTerminal(id);
     const floatKeys = useBindingKeys("agent:float");
     const pinLabel = pinned ? "Turn off always on top" : "Turn on always on top";
     return (
@@ -77,6 +82,33 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                     </span>
                 ) : null}
             </div>
+            {roster.shown.length > 1 ? (
+                <span data-float-switcher className="flex flex-none items-center gap-0.5">
+                    {roster.shown.map((a) => {
+                        const state = a.state === "asking" ? askingLabel(a) : STATE_LABEL[a.state];
+                        return (
+                            <button
+                                key={a.id}
+                                type="button"
+                                data-float-switch={a.id}
+                                aria-label={`${a.name}, ${state}`}
+                                aria-pressed={a.id === focusId}
+                                title={`${a.name} · ${state}`}
+                                onClick={() => show(a.id)}
+                                className={cn(
+                                    "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-full hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                    a.id === focusId && "bg-surface-hover ring-1 ring-edge-mid"
+                                )}
+                            >
+                                <StatusDot state={a.state} />
+                            </button>
+                        );
+                    })}
+                    {roster.more > 0 ? (
+                        <span className="pl-1 text-[11px] text-muted tabular-nums">+{roster.more}</span>
+                    ) : null}
+                </span>
+            ) : null}
             <button
                 type="button"
                 data-float-minimize
