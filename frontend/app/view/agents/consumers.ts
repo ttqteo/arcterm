@@ -60,6 +60,7 @@ export interface ConsumersView {
     totalBytes: number;
     groups: ConsumerGroup[];
     own: OwnUsage[];
+    agentsBytes?: number; // every agent's RAM: 0 with none running, absent while none is read
     appBytes?: number; // the whole app: its own processes and every agent; absent while nothing is read
 }
 
@@ -141,14 +142,16 @@ export function buildConsumers(
         { label: "Host", bytes: data.hostbytes },
         { label: "Terminals", bytes: data.terminalsbytes },
     ];
+    // Own leaves the agents out (Terminals is wavesrv's tree minus them), so they are added back, one the roster has
+    // not seen yet included: it is still RAM the app holds
+    const agentBytes = (data.agents ?? []).map((c) => c.rambytes);
     return {
         freeBytes: data.availablebytes,
         totalBytes: data.totalbytes,
         groups: ordered,
         own,
-        // Own leaves the agents out (Terminals is wavesrv's tree minus them), so they are added back, one the roster
-        // has not seen yet included: it is still RAM the app holds
-        appBytes: sumRead([...own.map((o) => o.bytes), ...(data.agents ?? []).map((c) => c.rambytes)]),
+        agentsBytes: agentBytes.length === 0 ? 0 : sumRead(agentBytes),
+        appBytes: sumRead([...own.map((o) => o.bytes), ...agentBytes]),
     };
 }
 

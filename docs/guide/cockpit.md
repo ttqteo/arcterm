@@ -236,7 +236,7 @@ Bấm chip RAM hoặc thanh quota để mở panel **Consumers** treo ngay dư�
 
 | Chế độ | Đầu panel | Mỗi dòng | Cuối panel |
 |---|---|---|---|
-| **RAM** | `<trống> GB free of <tổng> GB` | RAM của agent | Mục *arcterm*: Interface, Server, Host, Terminals và **Total, with agents** (mọi thứ arcterm chạy, kể cả agent) |
+| **RAM** | `<trống> GB free of <tổng> GB` | RAM của agent | Mục *arcterm*: Interface, Server, Host, Terminals, **Agents** (RAM của mọi agent cộng lại) và **Total, with agents** (mọi thứ arcterm chạy, kể cả agent) |
 | **Tokens** | `Tokens, last 10 min · 5h quota N%` | Token và chi phí ước tính trong 10 phút gần nhất (không tính cache read) | — |
 
 Mỗi dòng có chấm trạng thái, tên (bấm để mở agent), project, model và hai nút:

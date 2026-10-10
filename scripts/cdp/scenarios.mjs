@@ -22910,11 +22910,13 @@ const consumersPopover = {
         );
 
         const own = await h.ev(`[...document.querySelectorAll("[data-consumers-own]")].map((o) => [o.dataset.consumersOwn, o.textContent])`);
+        const agentsSum = await h.ev(`document.querySelector("[data-consumers-agents]")?.textContent ?? null`);
         rec(
-            "4. arcterm's own processes are listed below with their RAM",
+            "4. arcterm's own processes are listed below with their RAM, then every agent's RAM summed",
             JSON.stringify(own.slice(0, 3).map((o) => o[0])) === JSON.stringify(["Interface", "Server", "Host"]) &&
-                own[0][1].includes("684 MB") && own[1][1].includes("121 MB") && own[2][1].includes("47 MB"),
-            JSON.stringify(own)
+                own[0][1].includes("684 MB") && own[1][1].includes("121 MB") && own[2][1].includes("47 MB") &&
+                /^Agents\d+(\.\d+)? GB$/.test(agentsSum ?? ""),
+            JSON.stringify({ own, agentsSum })
         );
 
         const marks = await h.ev(`(() => {

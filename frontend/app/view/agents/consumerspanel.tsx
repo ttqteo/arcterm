@@ -279,8 +279,17 @@ export function ConsumersPanel({ model }: { model: AgentsViewModel }) {
                             </div>
                         ))}
                         <div
+                            data-consumers-agents
+                            className="flex items-center justify-between py-[2px] text-[12px] text-secondary"
+                        >
+                            <span>Agents</span>
+                            <span className="tabular-nums">
+                                {view?.agentsBytes === undefined ? "—" : ramLabel(view.agentsBytes)}
+                            </span>
+                        </div>
+                        <div
                             data-consumers-app-total
-                            title="Everything arcterm runs: the rows above and every agent"
+                            title="Everything arcterm runs: the rows above"
                             className="mt-[3px] flex items-center justify-between border-t border-border pt-[4px] text-[12px] font-semibold text-primary"
                         >
                             <span>Total, with agents</span>

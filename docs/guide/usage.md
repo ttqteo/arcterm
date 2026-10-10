@@ -143,7 +143,7 @@ Bấm chip (view **RAM**) hoặc thanh meter (view **Tokens**) để mở **Cons
 |---|---|---|
 | Tiêu đề | `1.3 GB free of 16 GB` | `Tokens, last 10 min · 5h quota 62%` |
 | Mỗi hàng | RAM của agent | Token và chi phí ước tính trong 10 phút gần nhất, cache read không tính |
-| Cuối bảng | Phần **arcterm**: **Interface**, **Server**, **Host**, **Terminals**, và **Total, with agents** (mọi thứ arcterm chạy, kể cả mọi agent) | — |
+| Cuối bảng | Phần **arcterm**: **Interface**, **Server**, **Host**, **Terminals**, **Agents** (RAM của mọi agent cộng lại), và **Total, with agents** (mọi thứ arcterm chạy, kể cả mọi agent) | — |
 | Dấu ⚠ | — | Agent đốt nhiều nhất, khi quá 500.000 token trong 10 phút ("Spending fastest") |
 
 Hai view là hai cách nhìn cùng một danh sách. Thứ tự hàng được chốt lúc bảng mở và giữ nguyên trong khi bảng còn mở, nên đổi view hoặc có số đọc mới không làm hàng nhảy. Worker của một run nằm dưới nhãn `Run <8 ký tự đầu>`; các agent bạn tự mở nằm ở nhóm đầu, không nhãn.

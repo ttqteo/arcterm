@@ -193,6 +193,20 @@ describe("buildConsumers", () => {
         expect(view.appBytes).toBe(1 * GB + 121 * MB + 12 * MB + 300 * MB + 100 * MB);
     });
 
+    it("sums every agent's RAM for the arcterm section, read or not in the roster", () => {
+        const view = buildConsumers(
+            reading([agent("a", { rambytes: 300 * MB }), agent("ghost", { rambytes: 100 * MB }), agent("b")]),
+            [vm("a"), vm("b")],
+            "ram"
+        );
+        expect(view.agentsBytes).toBe(400 * MB);
+    });
+
+    it("counts no agents as 0 and agents with no reading as absent", () => {
+        expect(buildConsumers(reading([]), [], "ram").agentsBytes).toBe(0);
+        expect(buildConsumers(reading([agent("a")]), [vm("a")], "ram").agentsBytes).toBeUndefined();
+    });
+
     it("leaves the total absent until something is read", () => {
         expect(buildConsumers(reading([agent("a")]), [vm("a")], "ram").appBytes).toBeUndefined();
     });
