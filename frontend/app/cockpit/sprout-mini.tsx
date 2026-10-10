@@ -6,8 +6,8 @@
 // and is dragged by a press that moves. A click opens the Jarvis chat (the pet peek) from it; a double-click, or
 // Terminal, gives the float window back. A reply that lands while the chat is folded shows in a bubble beside it.
 // Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it. Nothing
-// here carries a title: the app's tooltip chip throws a popover shadow that, over a light app behind the see-through
-// window, reads as a dark smear; the hover chip already says what Sprout is.
+// here carries a title or a drop shadow: over a light app behind the see-through window, a popover shadow (the tooltip
+// chip's, or the hover chip's own) reads as a dark smear. A border keeps each one apart from what is behind it.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
@@ -20,13 +20,14 @@ import type { MiniSides } from "@/app/view/agents/floatwindow";
 import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
+import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { postureFor } from "@/app/view/jarvis/petcondition";
 import { miniLook, nextUnread } from "@/app/view/jarvis/petmini";
 import { petOutfit, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import { PetPeek } from "@/app/view/jarvis/petpeek";
 import { queueRows } from "@/app/view/jarvis/petpeekmodel";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
-import { petErrandAtom, petOutfitChoiceAtom, petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { petCharacterAtom, petErrandAtom, petOutfitChoiceAtom, petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { usePetSignals } from "@/app/view/jarvis/petview";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { cn, fireAndForget } from "@/util/util";
@@ -88,10 +89,11 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const focusId = useAtomValue(model.focusIdAtom);
     const messages = useAtomValue(channelMessagesAtom);
     const outfitChoice = useAtomValue(petOutfitChoiceAtom);
+    const character = petCharacter(useAtomValue(petCharacterAtom));
     const frame = useBobFrame();
     const waiting = useMemo(() => queueRows(items, agents, messages).length, [items, agents, messages]);
     const look = miniLook({ posture: postureFor(signals), waiting, errand, unread, chatOpen, frame });
-    const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()));
+    const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
     const agent = agents.find((a) => a.id === focusId) ?? terminals.find((a) => a.id === focusId);
     // state, not a ref: the chat positions itself once this lands
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
@@ -166,7 +168,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                 className={cn(
                     "absolute h-20 w-20",
                     boxCorner(sides),
-                    MINI_TILE && "rounded-[18px] border border-edge-strong bg-surface shadow-popover-sm"
+                    MINI_TILE && "rounded-[18px] border border-edge-strong bg-surface"
                 )}
             >
                 <span
@@ -213,7 +215,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         }
                     }}
                     className={cn(
-                        "absolute flex w-[240px] cursor-pointer flex-col gap-1 rounded-[12px] border border-edge-mid bg-surface-raised px-2.5 pb-[9px] pt-2 shadow-popover-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        "absolute flex w-[240px] cursor-pointer flex-col gap-1 rounded-[12px] border border-edge-mid bg-surface-raised px-2.5 pb-[9px] pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                         besideSprout(sides)
                     )}
                 >
@@ -249,7 +251,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                 <div
                     data-mini-hit="chip"
                     className={cn(
-                        "absolute flex h-[30px] items-center gap-2 whitespace-nowrap rounded-full border border-edge-mid bg-surface-raised pl-2.5 pr-1 shadow-popover-sm",
+                        "absolute flex h-[30px] items-center gap-2 whitespace-nowrap rounded-full border border-edge-mid bg-surface-raised pl-2.5 pr-1",
                         besideSprout(sides)
                     )}
                 >

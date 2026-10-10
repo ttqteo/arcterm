@@ -10,6 +10,7 @@ import {
     openPetPeek,
     peekFactsAtom,
     peekItemAtom,
+    peekLandRowAtom,
     reportPeekFacts,
     settlePeek,
     startPeek,
@@ -54,6 +55,22 @@ describe("opening the popup from the creature or its key", () => {
         expect(globalStore.get(peekItemAtom)).toBeNull();
         expect(globalStore.get(petBubbleAtom)).toBeNull();
         expect(globalStore.get(petUnreadAtom)).toBe(false);
+    });
+
+    it("opening while a question's bubble speaks lands the cursor on that question's row", () => {
+        globalStore.set(petBubbleAtom, { id: "e1", kind: "ask", text: "Which way?", at: 1, ref: "block:b1" });
+        openPetPeek();
+        expect(globalStore.get(peekLandRowAtom)).toBe("ask:block:b1");
+    });
+
+    it("opening with no bubble, or one about anything else, lands nowhere in particular", () => {
+        globalStore.set(peekLandRowAtom, "ask:block:old");
+        globalStore.set(petBubbleAtom, null);
+        openPetPeek();
+        expect(globalStore.get(peekLandRowAtom)).toBeNull();
+        globalStore.set(petBubbleAtom, { id: "e2", kind: "notify", text: "Built", at: 1, ref: "block:b1" });
+        openPetPeek();
+        expect(globalStore.get(peekLandRowAtom)).toBeNull();
     });
 });
 

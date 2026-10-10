@@ -251,6 +251,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     label: "Jarvis",
                     rows: [
                         {
+                            id: "appearance.petcharacter",
+                            title: "Character",
+                            desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for either.",
+                            key: "jarvis.pet.character",
+                            scope: "local",
+                        },
+                        {
                             id: "appearance.petoutfit",
                             title: "Jarvis in Vietnam's colours",
                             desc: "The flag shirt, or the flag in its hand. On 30/4, 1/5 and 2/9 it wears the shirt even when this is off.",

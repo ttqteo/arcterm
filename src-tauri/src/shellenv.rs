@@ -87,7 +87,9 @@ pub fn merge_path(login: &str, inherited: &str) -> String {
 // inherits them — `task install` on a Mac ends in `open`, which hands the app its caller's environment — and
 // passes them to every shell and agent it starts. An interactive claude that sees CLAUDE_CODE_CHILD_SESSION
 // takes itself for a nested child and saves no transcript, prompt history or session name: on 2026-10-08
-// every session in an arcterm reinstalled from an agent's shell was gone once it ended.
+// every session in an arcterm reinstalled from an agent's shell was gone once it ended. A claude that sees
+// CLAUDE_JOB_DIR joins that background job and takes the job's name as its own: on 2026-10-10 every session
+// in an arcterm reinstalled from a job's shell was titled after the job.
 const INHERITED_AGENT_VARS: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_CODE_CHILD_SESSION",
@@ -99,6 +101,7 @@ const INHERITED_AGENT_VARS: &[&str] = &[
     "CLAUDE_CODE_MESSAGING_TOKEN",
     "CLAUDE_PID",
     "CLAUDE_EFFORT",
+    "CLAUDE_JOB_DIR",
     "AI_AGENT",
 ];
 
@@ -163,12 +166,15 @@ mod tests {
     fn scrubs_the_markers_a_claude_shell_hands_its_commands() {
         std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
         std::env::set_var("CLAUDECODE", "1");
+        std::env::set_var("CLAUDE_JOB_DIR", "/home/.claude/jobs/f8132765");
         std::env::set_var("CLAUDE_CODE_PLUGIN_DIRS", "/x");
         let removed = scrub_inherited_agent_env();
         assert!(removed.contains(&"CLAUDE_CODE_CHILD_SESSION"));
         assert!(removed.contains(&"CLAUDECODE"));
+        assert!(removed.contains(&"CLAUDE_JOB_DIR"));
         assert!(std::env::var_os("CLAUDE_CODE_CHILD_SESSION").is_none());
         assert!(std::env::var_os("CLAUDECODE").is_none());
+        assert!(std::env::var_os("CLAUDE_JOB_DIR").is_none());
         // arcterm's own, and settings.json hands it to every claude anyway
         assert_eq!(
             std::env::var("CLAUDE_CODE_PLUGIN_DIRS").as_deref(),

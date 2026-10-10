@@ -8,6 +8,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { OpenTarget } from "./address";
+import { bubbleRowKey } from "./petpeekmodel";
 import { petBubbleAtom, petPeekOpenAtom, petUnreadAtom } from "./petstore";
 
 export type PeekTarget = Exclude<OpenTarget, { kind: "channel" } | { kind: "canvas" }>;
@@ -63,9 +64,14 @@ export function backToHub(): void {
     globalStore.set(petPeekOpenAtom, true);
 }
 
+// The queue row the popup's cursor lands on as it opens: the question the bubble was asking (bubbleRowKey), so a
+// click on "Needs you" lands on that question, not on whatever ranks first. The popup takes it once and clears it.
+export const peekLandRowAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
 // The popup on its hub, from a click on the creature or its key (g w). Opening it is the notice, so the bubble and
 // the unread mark go.
 export function openPetPeek(): void {
+    globalStore.set(peekLandRowAtom, bubbleRowKey(globalStore.get(petBubbleAtom)) ?? null);
     globalStore.set(peekItemAtom, null);
     globalStore.set(petPeekOpenAtom, true);
     globalStore.set(petUnreadAtom, false);

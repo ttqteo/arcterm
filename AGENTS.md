@@ -81,6 +81,12 @@ Other useful commands:
   a short fact sheet with `path:line` for each fact; a fresh writing subagent works from the sheet and reads no code;
   one page per writer. The 2026-10-08 rewrite's ~200M went to subagents that `cat` whole files, then made ~140 calls
   on a 400–566k context. Paste the briefs in `docs/agents/subagent-briefs.md` into the prompts.
+- **A subagent that only collects runs on haiku.** When its job is to gather, not judge — list or fetch things (files,
+  schemas, Notion databases, API objects), grep and report `path:line`, check a list against a source, or the research
+  half of the split above — launch it with `model: "haiku"` and have it return raw facts; the lead does the
+  interpreting. Design, review, root-cause debugging, writing code or prose, and any agent holding write tools where a
+  slip is costly stay on sonnet or better. The 2026-10-10 read-only survey of 21 Notion database schemas took sonnet
+  ~207k tokens over 48 calls: a haiku job.
 - CGO backend builds use the **zig** compiler for cross/static linking (required dependency, see `Taskfile.yml` `build:server:*`).
 - **Worktrees (Windows):** `task worktree:prepare` (run inside the worktree) junctions `node_modules`,
   `src-tauri/target`, `dist/bin` from the main checkout so `task dev` there is fast instead of a cold

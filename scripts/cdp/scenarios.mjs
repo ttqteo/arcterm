@@ -4812,6 +4812,8 @@ const diffCommitTab = {
 const PET = `document.querySelector('[aria-label="Jarvis condition"]')`;
 const PET_PX = 48;
 const PET_HOME_KEY = "wave:pet.home";
+// the character Settings → Appearance picks (petstore.ts petCharacterAtom)
+const PET_CHARACTER_KEY = "jarvis.pet.character";
 const PET_PROJECT = "verify-jarvis-pet";
 const PET_FIXTURE_AGENT = "fx-jarvis-pet";
 const PET_NOTIFY_TITLE = "cdp jarvis-pet";
@@ -5055,6 +5057,7 @@ const jarvisPet = {
         const ctx = {
             terminals: [],
             prevHome: await h.ev(`localStorage.getItem(${JSON.stringify(PET_HOME_KEY)})`),
+            prevCharacter: await h.ev(`localStorage.getItem(${JSON.stringify(PET_CHARACTER_KEY)})`),
             // a fixture the developer had active goes back in teardown rather than away
             prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
         };
@@ -5548,6 +5551,42 @@ const jarvisPet = {
                 onAvoid: onAvoid13,
             }
         );
+
+        // 14. the Minion: picked with a real click in Settings → Appearance → Jarvis → Character, the creature on the
+        // ledge is drawn in the Minion's own tokens, each still a var(--color-…), and still stands on the ledge
+        await h.goto("settings");
+        const opened14 = await spOpen(h, "appearance");
+        const picked14 =
+            opened14 &&
+            (await spClick(
+                h,
+                `[...(${spRow("appearance.petcharacter")}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Minion")`
+            ));
+        await h.goto("agent");
+        const minion14 = await petWait(
+            h,
+            (s) => (s?.pet?.tokens ?? []).includes("var(--color-minion-skin)") && petOnLedge(s),
+            15_000
+        );
+        const tokens14 = (minion14?.pet?.tokens ?? []).map((t) => String(t).replace(/\s+/g, "")).sort();
+        const fills14 = [...(minion14?.fills ?? [])].sort();
+        await petShot(h, "jarvis-pet-14");
+        rec(
+            "14. picking Minion in Settings draws the creature in the Minion's tokens, each a var(--color-…), standing on the ledge",
+            picked14 === true &&
+                tokens14.includes("var(--color-minion-skin)") &&
+                tokens14.every((t) => PET_TOKEN.test(t)) &&
+                JSON.stringify(tokens14) === JSON.stringify(fills14) &&
+                petOnLedge(minion14),
+            {
+                opened: opened14,
+                picked: picked14,
+                tokens: tokens14,
+                fills: fills14,
+                bottom: minion14?.sprite?.bottom,
+                ledgeTop: minion14?.ledgeTop,
+            }
+        );
         return steps;
     },
     // best-effort, so one failed step does not strand the rest
@@ -5581,6 +5620,10 @@ const jarvisPet = {
         }
         // the drags moved home; the home atom is read at module load, so this lands with the reload below
         await step("restore the creature's home", () => h.ev(restoreStorageKey(PET_HOME_KEY, ctx.prevHome)));
+        // step 14 picked the Minion; the atom reads its key at load, so this too lands with the reload below
+        await step("restore the creature's character", () =>
+            h.ev(restoreStorageKey(PET_CHARACTER_KEY, ctx.prevCharacter))
+        );
         // the fixture roster is read once at boot
         await step("reload onto the live roster", async () => {
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");

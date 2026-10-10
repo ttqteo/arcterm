@@ -119,11 +119,22 @@ Click the creature on the footer, or press `Mod`+`G` `w`, to open it.
 | Keys | Action |
 |---|---|
 | `j` / `k` (or `↓` / `↑`) | Move between the waiting rows |
-| `Enter` | The focused row's button: approve, retry, acknowledge, land again, or open |
-| `1`…`9` | Answer the focused row's question with that option (a one-question, single-pick ask) |
+| `Enter` | The focused row's button: approve, retry, acknowledge, land again, open, or open its answer form |
+| `1`…`9` | Answer the focused row's question with that option (a one-question, single-pick ask); on a question with several parts or several picks, open its answer form and pick that option |
 | `Space` | Peek where the focused row's Open would go |
 | `/` | Ask Jarvis (the composer at the bottom) |
 | `Esc` | Close |
+
+Opening it from a "Needs you" bubble puts the cursor on that question, with its answer form open when it has one.
+
+The answer form (a question with several parts or several picks; `Enter` or **Answer** opens it under the row):
+
+| Keys | Action |
+|---|---|
+| `1`…`9` | Pick that option of the current question; on a multi-pick question, press it again to unpick. A single pick moves on to the next unanswered question |
+| `←` / `→` | Previous / next question |
+| `Enter` | Send once every question has an answer, else go to the first one still unanswered |
+| `Esc` | Fold the form, from its text field too; a second `Esc` closes the popup |
 
 ## Peek (the avatar popup's item view)
 
@@ -221,7 +232,7 @@ was.
 |---|---|
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
 | `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have. Works from inside the terminal, where a bare `c` is typed into it |
-| `Alt`+`W` | Close the agent whose header shows **Done — Close** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Done, the key goes to the terminal |
+| `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
 | `[` / `]` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
 | `Mod`+`Enter` | Send the marks to the agent (from mark mode) |

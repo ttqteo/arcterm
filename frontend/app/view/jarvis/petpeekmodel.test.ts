@@ -1,6 +1,7 @@
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { describe, expect, it } from "vitest";
 import {
+    bubbleRowKey,
     dedupeUpdates,
     enterHintLabel,
     eventPeekTarget,
@@ -414,5 +415,69 @@ describe("peekAnswerAct", () => {
         expect(peekAnswerAct(row, "0")).toBeNull();
         expect(peekAnswerAct(row, "a")).toBeNull();
         expect(peekAnswerAct(undefined, "1")).toBeNull();
+    });
+});
+
+// A question one key cannot answer (several questions, or several picks) still answers in the peek: its row opens
+// the Cockpit's answer form in place, so the creature resolves it instead of escorting you to a terminal.
+describe("queueRows — a question one key cannot answer opens a form", () => {
+    const pick = (label: string) => ({ question: `${label}?`, options: [{ label: "Keep" }, { label: "Drop" }] });
+    const asker = (ask: unknown) =>
+        ({ id: "tab-1", name: "juno", blockId: "b1", state: "asking", ask }) as unknown as AgentVM;
+
+    it("names the agent whose ask the form answers, for several questions or several picks", () => {
+        const two = { questions: [pick("a"), pick("b")] };
+        const many = { questions: [{ ...pick("a"), multiSelect: true }] };
+        for (const ask of [two, many]) {
+            const row = queueRows([ASK], [asker(ask)])[0];
+            expect(row.form).toBe("tab-1");
+            expect(row.answers).toEqual([]);
+        }
+    });
+
+    it("names the escort Open, since the form carries the answer", () => {
+        const row = queueRows([ASK], [asker({ questions: [pick("a"), pick("b")] })])[0];
+        expect(row.primary).toMatchObject({ verb: "open", label: "Open" });
+    });
+
+    it("needs no form where one key answers", () => {
+        expect(queueRows([ASK], [asker({ questions: [pick("a")] })])[0].form).toBeNull();
+    });
+
+    it("leaves a doc review to its own review, through the escort", () => {
+        const review = {
+            questions: [
+                {
+                    header: "Spec review",
+                    question: "/abs/spec.md\n- one",
+                    options: [{ label: "Approve" }, { label: "Request changes" }],
+                },
+            ],
+        };
+        expect(queueRows([ASK], [asker(review)])[0].form).toBeNull();
+    });
+
+    it("has no form when the agent that asked is gone, or asked nothing structured", () => {
+        expect(queueRows([ASK], [])[0].form).toBeNull();
+        expect(queueRows([ASK], [asker({ questions: [] })])[0].form).toBeNull();
+    });
+
+    it("gives every other kind no form", () => {
+        expect(queueRows([DAG_GATE, DAG_BLOCKED], [asker({ questions: [pick("a"), pick("b")] })]).map((r) => r.form)).toEqual([null, null]); // prettier-ignore
+    });
+});
+
+describe("bubbleRowKey — the row a spoken update lands the peek on", () => {
+    const spoken = (over: Partial<PetEvent>): PetEvent =>
+        ({ id: "e1", kind: "ask", text: "Which way?", at: 1, ...over }) as PetEvent;
+
+    it("lands an ask's bubble on the queue row of that ask", () => {
+        expect(bubbleRowKey(spoken({ ref: "block:b1" }))).toBe("ask:block:b1");
+    });
+
+    it("lands nowhere for an ask with no ref, another kind, or no bubble", () => {
+        expect(bubbleRowKey(spoken({}))).toBeUndefined();
+        expect(bubbleRowKey(spoken({ kind: "notify", ref: "block:b1" }))).toBeUndefined();
+        expect(bubbleRowKey(null)).toBeUndefined();
     });
 });

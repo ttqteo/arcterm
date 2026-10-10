@@ -874,7 +874,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const inCanvas = (ctx: KeyContext) => agentNav(ctx) && canvas()?.mode === "canvas";
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
     const docReview = () => focusedDocReview(model);
-    // the focused agent when the header offers its Done — Close (donesuggest.ts), else undefined
+    // the focused agent when the header offers its ✓ Close (donesuggest.ts), else undefined
     const doneAgent = (): AgentVM | undefined => {
         const id = globalStore.get(model.focusIdAtom);
         const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
@@ -1075,7 +1075,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             run: () => setAgentView(focusId(), "terminal", Date.now()),
         },
         {
-            // the header's Done — Close, from inside the terminal too. Whether it is offered is read in run(), not
+            // the header's ✓ Close, from inside the terminal too. Whether it is offered is read in run(), not
             // when(): the offer follows the roster, unread counts and runs, none of them a predicate atom
             // (whenstate.ts), so the key is live on the surface and passes to the TUI when nothing is offered
             id: "agent:done-close",

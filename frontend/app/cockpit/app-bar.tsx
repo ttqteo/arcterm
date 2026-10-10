@@ -11,6 +11,8 @@ import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
+import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
+import { petCharacterAtom } from "@/app/view/jarvis/petstore";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
@@ -121,11 +123,12 @@ export function WindowControls() {
     const maximized = useWindowMaximized();
     // floating, minimize folds the window into Sprout (floatstore.ts enterMini) rather than into the taskbar
     const floating = useAtomValue(floatModeAtom);
+    const character = petCharacter(useAtomValue(petCharacterAtom));
     return (
         <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
             <button
                 onClick={() => (floating ? fireAndForget(enterMini) : win.minimize())}
-                aria-label={floating ? "Minimize to Sprout" : "Minimize"}
+                aria-label={floating ? `Minimize to ${PET_CHARACTER_NAME[character]}` : "Minimize"}
                 className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >
                 &#x2013;

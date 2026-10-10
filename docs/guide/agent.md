@@ -106,7 +106,7 @@ Chân hộp thoại có một dòng cho biết điều sẽ xảy ra (`Starts in
 Header phía trên terminal là một hàng gọn:
 
 - chấm trạng thái, **tên**, logo harness, **trạng thái** (`working`, `idle`, `asking`), **model**, **context** đã dùng (số token, đổi màu khi đầy), rồi `· <project>`. Agent gắn với initiative thì có thêm liên kết tới initiative trong [Jarvis](jarvis.md); lead của run ghi `orchestrator run <id>`; worker ghi `↑ <tên lead>` (bấm để tới lead).
-- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **Done · N tok — Close** khi agent trông như đã xong; nút **Redraw**; nút **Float**; nút toàn màn hình; nút `×` đóng.
+- bên phải: nút màu cam **Spec review** / **Plan review** khi agent đang xin duyệt (xem [bên dưới](#duyệt-tài-liệu-do-agent-yêu-cầu)); nút chuyển **Terminal | Canvas | Review** khi agent có canvas hoặc Doc review; nút **Split**; nút **✓ Close · N tok** khi agent trông như đã xong; nút **Redraw**; nút **Float**; nút toàn màn hình; nút `×` đóng.
 
 Chuột phải vào header: **Interrupt turn**, **Fullscreen terminal** / **Exit fullscreen**, **Float window** / **Leave float**, **Redraw terminal**, **Show details** / **Hide details**, **Close agent**.
 
@@ -115,7 +115,7 @@ Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus v�
 | Việc | Cách làm |
 |---|---|
 | Toàn màn hình terminal | `f` hoặc `F11` (`F11` dùng được cả khi đang gõ trong terminal); `Esc` thoát toàn màn hình |
-| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn và một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi); nút ghim trên thanh giữ nó luôn nằm trên các app khác (mặc định tắt). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước. Nút **Minimize** trên thanh (hoặc nút minimize của cửa sổ, nút vàng trên macOS) thu cửa sổ lại thành con Sprout bay trên mọi app ở góc màn hình: bấm Sprout để mở chat Jarvis, kéo để dời chỗ, **Terminal** hoặc bấm đúp để mở lại cửa sổ Float |
+| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn và một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi); nó luôn nằm trên các app khác ngay khi bật (nút ghim trên thanh tắt điều đó). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước. Nút **Minimize** trên thanh (hoặc nút minimize của cửa sổ, nút vàng trên macOS) thu cửa sổ lại thành con Sprout bay trên mọi app ở góc màn hình: bấm Sprout để mở chat Jarvis, kéo để dời chỗ, **Terminal** hoặc bấm đúp để mở lại cửa sổ Float |
 | Terminal bị vỡ chữ, chồng dòng hoặc lệch cột | Nút **Redraw** trên header (hoặc **Redraw terminal** trong menu chuột phải): vẽ lại terminal và cho agent tự vẽ lại toàn màn hình ở đúng kích thước, phiên vẫn chạy tiếp, không mất gì |
 | Ngắt lượt đang chạy | **Interrupt turn** trong menu header, hoặc `Esc` trong terminal, hoặc nút **Stop** ở chân rail |
 | Chuyển sang agent kế tiếp | `Ctrl+Tab`, dùng được cả khi con trỏ đang ở trong terminal; gõ phím theo sang terminal của agent mới |
@@ -290,7 +290,7 @@ Với phiên Claude đã kết thúc: chuột phải hàng → **Delete session*
 
 ## Đóng và khôi phục agent
 
-- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Ctrl+C` hai lần liên tiếp trong 500 ms khi đang ở terminal của agent (lần đầu vẫn đi tới agent, lần hai mở hộp xác nhận), nút **✓ Close** / **Done · N tok — Close** khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và `Ctrl+C` hai lần không đóng nó (trong shell, đó là cách dừng một lệnh cứng đầu).
+- **Đóng:** nút `×` ở header, **Close agent** trong menu chuột phải, `Ctrl+C` hai lần liên tiếp trong 500 ms khi đang ở terminal của agent (lần đầu vẫn đi tới agent, lần hai mở hộp xác nhận), nút **✓ Close** (ở dòng sidebar và ở header, kèm số token) khi agent đã commit xong, hoặc **Stop** trong panel **Consumers**. Luôn có hộp xác nhận; thao tác kết thúc phiên và không hoàn tác được. Terminal thường dùng **Close terminal**, và `Ctrl+C` hai lần không đóng nó (trong shell, đó là cách dừng một lệnh cứng đầu).
 - **Đóng lead của run có worker:** hộp thoại hỏi **Close run** (đóng tất cả) hay **Close lead only** (worker vẫn chạy).
 - **Đánh thức agent đang rảnh:** nút **Resume** ở chân rail gõ `continue` vào terminal.
 - **Sau khi tắt hoặc cập nhật app:** các agent claude, codex, opencode, pi và agy đang chạy lúc đó tự mở lại, mỗi cái vào phiên của nó, mà không phải mở từng cái từ lịch sử. Agent chưa báo phiên của nó lên cockpit (ví dụ Codex khi hook chưa được trust) không tự mở lại; hãy mở từ **Conversations**. Lượt đang dở của một agent bị cắt lúc app tắt, nên nó thường ngồi ở trạng thái rảnh sau khi mở lại; dùng **Resume** ở chân rail để bảo nó tiếp tục. Worker của run được khôi phục theo run, xem [Orchestrator](orchestrator.md).

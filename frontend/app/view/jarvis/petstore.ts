@@ -14,8 +14,10 @@ import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import type { PetActState } from "./petacts";
+import { DEFAULT_PET_CHARACTER } from "./petcharacter";
 import { DEFAULT_PET_OUTFIT, type PetOutfitChoice } from "./petoutfit";
 import { pruneSaid } from "./petquota";
+import type { PetCharacter } from "./petsprite";
 import type { PetEvent, PetWatermark } from "./petvoice";
 
 const HOME_KEY = "wave:pet.home";
@@ -80,6 +82,17 @@ export const petOutfitChoiceAtom = atomWithStorage<PetOutfitChoice>(
         getOnInit: true,
     }
 ) as PrimitiveAtom<PetOutfitChoice>;
+
+// Which creature Jarvis is drawn as (Settings → Appearance), persisted like the outfit. Read through petCharacter,
+// which turns a value that is not one of the two into Sprout.
+export const petCharacterAtom = atomWithStorage<PetCharacter>(
+    "jarvis.pet.character",
+    DEFAULT_PET_CHARACTER,
+    undefined,
+    {
+        getOnInit: true,
+    }
+) as PrimitiveAtom<PetCharacter>;
 
 // Whether the pet says a quote now and then (petquotes.ts, Settings → Appearance), persisted like the outfit.
 export const DEFAULT_PET_QUOTES = true;

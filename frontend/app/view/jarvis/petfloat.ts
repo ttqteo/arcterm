@@ -7,10 +7,14 @@
 // Pure, like petcondition.ts; petfloatmark.tsx draws it.
 
 import type { PetPosture } from "./petcondition";
-import { spriteFor, type PetOutfit } from "./petsprite";
+import { spriteFor, type PetCharacter, type PetOutfit } from "./petsprite";
 import { POSTURE_MARK } from "./petwalk";
 
-export function floatMarkSprite(posture: PetPosture, outfit: PetOutfit | null): ReturnType<typeof spriteFor> | null {
+export function floatMarkSprite(
+    posture: PetPosture,
+    outfit: PetOutfit | null,
+    character: PetCharacter = "sprout"
+): ReturnType<typeof spriteFor> | null {
     const mark = POSTURE_MARK[posture];
-    return mark == null ? null : spriteFor("stand", [mark], outfit);
+    return mark == null ? null : spriteFor("stand", [mark], outfit, character);
 }

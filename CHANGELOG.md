@@ -20,6 +20,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
   `~/.codex/config.toml` names a `model`), or write `**Model:** codex:gpt-5.5` (or `codex`, or `agy:<model>`) on a
   plan task and start the run on **Reviewer picks**. A Codex worker runs with its approval, sandbox and hook-trust
   checks off, since no one is there to answer them, and its heavy commands skip the job queue.
+- Jarvis can be a one-eyed Minion instead of Sprout: pick it in **Settings → Appearance → Jarvis → Character**. It
+  walks, rests and plays like Sprout, wears the same marks, and the flag shirt turns its overalls red.
+- The Jarvis pet's popup answers every agent question in place, not only one-pick ones: a question with several
+  parts or several picks opens its answer form under the row (**Answer**, or `Enter`), where `1`–`9` pick, `←` / `→`
+  change question and `Enter` sends. Clicking a "Needs you" bubble lands on that question with its form open.
 - Codex agents show working, idle and "needs you" on the rail with their session's title and model, and come back in
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.
@@ -50,6 +55,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - The Codex and Antigravity marks are a white mark on a dark tile, like pi's, so they read clearly on a dark theme
   instead of fading into it.
+- The header button for a finished agent reads **✓ Close · 8.7M tok**, like its sidebar row's ✓ Close, instead of
+  repeating itself as Done — Close.
+- A float window stays above your other apps from the moment it opens; its pin button turns that off.
 - The Low RAM card is gone: a heavy command waits in the job queue instead.
 - On a Mac the job queue judges RAM by macOS's own memory pressure, which counts compressed memory and swap, so heavy
   jobs no longer wait on a machine that only looks full: they run at green, one at a time at yellow, and wait at red.
@@ -63,9 +71,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A Terminal opened from New with a command in its Command field runs that command when it opens, at the shell's
+  first prompt, and stays a shell afterwards; the command was ignored before.
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
 - The app bar's 5-hour meter shows again at 0% when Claude's usage reading says the window is unused, and its
   countdown to the reset is back beside it instead of only in the tooltip.
+- An arcterm reinstalled from inside a Claude background job no longer names every new Claude session after that
+  job.
 
 ## 0.15.8 — 2026-10-09
 

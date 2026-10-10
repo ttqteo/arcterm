@@ -13,6 +13,8 @@
 import { computeEntrances, initialEntranceState, MOTION, paneReveal, popoverReveal } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { askSentKey, type AgentVM } from "@/app/view/agents/agentsviewmodel";
+import { AnswerBar } from "@/app/view/agents/answerbar";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { activeChannelAtom, channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { InlineMarkdown } from "@/app/view/agents/inlinemarkdown";
@@ -44,9 +46,10 @@ import {
     type ReactNode,
 } from "react";
 import { peekAddress } from "./openref";
+import { formKey, questionAfterPick, type FormKey } from "./peekanswer";
 import { PeekItemView, runItemCommand, type ItemChrome } from "./peekitem";
 import { itemHints, itemKeyCommand } from "./peekitemmodel";
-import { backToHub, closePeek, peekFactsAtom, peekItemAtom, peekTargetKey } from "./peekstore";
+import { backToHub, closePeek, peekFactsAtom, peekItemAtom, peekLandRowAtom, peekTargetKey } from "./peekstore";
 import { actNavigates, runAct } from "./petactrun";
 import { actsForEvent, type PetAct, type PetTarget } from "./petacts";
 import { EventLabel, eventTone } from "./petbubble";
@@ -295,17 +298,58 @@ function AnswerButtons({ model, acts }: { model: AgentsViewModel; acts: PetAct[]
     );
 }
 
+// The Cockpit's answer form for a question one key cannot answer (peekanswer.ts), on the model's shared answer
+// state: a pick here is the same pick on the Cockpit's card, and one send locks both.
+function AnswerForm({ model, agent, onSent }: { model: AgentsViewModel; agent: AgentVM; onSent: () => void }) {
+    const selections = useAtomValue(model.answerSelAtom)[agent.id] ?? {};
+    const texts = useAtomValue(model.answerTextAtom)[agent.id] ?? {};
+    const active = useAtomValue(model.answerTabAtom)[agent.id] ?? 0;
+    const sent = useAtomValue(model.sentIdsAtom).has(askSentKey(agent) ?? "");
+    return (
+        <div data-pet-answer-form-body className="col-span-2 mt-2">
+            <AnswerBar
+                model={model}
+                agent={agent}
+                selections={selections}
+                texts={texts}
+                sent={sent}
+                numbered
+                activeQuestion={active}
+                onToggle={(qi, oi) => model.toggleAnswer(agent.id, qi, oi)}
+                onText={(qi, value) => model.setAnswerText(agent.id, qi, value)}
+                onSelectQuestion={(qi) => setAnswerTab(model, agent.id, qi)}
+                onSubmit={() => {
+                    model.submitAnswer(agent.id);
+                    onSent();
+                }}
+                showHint={false}
+            />
+        </div>
+    );
+}
+
+function setAnswerTab(model: AgentsViewModel, agentId: string, qi: number): void {
+    globalStore.set(model.answerTabAtom, { ...globalStore.get(model.answerTabAtom), [agentId]: qi });
+}
+
 function QueueRow({
     model,
     row,
     now,
     focused,
+    formAgent,
+    onToggleForm,
+    onFormSent,
     onLeave,
 }: {
     model: AgentsViewModel;
     row: PeekRow;
     now: number;
     focused: boolean;
+    // the agent whose ask the row's open form answers; undefined while the form is folded
+    formAgent: AgentVM | undefined;
+    onToggleForm: () => void;
+    onFormSent: () => void;
     onLeave: () => void;
 }) {
     const acts = [row.primary, ...row.links, ...row.answers].filter((act) => act != null);
@@ -331,7 +375,8 @@ function QueueRow({
                     {/* only kinds whose text is the payload get a detail — see DETAIL_KINDS. An escalation IS
                         its question, so it shows rather than hiding behind a click; a long one is cut by
                         height and opens in place. */}
-                    {row.detail != null ? (
+                    {/* an open form asks its questions itself */}
+                    {row.detail != null && formAgent == null ? (
                         <ClampedProse
                             text={row.detail}
                             collapsed="max-h-[66px]"
@@ -341,12 +386,37 @@ function QueueRow({
                     {row.answers.length > 0 ? <AnswerButtons model={model} acts={row.answers} /> : null}
                     <ActOutcome acts={acts} className="mt-1.5" />
                 </div>
-                {row.primary != null ? (
+                {row.form != null ? (
+                    // the form carries the answer, so the escort steps aside to a link
+                    <div className="flex flex-none items-center gap-2.5">
+                        <ActLinks
+                            model={model}
+                            acts={[...row.links, ...(row.primary != null ? [row.primary] : [])]}
+                            onLeave={onLeave}
+                        />
+                        <button
+                            type="button"
+                            data-pet-answer-form={row.key}
+                            aria-expanded={formAgent != null}
+                            onClick={onToggleForm}
+                            className={cn(
+                                "h-6 flex-none whitespace-nowrap rounded-[6px] px-2.5 text-[11px]",
+                                FOCUS_RING,
+                                focused
+                                    ? "bg-accent font-bold text-background hover:bg-accenthover"
+                                    : "border border-edge-strong font-semibold text-secondary hover:border-edge-mid hover:bg-surface-hover"
+                            )}
+                        >
+                            Answer
+                        </button>
+                    </div>
+                ) : row.primary != null ? (
                     <div className="flex flex-none items-center gap-2.5">
                         <ActLinks model={model} acts={row.links} onLeave={onLeave} />
                         <ActButton model={model} act={row.primary} filled={focused} onLeave={onLeave} />
                     </div>
                 ) : null}
+                {formAgent != null ? <AnswerForm model={model} agent={formAgent} onSent={onFormSent} /> : null}
             </div>
         </div>
     );
@@ -582,6 +652,10 @@ export function PetPeek({
     const [returnFocusEnabled, setReturnFocusEnabled] = useState(true);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [cursor, setCursor] = useState(0);
+    // the row whose answer form is open; it shows while that row holds the cursor
+    const [formRow, setFormRow] = useState<string | null>(null);
+    const landRow = useAtomValue(peekLandRowAtom);
+    const answerTab = useAtomValue(model.answerTabAtom);
     const entranceRef = useRef(initialEntranceState());
 
     const close = useCallback(() => {
@@ -628,6 +702,7 @@ export function PetPeek({
             // Earlier into busy's Since you looked.
             setCursor(0);
             setDrawerOpen(false);
+            setFormRow(null);
         }
     }, [anchor, open]);
 
@@ -665,6 +740,29 @@ export function PetPeek({
     const updates = dedupeUpdates(said, items);
     const quiet = rows.length === 0;
     const focusedRow = rows[Math.min(cursor, Math.max(0, rows.length - 1))];
+    const formAgent = focusedRow?.form != null ? agents.find((agent) => agent.id === focusedRow.form) : undefined;
+    const formOpen = formAgent != null && focusedRow?.key === formRow;
+
+    // opened from a question's bubble: the cursor lands on that question, its form open when it has one. Taken once;
+    // a row not in the queue yet leaves the cursor where it was.
+    useEffect(() => {
+        if (!open || landRow == null) {
+            return;
+        }
+        globalStore.set(peekLandRowAtom, null);
+        const index = rows.findIndex((row) => row.key === landRow);
+        if (index >= 0) {
+            setCursor(index);
+            setFormRow(rows[index].form != null ? rows[index].key : null);
+        }
+    }, [open, landRow]);
+
+    // a form opens below its row, so it brings itself into view the way the cursor row does
+    useEffect(() => {
+        if (formOpen) {
+            panelRef.current?.querySelector("[data-pet-answer-form-body]")?.scrollIntoView({ block: "nearest" });
+        }
+    }, [formOpen]);
     // the quiet card's Enter opens what its headline offers, the way a busy row's Enter opens that row
     const latestAct = quiet && updates[0] != null ? (actsForEvent(updates[0])[0] ?? null) : null;
     const enterAct = quiet ? latestAct : peekActForCommand(focusedRow, "open");
@@ -717,9 +815,69 @@ export function PetPeek({
         }
     };
 
+    const runFormKey = (agent: AgentVM, key: FormKey) => {
+        switch (key.kind) {
+            case "toggle": {
+                model.toggleAnswer(agent.id, key.qi, key.oi);
+                const selections = globalStore.get(model.answerSelAtom)[agent.id] ?? {};
+                const texts = globalStore.get(model.answerTextAtom)[agent.id] ?? {};
+                setAnswerTab(model, agent.id, questionAfterPick(agent.ask?.questions ?? [], key.qi, selections, texts));
+                return;
+            }
+            case "question":
+                setAnswerTab(model, agent.id, key.qi);
+                return;
+            case "submit":
+                model.submitAnswer(agent.id);
+                return;
+            case "collapse":
+                setFormRow(null);
+                return;
+        }
+    };
+
+    // The focused row's answer form: Enter or a digit opens it, and while open its keys come first (peekanswer.ts).
+    // Escape folds it from anywhere inside, its text field included, before a second one closes the popup. True when
+    // the key was the form's.
+    const onFormKeyDown = (event: KeyboardEvent<HTMLDivElement>): boolean => {
+        if (formAgent == null || focusedRow == null) {
+            return false;
+        }
+        if (formOpen && event.key === "Escape") {
+            event.preventDefault();
+            setFormRow(null);
+            panelRef.current?.focus();
+            return true;
+        }
+        const bare = !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat;
+        if (!bare || event.target !== event.currentTarget) {
+            return false;
+        }
+        if (!formOpen && event.key === "Enter") {
+            event.preventDefault();
+            setFormRow(focusedRow.key);
+            return true;
+        }
+        const selections = globalStore.get(model.answerSelAtom)[formAgent.id] ?? {};
+        const texts = globalStore.get(model.answerTextAtom)[formAgent.id] ?? {};
+        const active = globalStore.get(model.answerTabAtom)[formAgent.id] ?? 0;
+        const key = formKey(event.key, formAgent.ask?.questions ?? [], active, selections, texts);
+        // folded, only a digit reaches the form, and it opens it on the way
+        if (key == null || (!formOpen && key.kind !== "toggle")) {
+            return false;
+        }
+        event.preventDefault();
+        setFormRow(focusedRow.key);
+        runFormKey(formAgent, key);
+        return true;
+    };
+
     const onPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         if (item != null) {
             onItemKeyDown(event);
+            return;
+        }
+        if (onFormKeyDown(event)) {
             return;
         }
         // a bare digit sends the focused row's option, as on the Cockpit's answer bar
@@ -768,24 +926,37 @@ export function PetPeek({
         }
     };
 
+    const formQuestions = formAgent?.ask?.questions ?? [];
+    const formOptions = formQuestions[answerTab[formAgent?.id ?? ""] ?? 0]?.options?.length ?? 0;
     const hints =
         item != null
             ? itemHints(item.target.kind)
-            : [
-                  ...(quiet ? [] : [{ keys: ["j", "k"], label: "move" }]),
-                  ...(spaceTarget != null ? [{ keys: ["space"], label: "peek" }] : []),
-                  ...(!quiet || latestAct != null ? [{ keys: ["↵"], label: enterHintLabel(enterAct) }] : []),
-                  ...(focusedRow != null && focusedRow.answers.length > 0
-                      ? [
-                            {
-                                keys: [focusedRow.answers.length === 1 ? "1" : `1–${focusedRow.answers.length}`],
-                                label: "answer",
-                            },
-                        ]
-                      : []),
-                  { keys: ["/"], label: "ask" },
-                  { keys: ["esc"], label: "close" },
-              ];
+            : formOpen
+              ? [
+                    ...(formOptions > 0
+                        ? [{ keys: [formOptions === 1 ? "1" : `1–${Math.min(formOptions, 9)}`], label: "pick" }]
+                        : []),
+                    ...(formQuestions.length > 1 ? [{ keys: ["←", "→"], label: "question" }] : []),
+                    { keys: ["↵"], label: "send" },
+                    { keys: ["esc"], label: "fold" },
+                ]
+              : [
+                    ...(quiet ? [] : [{ keys: ["j", "k"], label: "move" }]),
+                    ...(spaceTarget != null ? [{ keys: ["space"], label: "peek" }] : []),
+                    ...(!quiet || latestAct != null
+                        ? [{ keys: ["↵"], label: formAgent != null ? "answer" : enterHintLabel(enterAct) }]
+                        : []),
+                    ...(focusedRow != null && focusedRow.answers.length > 0
+                        ? [
+                              {
+                                  keys: [focusedRow.answers.length === 1 ? "1" : `1–${focusedRow.answers.length}`],
+                                  label: "answer",
+                              },
+                          ]
+                        : []),
+                    { keys: ["/"], label: "ask" },
+                    { keys: ["esc"], label: "close" },
+                ];
 
     // portaled, so a menu a control in here portals (the harness picker) nests in this portal node, which the focus
     // manager counts as inside the dialog: it is not hidden from assistive tech, and focus in it is not outside
@@ -815,7 +986,10 @@ export function PetPeek({
                                         transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
                                     }}
                                     className={cn(
-                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border border-border bg-surface-raised shadow-popover",
+                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border bg-surface-raised",
+                                        // folded: no drop shadow, which smears the app behind the see-through window;
+                                        // a stronger edge parts the panel from it instead
+                                        corner === "mini" ? "border-edge-strong" : "border-border shadow-popover",
                                         // folded: Sprout's 80px box and the offset share the window with the panel
                                         corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
                                         item != null ? "max-w-[560px]" : quiet ? "max-w-[300px]" : "max-w-[420px]"
@@ -1017,6 +1191,21 @@ export function PetPeek({
                                                                         focused={
                                                                             index === Math.min(cursor, rows.length - 1)
                                                                         }
+                                                                        formAgent={
+                                                                            formOpen && row.key === formRow
+                                                                                ? formAgent
+                                                                                : undefined
+                                                                        }
+                                                                        onToggleForm={() => {
+                                                                            setCursor(index);
+                                                                            setFormRow((prior) =>
+                                                                                prior === row.key && formOpen
+                                                                                    ? null
+                                                                                    : row.key
+                                                                            );
+                                                                            panelRef.current?.focus();
+                                                                        }}
+                                                                        onFormSent={() => panelRef.current?.focus()}
                                                                         onLeave={leavePeek}
                                                                     />
                                                                 </motion.div>

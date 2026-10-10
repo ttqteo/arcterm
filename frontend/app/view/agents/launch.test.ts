@@ -151,6 +151,20 @@ describe("buildLaunchMeta", () => {
         const m = buildLaunchMeta({ runtime: "terminal", startupCommand: "", task: "", cwd: "/x" });
         expect(m).toEqual({ view: "term", controller: "shell", "cmd:cwd": "/x" });
     });
+    it("a terminal with a command stays a shell and types the command at its first prompt", () => {
+        const m = buildLaunchMeta({
+            runtime: "terminal",
+            startupCommand: "  curl -fsSL https://example.com/install.sh | sh  ",
+            task: "",
+            cwd: "/x",
+        });
+        expect(m).toEqual({
+            view: "term",
+            controller: "shell",
+            "cmd:cwd": "/x",
+            "cmd:firstcommand": "curl -fsSL https://example.com/install.sh | sh",
+        });
+    });
     it("passes the opencode task positionally with cwd", () => {
         const m = buildLaunchMeta({
             runtime: "opencode",

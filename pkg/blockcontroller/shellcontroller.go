@@ -459,6 +459,24 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 	liveToken := markAgentLive(bc.BlockId, blockMeta)
 	shellInputCh := make(chan *BlockInputUnion, 32)
 	bc.ShellInputCh = shellInputCh
+	var typer *firstCommandTyper
+	if bc.ControllerType == BlockController_Shell {
+		if firstCmd := takeFirstCommand(bc.BlockId, blockMeta); firstCmd != "" {
+			typer = newFirstCommandTyper(firstCommandSettle, firstCommandFallback, func() {
+				bc.WithLock(func() {
+					// a restart since put another shell on the block: the command was for this one
+					if bc.ShellInputCh != shellInputCh {
+						return
+					}
+					select {
+					case shellInputCh <- &BlockInputUnion{InputData: []byte(firstCmd + "\r")}:
+					default:
+						log.Printf("block %s: shell input buffer full, first command not typed\n", bc.BlockId)
+					}
+				})
+			})
+		}
+	}
 
 	go func() {
 		// handles regular output from the pty (goes to the blockfile and xterm)
@@ -467,6 +485,9 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		}()
 		defer func() {
 			log.Printf("[shellproc] pty-read loop done\n")
+			if typer != nil {
+				typer.stop()
+			}
 			shellProc.Close()
 			bc.WithLock(func() {
 				// so no other events are sent
@@ -490,6 +511,9 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 				err := HandleAppendBlockFile(bc.BlockId, wavebase.BlockFile_Term, buf[:nr])
 				if err != nil {
 					log.Printf("error appending to blockfile: %v\n", err)
+				}
+				if typer != nil {
+					typer.output(buf[:nr])
 				}
 			}
 			if err == io.EOF {

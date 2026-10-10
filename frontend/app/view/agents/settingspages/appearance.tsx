@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Settings > Appearance: the palette every surface derives from, its role colors, the interface and code
-// faces, and Jarvis's outfit and quotes. The terminal's own face is a Terminal setting.
+// faces, and Jarvis's character, outfit and quotes. The terminal's own face is a Terminal setting.
 
+import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
-import { petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
+import type { PetCharacter } from "@/app/view/jarvis/petsprite";
+import { petCharacterAtom, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check } from "lucide-react";
@@ -28,6 +30,7 @@ export function AppearancePage() {
                 <FontRows />
             </SettingCard>
             <SettingCard id="jarvis" label="Jarvis">
+                <PetCharacterRow />
                 <PetOutfitRow />
                 <PetQuotesRow />
             </SettingCard>
@@ -133,6 +136,24 @@ function ColorRows() {
                 );
             })}
         </>
+    );
+}
+
+const PET_CHARACTER_OPTIONS: { id: PetCharacter; label: string }[] = (["sprout", "minion"] as const).map((id) => ({
+    id,
+    label: PET_CHARACTER_NAME[id],
+}));
+
+function PetCharacterRow() {
+    const [character, setCharacter] = useAtom(petCharacterAtom);
+    return (
+        <SettingRow id="appearance.petcharacter">
+            <Segmented<PetCharacter>
+                options={PET_CHARACTER_OPTIONS}
+                value={petCharacter(character)}
+                onChange={(id) => setCharacter(id)}
+            />
+        </SettingRow>
     );
 }
 
