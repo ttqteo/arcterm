@@ -157,7 +157,7 @@ Từ dòng lệnh: `wsh runs start --plan <plan.md>` (xem [CLI](#cli)).
 
 Engine mở một lead **chỉ ở sự kiện cần xét đoán đầu tiên**, với luật điều phối làm prompt và sự kiện làm dòng đầu. Một plan land xong và kết thúc final stage ở trạng thái *passed* hoặc *unverified*, không có gì để quyết, thì không bao giờ có lead: engine tự đóng run, niêm phong bằng chứng và merge nó về. Nếu Setup của plan hỏng trong cây của run lúc submit, lead cũng được mở (với lỗi Setup trong tay) thay vì từ chối plan; plan hỏng lúc parse thì hộp New đã chặn từ trước và không run nào được tạo.
 
-Dùng palette: gõ một goal vào ô **Search, or type a goal…** (`Ctrl+P`); chữ không khớp gì được coi là goal, và **Quick** hay **Orchestrate** mở hộp New ở dòng run với goal đã điền sẵn và project vừa dùng được chọn sẵn, để bạn xác nhận project trước khi chạy gì cả. Một run mà một session bắt đầu bằng `wsh runs start` mang link về session đó: `↰ <session>` trên header của lead (hay của agent run Quick) và dòng **started from** trên run sheet.
+Dùng palette: gõ một goal vào ô **Search, or type a goal…** (`Ctrl+P`); chữ không khớp gì được coi là goal, và **Quick** hay **Orchestrate** mở hộp New ở dòng run với goal đã điền sẵn và project vừa dùng được chọn sẵn, để bạn xác nhận project trước khi chạy gì cả. Một run mà một session bắt đầu bằng `wsh runs start` mang link về session đó: `↰ <session>` trên header của lead (hay của agent run Quick) và dòng **started from** trên run sheet; header của session có link `↳` tới các run nó đã bắt đầu.
 
 ## Review plan
 

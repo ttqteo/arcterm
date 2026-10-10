@@ -17,7 +17,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
 import { effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
-import { openOrPeek } from "@/app/view/jarvis/openref";
+import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
 import { redrawTerminal } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
@@ -54,7 +54,8 @@ import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
-import { openRunOrigin, useRunOrigin } from "./runoriginstore";
+import { startedRunsText } from "./runorigin";
+import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
@@ -161,6 +162,44 @@ function RunOriginLink({ model, runId }: { model: AgentsViewModel; runId: string
                     ↰ {origin.name}
                 </button>
             )}
+        </>
+    );
+}
+
+// The other way round: the runs this session started with `wsh runs start`. One opens its run sheet; several offer a
+// menu of them, the ones still going first.
+function StartedRunsLink({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
+    const runs = useRunsStartedBy(agent);
+    if (runs.length === 0) {
+        return null;
+    }
+    const open = (runId: string) => fireAndForget(() => openTarget(model, { kind: "run", runId }));
+    const onClick = (e: React.MouseEvent) => {
+        if (runs.length === 1) {
+            open(runs[0].oid);
+            return;
+        }
+        ContextMenuModel.getInstance().showContextMenu(
+            runs.map((r) => ({ label: `${startedRunsText([r])} · ${r.status}`, click: () => open(r.oid) })),
+            e
+        );
+    };
+    return (
+        <>
+            {" · "}
+            <button
+                type="button"
+                data-started-runs={runs.length}
+                onClick={onClick}
+                title={
+                    runs.length === 1
+                        ? `A run this session started (${runs[0].status}): open it`
+                        : "Runs this session started: pick one to open"
+                }
+                className="cursor-pointer text-accent-soft hover:underline"
+            >
+                ↳ {startedRunsText(runs)}
+            </button>
         </>
     );
 }
@@ -405,6 +444,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                     {agent.runId && lineage?.kind !== "worker" && lineage?.kind !== "stage" ? (
                         <RunOriginLink model={model} runId={agent.runId} />
                     ) : null}
+                    <StartedRunsLink model={model} agent={agent} />
                 </span>
             </div>
             <div className="flex-1" />
