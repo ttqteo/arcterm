@@ -866,12 +866,13 @@ export function PetPeek({
                                                             : `${rows.length} waiting on you`}
                                                     </h2>
                                                     {onRestore != null ? (
+                                                        // no titles: over the see-through folded window, the tooltip
+                                                        // chip's popover shadow smears the app behind
                                                         <>
                                                             <button
                                                                 type="button"
                                                                 data-mini-restore
                                                                 aria-label="Restore the float window"
-                                                                title="Restore the float window"
                                                                 onClick={() => {
                                                                     leavePeek();
                                                                     onRestore();
@@ -891,7 +892,6 @@ export function PetPeek({
                                                             <button
                                                                 type="button"
                                                                 aria-label="Collapse into Sprout"
-                                                                title="Collapse into Sprout (Esc)"
                                                                 onClick={close}
                                                                 className={cn(
                                                                     "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",

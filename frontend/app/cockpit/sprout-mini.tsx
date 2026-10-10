@@ -5,7 +5,9 @@
 // window's corner away from where things open (floatwindow.ts miniSides), bobs, wears what waits on you (petmini.ts),
 // and is dragged by a press that moves. A click opens the Jarvis chat (the pet peek) from it; a double-click, or
 // Terminal, gives the float window back. A reply that lands while the chat is folded shows in a bubble beside it.
-// Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it.
+// Every element the cursor may use carries data-mini-hit, or the click-through poll lets clicks fall through it. Nothing
+// here carries a title: the app's tooltip chip throws a popover shadow that, over a light app behind the see-through
+// window, reads as a dark smear; the hover chip already says what Sprout is.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
@@ -178,7 +180,6 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     ref={setAnchor}
                     type="button"
                     aria-label={look.label}
-                    title={look.label}
                     aria-expanded={chatOpen}
                     onPointerDown={onPointerDown}
                     onClick={onClick}
@@ -203,7 +204,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     data-mini-hit="bubble"
                     role="button"
                     tabIndex={0}
-                    title="Open the reply"
+                    aria-label="Open the reply"
                     onClick={openPetPeek}
                     onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -229,7 +230,6 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         <button
                             type="button"
                             aria-label="Dismiss the reply"
-                            title="Dismiss (the reply stays in the chat)"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 globalStore.set(miniUnreadAtom, false);
@@ -263,7 +263,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                     <button
                         type="button"
                         data-mini-restore
-                        title="Restore the float window"
+                        aria-label="Restore the float window"
                         onClick={restore}
                         className="flex h-[22px] cursor-pointer items-center gap-1 rounded-full bg-surface-hover px-2 text-[11px] font-semibold text-ink-mid hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
