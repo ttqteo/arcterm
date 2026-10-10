@@ -34,6 +34,7 @@ import {
     leadWorker,
     liveWorkers,
 } from "@/app/view/agents/runmodel";
+import { openRunOrigin, useRunOrigin } from "@/app/view/agents/runoriginstore";
 import { SEG_FILL, STRIP_MAX, taskStrip, taskStripLabel } from "@/app/view/agents/runstrip";
 import { eventTitle, tsLabel } from "@/app/view/agents/runtimeline";
 import { SectionLabel } from "@/app/view/agents/sectionlabel";
@@ -191,7 +192,14 @@ function RunSheetFrame({ ctx, dag }: { ctx: SheetCtx; dag: SheetDagRead | null }
 
     return (
         <div data-run-sheet={run.status} className="flex min-h-0 flex-1 flex-col bg-background">
-            <Reading run={run} agents={agents} status={status} dag={dag} onRetry={dag?.digest.retry} />
+            <Reading
+                model={ctx.model}
+                run={run}
+                agents={agents}
+                status={status}
+                dag={dag}
+                onRetry={dag?.digest.retry}
+            />
             <div className="sc min-h-0 flex-1 overflow-y-auto px-4 pb-2.5">
                 {dag != null ? (
                     <RunTimingSection run={run} digest={dag.digest.digest} tasks={dag.group?.tasks} now={now} />
@@ -326,12 +334,14 @@ function FinalThumb({
 }
 
 function Reading({
+    model,
     run,
     agents,
     status,
     dag,
     onRetry,
 }: {
+    model: AgentsViewModel;
     run: Run;
     agents: AgentVM[];
     status: SheetStatus;
@@ -344,6 +354,7 @@ function Reading({
     const cost = liveWorkers(run, agents).reduce((sum, a) => sum + (a.usage?.costusd ?? 0), 0);
     const ref = run.effortref;
     const effort = ref != null ? index.get(ref.effortoid) : undefined;
+    const origin = useRunOrigin(model, run);
     return (
         <div className="flex flex-none flex-col gap-[11px] border-b border-edge-faint px-4 pb-3.5 pt-4">
             <div className="flex items-center gap-[9px]">
@@ -389,6 +400,26 @@ function Reading({
                 headingClassName="text-[17px] font-bold leading-[1.3] tracking-[-.01em] text-primary"
                 proseClassName={cn(STAGE_PROSE, "text-[13px] leading-[1.6] text-ink-mid")}
             />
+            {origin != null ? (
+                // the session that ran `wsh runs start` for this run; nothing for a run started here
+                <button
+                    type="button"
+                    data-run-origin={origin.kind}
+                    disabled={origin.kind === "gone"}
+                    title={
+                        origin.kind === "gone"
+                            ? "That session has since closed"
+                            : `Go to ${origin.name}, the session that started this run`
+                    }
+                    onClick={() => openRunOrigin(model, origin)}
+                    className="inline-flex max-w-full cursor-pointer items-center gap-1 self-start text-[10.5px] text-ink-mid hover:text-accent-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-default disabled:hover:text-ink-mid"
+                >
+                    <CornerDownRight size={11} aria-hidden className="flex-none text-muted" />
+                    <span className="truncate">
+                        started from {origin.kind === "gone" ? "a closed session" : origin.name}
+                    </span>
+                </button>
+            ) : null}
             {ref != null && effort != null ? (
                 <button
                     type="button"

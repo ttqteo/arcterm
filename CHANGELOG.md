@@ -23,6 +23,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   pushed. Beside the source picker, **Fetch**, **Pull** and **Push** work on the branch against its upstream and show
   how many commits it is ahead and behind: Pull only fast-forwards and asks first when an agent is working in that
   folder, Push never forces, and a refusal from git is shown instead of changing anything.
+- A run an agent started with `wsh runs start` links back to that session: `↰ <session>` in the run's header on
+  Agent and **started from** on its run sheet, which open the session's terminal, or its transcript once it has ended.
 
 ### Changed
 

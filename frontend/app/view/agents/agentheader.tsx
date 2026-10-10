@@ -14,6 +14,7 @@ import { MOTION } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
+import * as WOS from "@/app/store/wos";
 import { effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
 import { openOrPeek } from "@/app/view/jarvis/openref";
@@ -53,6 +54,7 @@ import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
+import { openRunOrigin, useRunOrigin } from "./runoriginstore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
@@ -129,6 +131,36 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
             >
                 {initiativeLinkText(agent.name, effort)}
             </button>
+        </>
+    );
+}
+
+// The session that started this agent's run with `wsh runs start`, linking back to it. The tree no longer lists the
+// run under that session, so this is where the two meet.
+function RunOriginLink({ model, runId }: { model: AgentsViewModel; runId: string }) {
+    const run = useAtomValue(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId)));
+    const origin = useRunOrigin(model, run);
+    if (origin == null) {
+        return null;
+    }
+    return (
+        <>
+            {" · "}
+            {origin.kind === "gone" ? (
+                <span data-run-origin="gone" title="Started from a session that has since closed">
+                    ↰ a closed session
+                </span>
+            ) : (
+                <button
+                    type="button"
+                    data-run-origin={origin.kind}
+                    onClick={() => openRunOrigin(model, origin)}
+                    title={`Started from ${origin.name}: go to that session`}
+                    className="cursor-pointer text-accent-soft hover:underline"
+                >
+                    ↰ {origin.name}
+                </button>
+            )}
         </>
     );
 }
@@ -368,6 +400,10 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 <span>↑ {lineage.run?.title ?? "no lead"}</span>
                             )}
                         </>
+                    ) : null}
+                    {/* a worker's way back is its lead; a lead or a Quick run's agent links the session it came from */}
+                    {agent.runId && lineage?.kind !== "worker" && lineage?.kind !== "stage" ? (
+                        <RunOriginLink model={model} runId={agent.runId} />
                     ) : null}
                 </span>
             </div>

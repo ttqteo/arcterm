@@ -156,7 +156,7 @@ Thao tác trên hàng:
 
 Run orchestrator được vẽ như một nhóm: hàng của **lead** (biểu tượng sơ đồ) có dòng dưới gồm chip `N workers` (gấp/mở), tiến độ (vd. `3/7 done`) và một thanh mảnh chia theo từng task. Bên dưới là các **worker** theo task: tên task, trạng thái, câu hỏi nếu có; task đã xong gấp vào dòng `N done`, task chưa chạy vào `N queued`. Run đã land ghi **✓ landed**. Bấm một worker để xem terminal của nó; worker đã xong mở transcript chỉ-đọc của nó.
 
-Một run mà lead đã đóng nhưng worker còn tab hiện thành một hàng *run* riêng (chuột phải: **Open run**, **Close run**). Run do một agent khởi động bằng `wsh runs start` nằm một cấp thụt vào dưới agent đó. Chi tiết run: [Orchestrator](orchestrator.md).
+Một run mà lead đã đóng nhưng worker còn tab hiện thành một hàng *run* riêng (chuột phải: **Open run**, **Close run**). Run do một agent khởi động bằng `wsh runs start` giữ chỗ của nó trong cây; header của lead (hay của agent run Quick) có link `↰ <session>` về agent đó, mở terminal khi agent còn sống và transcript khi đã kết thúc ("↰ a closed session" khi không tìm được nữa). Chi tiết run: [Orchestrator](orchestrator.md).
 
 ### Conversations — các cuộc hội thoại đã kết thúc
 
