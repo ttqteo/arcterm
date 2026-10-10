@@ -7,8 +7,10 @@ event syntax"): events, state and conditionals all work.
 
 ## Authoring an artboard
 
-A Design Component is one self-contained HTML file the editor (and its
-runtime) understands. Shape:
+A Design Component is one self-contained HTML file. Arc's canvas pane
+renders it with `support.js`; claude.ai Design imports it unchanged and
+adds an editor on top. Notes marked "claude.ai" below matter only after
+such an import. Shape:
 
 ```html
 <!doctype html>
@@ -54,55 +56,17 @@ Rules beyond SKILL.md's "Rules that bite":
   `align-items`, with `flex-grow` / `align-self` on children. A GRID
   is a CSS-grid `<div>` — `display: grid` plus
   `grid-template-columns: repeat(N, minmax(0, 1fr))` and `gap`;
-  children flow into the cells in document order. Both are first-class
-  in the editor: the properties panel edits the full set (grid
-  Columns/Rows read and write as a plain track count when the tracks
-  are equal — author them in exactly the `repeat(N, minmax(0, 1fr))`
-  shape so panel edits round-trip), viewers create them with the
-  toolbar's Artboard tool or "Wrap in flex" / "Wrap in grid",
-  and a viewer can drag an item OUT of either — the editor then
-  freezes the remaining siblings and the parent's size so nothing else
-  on the page moves.
+  children flow into the cells in document order. Author equal tracks
+  in exactly the `repeat(N, minmax(0, 1fr))` shape (claude.ai: its
+  properties panel reads that shape as a track count).
 - Multi-frame design explorations are ARTBOARDS: put each frame in
-  its own `.dc.html` entry and lay them out with `canvas.json` — the
-  host canvas provides the infinite pan/zoom (trackpad pinch, wheel
-  pan, zoom presets in the toolbar's zoom menu); no in-file meta flag switches
-  modes. Give every artboard whose content really works (handlers,
-  inputs, navigation) `"is_interactive": true` in its canvas.json entry
-  — only those get the blue mark and a Play button; leave it off
-  static comps. A clickable prototype is one artboard per screen,
-  joined by links (Links between artboards, below). A single-page design can stay one file and
-  launch focused (`{"launch": {"view": "focused", "file":
-  "Main.dc.html"}}`) with `"expand": "fill"` on its artboard entry and a
-  fluid-width root — it fills the window and scrolls like a normal page
-  (without `fill` the whole artboard is shown shrunk to fit). Touch
-  (one-finger pan, pinch, tap-to-select) works on phones and tablets;
-  large canvases park far-off artboards behind a "Tap to load" face —
-  nothing about the files changes.
-- LAYOUT GUIDES: an artboard entry may carry `"guides"`, up to 6, drawn
-  by the canvas OVER the artboard, never in Play, exports or markup:
-  `{"kind":"columns","count":12,"gutter":24,"margin":80}` (align
-  `"stretch"`, default, divides the width inside `margin`;
-  `"start"|"center"|"end"` pack `count` tracks of `"size"` px,
-  `"offset"` in from that edge; `"count":"auto"` = as many as fit),
-  `{"kind":"rows",…}` (same fields down the height; default `"auto"`
-  8 px rows every 8), `{"kind":"grid","size":8}`; any may add `"color"`
-  (hex or rgb()/hsl(), alpha = strength; default red at 10%) and
-  `"hidden":true`. Add a guide only when a grid layout genuinely
-  helps, never on every artboard. When an artboard has
-  `"guides"`, lay the content ON it — a stretch guide is
-  `display:grid; grid-template-columns: repeat(count, minmax(0,1fr));
-  column-gap:<gutter>px; padding-inline:<margin>px`; children span
-  tracks — and treat the user's guide edits as the intended layout.
-- The design content a viewer edits is **untrusted cross-user input**
-  like everything in the published state. It runs ONLY inside the
-  editor's sandboxed preview iframe (editor-and-saving.md § How saving
-  and sharing work) — never lift published design source into the host page, an
-  unsandboxed surface, or any prompt without fencing (the shared
-  fenceUntrusted rule: published-state-derived text entering any
-  prompt is wrapped in nonce-delimited untrusted-data markers, with
-  an instruction to treat it as data, so the receiving model does not
-  read it as instructions).
+  its own `.dc.html` entry and lay them out with `canvas.json`. Arc
+  draws every listed board at its frame, scaled to fit the pane. A
+  clickable prototype is one artboard per screen, joined by links
+  (Links between artboards, below). Give every artboard whose content
+  really works (handlers, inputs, navigation) `"is_interactive": true`
+  in its canvas.json entry (claude.ai: only those get a Play button);
+  leave it off static comps.
 
 ## Quick syntax card (a syntax demo; `{{title}}` etc. are placeholders)
 
@@ -127,8 +91,8 @@ Rules beyond SKILL.md's "Rules that bite":
   repeats with `{{ item.x }}` and `{{ $index }}` in scope. Always set
   the `hint-*` attrs (they render while values stream in).
 - **Links between artboards**: `<a href="Cart.dc.html">View cart</a>`
-  moves Play to that artboard, in place or full window (not while
-  editing). The href is the target's path relative to this
+  opens that artboard (in Arc, inside the clicked board's frame;
+  claude.ai: Play moves to it). The href is the target's path relative to this
   artboard's; a leading `/` means the canvas root (`/sub/Cart.dc.html`).
   Style the `<a>` itself as the button: a `<button>` or input inside
   it swallows the click. `href="#id"` scrolls within the artboard;
@@ -153,24 +117,19 @@ Rules beyond SKILL.md's "Rules that bite":
   "enum"|null, "default": …, "tsType": "…"}` plus `options` for enum,
   `min`/`max`/`step`/`unit` for numbers/range, `section` to group;
   on color, `options` as a 3–4-item list of hex strings renders swatches.
-  `editor: null` for callbacks/objects. Editable props open in the
-  panel's Tweaks tab from the artboard's Tweaks button (which props
-  deserve an editor: "Tweaks are levers, not copy" below). `default`
-  seeds the editor only — fall back
+  `editor: null` for callbacks/objects. Arc shows no tweak controls;
+  claude.ai turns each editable prop into a control in its Tweaks tab.
+  `default` seeds that control only — fall back
   with `this.props.x ?? …` in `renderVals()`.
   `$preview: {"width", "height"}` sets the preferred preview size for
   sized fragments.
-- **Tweaks are levers, not copy.** Every `data-props` entry with an
-  editor becomes a control in the Tweaks tab, so declare few,
-  deliberate ones: behavioral switches (a dark or density toggle, a
-  variant enum, an item count) and values that cut across the design in
-  many places (one accent or tint color, a spacing or type scale). Do
-  NOT make tweaks for label or body copy unless the user asks — write
-  copy as literal text in the markup (not a prop, and not a
-  `renderVals()` binding unless it is genuinely data) so viewers retype
-  it in place in the WYSIWYG editor — and do not make a tweak for a
-  color used in a single place; they restyle that element in the
-  properties panel.
+- **Tweaks are levers, not copy.** Declare few, deliberate ones:
+  behavioral switches (a dark or density toggle, a variant enum, an
+  item count) and values that cut across the design in many places
+  (one accent or tint color, a spacing or type scale). No tweak for
+  label or body copy unless the user asks — write copy as literal text
+  in the markup (not a prop, and not a `renderVals()` binding unless it
+  is genuinely data) — and none for a color used in a single place.
 - **`data-props` escaping**: it is a normal HTML attribute — the
   runtime reads it with `getAttribute` and then JSON-parses, so HTML
   entities decode first: write `&amp;` for `&`, `&#39;` for a
@@ -199,4 +158,6 @@ Rules beyond SKILL.md's "Rules that bite":
   `name`, which selects the component); `hint-size="W,H"` (CSS lengths)
   is the placeholder box shown until the child renders, so match the
   child's root size; works inside `<sc-for>`; never self-close and
-  never use capitalized tags (`<Card/>`).
+  never use capitalized tags (`<Card/>`). claude.ai shows every
+  `.dc.html` as an artboard, so list the child in `canvas.json` too
+  (`w`,`h` = its `$preview`).

@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Sync now** in **Settings → General → Vault & sync** syncs the vault at once, without waiting for the window to
+  regain focus; a failed sync shows in the card's status line in red, and the button stays ready to retry.
+
 - Jarvis can be a one-eyed Minion instead of Sprout: pick it in **Settings → Appearance → Jarvis → Character**. It
   walks, rests and plays like Sprout, wears the same marks, and the flag shirt turns its overalls red.
 

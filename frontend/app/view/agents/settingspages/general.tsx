@@ -6,13 +6,13 @@
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { fireAndForget } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Folder } from "lucide-react";
+import { Folder, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { startupMenuEntries, startupSurfaceAtom, vaultPathError } from "../cockpitprefsstore";
 import { railVisibleAtom } from "../railstore";
-import { vaultStatusLine } from "../settingsmodel";
+import { vaultStatusLine, vaultSyncButton, vaultSyncFailureNote } from "../settingsmodel";
 import {
     CardFooter,
     CommitText,
@@ -92,19 +92,26 @@ function NotificationRows() {
     );
 }
 
+// a waited sync runs a pull and a push; the 5 s default rpc timeout would give up on it mid-run
+const VAULT_SYNC_TIMEOUT_MS = 120_000;
+
 function VaultCard() {
     const stored = (useAtomValue(getSettingsKeyAtom("memory:vaultpath")) as string) ?? "";
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<VaultStatusRtnData | null>(null);
     const [remoteError, setRemoteError] = useState<string | null>(null);
-    const loadStatus = () =>
-        fireAndForget(async () => {
-            try {
-                setStatus(await RpcApi.VaultStatusCommand(TabRpcClient));
-            } catch (e) {
-                setRemoteError(String(e));
-            }
-        });
+    const [clicking, setClicking] = useState(false);
+    const reloadStatus = async (): Promise<VaultStatusRtnData | null> => {
+        try {
+            const s = await RpcApi.VaultStatusCommand(TabRpcClient);
+            setStatus(s);
+            return s;
+        } catch (e) {
+            setRemoteError(String(e));
+            return null;
+        }
+    };
+    const loadStatus = () => fireAndForget(reloadStatus);
     useEffect(() => {
         loadStatus();
     }, []);
@@ -118,7 +125,26 @@ function VaultCard() {
             }
             loadStatus();
         });
-    const statusLine = vaultStatusLine(status);
+    const syncNow = () =>
+        fireAndForget(async () => {
+            setRemoteError(null);
+            setClicking(true);
+            try {
+                await RpcApi.VaultSyncCommand(TabRpcClient, { wait: true }, { timeout: VAULT_SYNC_TIMEOUT_MS });
+                await reloadStatus();
+            } catch (e) {
+                const note = vaultSyncFailureNote(String(e), await reloadStatus());
+                if (note != null) {
+                    setRemoteError(note);
+                }
+            } finally {
+                setClicking(false);
+            }
+        });
+    // a click shows as running before the reloaded status can say so
+    const shown = clicking && status != null ? { ...status, running: true } : status;
+    const statusLine = vaultStatusLine(shown);
+    const syncButton = vaultSyncButton(status, clicking);
     // validate before persisting: an empty path clears the override (falls back to the default vault),
     // otherwise the folder must exist and be a directory. reuses FileInfoCommand (bare local path, ~
     // expanded by the backend) instead of a dedicated RPC — mirrors the New Project picker's stat check.
@@ -161,7 +187,14 @@ function VaultCard() {
             footer={
                 statusLine ? (
                     <CardFooter dot>
-                        <span className="tabular-nums">{statusLine}</span>
+                        <span
+                            data-testid="vault-sync-status"
+                            role="status"
+                            aria-live="polite"
+                            className={cn("tabular-nums", shown?.lasterror && !shown.running ? "text-error" : null)}
+                        >
+                            {statusLine}
+                        </span>
                     </CardFooter>
                 ) : undefined
             }
@@ -186,10 +219,27 @@ function VaultCard() {
             ) : null}
             <SettingRow id="memory.remote">
                 <CommitText value={status?.remoteurl ?? ""} placeholder="git@host:you/vault.git" onCommit={setRemote} />
+                <button
+                    type="button"
+                    data-testid="vault-sync-now"
+                    disabled={!syncButton.enabled}
+                    onClick={syncNow}
+                    className={cn(
+                        "flex w-[96px] flex-none items-center justify-center gap-1.5 rounded border py-[7px] text-[12px] font-semibold transition-colors",
+                        syncButton.enabled
+                            ? "cursor-pointer border-edge-mid text-secondary hover:border-edge-strong hover:text-primary"
+                            : "cursor-not-allowed border-edge-faint text-ink-faint"
+                    )}
+                >
+                    {syncButton.enabled ? <RefreshCw size={12} aria-hidden /> : null}
+                    {syncButton.label}
+                </button>
             </SettingRow>
             {remoteError ? (
                 <div className="px-4 pb-3">
-                    <Note tone="error">{remoteError}</Note>
+                    <Note tone="error" testId="vault-sync-error">
+                        {remoteError}
+                    </Note>
                 </div>
             ) : null}
         </SettingCard>

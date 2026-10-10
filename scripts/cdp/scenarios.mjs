@@ -25741,6 +25741,162 @@ const settingsRadarAudit = {
     },
 };
 
+// --- settings-vault-sync: the Sync now button on Settings > General's Vault & sync card ---------------------
+// The dev app is pointed at a throwaway vault (wavevault opens the configured root on every call), first with
+// no remote, then with a bare temp remote, then with a remote that does not exist. The configured vault is
+// never touched: under a plain `task dev` it may be the user's real one. The error note and the status footer render
+// after the row inside the card, so both are looked up in the whole card.
+const VAULT_PANE = `document.querySelector('[data-setting-card="vault"]')`;
+const VAULT_ROW = `${VAULT_PANE}?.querySelector('[data-setting-row="memory.remote"]')`;
+const VAULT_SYNC_BTN = `${VAULT_PANE}?.querySelector('[data-testid="vault-sync-now"]')`;
+const VAULT_SYNC_STATUS = `${VAULT_PANE}?.querySelector('[data-testid="vault-sync-status"]')`;
+const VAULT_SYNC_ERROR = `${VAULT_PANE}?.querySelector('[data-testid="vault-sync-error"]')`;
+// a first push to an empty bare remote is quick; a sync that takes longer is a failure worth seeing
+const VAULT_SYNC_WAIT_MS = 30_000;
+const vaultSyncState = (h) =>
+    h.ev(`(() => {
+        const b = ${VAULT_SYNC_BTN};
+        const s = ${VAULT_SYNC_STATUS};
+        return {
+            button: b ? { label: (b.textContent || "").trim(), disabled: b.disabled } : null,
+            status: s ? (s.textContent || "").trim() : null,
+            note: ${VAULT_SYNC_ERROR} != null,
+        };
+    })()`);
+
+// the card loads the vault status once, on mount, so a remote set over RPC shows only after a remount
+async function openVaultSection(h) {
+    await h.goto("cockpit");
+    await h.goto("settings");
+    await h.ev(`document.querySelector('[data-section="general"]')?.click()`);
+    return polishWaitFor(h, `${VAULT_ROW} != null && ${VAULT_SYNC_STATUS} != null`, 5000);
+}
+
+async function teardownVaultSync(h, ctx) {
+    if (ctx.vaultConfigured) {
+        await h.rpc("vaultsetremote", { url: "" });
+        await h.rpc("setconfig", { "memory:vaultpath": ctx.prevVaultPath });
+    }
+    for (const dir of [ctx.vault, ctx.remote]) {
+        if (dir) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    }
+}
+
+const settingsVaultSync = {
+    name: "settings-vault-sync",
+    surface: "settings",
+    async arrange(h) {
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const ctx = { prevVaultPath: settings["memory:vaultpath"] ?? null };
+        try {
+            ctx.vault = mkdtempSync(join(tmpdir(), "verify-vault-"));
+            ctx.remote = mkdtempSync(join(tmpdir(), "verify-vault-remote-"));
+            execFileSync("git", ["init", "--bare", ctx.remote], { stdio: "ignore" });
+            await h.rpc("setconfig", { "memory:vaultpath": ctx.vault });
+            ctx.vaultConfigured = true;
+        } catch (e) {
+            await teardownVaultSync(h, ctx);
+            throw e;
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        const opened = await openVaultSection(h);
+        await polishWaitFor(h, `(${VAULT_SYNC_STATUS}?.textContent || "").includes("Sync off")`, 5000);
+        const off = await vaultSyncState(h);
+        rec(
+            "1. with no remote the Sync now button is disabled and the status reads Sync off",
+            opened &&
+                off.button?.label === "Sync now" &&
+                off.button.disabled === true &&
+                off.status === "Sync off — no remote",
+            JSON.stringify(off)
+        );
+        await h.ev(`${VAULT_ROW}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-vault-sync-off.png");
+
+        await h.rpc("vaultsetremote", { url: ctx.remote });
+        await openVaultSection(h);
+        await polishWaitFor(h, `${VAULT_SYNC_BTN}?.disabled === false`, 5000);
+        const idle = await vaultSyncState(h);
+        rec(
+            "2. with a remote the Sync now button is enabled",
+            idle.button?.label === "Sync now" && idle.button.disabled === false,
+            JSON.stringify(idle)
+        );
+        await h.ev(`${VAULT_ROW}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-vault-sync-idle.png");
+
+        // the local in-flight flag renders before the rpc returns, so one frame after the click shows it
+        const clicked = await h.ev(`(async () => {
+            const b = ${VAULT_SYNC_BTN};
+            if (!b) return null;
+            b.click();
+            await new Promise((r) => requestAnimationFrame(() => r()));
+            const n = ${VAULT_SYNC_BTN};
+            return { label: (n?.textContent || "").trim(), disabled: n?.disabled ?? null };
+        })()`);
+        rec(
+            "3. a click marks the button Syncing… and disables it at once",
+            clicked?.label === "Syncing…" && clicked.disabled === true,
+            JSON.stringify(clicked)
+        );
+        await h.shot("cdp-shots/settings-vault-sync-syncing.png");
+
+        await polishWaitFor(
+            h,
+            `(${VAULT_SYNC_STATUS}?.textContent || "").trim() === "Last synced just now" && ${VAULT_SYNC_BTN}?.disabled === false`,
+            VAULT_SYNC_WAIT_MS
+        );
+        const synced = await vaultSyncState(h);
+        rec(
+            "4. the sync lands: Last synced just now, the button enabled, no error note",
+            synced.status === "Last synced just now" && synced.button?.disabled === false && synced.note === false,
+            JSON.stringify(synced)
+        );
+
+        await h.rpc("vaultsetremote", { url: join(ctx.remote, "missing") });
+        await h.ev(`${VAULT_SYNC_BTN}?.click()`);
+        await polishWaitFor(
+            h,
+            `(${VAULT_SYNC_STATUS}?.textContent || "").startsWith("Sync failed:") && ${VAULT_SYNC_BTN}?.disabled === false`,
+            VAULT_SYNC_WAIT_MS
+        );
+        const failed = await vaultSyncState(h);
+        const colors = await h.ev(`(() => {
+            const s = ${VAULT_SYNC_STATUS};
+            const probe = document.createElement("span");
+            probe.style.color = "var(--color-error)";
+            document.body.appendChild(probe);
+            const token = getComputedStyle(probe).color;
+            probe.remove();
+            return { status: s ? getComputedStyle(s).color : null, token };
+        })()`);
+        rec(
+            "5. a failed sync shows once, in the status line in the error color, and the button allows a retry",
+            failed.status?.startsWith("Sync failed:") === true &&
+                colors.status === colors.token &&
+                failed.button?.label === "Sync now" &&
+                failed.button.disabled === false &&
+                failed.note === false,
+            `${JSON.stringify(failed)} colors=${JSON.stringify(colors)}`
+        );
+        await h.ev(`${VAULT_ROW}?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-vault-sync-failed.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownVaultSync(h, ctx);
+        await h.goto("cockpit");
+    },
+};
+
 // --- settings-pages: six pages of cards, the key pill on hover, a changed row end to end ----------------
 // docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the six in order;
 // the page's card ids in order; a shot), then one detail step per page that draws something the card ids do not show
@@ -27398,6 +27554,7 @@ export const SCENARIOS = [
     dagLifecycle,
     routePickerFlat,
     settingsRadarAudit,
+    settingsVaultSync,
     settingsPages,
     jarvisMotion,
     // before brief-inline-tracker, which leaves a briefing fixture on over the seeded data
