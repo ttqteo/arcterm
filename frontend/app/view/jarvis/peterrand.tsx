@@ -58,11 +58,14 @@ export function PetErrand({
     channels,
     onPick,
     compact = false,
+    showPrompt = false,
 }: {
     dest: Channel | null;
     channels: Channel[] | null;
     onPick: (oid: string) => void;
     compact?: boolean;
+    // folded float: the chat shows what you asked above the reply
+    showPrompt?: boolean;
 }) {
     const errand = useAtomValue(petErrandAtom);
     const pref = useAtomValue(harnessPreferenceAtom);
@@ -102,6 +105,11 @@ export function PetErrand({
 
     return (
         <div data-pet-composer className="flex flex-none flex-col gap-1.5 border-t border-border p-2.5">
+            {showPrompt && errand != null ? (
+                <div className="max-w-[80%] self-end rounded-[10px] bg-surface-hover px-2.5 py-1.5 text-[11.5px] leading-[1.45] text-primary [overflow-wrap:anywhere]">
+                    {errand.prompt}
+                </div>
+            ) : null}
             {errand != null ? <ErrandReply errand={errand} /> : null}
 
             {/* Two rows, by frequency rather than by symmetry. Typing happens constantly; the harness and

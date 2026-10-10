@@ -29,7 +29,7 @@ import {
     type Placement,
 } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, X } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, ChevronUp, PictureInPicture2, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
     useCallback,
@@ -71,21 +71,31 @@ import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom } from "
 import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 
-// Where the peek opens from: the walking creature's corner, or the float bar's top right (petfloatmark.tsx), where
-// it drops down.
-export type PeekCorner = PetCorner | "top-right";
+// Where the peek opens from: the walking creature's corner, the float bar's top right (petfloatmark.tsx), where it
+// drops down, or Sprout folded out of the float (cockpit/sprout-mini.tsx), whose placement prop says which way.
+export type PeekCorner = PetCorner | "top-right" | "mini";
 
 const PLACEMENT: Record<PeekCorner, Placement> = {
     "bottom-right": "top-end",
     "bottom-left": "top-start",
     "top-right": "bottom-end",
+    mini: "top-end",
 };
 
 const ORIGIN: Record<PeekCorner, string> = {
     "bottom-right": "bottom right",
     "bottom-left": "bottom left",
     "top-right": "top right",
+    mini: "bottom right",
 };
+
+// the corner a panel grows from: its edge on the anchor's side, at the aligned end
+function originOf(placement: Placement): string {
+    const [side, align] = placement.split("-");
+    const v = side === "top" ? "bottom" : side === "bottom" ? "top" : "center";
+    const h = align === "end" ? "right" : align === "start" ? "left" : "center";
+    return `${v} ${h}`;
+}
 
 // A standing condition's dot. Tone is never the only carrier — the line states the fact in words, and an
 // unremedied condition ends in "no action" rather than in nothing. A spent window reads red, not amber:
@@ -540,11 +550,17 @@ export function PetPeek({
     anchor,
     corner,
     signals,
+    placement,
+    onRestore,
 }: {
     model: AgentsViewModel;
     anchor: HTMLElement | null;
     corner: PeekCorner;
     signals: PetSignals;
+    // the mini corner's way out of Sprout (toward the middle of the screen)
+    placement?: Placement;
+    // folded float only: the header gives the float window back instead of opening the full Jarvis view
+    onRestore?: () => void;
 }) {
     const open = useAtomValue(petPeekOpenAtom);
     const peekItem = useAtomValue(peekItemAtom);
@@ -592,7 +608,7 @@ export function PetPeek({
 
     const { refs, floatingStyles, context } = useFloating({
         open,
-        placement: PLACEMENT[corner],
+        placement: placement ?? PLACEMENT[corner],
         strategy: "fixed",
         middleware: [offset(12), shift({ padding: 8, crossAxis: true })],
         whileElementsMounted: autoUpdate,
@@ -794,9 +810,14 @@ export function PetPeek({
                                     animate="animate"
                                     exit="exit"
                                     transition={{ layout: { duration: MOTION.durMacro, ease: MOTION.easeFluid } }}
-                                    style={{ transformOrigin: ORIGIN[corner] }}
+                                    data-mini-hit="chat"
+                                    style={{
+                                        transformOrigin: placement != null ? originOf(placement) : ORIGIN[corner],
+                                    }}
                                     className={cn(
-                                        "flex max-h-[calc(100vh-16px)] w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border border-border bg-surface-raised shadow-popover",
+                                        "flex w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[12px] border border-border bg-surface-raised shadow-popover",
+                                        // folded: Sprout's 80px box and the offset share the window with the panel
+                                        corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
                                         item != null ? "max-w-[560px]" : quiet ? "max-w-[300px]" : "max-w-[420px]"
                                     )}
                                 >
@@ -844,29 +865,85 @@ export function PetPeek({
                                                             ? "Nothing waiting on you"
                                                             : `${rows.length} waiting on you`}
                                                     </h2>
-                                                    <button
-                                                        type="button"
-                                                        aria-label="Open full Jarvis view"
-                                                        onClick={openJarvis}
-                                                        className={cn(
-                                                            "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
-                                                            FOCUS_RING
-                                                        )}
-                                                    >
-                                                        Full view
-                                                        <ArrowUpRight aria-hidden="true" size={11} strokeWidth={2} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        aria-label="Close Jarvis panel"
-                                                        onClick={close}
-                                                        className={cn(
-                                                            "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
-                                                            FOCUS_RING
-                                                        )}
-                                                    >
-                                                        <X aria-hidden="true" size={14} strokeWidth={2} />
-                                                    </button>
+                                                    {onRestore != null ? (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                data-mini-restore
+                                                                aria-label="Restore the float window"
+                                                                title="Restore the float window"
+                                                                onClick={() => {
+                                                                    leavePeek();
+                                                                    onRestore();
+                                                                }}
+                                                                className={cn(
+                                                                    "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
+                                                                    FOCUS_RING
+                                                                )}
+                                                            >
+                                                                <PictureInPicture2
+                                                                    aria-hidden="true"
+                                                                    size={12}
+                                                                    strokeWidth={2}
+                                                                />
+                                                                Terminal
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                aria-label="Collapse into Sprout"
+                                                                title="Collapse into Sprout (Esc)"
+                                                                onClick={close}
+                                                                className={cn(
+                                                                    "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
+                                                                    FOCUS_RING
+                                                                )}
+                                                            >
+                                                                {placement?.startsWith("bottom") ? (
+                                                                    <ChevronUp
+                                                                        aria-hidden="true"
+                                                                        size={14}
+                                                                        strokeWidth={2}
+                                                                    />
+                                                                ) : (
+                                                                    <ChevronDown
+                                                                        aria-hidden="true"
+                                                                        size={14}
+                                                                        strokeWidth={2}
+                                                                    />
+                                                                )}
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                aria-label="Open full Jarvis view"
+                                                                onClick={openJarvis}
+                                                                className={cn(
+                                                                    "flex h-7 flex-none items-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-[11px] font-medium text-muted hover:bg-surface-hover hover:text-primary",
+                                                                    FOCUS_RING
+                                                                )}
+                                                            >
+                                                                Full view
+                                                                <ArrowUpRight
+                                                                    aria-hidden="true"
+                                                                    size={11}
+                                                                    strokeWidth={2}
+                                                                />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                aria-label="Close Jarvis panel"
+                                                                onClick={close}
+                                                                className={cn(
+                                                                    "flex h-7 w-7 flex-none items-center justify-center rounded-[7px] text-muted hover:bg-surface-hover hover:text-primary",
+                                                                    FOCUS_RING
+                                                                )}
+                                                            >
+                                                                <X aria-hidden="true" size={14} strokeWidth={2} />
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
 
                                                 {conditions.map((condition) => (
@@ -973,6 +1050,7 @@ export function PetPeek({
                                                     dest={dest}
                                                     channels={channels}
                                                     compact={quiet}
+                                                    showPrompt={onRestore != null}
                                                     onPick={(oid) => globalStore.set(petPeekDestAtom, oid)}
                                                 />
                                             </>

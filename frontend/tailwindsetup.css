@@ -527,3 +527,12 @@ svg [aria-label="tip"] g path {
     margin-right: 6px;
     accent-color: var(--color-accent);
 }
+
+/* The float folded into Sprout (floatstore.ts enterMini): the window is see-through, so nothing may paint the page.
+   !important beats index.html's inline body background and the cockpit root's own (cockpit.scss .cockpit-shell). */
+html[data-float-mini],
+html[data-float-mini] body,
+html[data-float-mini] #main,
+html[data-float-mini] .cockpit-shell {
+    background: transparent !important;
+}

@@ -27132,6 +27132,125 @@ const jobqueueAgentTag = {
     },
 };
 
+// --- float folded into Sprout ------------------------------------------------------------------
+// Float a fresh terminal, fold it into Sprout, open the chat from Sprout, give the float window back, and check the
+// terminal's PTY size never moved (the shell is hidden before the window shrinks). Windows only: WKWebView answers
+// no CDP.
+const FLOAT_MINI_PROJECT = "verify-float-mini";
+
+async function floatMiniWait(h, expr, ms = 8000) {
+    return h.ev(`(async () => {
+        for (let i = 0; i < ${Math.ceil(ms / 200)}; i++) {
+            if (${expr}) return true;
+            await new Promise((r) => setTimeout(r, 200));
+        }
+        return false;
+    })()`);
+}
+
+async function floatMiniTermSize(h, blockId) {
+    const block = await waveService(h, "object", "GetObject", [`block:${blockId}`]);
+    return block?.runtimeopts?.termsize ?? null;
+}
+
+const floatMini = {
+    name: "float-mini",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [] };
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, FLOAT_MINI_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        if (ctx.arrangeError) {
+            steps.push({ step: "0. arrange", ok: false, detail: ctx.arrangeError });
+            return steps;
+        }
+        const term = ctx.terminals[0];
+        await h.goto("agent");
+        const chosen = await floatMiniWait(h, `!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        await floatMiniWait(h, `!!document.querySelector("[data-agent-float]")`);
+        await h.ev(`document.querySelector("[data-agent-float]")?.click()`);
+        const floated = await floatMiniWait(h, `!!document.querySelector("[data-float-bar]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const before = await floatMiniTermSize(h, term.blockId);
+        steps.push({
+            step: "1. the scenario's terminal floats",
+            ok: chosen && floated && before != null,
+            detail: JSON.stringify({ chosen, floated, before }),
+        });
+
+        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
+        const folded = await floatMiniWait(h, `!!document.querySelector("[data-sprout-mini]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 800))");
+        const rest = await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
+        // the float bar is still mounted, under the hidden shell
+        const barGone = await h.ev(`!document.querySelector("[data-float-bar]")?.offsetParent`);
+        // nothing from the page root down may paint, or the see-through window shows a dark box around Sprout
+        const painted = await h.ev(`["html", "body", "#main", ".cockpit-shell"]
+            .map((sel) => [sel, getComputedStyle(document.querySelector(sel)).backgroundColor])
+            .filter(([, bg]) => bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")`);
+        await h.shot("cdp-shots/float-mini-rest.png");
+        steps.push({
+            step: "2. Minimize folds the window into Sprout's 340x112 box, see-through around it",
+            ok: folded && rest.w <= 340 && rest.h <= 112 && barGone && painted.length === 0,
+            detail: JSON.stringify({ folded, rest, barGone, painted }),
+        });
+
+        await h.ev(`document.querySelector('[data-mini-hit="sprout"] button')?.click()`);
+        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 112`);
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        await h.shot("cdp-shots/float-mini-chat.png");
+        steps.push({
+            step: "3. a click on Sprout opens the chat and the window grows for it",
+            ok: chat,
+            detail: JSON.stringify(await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`)),
+        });
+
+        await h.ev(`document.querySelector("[data-pet-peek] [data-mini-restore]")?.click()`);
+        const back = await floatMiniWait(
+            h,
+            `!document.querySelector("[data-sprout-mini]") && !!document.querySelector("[data-float-bar]")?.offsetParent`
+        );
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const after = await floatMiniTermSize(h, term.blockId);
+        await h.shot("cdp-shots/float-mini-restored.png");
+        steps.push({
+            step: "4. Terminal gives the float window back, and the PTY size never moved",
+            ok: back && JSON.stringify(after) === JSON.stringify(before),
+            detail: JSON.stringify({ back, before, after }),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`float-mini teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore from Sprout", () => h.ev(`document.querySelector("[data-mini-restore]")?.click()`));
+        await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
+        await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -27228,4 +27347,5 @@ export const SCENARIOS = [
     notifyToast,
     jobqueueChip,
     jobqueueAgentTag,
+    floatMini,
 ];

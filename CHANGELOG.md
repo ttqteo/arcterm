@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Minimizing a float window folds it into Sprout, who floats over your other apps at a corner of the screen: click
+  Sprout to answer what waits on you or ask Jarvis, drag it anywhere, and press **Terminal** or double-click it to
+  get the float window back.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
   as the free RAM allows, so several runs no longer push the machine into swap; the new Jobs chip in the app bar shows
   what runs and what waits, with Run now and Skip.

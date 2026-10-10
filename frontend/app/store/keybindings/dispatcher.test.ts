@@ -10,6 +10,7 @@ import type { LauncherKind } from "@/app/view/agents/launcher";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
+import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { setPlatform } from "@/util/platformutil";
@@ -124,7 +125,17 @@ describe("deriveKeyContext", () => {
         globalStore.set(docReviewAtom, null);
         globalStore.set(petPeekOpenAtom, false);
         globalStore.set(uploadsLightboxOpenAtom, false);
+        globalStore.set(floatMiniAtom, false);
         vi.unstubAllGlobals();
+    });
+
+    // folded into Sprout, the hidden Agent surface's keys (f, Escape, Shift+F, j/k) ended float behind it
+    it("counts the float folded into Sprout as a modal", () => {
+        const unbind = bindModel("agent");
+        expect(deriveKeyContext().modalOpen).toBe(false);
+        globalStore.set(floatMiniAtom, true);
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        unbind();
     });
 
     function stubModel(surface: SurfaceKey): AgentsViewModel {

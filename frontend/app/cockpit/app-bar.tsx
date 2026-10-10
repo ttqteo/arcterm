@@ -6,12 +6,14 @@ import { atoms, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { enterMini, floatModeAtom } from "@/app/view/agents/floatstore";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
+import { fireAndForget } from "@/util/util";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import clsx from "clsx";
 import { useAtomValue } from "jotai";
@@ -117,11 +119,13 @@ function withChord(label: string, keys: string | undefined): string {
 export function WindowControls() {
     const win = getCurrentWindow();
     const maximized = useWindowMaximized();
+    // floating, minimize folds the window into Sprout (floatstore.ts enterMini) rather than into the taskbar
+    const floating = useAtomValue(floatModeAtom);
     return (
         <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
             <button
-                onClick={() => win.minimize()}
-                aria-label="Minimize"
+                onClick={() => (floating ? fireAndForget(enterMini) : win.minimize())}
+                aria-label={floating ? "Minimize to Sprout" : "Minimize"}
                 className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >
                 &#x2013;

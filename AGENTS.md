@@ -113,8 +113,8 @@ before working in an area you don't already know.
 
 - **Tauri shell — Rust (`src-tauri/`)** — thin native host replacing the Electron main process. Mints
   a per-launch auth key, spawns `wavesrv` as a child, parses its `WAVESRV-ESTART` stderr line for the
-  dynamic ports, and runs `wsh install-agent-hooks` on every launch. Five Tauri commands only; the
-  window is borderless and the titlebar is drawn in React.
+  dynamic ports, and runs `wsh install-agent-hooks` on every launch. Eight Tauri commands only (listed in
+  `docs/reference/architecture.md`); the window is borderless and the titlebar is drawn in React.
 - **Go backend (`cmd/`, `pkg/`)** — `wavesrv` (SQLite object store + HTTP + websocket RPC) and `wsh`
   (CLI helper shipped into terminals). **Agents report into and drive the cockpit through `wsh`**
   (`wsh agent-hook`, `wsh ask`; `wsh runs`, `wsh agents`, `wsh ui`, `wsh effort`). The launch-time
