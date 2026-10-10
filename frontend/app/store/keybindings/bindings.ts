@@ -78,6 +78,7 @@ import { peekTarget } from "@/app/view/jarvis/openref";
 import { openPetPeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
+import { isMacOS } from "@/util/platformutil";
 import type { MutableRefObject } from "react";
 import { ownsKeys } from "./dispatcher";
 import { listNavAtom } from "./listnav";
@@ -377,24 +378,28 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
             run: () => stepFloat(model, -1),
         },
-        {
-            // Option+Tab on a Mac, where nothing else takes it; on Windows Alt+Tab is the system's app switcher and
-            // never reaches the window.
-            id: "float:next-tab-alt",
-            keys: "Alt:Tab",
-            group: "Agent",
-            label: "Next tab in a float",
-            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
-            run: () => stepFloat(model, 1),
-        },
-        {
-            id: "float:prev-tab-alt",
-            keys: "Alt:Shift:Tab",
-            group: "Agent",
-            label: "Previous tab in a float",
-            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
-            run: () => stepFloat(model, -1),
-        },
+        // Option+Tab too on a Mac, where nothing else takes it. Not on Windows: Alt+Tab is the system's app switcher
+        // there and never reaches the window, so Ctrl+Tab alone switches a float's tabs.
+        ...(isMacOS()
+            ? [
+                  {
+                      id: "float:next-tab-alt",
+                      keys: "Alt:Tab",
+                      group: "Agent",
+                      label: "Next tab in a float",
+                      when: (ctx: KeyContext) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
+                      run: () => stepFloat(model, 1),
+                  },
+                  {
+                      id: "float:prev-tab-alt",
+                      keys: "Alt:Shift:Tab",
+                      group: "Agent",
+                      label: "Previous tab in a float",
+                      when: (ctx: KeyContext) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
+                      run: () => stepFloat(model, -1),
+                  },
+              ]
+            : []),
         {
             id: "close-agent",
             keys: "Ctrl:c",
