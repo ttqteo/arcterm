@@ -558,12 +558,20 @@ func TestRunsLandAndAckSendTheirRpcs(t *testing.T) {
 		t.Fatalf("land = %+v, want the server's reply", land)
 	}
 
-	req = fakeRunsRpc(t, func() error { return runsAck("ch-1", "r-1") }, nil)
+	req = fakeRunsRpc(t, func() error { return runsAck("ch-1", "r-1", false) }, nil)
 	var ack wshrpc.CommandAckRunData
 	b, _ = json.Marshal(req.Data)
 	json.Unmarshal(b, &ack)
 	if req.Command != "ackrun" || ack != (wshrpc.CommandAckRunData{ChannelId: "ch-1", RunId: "r-1"}) {
 		t.Fatalf("request = %s %+v, want ackrun for r-1", req.Command, ack)
+	}
+
+	req = fakeRunsRpc(t, func() error { return runsAck("ch-1", "r-1", true) }, nil)
+	ack = wshrpc.CommandAckRunData{}
+	b, _ = json.Marshal(req.Data)
+	json.Unmarshal(b, &ack)
+	if req.Command != "ackrun" || ack != (wshrpc.CommandAckRunData{ChannelId: "ch-1", RunId: "r-1", Land: true}) {
+		t.Fatalf("request = %s %+v, want ackrun for r-1 dismissing its land", req.Command, ack)
 	}
 }
 

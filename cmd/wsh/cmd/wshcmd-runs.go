@@ -171,6 +171,7 @@ func init() {
 	runsShowCmd.Flags().Bool("json", false, "JSON output")
 	runsCancelCmd.Flags().Bool("yes", false, "cancel even though workers are live")
 	runsLandCmd.Flags().Bool("force", false, "land even though the final stage failed")
+	runsAckCmd.Flags().Bool("land", false, "dismiss the run's held land instead, as the cockpit's Dismiss does: the branch stays")
 	runsAttentionCmd.Flags().Bool("json", false, "JSON output")
 	runsCmd.AddCommand(runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsLandCmd, runsAckCmd, runsAttentionCmd)
 	rootCmd.AddCommand(runsCmd)
@@ -971,15 +972,20 @@ func runsAckRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := runsAck(ch.OID, run.ID); err != nil {
+	land, _ := cmd.Flags().GetBool("land")
+	if err := runsAck(ch.OID, run.ID, land); err != nil {
 		return err
+	}
+	if land {
+		fmt.Printf("dismissed run %s's held land; wave/%s stays\n", run.ID, run.ID)
+		return nil
 	}
 	fmt.Printf("acknowledged run %s\n", run.ID)
 	return nil
 }
 
-func runsAck(channelId, runId string) error {
-	return wshclient.AckRunCommand(RpcClient, wshrpc.CommandAckRunData{ChannelId: channelId, RunId: runId}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+func runsAck(channelId, runId string, land bool) error {
+	return wshclient.AckRunCommand(RpcClient, wshrpc.CommandAckRunData{ChannelId: channelId, RunId: runId, Land: land}, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
 }
 
 // runsLiveWorkers counts the workers a cancel would stop: the workers on a running phase plus an engine
