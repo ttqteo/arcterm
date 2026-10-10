@@ -59,9 +59,17 @@ Một **route** là một harness cộng một model cụ thể; không có tier
 | Vai trò | Harness được phép |
 |---|---|
 | **Lead**, **Reviewers** (reviewer của task, plan reviewer, final verifier) | Claude Code, Pi |
-| **Workers** | Claude Code, Pi, Antigravity (`agy`) |
+| **Workers** | Claude Code, Pi, Antigravity (`agy`), Codex |
 
-Codex và OpenCode chỉ để consult, không chạy được trong run. Bộ chọn route lọc theo harness (**All / Pi / Claude Code**), nhận cả model id gõ tay, và bộ chọn của lead/reviewer chỉ liệt kê harness có thể lead.
+OpenCode chỉ để consult, không chạy được trong run. Codex chỉ làm worker của task: nó không làm lead, reviewer hay stage session. Bộ chọn route lọc theo harness (**All / Pi / Claude Code**), nhận cả model id gõ tay, và bộ chọn của lead/reviewer chỉ liệt kê harness có thể lead.
+
+Codex chỉ hiện trong bộ chọn Workers khi `~/.codex/config.toml` có dòng `model = "…"` (ở đầu file hoặc trong một profile): arcterm đọc danh sách model của Codex từ đó. Không có dòng đó thì vẫn giao task cho Codex được bằng dòng `**Model:** codex` trong plan.
+
+Worker Codex khác các worker còn lại ở ba điểm:
+
+- **Hai cờ bypass.** Nó khởi động bằng `codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust` (thêm `--model <id>` nếu route có model), prompt đặt ngay sau, nên vẫn là một terminal sống để bạn xem và engine gõ vào. Cờ đầu vì worker không có người ở các prompt xin quyền (nó cũng bỏ qua màn hình "trust this folder" trong worktree mới). Cờ sau vì Codex chỉ chạy hook của người dùng khi bạn đã tin nó bằng `/hooks`; thiếu cờ này, worker không bao giờ báo session id và kẹt ở hạn token đầu tiên. Đổi lại, trong worker mọi hook đang bật trong `~/.codex/hooks.json` (cả của công cụ khác) chạy mà chưa được tin.
+- **Hỏi bằng `wsh ask --wait`.** Codex không có tool hỏi mà cockpit thấy được, nên worker hỏi bằng lệnh shell `wsh ask --wait --questions-json '<json>'`: lệnh chặn cho tới khi lead hoặc bạn trả lời (tối đa 30 phút) rồi in câu trả lời dạng JSON. Câu hỏi đi qua cùng đường với câu hỏi của worker khác: lead trước, rồi tới bạn.
+- **Lệnh nặng không xếp hàng.** Build hay test nặng của worker Codex không chờ trong [hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng); chỉ **Workers at once** giới hạn số build Codex chạy song song.
 
 Một run orchestrator có ba route, chọn ở hộp New (**Lead**, **Workers**, **Reviewers**) và điền sẵn từ [profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc):
 
@@ -69,7 +77,7 @@ Một run orchestrator có ba route, chọn ở hộp New (**Lead**, **Workers**
 - **Workers**, một trong ba:
   - **Same as lead** (mặc định): mọi task chạy trên route của lead.
   - **một route**: mọi task chạy trên route đó.
-  - **Reviewer picks**: mỗi task chạy trên dòng `**Model:**` của plan nếu có, nếu không thì trên model plan reviewer chọn cho nó, `sonnet` hoặc model của lead ([Model picks](#model-picks)). Reviewer picks và một route là **một** cài đặt, nên run không bao giờ có cả hai; server từ chối request gửi cả hai.
+  - **Reviewer picks**: mỗi task chạy trên dòng `**Model:**` của plan nếu có (dòng này có thể nêu cả harness, như `codex:gpt-5.5`: xem [Plan file](plan-format.md#các-dòng-đầu-task)), nếu không thì trên model plan reviewer chọn cho nó, `sonnet` hoặc model của lead ([Model picks](#model-picks)). Reviewer picks và một route là **một** cài đặt, nên run không bao giờ có cả hai; server từ chối request gửi cả hai.
 - **Reviewers**: nơi các session xét của engine chạy: reviewer từng task, plan reviewer, final verifier. Mặc định là route của lead. Chỉ bạn đặt (hộp New, profile, `wsh runs start`, hoặc **Adjust** trên run đang chạy); lead không có lệnh nào ghi nó.
 
 Engine tìm route của từng task bằng một quy tắc (`effectiveTaskRoute`, `pkg/orchestrate/modelroute.go`), lấy nấc đầu tiên áp dụng được:
@@ -278,7 +286,7 @@ Chi tiết các sự kiện "worker":
 
 - **Treo**: im lặng 15 phút (tính từ lần mới nhất trong ghi transcript, mẫu CPU bận, hay câu hỏi chờ), tiến trình còn sống, không có câu hỏi nào đang chờ. Có hai biến thể: worker thoát mà không báo xong (tiến trình biến mất, báo ngay), và worker kết thúc lượt mà không hoàn tất rồi đứng rảnh 3 phút sau hook Stop (engine **không** tự retry biến thể này).
 - **Có thể đang kẹt**: cây làm việc không đổi 20 phút trong khi worker vẫn "hoạt động" (ghi transcript hoặc CPU bận trong 5 phút qua), hoặc cùng một lệnh thất bại cùng một kiểu 3 lần. Engine kiểm mỗi phút và không tự làm gì; lead quyết.
-- **Không bao giờ bắt đầu**: shell của terminal worker không lên nổi sau 5 phút kể từ lúc spawn (pi và agy còn bị canh bằng "chưa có transcript nào").
+- **Không bao giờ bắt đầu**: shell của terminal worker không lên nổi sau 5 phút kể từ lúc spawn (pi, agy và codex còn bị canh bằng "chưa có transcript nào").
 
 `dag status` hiện worker không ghi gì gần đây là `idle Nm`, hoặc `running a command Nm · <tool>` khi tiến trình của nó đang bận (một lần test dài không ghi transcript); worker bị cờ đọc `stuck? <lý do>`. Mỗi task xong có một dòng báo cáo nêu các mục không rỗng và lệnh kéo, ví dụ `t-3 report: differs, not verified, found not fixed (wsh jarvis dag report t-3)`; báo cáo đời cũ đọc `t-3 report: unstructured (…)`.
 
@@ -329,7 +337,7 @@ Một tick của scheduler chưa xong sau **12 phút**, hoặc một Verify tạ
 
 ## Điều khiển run đang chạy
 
-- **Nói chuyện với một worker.** Gõ vào terminal của nó trên surface Agent. Điều bạn gõ được ghi trên run của lead thành dòng `you told t-2 · …` và trong `dag status` (`the human told this worker … ago: …`), để lead thấy ở lần đánh thức kế. Nó không đánh thức ai. (Chỉ các run có transcript được theo dõi: claude, pi, agy.)
+- **Nói chuyện với một worker.** Gõ vào terminal của nó trên surface Agent. Điều bạn gõ được ghi trên run của lead thành dòng `you told t-2 · …` và trong `dag status` (`the human told this worker … ago: …`), để lead thấy ở lần đánh thức kế. Nó không đánh thức ai. (Chỉ các run có transcript được theo dõi: claude, pi, agy, codex.)
 - **Đổi độ rộng hay route workers.** Trên run sheet, **adjust** ở dòng cấu hình → **Worker parallelism**, **Worker route** (có cả **Reviewer picks**) và **Reviewers** → **Save settings** ("Saved. Applies to future dispatches."). Nó áp dụng cho các dispatch từ lúc đó; nó không đổi hình dạng run, máy, hay route lead (cố định lúc khởi chạy), và không đổi cái đang chạy; hạ độ rộng không hủy worker nào. Thẻ lead trên Cockpit và palette ("Workers at once") có bộ chỉnh độ rộng riêng. Mặc định cho lần chạy sau lưu trong [Profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc) hoặc bằng `wsh runs route`.
 - **Hủy.** **Cancel run** (dock của sheet, thẻ lead, palette) hỏi trước khi dừng worker còn đang chạy ("Stop N running workers and cancel this run? Completed phases, transcripts, and artifacts are kept." với **Keep running** để lùi); số worker tính cả worker của task trong dag. Hai chỗ **không hỏi**: nút **Cancel** ở header DAG view, và nút **Stop** trên hàng Runs của Jarvis (nút này cũng hủy cả run, nhưng chỉ đếm worker của phase nên với run engine nó thường hủy ngay). `wsh runs cancel <run-id>` đòi `--yes` khi còn worker sống. Hủy dừng các worker đang chạy, bỏ qua mọi task chưa bắt đầu, lưu việc dở của mỗi lane thành patch ở `.waveterm/recovery/` rồi xóa cây lane. Worker nào sống sót sau hủy thì sheet nói thế qua thẻ **Cancelled · N still running** với **Take control** và **Stop** cho từng cái.
 

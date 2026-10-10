@@ -10,14 +10,26 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
+// codexAskTool is the shell form a codex worker asks with: codex has no ask tool the cockpit sees, so it runs
+// `wsh ask --wait`, which goes through the same AskCommand RPC as pi's bridge (the engine routes the question to
+// the lead, then the human). The ask blocks for as long as they take, up to wsh ask's 30-minute ceiling, and
+// codex's shell tool gives a command a short default timeout and may hand back a still-running session, so the
+// text says how to survive both.
+const codexAskTool = "the shell command `wsh ask --wait --questions-json '{\"questions\":[{\"question\":\"<the question>\",\"header\":\"<a short label>\",\"options\":[{\"label\":\"<an option>\",\"description\":\"<what it means>\"}]}]}'` " +
+	"(it blocks until the lead or the human answers, then prints the answers as JSON; run it with the shell tool's timeout set to 1800000 ms, " +
+	"and if the tool returns while the command still runs, keep reading that session until it prints the answers JSON; never start a second ask)"
+
 // AskTool names the structured question tool a runtime's agent calls. A question asked in plain text
-// never reaches the cockpit, so every prompt that tells an agent to ask names this tool.
+// never reaches the cockpit, so every prompt that tells an agent to ask names this tool. For codex it is
+// the shell command it runs, with how to run it.
 func AskTool(runtime string) string {
 	switch runtime {
 	case "pi":
 		return "ask_user_question"
 	case "agy":
 		return "ask_question"
+	case "codex":
+		return codexAskTool
 	}
 	return "AskUserQuestion"
 }

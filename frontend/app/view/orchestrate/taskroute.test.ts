@@ -262,6 +262,27 @@ describe("cardModelTag", () => {
         const t = task({ modelsource: "owner", runspec: { model: "claude-sonnet-5-5" } });
         expect(cardModelTag(t, lead, zeroGroup)).toBe("sonnet-5-5 · you");
     });
+    it("names a harness's default model by the harness when the lead runs another", () => {
+        const claudeDefault = { runtime: "claude" } as Run;
+        const t = task({ modelsource: "plan", runspec: { runtime: "codex" } });
+        expect(cardModelTag(t, claudeDefault, picksGroup)).toBe("codex · plan");
+    });
+    it("names a harness's pinned model by the model", () => {
+        const t = task({ modelsource: "plan", runspec: { runtime: "codex", model: "gpt-5.5" } });
+        expect(cardModelTag(t, { runtime: "claude" } as Run, picksGroup)).toBe("gpt-5.5 · plan");
+    });
+    it("tags a route that differs from the workers route in runtime alone", () => {
+        const t = task({ modelsource: "plan", runspec: { runtime: "pi", model: "haiku" } });
+        expect(cardModelTag(t, { runtime: "claude", model: "haiku" } as Run, picksGroup)).toBe("haiku · plan");
+    });
+    it("is null when the runtime and the model both match the workers route", () => {
+        const piLead = { runtime: "pi", model: "haiku" } as Run;
+        const pinned = task({ modelsource: "plan", runspec: { runtime: "pi", model: "haiku" } });
+        expect(cardModelTag(pinned, piLead, picksGroup)).toBeNull();
+        // a harness with no model on a lead of that harness with no model: the same route
+        const bare = task({ modelsource: "plan", runspec: { runtime: "codex" } });
+        expect(cardModelTag(bare, { runtime: "codex" } as Run, picksGroup)).toBeNull();
+    });
     it("is null on the workers route or the lead's", () => {
         expect(cardModelTag(task(), lead, workersGroup)).toBeNull();
         expect(cardModelTag(task(), lead, zeroGroup)).toBeNull();
@@ -307,8 +328,16 @@ describe("header chips", () => {
         expect(workersChip(picksGroup, lead)).toBe("workers · reviewer picks");
         expect(workersChip(workersGroup, lead)).toBe("workers · haiku");
     });
+    it("names a harness with no model by the harness", () => {
+        const codexDefault = { tasks: [], workerroute: { runtime: "codex" } } as unknown as TaskGroup;
+        expect(workersChip(codexDefault, lead)).toBe("workers · codex");
+        const codexModel = { tasks: [], workerroute: { runtime: "codex", model: "gpt-5.5" } } as unknown as TaskGroup;
+        expect(workersChip(codexModel, lead)).toBe("workers · gpt-5.5");
+    });
     it("words the reviewer route", () => {
         expect(reviewersChip(zeroGroup, lead)).toBe("reviewers · same as lead");
+        const harnessOnly = { tasks: [], reviewerroute: { runtime: "pi" } } as unknown as TaskGroup;
+        expect(reviewersChip(harnessOnly, lead)).toBe("reviewers · pi");
         const set = {
             tasks: [],
             reviewerroute: { runtime: "claude", model: "claude-sonnet-5-5" },

@@ -16,6 +16,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   stay; **Wake**, or a message to it, picks it up where it was. When RAM runs low the longest-idle one sleeps early.
   Settings → Agents → **Sleep idle agents** sets the time or turns it off; **Sleep** is also in the RAM panel and the
   row's menu.
+- Codex can work a task in an orchestrator run: pick it as the run's Workers (it is listed once
+  `~/.codex/config.toml` names a `model`), or write `**Model:** codex:gpt-5.5` (or `codex`, or `agy:<model>`) on a
+  plan task and start the run on **Reviewer picks**. A Codex worker runs with its approval, sandbox and hook-trust
+  checks off, since no one is there to answer them, and its heavy commands skip the job queue.
 - Codex agents show working, idle and "needs you" on the rail with their session's title and model, and come back in
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.

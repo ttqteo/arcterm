@@ -90,6 +90,40 @@ func TestNoteWorkerSessionBindsAndRebinds(t *testing.T) {
 	}
 }
 
+// codex names its own session like agy, so its first status report binds the id onto a codex child run
+func TestNoteWorkerSessionBindsACodexWorker(t *testing.T) {
+	block, channelID, runID := seedBoundWorker(t, "codex")
+	if got := boundSession(t, channelID, runID); got != "" {
+		t.Fatalf("a codex child starts unbound, got %q", got)
+	}
+	NoteWorkerSession(context.Background(), statusEvent(block, "codex", liveSession))
+	if got := boundSession(t, channelID, runID); got != liveSession {
+		t.Fatalf("the first codex report binds the id, got %q", got)
+	}
+	NoteWorkerSession(context.Background(), statusEvent(block, "codex", ""))
+	if got := boundSession(t, channelID, runID); got != liveSession {
+		t.Fatalf("a report with no id leaves the binding, got %q", got)
+	}
+}
+
+// a nested `codex exec` inside a claude worker's block reports as codex, and must not replace the id claude was launched with
+func TestNoteWorkerSessionIgnoresACodexReportFromAClaudeWorker(t *testing.T) {
+	block, channelID, runID := seedBoundWorker(t, "claude")
+	if err := wstore.UpdateRun(context.Background(), channelID, runID, func(r *waveobj.Run) error { r.SessionId = "launched-id"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	NoteWorkerSession(context.Background(), statusEvent(block, "codex", "nested-codex"))
+	if got := boundSession(t, channelID, runID); got != "launched-id" {
+		t.Fatalf("a codex status inside a claude worker's block must not touch it, got %q", got)
+	}
+	// and a claude status never binds a codex child
+	block, channelID, runID = seedBoundWorker(t, "codex")
+	NoteWorkerSession(context.Background(), statusEvent(block, "claude", "claude-session"))
+	if got := boundSession(t, channelID, runID); got != "" {
+		t.Fatalf("a claude status must not bind a codex child, got %q", got)
+	}
+}
+
 func TestNoteWorkerSessionIgnoresWhatIsNotAnAgyWorker(t *testing.T) {
 	ctx := context.Background()
 	t.Run("a block that is no worker", func(t *testing.T) {

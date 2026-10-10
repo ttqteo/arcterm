@@ -56,8 +56,14 @@ func TestResumeWorkerArgs(t *testing.T) {
 	if !ok || !reflect.DeepEqual(got, wantAgy) {
 		t.Errorf("agy: got %v %v, want %v", got, ok, wantAgy)
 	}
-	if _, ok := ResumeWorkerArgs("codex", "sess-1", base, ResumeNudge); ok {
-		t.Error("codex cannot resume a session")
+	// codex resumes with a subcommand: `codex resume <id> <launch flags> <nudge>`
+	got, ok = ResumeWorkerArgs("codex", "sess-1", base, ResumeNudge)
+	wantCodex := []string{"resume", "sess-1", "--dangerously-skip-permissions", "--model", "opus", ResumeNudge}
+	if !ok || !reflect.DeepEqual(got, wantCodex) {
+		t.Errorf("codex: got %v %v, want %v", got, ok, wantCodex)
+	}
+	if _, ok := ResumeWorkerArgs("opencode", "sess-1", base, ResumeNudge); ok {
+		t.Error("opencode cannot resume a session")
 	}
 }
 

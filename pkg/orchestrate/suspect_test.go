@@ -262,7 +262,7 @@ func TestSuspectEditsBetweenIdenticalFailures(t *testing.T) {
 func TestSuspectUntrackedRuntimeIsCheckedForStagnation(t *testing.T) {
 	ctx, g, f, _ := seedSuspectChild(t, "suspect-untracked", 21*time.Minute)
 	if err := wstore.UpdateRun(ctx, g.ChannelId, g.Tasks[0].RunID, func(run *waveobj.Run) error {
-		run.Runtime = "codex"
+		run.Runtime = "opencode"
 		return nil
 	}); err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -197,6 +198,44 @@ func TestDagSubmitFromPlanPath(t *testing.T) {
 		}
 	})
 
+	t.Run("a Model line may name a harness; one that cannot work is refused naming the task", func(t *testing.T) {
+		// whether agy is installed is the machine's business; the catalog's run-worker flag is what this checks
+		oldValidate := validateHarness
+		validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
+			return harness.ValidateCapable(runtime, op)
+		}
+		t.Cleanup(func() { validateHarness = oldValidate })
+		src := func(line string) string {
+			return "### Task 1: input\nadd the field\n\n### Task 2: totals\n**Depends on:** none\n**Model:** " + line + "\ndo it\n"
+		}
+		channelId, runId := newRun(t)
+		for _, c := range []struct{ name, line, errPart string }{
+			{"a harness that is not a run worker", "opencode:x", `task "t-2"`},
+			{"such a harness alone", "opencode", `task "t-2"`},
+			{"a model the harness does not take", "agy:Not_A_Slug", `task "t-2"`},
+		} {
+			_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, PlanPath: writePlan(t, "plan.md", src(c.line))})
+			if err == nil || !strings.Contains(err.Error(), c.errPart) {
+				t.Fatalf("%s: error %v should name %q", c.name, err, c.errPart)
+			}
+		}
+		for _, c := range []struct{ line, runtime, model string }{
+			{"agy:gemini-3-pro", "agy", "gemini-3-pro"},
+			{"agy", "agy", ""},
+			{"pi:openrouter/x:free", "pi", "openrouter/x:free"},
+			{"sonnet", "", "sonnet"},
+		} {
+			channelId, runId := newRun(t)
+			g, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: channelId, RunId: runId, PlanPath: writePlan(t, "plan.md", src(c.line))})
+			if err != nil {
+				t.Fatalf("%s: %v", c.line, err)
+			}
+			if got := g.Tasks[1].RunSpec; got.Runtime != c.runtime || got.Model != c.model {
+				t.Fatalf("%s: task 2 runs on %q / %q, want %q / %q", c.line, got.Runtime, got.Model, c.runtime, c.model)
+			}
+		}
+	})
+
 	t.Run("a task submitted as JSON cannot name chunks without an effort", func(t *testing.T) {
 		channelId, runId := newRun(t)
 		_, err := (&WshServer{}).DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{
@@ -325,6 +364,21 @@ func TestDagPlanPreview(t *testing.T) {
 		}
 		if !reflect.DeepEqual(*got, want) {
 			t.Fatalf("preview = %+v, want %+v", *got, want)
+		}
+	})
+
+	t.Run("shows a plan's Model line as written", func(t *testing.T) {
+		src := "### Task 1: a\n**Model:** agy:gemini-3-pro\n\n### Task 2: b\n**Model:** agy\n\n### Task 3: c\n**Model:** sonnet\n\n### Task 4: d\n**Model:** pi:openrouter/x:free\n\n### Task 5: e\n"
+		got, err := (&WshServer{}).DagPlanPreviewCommand(ctx, wshrpc.CommandDagPlanPreviewData{PlanPath: write(t, "plan.md", src)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := make([]string, len(got.Tasks))
+		for i, task := range got.Tasks {
+			lines[i] = task.Model
+		}
+		if want := []string{"agy:gemini-3-pro", "agy", "sonnet", "pi:openrouter/x:free", ""}; !reflect.DeepEqual(lines, want) {
+			t.Fatalf("model lines = %q, want %q", lines, want)
 		}
 	})
 

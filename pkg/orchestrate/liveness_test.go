@@ -102,7 +102,7 @@ func TestLastActivityBeforeTheFirstWrite(t *testing.T) {
 // verdict is what kills a healthy child.
 func TestLastActivityUntracked(t *testing.T) {
 	stubSessionsRoot(t, t.TempDir())
-	for _, rt := range []string{"codex", "opencode", "gemini"} {
+	for _, rt := range []string{"opencode", "gemini"} {
 		run := &waveobj.Run{Runtime: rt, DagORef: "dag-1", ProjectPath: t.TempDir(), SessionId: liveSession}
 		if got, tracked := lastActivityForRun(run); tracked || got != 0 {
 			t.Fatalf("runtime %q: want (0,false), got (%d,%v)", rt, got, tracked)
@@ -561,5 +561,57 @@ func TestTranscriptForRunAgy(t *testing.T) {
 	}
 	if got, tracked := lastActivityForRun(bound); !tracked || got != mtime.UnixMilli() {
 		t.Fatalf("want the conversation's own mtime %d, got (%d, %v)", mtime.UnixMilli(), got, tracked)
+	}
+}
+
+// writeCodexSession writes a rollout where codex puts one: sessions/YYYY/MM/DD/rollout-<ts>-<id>.jsonl.
+func writeCodexSession(t *testing.T, root, id string, mtime time.Time) string {
+	t.Helper()
+	return writeTranscript(t, filepath.Join(root, "2026", "10", "10", "rollout-2026-10-10T09-15-30-"+id+".jsonl"), mtime)
+}
+
+// codex names its own session like agy: its run has no id until the first status report binds one, and until then
+// the child is tracked with nothing written, so the first-token deadline can judge it. Once bound, the rollout under
+// the date tree is the heartbeat.
+func TestTranscriptForRunCodex(t *testing.T) {
+	root := t.TempDir()
+	stubSessionsRoot(t, root)
+	unbound := &waveobj.Run{Runtime: "codex", DagORef: "dag-1", ProjectPath: t.TempDir()}
+	if path, runtime, tracked := transcriptForRun(unbound); path != "" || runtime != "codex" || !tracked {
+		t.Fatalf("unbound codex: want (\"\", codex, true), got (%q, %q, %v)", path, runtime, tracked)
+	}
+	if got, tracked := lastActivityForRun(unbound); !tracked || got != 0 {
+		t.Fatalf("unbound codex activity: want (0, true), got (%d, %v)", got, tracked)
+	}
+
+	bound := &waveobj.Run{Runtime: "codex", DagORef: "dag-1", ProjectPath: t.TempDir(), SessionId: liveSession}
+	if path, _, tracked := transcriptForRun(bound); path != "" || !tracked {
+		t.Fatalf("bound but not yet written: want (\"\", true), got (%q, %v)", path, tracked)
+	}
+	mtime := time.Now().Add(-2 * time.Minute)
+	want := writeCodexSession(t, root, liveSession, mtime)
+	writeCodexSession(t, root, siblingSession, time.Now())
+	path, runtime, tracked := transcriptForRun(bound)
+	if path != want || runtime != "codex" || !tracked {
+		t.Fatalf("bound codex: want (%q, codex, true), got (%q, %q, %v)", want, path, runtime, tracked)
+	}
+	if got, tracked := lastActivityForRun(bound); !tracked || got != mtime.UnixMilli() {
+		t.Fatalf("want the rollout's own mtime %d, got (%d, %v)", mtime.UnixMilli(), got, tracked)
+	}
+}
+
+// A codex child that has written nothing reaches the first-token deadline; claude, which is silent by design, does
+// not, and a runtime with no transcript source never does.
+func TestFirstTokenArmedForCodex(t *testing.T) {
+	for _, tc := range []struct {
+		runtime string
+		want    bool
+	}{{"codex", true}, {"agy", true}, {"pi", true}, {"claude", false}, {"", false}, {"opencode", false}} {
+		if got := firstTokenArmed(&waveobj.Run{Runtime: tc.runtime}); got != tc.want {
+			t.Fatalf("runtime %q: want armed=%v, got %v", tc.runtime, tc.want, got)
+		}
+	}
+	if firstTokenArmed(nil) {
+		t.Fatal("a nil run is never armed")
 	}
 }

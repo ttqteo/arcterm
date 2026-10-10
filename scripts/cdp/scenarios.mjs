@@ -17758,6 +17758,285 @@ const modelPicks = {
     },
 };
 
+// --- codex-worker-route: the cockpit names a task's harness (docs/superpowers/specs/2026-10-10-codex-run-worker-design.md §3)
+// Two held runs, so no codex worker is dispatched while the scenario looks at them. Run 1 is Reviewer picks over the plan
+// in fixtures/codex-route-plan.md: Task 1 (sonnet) runs `sleep 600` and never completes, so Task 2 (codex) waits behind
+// it. Run 2 has codex as its Workers route, over the same plan without its Model lines, and stays in plan review.
+const CODEX_ROUTE_PLAN = fileURLToPath(new URL("./fixtures/codex-route-plan.md", import.meta.url));
+const CODEX_ROUTE_TITLE = "verify codex worker route";
+const CODEX_WORKERS_TITLE = "verify codex workers chip";
+// the group header's workers chip is a bare span
+const DAG_WORKERS_CHIP = `([...document.querySelectorAll('[data-dag-modal-kind] span')].map((s) => s.textContent.trim()).find((t) => t.startsWith('workers · ')) ?? null)`;
+
+// A scenario that follows one ending in location.reload() starts before boot-core.ts has set window.TabRpcClient, so
+// its first RPC finds it undefined. Waits like verify.mjs's render wait: a failed evaluate (the execution context a
+// reload in flight destroyed) is not ready yet, and past the deadline the app did not boot, which fails the scenario.
+async function waitForAppBoot(h, maxMs = 120000) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+        const up = await h.ev(`!!window.TabRpcClient && !!document.querySelector('nav button')`).catch(() => false);
+        if (up) return;
+        await polishNap(500);
+    }
+    throw new Error(`the app did not boot in ${maxMs / 1000}s: window.TabRpcClient or the nav is still missing`);
+}
+
+// The first catalog enumeration in a fresh app can outlast one CDP evaluate (30 s), so the call is left running in the
+// page and polled for.
+async function listHarnessesPatiently(h, maxMs = 180000) {
+    await waitForAppBoot(h);
+    await h.ev(`(() => {
+        window.__cdpHarnesses = null;
+        window.TabRpcClient.wshRpcCall("listharnesses", null, { timeout: ${maxMs} }).then(
+            (r) => { window.__cdpHarnesses = { harnesses: r?.harnesses ?? [] }; },
+            (e) => { window.__cdpHarnesses = { error: String(e?.message ?? e) }; }
+        );
+        return true;
+    })()`);
+    for (let waited = 0; waited < maxMs; waited += 1000) {
+        const got = await h.ev(`window.__cdpHarnesses`);
+        if (got != null) {
+            await h.ev(`delete window.__cdpHarnesses`);
+            if (got.error != null) throw new Error(`listharnesses failed: ${got.error}`);
+            return got.harnesses;
+        }
+        await polishNap(1000);
+    }
+    throw new Error(`listharnesses did not answer in ${maxMs / 1000}s`);
+}
+
+// Escape in the DAG modal first drops the selected task, so its Close button is the sure way out
+async function closeCodexRunDag(h) {
+    await h.ev(
+        `[...document.querySelectorAll('[data-dag-modal-kind] button')].find((b) => b.textContent.trim().startsWith('Close'))?.click()`
+    );
+    return polishWaitFor(h, `!document.querySelector('[data-dag-modal-kind]')`, 3000);
+}
+
+// opens a run's DAG from its Brief sheet and waits for its cards; the modal of a run opened before it is closed first
+async function openCodexRunDag(h, runId, title, tasks) {
+    await closeCodexRunDag(h);
+    const opened = await h.ev(`(async () => {
+        for (let i = 0; i < 20 && typeof window.__openAddress !== "function"; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        if (typeof window.__openAddress !== "function") return { ok: false, why: "no __openAddress hook" };
+        return window.__openAddress(${JSON.stringify(`run:${runId}`)});
+    })()`);
+    // the sheet still shows the run before it until the address lands
+    await polishNap(500);
+    const openDag = `[...(document.querySelector('[data-jarvis-brief-sheet]')?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Open DAG')`;
+    const sheet = await polishWaitFor(h, `!!${openDag}`, 15000);
+    if (sheet) await h.ev(`${openDag}.click()`);
+    const graph = await polishWaitFor(
+        h,
+        `${flatText(`document.querySelector('[data-dag-modal-kind="live"]')`)}.includes(${JSON.stringify(title)}) && document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]').length === ${tasks}`,
+        10000
+    );
+    return { ok: opened?.ok === true && sheet && graph, opened, sheet, graph };
+}
+
+const codexWorkerRoute = {
+    name: "codex-worker-route",
+    surface: "jarvis",
+    async arrange(h) {
+        // only a missing codex skips: an installed codex that is not a run worker is the change failing
+        await waitForAppBoot(h);
+        const started = Date.now();
+        const harnesses = await listHarnessesPatiently(h);
+        console.error(`codex-worker-route: listharnesses answered in ${Date.now() - started} ms`);
+        const codex = harnesses.find((x) => x.runtime === "codex");
+        if (!codex?.installed) return { skip: "codex is not installed" };
+        const cwd = mkdtempSync(join(tmpdir(), "verify-codex-worker-route-"));
+        const ctx = {
+            cwd,
+            runIds: [],
+            codex: {
+                runworkercapable: codex.runworkercapable,
+                leadcapable: codex.leadcapable,
+                modelRows: (codex.routecapabilities ?? []).filter((c) => (c.model ?? "") !== "").map((c) => c.model),
+            },
+        };
+        // a throw past this point still returns ctx, so teardown cancels and removes whatever was already made
+        try {
+            const wslist = await h.rpc("workspacelist", null);
+            const workspaceid = wslist[0].workspacedata.oid;
+            const ch = await h.rpc("createchannel", { name: "verify-codex-worker-route", projectpath: cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid,
+                goal: "verify codex-worker-route: hold on a shell command, make no file changes",
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+                reviewerpicks: true,
+                parallelism: 1,
+            });
+            ctx.runId = created.run.id;
+            ctx.runIds.push(ctx.runId);
+            await h.rpc(
+                "dagsubmit",
+                { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: CODEX_ROUTE_PLAN },
+                MODELS_RPC
+            );
+            // the plan reviewer is a real session, spawned after the submit returns; its verdict is recorded here, in
+            // its name, before it can send one. Both tasks have a Model line, so it has no picks to send.
+            let reviewer = null;
+            for (let waited = 0; waited < 90000 && reviewer == null; waited += 1000) {
+                const pr = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.planreview;
+                reviewer = pr?.state === "reviewing" && pr.runid ? pr.runid : null;
+                if (reviewer == null) await polishNap(1000);
+            }
+            if (reviewer == null) throw new Error("the plan reviewer never started");
+            await h.rpc(
+                "dagaction",
+                {
+                    channelid: ctx.channelId,
+                    runid: reviewer,
+                    taskid: "",
+                    action: "planreview-pass",
+                    notes: "verify codex-worker-route: Task 2 waits behind a sleep",
+                },
+                MODELS_RPC
+            );
+            // run 2: codex is the Workers route, not Reviewer picks. Its plan review is never passed, so nothing dispatches
+            const workersPlan = join(ctx.cwd, "codex-workers-plan.md");
+            writeFileSync(
+                workersPlan,
+                readFileSync(CODEX_ROUTE_PLAN, "utf8")
+                    .replace(/^\*\*Model:\*\*.*\r?\n/gm, "")
+                    .replace(/^# .*$/m, `# ${CODEX_WORKERS_TITLE}`)
+            );
+            const second = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid,
+                goal: "verify codex-worker-route: codex as the Workers route",
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+                reviewerpicks: false,
+                workerroute: { runtime: "codex" },
+                parallelism: 1,
+            });
+            ctx.workersRunId = second.run.id;
+            ctx.runIds.push(ctx.workersRunId);
+            await h.rpc(
+                "dagsubmit",
+                { channelid: ctx.channelId, runid: ctx.workersRunId, parallelism: 1, planpath: workersPlan },
+                MODELS_RPC
+            );
+            // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
+            await polishReload(h);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.skip != null) {
+            return [skipStep("1. a codex task on a Reviewer picks run is tagged and routed to codex", `${ctx.skip}: install the codex CLI`)];
+        }
+        if (ctx.arrangeError != null) {
+            rec("0. a Reviewer picks run passed its plan review, and a codex Workers run was submitted", false, ctx.arrangeError);
+            return steps;
+        }
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        const picks = await openCodexRunDag(h, ctx.runId, CODEX_ROUTE_TITLE, 2);
+        await h.shot("cdp-shots/codex-worker-route-1-graph.png");
+        rec("1. the run's graph opened with its 2 tasks", picks.ok, JSON.stringify({ runId: ctx.runId, ...picks }));
+        if (!picks.ok) return steps;
+
+        await polishWaitFor(h, `${cardTagExpr("t-2")} != null`, 5000);
+        const tags = await h.ev(`({ t1: ${cardTagExpr("t-1")}, t2: ${cardTagExpr("t-2")}, chip: ${DAG_WORKERS_CHIP} })`);
+        await h.shot("cdp-shots/codex-worker-route-2-tag.png");
+        rec(
+            "2. the codex task's card tag reads `codex · plan`",
+            tags.t2 === "codex · plan",
+            JSON.stringify(tags)
+        );
+
+        await h.ev(`${dagCardExpr("t-2")}?.click()`);
+        await polishWaitFor(h, `!!${DAG_RAIL_ROUTE}`, 3000);
+        const rail = await h.ev(railExpr);
+        await h.shot("cdp-shots/codex-worker-route-3-rail.png");
+        rec(
+            "3. selecting it, the rail's route is `plan:codex:` and its worker line names the plan's pick",
+            rail.route === "plan:codex:" && rail.text.includes("worker · plan's pick"),
+            JSON.stringify(rail)
+        );
+
+        // the Workers picker of the New run window offers codex once it is a run worker. Codex's catalog is the `model`
+        // lines of its config.toml (runroute.enumerateCodex) and the picker lists only a harness with model rows, so a
+        // codex config that names no model leaves nothing to offer
+        const modalClosed = await closeCodexRunDag(h);
+        const step4 = "4. the New run window's Workers picker offers Codex";
+        if (ctx.codex.modelRows.length === 0) {
+            steps.push(
+                skipStep(
+                    step4,
+                    'codex lists no models, so the Workers picker has no Codex section: add `model = "gpt-5.5"` to ~/.codex/config.toml'
+                )
+            );
+        } else {
+            await h.ev(OPEN_NEW_RUN);
+            const dialog = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
+            const trigger = await polishWaitFor(h, `!!${NEW_RUN_WORKERS}`, 5000);
+            const offered = trigger
+                ? await agyReadPicker(h, NEW_RUN_WORKERS, "codex")
+                : { open: false, chips: [], rows: [] };
+            await h.shot("cdp-shots/codex-worker-route-4-picker.png");
+            rec(
+                step4,
+                dialog &&
+                    trigger &&
+                    offered.open &&
+                    (offered.chips.includes("codex") || offered.rows.some((r) => r.startsWith("codex-"))),
+                JSON.stringify({ modalClosed, dialog, trigger, codex: ctx.codex, ...offered })
+            );
+            await agyClosePicker(h);
+            await h.ev(
+                `[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`
+            );
+            await polishWaitFor(h, `!${NEW_RUN}`, 3000);
+        }
+
+        // a run whose Workers route is codex, not Reviewer picks
+        const workers = await openCodexRunDag(h, ctx.workersRunId, CODEX_WORKERS_TITLE, 2);
+        const chip = workers.ok ? await h.ev(DAG_WORKERS_CHIP) : null;
+        await h.shot("cdp-shots/codex-worker-route-5-workers.png");
+        rec(
+            "5. a run on a codex Workers route reads `workers · codex` in its graph header",
+            workers.ok && chip === "workers · codex",
+            JSON.stringify({ runId: ctx.workersRunId, chip, ...workers })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        if (ctx.cwd == null) return;
+        // every run first: a worker left running outlives the scenario
+        for (const runId of ctx.runIds ?? []) {
+            try {
+                await h.rpc("cancelrun", { channelid: ctx.channelId, runid: runId });
+            } catch (e) {
+                console.error(`codex-worker-route teardown: cancel the run ${runId} failed: ${e?.message ?? e}`);
+            }
+        }
+        await h.ev(PEEKS_ESC).catch(() => {});
+        // the runs are already cancelled
+        await teardownFixtureRun(h, { ...ctx, runId: undefined }, "codex-worker-route");
+        // a cancelled worker can still hold its cwd for a moment, which the one removal above does not wait out
+        try {
+            rmSync(ctx.cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+        } catch (e) {
+            console.error(`codex-worker-route teardown: remove the temp dir failed: ${e?.message ?? e}`);
+        }
+    },
+};
+
 // --- radar-start-investigation: the draft lands on the launcher, not on a past run -----------------
 // Start investigation hands the finding to its project's channel sheet. With a run selected in that channel
 // (one the user had looked at, or a live one) the sheet opened on that run's report and the launcher holding
@@ -27792,6 +28071,7 @@ export const SCENARIOS = [
     paletteActions,
     paletteGoal,
     modelPicks,
+    codexWorkerRoute,
     canvasSwap,
     canvasTabsScenario,
     agentRailSections,
