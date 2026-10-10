@@ -27,7 +27,17 @@ describe("hitAny", () => {
 });
 
 describe("toPagePoint", () => {
-    it("turns the screen's physical cursor into the page's CSS pixels", () => {
-        expect(toPagePoint({ x: 2600, y: 1700 }, { x: 2000, y: 1500 }, 2)).toEqual({ x: 300, y: 100 });
+    it("turns Windows' physical cursor into the page's CSS pixels", () => {
+        expect(toPagePoint({ x: 2600, y: 1700 }, { x: 2000, y: 1500 }, { cursor: 2, window: 2 }, false)).toEqual({
+            x: 300,
+            y: 100,
+        });
+    });
+    // macOS reports the cursor in the primary monitor's scale and the window in its own: a 2x laptop with Sprout on a
+    // 1x monitor put every cursor far outside every box, and the window ignored all clicks
+    it("measures in points on macOS when the cursor's scale and the window's differ", () => {
+        const cursor = { x: 3080, y: 600 }; // points (1540, 300) at the 2x primary's scale
+        const inner = { x: 1500, y: 250 }; // points (1500, 250) at the 1x window's scale
+        expect(toPagePoint(cursor, inner, { cursor: 2, window: 1 }, true)).toEqual({ x: 40, y: 50 });
     });
 });

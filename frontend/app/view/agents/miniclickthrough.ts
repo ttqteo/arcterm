@@ -7,7 +7,8 @@
 // knows Sprout is hovered.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
+import { isMacOS } from "@/util/platformutil";
+import { cursorPosition, getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { atom, type PrimitiveAtom } from "jotai";
 import { hitAny, toPagePoint } from "./minihit";
 
@@ -18,6 +19,8 @@ const HOVER_LEAVE_MS = 200;
 export const miniHoverAtom = atom(false) as PrimitiveAtom<boolean>;
 
 let timer: ReturnType<typeof setInterval> | null = null;
+// bumped by every stop: a tick still awaiting the cursor when the fold ends must not set the window deaf again
+let generation = 0;
 
 function boxes(selector: string): DOMRect[] {
     return Array.from(document.querySelectorAll(selector), (el) => el.getBoundingClientRect());
@@ -28,6 +31,8 @@ export function startClickThrough(): void {
         return;
     }
     const win = getCurrentWindow();
+    const mac = isMacOS();
+    const gen = ++generation;
     let ignoring: boolean | null = null;
     let inFlight = false;
     let leftAt = 0;
@@ -37,12 +42,17 @@ export function startClickThrough(): void {
         }
         inFlight = true;
         try {
-            const [cursor, inner, scale] = await Promise.all([
+            const [cursor, inner, scale, primary] = await Promise.all([
                 cursorPosition(),
                 win.innerPosition(),
                 win.scaleFactor(),
+                // macOS reports the cursor in the primary monitor's scale (minihit.ts toPagePoint)
+                mac ? primaryMonitor() : Promise.resolve(null),
             ]);
-            const p = toPagePoint(cursor, inner, scale);
+            if (gen !== generation) {
+                return;
+            }
+            const p = toPagePoint(cursor, inner, { cursor: primary?.scaleFactor ?? scale, window: scale }, mac);
             const ignore = !hitAny(p, boxes("[data-mini-hit]"));
             if (ignore !== ignoring) {
                 ignoring = ignore;
@@ -70,6 +80,7 @@ export function startClickThrough(): void {
 }
 
 export function stopClickThrough(): void {
+    generation++;
     if (timer != null) {
         clearInterval(timer);
         timer = null;

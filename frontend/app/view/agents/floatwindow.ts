@@ -182,3 +182,18 @@ export function parseMiniRestore(raw: unknown): MiniRestore | null {
     }
     return { rect, pinned: r.pinned };
 }
+
+// The folded float works in one space. Tauri hands out "physical" pixels, but on macOS tao makes them from points with
+// whichever scale is at hand (the window's own for its frame, each monitor's for its area), so two monitors of
+// different scales do not share one space there; in points they do. Windows' physical pixels already share one.
+export function toSpace(rect: WinRect, scale: number, mac: boolean): WinRect {
+    if (!mac) {
+        return rect;
+    }
+    return { x: rect.x / scale, y: rect.y / scale, width: rect.width / scale, height: rect.height / scale };
+}
+
+// what a logical size is multiplied by in that space: points are logical already
+export function spaceScale(scale: number, mac: boolean): number {
+    return mac ? 1 : scale;
+}

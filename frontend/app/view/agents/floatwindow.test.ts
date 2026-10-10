@@ -15,7 +15,9 @@ import {
     parseRect,
     parseRestore,
     screenFor,
+    spaceScale,
     sproutFromWindow,
+    toSpace,
     type MiniSides,
 } from "./floatwindow";
 
@@ -187,5 +189,24 @@ describe("parseMiniRestore", () => {
         expect(parseMiniRestore({ rect: { x: 10, y: 20, width: 720, height: 460 } })).toBeNull();
         expect(parseMiniRestore({ rect: { x: 10 }, pinned: false })).toBeNull();
         expect(parseMiniRestore("junk")).toBeNull();
+    });
+});
+
+describe("toSpace and spaceScale", () => {
+    // a 2x laptop (1440x900 points) with a 1x monitor to its right: tao reports each in its own scale
+    const laptopPhysical = { x: 0, y: 0, width: 2880, height: 1800 };
+    const externalPhysical = { x: 1440, y: 0, width: 1920, height: 1080 };
+    it("puts monitors of different scales into one space on macOS: points", () => {
+        const a = toSpace(laptopPhysical, 2, true);
+        const b = toSpace(externalPhysical, 1, true);
+        expect(a).toEqual({ x: 0, y: 0, width: 1440, height: 900 });
+        expect(b.x).toBe(a.x + a.width);
+    });
+    it("leaves Windows' physical pixels alone, which already share one space", () => {
+        expect(toSpace(laptopPhysical, 2, false)).toEqual(laptopPhysical);
+    });
+    it("scales logical sizes by 1 in points and by the monitor's scale in physical pixels", () => {
+        expect(spaceScale(2, true)).toBe(1);
+        expect(spaceScale(1.5, false)).toBe(1.5);
     });
 });

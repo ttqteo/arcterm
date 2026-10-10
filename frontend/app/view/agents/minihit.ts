@@ -22,7 +22,20 @@ export function hitAny(p: Point, boxes: readonly Box[]): boolean {
     return boxes.some((b) => p.x >= b.left && p.x < b.right && p.y >= b.top && p.y < b.bottom);
 }
 
-// the cursor, in the screen's physical pixels, as the page's CSS pixels
-export function toPagePoint(cursor: Point, inner: Point, scale: number): Point {
-    return { x: (cursor.x - inner.x) / scale, y: (cursor.y - inner.y) / scale };
+// The cursor as the page's CSS pixels. Windows reports the cursor and the window in one space of physical pixels. macOS
+// does not: tao makes the cursor's "physical" pixels from points with the primary monitor's scale and the window's
+// with the window's own, so on a second monitor of another scale only points line up, and a point is a CSS pixel.
+export function toPagePoint(
+    cursor: Point,
+    inner: Point,
+    scales: { cursor: number; window: number },
+    mac: boolean
+): Point {
+    if (mac) {
+        return {
+            x: cursor.x / scales.cursor - inner.x / scales.window,
+            y: cursor.y / scales.cursor - inner.y / scales.window,
+        };
+    }
+    return { x: (cursor.x - inner.x) / scales.window, y: (cursor.y - inner.y) / scales.window };
 }
