@@ -25,6 +25,37 @@ export function focusTrapTarget(
     return focusables[(next + focusables.length) % focusables.length];
 }
 
+// Set while a closing shell hands focus back, so a focus handler can tell that hand-back from a pick: the Agent
+// surface's cells read it (agentsurface.tsx focusCell). Focus events fire inside focus(), so the flag covers them.
+let restoring = false;
+
+export function restoringModalFocus(): boolean {
+    return restoring;
+}
+
+function handBack(el: HTMLElement, options?: FocusOptions): void {
+    restoring = true;
+    try {
+        el.focus(options);
+    } finally {
+        restoring = false;
+    }
+}
+
+type FocusFallback = (previous: HTMLElement | null) => HTMLElement | null;
+let fallback: FocusFallback | null = null;
+
+/** Where focus goes when a closing shell cannot hand it back and nothing else took it, instead of <body>. One at a
+ *  time: the always-mounted Agent surface sets it. Returns the unset. */
+export function setModalFocusFallback(f: FocusFallback): () => void {
+    fallback = f;
+    return () => {
+        if (fallback === f) {
+            fallback = null;
+        }
+    };
+}
+
 export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement | null): () => void {
     if (panel != null && !panel.contains(previous)) {
         panel.focus();
@@ -34,7 +65,7 @@ export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement 
         // land focus on <body> instead of leaving it where the browser already put it. A hidden one
         // (the Agent surface's xterm after a palette pick navigated away) cannot take focus either.
         if (previous?.isConnected && previous.checkVisibility()) {
-            previous.focus();
+            handBack(previous);
             return;
         }
         // with nowhere to hand focus back, don't leave it in this panel: it outlives the close through
@@ -42,6 +73,12 @@ export function takeModalFocus(panel: HTMLElement | null, previous: HTMLElement 
         const active = document.activeElement as HTMLElement | null;
         if (panel?.contains(active)) {
             active.blur();
+        } else if (active != null && active !== document.body) {
+            return;
+        }
+        const next = fallback?.(previous);
+        if (next != null) {
+            handBack(next, { preventScroll: true });
         }
     };
 }

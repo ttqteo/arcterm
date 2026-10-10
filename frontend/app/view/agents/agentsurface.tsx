@@ -20,6 +20,7 @@
 
 import { CockpitFocusPane } from "@/app/cockpit/focus-pane";
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
+import { restoringModalFocus, setModalFocusFallback } from "@/app/modals/modalfocus";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildAgentBindings } from "@/app/store/keybindings/bindings";
 import { focusClaimed, isEditableTarget } from "@/app/store/keybindings/dispatcher";
@@ -58,6 +59,7 @@ import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
+import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { RunPane } from "./runpane";
 import { SessionPane } from "./sessionpane";
@@ -309,6 +311,25 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     };
 
+    // A dialog closing over this surface that cannot hand focus back (a palette pick hid the cell it was opened from)
+    // gives it to the picked agent's terminal or this surface, never <body> (modalfocusfallback.ts).
+    useEffect(
+        () =>
+            setModalFocusFallback((previous) => {
+                if (globalStore.get(model.surfaceAtom) !== "agent") {
+                    return null;
+                }
+                const wrap = wrapRef.current;
+                const picked = globalStore.get(model.focusIdAtom);
+                const term =
+                    picked == null
+                        ? null
+                        : wrap?.querySelector<HTMLElement>(`[data-agent-terminal="${picked}"] .xterm-helper-textarea`);
+                return agentFocusFallback(previous, term ?? null, wrap);
+            }),
+        []
+    );
+
     // A terminal just docked takes the keyboard, as choosing it did when it took the centre. Only on a change of
     // terminal, so the dock reappearing after a session read or fullscreen does not pull focus from the agent.
     const lastDocked = useRef<string | undefined>(undefined);
@@ -452,8 +473,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // A focus that a closing modal hands back is not a pick either: ModalShell restores focus to what had it when it
     // opened, which for a palette opened from a terminal is that cell's xterm, and counting it would undo the pick
     // the palette just made (Open in split, an agent already in the grid). relatedTarget cannot spot the restore (null
-    // when the old focus was removed), but a modal's dialog is still in the document through its exit animation, which
-    // is when the restore runs. The restore lands in the old cell while the selected agent is another one, so hand
+    // when the old focus was removed); the shell marks it while it runs (restoringModalFocus), which holds however soon
+    // the dialog leaves the document. The restore lands in the old cell while the selected agent is another one, so hand
     // focus on to that agent's xterm here rather than leave typing going to the old one (the effect above cannot: a
     // palette thing-action changes the selection a commit before the palette closes). Clicks come in through
     // onMouseDownCapture, which this does not gate.
@@ -461,7 +482,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         if (e.target instanceof Element && e.target.closest("[data-agent-cell-remove]") != null) {
             return;
         }
-        if (viaFocus && document.querySelector('[role="dialog"][aria-modal="true"]') != null) {
+        if (viaFocus && restoringModalFocus()) {
             const picked = globalStore.get(model.focusIdAtom);
             if (multi && picked != null && picked !== id) {
                 focusTerminalOf(picked);
