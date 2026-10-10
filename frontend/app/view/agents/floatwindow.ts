@@ -8,6 +8,8 @@
 // Rects are physical pixels, as Tauri reports a window's frame and a monitor's work area; the sizes below are
 // logical and scale by the monitor's factor.
 
+import type { FoldOrigin } from "./windowsize";
+
 export interface WinRect {
     x: number;
     y: number;
@@ -94,23 +96,31 @@ export function parseRestore(raw: unknown): FloatRestore | null {
     return { rect, maximized: r.maximized, terminalFullscreen: r.terminalFullscreen };
 }
 
-// Float folded into Sprout (floatstore.ts enterMini). The window becomes a see-through box around Sprout and grows
-// for the chat, always around Sprout's own place on screen, so Sprout never moves when the chat opens or closes.
-// Sizes are logical here and physical in the rects, like the float's.
-export const MINI_SPROUT_BOX = 80; // the 64px sprite with room for its bob, its shadow and the count chip
-export const MINI_REST_SIZE = { width: 340, height: 112 }; // room beside Sprout for the hover chip and the reply bubble
+// The window folded into Sprout (floatstore.ts foldToSprout). The window becomes a see-through box around Sprout and
+// grows for the chat, always around Sprout's own place on screen, so Sprout never moves when the chat opens or closes.
+// Sizes are logical here and in the fold's space in the rects (toSpace).
+export const MINI_SPROUT_BOX = 64; // the 48px sprite (petsprite.ts PET_PX) with room for its bob and the count chip
+// the sprite sits this far inside the box, so a fold puts it on the pixels the walking one stood on (windowsize.ts)
+export const MINI_SPRITE_INSET = 8;
+export const MINI_REST_SIZE = { width: 320, height: 232 }; // room beside Sprout for the agent list and the bubble
 export const MINI_CHAT_SIZE = { width: 380, height: 620 };
 const MINI_MARGIN = 24;
 
-// which way from Sprout the chip, the bubble and the chat open: toward the middle of the screen
+// which way from Sprout the list, the bubble and the chat open: toward the middle of the screen
 export interface MiniSides {
     h: "left" | "right";
     v: "up" | "down";
 }
 
-// what giving the float window back needs
+// what giving the window back needs: the size it was folded from and that size's frame
 export interface MiniRestore {
+    origin: FoldOrigin;
+    // the frame, in the fold's space
     rect: WinRect;
+    maximized: boolean;
+    // macOS native fullscreen, left for the fold
+    fullscreen: boolean;
+    // Float's always on top
     pinned: boolean;
 }
 
@@ -123,13 +133,13 @@ export function miniSides(sprout: WinRect, work: WinRect): MiniSides {
     };
 }
 
-// Sprout's box on screen: where it was last dropped, pulled back on screen, or in the work area's bottom-right
-// corner, out of the way like a first float
-export function miniSproutRect(last: WinRect | null, work: WinRect, scale: number): WinRect {
+// Sprout's box on screen: the fold's spot (windowsize.ts foldSpot) or where a drag left it, pulled back on screen; the
+// work area's bottom-right corner when there is none
+export function miniSproutRect(spot: WinRect | null, work: WinRect, scale: number): WinRect {
     const size = MINI_SPROUT_BOX * scale;
     const margin = MINI_MARGIN * scale;
-    const x = last?.x ?? work.x + work.width - size - margin;
-    const y = last?.y ?? work.y + work.height - size - margin;
+    const x = spot?.x ?? work.x + work.width - size - margin;
+    const y = spot?.y ?? work.y + work.height - size - margin;
     return {
         x: clamp(x, work.x, work.x + work.width - size),
         y: clamp(y, work.y, work.y + work.height - size),
@@ -180,7 +190,14 @@ export function parseMiniRestore(raw: unknown): MiniRestore | null {
     if (rect == null || typeof r.pinned !== "boolean") {
         return null;
     }
-    return { rect, pinned: r.pinned };
+    return {
+        // a fold from before Full could fold has no origin, and only ever folded a float
+        origin: r.origin === "full" ? "full" : "float",
+        rect,
+        maximized: r.maximized === true,
+        fullscreen: r.fullscreen === true,
+        pinned: r.pinned,
+    };
 }
 
 // The folded float works in one space. Tauri hands out "physical" pixels, but on macOS tao makes them from points with
