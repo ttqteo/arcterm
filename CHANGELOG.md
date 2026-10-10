@@ -43,7 +43,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.
 - The **Sprout** button on the app bar and on the float bar, and minimize (the yellow button on macOS), fold the
-  window into Sprout right where Sprout stood, from the cockpit or a float: Sprout floats over your other apps; hover it
+  window into Sprout right where Sprout stood, from the cockpit or a float: the window shrinks into Sprout, which stays
+  in place, and Sprout floats over your other apps; hover it
   to see every agent and float on one; click it to answer what waits on you or ask Jarvis; drag it anywhere; and
   double-click it or press **Restore** to get back the window you folded, at the same size and place. `⌘M` (`Ctrl`+`M`
   on Windows) folds too, even from inside a terminal. **Settings → General → Window → Minimize** sends minimize to the

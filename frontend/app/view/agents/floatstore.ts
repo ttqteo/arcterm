@@ -60,6 +60,7 @@ import {
     FOLD_MS,
     FOLD_SCALE,
     foldCenter,
+    foldFade,
     foldSpot,
     minimizeAction,
     minimizeChoice,
@@ -92,7 +93,8 @@ export const floatMiniAtom = atom(false) as PrimitiveAtom<boolean>;
 export const foldOriginAtom = atom<FoldOrigin | null>(null) as PrimitiveAtom<FoldOrigin | null>;
 // which way from Sprout the list, the bubble and the chat open (floatwindow.ts miniSides)
 export const miniSidesAtom = atom<MiniSides>({ h: "left", v: "up" }) as PrimitiveAtom<MiniSides>;
-// true while the window changes size around Sprout, so a half-applied size never shows
+// true while the window changes size around Sprout, so a half-applied size never shows; a fold sets it before Sprout
+// first draws
 export const miniResizingAtom = atom(false) as PrimitiveAtom<boolean>;
 
 // the origin, frame and pin to give back; session, so a reload mid-fold can still give them back
@@ -393,17 +395,21 @@ function walkingSprite(): Pt | null {
     return r == null || r.width === 0 ? null : { x: r.left, y: r.top };
 }
 
-// Scale the content into Sprout's spot and fade it (a fold), or grow it out of the spot (a restore): opacity and scale
-// on the motion tokens' easing. Reduced motion skips it.
+// Scale the content into Sprout's spot and fade it (a fold), or grow it out of the spot (a restore): the scale on the
+// motion tokens' easing, the fade held to the fold's end (windowsize.ts foldFade). Reduced motion skips it.
 async function scaleContent(at: Pt, to: "sprout" | "window"): Promise<void> {
     const el = content();
     if (el == null || reducedMotion()) {
         return;
     }
     el.style.transformOrigin = `${at.x}px ${at.y}px`;
-    const keyframes =
-        to === "sprout" ? { scale: [1, FOLD_SCALE], opacity: [1, 0] } : { scale: [FOLD_SCALE, 1], opacity: [0, 1] };
-    await animate(el, keyframes, { duration: FOLD_MS / 1000, ease: MOTION.easeFluid }).finished;
+    const duration = FOLD_MS / 1000;
+    const fade = foldFade(to);
+    await animate(
+        el,
+        { scale: to === "sprout" ? [1, FOLD_SCALE] : [FOLD_SCALE, 1], opacity: fade.opacity },
+        { duration, ease: MOTION.easeFluid, opacity: { duration, ease: "linear", times: fade.times } }
+    ).finished;
 }
 
 // Before the shell shows again: drawn as small and clear as the fold left it, so its first frame is not full size.
@@ -465,7 +471,10 @@ export function foldToSprout(): Promise<void> {
             await setTrafficLightsHidden(true);
             await win.setShadow(false);
             await scaleContent(foldCenter(sprite, viewport), "sprout");
-            // hide the shell before the window shrinks: a terminal that saw the small window would refit its PTY to it
+            // hide the shell before the window shrinks: a terminal that saw the small window would refit its PTY to it.
+            // The folded Sprout waits unseen until the window stands around its spot, or it shows in a corner of the
+            // big window first.
+            globalStore.set(miniResizingAtom, true);
             globalStore.set(floatMiniAtom, true);
             await nextFrame();
             await nextFrame();

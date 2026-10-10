@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 import { MINI_SPRITE_INSET, MINI_SPROUT_BOX, miniSproutRect, screenFor } from "./floatwindow";
 import {
     afterOpen,
+    FOLD_FADE_FROM,
     FOLD_FALLBACK_MARGIN,
     foldCenter,
+    foldFade,
     foldSpot,
     minimizeAction,
     minimizeChoice,
@@ -169,6 +171,22 @@ describe("foldCenter", () => {
             x: viewport.width - FOLD_FALLBACK_MARGIN - PET_PX / 2,
             y: viewport.height - FOLD_FALLBACK_MARGIN - PET_PX / 2,
         }));
+});
+
+describe("foldFade", () => {
+    // faded as it shrinks, the content was gone before it reached Sprout, and the fold read as a blink
+    it("holds the content solid while it shrinks and fades it only at the end", () => {
+        const { opacity, times } = foldFade("sprout");
+        expect(opacity).toEqual([1, 1, 0]);
+        expect(times).toEqual([0, FOLD_FADE_FROM, 1]);
+        expect(FOLD_FADE_FROM).toBeGreaterThanOrEqual(0.5);
+    });
+    it("plays the fold backwards on a restore", () => {
+        const fold = foldFade("sprout");
+        const back = foldFade("window");
+        expect(back.opacity).toEqual([...fold.opacity].reverse());
+        expect(back.times).toEqual(fold.times.map((t) => 1 - t).reverse());
+    });
 });
 
 describe("unfoldCenter", () => {

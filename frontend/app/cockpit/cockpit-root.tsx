@@ -201,12 +201,15 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <NewInitiativeHost model={model} />
                 <CommandPalette model={model} />
                 <ShortcutsCheatSheet model={model} />
-                {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the
-                    creature is the one object in the app that has to survive that */}
-                <PetView model={model} />
                 <ModalsRenderer />
                 <ContextMenuHost />
                 <NotificationToasts />
+            </div>
+            {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the creature is the
+                one object in the app that has to survive that. Outside the content, so a fold shrinks the window into
+                Sprout rather than Sprout with it; hidden, not unmounted, while folded. */}
+            <div className={cn("contents", folded && "hidden")}>
+                <PetView model={model} />
             </div>
             {folded ? <SproutMini model={model} /> : null}
             <TitleTipHost />

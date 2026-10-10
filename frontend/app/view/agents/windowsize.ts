@@ -94,6 +94,21 @@ export const FOLD_FALLBACK_MARGIN = 24;
 // the fold's motion: the content scales to this and fades over this long (MOTION.easeFluid)
 export const FOLD_MS = 300;
 export const FOLD_SCALE = 0.04;
+// the share of FOLD_MS the content stays solid on a fold, so the eye sees it shrink into Sprout before it fades
+export const FOLD_FADE_FROM = 0.6;
+
+export interface FoldFade {
+    opacity: number[];
+    // each keyframe's place in the fold, 0 to 1
+    times: number[];
+}
+
+/** The content's fade on a fold (to Sprout) or a restore (to the window): a restore plays the fold backwards. */
+export function foldFade(to: "sprout" | "window"): FoldFade {
+    return to === "sprout"
+        ? { opacity: [1, 1, 0], times: [0, FOLD_FADE_FROM, 1] }
+        : { opacity: [0, 1, 1], times: [0, 1 - FOLD_FADE_FROM, 1] };
+}
 
 // the walking sprite's top-left in CSS px, or the fallback corner's
 function spriteAt(sprite: Pt | null, viewport: Viewport): Pt {
