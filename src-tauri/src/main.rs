@@ -4,6 +4,7 @@ mod applog;
 mod canvas;
 mod estart;
 mod init;
+mod macwindow;
 mod commands;
 mod notify;
 mod paths;
@@ -314,7 +315,9 @@ fn main() {
             commands::set_window_init_status,
             commands::open_external,
             canvas::capture_webview,
-            notify::notify_os
+            notify::notify_os,
+            macwindow::set_traffic_lights_hidden,
+            macwindow::redirect_minimize
         ])
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)

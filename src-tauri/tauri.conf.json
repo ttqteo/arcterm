@@ -10,6 +10,7 @@
     "frontendDist": "../frontend/tauri/dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -21,6 +22,7 @@
         "center": true,
         "maximized": true,
         "decorations": false,
+        "transparent": true,
         "dragDropEnabled": false
       }
     ],

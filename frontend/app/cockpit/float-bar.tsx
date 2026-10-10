@@ -6,15 +6,20 @@ import { CTX_TEXT, ICON_BTN, ICON_BTN_ON, STATE_COLOR, STATE_LABEL } from "@/app
 import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
-import { exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
+import { enterMini, exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { PetFloatMark } from "@/app/view/jarvis/petfloatmark";
+import { spriteFor } from "@/app/view/jarvis/petsprite";
+import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { PictureInPicture2, Pin } from "lucide-react";
 import { WindowControls } from "./app-bar";
+
+// a sitting Sprout on the button that folds the float into it
+const MINIMIZE_SPRITE = spriteFor("sit", []);
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
@@ -75,6 +80,17 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             </div>
             {/* the footer and its walking pet are gone in float mode; what waits on you shows here */}
             <PetFloatMark model={model} />
+            <button
+                type="button"
+                data-float-minimize
+                aria-label="Minimize to Sprout"
+                title="Minimize to Sprout"
+                onClick={() => fireAndForget(enterMini)}
+                className={cn(ICON_BTN, "gap-[5px] pr-2 text-[11px] font-semibold")}
+            >
+                <SproutSvg sprite={MINIMIZE_SPRITE} cellPx={1} />
+                Minimize
+            </button>
             <button
                 type="button"
                 data-float-pin

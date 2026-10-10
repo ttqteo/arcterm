@@ -186,8 +186,8 @@ func TestJobQueueRunNowStartsAQueuedJobPastTheSlot(t *testing.T) {
 func TestGetJobQueueListsJobsWithUnixMillisecondTimes(t *testing.T) {
 	q := installQueue(t, 1)
 	empty, err := (&WshServer{}).GetJobQueueCommand(context.Background())
-	if err != nil || empty.Slots != 1 || empty.Jobs == nil || len(empty.Jobs) != 0 {
-		t.Fatalf("empty queue = %+v, %v; want slots 1 and a non-nil empty list", empty, err)
+	if err != nil || empty.Slots != 1 || empty.Mode != jobqueue.ModeSlots || empty.Jobs == nil || len(empty.Jobs) != 0 {
+		t.Fatalf("empty queue = %+v, %v; want slots 1, mode slots and a non-nil empty list", empty, err)
 	}
 	before := time.Now().UnixMilli()
 	held, err := q.Acquire(context.Background(), jobqueue.Request{
@@ -215,6 +215,32 @@ func TestGetJobQueueListsJobsWithUnixMillisecondTimes(t *testing.T) {
 	if queued.Running || queued.Position != 1 || queued.Reason != "slot busy" || queued.Name != "task check:ts" ||
 		queued.QueuedTs < before || queued.StartedTs != 0 {
 		t.Fatalf("queued job = %+v", queued)
+	}
+}
+
+func TestGetJobQueueCarriesTheMode(t *testing.T) {
+	saved := jobqueue.Default
+	t.Cleanup(func() { jobqueue.Default = saved })
+	jobqueue.Default = nil
+	none, err := (&WshServer{}).GetJobQueueCommand(context.Background())
+	if err != nil || none.Mode != jobqueue.ModeAuto {
+		t.Fatalf("no queue = %+v, %v; want the setting's default, auto", none, err)
+	}
+	jobqueue.Default = jobqueue.New(jobqueue.Config{Mode: func() string { return jobqueue.ModeOff }})
+	off, err := (&WshServer{}).GetJobQueueCommand(context.Background())
+	if err != nil || off.Mode != jobqueue.ModeOff {
+		t.Fatalf("queue = %+v, %v; want mode off", off, err)
+	}
+}
+
+func TestGetJobQueueCarriesThePause(t *testing.T) {
+	saved := jobqueue.Default
+	t.Cleanup(func() { jobqueue.Default = saved })
+	until := time.Now().Add(time.Hour).Truncate(time.Millisecond)
+	jobqueue.Default = jobqueue.New(jobqueue.Config{PausedUntil: func() time.Time { return until }})
+	data, err := (&WshServer{}).GetJobQueueCommand(context.Background())
+	if err != nil || data.PausedUntil != until.UnixMilli() {
+		t.Fatalf("queue = %+v, %v; want paused until %d", data, err, until.UnixMilli())
 	}
 }
 

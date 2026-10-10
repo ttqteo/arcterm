@@ -7,6 +7,7 @@ import { modalsModel } from "@/app/store/modalmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
 import { docReviewAtom } from "@/app/view/agents/docreview";
+import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { heldAskOpenAtom } from "@/app/view/agents/heldaskpopup";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
@@ -106,6 +107,9 @@ export function deriveKeyContext(): KeyContext {
         // and the footer's Consumers and Servers popovers, whose Escape listeners run after this capture handler
         globalStore.get(consumersOpenAtom) != null ||
         globalStore.get(machineServersOpenAtom) ||
+        // the float folded into Sprout: the shell is hidden, and its keys (f, Escape, Shift+F, j/k) ended float or
+        // changed the agent behind Sprout's back
+        globalStore.get(floatMiniAtom) ||
         globalStore.get(modalsModel.modalsAtom).length > 0;
     return {
         surface,

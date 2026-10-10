@@ -4,6 +4,9 @@
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { ctrlHeldAtom } from "@/app/cockpit/ctrlheld";
 import { digitHintAtom } from "@/app/cockpit/digithints";
+import { queuedJobFor } from "@/app/cockpit/jobqueue";
+import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
+import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { useSettle } from "@/app/element/motionhooks";
 import { cardVariants, composerReveal, computeEntrances, initialEntranceState } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -443,6 +446,8 @@ function ParentRow({
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
     const mark = lead != null ? leadMark(lead.run, agent) : null;
+    // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place
+    const queued = queuedJobFor(useAtomValue(jobQueueAtom), agent.blockId);
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
     // (donesuggest.ts)
     const done = doneSuggestion(agent, unreadCount, useAtomValue(model.lineageAtom).runs);
@@ -554,8 +559,10 @@ function ParentRow({
             ) : (
                 <>
                     {/* the count stands in for an idle agent's grey dot, and so does the Close a finished one offers;
-                        a working one keeps its pulse */}
-                    {done ? (
+                        a working one keeps its pulse, unless its command waits in the job queue */}
+                    {queued ? (
+                        <QueuedJobTag job={queued} />
+                    ) : done ? (
                         // the chip's click is its own: it must not select the row it closes
                         <button
                             type="button"
@@ -808,6 +815,9 @@ function WorkerRow({
     const selected = focusKey != null && focusId === focusKey;
     const waits = done || nested ? undefined : unmetDeps(run.dag, task);
     const asksYou = !done && ask?.owner !== "lead" && (ask?.owner === "you" || agent?.state === "asking");
+    // its heavy command waiting its turn in the job queue, tagged at the second line's end
+    const jobQueue = useAtomValue(jobQueueAtom);
+    const queued = done ? null : queuedJobFor(jobQueue, agent?.blockId);
     const sub = workerSubtext({
         taskId: task.id,
         lane,
@@ -896,6 +906,8 @@ function WorkerRow({
                         <span className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-warning">
                             {agent?.ask?.hold ? askingLabel(agent) : "asking"}
                         </span>
+                    ) : queued ? (
+                        <QueuedJobTag job={queued} />
                     ) : null}
                 </div>
             </div>

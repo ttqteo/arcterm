@@ -31,11 +31,97 @@ export function chipLabel(d: JobQueueData): string | null {
     return queued > 0 ? `${queued} queued` : null;
 }
 
+/** How the queue starts its jobs (pkg/jobqueue's Mode): `auto` (the default) starts each as RAM allows, `slots`
+ * also counts them, `off` never waits. wavesrv sends one of the three. */
+function paceText(d: JobQueueData): string {
+    if (d.mode === "auto") {
+        return "as RAM allows";
+    }
+    if (d.mode === "off") {
+        return "queue off: each starts at once";
+    }
+    return d.slots === 1 ? "one at a time" : `${d.slots} at a time`;
+}
+
 /** The chip's tooltip. */
 export function queueTitle(d: JobQueueData): string {
     const running = runningCount(d);
-    const pace = d.slots === 1 ? "one at a time" : `${d.slots} at a time`;
-    return `Heavy jobs: ${running} running, ${d.jobs.length - running} queued (${pace}; set in the popover)`;
+    return `Heavy jobs: ${running} running, ${d.jobs.length - running} queued (${paceText(d)}; set in the popover)`;
+}
+
+/** The popover's pace picker: Auto, a slot count or Off. */
+export const PACE_CHOICES: readonly { value: string; label: string }[] = [
+    { value: "auto", label: "Auto" },
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3" },
+    { value: "4", label: "4" },
+    { value: "off", label: "Off" },
+];
+
+/** The picker's value: the slot count while the queue counts slots, else its mode; Auto before the first reading. */
+export function paceValue(d: JobQueueData | null): string {
+    if (d == null) {
+        return "auto";
+    }
+    return d.mode === "auto" || d.mode === "off" ? d.mode : String(d.slots);
+}
+
+/** The settings a picked value writes. A slot count writes the slots mode with it, so picking 2 after Auto counts
+ * slots again. */
+export function pacePatch(value: string): SettingsType {
+    if (value === "auto" || value === "off") {
+        return { "jobs:mode": value };
+    }
+    return { "jobs:mode": "slots", "jobs:slots": Number(value) };
+}
+
+/** How long the pause on at `now` (Unix ms) has left, in ms; null when none is on. wavesrv drops an ended pause at its
+ * next tick, so the clock decides in the meantime. */
+export function pauseLeft(d: JobQueueData | null, now: number): number | null {
+    const until = d?.pauseduntil ?? 0;
+    return until > now ? until - now : null;
+}
+
+/** "4h", "3h 12m", "58m": a pause's time left, rounded up to the minute so it never reads 0 while the pause is on. */
+export function formatLeft(ms: number): string {
+    const total = Math.max(1, Math.ceil(ms / 60_000));
+    if (total < 60) {
+        return `${total}m`;
+    }
+    const h = Math.floor(total / 60);
+    return total % 60 === 0 ? `${h}h` : `${h}h ${total % 60}m`;
+}
+
+/** The chip's text: while a pause is on, the time it has left (and what runs), so a paused queue is never forgotten;
+ * else chipLabel. */
+export function chipText(d: JobQueueData, now: number): string | null {
+    const left = pauseLeft(d, now);
+    if (left == null) {
+        return chipLabel(d);
+    }
+    const running = runningCount(d);
+    return running > 0 ? `paused ${formatLeft(left)} · ${running} running` : `paused ${formatLeft(left)}`;
+}
+
+/** The chip's tooltip: the pause while one is on, else queueTitle. */
+export function chipTitle(d: JobQueueData, now: number): string {
+    const left = pauseLeft(d, now);
+    if (left == null) {
+        return queueTitle(d);
+    }
+    return `Heavy jobs: queue paused for ${formatLeft(left)}, every job starts at once (resume in the popover)`;
+}
+
+/** The popover's Pause choices: how long the queue stays off. */
+export const PAUSE_CHOICES: readonly { label: string; ms: number }[] = [
+    { label: "1h", ms: 3_600_000 },
+    { label: "4h", ms: 4 * 3_600_000 },
+];
+
+/** The settings a Pause writes: the queue off for `ms` from `now`; null (Resume) ends the pause. */
+export function pausePatch(ms: number | null, now: number): SettingsType {
+    return { "jobs:pauseuntil": ms == null ? 0 : now + ms };
 }
 
 /** Whether a queued job has waited past LONG_WAIT_MS at `now` (Unix ms). A running job has stopped waiting. */
@@ -88,4 +174,33 @@ export function openTargetFor(job: JobQueueJob, agents: readonly JobAgent[]): Op
     }
     const agent = agents.find((a) => job.blockid && a.blockId === job.blockid);
     return agent ? { kind: "agent", tabId: agent.id } : null;
+}
+
+/** The job an agent's block waits on: its queued job served first, or null when it has none waiting. A running job has
+ * stopped waiting, and an engine step belongs to no block. */
+export function queuedJobFor(d: JobQueueData | null, blockId: string | undefined): JobQueueJob | null {
+    if (d == null || !blockId) {
+        return null;
+    }
+    const waiting = d.jobs.filter((j) => !j.running && j.blockid === blockId);
+    return ordered(waiting)[0] ?? null;
+}
+
+/** What an agent's row and header say while its heavy command waits its turn: the head of the queue says why it waits
+ * (the queue's reason is the head's), a job further back how many wait ahead of it. It warns past LONG_WAIT_MS, as the
+ * chip does. */
+export function queuedTag(job: JobQueueJob, now: number): { label: string; title: string; warn: boolean } {
+    const pos = job.position ?? 0;
+    const title = `${job.name} waits its turn in the heavy-job queue`;
+    let why = "";
+    if (pos > 1) {
+        why = `${pos - 1} ${pos === 2 ? "job" : "jobs"} ahead of it`;
+    } else if (pos === 1 && job.reason) {
+        why = job.reason;
+    }
+    return {
+        label: pos > 0 ? `queued #${pos}` : "queued",
+        title: why ? `${title}: ${why}` : title,
+        warn: now - job.queuedts > LONG_WAIT_MS,
+    };
 }

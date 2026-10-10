@@ -65,11 +65,12 @@ Other useful commands:
   `AppData\Local\Arc`, where installs from before the rename live).
 - **A heavy shell command waits its turn, and can come back "Not run: …".** Before every Bash command an agent
   runs, the Claude mod and the pi tools extension call `wsh jobslot`; a heavy one (a build, the typecheck, a whole test
-  suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until a slot is free
-  (`jobs:slots` at once, default 1) and its RAM fits, and holds the slot while it runs. The engine's Verify, Final and
-  heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't retry it —
-  carry on and report it skipped. The commands and their RAM estimates are one table in `pkg/memgate/memgate.go`; a
-  single test file or `-run` filter is light and never queues.
+  suite, `npm install`; dev servers excluded) waits in wavesrv's queue (`pkg/jobqueue`) until its RAM fits (by default,
+  `jobs:mode` `auto`; `slots` also caps them at `jobs:slots` at once, `off` never waits, and `jobs:pauseuntil` is off
+  for a while; on macOS "fits" reads the OS memory pressure), and holds its slot while it runs. The engine's Verify,
+  Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't
+  retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
+  `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never queues.
 - **Say what a fan-out will cost before starting it.** Token cost grows as context size × tool calls × agents,
   and almost all of it is cache reads: on 2026-10-08 a docs rewrite with four research subagents and a few real Claude
   agents staged for screenshots took the account from ~20M to ~220M tokens in an hour. Before you launch several
@@ -113,8 +114,8 @@ before working in an area you don't already know.
 
 - **Tauri shell — Rust (`src-tauri/`)** — thin native host replacing the Electron main process. Mints
   a per-launch auth key, spawns `wavesrv` as a child, parses its `WAVESRV-ESTART` stderr line for the
-  dynamic ports, and runs `wsh install-agent-hooks` on every launch. Five Tauri commands only; the
-  window is borderless and the titlebar is drawn in React.
+  dynamic ports, and runs `wsh install-agent-hooks` on every launch. Eight Tauri commands only (listed in
+  `docs/reference/architecture.md`); the window is borderless and the titlebar is drawn in React.
 - **Go backend (`cmd/`, `pkg/`)** — `wavesrv` (SQLite object store + HTTP + websocket RPC) and `wsh`
   (CLI helper shipped into terminals). **Agents report into and drive the cockpit through `wsh`**
   (`wsh agent-hook`, `wsh ask`; `wsh runs`, `wsh agents`, `wsh ui`, `wsh effort`). The launch-time

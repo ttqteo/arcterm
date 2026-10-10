@@ -24,7 +24,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
   the available next keys.
 - **Which-key bar.** The transient bottom bar shown after pressing a leader — it only lists keys
   that will work in your current context.
-- **Held modifier.** Hold `Mod` or `Alt` on its own and the bottom bar lists every chord on that key that
+- **Held modifier.** Hold `Mod` or `Alt` on its own a moment and the bottom bar lists every chord on that key that
   works right now — inside the terminal, the only keys that reach the cockpit. The digit jumps show as one chip
   (`Mod`+`1`–`7`, `Alt`+`1`–`9`) while the rail and the Active list number their rows.
 - **Cheat sheet.** Press `?` (while not typing) to open a searchable modal of every shortcut.
@@ -34,7 +34,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 
 | Keys | Action |
 |---|---|
-| `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar. Hold `Mod` to see the numbers on the rail |
+| `Mod`+`1`…`7` | Jump to surface by position — in order: Cockpit, Jarvis, Agent, Usage, Code, Diff, Radar. Hold `Mod` a moment to see the numbers on the rail |
 | `Mod`+`P` | Search — opens on the Files scope on Code (see below) |
 | `Mod`+`N` | New agent: opens the New dialog on an agent row |
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
@@ -205,7 +205,7 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 |---|---|
 | `Ctrl`+`Tab` | Next agent, by the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
 | `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above |
-| `Alt`+`1`…`9` | The nth agent of the Active list, top to bottom (the split's agents first). Hold `Alt` and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
+| `Alt`+`1`…`9` | The nth agent of the Active list, top to bottom (the split's agents first). Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 

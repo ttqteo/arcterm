@@ -3,7 +3,10 @@
 
 // Package jobqueue holds the heavy shell jobs of every agent and engine run on this machine (builds, the
 // typecheck, whole test suites) to a few at a time, so concurrent runs stop starving each other of CPU and
-// disk. One FIFO: the head starts when a slot is free and its RAM peak fits; no job overtakes another.
+// disk. One FIFO; no job overtakes another. By default (jobs:mode auto) the head starts as soon as its RAM peak
+// fits, so a job waits only when running it would push the machine into swap; jobs:mode slots also caps how many
+// run at once, and off never makes one wait. Where the OS reads its own memory pressure (macOS) that decides
+// instead of the free-RAM count, and jobs:pauseuntil turns the queue off for a while.
 package jobqueue
 
 import (
@@ -32,6 +35,53 @@ const (
 	// Tick paces Run: a fresh RAM reading and the reclaim check.
 	Tick = 5 * time.Second
 )
+
+// Mode is how the queue starts its jobs, the jobs:mode setting.
+const (
+	ModeAuto  = "auto"  // no slot count: the head starts as soon as its peak fits the free RAM; the default
+	ModeSlots = "slots" // the head starts while fewer than jobs:slots run and its peak fits the free RAM
+	ModeOff   = "off"   // no wait: every job starts at once, and is still listed
+)
+
+// NormMode reads the jobs:mode setting: unset or unknown is ModeAuto.
+func NormMode(m string) string {
+	switch m {
+	case ModeSlots, ModeOff:
+		return m
+	}
+	return ModeAuto
+}
+
+// Pressure is the OS's own reading of memory pressure, where it has one (macOS, the one Activity Monitor draws).
+// There it decides instead of the free-RAM count, which leaves out the compressor and swap and so reads low on a
+// machine that still runs fine.
+type Pressure int
+
+const (
+	PressureUnknown  Pressure = iota // no reading: the free-RAM rule decides
+	PressureNormal                   // every job may start
+	PressureWarn                     // one at a time: a job starts once the last one has ramped up
+	PressureCritical                 // nothing starts: the machine is about to stall
+)
+
+// the reasons a queued job waits on the pressure, as the cockpit shows them
+const (
+	ReasonPressureHigh     = "memory pressure high, one at a time"
+	ReasonPressureCritical = "memory pressure critical"
+)
+
+// PressureFromLevel reads macOS's kern.memorystatus_vm_pressure_level: 1 normal, 2 warn, 4 critical.
+func PressureFromLevel(level uint32) Pressure {
+	switch level {
+	case 1:
+		return PressureNormal
+	case 2:
+		return PressureWarn
+	case 4:
+		return PressureCritical
+	}
+	return PressureUnknown
+}
 
 // ErrSkipped is Acquire's error when the person skipped the job from the cockpit.
 var ErrSkipped = errors.New("skipped from the job queue")
@@ -78,8 +128,10 @@ type Job struct {
 }
 
 type Snapshot struct {
-	Slots int
-	Jobs  []Job // running first, then the queue in order
+	Slots       int
+	Mode        string
+	PausedUntil time.Time // zero unless a pause is on: until then every job starts at once
+	Jobs        []Job     // running first, then the queue in order
 }
 
 // Wait is a queued job's place, handed to Acquire's wait callback whenever it changes.
@@ -93,7 +145,12 @@ type Wait struct {
 // Config wires the queue to its surroundings. Wait callbacks and OnChange run one at a time, in the order the
 // queue changed, so they must not block and must not call Acquire, Release, RunNow, Skip or Reclaim.
 type Config struct {
-	Slots     func() int
+	Slots func() int
+	Mode  func() string // jobs:mode, read through NormMode; nil counts slots (tests), unlike an unset setting
+	// PausedUntil is jobs:pauseuntil: before it the queue runs as ModeOff. nil or a past time is no pause.
+	PausedUntil func() time.Time
+	// Pressure is the OS's memory pressure; nil or PressureUnknown leaves the decision to Available.
+	Pressure  func(context.Context) Pressure
 	Available func(context.Context) (uint64, error)
 	OnChange  func(Snapshot) // when the snapshot differs from the last one handed out, outside the lock
 	Now       func() time.Time
@@ -147,6 +204,9 @@ func New(cfg Config) *Queue {
 	if cfg.Slots == nil {
 		cfg.Slots = func() int { return DefaultSlots }
 	}
+	if cfg.Mode == nil {
+		cfg.Mode = func() string { return ModeSlots }
+	}
 	return &Queue{cfg: cfg}
 }
 
@@ -168,17 +228,20 @@ func clampSlots(n int) int {
 	return n
 }
 
-// plan picks the queued jobs that start now, in queue order: a forced job always; otherwise the head while
-// fewer than slots run and its peak fits the free RAM less the peaks of jobs still ramping up. It stops at the
-// first job that cannot start, and returns why the rest wait.
-func plan(jobs []Job, slots int, available uint64, now time.Time) ([]string, string) {
-	running := 0
+// plan picks the queued jobs that start now, in queue order: a forced job always, and every job in ModeOff;
+// otherwise the head while fewer than slots run (in ModeSlots) and the RAM allows it. With a pressure reading
+// that is the pressure: normal starts it, warn only once no job is still ramping up, critical never. With none it
+// is the free RAM less the peaks of jobs still ramping up, which must fit its peak. It stops at the first job that
+// cannot start, and returns why the rest wait.
+func plan(jobs []Job, slots int, mode string, available uint64, pressure Pressure, now time.Time) ([]string, string) {
+	running, rampingJobs := 0, 0
 	var ramping uint64
 	for _, j := range jobs {
 		if j.Running {
 			running++
 			if now.Sub(j.StartedAt) < RampUp {
 				ramping += j.Bytes
+				rampingJobs++
 			}
 		}
 	}
@@ -189,9 +252,10 @@ func plan(jobs []Job, slots int, available uint64, now time.Time) ([]string, str
 		if j.Running {
 			continue
 		}
-		if j.Forced {
+		if j.Forced || mode == ModeOff {
 			start = append(start, j.Id)
 			running++
+			rampingJobs++
 			free = sub(free, j.Bytes)
 			continue
 		}
@@ -199,13 +263,18 @@ func plan(jobs []Job, slots int, available uint64, now time.Time) ([]string, str
 			continue
 		}
 		switch {
-		case running >= slots:
+		case mode == ModeSlots && running >= slots:
 			reason = "slot busy"
-		case !memgate.Fits(memgate.Job{Name: j.Name, Bytes: j.Bytes}, free):
+		case pressure == PressureCritical:
+			reason = ReasonPressureCritical
+		case pressure == PressureWarn && rampingJobs > 0:
+			reason = ReasonPressureHigh
+		case pressure == PressureUnknown && !memgate.Fits(memgate.Job{Name: j.Name, Bytes: j.Bytes}, free):
 			reason = fmt.Sprintf("needs %s, %s free", memgate.FormatGB(j.Bytes), memgate.FormatGB(free))
 		default:
 			start = append(start, j.Id)
 			running++
+			rampingJobs++
 			free = sub(free, j.Bytes)
 		}
 	}
@@ -252,7 +321,7 @@ func (q *Queue) Acquire(ctx context.Context, req Request, wait func(Wait)) (*Slo
 }
 
 // evaluate starts what plan says can start, refreshes every waiter's place, and tells the waiters and
-// OnChange what changed. A broken RAM reading reads as plenty: it never blocks a job.
+// OnChange what changed. A broken RAM reading reads as plenty: it never blocks a job. A pause on runs it as ModeOff.
 func (q *Queue) evaluate(ctx context.Context) {
 	q.evalMu.Lock()
 	defer q.evalMu.Unlock()
@@ -261,6 +330,10 @@ func (q *Queue) evaluate(ctx context.Context) {
 		if v, err := q.cfg.Available(ctx); err == nil {
 			available = v
 		}
+	}
+	pressure := PressureUnknown
+	if q.cfg.Pressure != nil {
+		pressure = q.cfg.Pressure(ctx)
 	}
 	type notice struct {
 		wait func(Wait)
@@ -273,7 +346,11 @@ func (q *Queue) evaluate(ctx context.Context) {
 	for i, e := range q.entries {
 		jobs[i] = e.Job
 	}
-	start, reason := plan(jobs, clampSlots(q.cfg.Slots()), available, now)
+	mode := NormMode(q.cfg.Mode())
+	if !q.pausedUntil(now).IsZero() {
+		mode = ModeOff
+	}
+	start, reason := plan(jobs, clampSlots(q.cfg.Slots()), mode, available, pressure, now)
 	for _, id := range start {
 		for _, e := range q.entries {
 			if e.Id == id {
@@ -316,7 +393,8 @@ func (q *Queue) evaluate(ctx context.Context) {
 	for _, n := range notices {
 		n.wait(n.w)
 	}
-	if q.cfg.OnChange != nil && (q.lastSnap.Slots != snap.Slots || !slices.Equal(q.lastSnap.Jobs, snap.Jobs)) {
+	if q.cfg.OnChange != nil && (q.lastSnap.Slots != snap.Slots || q.lastSnap.Mode != snap.Mode ||
+		!q.lastSnap.PausedUntil.Equal(snap.PausedUntil) || !slices.Equal(q.lastSnap.Jobs, snap.Jobs)) {
 		q.lastSnap = snap
 		q.cfg.OnChange(snap)
 	}
@@ -335,8 +413,23 @@ func (q *Queue) Snapshot() Snapshot {
 	return q.snapshotLocked()
 }
 
+// pausedUntil is when the pause on at now ends, or zero when none is.
+func (q *Queue) pausedUntil(now time.Time) time.Time {
+	if q.cfg.PausedUntil == nil {
+		return time.Time{}
+	}
+	if until := q.cfg.PausedUntil(); until.After(now) {
+		return until
+	}
+	return time.Time{}
+}
+
 func (q *Queue) snapshotLocked() Snapshot {
-	snap := Snapshot{Slots: clampSlots(q.cfg.Slots())}
+	snap := Snapshot{
+		Slots:       clampSlots(q.cfg.Slots()),
+		Mode:        NormMode(q.cfg.Mode()),
+		PausedUntil: q.pausedUntil(q.cfg.Now()),
+	}
 	var queued []Job
 	for _, e := range q.entries {
 		if e.Running {
@@ -439,8 +532,8 @@ func Hold(ctx context.Context, req Request) (release func(), err error) {
 	return slot.Release, nil
 }
 
-// Poke has the default queue read its inputs again now: a changed jobs:slots takes effect at once rather than at
-// the next release or Tick. With no default queue it does nothing.
+// Poke has the default queue read its inputs again now: a changed jobs:slots or jobs:mode takes effect at once
+// rather than at the next release or Tick. With no default queue it does nothing.
 func Poke() {
 	if Default != nil {
 		Default.evaluate(context.Background())

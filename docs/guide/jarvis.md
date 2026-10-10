@@ -36,6 +36,7 @@ Mở một run từ **Waiting on you**, danh sách run, Conversation History, ho
 
 - **Verb** và dòng phụ: Planning, Starting, Executing, Waiting on you, Landing, Blocked, Done, Cancelled.
 - **Thanh tiến độ** (mỗi task một đoạn) và các chip: thời gian đã trôi, worker-time, landed, answered, forwarded, unverified, attention.
+- Dòng **started from** *tên session*, dưới goal, khi run do một session bắt đầu bằng `wsh runs start`: bấm để về session đó (terminal khi còn sống, transcript khi đã kết thúc).
 - **Timing** (run orchestrator): mỗi hoạt động một thanh (Planning, Execution, Task review, Merge & Verify, Final verification, Landing / wrap-up) trên trục tính từ lúc khởi chạy. Thu gọn khi run đang chạy, mở khi run đã xong. Các hoạt động chồng lên nhau nên cộng lại không bằng tổng.
 - **Questions for you**, khi bạn đang giữ câu hỏi.
 - **Tasks**: mỗi task một hàng với trạng thái và một hành động: **Open in Agent ↗** cho worker đang sống, **View child run** cho task đã xong, **Open DAG ↗** cho task kẹt ở merge. Sau đó là dòng `next:` nói run đang đợi gì.

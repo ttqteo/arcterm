@@ -73,5 +73,7 @@ const (
 	ConfigKey_UsageInsightsLang              = "usage:insightslang"
 
 	ConfigKey_JobsSlots                      = "jobs:slots"
+	ConfigKey_JobsMode                       = "jobs:mode"
+	ConfigKey_JobsPauseUntil                 = "jobs:pauseuntil"
 )
 

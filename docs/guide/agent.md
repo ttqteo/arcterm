@@ -115,7 +115,7 @@ Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus v�
 | Việc | Cách làm |
 |---|---|
 | Toàn màn hình terminal | `f` hoặc `F11` (`F11` dùng được cả khi đang gõ trong terminal); `Esc` thoát toàn màn hình |
-| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn và một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi); nút ghim trên thanh giữ nó luôn nằm trên các app khác (mặc định tắt). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước |
+| Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn và một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi); nút ghim trên thanh giữ nó luôn nằm trên các app khác (mặc định tắt). Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước. Nút **Minimize** trên thanh (hoặc nút minimize của cửa sổ, nút vàng trên macOS) thu cửa sổ lại thành con Sprout bay trên mọi app ở góc màn hình: bấm Sprout để mở chat Jarvis, kéo để dời chỗ, **Terminal** hoặc bấm đúp để mở lại cửa sổ Float |
 | Terminal bị vỡ chữ, chồng dòng hoặc lệch cột | Nút **Redraw** trên header (hoặc **Redraw terminal** trong menu chuột phải): vẽ lại terminal và cho agent tự vẽ lại toàn màn hình ở đúng kích thước, phiên vẫn chạy tiếp, không mất gì |
 | Ngắt lượt đang chạy | **Interrupt turn** trong menu header, hoặc `Esc` trong terminal, hoặc nút **Stop** ở chân rail |
 | Chuyển sang agent kế tiếp | `Ctrl+Tab`, dùng được cả khi con trỏ đang ở trong terminal; gõ phím theo sang terminal của agent mới |
@@ -156,7 +156,7 @@ Thao tác trên hàng:
 
 Run orchestrator được vẽ như một nhóm: hàng của **lead** (biểu tượng sơ đồ) có dòng dưới gồm chip `N workers` (gấp/mở), tiến độ (vd. `3/7 done`) và một thanh mảnh chia theo từng task. Bên dưới là các **worker** theo task: tên task, trạng thái, câu hỏi nếu có; task đã xong gấp vào dòng `N done`, task chưa chạy vào `N queued`. Run đã land ghi **✓ landed**. Bấm một worker để xem terminal của nó; worker đã xong mở transcript chỉ-đọc của nó.
 
-Một run mà lead đã đóng nhưng worker còn tab hiện thành một hàng *run* riêng (chuột phải: **Open run**, **Close run**). Run do một agent khởi động bằng `wsh runs start` nằm một cấp thụt vào dưới agent đó. Chi tiết run: [Orchestrator](orchestrator.md).
+Một run mà lead đã đóng nhưng worker còn tab hiện thành một hàng *run* riêng (chuột phải: **Open run**, **Close run**). Run do một agent khởi động bằng `wsh runs start` giữ chỗ của nó trong cây; header của lead (hay của agent run Quick) có link `↰ <session>` về agent đó, mở terminal khi agent còn sống và transcript khi đã kết thúc ("↰ a closed session" khi không tìm được nữa). Chiều ngược lại, header của agent đã khởi động run có link `↳` tới run đó: một run thì là goal của nó và mở run sheet, nhiều run thì là `N runs, k active` và mở menu chọn run, run còn chạy lên trước. Chi tiết run: [Orchestrator](orchestrator.md).
 
 ### Conversations — các cuộc hội thoại đã kết thúc
 

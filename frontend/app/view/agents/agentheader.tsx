@@ -5,15 +5,19 @@
 // Extracted from the former AgentTranscript header (now removed): the real Claude Code TUI has no
 // chrome of its own, so this keeps name/status/model/context% + the details-rail toggle visible.
 
+import { queuedJobFor } from "@/app/cockpit/jobqueue";
+import { QueuedJobTag } from "@/app/cockpit/jobqueuechip";
+import { jobQueueAtom } from "@/app/cockpit/jobqueuestore";
 import { KeyCap } from "@/app/element/keycap";
 import { useSettle } from "@/app/element/motionhooks";
 import { MOTION } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
+import * as WOS from "@/app/store/wos";
 import { effortDetailAtom, loadEffortDetail } from "@/app/view/jarvis/effortstore";
 import { initiativeLinkText } from "@/app/view/jarvis/initiativework";
-import { openOrPeek } from "@/app/view/jarvis/openref";
+import { openOrPeek, openTarget } from "@/app/view/jarvis/openref";
 import { redrawTerminal } from "@/app/view/term/termwrap";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
@@ -50,6 +54,8 @@ import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
 import { railVisibleAtom, terminalFullscreenAtom } from "./railstore";
 import { agentProject, isEndedWorkerId, leadAgentOf } from "./runlineage";
+import { startedRunsText } from "./runorigin";
+import { openRunOrigin, useRunOrigin, useRunsStartedBy } from "./runoriginstore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
@@ -130,6 +136,74 @@ function InitiativeLink({ model, agent }: { model: AgentsViewModel; agent: Agent
     );
 }
 
+// The session that started this agent's run with `wsh runs start`, linking back to it. The tree no longer lists the
+// run under that session, so this is where the two meet.
+function RunOriginLink({ model, runId }: { model: AgentsViewModel; runId: string }) {
+    const run = useAtomValue(WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId)));
+    const origin = useRunOrigin(model, run);
+    if (origin == null) {
+        return null;
+    }
+    return (
+        <>
+            {" · "}
+            {origin.kind === "gone" ? (
+                <span data-run-origin="gone" title="Started from a session that has since closed">
+                    ↰ a closed session
+                </span>
+            ) : (
+                <button
+                    type="button"
+                    data-run-origin={origin.kind}
+                    onClick={() => openRunOrigin(model, origin)}
+                    title={`Started from ${origin.name}: go to that session`}
+                    className="cursor-pointer text-accent-soft hover:underline"
+                >
+                    ↰ {origin.name}
+                </button>
+            )}
+        </>
+    );
+}
+
+// The other way round: the runs this session started with `wsh runs start`. One opens its run sheet; several offer a
+// menu of them, the ones still going first.
+function StartedRunsLink({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
+    const runs = useRunsStartedBy(agent);
+    if (runs.length === 0) {
+        return null;
+    }
+    const open = (runId: string) => fireAndForget(() => openTarget(model, { kind: "run", runId }));
+    const onClick = (e: React.MouseEvent) => {
+        if (runs.length === 1) {
+            open(runs[0].oid);
+            return;
+        }
+        ContextMenuModel.getInstance().showContextMenu(
+            runs.map((r) => ({ label: `${startedRunsText([r])} · ${r.status}`, click: () => open(r.oid) })),
+            e
+        );
+    };
+    return (
+        <>
+            {" · "}
+            <button
+                type="button"
+                data-started-runs={runs.length}
+                onClick={onClick}
+                title={
+                    runs.length === 1
+                        ? `A run this session started (${runs[0].status}): open it`
+                        : "Runs this session started: pick one to open"
+                }
+                className="cursor-pointer text-accent-soft hover:underline"
+            >
+                ↳ {startedRunsText(runs)}
+            </button>
+        </>
+    );
+}
+
 export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     const railVisible = useAtomValue(railVisibleAtom);
     const fullscreen = useAtomValue(terminalFullscreenAtom);
@@ -152,6 +226,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
     const stateText = ended ? (landed ? "landed" : "done") : liveText;
     const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
+    // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
+    const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);
+    const queued = !ended && agent.state === "working" ? queuedJob : null;
     // m4: one-shot settle on the state pill when the focused agent reaches idle
     const settling = useSettle(!ended && agent.state === "idle");
     const review = parseDocReview(agent.ask);
@@ -308,15 +385,19 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                 <span title={rt.label} className={cn("flex-none self-center", rt.text)}>
                     <RuntimeMark runtime={agent.agent} className="text-[12px] leading-none" />
                 </span>
-                <span
-                    className={cn(
-                        "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
-                        settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
-                    )}
-                    style={{ color: stateColor }}
-                >
-                    {stateText}
-                </span>
+                {queued ? (
+                    <QueuedJobTag job={queued} />
+                ) : (
+                    <span
+                        className={cn(
+                            "flex-none text-[11px] font-medium transition-colors duration-[140ms]",
+                            settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                        )}
+                        style={{ color: stateColor }}
+                    >
+                        {stateText}
+                    </span>
+                )}
                 {agent.model ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}
                 {agent.usage?.contextpct != null ? (
                     <span
@@ -359,6 +440,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                             )}
                         </>
                     ) : null}
+                    {/* a worker's way back is its lead; a lead or a Quick run's agent links the session it came from */}
+                    {agent.runId && lineage?.kind !== "worker" && lineage?.kind !== "stage" ? (
+                        <RunOriginLink model={model} runId={agent.runId} />
+                    ) : null}
+                    <StartedRunsLink model={model} agent={agent} />
                 </span>
             </div>
             <div className="flex-1" />

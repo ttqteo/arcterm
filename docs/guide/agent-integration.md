@@ -89,7 +89,7 @@ wsh agents send <tab> "…"                                # nhắn cho một ag
 wsh agents read <tab>                                    # đọc câu trả lời của nó
 ```
 
-Một run mà phiên agent bắt đầu bằng `wsh runs start` được liệt kê dưới phiên đó trong sidebar, cả khi chạy lẫn khi đã xong. `wsh runs start` không hỏi lại route: nó lấy route từ profile ([Jarvis → Profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc)) trừ khi bạn truyền cờ, nên xem `wsh runs route` trước khi chạy run tốn kém.
+Một run mà phiên agent bắt đầu bằng `wsh runs start` ghi lại phiên đó: header của run trên surface Agent có link `↰ <phiên>` và run sheet có dòng **started from**, cả khi chạy lẫn khi đã xong; header của phiên có link `↳` ngược về các run nó đã bắt đầu. `wsh runs start` không hỏi lại route: nó lấy route từ profile ([Jarvis → Profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc)) trừ khi bạn truyền cờ, nên xem `wsh runs route` trước khi chạy run tốn kém.
 
 ## Skills đi kèm
 

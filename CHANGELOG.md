@@ -15,27 +15,47 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Codex agents show working, idle and "needs you" on the rail with their session's title and model, and come back in
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.
-- Builds, typechecks and whole test suites from every agent and run now wait their turn in one queue, one at a time by
-  default, so several runs no longer stall the machine; the new Jobs chip in the app bar shows what runs and what waits,
-  with Run now and Skip.
+- Minimizing a float window folds it into Sprout, who floats over your other apps at a corner of the screen: click
+  Sprout to answer what waits on you or ask Jarvis, drag it anywhere, and press **Terminal** or double-click it to
+  get the float window back.
+- Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
+  as the free RAM allows, so several runs no longer push the machine into swap; the new Jobs chip in the app bar shows
+  what runs and what waits, with Run now and Skip.
+- An agent whose build or test waits in the job queue says so on its row and in its header, as `queued #2` instead of
+  working, with why it waits (RAM or a busy slot) in the tooltip; a click opens the Jobs popover.
+- The Jobs popover's Slots picker sets how the queue runs: **Auto** (the default) as many at once as the free RAM
+  allows, **1–4** no more than that many at once, **Off** never makes one wait.
+- **Pause the queue for 1h or 4h** in the Jobs popover: every heavy job starts at once until then, the chip counts the
+  pause down, and **Resume** ends it early.
 - Diff can commit and sync. The Commit tab lists the working tree's files with a tick each (Changes ticked,
   Unversioned not): write a message and press **Commit** or `Ctrl`+`Enter`, and only the ticked files are committed, so
   what another session staged stays staged. **Amend** loads the last commit's message and turns off once that commit is
   pushed. Beside the source picker, **Fetch**, **Pull** and **Push** work on the branch against its upstream and show
   how many commits it is ahead and behind: Pull only fast-forwards and asks first when an agent is working in that
   folder, Push never forces, and a refusal from git is shown instead of changing anything.
+- A run an agent started with `wsh runs start` links back to that session: `↰ <session>` in the run's header on
+  Agent and **started from** on its run sheet, which open the session's terminal, or its transcript once it has ended.
+  The other way round, the session's header links its runs with `↳`: one opens its run sheet, several
+  (`3 runs, 1 active`) a menu of them.
 
 ### Changed
 
 - The Low RAM card is gone: a heavy command waits in the job queue instead.
+- On a Mac the job queue judges RAM by macOS's own memory pressure, which counts compressed memory and swap, so heavy
+  jobs no longer wait on a machine that only looks full: they run at green, one at a time at yellow, and wait at red.
 - New agent: the task and the list of sessions to resume sit side by side, so the dialog fits without scrolling; a long
   list scrolls inside itself.
-- Holding `Ctrl` or `Alt` shows the shortcut bar and the rail and agent numbers at once instead of after a short pause;
-  pressing any other key with it, as in `Ctrl`+`C`, hides them again.
+- Pressing any other key while holding `Ctrl` or `Alt`, as in `Ctrl`+`C`, hides the shortcut bar and the rail and
+  agent numbers again.
+- Those rail and agent numbers are a small badge in the icon's corner instead of covering the whole icon.
+- The **Agent** item in the left rail keeps its count of working agents while you are on Agent, not only from other
+  surfaces.
 
 ### Fixed
 
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
+- The app bar's 5-hour meter shows again at 0% when Claude's usage reading says the window is unused, and its
+  countdown to the reset is back beside it instead of only in the tooltip.
 
 ## 0.15.8 — 2026-10-09
 

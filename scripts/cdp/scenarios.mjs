@@ -26667,8 +26667,11 @@ const jobqueueChip = {
     async arrange(h) {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-jobqueue-")) };
         try {
-            ctx.slotsBefore = (await h.rpc("getfullconfig", null))?.settings?.["jobs:slots"] ?? null;
-            await h.rpc("setconfig", { "jobs:slots": 1 });
+            const settingsBefore = (await h.rpc("getfullconfig", null))?.settings ?? {};
+            ctx.slotsBefore = settingsBefore["jobs:slots"] ?? null;
+            ctx.modeBefore = settingsBefore["jobs:mode"] ?? null;
+            ctx.pauseBefore = settingsBefore["jobs:pauseuntil"] ?? null;
+            await h.rpc("setconfig", { "jobs:slots": 1, "jobs:mode": "slots" });
             ctx.slotsChanged = true;
             // the run step 9 opens: deferred, so no lead and no worker starts
             const wslist = await h.rpc("workspacelist", null);
@@ -26833,6 +26836,44 @@ const jobqueueChip = {
             JSON.stringify({ picked, slots, npm: npmNow && [npmNow.state, npmNow.text] })
         );
 
+        // 6b. Auto and Off: the picker writes jobs:mode, and the chip's tooltip reads the pace back from the queue
+        const pickPace = async (value) => {
+            const picked = await h.ev(`(() => {
+                const s = document.querySelector("[data-job-queue-slots]");
+                if (!s) return false;
+                s.value = ${JSON.stringify(value)};
+                s.dispatchEvent(new Event("change", { bubbles: true }));
+                return true;
+            })()`);
+            let mode = null;
+            for (let waited = 0; waited < 3000 && mode !== value; waited += 250) {
+                mode = (await h.rpc("getfullconfig", null))?.settings?.["jobs:mode"] ?? null;
+                if (mode !== value) await polishNap(250);
+            }
+            const shown = await polishWaitFor(
+                h,
+                `document.querySelector("[data-job-queue-slots]")?.value === ${JSON.stringify(value)}`,
+                3000
+            );
+            const title = await h.ev(`document.querySelector("[data-job-queue-chip]")?.title ?? null`);
+            return { picked, mode, shown, title };
+        };
+        const auto = await pickPace("auto");
+        const off = await pickPace("off");
+        await h.shot("cdp-shots/jobqueue-chip-pace-off.png");
+        rec(
+            "6b. Auto and Off are saved to jobs:mode, stay picked, and the chip's tooltip says as RAM allows / queue off",
+            auto.picked &&
+                auto.mode === "auto" &&
+                auto.shown &&
+                String(auto.title).includes("as RAM allows") &&
+                off.picked &&
+                off.mode === "off" &&
+                off.shown &&
+                String(off.title).includes("queue off"),
+            JSON.stringify({ auto, off })
+        );
+
         // 7. drain: each return() sends a wire cancel, so wavesrv ends the stream and frees its slot
         await h.ev("(window.__jq.forEach((g) => g.return()), true)");
         const emptied = await polishWaitFor(h, `!!document.querySelector("[data-job-queue-empty]")`, 3000);
@@ -26918,6 +26959,60 @@ const jobqueueChip = {
             opened && landed && surface === SURFACE_LABEL.jarvis && sheet?.goal === true,
             JSON.stringify({ opened, landed, surface, sheet })
         );
+
+        // 10. Pause 1h: written to jobs:pauseuntil, read back from the queue's own snapshot, counted down on the chip,
+        // and Resume ends it. A running job is injected only so the chip is there to open the popover from
+        await h.ev(`window.__jobQueueInject({
+            slots: 1, mode: "auto",
+            jobs: [{ id: "jp", name: "task check:ts", bytes: 3221225472, running: true, queuedts: Date.now(), startedts: Date.now() }],
+        })`);
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-chip]")`, 3000);
+        await click("[data-job-queue-chip]");
+        await polishWaitFor(h, `!!document.querySelector("[data-job-queue-pause-for='1h']")`, 3000);
+        const before = Date.now();
+        await click("[data-job-queue-pause-for='1h']");
+        let pauseUntil = null;
+        for (let waited = 0; waited < 3000 && !(pauseUntil > before); waited += 250) {
+            pauseUntil = (await h.rpc("getfullconfig", null))?.settings?.["jobs:pauseuntil"] ?? null;
+            if (!(pauseUntil > before)) await polishNap(250);
+        }
+        const pausedShown = await polishWaitFor(
+            h,
+            `document.querySelector("[data-job-queue-chip]")?.hasAttribute("data-job-queue-paused") === true && !!document.querySelector("[data-job-queue-resume]")`,
+            3000
+        );
+        const paused = await h.ev(`(() => ({
+            chip: document.querySelector("[data-job-queue-chip]")?.textContent?.trim() ?? null,
+            left: document.querySelector("[data-job-queue-paused-left]")?.textContent ?? null,
+        }))()`);
+        await h.shot("cdp-shots/jobqueue-chip-paused.png");
+        rec(
+            "10a. Pause 1h saves jobs:pauseuntil an hour out, and the chip and the popover say paused 1h",
+            pauseUntil != null &&
+                pauseUntil - before > 59 * 60_000 &&
+                pauseUntil - before <= 61 * 60_000 &&
+                pausedShown &&
+                String(paused.chip).startsWith("paused 1h") &&
+                String(paused.left).includes("1h left"),
+            JSON.stringify({ pauseUntil, before, pausedShown, paused })
+        );
+        await click("[data-job-queue-resume]");
+        let resumed = null;
+        for (let waited = 0; waited < 3000 && resumed !== 0; waited += 250) {
+            resumed = (await h.rpc("getfullconfig", null))?.settings?.["jobs:pauseuntil"] ?? null;
+            if (resumed !== 0) await polishNap(250);
+        }
+        const offAgain = await polishWaitFor(
+            h,
+            `!!document.querySelector("[data-job-queue-pause-for='1h']") && !document.querySelector("[data-job-queue-chip][data-job-queue-paused]")`,
+            3000
+        );
+        rec(
+            "10b. Resume clears the pause: the popover offers Pause again and the chip no longer reads paused",
+            resumed === 0 && offAgain,
+            JSON.stringify({ resumed, offAgain })
+        );
+        await escape();
         return steps;
     },
     async teardown(h, ctx) {
@@ -26933,11 +27028,285 @@ const jobqueueChip = {
         // cancels the run, deletes its channel, reloads the page (the websocket closes, so wavesrv cancels any stream
         // still held) and removes the temp dir
         await teardownFixtureRun(h, ctx, "jobqueue-chip", {
-            what: "restore jobs:slots",
+            what: "restore jobs:slots, jobs:mode and jobs:pauseuntil",
             fn: async () => {
-                if (ctx.slotsChanged) await h.rpc("setconfig", { "jobs:slots": ctx.slotsBefore });
+                if (ctx.slotsChanged) {
+                    await h.rpc("setconfig", {
+                        "jobs:slots": ctx.slotsBefore,
+                        "jobs:mode": ctx.modeBefore,
+                        "jobs:pauseuntil": ctx.pauseBefore,
+                    });
+                }
             },
         });
+    },
+};
+
+// --- jobqueue-agent-tag: an agent whose heavy command waits its turn in the job queue says so on its row, where it would
+// otherwise read as working. A fixture roster holds the one agent; its job is set through the dev hook
+// window.__jobQueueInject, with its block's id, so no real agent has to run a build.
+const JQT_AGENT = "fx-jq-tag";
+const JQT_BLOCK = "fx-blk-jq-tag";
+const JQT_NAME = "queue-tag worker";
+const JQT_TAG = `[data-agent-row="${JQT_AGENT}"] [data-agent-queued]`;
+// a snapshot with a build running for no agent and the fixture agent's typecheck waiting on RAM, queued `ago` ms back
+const jqtSnapshot = (ago) => `window.__jobQueueInject({
+    slots: 1,
+    jobs: [
+        { id: "jqt-run", name: "cargo build", bytes: 3221225472, running: true, queuedts: Date.now() - 60_000, startedts: Date.now() - 60_000 },
+        { id: "jqt-wait", name: "task check:ts", bytes: 3221225472, position: 1, reason: "needs 3.0 GB, 1.2 GB free", queuedts: Date.now() - ${ago}, blockid: ${JSON.stringify(JQT_BLOCK)} },
+    ],
+})`;
+
+const jobqueueAgentTag = {
+    name: "jobqueue-agent-tag",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null };
+        try {
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: JQT_AGENT,
+                            name: JQT_NAME,
+                            project: "waveterm",
+                            task: "run the typecheck",
+                            state: "working",
+                            agent: "claude",
+                            model: "sonnet",
+                            activeMs: 60_000,
+                            blockId: JQT_BLOCK,
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the roster fixture is read once at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster", false, ctx.arrangeError);
+            return steps;
+        }
+        const readTag = () =>
+            h.ev(`(() => {
+                const t = document.querySelector(${JSON.stringify(JQT_TAG)});
+                return t
+                    ? {
+                          text: t.textContent.trim(),
+                          title: t.title,
+                          amber: t.classList.contains("text-warning"),
+                          triangle: !!t.querySelector("svg.lucide-triangle-alert"),
+                      }
+                    : null;
+            })()`);
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${JQT_AGENT}"]')`, 8000);
+
+        // 1. the waiting agent's row reads queued #1, why in its tooltip
+        await h.ev(jqtSnapshot(20_000));
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(JQT_TAG)})`, 3000);
+        let tag = await readTag();
+        await h.shot("cdp-shots/jobqueue-agent-tag.png");
+        rec(
+            "1. the agent's row says queued #1, its tooltip the command and the RAM it waits on",
+            tag?.text === "queued #1" &&
+                tag.title.includes("task check:ts") &&
+                tag.title.includes("needs 3.0 GB, 1.2 GB free") &&
+                !tag.amber,
+            JSON.stringify(tag)
+        );
+
+        // 2. its click opens the Jobs popover on that job, and the row it sits on stays as it was
+        await h.ev(`document.querySelector(${JSON.stringify(JQT_TAG)})?.click()`);
+        const opened = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-job-queue-panel] [data-job-row="jqt-wait"]')`,
+            3000
+        );
+        const source = await h.ev(
+            `document.querySelector('[data-job-queue-panel] [data-job-row="jqt-wait"] [data-job-source]')?.textContent ?? null`
+        );
+        await h.shot("cdp-shots/jobqueue-agent-tag-popover.png");
+        rec(
+            "2. a click on the tag opens the Jobs popover, whose queued row names the agent",
+            opened && typeof source === "string" && source.includes(JQT_NAME),
+            JSON.stringify({ opened, source })
+        );
+        await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }))`);
+        await polishWaitFor(h, `!document.querySelector("[data-job-queue-panel]")`, 3000);
+
+        // 3. past five minutes the tag warns, as the chip does
+        await h.ev(jqtSnapshot(6 * 60_000));
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(JQT_TAG)} + " svg.lucide-triangle-alert")`, 3000);
+        tag = await readTag();
+        await h.shot("cdp-shots/jobqueue-agent-tag-long-wait.png");
+        rec(
+            "3. a job waiting 6 minutes turns the tag amber with a TriangleAlert",
+            tag?.text === "queued #1" && tag.amber && tag.triangle,
+            JSON.stringify(tag)
+        );
+
+        // 4. once its job starts, the tag goes and the row reads working again
+        await h.ev(`window.__jobQueueInject({
+            slots: 1,
+            jobs: [{ id: "jqt-wait", name: "task check:ts", bytes: 3221225472, running: true, queuedts: Date.now() - 60_000, startedts: Date.now(), blockid: ${JSON.stringify(JQT_BLOCK)} }],
+        })`);
+        const gone = await polishWaitFor(h, `!document.querySelector(${JSON.stringify(JQT_TAG)})`, 3000);
+        rec("4. once its job runs, the row has no queued tag", gone, JSON.stringify(await readTag()));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`jobqueue-agent-tag teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the injected snapshot", () => h.ev("window.__jobQueueInject?.({ slots: 1, jobs: [] })"));
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null
+                    ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                    : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("reload onto the restored roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+    },
+};
+
+// --- float folded into Sprout ------------------------------------------------------------------
+// Float a fresh terminal, fold it into Sprout, open the chat from Sprout, give the float window back, and check the
+// terminal's PTY size never moved (the shell is hidden before the window shrinks). Windows only: WKWebView answers
+// no CDP.
+const FLOAT_MINI_PROJECT = "verify-float-mini";
+
+async function floatMiniWait(h, expr, ms = 8000) {
+    return h.ev(`(async () => {
+        for (let i = 0; i < ${Math.ceil(ms / 200)}; i++) {
+            if (${expr}) return true;
+            await new Promise((r) => setTimeout(r, 200));
+        }
+        return false;
+    })()`);
+}
+
+async function floatMiniTermSize(h, blockId) {
+    const block = await waveService(h, "object", "GetObject", [`block:${blockId}`]);
+    return block?.runtimeopts?.termsize ?? null;
+}
+
+const floatMini = {
+    name: "float-mini",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [] };
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, FLOAT_MINI_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        if (ctx.arrangeError) {
+            steps.push({ step: "0. arrange", ok: false, detail: ctx.arrangeError });
+            return steps;
+        }
+        const term = ctx.terminals[0];
+        await h.goto("agent");
+        const chosen = await floatMiniWait(h, `!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        await floatMiniWait(h, `!!document.querySelector("[data-agent-float]")`);
+        await h.ev(`document.querySelector("[data-agent-float]")?.click()`);
+        const floated = await floatMiniWait(h, `!!document.querySelector("[data-float-bar]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const before = await floatMiniTermSize(h, term.blockId);
+        steps.push({
+            step: "1. the scenario's terminal floats",
+            ok: chosen && floated && before != null,
+            detail: JSON.stringify({ chosen, floated, before }),
+        });
+
+        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
+        const folded = await floatMiniWait(h, `!!document.querySelector("[data-sprout-mini]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 800))");
+        const rest = await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
+        // the float bar is still mounted, under the hidden shell
+        const barGone = await h.ev(`!document.querySelector("[data-float-bar]")?.offsetParent`);
+        // nothing from the page root down may paint, or the see-through window shows a dark box around Sprout
+        const painted = await h.ev(`["html", "body", "#main", ".cockpit-shell"]
+            .map((sel) => [sel, getComputedStyle(document.querySelector(sel)).backgroundColor])
+            .filter(([, bg]) => bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")`);
+        await h.shot("cdp-shots/float-mini-rest.png");
+        steps.push({
+            step: "2. Minimize folds the window into Sprout's 340x112 box, see-through around it",
+            ok: folded && rest.w <= 340 && rest.h <= 112 && barGone && painted.length === 0,
+            detail: JSON.stringify({ folded, rest, barGone, painted }),
+        });
+
+        await h.ev(`document.querySelector('[data-mini-hit="sprout"] button')?.click()`);
+        const chat = await floatMiniWait(h, `!!document.querySelector("[data-pet-peek]") && window.innerHeight > 112`);
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        await h.shot("cdp-shots/float-mini-chat.png");
+        steps.push({
+            step: "3. a click on Sprout opens the chat and the window grows for it",
+            ok: chat,
+            detail: JSON.stringify(await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`)),
+        });
+
+        await h.ev(`document.querySelector("[data-pet-peek] [data-mini-restore]")?.click()`);
+        const back = await floatMiniWait(
+            h,
+            `!document.querySelector("[data-sprout-mini]") && !!document.querySelector("[data-float-bar]")?.offsetParent`
+        );
+        await h.ev("new Promise((r) => setTimeout(r, 1200))");
+        const after = await floatMiniTermSize(h, term.blockId);
+        await h.shot("cdp-shots/float-mini-restored.png");
+        steps.push({
+            step: "4. Terminal gives the float window back, and the PTY size never moved",
+            ok: back && JSON.stringify(after) === JSON.stringify(before),
+            detail: JSON.stringify({ back, before, after }),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`float-mini teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore from Sprout", () => h.ev(`document.querySelector("[data-mini-restore]")?.click()`));
+        await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
+        await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
     },
 };
 
@@ -27036,4 +27405,6 @@ export const SCENARIOS = [
     capacityWarn,
     notifyToast,
     jobqueueChip,
+    jobqueueAgentTag,
+    floatMini,
 ];

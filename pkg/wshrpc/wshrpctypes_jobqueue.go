@@ -47,8 +47,10 @@ type JobQueueJob struct {
 }
 
 type JobQueueData struct {
-	Slots int           `json:"slots"`
-	Jobs  []JobQueueJob `json:"jobs"`
+	Slots       int           `json:"slots"`
+	Mode        string        `json:"mode"`                  // jobqueue.ModeAuto, ModeSlots or ModeOff
+	PausedUntil int64         `json:"pauseduntil,omitempty"` // Unix ms while a pause is on: every job starts at once
+	Jobs        []JobQueueJob `json:"jobs"`
 }
 
 type CommandJobQueueActData struct {

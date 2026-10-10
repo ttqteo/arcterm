@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    formatResetShort,
     meterTitle,
     providerDot,
     providerLabel,
@@ -53,17 +54,22 @@ describe("windowUsedTokens", () => {
 });
 
 describe("usageBarVisible", () => {
+    const RESET = 1_700_000_000;
     it("is false when pct is null/undefined (api-key auth or unreported)", () => {
-        expect(usageBarVisible(undefined, false)).toBe(false);
-        expect(usageBarVisible(null as unknown as undefined, false)).toBe(false);
+        expect(usageBarVisible(undefined, false, RESET)).toBe(false);
+        expect(usageBarVisible(null as unknown as undefined, false, RESET)).toBe(false);
     });
     it("is true for any live numeric pct including 0", () => {
-        expect(usageBarVisible(0, false)).toBe(true);
-        expect(usageBarVisible(73, false)).toBe(true);
+        expect(usageBarVisible(0, false, RESET)).toBe(true);
+        expect(usageBarVisible(0, false, undefined)).toBe(true);
+        expect(usageBarVisible(73, false, RESET)).toBe(true);
     });
-    it("hides a saved 0% (rolled over with nothing running) but keeps a saved nonzero reading", () => {
-        expect(usageBarVisible(0, true)).toBe(false);
-        expect(usageBarVisible(42, true)).toBe(true);
+    it("hides a saved 0% that rolled over (no reset left) but keeps a saved nonzero reading", () => {
+        expect(usageBarVisible(0, true, undefined)).toBe(false);
+        expect(usageBarVisible(42, true, undefined)).toBe(true);
+    });
+    it("shows a saved 0% that still names its reset: the usage endpoint's reading of an unused window", () => {
+        expect(usageBarVisible(0, true, RESET)).toBe(true);
     });
 });
 
@@ -92,5 +98,20 @@ describe("windowElapsed", () => {
     it("stays inside 0..1 when the reset is past or further out than the window", () => {
         expect(windowElapsed(NOW / 1000 - 60, FIVE_H, NOW)).toBe(1);
         expect(windowElapsed(NOW / 1000 + 6 * 3600, FIVE_H, NOW)).toBe(0);
+    });
+});
+
+describe("formatResetShort", () => {
+    const NOW = 1_700_000_000_000;
+    const at = (mins: number) => NOW / 1000 + mins * 60;
+    it("drops the space and the trailing m", () => {
+        expect(formatResetShort(at(115), NOW)).toBe("1h55");
+        expect(formatResetShort(at(180), NOW)).toBe("3h");
+        expect(formatResetShort(at(42), NOW)).toBe("42m");
+        expect(formatResetShort(at(76 * 60), NOW)).toBe("3d4h");
+        expect(formatResetShort(at(72 * 60), NOW)).toBe("3d");
+    });
+    it("says now once the reset has passed", () => {
+        expect(formatResetShort(at(-1), NOW)).toBe("now");
     });
 });
