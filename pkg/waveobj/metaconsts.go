@@ -37,6 +37,7 @@ const (
 	MetaKey_CmdArgs                          = "cmd:args"
 	MetaKey_CmdShell                         = "cmd:shell"
 	MetaKey_CmdJwt                           = "cmd:jwt"
+	MetaKey_CmdFirstCommand                  = "cmd:firstcommand"
 	MetaKey_CmdEnv                           = "cmd:env"
 	MetaKey_CmdCwd                           = "cmd:cwd"
 	MetaKey_CmdInitScript                    = "cmd:initscript"

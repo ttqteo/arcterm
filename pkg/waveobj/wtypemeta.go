@@ -35,9 +35,10 @@ type MetaTSType struct {
 	CmdKeepOnExit       bool     `json:"cmd:keeponexit,omitempty"` // agent blocks close on exit unless they opt out
 	CmdCloseOnExitDelay float64  `json:"cmd:closeonexitdelay,omitempty"`
 	CmdNoWsh            bool     `json:"cmd:nowsh,omitempty"`
-	CmdArgs             []string `json:"cmd:args,omitempty"`  // args for cmd (only if cmd:shell is false)
-	CmdShell            bool     `json:"cmd:shell,omitempty"` // shell expansion for cmd+args (defaults to true)
-	CmdJwt              bool     `json:"cmd:jwt,omitempty"`   // force adding JWT to environment
+	CmdArgs             []string `json:"cmd:args,omitempty"`         // args for cmd (only if cmd:shell is false)
+	CmdShell            bool     `json:"cmd:shell,omitempty"`        // shell expansion for cmd+args (defaults to true)
+	CmdJwt              bool     `json:"cmd:jwt,omitempty"`          // force adding JWT to environment
+	CmdFirstCommand     string   `json:"cmd:firstcommand,omitempty"` // typed into a shell block at its first prompt, then cleared
 
 	// these can be nested under "[conn]"
 	CmdEnv            map[string]string `json:"cmd:env,omitempty"`

@@ -54,6 +54,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A Terminal opened from New with a command in its Command field runs that command when it opens, at the shell's
+  first prompt, and stays a shell afterwards; the command was ignored before.
 - Codex sessions show their runtime icon and use the first prompt as a title when the reporter omits it.
 - The app bar's 5-hour meter shows again at 0% when Claude's usage reading says the window is unused, and its
   countdown to the reset is back beside it instead of only in the tooltip.

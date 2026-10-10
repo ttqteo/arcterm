@@ -365,7 +365,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
             </div>
             {runtime === "terminal" ? (
                 <span className="text-[11.5px] text-muted">
-                    A plain shell in the project folder. No agent, no task.
+                    A plain shell in the project folder. A command typed above runs in it when it opens.
                 </span>
             ) : null}
             {runtimeSupportsWorktree(runtime) && resume == null ? (

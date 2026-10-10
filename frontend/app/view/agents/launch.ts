@@ -130,7 +130,7 @@ export interface LaunchMetaSpec {
     cwd: string;
 }
 
-// Build the CreateBlock meta. Terminal -> default shell block. Agent runtimes -> cmd block with the
+// Build the CreateBlock meta. Terminal -> default shell block (plus its first command). Agent runtimes -> cmd block with the
 // task passed as a single positional arg (arg array avoids all shell-quoting issues). The startup
 // command is tokenized on whitespace (best-effort if the user adds flags) — unless startupArgs is
 // given, in which case it is used verbatim because a pi resume path can never survive re-tokenizing.
@@ -139,6 +139,12 @@ export function buildLaunchMeta(spec: LaunchMetaSpec): Record<string, unknown> {
         const meta: Record<string, unknown> = { view: "term", controller: "shell" };
         if (spec.cwd) {
             meta["cmd:cwd"] = spec.cwd;
+        }
+        // the Command field's text is typed into the shell at its first prompt (wavesrv does it, once), so the
+        // user's rc files apply and the shell stays after the command ends
+        const command = spec.startupCommand.trim();
+        if (command) {
+            meta["cmd:firstcommand"] = command;
         }
         return meta;
     }
