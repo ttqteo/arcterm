@@ -17,7 +17,7 @@ import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { PictureInPicture2, Pin } from "lucide-react";
-import { FOLD_SPRITE, WindowControls } from "./app-bar";
+import { FOLD_SPRITE, useFoldTitle, WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
@@ -27,6 +27,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
     const character = petCharacter(useAtomValue(petCharacterAtom));
+    const foldTitle = useFoldTitle();
     const focusId = useAtomValue(model.focusIdAtom);
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
@@ -83,7 +84,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                 type="button"
                 data-float-minimize
                 aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
-                title={`Fold into ${PET_CHARACTER_NAME[character]}`}
+                title={foldTitle}
                 onClick={() => fireAndForget(foldToSprout)}
                 className={cn(ICON_BTN, "gap-[5px] pr-2 text-[11px] font-semibold")}
             >

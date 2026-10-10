@@ -8,10 +8,12 @@
 // same window, see-through, around the spot it stood on; a restore gives back the size and frame it was folded from.
 
 import { MOTION } from "@/app/element/motiontokens";
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { isMacOS } from "@/util/platformutil";
+import { fireAndForget } from "@/util/util";
 import { listen } from "@tauri-apps/api/event";
 import {
     availableMonitors,
@@ -49,7 +51,7 @@ import {
     type Screen,
     type WinRect,
 } from "./floatwindow";
-import { FLOAT_MINIMIZE_EVENT, redirectMinimize, setTrafficLightsHidden } from "./macwindow";
+import { MINIMIZE_EVENT, redirectMinimize, setTrafficLightsHidden } from "./macwindow";
 import { startClickThrough, stopClickThrough } from "./miniclickthrough";
 import { terminalFullscreenAtom } from "./railstore";
 import { serialQueue } from "./serialqueue";
@@ -58,10 +60,13 @@ import {
     FOLD_SCALE,
     foldCenter,
     foldSpot,
+    minimizeAction,
+    minimizeChoice,
     move,
     onSurfaceChange,
     sizeState,
     unfoldCenter,
+    windowSize,
     type FoldOrigin,
     type Pt,
     type SizeState,
@@ -144,12 +149,10 @@ async function leaveNativeFullscreen(win: Window): Promise<void> {
 
 async function giveFrameBack(win: Window, restore: FloatRestore | null): Promise<void> {
     await win.setAlwaysOnTop(false);
-    // a reload mid-fold left the window see-through, frameless and deaf to the cursor; a float left the yellow button
-    // pointed at Sprout
+    // a reload mid-fold left the window see-through, frameless and deaf to the cursor
     await win.setIgnoreCursorEvents(false).catch(() => {});
     await win.setShadow(true).catch(() => {});
     await setTrafficLightsHidden(false).catch(() => {});
-    await redirectMinimize(false).catch(() => {});
     writeJson(session, MINI_RESTORE_KEY, null);
     if (restore != null) {
         await win.setSize(new PhysicalSize(restore.rect.width, restore.rect.height));
@@ -195,8 +198,6 @@ async function floatTheWindow(model: AgentsViewModel): Promise<void> {
         globalStore.set(terminalFullscreenAtom, true);
         globalStore.set(floatPinnedAtom, true);
         globalStore.set(floatModeAtom, true);
-        // the yellow button folds the float into Sprout rather than sending it to the Dock (macOS only)
-        await redirectMinimize(true).catch((e) => console.error("redirecting the minimize button failed", e));
     } catch (e) {
         console.error("entering float mode failed", e);
         // a half-shrunk window with the full layout is worse than no float
@@ -557,6 +558,18 @@ export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Pro
     });
 }
 
+/** Minimize, from the window's own button, the yellow button or ⌘M: fold into Sprout, or to the Dock or taskbar when
+ *  window:minimize says so; folded, nothing. */
+export function minimizeRequested(): void {
+    const size = windowSize(globalStore.get(floatModeAtom), globalStore.get(floatMiniAtom));
+    const action = minimizeAction(minimizeChoice(globalStore.get(getSettingsKeyAtom("window:minimize"))), size);
+    if (action === "dock") {
+        fireAndForget(() => getCurrentWindow().minimize());
+    } else if (action === "fold") {
+        void foldToSprout();
+    }
+}
+
 // Out of the fold with no growth, for a leave that goes on to another size (exitFloat).
 function exitMini(): Promise<void> {
     return miniOps(async () => {
@@ -651,11 +664,19 @@ export function setupFloatMode(model: AgentsViewModel): () => void {
         clearTimeout(moveTimer);
         moveTimer = setTimeout(() => void settleMove().catch((e) => console.error("placing Sprout failed", e)), 300);
     });
-    // the yellow button, redirected while floating (floatTheWindow)
-    const unlistenMinimize = listen(FLOAT_MINIMIZE_EVENT, () => void foldToSprout());
+    // the yellow button and ⌘M fold while window:minimize says Sprout, in every size (macOS: macwindow.rs redirects them)
+    const minimizeSetting = getSettingsKeyAtom("window:minimize");
+    const syncRedirect = () =>
+        void redirectMinimize(minimizeChoice(globalStore.get(minimizeSetting)) === "sprout").catch((e) =>
+            console.error("redirecting minimize failed", e)
+        );
+    syncRedirect();
+    const unsubMinimize = globalStore.sub(minimizeSetting, syncRedirect);
+    const unlistenMinimize = listen(MINIMIZE_EVENT, minimizeRequested);
     return () => {
         unsubSurface();
         unsubFullscreen();
+        unsubMinimize();
         clearTimeout(moveTimer);
         void unlistenMoved.then((f) => f());
         void unlistenMinimize.then((f) => f());

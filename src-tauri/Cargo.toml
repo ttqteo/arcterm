@@ -37,7 +37,7 @@ tauri-winrt-notification = "0.7"
 # Notification Center banners that report their click (notify.rs), which tauri-plugin-notification, built on this crate,
 # does not pass on. Pinned to the version that plugin pulled into the tree.
 mac-notification-sys = "0.6.15"
-# the float's traffic lights and yellow button (macwindow.rs), which Tauri cannot hide or redirect. Pinned to the
+# the window's traffic lights, yellow button and ⌘M (macwindow.rs), which Tauri cannot hide or redirect. Pinned to the
 # versions already in the tree via tao.
 objc2 = "=0.6.4"
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSWindow"] }

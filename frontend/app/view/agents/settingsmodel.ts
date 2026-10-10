@@ -146,6 +146,20 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     ],
                 },
                 {
+                    id: "window",
+                    label: "Window",
+                    rows: [
+                        {
+                            id: "window.minimize",
+                            title: "Minimize",
+                            desc: "What minimize does, the yellow button and ⌘M on macOS included: fold the window into Sprout, which floats over every app, or send it to the Dock or taskbar. The Sprout button folds either way.",
+                            key: "window:minimize",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+                {
                     id: "vault",
                     label: "Vault & sync",
                     rows: [

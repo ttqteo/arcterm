@@ -1,13 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The float's macOS window chrome, from src-tauri/src/macwindow.rs: hide the traffic lights while folded into Sprout,
-// and send the yellow button to Sprout while floating (it emits FLOAT_MINIMIZE_EVENT). No-ops elsewhere.
+// The window's macOS chrome, from src-tauri/src/macwindow.rs: hide the traffic lights while folded into Sprout, and send
+// the yellow button and ⌘M to Sprout while window:minimize says so (they emit MINIMIZE_EVENT). No-ops elsewhere.
 
 import { isMacOS } from "@/util/platformutil";
 import { invoke } from "@tauri-apps/api/core";
 
-export const FLOAT_MINIMIZE_EVENT = "float-minimize";
+export const MINIMIZE_EVENT = "window-minimize";
 
 export async function setTrafficLightsHidden(hidden: boolean): Promise<void> {
     if (isMacOS()) {

@@ -3,6 +3,7 @@
     "notify:os": true,
     "notify:toast": true,
     "notify:reply": true,
+    "window:minimize": "sprout",
     "editor:minimapenabled": true,
     "window:magnifiedblockopacity": 0.6,
     "window:magnifiedblocksize": 0.95,

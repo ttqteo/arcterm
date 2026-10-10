@@ -131,6 +131,7 @@ describe("settingsSections", () => {
             "notify:os",
             "notify:toast",
             "notify:reply",
+            "window:minimize",
             "memory:vaultpath",
             "term:fontfamily",
             "term:fontsize",
@@ -223,6 +224,7 @@ describe("settings pages", () => {
             "notifications.toast",
             "notifications.reply",
         ]);
+        expect(cards["general/window"]).toEqual(["window.minimize"]);
         expect(cards["general/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
         expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
         expect(cards["appearance/colors"]).toEqual([
@@ -255,7 +257,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(36 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(37 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

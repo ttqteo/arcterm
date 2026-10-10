@@ -6,6 +6,7 @@
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Folder } from "lucide-react";
@@ -24,6 +25,7 @@ import {
     Toggle,
     writeConfig,
 } from "../settingsui";
+import { minimizeChoice } from "../windowsize";
 
 export function GeneralPage() {
     return (
@@ -33,6 +35,9 @@ export function GeneralPage() {
             </SettingCard>
             <SettingCard id="notifications" label="Notifications">
                 <NotificationRows />
+            </SettingCard>
+            <SettingCard id="window" label="Window">
+                <WindowRows />
             </SettingCard>
             <VaultCard />
         </>
@@ -89,6 +94,32 @@ function NotificationRows() {
                 />
             </SettingRow>
         </>
+    );
+}
+
+function WindowRows() {
+    const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
+    const dock = isMacOS() ? "Dock" : "Taskbar";
+    const items: ContextMenuItem[] = [
+        {
+            label: "Sprout",
+            type: "radio",
+            checked: choice === "sprout",
+            sublabel: "Fold the window into Sprout, over every app",
+            click: () => writeConfig({ "window:minimize": "sprout" }),
+        },
+        {
+            label: dock,
+            type: "radio",
+            checked: choice === "dock",
+            sublabel: `Send the window to the ${dock.toLowerCase()}`,
+            click: () => writeConfig({ "window:minimize": "dock" }),
+        },
+    ];
+    return (
+        <SettingRow id="window.minimize">
+            <Select value={choice} label={choice === "dock" ? dock : "Sprout"} items={items} ariaLabel="Minimize" />
+        </SettingRow>
     );
 }
 

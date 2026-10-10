@@ -30,7 +30,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The **Sprout** button on the app bar and on the float bar, and minimize (the yellow button on macOS), fold the
   window into Sprout right where Sprout stood, from the cockpit or a float: Sprout floats over your other apps; click it
   to answer what waits on you or ask Jarvis, drag it anywhere, and double-click it or press **Restore** to get back the
-  window you folded, at the same size and place.
+  window you folded, at the same size and place. On macOS `⌘M` folds too. **Settings → General → Window → Minimize**
+  sends minimize to the Dock or taskbar instead.
 - Builds, typechecks and whole test suites from every agent and run now go through one queue that starts each as soon
   as the free RAM allows, so several runs no longer push the machine into swap; the new Jobs chip in the app bar shows
   what runs and what waits, with Run now and Skip.

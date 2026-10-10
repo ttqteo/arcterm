@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ShortcutHint } from "@/app/element/shortcuthint";
-import { atoms, isDev } from "@/app/store/global";
+import { atoms, getSettingsKeyAtom, isDev } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
-import { floatModeAtom, foldToSprout } from "@/app/view/agents/floatstore";
+import { foldToSprout, minimizeRequested } from "@/app/view/agents/floatstore";
 import { reopenLauncher } from "@/app/view/agents/launcherstore";
 import { ProjectSwitcher } from "@/app/view/agents/projectswitcher";
 import { HeaderUsageMeters } from "@/app/view/agents/usagemeters";
+import { minimizeChoice } from "@/app/view/agents/windowsize";
 import { WorkerCapacityChip } from "@/app/view/agents/workercapacitychip";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { spriteFor } from "@/app/view/jarvis/petsprite";
@@ -41,9 +42,18 @@ export const FOLD_SPRITE = {
     minion: spriteFor("sit", [], null, "minion"),
 };
 
+// The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
+export function useFoldTitle(): string {
+    const character = petCharacter(useAtomValue(petCharacterAtom));
+    const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
+    const title = `Fold into ${PET_CHARACTER_NAME[character]}`;
+    return isMacOS() && choice === "sprout" ? `${title} (⌘M)` : title;
+}
+
 export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const character = petCharacter(useAtomValue(petCharacterAtom));
+    const foldTitle = useFoldTitle();
     // the lights hide in macOS fullscreen, so their room goes with them
     const fullscreen = useAtomValue(atoms.isFullScreen);
     const newAgentKeys = useBindingKeys("new-agent");
@@ -115,7 +125,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
                     type="button"
                     data-app-sprout
                     aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
-                    title={`Fold into ${PET_CHARACTER_NAME[character]}`}
+                    title={foldTitle}
                     onClick={() => fireAndForget(foldToSprout)}
                     className="flex h-[26px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised pl-1.5 pr-2 text-[11.5px] font-semibold text-secondary hover:bg-surface-hover hover:text-primary"
                 >
@@ -142,14 +152,14 @@ function withChord(label: string, keys: string | undefined): string {
 export function WindowControls() {
     const win = getCurrentWindow();
     const maximized = useWindowMaximized();
-    // floating, minimize folds the window into Sprout (floatstore.ts foldToSprout) rather than into the taskbar
-    const floating = useAtomValue(floatModeAtom);
+    // minimize folds the window into Sprout unless window:minimize sends it to the taskbar (floatstore.ts)
+    const toSprout = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize"))) === "sprout";
     const character = petCharacter(useAtomValue(petCharacterAtom));
     return (
         <div data-tauri-drag-region className="flex h-full shrink-0 items-center border-l border-border">
             <button
-                onClick={() => (floating ? fireAndForget(foldToSprout) : win.minimize())}
-                aria-label={floating ? `Minimize to ${PET_CHARACTER_NAME[character]}` : "Minimize"}
+                onClick={minimizeRequested}
+                aria-label={toSprout ? `Fold into ${PET_CHARACTER_NAME[character]}` : "Minimize"}
                 className="flex h-full w-11 cursor-pointer items-center justify-center text-secondary hover:bg-hover"
             >
                 &#x2013;
