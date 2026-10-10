@@ -118,7 +118,7 @@ func TestResumeRefusesARunItCannotResume(t *testing.T) {
 		"dag run":    func(r *waveobj.Run) { r.DagORef = "dag:1" },
 		"not failed": func(r *waveobj.Run) { r.Phases[0].State = jarvis.PhaseState_Running },
 		"no session": func(r *waveobj.Run) { r.SessionId = "" },
-		"codex":      func(r *waveobj.Run) { r.Runtime = "codex" },
+		"opencode":   func(r *waveobj.Run) { r.Runtime = "opencode" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			calls := stubResumeRunWorker(t, nil)

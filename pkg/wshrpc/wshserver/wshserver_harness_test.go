@@ -46,7 +46,7 @@ func TestListHarnessesReturnsCatalogWithoutOpenRouter(t *testing.T) {
 		if info.Label == "" || !info.ConsultCapable {
 			t.Errorf("info %+v missing label/capabilities", info)
 		}
-		if wantWorker := info.Runtime == "claude" || info.Runtime == "pi" || info.Runtime == "agy"; info.RunWorkerCapable != wantWorker {
+		if wantWorker := info.Runtime == "claude" || info.Runtime == "pi" || info.Runtime == "agy" || info.Runtime == "codex"; info.RunWorkerCapable != wantWorker {
 			t.Errorf("%s RunWorkerCapable = %v, want %v", info.Runtime, info.RunWorkerCapable, wantWorker)
 		}
 		if wantLead := info.Runtime == "claude" || info.Runtime == "pi"; info.LeadCapable != wantLead {
@@ -69,7 +69,7 @@ func TestListHarnessesAddsRouteCapabilitiesOnlyForAvailableWorkers(t *testing.T)
 		return []harness.ProbeResult{
 			{Spec: harness.Spec{Runtime: "pi", Label: "Pi", RunWorkerCapable: true}, Installed: true},
 			{Spec: harness.Spec{Runtime: "claude", Label: "Claude Code", RunWorkerCapable: true}, Installed: false},
-			{Spec: harness.Spec{Runtime: "codex", Label: "Codex", RunWorkerCapable: false}, Installed: true},
+			{Spec: harness.Spec{Runtime: "opencode", Label: "OpenCode", RunWorkerCapable: false}, Installed: true},
 		}
 	}
 
@@ -134,7 +134,7 @@ func TestListHarnessesAddsCatalogModelCapabilities(t *testing.T) {
 		return []harness.ProbeResult{
 			{Spec: harness.Spec{Runtime: "pi", Label: "Pi", RunWorkerCapable: true}, Installed: true},
 			{Spec: harness.Spec{Runtime: "claude", Label: "Claude Code", RunWorkerCapable: true}, Installed: false},
-			{Spec: harness.Spec{Runtime: "codex", Label: "Codex", RunWorkerCapable: false}, Installed: true},
+			{Spec: harness.Spec{Runtime: "opencode", Label: "OpenCode", RunWorkerCapable: false}, Installed: true},
 		}
 	}
 

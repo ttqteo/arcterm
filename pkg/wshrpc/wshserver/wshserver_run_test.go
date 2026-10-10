@@ -352,9 +352,13 @@ func TestCreateRunCommand_RejectsInvalidOrUnavailableRouteBeforePersistence(t *t
 	cases := []struct {
 		name, runtime string
 		available     bool
+		// leadRefused: runroute accepts the route, and the harness catalog refuses it for the lead operation
+		leadRefused bool
 	}{
-		{name: "unsupported runtime", runtime: "codex"},
+		{name: "unsupported runtime", runtime: "opencode"},
 		{name: "unavailable harness", runtime: "claude", available: false},
+		// codex is a worker route, so runroute resolves it; only OperationLead keeps it from leading a run
+		{name: "codex cannot lead", runtime: "codex", leadRefused: true},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -363,8 +367,16 @@ func TestCreateRunCommand_RejectsInvalidOrUnavailableRouteBeforePersistence(t *t
 			if err != nil {
 				t.Fatalf("CreateChannel: %v", err)
 			}
+			if _, err := runroute.Resolve(waveobj.RoutePin{Runtime: tt.runtime}); tt.leadRefused && err != nil {
+				t.Fatalf("runroute refused %q (%v): the case is for a route the lead operation refuses", tt.runtime, err)
+			}
+			var leadOps []harness.Operation
 			oldValidate := validateHarness
-			validateHarness = func(string, harness.Operation) (harness.Spec, error) {
+			validateHarness = func(runtime string, op harness.Operation) (harness.Spec, error) {
+				if tt.leadRefused {
+					leadOps = append(leadOps, op)
+					return harness.ValidateCapable(runtime, op)
+				}
 				if !tt.available {
 					return harness.Spec{}, context.Canceled
 				}
@@ -385,6 +397,9 @@ func TestCreateRunCommand_RejectsInvalidOrUnavailableRouteBeforePersistence(t *t
 			})
 			if err == nil {
 				t.Fatal("CreateRun must reject the route")
+			}
+			if tt.leadRefused && (len(leadOps) != 1 || leadOps[0] != harness.OperationLead) {
+				t.Fatalf("the route must be refused by the lead operation, got operations %v (error %v)", leadOps, err)
 			}
 			if runs, _ := wstore.GetChannelRuns(ctx, ch.OID); len(runs) != 0 {
 				t.Fatalf("rejected route persisted %d runs", len(runs))

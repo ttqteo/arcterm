@@ -61,8 +61,10 @@ var specs = []Spec{
 	{Runtime: "agy", Bin: "agy", Label: "Antigravity", ConsultCapable: true, RunWorkerCapable: true, AssignsOwnSession: true,
 		SteeringRel: []string{".gemini", "config", "AGENTS.md"}, SkillsRel: []string{".gemini", "config", "skills"},
 		UpdateArgs: []string{"update"}},
-	// run workers are claude, pi and agy (docs/deferred.md, 2026-09-14); codex and opencode still consult
-	{Runtime: "codex", Bin: "codex", Label: "Codex", ConsultCapable: true, RunWorkerCapable: false,
+	// codex runs task workers only, like agy: a lead needs the handoff /compact and re-orientation after
+	// compaction, and codex has neither. It names its own session id, so its worker's session is bound late
+	// from its first hook. opencode still only consults (docs/deferred.md, 2026-09-14).
+	{Runtime: "codex", Bin: "codex", Label: "Codex", ConsultCapable: true, RunWorkerCapable: true, AssignsOwnSession: true,
 		SteeringRel: []string{".codex", "AGENTS.md"}, SkillsRel: []string{".codex", "skills"}},
 	{Runtime: "opencode", Bin: "opencode", Label: "OpenCode", ConsultCapable: true, RunWorkerCapable: false,
 		SteeringRel: []string{".config", "opencode", "AGENTS.md"}, SkillsRel: []string{".config", "opencode", "skills"}},

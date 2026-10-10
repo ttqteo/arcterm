@@ -80,7 +80,7 @@ func TestRunWorkerSpecFor_CapabilityArgs(t *testing.T) {
 }
 
 func TestRunWorkerSpecForRejectsUnsupportedRuntimes(t *testing.T) {
-	for _, runtime := range []string{"codex", "opencode"} {
+	for _, runtime := range []string{"opencode"} {
 		cap := runroute.Capability{Runtime: runtime, ResolvedModel: "operator default"}
 		if spec, ok := RunWorkerSpecFor(cap, "", "do work"); ok {
 			t.Errorf("%s must have no run worker adapter, got %+v", runtime, spec)
@@ -102,6 +102,9 @@ func TestRunWorkerSpecForSessionId(t *testing.T) {
 		// agy names its own conversation: it never takes --session-id, even when handed one
 		{"agy", "", []string{"--dangerously-skip-permissions", "-i", "do work"}},
 		{"agy", "gemini-3-pro", []string{"--dangerously-skip-permissions", "--model", "gemini-3-pro", "-i", "do work"}},
+		// codex names its own session too, and takes its prompt positionally: no prompt flag, never `exec`
+		{"codex", "", []string{"--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust", "do work"}},
+		{"codex", "gpt-5.5", []string{"--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust", "--model", "gpt-5.5", "do work"}},
 	}
 	for _, tt := range tests {
 		cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: tt.runtime, Model: tt.model})
@@ -523,9 +526,27 @@ func TestRunWorkerSpecForAgyBaseArgs(t *testing.T) {
 	}
 }
 
+func TestRunWorkerSpecForCodexBaseArgs(t *testing.T) {
+	cap, err := runroute.Resolve(waveobj.RoutePin{Runtime: "codex", Model: "gpt-5.5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, ok := RunWorkerSpecFor(cap, "", "do work")
+	want := []string{"--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust", "--model", "gpt-5.5"}
+	if !ok || spec.Bin != "codex" || !reflect.DeepEqual(spec.BaseArgs, want) {
+		t.Fatalf("codex spec = %+v, ok=%v, want base args %v", spec, ok, want)
+	}
+	// the launch args are the base args and the prompt, so a resume recomposes the same flags
+	if wantArgs := append(append([]string{}, want...), "do work"); !reflect.DeepEqual(spec.Args, wantArgs) {
+		t.Fatalf("codex args = %v, want %v", spec.Args, wantArgs)
+	}
+}
+
 func TestWorkerSessionId(t *testing.T) {
-	if got := WorkerSessionId("agy"); got != "" {
-		t.Errorf("agy names its own session, got %q", got)
+	for _, rt := range []string{"agy", "codex"} {
+		if got := WorkerSessionId(rt); got != "" {
+			t.Errorf("%s names its own session, got %q", rt, got)
+		}
 	}
 	for _, rt := range []string{"claude", "pi"} {
 		a, b := WorkerSessionId(rt), WorkerSessionId(rt)

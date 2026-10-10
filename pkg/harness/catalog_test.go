@@ -29,15 +29,16 @@ func TestLookupCapabilities(t *testing.T) {
 		if !ok || !spec.ConsultCapable || spec.Bin == "" {
 			t.Fatalf("invalid %s spec: %+v, ok=%v", runtime, spec, ok)
 		}
-		// run workers are claude, pi and agy; codex and opencode stay consult-only
-		if wantWorker := runtime == "pi" || runtime == "claude" || runtime == "agy"; spec.RunWorkerCapable != wantWorker {
+		// run workers are claude, pi, agy and codex; opencode stays consult-only
+		if wantWorker := runtime != "opencode"; spec.RunWorkerCapable != wantWorker {
 			t.Fatalf("%s RunWorkerCapable = %v, want %v", runtime, spec.RunWorkerCapable, wantWorker)
 		}
-		// leads are claude and pi: agy has no /compact and no compaction event
+		// leads are claude and pi: agy and codex have no /compact and no compaction event
 		if wantLead := runtime == "pi" || runtime == "claude"; spec.LeadCapable != wantLead {
 			t.Fatalf("%s LeadCapable = %v, want %v", runtime, spec.LeadCapable, wantLead)
 		}
-		if wantOwn := runtime == "agy"; spec.AssignsOwnSession != wantOwn {
+		// agy and codex name their own session
+		if wantOwn := runtime == "agy" || runtime == "codex"; spec.AssignsOwnSession != wantOwn {
 			t.Fatalf("%s AssignsOwnSession = %v, want %v", runtime, spec.AssignsOwnSession, wantOwn)
 		}
 	}
@@ -103,12 +104,18 @@ func TestValidateInstalledLead(t *testing.T) {
 		if _, err := ValidateInstalled("agy", op); err != nil {
 			t.Fatalf("agy %s: %v", op, err)
 		}
+		if _, err := ValidateInstalled("codex", op); err != nil {
+			t.Fatalf("codex %s: %v", op, err)
+		}
 	}
 	if _, err := ValidateCapable("agy", OperationLead); err == nil {
 		t.Fatal("ValidateCapable accepted agy as a lead")
 	}
 	if _, err := ValidateCapable("codex", OperationLead); err == nil {
 		t.Fatal("ValidateCapable accepted codex as a lead")
+	}
+	if _, err := ValidateCapable("codex", OperationRunWorker); err != nil {
+		t.Fatalf("ValidateCapable refused codex as a run worker: %v", err)
 	}
 }
 
