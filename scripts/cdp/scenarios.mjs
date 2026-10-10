@@ -23370,6 +23370,408 @@ const consumersPopover = {
     },
 };
 
+// --- agent-sleep: an idle agent put to sleep (docs/superpowers/specs/2026-10-09-agent-sleep-design.md). The roster is a
+// fixture of two idle claude agents, one awake and one asleep (the fixture's `sleeping` is what the block's agent:sleeping
+// meta becomes in the app), so nothing real is slept or woken. getconsumers answers the Consumers mock's reading; a
+// second layer above it answers agentssleep, agentswake and controllerinput, each call recorded in `calls`, by the mode a
+// step sets. Wake: "ok" resolves, "hold" keeps the call pending until the step releases it, "fail" rejects with the
+// server's reason. Sleep: "ok" answers the bytes freed, "background" answers a call without `force` with the tasks
+// running under the agent and a forced one with the bytes freed. The scenario never writes a setting: step 8 only reads
+// Settings > Agents. Teardown puts both RPC layers, the roster fixture and the page back.
+const AS_MOCK_KEY = "__arcAgentSleepMock";
+const AS_AWAKE_ID = "fx-as-awake";
+const AS_SLEEPING_ID = "fx-as-sleeping";
+const AS_AWAKE_NAME = "sleep awake";
+const AS_SLEEPING_NAME = "sleep sleeper";
+const AS_AWAKE_BLOCK = "fx-blk-as-awake";
+const AS_SLEEPING_BLOCK = "fx-blk-as-sleeping";
+const AS_WAKE_FAIL = "it exited (code 1) before it came back; its output is in the terminal";
+const AS_BACKGROUND = "npm run dev";
+const AS_FREED = 330 * 2 ** 20;
+const AS_SLEPT_FOR_MS = 2 * 3_600_000;
+const AS_READING = {
+    totalbytes: 8 * 2 ** 30,
+    availablebytes: 3 * 2 ** 30,
+    windowms: 600_000,
+    interfacebytes: 600 * 2 ** 20,
+    serverbytes: 100 * 2 ** 20,
+    hostbytes: 40 * 2 ** 20,
+    // both tabs: buildConsumers drops a reading for a tab the roster lacks, and builds the Sleeping group from the roster
+    agents: [
+        { tabid: AS_AWAKE_ID, blockid: AS_AWAKE_BLOCK, rambytes: AS_FREED, tokensread: true, tokens: [] },
+        { tabid: AS_SLEEPING_ID, blockid: AS_SLEEPING_BLOCK, tokensread: true, tokens: [] },
+    ],
+};
+
+// the sleeper's last turn committed (`committed`), which on an awake agent offers ✓ Close on its row; asleep it must not
+function agentSleepRoster(now) {
+    const base = { project: "arcterm", task: "", state: "idle", agent: "claude", model: "sonnet" };
+    return [
+        { ...base, id: AS_AWAKE_ID, name: AS_AWAKE_NAME, idleSince: now - 10 * 60_000, blockId: AS_AWAKE_BLOCK, committed: true },
+        {
+            ...base,
+            id: AS_SLEEPING_ID,
+            name: AS_SLEEPING_NAME,
+            idleSince: now - AS_SLEPT_FOR_MS,
+            blockId: AS_SLEEPING_BLOCK,
+            committed: true,
+            sleeping: { since: now - AS_SLEPT_FOR_MS, freedBytes: AS_FREED },
+        },
+    ];
+}
+
+// a second mock layer over the Consumers one: whatever it does not answer goes down to the layer under it
+async function installAgentSleepMock(h) {
+    const resolved = await ahResolveModules(h);
+    if (resolved.error) return `unresolved: ${resolved.error}`;
+    return h.ev(`(async () => {
+        const api = (await import(${JSON.stringify(resolved.urls.api)})).RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${AS_MOCK_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const m = { api, prev, wake: "ok", sleep: "ok", held: [], calls: [] };
+        const wake = () => {
+            if (m.wake === "hold") return new Promise((resolve, reject) => m.held.push({ resolve, reject }));
+            if (m.wake === "fail") return Promise.reject(new Error(${JSON.stringify(AS_WAKE_FAIL)}));
+            return Promise.resolve(null);
+        };
+        const sleep = (data) =>
+            Promise.resolve(
+                m.sleep === "background" && !data.force ? { background: [${JSON.stringify(AS_BACKGROUND)}] } : { freedbytes: ${AS_FREED} }
+            );
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                if (command === "agentswake") {
+                    m.calls.push({ command, data });
+                    return wake();
+                }
+                if (command === "agentssleep") {
+                    m.calls.push({ command, data });
+                    return sleep(data);
+                }
+                // typing into a fixture block goes nowhere; the call is recorded (with what it carried), never sent. The
+                // command also carries a terminal resize, which the fixture block's xterm sends whenever the layout
+                // moves, so a step looks at the input a call carried and at the calls made after its own action
+                if (command === "controllerinput" && String(data?.blockid).startsWith("fx-")) {
+                    m.calls.push({ command, data: { blockid: data.blockid, input: atob(data.inputdata64 ?? ""), resized: data.termsize != null } });
+                    return Promise.resolve(null);
+                }
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${AS_MOCK_KEY} = m;
+        return "installed";
+    })()`);
+}
+
+const asMode = (h, kind, mode) =>
+    h.ev(`(() => {
+        const m = window.${AS_MOCK_KEY};
+        if (!m) return false;
+        m[${JSON.stringify(kind)}] = ${JSON.stringify(mode)};
+        return true;
+    })()`);
+
+// lets the held wakes finish as a success: the fixture roster does not change, so the card goes back to its Wake button
+const asRelease = (h) =>
+    h.ev(`(() => {
+        const m = window.${AS_MOCK_KEY};
+        const held = m ? m.held.splice(0) : [];
+        for (const p of held) p.resolve(null);
+        return held.length;
+    })()`);
+
+const asCalls = (h, command) =>
+    h.ev(`(window.${AS_MOCK_KEY}?.calls ?? []).filter((c) => c.command === ${JSON.stringify(command)})`);
+
+const removeAgentSleepMock = (h) =>
+    h.ev(`(() => {
+        const m = window.${AS_MOCK_KEY};
+        if (!m) return "absent";
+        for (const p of m.held.splice(0)) p.resolve(null);
+        m.api.setMockRpcClient(m.prev);
+        delete window.${AS_MOCK_KEY};
+        return "restored";
+    })()`);
+
+const asRow = (id) => `document.querySelector('[data-agent-row="${id}"]')`;
+const asCard = `document.querySelector("[data-sleeping-card]")`;
+const asEscape = (h) => h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+// the composer of the sleeping agent, wherever the Cockpit draws it
+const AS_COMPOSER = `[...document.querySelectorAll("[data-agent-composer] textarea")].find((t) => t.placeholder === ${JSON.stringify(`message ${AS_SLEEPING_NAME}…`)})`;
+
+const agentSleep = {
+    name: "agent-sleep",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null };
+        try {
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(agentSleepRoster(Date.now()), null, 2));
+            ctx.wroteFixture = true;
+            // the fixture roster is read at boot
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            const consumers = await installConsumersMock(h, AS_READING);
+            if (consumers !== "installed") throw new Error(`consumers mock: ${consumers}`);
+            await consumersMode(h, "reading");
+            const mock = await installAgentSleepMock(h);
+            if (mock !== "installed") throw new Error(`sleep mock: ${mock}`);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixture roster and the mocks", false, ctx.arrangeError);
+            return steps;
+        }
+
+        // 1. the sleeping row: a moon, "sleeping 2h" for its age, and no ✓ Close although its last turn committed
+        const rowReady = await polishWaitFor(h, `!!${asRow(AS_SLEEPING_ID)}?.querySelector("[data-agent-sleeping]")`, 10000);
+        const row = await h.ev(`(() => {
+            const sl = ${asRow(AS_SLEEPING_ID)};
+            const aw = ${asRow(AS_AWAKE_ID)};
+            return {
+                text: sl?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                moon: !!sl?.querySelector("[data-agent-sleeping]"),
+                done: !!sl?.querySelector("[data-agent-done]"),
+                awakeMoon: !!aw?.querySelector("[data-agent-sleeping]"),
+                awakeDone: !!aw?.querySelector("[data-agent-done]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/agent-sleep-row.png");
+        rec(
+            "1. the sidebar row shows the moon and \"sleeping 2h\", and no Close",
+            rowReady && row.moon && /sleeping 2h/.test(row.text ?? "") && !row.done && !row.awakeMoon,
+            JSON.stringify(row)
+        );
+
+        // 2. focused, the sleeping agent's terminal has the card over it
+        await h.ev(`${asRow(AS_SLEEPING_ID)}?.click()`);
+        const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-card="${AS_SLEEPING_ID}"]')`, 5000);
+        const card = await h.ev(`(() => {
+            const c = document.querySelector("[data-sleeping-card]");
+            return { text: c?.textContent.trim() ?? null, wake: c?.querySelector("[data-sleeping-wake]")?.textContent.trim() ?? null };
+        })()`);
+        await h.shot("cdp-shots/agent-sleep-card.png");
+        rec(
+            "2. focused, the card over the terminal says \"Sleeping since\" and offers Wake",
+            cardUp && (card.text ?? "").includes("Sleeping since") && card.wake === "Wake",
+            JSON.stringify(card)
+        );
+
+        // 3. Wake reads Waking… and is disabled while the call is pending; the call names the tab
+        await asMode(h, "wake", "hold");
+        await h.ev(`document.querySelector("[data-sleeping-wake]")?.click()`);
+        const waking = await polishWaitFor(
+            h,
+            `(() => { const b = document.querySelector("[data-sleeping-wake]"); return !!b && b.textContent.trim() === "Waking…" && b.disabled; })()`,
+            3000
+        );
+        const wakeCalls = await asCalls(h, "agentswake");
+        await h.shot("cdp-shots/agent-sleep-waking.png");
+        rec(
+            "3. Wake on the card reads Waking… and is disabled, and agentswake names the tab",
+            waking && wakeCalls.length === 1 && wakeCalls[0].data.tab === AS_SLEEPING_ID && wakeCalls[0].data.fresh == null && wakeCalls[0].data.message == null,
+            JSON.stringify({ waking, wakeCalls })
+        );
+        await asRelease(h);
+        await polishWaitFor(
+            h,
+            `(() => { const b = document.querySelector("[data-sleeping-wake]"); return !!b && b.textContent.trim() === "Wake" && !b.disabled; })()`,
+            3000
+        );
+
+        // 4. a failed wake shows the server's reason with Start fresh and Close; Start fresh asks for a fresh start
+        await asMode(h, "wake", "fail");
+        await h.ev(`document.querySelector("[data-sleeping-wake]")?.click()`);
+        const failed = await polishWaitFor(h, `!!document.querySelector("[data-sleeping-error]")`, 3000);
+        const failure = await h.ev(`(() => ({
+            reason: document.querySelector("[data-sleeping-error]")?.textContent.trim() ?? null,
+            fresh: document.querySelector("[data-sleeping-fresh]")?.textContent.trim() ?? null,
+            close: document.querySelector("[data-sleeping-close]")?.textContent.trim() ?? null,
+            wake: !!document.querySelector("[data-sleeping-wake]"),
+        }))()`);
+        await h.shot("cdp-shots/agent-sleep-failed.png");
+        await asMode(h, "wake", "hold");
+        await h.ev(`document.querySelector("[data-sleeping-fresh]")?.click()`);
+        const starting = await polishWaitFor(
+            h,
+            `(() => { const b = document.querySelector("[data-sleeping-fresh]"); return !!b && b.textContent.trim() === "Starting…" && b.disabled; })()`,
+            3000
+        );
+        const freshCall = (await asCalls(h, "agentswake")).find((c) => c.data.fresh === true);
+        rec(
+            "4. a failed wake shows the reason with Start fresh and Close, and Start fresh sends fresh: true",
+            failed && failure.reason === AS_WAKE_FAIL && failure.fresh === "Start fresh" && failure.close === "Close" && !failure.wake &&
+                starting && freshCall?.data?.tab === AS_SLEEPING_ID,
+            JSON.stringify({ failed, failure, starting, freshCall })
+        );
+        await asRelease(h);
+        await asMode(h, "wake", "ok");
+
+        // 5. Sleep in the awake row's menu asks before it stops background work, and the confirmed one forces
+        await asMode(h, "sleep", "background");
+        await h.ev(`(() => {
+            const el = ${asRow(AS_AWAKE_ID)};
+            const r = el.getBoundingClientRect();
+            el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+        })()`);
+        const menuItems = await polishWaitFor(h, caMenuHas("Sleep"), 3000);
+        const menuHasWake = await h.ev(caMenuHas("Wake"));
+        await h.shot("cdp-shots/agent-sleep-menu.png");
+        await h.ev(caMenuClick("Sleep"));
+        const confirm = await polishWaitFor(h, `!!${consumersDialogExpr(AS_BACKGROUND)}`, 3000);
+        await h.shot("cdp-shots/agent-sleep-background.png");
+        const firstSleep = (await asCalls(h, "agentssleep"))[0];
+        await h.ev(`[...(${consumersDialogExpr(AS_BACKGROUND)}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim().startsWith("Sleep anyway"))?.click()`);
+        const freedToast = await polishWaitFor(h, consumersToastExpr("freed 330 MB"), 3000);
+        const sleepCalls = await asCalls(h, "agentssleep");
+        rec(
+            "5. Sleep in the row menu asks before stopping background work; confirming sends force: true and a toast says freed 330 MB",
+            menuItems && !menuHasWake && confirm && firstSleep?.data?.tab === AS_AWAKE_ID && firstSleep.data.force == null &&
+                sleepCalls.length === 2 && sleepCalls[1].data.tab === AS_AWAKE_ID && sleepCalls[1].data.force === true && freedToast,
+            JSON.stringify({ menuItems, menuHasWake, confirm, sleepCalls, freedToast })
+        );
+        await asMode(h, "sleep", "ok");
+
+        // 6. the Consumers panel: a Sleeping group with Wake, Sleep on the awake row
+        await h.goto("cockpit");
+        await polishWaitFor(h, `!!document.querySelector("[data-worker-capacity]")`, 10000);
+        await h.ev(`document.querySelector("[data-worker-capacity]")?.click()`);
+        const opened = await polishWaitFor(h, `${CONSUMERS_SORT} === "ram" && document.querySelectorAll("[data-consumer-row]").length === 2`, 5000);
+        const panel = await h.ev(`(() => {
+            const p = document.querySelector("[data-consumers-panel]");
+            const sl = ${consumersRowExpr(AS_SLEEPING_ID)};
+            const aw = ${consumersRowExpr(AS_AWAKE_ID)};
+            return {
+                rows: p ? [...p.querySelectorAll("[data-consumer-row]")].map((r) => r.dataset.consumerRow) : [],
+                group: !!p && [...p.querySelectorAll("*")].some((e) => e.children.length === 0 && e.textContent.trim() === "Sleeping"),
+                moon: !!sl?.querySelector("[data-consumer-moon]"),
+                wake: sl?.querySelector("[data-consumer-wake]")?.textContent.trim() ?? null,
+                sleepOnSleeper: !!sl?.querySelector("[data-consumer-sleep]"),
+                sleepOnAwake: aw?.querySelector("[data-consumer-sleep]")?.textContent.trim() ?? null,
+                wakeOnAwake: !!aw?.querySelector("[data-consumer-wake]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/agent-sleep-consumers.png");
+        rec(
+            "6a. the Consumers panel has a Sleeping group last, with Wake, and Sleep on the awake row",
+            opened && panel.rows[0] === AS_AWAKE_ID && panel.rows[1] === AS_SLEEPING_ID && panel.group && panel.moon && panel.wake === "Wake" &&
+                !panel.sleepOnSleeper && panel.sleepOnAwake === "Sleep" && !panel.wakeOnAwake,
+            JSON.stringify(panel)
+        );
+        const wakesBefore = (await asCalls(h, "agentswake")).length;
+        await asMode(h, "wake", "hold");
+        await h.ev(`${consumersRowExpr(AS_SLEEPING_ID)}?.querySelector("[data-consumer-wake]")?.click()`);
+        const panelWaking = await polishWaitFor(
+            h,
+            `(() => { const b = ${consumersRowExpr(AS_SLEEPING_ID)}?.querySelector("[data-consumer-wake]"); return !!b && b.textContent.trim() === "Waking…" && b.disabled; })()`,
+            3000
+        );
+        const panelWake = (await asCalls(h, "agentswake")).slice(wakesBefore);
+        rec(
+            "6b. Wake in the panel sends agentswake for the sleeping tab",
+            panelWaking && panelWake.length === 1 && panelWake[0].data.tab === AS_SLEEPING_ID,
+            JSON.stringify({ panelWaking, panelWake })
+        );
+        await asRelease(h);
+        await asMode(h, "wake", "ok");
+        const sleepsBefore = (await asCalls(h, "agentssleep")).length;
+        await h.ev(`${consumersRowExpr(AS_AWAKE_ID)}?.querySelector("[data-consumer-sleep]")?.click()`);
+        // step 5's toast may still be up, so the call itself is what is waited for
+        const panelSlept = await polishWaitFor(h, `window.${AS_MOCK_KEY}.calls.filter((c) => c.command === "agentssleep").length > ${sleepsBefore}`, 3000);
+        const panelSleep = (await asCalls(h, "agentssleep")).slice(sleepsBefore);
+        rec(
+            "6c. Sleep in the panel sends agentssleep for the awake tab",
+            panelSlept && panelSleep.length === 1 && panelSleep[0].data.tab === AS_AWAKE_ID && panelSleep[0].data.force == null,
+            JSON.stringify({ panelSlept, panelSleep })
+        );
+        await asEscape(h);
+        await polishWaitFor(h, `${CONSUMERS_SORT} === null`, 2000);
+
+        // 7. a message to the sleeping agent goes through wake, and stays in the box when the wake fails. The Cockpit parks
+        // an agent idle for two hours in its Idle list, which draws a composer for each agent once it is opened; a card
+        // draws a collapsed one that opens on a click. Either way the box is found by its placeholder.
+        let composer = await polishWaitFor(h, `!!(${AS_COMPOSER})`, 1500);
+        if (!composer) {
+            await h.ev(`[...document.querySelectorAll("h2")].find((x) => x.textContent.trim().toLowerCase() === "idle")?.parentElement?.click()`);
+            composer = await polishWaitFor(h, `!!(${AS_COMPOSER})`, 3000);
+        }
+        if (!composer) {
+            await h.ev(`document.querySelector('[data-agent-id="${AS_SLEEPING_ID}"] .cursor-text')?.click()`);
+            composer = await polishWaitFor(h, `!!(${AS_COMPOSER})`, 3000);
+        }
+        let typed = null;
+        if (composer) {
+            await h.ev(`(${AS_COMPOSER}).focus()`);
+            await h.cdp("Input.insertText", { text: "carry on" });
+            typed = await h.ev(`(${AS_COMPOSER}).value`);
+        }
+        const wakesBeforeSend = (await asCalls(h, "agentswake")).length;
+        const inputsBeforeSend = (await asCalls(h, "controllerinput")).length;
+        await asMode(h, "wake", "fail");
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+        }
+        const sent = await polishWaitFor(h, `window.${AS_MOCK_KEY}.calls.filter((c) => c.command === "agentswake").length > ${wakesBeforeSend}`, 3000);
+        const errorToast = await polishWaitFor(h, consumersToastExpr("Couldn't wake", "it exited (code 1)"), 3000);
+        const send = (await asCalls(h, "agentswake")).slice(wakesBeforeSend)[0];
+        // input sent after the send only: the block's xterm resizes (a call with no input) as the layout moves
+        const inputs = await asCalls(h, "controllerinput");
+        const typedInto = inputs.slice(inputsBeforeSend).filter((c) => c.data.blockid === AS_SLEEPING_BLOCK && c.data.input !== "");
+        const kept = await h.ev(`(${AS_COMPOSER})?.value ?? null`);
+        await h.shot("cdp-shots/agent-sleep-composer.png");
+        rec(
+            "7. a message to the sleeping agent goes through wake, no keystrokes are sent, and the box keeps it when the wake fails",
+            composer && typed === "carry on" && sent && send?.data?.tab === AS_SLEEPING_ID && send.data.message === "carry on" &&
+                typedInto.length === 0 && kept === "carry on" && errorToast,
+            JSON.stringify({ composer, typed, send, typedInto, inputsBeforeSend, inputs, kept, errorToast })
+        );
+        await asMode(h, "wake", "ok");
+
+        // 8. Settings > Agents: Sleep idle agents, a toggle and the minutes stepper (read only: nothing is changed)
+        await h.goto("settings");
+        const pageOpen = await spOpen(h, "agents");
+        const settings = await h.ev(`(() => {
+            const toggle = document.querySelector('[data-setting-row="agents.sleepidle"] [role="switch"]');
+            const after = document.querySelector('[data-setting-row="agents.sleepaftermin"]');
+            return {
+                card: !!document.querySelector('[data-setting-card="sleep"]'),
+                toggle: toggle?.getAttribute("aria-label") ?? null,
+                checked: toggle?.getAttribute("aria-checked") ?? null,
+                minutes: after?.querySelector(".tabular-nums")?.textContent.trim() ?? null,
+                decrease: !!after?.querySelector('button[aria-label="Decrease minutes before an idle agent sleeps"]'),
+                increase: !!after?.querySelector('button[aria-label="Increase minutes before an idle agent sleeps"]'),
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-setting-card="sleep"]')?.scrollIntoView({ block: "center" })`);
+        await h.shot("cdp-shots/agent-sleep-settings.png");
+        rec(
+            "8. Settings > Agents has Sleep idle agents: the toggle and the minutes stepper",
+            pageOpen && settings.card && settings.toggle === "Sleep idle agents" && (settings.checked === "true" || settings.checked === "false") &&
+                /^\d+$/.test(settings.minutes ?? "") && settings.decrease && settings.increase,
+            JSON.stringify(settings)
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await removeAgentSleepMock(h);
+        await removeConsumersMock(h);
+        if (ctx.wroteFixture) {
+            ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true });
+        }
+        if (!(await ahReload(h))) console.error("agent-sleep teardown: the page did not come back after the reload");
+        await h.goto("cockpit");
+    },
+};
+
 // --- machine-servers: the footer's Servers chip and popover (docs/superpowers/specs/2026-10-08-machine-servers-design.md).
 // listalldevservers is mocked the way consumers-popover mocks getconsumers, so the rows, owners and counts are known, and
 // stopdevserver is recorded, never run: nothing on the machine is stopped. Every other command passes through. The roster is
@@ -25988,7 +26390,7 @@ const SP_PAGES = [
     { id: "general", cards: ["startup", "notifications", "vault"] },
     { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
-    { id: "agents", cards: ["claudeaccount", "runs", "flags"] },
+    { id: "agents", cards: ["claudeaccount", "sleep", "runs", "flags"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
     { id: "about", cards: ["versions", "agents"] },
 ];
@@ -27681,6 +28083,7 @@ export const SCENARIOS = [
     mdComments,
     workerCapacity,
     consumersPopover,
+    agentSleep,
     machineServers,
     capacityWarn,
     notifyToast,

@@ -10,6 +10,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
+import { useViewingSync } from "./agentsleep";
 import { AgentSurface } from "./agentsurface";
 import { primeChannels } from "./channelsstore";
 import { CockpitSurface } from "./cockpitsurface";
@@ -127,6 +128,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
     useEffect(() => setupRosterSeededLatch(), []);
     // a turn can end while any surface shows, so the unread set is kept here, not in the Agent surface
     useUnreadTracking(model);
+    // the server never sleeps an agent on screen, whatever surface shows
+    useViewingSync(model);
     useDockBadge(model);
     const surface = useAtomValue(model.surfaceAtom);
     const floating = useAtomValue(floatModeAtom);

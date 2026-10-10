@@ -53,6 +53,25 @@ export function shouldRelaunchWorker(
     return !NO_RELAUNCH_RUN_STATUSES.includes(runStatus ?? "");
 }
 
+// Pure: whether the block's agent is asleep (block meta agent:sleeping holds the time it slept; 0 or absent = awake)
+export function isAgentSleeping(meta: Record<string, unknown> | undefined | null): boolean {
+    const slept = meta?.["agent:sleeping"];
+    return typeof slept === "number" && slept > 0;
+}
+
+// Pure: why a terminal view mounting must not relaunch its agent block, or null when it may. A sleeping agent
+// stays asleep through a remount and a restart of arcterm ("sleeping"): only Wake brings it back. Otherwise it is
+// the status of the run whose over or blocked worker this is (shouldRelaunchWorker).
+export function relaunchBlockedBy(
+    meta: Record<string, unknown> | undefined,
+    runStatus: string | undefined
+): string | null {
+    if (isAgentSleeping(meta)) {
+        return "sleeping";
+    }
+    return shouldRelaunchWorker(meta, runStatus) ? null : (runStatus ?? null);
+}
+
 function sameArgs(a: string[], b: string[]): boolean {
     return a.length === b.length && a.every((v, i) => v === b[i]);
 }

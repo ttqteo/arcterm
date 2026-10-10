@@ -68,6 +68,16 @@ agent's connection, local default. Effort realistically L counting step 1. Full 
 history (pre-consolidation issue 5). The E8 connserver readiness handshake (patch saved, needs a live
 SSH/WSL verify) rides on step 1.
 
+### (arcterm) Codex sessions not shown on a Mac
+
+Reported 2026-10-10: Codex sessions do not show on a Mac; it is not yet known whether that is Conversation History or
+the rail. Not reproduced: no Mac at hand. The scanner reads `~/.codex/sessions/**/rollout-*.jsonl` on every OS
+(`pkg/agentsessions/agentsessions.go` `allProviders`), with nothing Mac-specific. Suspects: a newer Codex there that no
+longer writes rollout jsonl (Windows `codex-cli 0.162.0` already keeps `thread_history_1.sqlite` beside it), a
+`CODEX_HOME` the scanner ignores, or, for the rail, an install older than the Codex hook support (`a5deee7d`) or hooks
+not yet trusted with `/hooks`. On the Mac first run: `codex --version; echo $CODEX_HOME; ls ~/.codex/; find
+~/.codex/sessions -name 'rollout-*' -mtime -3 | head -3; grep -c codex-hook ~/.codex/hooks.json`.
+
 ---
 
 ## 3 · Held — pick up only on the named trigger

@@ -240,6 +240,14 @@ describe("agentVMFromInput", () => {
         ).toBeUndefined();
     });
 
+    it("carries a sleeping agent's sleep, and stays idle: sleeping is not a fourth state", () => {
+        const sleeping = { since: 1_700_000_000_000, freedBytes: 330 * 2 ** 20 };
+        const vm = agentVMFromInput({ id: "tab-9", name: "x", status: "idle", ts: NOW - 5000, sleeping }, NOW);
+        expect(vm.sleeping).toEqual(sleeping);
+        expect(vm.state).toBe("idle");
+        expect(agentVMFromInput({ id: "tab-9", name: "x", status: "idle" }, NOW).sleeping).toBeUndefined();
+    });
+
     it("maps a working row: status->working, model label, activeMs from ts", () => {
         const input: LiveAgentInput = {
             id: "tab-1",

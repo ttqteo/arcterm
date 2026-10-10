@@ -66,6 +66,8 @@ declare global {
         runid: string;
         harness: string;
         state: string;
+        sleptat?: number;
+        freedbytes?: number;
     };
 
     // baseds.AgentStatusData
@@ -477,6 +479,30 @@ declare global {
         tabid: string;
         midturn: boolean;
         overstream: boolean;
+    };
+
+    // wshrpc.CommandAgentsSetViewingData
+    type CommandAgentsSetViewingData = {
+        tabids: string[];
+    };
+
+    // wshrpc.CommandAgentsSleepData
+    type CommandAgentsSleepData = {
+        tab: string;
+        force?: boolean;
+    };
+
+    // wshrpc.CommandAgentsSleepRtnData
+    type CommandAgentsSleepRtnData = {
+        freedbytes?: number;
+        background?: string[];
+    };
+
+    // wshrpc.CommandAgentsWakeData
+    type CommandAgentsWakeData = {
+        tab: string;
+        message?: string;
+        fresh?: boolean;
     };
 
     // wshrpc.CommandAnalyzeUsageData
@@ -2445,6 +2471,9 @@ declare global {
         "app:loom"?: boolean;
         "agent:transcriptpath"?: string;
         "agent:loginemail"?: string;
+        "agent:sleeping"?: number;
+        "agent:sleepfreed"?: number;
+        "agent:wakefailed"?: string;
         count?: number;
     };
 
@@ -3004,6 +3033,9 @@ declare global {
         "harness:updatecheck"?: boolean;
         "claude:*"?: boolean;
         "claude:activeaccount"?: string;
+        "agents:*"?: boolean;
+        "agents:sleepidle"?: boolean;
+        "agents:sleepaftermin"?: number;
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
         "usage:insightslang"?: string;

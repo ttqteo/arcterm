@@ -28,6 +28,7 @@ import {
     type AgentEntry,
     type AgentVM,
 } from "./agentsviewmodel";
+import { sleepingOf } from "./agentsleep";
 import { fetchPreviousInfo } from "./previousinfo";
 import { registeredProjectFor } from "./projectlabel";
 import { projectsAtom } from "./projectsstore";
@@ -64,6 +65,7 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
         if (!status?.state) {
             continue; // not an agent (no status emitted) — skip
         }
+        const block = get(WOS.getWaveObjectAtom<Block>(row.termBlockOref));
         const vm = agentVMFromInput(
             {
                 id: row.tabId,
@@ -83,7 +85,8 @@ export const liveAgentBaseAtom: Atom<AgentVM[]> = atom((get) => {
                 sessionId: status.sessionid,
                 step: status.step,
                 committed: status.committed,
-                loginEmail: blockLoginEmail(get(WOS.getWaveObjectAtom<Block>(row.termBlockOref))),
+                loginEmail: blockLoginEmail(block),
+                sleeping: sleepingOf(block?.meta),
             },
             now
         );

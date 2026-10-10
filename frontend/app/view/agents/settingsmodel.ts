@@ -83,6 +83,14 @@ export function radarAuditRoute(runtime: string, model: string): RoutePin {
     return { runtime: rt, ...(m ? { model: m } : {}) };
 }
 
+// agents:sleepaftermin, the minutes an agent stays idle before it sleeps: the stepper moves by 5 within [5, 240]
+// (4 h), and the shipped default is pkg/wconfig/defaultconfig/settings.json's
+export const SLEEP_AFTER_MIN = { step: 5, min: 5, max: 240, default: 30 };
+
+export function stepSleepAfter(current: number, dir: -1 | 1): number {
+    return Math.min(SLEEP_AFTER_MIN.max, Math.max(SLEEP_AFTER_MIN.min, current + dir * SLEEP_AFTER_MIN.step));
+}
+
 const THEME_OVERRIDE_KEY = "cockpit.theme.overrides";
 const LAUNCH_FLAGS_KEY = "agent.launch.flags";
 
@@ -336,11 +344,33 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "agents",
             name: "Agents",
-            blurb: "The Claude subscription new agents run on, the route new runs take, and the flags every launch starts with.",
+            blurb: "The Claude subscription new agents run on, when an idle agent sleeps, the route new runs take, and the flags every launch starts with.",
             cards: [
                 // The account list lives behind its own RPCs, not in settings, so the card has no rows for the
                 // index to count or search; ClaudeAccountSection renders it whole.
                 { id: "claudeaccount", label: "Claude account", rows: [] },
+                {
+                    id: "sleep",
+                    label: "Sleep idle agents",
+                    rows: [
+                        {
+                            id: "agents.sleepidle",
+                            title: "Sleep idle agents",
+                            desc: "End an idle agent's process to free RAM; Wake or a message resumes it.",
+                            key: "agents:sleepidle",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "agents.sleepaftermin",
+                            title: "After idle for",
+                            desc: "Minutes an agent stays idle before it sleeps.",
+                            key: "agents:sleepaftermin",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
                 {
                     id: "runs",
                     label: "Runs",

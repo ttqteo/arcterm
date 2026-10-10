@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings > Agents: the Claude subscription new agents run on, the route new runs take, and the flags every
-// launch starts with.
+// Settings > Agents: the Claude subscription new agents run on, when an idle agent sleeps, the route new runs
+// take, and the flags every launch starts with.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getSettingsKeyAtom } from "@/app/store/global";
@@ -35,8 +35,18 @@ import {
     setClaudeIdentity,
 } from "../ratelimitstore";
 import { RoutePicker } from "../routepicker";
-import { flagRowId } from "../settingsmodel";
-import { CardFooter, FLAG_RUNTIMES, Note, RowCtx, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
+import { flagRowId, SLEEP_AFTER_MIN, stepSleepAfter } from "../settingsmodel";
+import {
+    CardFooter,
+    FLAG_RUNTIMES,
+    Note,
+    RowCtx,
+    SettingCard,
+    SettingRow,
+    Stepper,
+    Toggle,
+    writeConfig,
+} from "../settingsui";
 
 export function AgentsPage({
     model,
@@ -50,6 +60,9 @@ export function AgentsPage({
     return (
         <>
             <ClaudeAccountCard model={model} />
+            <SettingCard id="sleep" label="Sleep idle agents">
+                <SleepRows />
+            </SettingCard>
             <SettingCard id="runs" label="Runs">
                 <RunRouteRow />
             </SettingCard>
@@ -123,6 +136,34 @@ function LaunchFlagRows({ runtime }: { runtime: Runtime }) {
                     );
                 })
             )}
+        </>
+    );
+}
+
+function SleepRows() {
+    const on = (useAtomValue(getSettingsKeyAtom("agents:sleepidle")) as boolean | undefined) ?? true;
+    const after =
+        (useAtomValue(getSettingsKeyAtom("agents:sleepaftermin")) as number | undefined) ?? SLEEP_AFTER_MIN.default;
+    return (
+        <>
+            <SettingRow id="agents.sleepidle">
+                <Toggle on={on} onToggle={() => writeConfig({ "agents:sleepidle": !on })} label="Sleep idle agents" />
+            </SettingRow>
+            <SettingRow id="agents.sleepaftermin">
+                <div className={cn("flex items-center gap-2", !on && "opacity-50")}>
+                    <Stepper
+                        value={after}
+                        onStep={(dir) => {
+                            const next = stepSleepAfter(after, dir);
+                            if (next !== after) {
+                                writeConfig({ "agents:sleepaftermin": next });
+                            }
+                        }}
+                        ariaLabel="minutes before an idle agent sleeps"
+                    />
+                    <span className="text-[12px] text-muted">min</span>
+                </div>
+            </SettingRow>
         </>
     );
 }

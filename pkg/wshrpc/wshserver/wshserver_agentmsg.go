@@ -40,6 +40,10 @@ type agentTabFacts struct {
 	Status       baseds.AgentStatusData
 	OpenAsk      bool
 	HasStream    bool
+	// what a tab whose shell is not running says about being asleep, from its block's meta (applySleepMeta)
+	Cmd        string // the block's cmd, a sleeping agent's harness: the exit event that ended its process names none
+	Sleeping   int64  // unix ms it was put to sleep; 0 when it was not
+	SleepFreed uint64 // the RAM its sleep freed
 }
 
 type agentRosterFacts struct {
@@ -91,15 +95,23 @@ func readAgentRosterFacts(ctx context.Context) (*agentRosterFacts, error) {
 		rs := blockcontroller.GetBlockControllerRuntimeStatus(blockId)
 		status := orchestrate.LatestAgentStatus(blockId, tab.OID)
 		_, openAsk := agentask.GlobalRegistry.Get(waveobj.MakeORef(waveobj.OType_Block, blockId).String())
-		facts.Tabs = append(facts.Tabs, agentTabFacts{
+		tf := agentTabFacts{
 			Tab:          tab,
 			BlockId:      blockId,
 			ShellRunning: rs != nil && rs.ShellProcStatus == blockcontroller.Status_Running,
-			ProjectPath:  jarvis.MainCheckout(status.Cwd),
 			Status:       status,
 			OpenAsk:      openAsk,
 			HasStream:    agentctl.Has(blockId),
-		})
+		}
+		if !tf.ShellRunning {
+			// a slept agent has no process, and the bare idle its exit published carries no cwd or transcript
+			// path: its block meta keeps what the row needs
+			if block, err := wstore.DBGet[*waveobj.Block](ctx, blockId); err == nil && block != nil {
+				applySleepMeta(&tf, block.Meta)
+			}
+		}
+		tf.ProjectPath = jarvis.MainCheckout(tf.Status.Cwd)
+		facts.Tabs = append(facts.Tabs, tf)
 	}
 	return facts, nil
 }
@@ -135,14 +147,48 @@ func agentsState(status string, openAsk bool) string {
 	return wshrpc.AgentsState_Working
 }
 
-// buildAgentRoster is the live claude, pi and agy agent tabs, ordered by tab id.
+// applySleepMeta reads what a block's meta says about its agent being asleep into tf, and fills in the
+// transcript path and cwd the status lacks.
+func applySleepMeta(tf *agentTabFacts, meta waveobj.MetaMapType) {
+	tf.Cmd = meta.GetString(waveobj.MetaKey_Cmd, "")
+	tf.Sleeping = metaMillis(meta, waveobj.MetaKey_AgentSleeping)
+	tf.SleepFreed = uint64(max(metaMillis(meta, waveobj.MetaKey_AgentSleepFreed), 0))
+	if tf.Status.TranscriptPath == "" {
+		tf.Status.TranscriptPath = meta.GetString(waveobj.MetaKey_AgentTranscriptPath, "")
+	}
+	if tf.Status.Cwd == "" {
+		tf.Status.Cwd = meta.GetString(waveobj.MetaKey_CmdCwd, "")
+	}
+}
+
+// metaMillis is an integer meta value: the store hands numbers back as float64, a value written in this process
+// may still be an int64.
+func metaMillis(meta waveobj.MetaMapType, key string) int64 {
+	switch v := meta[key].(type) {
+	case float64:
+		return int64(v)
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	}
+	return 0
+}
+
+// buildAgentRoster is the live claude, pi and agy agent tabs, ordered by tab id, and the sleeping ones: a slept
+// agent has no process but keeps its tab, its terminal output and its conversation.
 // ponytail: a tab whose agent exited back to its shell keeps its last status and still reads as live; a typed
 // send lands in the shell. Use the control stream or a session-end report as the liveness signal if that
 // happens in practice.
 func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 	var rows []agentRow
 	for _, tf := range facts.Tabs {
-		if !tf.ShellRunning || !agentHarnesses[tf.Status.Agent] {
+		asleep := !tf.ShellRunning && tf.Sleeping > 0
+		harness := tf.Status.Agent
+		if asleep {
+			harness = tf.Cmd
+		}
+		if (!tf.ShellRunning && !asleep) || !agentHarnesses[harness] {
 			continue
 		}
 		row := agentRow{
@@ -150,12 +196,15 @@ func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 				TabId:       tf.Tab.OID,
 				Name:        tf.Tab.Name,
 				ProjectPath: tf.ProjectPath,
-				Harness:     tf.Status.Agent,
+				Harness:     harness,
 				State:       agentsState(tf.Status.State, tf.OpenAsk),
 			},
 			blockId:   tf.BlockId,
 			status:    tf.Status,
 			hasStream: tf.HasStream,
+		}
+		if asleep {
+			row.State, row.SleptAt, row.FreedBytes = wshrpc.AgentsState_Sleeping, tf.Sleeping, tf.SleepFreed
 		}
 		if run := ownerRun(facts.Runs, tf.Tab.OID); run != nil {
 			row.RunId = run.OID
@@ -266,10 +315,19 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 	if target.State == wshrpc.AgentsState_Asking && !target.hasStream {
 		return nil, fmt.Errorf("agent %q has a question open in its terminal, and a typed message would answer it; send again once it is answered", target.Name)
 	}
-	agentmsg.NoteSent(senderBlock, target.blockId)
 	// the envelope's header is one line, and a tab name is whatever the user typed
 	senderName := strings.Join(strings.Fields(sender.Name), " ")
-	deliverAgentMessage(target.blockId, agentmsg.Envelope(senderName, sender.OID, text))
+	envelope := agentmsg.Envelope(senderName, sender.OID, text)
+	if target.State == wshrpc.AgentsState_Sleeping {
+		// the one path wsh agents send and Jarvis take: a message wakes the agent and is delivered once it reports in
+		if err := wakeAgent(ctx, target, envelope, false); err != nil {
+			return nil, err
+		}
+		agentmsg.NoteSent(senderBlock, target.blockId)
+		return &wshrpc.CommandAgentsSendRtnData{TabId: target.TabId, SentTs: time.Now().UnixMilli()}, nil
+	}
+	agentmsg.NoteSent(senderBlock, target.blockId)
+	deliverAgentMessage(target.blockId, envelope)
 	return &wshrpc.CommandAgentsSendRtnData{
 		TabId:   target.TabId,
 		SentTs:  time.Now().UnixMilli(),

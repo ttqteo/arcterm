@@ -566,6 +566,7 @@ export const AgentRow = memo(function AgentRow({
                                 <AgentComposer
                                     ref={composerRef}
                                     blockId={agent.blockId}
+                                    agent={agent}
                                     placeholder={`message ${agent.name}…`}
                                     onEscape={onComposerEscape}
                                     className="border-t-0 px-0 py-0"

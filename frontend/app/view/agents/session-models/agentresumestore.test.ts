@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { persistResume, shouldPersistResume, shouldRelaunchWorker } from "./agentresumestore";
+import { persistResume, relaunchBlockedBy, shouldPersistResume, shouldRelaunchWorker } from "./agentresumestore";
 
 const setMeta = vi.fn();
 const reloadWaveObject = vi.fn();
@@ -177,5 +177,27 @@ describe("persistResume (codex)", () => {
     it("waits for the rollout: a session id with no transcript path writes nothing", async () => {
         await persistResume("block:codex-2", "codex", undefined, "019f");
         expect(setMeta).not.toHaveBeenCalled();
+    });
+});
+
+describe("relaunchBlockedBy", () => {
+    const worker = { "agent:runid": "r1", "agent:taskid": "t-1" };
+
+    it("blocks the relaunch of a sleeping agent: reopening arcterm leaves it asleep", () => {
+        expect(relaunchBlockedBy({ "agent:sleeping": 1700000000000 }, undefined)).toBe("sleeping");
+        expect(relaunchBlockedBy({ cmd: "claude", "agent:sleeping": 1700000000000 }, "executing")).toBe("sleeping");
+    });
+
+    it("lets an agent that is awake relaunch: sleeping is 0 or absent", () => {
+        expect(relaunchBlockedBy({ "agent:sleeping": 0 }, undefined)).toBeNull();
+        expect(relaunchBlockedBy({ cmd: "claude" }, undefined)).toBeNull();
+        expect(relaunchBlockedBy(undefined, undefined)).toBeNull();
+    });
+
+    it("still blocks a worker whose run is over or blocked, by the run status", () => {
+        expect(relaunchBlockedBy(worker, "done")).toBe("done");
+        expect(relaunchBlockedBy(worker, "blocked")).toBe("blocked");
+        expect(relaunchBlockedBy(worker, "executing")).toBeNull();
+        expect(relaunchBlockedBy(worker, undefined)).toBeNull();
     });
 });

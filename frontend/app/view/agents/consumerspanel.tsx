@@ -17,10 +17,11 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { TriangleAlert } from "lucide-react";
+import { Moon, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
+import { sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import {
     buildConsumers,
     holdOrder,
@@ -96,13 +97,41 @@ function toSonnet(row: ConsumerRow): void {
     });
 }
 
+const ROW_ACTION =
+    "cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50";
+
 function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
+    // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
+    const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
+    const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
+        setPending(kind);
+        fireAndForget(async () => {
+            try {
+                await call();
+            } finally {
+                setPending(null);
+            }
+        });
+    };
+    const wake = () =>
+        run("wake", async () => {
+            try {
+                await wakeAgent(row.id);
+            } catch (e) {
+                wakeErrorToast(row.name, e);
+            }
+        });
     return (
         <div data-consumer-row={row.id} className="flex items-center gap-2 px-3 py-[5px] hover:bg-surface-hover">
-            <span
-                className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])}
-                aria-label={row.state}
-            />
+            {row.sleeping ? (
+                // 10px against the dot's 7px: the margins keep the name where the dot's rows have it
+                <Moon data-consumer-moon size={10} className="-mx-[1.5px] flex-none text-muted" aria-label="sleeping" />
+            ) : (
+                <span
+                    className={cn("h-[7px] w-[7px] flex-none rounded-full", STATE_DOT[row.state])}
+                    aria-label={row.state}
+                />
+            )}
             <button
                 type="button"
                 data-consumer-open
@@ -149,9 +178,33 @@ function Row({ row, model }: { row: ConsumerRow; model: AgentsViewModel }) {
                     data-consumer-sonnet
                     title="Switch this session to Sonnet (/model sonnet)"
                     onClick={() => toSonnet(row)}
-                    className="cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-hover"
+                    className={ROW_ACTION}
                 >
                     → Sonnet
+                </button>
+            ) : null}
+            {row.canSleep ? (
+                <button
+                    type="button"
+                    data-consumer-sleep
+                    title="End this agent's process to free its RAM; Wake or a message resumes it"
+                    disabled={pending != null}
+                    onClick={() => run("sleep", () => sleepWithConfirm(row.vm))}
+                    className={ROW_ACTION}
+                >
+                    Sleep
+                </button>
+            ) : null}
+            {row.sleeping ? (
+                <button
+                    type="button"
+                    data-consumer-wake
+                    title="Relaunch this agent where its conversation left off"
+                    disabled={pending != null}
+                    onClick={wake}
+                    className={ROW_ACTION}
+                >
+                    {pending === "wake" ? "Waking…" : "Wake"}
                 </button>
             ) : null}
             <button

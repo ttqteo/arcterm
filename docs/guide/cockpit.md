@@ -243,6 +243,7 @@ Mỗi dòng có chấm trạng thái, tên (bấm để mở agent), project, mo
 
 - **Stop** — kết thúc phiên của agent (có hỏi xác nhận). Với worker của run, task bị dừng và **không** được thử lại: các task sau nó chờ đến khi bạn **Retry** hoặc **Skip** trong run.
 - **→ Sonnet** — chỉ với agent Claude đang chạy Opus: gõ `/model sonnet`. Nếu agent đang giữa một lượt thì đổi có hiệu lực từ lượt sau.
+- **Sleep** — chỉ với agent Claude, pi hoặc Antigravity đang rảnh, không thuộc run: dừng tiến trình để trả RAM mà vẫn giữ hàng và hội thoại (hỏi trước nếu nó còn việc chạy nền). Agent đang ngủ nằm trong nhóm **Sleeping** cuối panel, với nút **Wake**.
 
 Biểu tượng cảnh báo ở chế độ Tokens đánh dấu agent đốt nhiều nhất khi vượt 500.000 token trong cửa sổ. **Open Usage** ở chân panel chuyển sang surface Usage. `Esc` hoặc bấm ra ngoài để đóng. Panel đọc lại mỗi 5 giây; nếu một lần đọc thất bại, danh sách mờ đi kèm dòng "Couldn't read usage".
 

@@ -69,6 +69,7 @@ import {
 } from "./railstore";
 import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
+import { SleepingCard } from "./sleepingcard";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
 import { clampDockHeight, splitDock } from "./terminaldock";
@@ -513,6 +514,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 {floating ? null : <AgentHeader model={model} agent={agent} />}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
                                 <HeldAskBar model={model} agent={agent} />
+                                {/* keyed: the card's pending wake and its failure belong to one agent */}
+                                <SleepingCard key={agent.id} agent={agent} />
                             </>
                         )}
                         {/* The grid parent is always rendered: hidden, never unmounted, so no xterm remounts. Tracks

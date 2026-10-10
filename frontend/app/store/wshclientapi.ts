@@ -72,6 +72,24 @@ export class RpcApiType {
         return client.wshRpcCall("agentssetmodel", data, opts);
     }
 
+    // command "agentssetviewing" [call]
+    AgentsSetViewingCommand(client: WshClient, data: CommandAgentsSetViewingData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentssetviewing", data, opts);
+        return client.wshRpcCall("agentssetviewing", data, opts);
+    }
+
+    // command "agentssleep" [call]
+    AgentsSleepCommand(client: WshClient, data: CommandAgentsSleepData, opts?: RpcOpts): Promise<CommandAgentsSleepRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentssleep", data, opts);
+        return client.wshRpcCall("agentssleep", data, opts);
+    }
+
+    // command "agentswake" [call]
+    AgentsWakeCommand(client: WshClient, data: CommandAgentsWakeData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentswake", data, opts);
+        return client.wshRpcCall("agentswake", data, opts);
+    }
+
     // command "agentsyncadopt" [call]
     AgentSyncAdoptCommand(client: WshClient, data: CommandAgentSyncAdoptData, opts?: RpcOpts): Promise<CommandAgentSyncAdoptRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentsyncadopt", data, opts);
