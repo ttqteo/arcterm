@@ -24,6 +24,8 @@ import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
+// dev-only spike hook for float mini; removed by the plan's last task
+import "@/app/view/agents/miniprobe";
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
 import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";

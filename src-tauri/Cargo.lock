@@ -4293,6 +4293,8 @@ version = "0.15.8"
 dependencies = [
  "chrono",
  "mac-notification-sys",
+ "objc2",
+ "objc2-app-kit",
  "open",
  "regex",
  "serde",
