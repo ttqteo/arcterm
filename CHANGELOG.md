@@ -15,6 +15,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Jarvis can be a one-eyed Minion instead of Sprout: pick it in **Settings → Appearance → Jarvis → Character**. It
   walks, rests and plays like Sprout, wears the same marks, and the flag shirt turns its overalls red.
 
+- Message another live agent from any Claude prompt: start it with `@` and the agent's tab id (`@3f2a91bc review
+  this diff`) and it goes straight to that agent's session, not the one you typed in; a line under the prompt says it
+  was sent, and a message that could not go comes back to the box with the reason. Right-click an agent card and
+  **Copy @mention** copies the id.
+
 - The Jarvis pet's popup answers every agent question in place, not only one-pick ones: a question with several
   parts or several picks opens its answer form under the row (**Answer**, or `Enter`), where `1`–`9` pick, `←` / `→`
   change question and `Enter` sends. Clicking a "Needs you" bubble lands on that question with its form open.

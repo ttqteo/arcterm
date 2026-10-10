@@ -8,6 +8,8 @@ import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-
 import type { Turn } from "./control-core";
 import { denial } from "./guard-core";
 import { jobslotArgs, jobslotLine } from "./jobslot-core";
+import type { Ran } from "./mention-core";
+import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { idleArgs } from "./status-core";
 import { usageArgs } from "./usage-core";
 
@@ -168,6 +170,35 @@ export const register: Register = (on) => {
             }
         }
         return next(e);
+    });
+
+    // "@<tab id> text" typed at this prompt goes to that agent's session and never reaches this one's model.
+    // only the person's own Enter: the cockpit's prompts and a peer's arrive with another origin
+    on("prompt.submit", async ($, e, next) => {
+        const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
+        if (m === null) {
+            return next(e);
+        }
+        const putBack = () =>
+            void $.prompt
+                .fill({ text: e.text })
+                .catch((err) => $.ui.log(`arc: putting the @mention back failed: ${String(err)}`, { to: "debug" }));
+        const refused = mentionRefusal(m, (e.attachments?.length ?? 0) > 0);
+        if (refused !== null) {
+            putBack();
+            return { drop: refused };
+        }
+        let ran: Ran;
+        try {
+            ran = await $.process.run([WSH, ...sendArgs(m)]);
+        } catch (err) {
+            ran = { exitCode: -1, stdout: "", stderr: String(err) };
+        }
+        const out = sendOutcome(m.id, ran);
+        if (out.refill) {
+            putBack();
+        }
+        return { drop: out.notice };
     });
 
     on("classic.UserPromptSubmit", ($, e, next) => {

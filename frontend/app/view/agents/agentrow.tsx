@@ -10,7 +10,18 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
-import { ArrowUpRight, Check, Copy, GitCompare, Minimize2, PanelRight, Plus, SquareTerminal, X } from "lucide-react";
+import {
+    ArrowUpRight,
+    AtSign,
+    Check,
+    Copy,
+    GitCompare,
+    Minimize2,
+    PanelRight,
+    Plus,
+    SquareTerminal,
+    X,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { memo, useEffect, useRef, useState } from "react";
 import { confirmCloseSession, driveAgent, NUDGE_INPUT } from "./agentactions";
@@ -20,6 +31,7 @@ import {
     clampQuestionIndex,
     entriesToShow,
     isFinishTransition,
+    mentionToken,
     muteMode,
     subagentsLabel,
     tasksLabel,
@@ -267,6 +279,7 @@ export const AgentRow = memo(function AgentRow({
             diff: <GitCompare size={15} />,
             mute: <Minimize2 size={15} />,
             copy: <Copy size={15} />,
+            mention: <AtSign size={15} />,
             close: <X size={15} />,
         };
         const clicks: Record<string, () => void> = {
@@ -275,13 +288,20 @@ export const AgentRow = memo(function AgentRow({
             diff: onOpenDiff,
             mute: () => muteAction?.(),
             copy: () => void navigator.clipboard.writeText(agent.name),
+            mention: () => void navigator.clipboard.writeText(mentionToken(agent.id)),
             close: () => confirmCloseSession(agent),
         };
         const items: ContextMenuItem[] = agentRowMenuItems({ hasDiff: !!diff, hasMute: !!muteAction }).map(
             (it: AgentRowMenuItem) =>
                 "separator" in it
                     ? { type: "separator" }
-                    : { label: it.label, icon: icons[it.key], click: clicks[it.key], danger: it.danger }
+                    : {
+                          label: it.label,
+                          sublabel: it.key === "mention" ? mentionToken(agent.id) : undefined,
+                          icon: icons[it.key],
+                          click: clicks[it.key],
+                          danger: it.danger,
+                      }
         );
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };

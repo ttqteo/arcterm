@@ -7,6 +7,7 @@ import {
     clampQuestionIndex,
     entriesToShow,
     isFinishTransition,
+    mentionToken,
     muteMode,
     subagentsLabel,
     tasksLabel,
@@ -57,12 +58,13 @@ describe("isFinishTransition", () => {
 });
 
 describe("agentRowMenuItems", () => {
-    it("always includes open, terminal, copy, a separator, and a danger close", () => {
+    it("always includes open, terminal, the two copies, a separator, and a danger close", () => {
         const items = agentRowMenuItems({ hasDiff: false, hasMute: false });
         expect(items).toEqual([
             { key: "open", label: "Open" },
             { key: "terminal", label: "Open terminal" },
             { key: "copy", label: "Copy name" },
+            { key: "mention", label: "Copy @mention" },
             { separator: true },
             { key: "close", label: "Close agent", danger: true },
         ]);
@@ -78,7 +80,13 @@ describe("agentRowMenuItems", () => {
     it("orders optional items diff -> mute between terminal and copy", () => {
         const items = agentRowMenuItems({ hasDiff: true, hasMute: true });
         const keys = items.map((i) => ("key" in i ? i.key : "sep"));
-        expect(keys).toEqual(["open", "terminal", "diff", "mute", "copy", "sep", "close"]);
+        expect(keys).toEqual(["open", "terminal", "diff", "mute", "copy", "mention", "sep", "close"]);
+    });
+});
+
+describe("mentionToken", () => {
+    it("is @ and the 8 characters of the tab id wsh agents list prints", () => {
+        expect(mentionToken("3f2a91bc-1234-5678-9abc-def012345678")).toBe("@3f2a91bc");
     });
 });
 

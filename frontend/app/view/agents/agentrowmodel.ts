@@ -34,8 +34,14 @@ export function tasksLabel(done: number, total: number): string {
     return `${done}/${total} tasks`;
 }
 
+// what the person types at another agent's prompt to send this one a message (the Claude mod's mention-core.ts):
+// the tab id cut to the length wsh agents list prints
+export function mentionToken(tabId: string): string {
+    return "@" + tabId.slice(0, 8);
+}
+
 export type AgentRowMenuItem =
-    | { key: "open" | "terminal" | "diff" | "mute" | "copy" | "close"; label: string; danger?: boolean }
+    | { key: "open" | "terminal" | "diff" | "mute" | "copy" | "mention" | "close"; label: string; danger?: boolean }
     | { separator: true };
 
 export function agentRowMenuItems(flags: { hasDiff: boolean; hasMute: boolean }): AgentRowMenuItem[] {
@@ -50,6 +56,7 @@ export function agentRowMenuItems(flags: { hasDiff: boolean; hasMute: boolean })
         items.push({ key: "mute", label: "Move to background" });
     }
     items.push({ key: "copy", label: "Copy name" });
+    items.push({ key: "mention", label: "Copy @mention" });
     items.push({ separator: true });
     items.push({ key: "close", label: "Close agent", danger: true });
     return items;
