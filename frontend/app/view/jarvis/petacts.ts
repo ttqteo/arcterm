@@ -25,7 +25,9 @@ export type PetAct =
     | { id: string; verb: "approve-task"; label: string; channelId: string; runId: string; taskId: string }
     | { id: string; verb: "retry-task"; label: string; channelId: string; runId: string; taskId: string }
     // one option of a one-question ask, sent to the agent that asked (askanswer.ts, the Cockpit's own send)
-    | { id: string; verb: "answer"; label: string; agentId: string; option: number };
+    | { id: string; verb: "answer"; label: string; agentId: string; option: number }
+    // a chunk that came due: an agent on its initiative, asked to do what the chunk's notes say
+    | { id: string; verb: "work-on"; label: string; effortORef: string; chunk: string };
 
 // An act's transient outcome, keyed by act id in petstore.ts. Transient on purpose: the row's real value
 // comes from its own poll, and letting an act's return value become the row's value would drift from the
@@ -43,6 +45,19 @@ export interface PetActState {
 // for a branch that will never land. Everything else needs a written answer, a picked option or a judgment, so
 // the escort covers it here; a question one key can answer also gets its options in the peek (petpeekmodel.ts).
 export function actsForAttention(item: AttentionItem): PetAct[] {
+    // a due chunk has no run: it is addressed by its initiative, Work on first, then Open to read it
+    if (item?.kind === "chunk-due" && item.oref) {
+        return [
+            {
+                id: `${item.key}:work`,
+                verb: "work-on",
+                label: "Work on",
+                effortORef: item.oref,
+                chunk: item.chunklabel ?? item.text,
+            },
+            { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: item.oref } },
+        ];
+    }
     if (!item?.runid) {
         return []; // nothing addressable: an item with no run cannot be opened or resolved
     }

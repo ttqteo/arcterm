@@ -54,7 +54,7 @@ export interface NotifySnapshot {
 }
 
 // attention kinds that wait on a decision of yours. An ask is left to the roster (its agent turns asking) and radar
-// triage is a backlog, not a block.
+// triage is a backlog, not a block. A chunk that came due is a decision you dated yourself, told once when it comes.
 export const DECISION_KINDS: ReadonlySet<string> = new Set([
     "gate",
     "escalation",
@@ -62,6 +62,7 @@ export const DECISION_KINDS: ReadonlySet<string> = new Set([
     "dag-blocked",
     "run-land-held",
     "run-unverified",
+    "chunk-due",
 ]);
 
 export function snapshotOf(
@@ -130,13 +131,15 @@ export function diffEvents(prev: NotifySnapshot | null, next: NotifySnapshot): N
     if (prev.attentionLoaded) {
         for (const [key, i] of next.attention) {
             if (!prev.attention.has(key)) {
+                // a due chunk's text is the chunk; the initiative it belongs to says more than its date
+                const due = i.kind === "chunk-due";
                 out.push({
                     kind: "attention",
                     target: { kind: "attention", key },
-                    label: "Decision",
+                    label: due ? "Due" : "Decision",
                     tone: "asking",
                     title: i.text,
-                    body: i.why ?? i.source,
+                    body: due ? i.source : (i.why ?? i.source),
                     meta: i.channelname ? `#${i.channelname}` : undefined,
                     loud: true,
                 });

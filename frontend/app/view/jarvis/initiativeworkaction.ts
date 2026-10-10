@@ -13,7 +13,8 @@ import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "@/a
 import { composeStartupCommand, runtimeStartupCommand, type Runtime } from "@/app/view/agents/launch";
 import { naFlagsAtom } from "@/app/view/agents/naflagsstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
-import { openAgentFor, planIdeaPrompt, projectPathFor, workOnPrompt } from "./initiativework";
+import { effortDetailAtom, loadEffortDetail } from "./effortstore";
+import { dueChunkPrompt, openAgentFor, planIdeaPrompt, projectPathFor, workOnPrompt } from "./initiativework";
 import { openTarget } from "./openref";
 
 // the harness a Brief launch falls back to when none is preferred and the catalog has not loaded yet
@@ -26,11 +27,12 @@ export interface WorkOnTarget {
     lastnote?: EffortLastNote;
 }
 
-// "plan" is an idea's Plan it: the same launch, asking for chunks instead of where things stand
+// "plan" is an idea's Plan it: the same launch, asking for chunks instead of where things stand; { due } asks
+// for what a chunk that came due says to do
 export async function workOnInitiative(
     model: AgentsViewModel,
     e: WorkOnTarget,
-    ask: "work" | "plan" = "work"
+    ask: "work" | "plan" | { due: string } = "work"
 ): Promise<void> {
     const oid = e.oref.replace(/^effort:/, "");
     const open = openAgentFor(oid, globalStore.get(model.agentsAtom));
@@ -60,7 +62,12 @@ export async function workOnInitiative(
                 runtime,
                 globalStore.get(naFlagsAtom)[runtime] ?? {}
             ),
-            task: ask === "plan" ? planIdeaPrompt(e.title, oid) : workOnPrompt(e.title, oid, e.lastnote),
+            task:
+                ask === "plan"
+                    ? planIdeaPrompt(e.title, oid)
+                    : ask === "work"
+                      ? workOnPrompt(e.title, oid, e.lastnote)
+                      : dueChunkPrompt(e.title, oid, ask.due),
             projectPath,
             projectName: e.project!,
             label: e.title,
@@ -73,4 +80,24 @@ export async function workOnInitiative(
             level: "error",
         });
     }
+}
+
+// Work on from a due chunk's row in Needs you. The row carries only the initiative's oref and the chunk, so the
+// initiative is read for its title and project first; the rest is workOnInitiative's, an open agent included.
+export async function workOnDueChunk(model: AgentsViewModel, effortORef: string, chunk: string): Promise<void> {
+    try {
+        await loadEffortDetail(effortORef);
+    } catch (err) {
+        pushToast({
+            title: "Couldn't read the initiative",
+            message: err instanceof Error ? err.message : String(err),
+            level: "error",
+        });
+        return;
+    }
+    const e = globalStore.get(effortDetailAtom).get(effortORef);
+    if (e == null) {
+        return;
+    }
+    await workOnInitiative(model, { oref: effortORef, title: e.title, project: e.project }, { due: chunk });
 }

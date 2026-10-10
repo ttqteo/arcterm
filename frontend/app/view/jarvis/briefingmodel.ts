@@ -199,6 +199,7 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "run-land-held": "land held",
     "run-unverified": "unverified",
     "radar-triage": "triage",
+    "chunk-due": "due",
 };
 
 export function buildAttentionQueue(input: {
@@ -217,6 +218,8 @@ export function buildAttentionQueue(input: {
         // through to the channel rule below and ends up static — inventing a target would be worse than
         // saying nothing, which is the same rule the no-channel case has always followed.
         const radarORef = a.kind === "radar-triage" && a.oref != null && a.oref !== "" ? a.oref : null;
+        // a chunk that came due names its initiative the same way, and opens it on the chunk's row
+        const dueORef = a.kind === "chunk-due" && a.oref != null && a.oref !== "" ? a.oref : null;
         return {
             key: a.key,
             kind: QUEUE_KIND_LABEL[a.kind] ?? a.kind,
@@ -228,16 +231,19 @@ export function buildAttentionQueue(input: {
             ts: a.waitingsince > 0 ? a.waitingsince : null,
             // a standalone item names no channel, so there is no run body to land on; it renders as
             // static info rather than a button that would navigate nowhere (NeedsRow's rule, kept).
-            action: channelId !== "" || radarORef != null ? a.action : null,
+            action: channelId !== "" || radarORef != null || dueORef != null ? a.action : null,
             nav:
                 radarORef != null
                     ? { kind: "radar", oref: radarORef }
-                    : channelId !== ""
-                      ? { kind: "channel", channelId, runId: a.runid != null && a.runid !== "" ? a.runid : null }
-                      : null,
+                    : dueORef != null
+                      ? { kind: "effort", oref: dueORef }
+                      : channelId !== ""
+                        ? { kind: "channel", channelId, runId: a.runid != null && a.runid !== "" ? a.runid : null }
+                        : null,
             tone: a.kind === "dag-blocked" ? "error" : "asking",
+            // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below
             attrib:
-                a.effortoid != null && a.effortoid !== ""
+                dueORef == null && a.effortoid != null && a.effortoid !== ""
                     ? [effortTitles.get(a.effortoid) ?? "", a.chunklabel ?? ""].filter((s) => s !== "").join(" · ")
                     : "",
             why: a.why ?? "",
@@ -251,8 +257,17 @@ export function buildAttentionQueue(input: {
     });
     // a blocked chunk is attention the server's attention leg never sees; it has no waiting-since to
     // interleave on, so it follows the wire rows rather than competing with them for priority.
+    // a chunk both blocked and due is one waiting thing: its due row already stands for it
+    const due = new Set(
+        rows.flatMap((r) =>
+            r.wireKind === "chunk-due" && r.nav?.kind === "effort" ? [r.nav.oref + ":" + r.title] : []
+        )
+    );
     for (const e of input.efforts) {
         for (const label of e.blockedChunks) {
+            if (due.has(e.oref + ":" + label)) {
+                continue;
+            }
             rows.push({
                 key: "chunk:" + e.oref + ":" + label,
                 kind: "chunk blocked",
@@ -309,7 +324,7 @@ export interface QueueSummary {
 }
 
 // the design's four kind words (design L1010-1013); every wire kind reads as one of them
-export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "blocked" | "triage" {
+export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "blocked" | "triage" | "due" {
     switch (row.wireKind) {
         case "dag-gate":
             return "gate";
@@ -320,6 +335,8 @@ export function queueKindLabel(row: QueueRow): "gate" | "ask" | "failed" | "bloc
             return row.retry ? "failed" : "blocked";
         case "radar-triage":
             return "triage";
+        case "chunk-due":
+            return "due";
         default:
             return "blocked";
     }

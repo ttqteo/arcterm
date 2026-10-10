@@ -578,6 +578,25 @@ export function vaultStatusLine(s: VaultStatusRtnData | null): string {
     return line;
 }
 
+// the Sync now button. `clicking` is the local in-flight flag, set before the RPC so the row reads
+// syncing at once; `status.running` also covers a sync started at launch or on window focus.
+export function vaultSyncButton(s: VaultStatusRtnData | null, clicking: boolean): { enabled: boolean; label: string } {
+    if (clicking || s?.running) {
+        return { enabled: false, label: "Syncing…" };
+    }
+    return { enabled: s != null && !s.off, label: "Sync now" };
+}
+
+// what a rejected Sync now puts in the row's error note. a sync's own failure is already in the reloaded
+// status as `lasterror` (shown by the status line), so only an RPC failure gets a note: the status has no
+// error, could not be loaded, or still runs (the RPC timeout fired mid-sync).
+export function vaultSyncFailureNote(err: string, reloaded: VaultStatusRtnData | null): string | null {
+    if (reloaded == null || reloaded.running || !reloaded.lasterror) {
+        return err;
+    }
+    return null;
+}
+
 // Cards keep the rows the query matches; a card whose label matches keeps all of its rows, which is how
 // the Claude account card (no rows) is found. Empty cards drop, then empty pages. An empty query returns
 // the sections unchanged (identity) so callers can skip the filtered path.

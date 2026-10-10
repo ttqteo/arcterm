@@ -56,13 +56,14 @@ An effort too foggy to name its phases gets a tracker of decisions first, not bu
 | `wsh effort delete <effort> [--force]` | delete (refuses unless archived or `--force`) |
 | `wsh effort advance <effort> [--note "..."]` | active chunk → done; marker moves to the next non-done chunk |
 | `wsh effort reopen <effort> <chunk>` | undo an advance (done → active, previous active back to pending) |
-| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X]` | add a chunk |
+| `wsh effort chunk add <effort> "<label>" [--at N] [--owner X] [--due YYYY-MM-DD\|+Nd]` | add a chunk |
 | `wsh effort chunk rename <effort> <chunk> "<label>"` | rename a chunk |
 | `wsh effort chunk move <effort> <chunk> <at>` | reorder (1-based target position) |
 | `wsh effort chunk remove <effort> <chunk>` | remove a chunk |
 | `wsh effort chunk status <effort> <chunk> <pending\|active\|done\|deferred\|blocked\|skipped> [--note "..."]` | set a chunk's status |
 | `wsh effort chunk note <effort> <chunk> --note "..."` | append an annotation to the chunk's trail |
 | `wsh effort chunk owner <effort> <chunk> <owner\|"">` | set/clear the chunk's owner |
+| `wsh effort chunk due <effort> <chunk> <YYYY-MM-DD\|+Nd\|"">` | set/clear the day the chunk comes due |
 | `wsh effort chunk attach <effort> <chunk> --run <oid> \| --agent <tabid>` | record that a run/agent is working this chunk |
 | `wsh effort chunk detach <effort> [chunk] --run <oid> \| --agent <tabid>` | remove a workref |
 
@@ -82,6 +83,11 @@ Chunks are always referenced by exact label, never index.
 - **Reopen undoes**: `wsh effort reopen <effort> "<chunk>"` when a done chunk turns out not to be.
 - **Blocked is a state, not a note**: `wsh effort chunk status <effort> "<chunk>" blocked --note "why"`.
   The briefing's attention banner folds blocked chunks in, so a stuck effort stays visible.
+- **A decision to revisit gets a date**: a re-measure, or a call deferred until there is evidence, is a chunk
+  with a due day: `wsh effort chunk add <effort> "Re-measure: <what>" --due +14d`, plus a chunk note saying
+  what to measure and what each result decides. From that day it waits in the cockpit's Needs you until the
+  chunk is done, deferred or skipped, or its date moves on (`wsh effort chunk due`). Nothing runs at the
+  date; the person picks it up.
 - **Skipped shrinks the denominator**: an effort that finishes by skipping still reads 100%.
 - Run↔chunk links detach automatically when the run's evidence seals; session workrefs detach at
   session end. Nothing auto-ticks — completion is always a deliberate action.

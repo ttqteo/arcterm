@@ -57,6 +57,13 @@ Hand over and stop. Render, screenshot or re-read the files only when the user a
 When the feature a canvas designed ships, delete its `.superpowers/design/<topic>/` folder in the
 same session. A canvas is never committed.
 
+## The canvas as a spec
+
+A canvas can settle a run's design: Build this… on the canvas, or a plan's `**Prototype:**` line,
+makes the plan reviewer read it as the spec and the final verifier check the built UI against
+every board. So before a canvas becomes a spec, drop the options not chosen: each board then
+shows one screen or state the built UI can reach, and its `title` says which.
+
 ## The design system
 
 A repo design doc (`DESIGN.md` or the like) and its token source ARE the design system: read the
@@ -74,13 +81,17 @@ accents sharing chroma and lightness. State the look you chose in a line.
   `{"v":3,"createdOnFiles":{"v":1,"at":"<now, RFC 3339>"},"title":"<canvas name>","launch":{"view":"canvas"},"pages":[],"boards":{"Main.dc.html":{"x":0,"y":0,"w":1440,"h":900,"title":"<what it shows>"}},"order":["Main.dc.html"],"notes":{},"designSystems":[]}`.
   One `boards` entry and one `order` slot per artboard, `Main.dc.html` first. `x`,`y`,`w`,`h` are
   the frame in CSS px: 80 px between frames in a row, 120 between rows. Add `"is_interactive":
-  true` to an artboard with working controls. When revising, keep every key you are not changing.
+  true` to an artboard with working controls, and `"expand": "fill"` to a fluid one. Arc reads
+  only the frame, `title` and `order`; the other keys take effect when the canvas is imported
+  into claude.ai Design. When revising, keep every key you are not changing.
 - **`<root>/<Name>.dc.html`**, one self-contained file per artboard. Names start with a letter,
   digit or `_`, then only those and `.` `-`; no spaces. Sizes: desktop 1280–1440 wide, phone
   390×844.
 - An image or font an artboard uses goes under `<root>/` and is linked by a relative path.
 
 ## One artboard: the skeleton
+
+Its grey is a placeholder: the look comes from the design system.
 
 ```html
 <!doctype html>
@@ -94,19 +105,19 @@ accents sharing chroma and lightness. State the look you chose in a line.
 <x-dc>
 <helmet>
 <style>
-body{margin:0;font-family:Georgia,serif;background:#faf9f5}
-a{color:#b45309}a:hover{color:#92400e}
+body{margin:0}
+a{color:#666}a:hover{color:#333}
 </style>
 </helmet>
 <div style="width: 880px; height: 560px; box-sizing: border-box; padding: 64px; display: flex; flex-direction: column; gap: 24px">
-<h1 style="margin: 0; font-size: 56px; color: {{accent}}">Spring at Meridian</h1>
-<div style="padding: 20px; background: #ffffff; border: 1px solid {{accent}}; border-radius: 12px">Pea &amp; mint soup</div>
+<h1 style="margin: 0; font-size: 56px; color: {{accent}}">Spring Menu</h1>
+<div>Pea soup</div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#d97757"},"$preview":{"width":880,"height":560}}'>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#666666"},"$preview":{"width":880,"height":560}}'>
 class Component extends DCLogic {
 renderVals() {
-return { accent: this.props.accent ?? '#d97757' };
+return { accent: this.props.accent ?? '#666666' };
 }
 }
 </script>
@@ -118,7 +129,10 @@ Rules that bite (each fails silently):
 
 - Keep the `<script src="./support.js"></script>` head line exactly.
 - Close every non-void element and quote every attribute.
-- Give the root element a fixed size equal to the board's `w`/`h`, and the same `$preview`.
+- Root: fixed at the board's `w`×`h` for a device mockup, poster or print piece; fluid for a
+  page or app screen (no px width, a `max-width` container, %/rem/fr; at narrow widths menus
+  stack, toolbars wrap and wide tables scroll in a box), with `"expand": "fill"` on its board
+  entry and `h` its height at `w`. `$preview` is `w`×`h` either way.
 - Inline `style="…"` for the design; `<helmet><style>` only for page basics and `a`/`a:hover`.
 - Lay out sibling groups with flex or grid plus `gap`.
 - `{{hole}}` is a dotted lookup into `renderVals()`, never an expression.
@@ -137,11 +151,17 @@ Events, state, repeats, branches, child components and links between artboards
 The long form, for pushback on a design call or a specific kind of piece: `reference/craft.md`.
 
 - Real copy; a missing fact becomes a placeholder like `[RUN NAME]`. No lorem ipsum, invented
-  stats or filler.
+  stats or filler. Include at least one detail only this subject has (its real units, terms or
+  data shapes), as content, not ornament.
 - Rationale and option notes go in your reply; an artboard's `title` names what it shows.
 - Options differ in layout and treatment of what the brief asks for. A control, step or section
   the brief did not ask for is a question in your reply, not an artboard.
 - Plain surfaces: no gradient washes, left-border cards or emoji; no Inter, Roboto or Arial.
+- With no design system, avoid the looks AI design clusters around: warm cream with a serif
+  display and a terracotta accent; near-black with one acid-green or vermilion pop; broadsheet
+  hairline rules over dense columns; a purple-to-blue gradient hero; Space Grotesk as the safe
+  face; everything centred; one large radius on every box.
+- Over-tall beats clipped: grow a board's `h` rather than cut content off.
 - Accessible as drawn: real `<button>`, `<a href>`, `<input>` + `<label>`; `aria-label` on
   icon-only buttons. Text 4.5:1 (3:1 at 24px+); colors that must be told apart also differ in
   lightness. Touch targets ≥44px.

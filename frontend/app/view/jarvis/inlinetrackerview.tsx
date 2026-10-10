@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { chunkTone, type ChunkTone } from "./effortmodel";
-import type { DetailRow } from "./inlinetracker";
+import { chunkDueChip, localDay, type DetailRow } from "./inlinetracker";
 import { trackerMenuAtom } from "./jarvisstore";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -314,6 +314,7 @@ export function InitiativeDetail({
                 }
                 const selected = cursor === row.id;
                 const label = row.row.label;
+                const due = chunkDueChip(row.row.due, row.row.status, localDay(new Date()));
                 const menuId = row.id + "#menu";
                 const otherStages = [...edits.stages, ""].filter((s) => s !== row.row.stage);
                 return (
@@ -355,6 +356,18 @@ export function InitiativeDetail({
                                         {label}
                                     </span>
                                 )}
+                                {due != null ? (
+                                    <span
+                                        data-jarvis-chunk-due={row.row.due}
+                                        title={due.come ? "Due: it waits in Needs you" : "The day it comes due"}
+                                        className={cn(
+                                            "flex-none text-[10.5px] tabular-nums",
+                                            due.come ? "font-semibold text-asking" : "text-ink-mid"
+                                        )}
+                                    >
+                                        {due.text}
+                                    </span>
+                                ) : null}
                                 {row.notes > 0 ? (
                                     <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
                                         {row.notes} {row.notes === 1 ? "note" : "notes"}

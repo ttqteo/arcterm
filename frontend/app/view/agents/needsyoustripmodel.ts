@@ -18,13 +18,16 @@ const KIND_LABEL: Record<string, string> = {
     "run-unverified": "Run to confirm",
     "run-land-held": "Run to land",
     escalation: "Escalation",
+    "chunk-due": "Due",
 };
 
 export type StripOpen =
     // an escalation whose asking agent is in the roster: its card, where the ask is answered
     | { kind: "agent"; agentId: string }
     // the run's sheet, or the channel's newest when the item names no run (what Jarvis's Open does)
-    | { kind: "channel"; channelId: string; runId: string | null };
+    | { kind: "channel"; channelId: string; runId: string | null }
+    // a chunk that came due: its initiative, which names no channel
+    | { kind: "effort"; effortId: string };
 
 export interface StripRow {
     key: string;
@@ -123,6 +126,7 @@ export function buildNeedsYouRows(input: {
             title: a.text,
         };
         const agent = escalationAgent(a, input.channelMessages[channelId], input.roster);
+        const effortId = a.kind === "chunk-due" ? idOf(a.oref, "effort") : "";
         rows.push({
             key: a.key,
             kindLabel: KIND_LABEL[a.kind],
@@ -136,9 +140,11 @@ export function buildNeedsYouRows(input: {
             open:
                 agent != null
                     ? { kind: "agent", agentId: agent.id }
-                    : channelId !== ""
-                      ? { kind: "channel", channelId, runId: run.runId }
-                      : null,
+                    : effortId !== ""
+                      ? { kind: "effort", effortId }
+                      : channelId !== ""
+                        ? { kind: "channel", channelId, runId: run.runId }
+                        : null,
         });
     }
     return rows;

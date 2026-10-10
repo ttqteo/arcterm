@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import type { BriefLine } from "./briefrows";
 import type { ChunkRowModel } from "./effortstore";
 import {
+    chunkDueChip,
     chunkRowId,
     expandableORef,
     isFlatPlan,
+    localDay,
     stageRowId,
     stageStartsOpen,
     trackerNavIds,
@@ -247,5 +249,25 @@ describe("trackerRows on a flat plan", () => {
     it("still walks the flat plan's chunks with the one cursor", () => {
         const nav = trackerNavIds(trackerRows({ ...base, chunks: FLAT }));
         expect(nav).toEqual(["initiatives:" + OREF, ...FLAT.map((c) => chunkRowId("initiatives:" + OREF, c.label))]);
+    });
+});
+
+describe("chunkDueChip", () => {
+    it("reads the day, and turns asking once it has come", () => {
+        expect(chunkDueChip("2026-10-20", "pending", "2026-10-19")).toEqual({ text: "due 10-20", come: false });
+        expect(chunkDueChip("2026-10-20", "active", "2026-10-20")).toEqual({ text: "due 10-20", come: true });
+        expect(chunkDueChip("2026-10-20", "blocked", "2026-11-02")).toEqual({ text: "due 10-20", come: true });
+    });
+    it("keeps the year when it is not this one", () => {
+        expect(chunkDueChip("2027-01-05", "pending", "2026-12-30")).toEqual({ text: "due 2027-01-05", come: false });
+    });
+    it("says nothing with no date, or once the chunk is settled", () => {
+        expect(chunkDueChip(undefined, "pending", "2026-10-20")).toBeNull();
+        for (const status of ["done", "deferred", "skipped"]) {
+            expect(chunkDueChip("2026-10-20", status, "2026-10-20")).toBeNull();
+        }
+    });
+    it("spells today as the server compares it", () => {
+        expect(localDay(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
     });
 });

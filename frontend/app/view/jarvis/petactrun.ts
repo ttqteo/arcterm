@@ -14,6 +14,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { agentAnswer, markAskSent } from "@/app/view/agents/askanswer";
 import { loadAttention } from "@/app/view/agents/attentionstore";
+import { workOnDueChunk } from "./initiativeworkaction";
 import { landAgain } from "./landrun";
 import { openAddress, openOrPeekAddress, type OpenGesture } from "./openref";
 import { closePeek } from "./peekstore";
@@ -129,6 +130,11 @@ export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: Open
         await land(act);
         return;
     }
+    if (act.verb === "work-on") {
+        closePeek();
+        await workOnDueChunk(model, act.effortORef, act.chunk);
+        return;
+    }
     if (act.verb === "open") {
         await escort(model, act, gesture);
     }
@@ -137,7 +143,7 @@ export async function runAct(model: AgentsViewModel, act: PetAct, gesture?: Open
 // only an escort leaves the peek, and not when the peek key (ctrlheld.ts) turns it into a peek; the caller drops
 // focus-return for it and nothing else
 export function actNavigates(act: PetAct, gesture?: { ctrlKey: boolean; metaKey?: boolean }): boolean {
-    return act.verb === "open" && !isPeekGesture(gesture);
+    return (act.verb === "open" && !isPeekGesture(gesture)) || act.verb === "work-on";
 }
 
 // The errand reuses the Channels surface's consult path exactly (channelactions.ts): post the question as a

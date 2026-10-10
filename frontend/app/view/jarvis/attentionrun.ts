@@ -72,13 +72,14 @@ async function call(act: AttentionAct, row: AttentionRunRow): Promise<void> {
 }
 
 // Runs the item's button. true: it went through, and the attention list is reloaded so the item leaves now rather
-// than on the next poll. false: it failed (the feedback says why) or the act only opens, which is the caller's to do.
+// than on the next poll. false: it failed (the feedback says why), or the act only opens or starts an agent, which
+// needs the cockpit and is the caller's to do.
 export async function runAttentionAct(
     act: AttentionAct,
     row: AttentionRunRow,
     feedback: AttentionFeedback
 ): Promise<boolean> {
-    if (act.kind === "open") {
+    if (act.kind === "open" || act.kind === "work-on") {
         return false;
     }
     try {

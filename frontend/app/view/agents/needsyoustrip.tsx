@@ -9,6 +9,7 @@
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { runAttentionAct } from "@/app/view/jarvis/attentionrun";
 import { REGION_LABEL, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "@/app/view/jarvis/briefstyle";
+import { workOnDueChunk } from "@/app/view/jarvis/initiativeworkaction";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -24,7 +25,12 @@ const feedback = {
     fail: (title: string) => pushToast({ title, message: "", level: "error" }),
 };
 
-const openTitle = (row: StripRow) => (row.open?.kind === "agent" ? "Go to the asking agent's card" : "Open the run");
+const openTitle = (row: StripRow) =>
+    row.open?.kind === "agent"
+        ? "Go to the asking agent's card"
+        : row.open?.kind === "effort"
+          ? "Open the initiative"
+          : "Open the run";
 
 export function NeedsYouStrip({
     model,
@@ -61,6 +67,10 @@ export function NeedsYouStrip({
             onFocusAgent(to.agentId);
             return;
         }
+        if (to.kind === "effort") {
+            fireAndForget(() => openOrPeek(model, { kind: "effort", effortId: to.effortId }, e));
+            return;
+        }
         fireAndForget(() =>
             openOrPeek(model, { kind: "channel", channelId: to.channelId, runId: to.runId ?? undefined }, e)
         );
@@ -68,6 +78,13 @@ export function NeedsYouStrip({
     const act = (row: StripRow, e: React.MouseEvent) => {
         if (row.act.kind === "open") {
             open(row, e);
+            return;
+        }
+        if (row.act.kind === "work-on") {
+            if (row.open?.kind === "effort") {
+                const effortId = row.open.effortId;
+                fireAndForget(() => workOnDueChunk(model, "effort:" + effortId, row.text));
+            }
             return;
         }
         setBusy((cur) => new Set(cur).add(row.key));

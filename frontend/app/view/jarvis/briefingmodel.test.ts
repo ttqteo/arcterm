@@ -841,3 +841,38 @@ describe("design queue wording", () => {
         expect(queueOpenTarget(rows[0].nav)).toEqual({ kind: "oref", oref: "task:d1" });
     });
 });
+
+describe("buildAttentionQueue: a chunk that came due", () => {
+    const due = {
+        kind: "chunk-due",
+        key: "chunk-due:e1:re-measure:2026-10-20",
+        source: "Nav rail",
+        text: "re-measure",
+        action: "Open",
+        phaseidx: 0,
+        waitingsince: 1000,
+        oref: "effort:e1",
+        effortoid: "e1",
+        chunklabel: "re-measure",
+        why: "Due 2026-10-20.",
+    } as AttentionItem;
+    it("opens its initiative and reads as due, with Work on in place", () => {
+        const [row] = buildAttentionQueue({ attention: [due], efforts: [] });
+        expect(row.nav).toEqual({ kind: "effort", oref: "effort:e1" });
+        expect(row.action).toBe("Open");
+        expect(row.attrib).toBe("");
+        expect(queueKindLabel(row)).toBe("due");
+        expect(queueAction(row)).toEqual({ label: "Work on", kind: "work-on" });
+        expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "effort:e1" });
+    });
+    it("stands for the chunk when it is also blocked", () => {
+        const efforts = [
+            { oref: "effort:e1", title: "Nav rail", blockedChunks: ["re-measure", "other"] } as EffortCardModel,
+        ];
+        const q = buildAttentionQueue({ attention: [due], efforts });
+        expect(q.map((r) => [r.wireKind, r.title])).toEqual([
+            ["chunk-due", "re-measure"],
+            ["chunk-blocked", "other"],
+        ]);
+    });
+});

@@ -3,8 +3,8 @@
 SKILL.md carries the short rules; this is the reasoning and the detail
 behind it. Read it when the user pushes back on a design call, or for
 the specific sections a piece needs — landing-page anatomy, wireframe
-rounds, phone prototypes (print pieces: print.md). The cross-family content rules are at the end; the bundled brand
-kit is described in format.md.
+rounds, phone prototypes. The content rules every canvas follows are at
+the end.
 
 ## Designing well (craft, not format)
 
@@ -14,79 +14,34 @@ existing design's visual vocabulary, the AI-slop tropes, the
 copyrighted-designs rule — all apply with full force on a design
 canvas. What follows is specific to designing.
 
-### Settle the aesthetic with the user, not for them
+### Settle the aesthetic
 
-Without an aesthetic, references, or a design system from the user,
-get their input before committing — ask, or sketch 2–4 genuinely
-different low-fi direction artboards they can SEE — rather than
-picking your own aesthetic (this is how you get slop). A concrete
+A repo design system (`DESIGN.md` or the like) settles it: follow that
+and skip the rest of this section. Without one, references or a brand
+from the user, get their input before committing — ask, or sketch 2–4
+genuinely different low-fi direction artboards they can SEE — rather
+than picking your own aesthetic (this is how you get slop). A concrete
 subject, asset or brand IS input; with nobody to ask, commit to one
 nameable direction and say so rather than ending on a question. Once
-settled, a decision stays settled. Then commit to a small system:
+settled, a decision stays settled.
 
-- A type pairing: Google Fonts load in the artifact (one
+Ground the direction in the subject: what the design is for, who uses
+it, and the one thing they should remember. Bold and minimal both work;
+the key is intentionality, not intensity, then precision in spacing,
+type and detail. Commit to a small system:
+
+- A type pairing: a distinctive display face over a refined body face,
+  1–3 families. Google Fonts load in a canvas (one
   `fonts.googleapis.com/css2?family=…&display=swap` `<link>` in
-  `<helmet>`; no other webfont host does); 1–3 families, each with a
-  system fallback of close metrics (shown while the font loads and
-  wherever a face can't be embedded; PNG/PDF export embeds linked
-  Google Fonts).
+  `<helmet>`; no other webfont host does), each with a system fallback
+  of close metrics.
 - Foreground/background: a color tone (warm, cool, neutral); subtly
   toned whites and blacks (whites below 0.02 saturation).
 - Accents: 0–2, in oklch, sharing chroma and lightness, varying hue.
   Prefer the brand or design system's colors; if too restrictive,
   derive harmonious oklch colors from them rather than inventing new.
-
-### When no brand or design system governs
-
-Use this guidance when designing work that is NOT governed by an
-existing brand or design system — and commit to a BOLD aesthetic
-direction before building:
-
-- **Purpose**: What problem does this design solve? Who uses it?
-- **Tone**: Pick an extreme: brutally minimal, maximalist chaos,
-  retro-futuristic, organic/natural, luxury/refined, playful/toy-like,
-  editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel,
-  industrial/utilitarian, etc. Use these for inspiration but design one
-  that is true to the aesthetic direction.
-- **Differentiation**: What makes this UNFORGETTABLE? What's the one
-  thing someone will remember?
-
-Bold maximalism and refined minimalism both work — the key is
-intentionality, not intensity. Then execute with precision:
-
-- **Typography**: choose fonts that are beautiful, unique, and
-  interesting. Avoid generic fonts like Arial and Inter; opt for
-  distinctive, characterful choices. Pair a distinctive display font
-  with a refined body font.
-- **Color & theme**: commit to a cohesive aesthetic. Dominant colors
-  with sharp accents outperform timid, evenly-distributed palettes.
-- **Motion**: where a design carries animation (CSS in the artboard),
-  focus on high-impact moments — one well-orchestrated reveal creates
-  more delight than scattered micro-interactions.
-- **Spatial composition**: unexpected layouts. Asymmetry. Overlap.
-  Diagonal flow. Grid-breaking elements. Generous negative space OR
-  controlled density.
-- **Backgrounds & visual details**: create atmosphere and depth rather
-  than defaulting to solid colors — gradient meshes, noise textures,
-  geometric patterns, layered transparencies, dramatic shadows,
-  decorative borders, grain overlays.
-
-Vary between light and dark themes, different fonts, different
-aesthetics — NEVER converge on the same choices across generations.
-And match implementation complexity to the aesthetic vision:
-maximalist designs need elaborate effects; minimalist designs need
-restraint, precision, and careful attention to spacing and subtle
-details.
-
-### Branded Anthropic work
-
-Use Ivory #FAF9F5 for the ground, Slate #141413 for text and Clay #D97757
-as the accent, with a serif display face over a sans body (the exact font
-stacks are on the brand colors and typography pages). Where the design
-carries the Claude or Anthropic marks: the Claude Spark appears once per
-surface, never rotated, distorted or in a lockup; the Claude logo is dark
-on light and light on dark, with clearspace, at its native aspect ratio;
-Claude and Anthropic marks appear in sequence, never combined.
+- Motion, where the design carries it (CSS in the artboard): one
+  well-orchestrated moment, not scattered effects.
 
 ### Hi-fi mockups are rooted in context
 
@@ -131,15 +86,14 @@ deliberately:
   approaches per idea, simple shapes, placeholder text, minimal color
   — sketchy, low-fi, focused on structure and flow.
 
-### Layout that survives direct manipulation
+### Layout that survives edits
 
 Strongly prefer flex/grid with `gap` over inline flow. Lay out
 sibling groups (buttons, chips, icons, cards, nav items, toolbars)
 with `display: flex`/`grid` plus `gap:`, not inline siblings spaced
 by source whitespace or per-element margins — gap spacing survives
-direct-manipulation edits (drag-reorder, delete, duplicate, the
-editor's drag-out and wrap-in-flex tools); whitespace text nodes
-don't. Inline flow is for runs of text with the occasional
+reordering, deleting and duplicating (and claude.ai's drag tools);
+whitespace text nodes don't. Inline flow is for runs of text with the occasional
 `<a>`/`<strong>`/`<em>` inside a sentence, not for laying out UI
 elements. And lean on modern CSS: `text-wrap: pretty`, CSS grid, and
 other advanced effects are your friends.
@@ -147,8 +101,7 @@ other advanced effects are your friends.
 ### Appropriate scales
 
 In generated MOCKUP content (a phone-screen artboard's buttons and
-rows — not the appifact editor's own chrome, which has its own rules),
-hit targets should never be less than 44px. For print artboards, 12pt
+rows), hit targets should never be less than 44px. For print artboards, 12pt
 is the minimum body type — and text in any design should be sized for
 its real viewing distance.
 
@@ -204,11 +157,6 @@ list is "AI tells to design past", below):
 - No product screenshot faked from styled rectangles: use the real
   image or a marked placeholder.
 - A quote runs three lines at most and carries a name and a role.
-
-### Print craft
-
-Posters, flyers, brochures, memos, reports — anything that leaves as a
-PDF: read `print.md` (beside this file) before the first artboard.
 
 ### Mobile prototypes
 
@@ -324,18 +272,9 @@ Copy:
 - Name the step ("Install"), not its number ("Step 1"). No em-dash in
   interface copy.
 
-## Content and design rules shared by every appifact family
+## Content rules for every canvas
 
-<!-- The block between the shared:* markers below is generated from
-skills/_shared/content-design.md by scripts/inline-shared.ts — edit the
-fragment and re-run it; hand edits here fail scripts/shared-inline.test.ts. -->
-
-<!-- shared:content-design -->
-These rules are about the CONTENT authored into the appifact — the
-deck, the artboards, the dashboard, the seeded cards and rows — as
-opposed to its chrome (the kit, the toolbar, the document machinery).
-They apply across every family (family skills add their own craft on
-top), and none of them changes a kit rule.
+These rules are about the CONTENT authored into the artboards.
 
 - **Do not add filler content.** Never pad a design with placeholder
   text, dummy sections, or informational material just to fill space.
@@ -365,26 +304,11 @@ top), and none of them changes a kit rule.
 - **Avoid AI slop tropes:** including but not limited to aggressive use
   of gradient backgrounds, emoji (unless explicitly part of the brand),
   containers with rounded corners and left-border accent color, and
-  overused font families (Inter, Roboto, Arial, Fraunces). Emoji in
-  content: only if the brand or design system uses them. (Appifact
-  chrome is stricter still — never emoji as UI glyphs —
-  that rule is unconditional.)
-- **Recreate from source, not from memory or screenshots.** When asked
-  to recreate a UI or design whose source you can reach — a repo, a
-  pasted file, an attached design system — read the real source and
-  build from it, not from your training-data memory of the app: read
-  the components and styles, copy the assets the design actually uses,
-  and copy exact numeric values (paddings, radii, font sizes,
-  line-heights) rather than rounding or snapping them to a 4/8-px grid
-  or a framework default. Claude is better at recreating interfaces
-  from code and design context than from screenshots; when source is
-  available, treat screenshots as high-level guidance only.
+  overused font families (Inter, Roboto, Arial, Fraunces).
+- **Recreate from source**, not from memory or screenshots: see
+  "Recreating an existing UI" above.
 - **Do not recreate copyrighted designs.** If asked to recreate a
   company's distinctive UI patterns, proprietary command structures, or
-  branded visual elements, you must refuse, unless the user's email
-  domain indicates they work at that company. Instead, understand what
-  the user wants to build and help them create an original design while
-  respecting intellectual property. (A Claude Code session has no
-  account email-domain signal, so this rests on what the user tells you
-  about where they work — ask when it's unclear.)
-<!-- /shared:content-design -->
+  branded visual elements, refuse unless the user says they work at
+  that company (ask when it's unclear). Instead, understand what the
+  user wants to build and help them create an original design.

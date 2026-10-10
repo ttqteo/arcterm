@@ -270,3 +270,27 @@ describe("stripAge", () => {
         expect(stripAge(10_000, 1_000)).toBe("just now");
     });
 });
+
+describe("buildNeedsYouRows: a chunk that came due", () => {
+    it("reads Due, opens its initiative, and offers Work on", () => {
+        const due = item({
+            kind: "chunk-due",
+            key: "chunk-due:e1:m:2026-10-20",
+            channelid: "",
+            runid: "",
+            taskid: "",
+            oref: "effort:e1",
+            text: "m",
+        });
+        const [row] = buildNeedsYouRows({
+            attention: [due],
+            filter: "all",
+            channelProject: new Map(),
+            channelMessages: {},
+            roster: [],
+        });
+        expect(row.kindLabel).toBe("Due");
+        expect(row.open).toEqual({ kind: "effort", effortId: "e1" });
+        expect(row.act).toEqual({ label: "Work on", kind: "work-on" });
+    });
+});

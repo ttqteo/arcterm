@@ -278,9 +278,18 @@ export function CardWarning({ children }: { children: ReactNode }) {
     );
 }
 
-export function Note({ tone = "warning", children }: { tone?: "warning" | "error"; children: ReactNode }) {
+export function Note({
+    tone = "warning",
+    testId,
+    children,
+}: {
+    tone?: "warning" | "error";
+    testId?: string;
+    children: ReactNode;
+}) {
     return (
         <div
+            data-testid={testId}
             className={cn(
                 "mt-4 flex items-start gap-2.5 rounded-[10px] border px-3.5 py-3 text-[12.5px] leading-[1.55]",
                 tone === "warning"

@@ -42,6 +42,9 @@ export function openNeedsTarget(model: AgentsViewModel, t: NeedsTarget | null): 
         case "channel":
             fireAndForget(() => openTarget(model, { kind: "channel", channelId: t.channelId }));
             return true;
+        case "effort":
+            fireAndForget(() => openTarget(model, { kind: "effort", effortId: t.effortId }));
+            return true;
         default:
             return false;
     }

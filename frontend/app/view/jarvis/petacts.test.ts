@@ -141,3 +141,31 @@ describe("actsForEvent", () => {
         expect(actsForEvent({ id: "e2" })).toEqual([]);
     });
 });
+
+describe("actsForAttention: a chunk that came due", () => {
+    it("is Work on its initiative, then Open, with no run to address", () => {
+        const item = {
+            kind: "chunk-due",
+            key: "chunk-due:e1:re-measure:2026-10-20",
+            source: "Nav rail",
+            text: "re-measure",
+            action: "Open",
+            phaseidx: 0,
+            waitingsince: 1000,
+            oref: "effort:e1",
+            effortoid: "e1",
+            chunklabel: "re-measure",
+            why: "Due 2026-10-20.",
+        } as AttentionItem;
+        expect(actsForAttention(item)).toEqual([
+            {
+                id: `${item.key}:work`,
+                verb: "work-on",
+                label: "Work on",
+                effortORef: "effort:e1",
+                chunk: "re-measure",
+            },
+            { id: `${item.key}:open`, verb: "open", label: "Open", target: { kind: "oref", ref: "effort:e1" } },
+        ]);
+    });
+});
