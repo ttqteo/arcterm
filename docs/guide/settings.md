@@ -108,7 +108,9 @@ Cả ba công tắc thông báo mặc định bật.
 
 ### Agents
 
-Gồm ba thẻ: **Claude account**, **Runs** (**Run route**) và **Launch flags**. Cách dùng ở phần "Làm thế nào" bên trên.
+Gồm bốn thẻ: **Claude account**, **Sleep idle agents**, **Runs** (**Run route**) và **Launch flags**. Cách dùng ở phần "Làm thế nào" bên trên.
+
+**Sleep idle agents** (bật sẵn, 30 phút): agent rảnh quá số phút này thì ngủ, tức tiến trình dừng để trả RAM nhưng hàng và hội thoại vẫn còn; **Wake**, hoặc một tin gửi tới nó, cho nó làm tiếp từ chỗ cũ. Khi RAM thiếu, agent rảnh lâu nhất ngủ sớm hơn. Không bao giờ ngủ: agent bạn đang xem, agent của run, agent còn việc chạy nền.
 
 ### Background AI
 

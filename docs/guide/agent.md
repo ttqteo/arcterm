@@ -143,6 +143,7 @@ Mỗi hàng agent: biểu tượng harness và **tên** ở dòng trên; dòng d
 | Số trong vòng tròn màu accent | Số lượt đã xong mà bạn chưa đọc (`9+` là tối đa). Tên đậm. Chỉ tính agent cấp trên, không tính worker của run |
 | Chip `1/3` (cam) | Agent dừng ở một phần trong mạch trình bày nhiều phần ("Phần 1/3") và đang chờ bạn trả lời; giữ cho tới khi bạn trả lời |
 | **✓ Close** | Lượt cuối của agent kết thúc bằng một git commit và bạn đã đọc; bấm để đóng (có hỏi xác nhận). Chỉ với agent Claude không thuộc run |
+| Mặt trăng và `sleeping 2h` | Agent đang ngủ: tiến trình đã dừng để trả RAM, nhưng hàng và hội thoại vẫn còn. Terminal của nó có thẻ **Wake**; gửi tin cho nó cũng đánh thức nó. Một agent ngủ không có **✓ Close** |
 | Token và tuổi | Tổng token của phiên và thời gian từ lần hoạt động cuối |
 
 Thao tác trên hàng:

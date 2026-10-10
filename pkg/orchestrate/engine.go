@@ -50,8 +50,8 @@ var validateWorkerHarness = func(runtime string) error {
 	return err
 }
 
-// validateLeadHarness checks a runtime that will judge work: a reviewer or a stage session. agy is a
-// worker, not a lead, so it fails here with the "cannot lead" message. A var so tests can stub it.
+// validateLeadHarness checks a runtime that will judge work: a reviewer or a stage session. agy and codex
+// are workers, not leads, so each fails here with the "cannot lead" message. A var so tests can stub it.
 var validateLeadHarness = func(runtime string) error {
 	_, err := harness.ValidateInstalled(runtime, harness.OperationLead)
 	return err

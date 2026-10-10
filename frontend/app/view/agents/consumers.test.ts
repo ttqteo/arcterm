@@ -6,6 +6,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     buildConsumers,
     BURN_WARN_TOKENS,
+    canSleep,
     holdOrder,
     PANEL_WIDTH,
     panelPlacement,
@@ -147,6 +148,121 @@ describe("buildConsumers", () => {
         expect([byId.pi.opus, byId.pi.canSonnet]).toEqual([false, false]);
     });
 
+    it("puts a sleeping agent in a last Sleeping group with no RAM, whatever it ranks", () => {
+        const dag = { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" };
+        const sleeping = { since: 1, freedBytes: 330 * MB };
+        const view = buildConsumers(
+            reading([
+                agent("zzz", { rambytes: 5 * GB }),
+                agent("nap"),
+                agent("w1", { rambytes: 1 * MB, dag }),
+                agent("nap2", { rambytes: 9 * GB }),
+            ]),
+            [vm("zzz"), vm("nap", { sleeping }), vm("w1"), vm("nap2", { sleeping })],
+            "ram"
+        );
+        expect(view.groups.map((g) => [g.key, g.label])).toEqual([
+            ["agents", undefined],
+            ["85548d0b-aaaa", "Run 85548d0b"],
+            ["sleeping", "Sleeping"],
+        ]);
+        const asleep = view.groups[2].rows;
+        expect(ids(asleep)).toEqual(["nap", "nap2"]); // no RAM to rank by: by name
+        expect(asleep.every((r) => r.sleeping && r.ramBytes === undefined && !r.canSleep && !r.canSonnet)).toBe(true);
+        expect(
+            view.groups
+                .slice(0, 2)
+                .flatMap((g) => g.rows)
+                .some((r) => r.sleeping)
+        ).toBe(false);
+    });
+
+    it("keeps the Sleeping group last when holdOrder holds the rows", () => {
+        const awake = [vm("a"), vm("nap")];
+        const opened = holdOrder(
+            buildConsumers(
+                reading([agent("nap", { rambytes: 2 * GB }), agent("a", { rambytes: 1 * GB })]),
+                awake,
+                "ram"
+            ),
+            null
+        );
+        expect(opened.order).toEqual(["nap", "a"]);
+        // nap falls asleep while the panel is open: its held place is first, its group stays last
+        const roster = [vm("a"), vm("nap", { sleeping: { since: 1, freedBytes: 0 } })];
+        const next = holdOrder(
+            buildConsumers(reading([agent("nap"), agent("a", { rambytes: 1 * GB })]), roster, "ram"),
+            opened.order
+        );
+        expect(next.view.groups.map((g) => g.key)).toEqual(["agents", "sleeping"]);
+        expect(next.order).toEqual(["a", "nap"]);
+    });
+
+    it("offers Sleep only to an awake idle claude, pi or agy agent that belongs to no run", () => {
+        const dag = { channelid: "ch", runid: "85548d0b-aaaa", taskid: "t-3" };
+        const slept = { since: 1, freedBytes: 0 };
+        const view = buildConsumers(
+            reading([
+                agent("claude"),
+                agent("pi"),
+                agent("agy"),
+                agent("codex"),
+                agent("busy"),
+                agent("asking"),
+                agent("nap"),
+                agent("worker", { dag }),
+                agent("lead"),
+            ]),
+            [
+                vm("claude", { state: "idle" }),
+                vm("lead", { state: "idle", runId: "85548d0b-aaaa" }),
+                vm("pi", { state: "idle", agent: "pi" }),
+                vm("agy", { state: "idle", agent: "agy" }),
+                vm("codex", { state: "idle", agent: "codex" }),
+                vm("busy", { state: "working" }),
+                vm("asking", { state: "asking" }),
+                vm("nap", { state: "idle", sleeping: slept }),
+                vm("worker", { state: "idle" }),
+            ],
+            "ram"
+        );
+        const rows = view.groups.flatMap((g) => g.rows);
+        const can = Object.fromEntries(rows.map((r) => [r.id, r.canSleep]));
+        expect(can).toEqual({
+            claude: true,
+            pi: true,
+            agy: true,
+            codex: false,
+            busy: false,
+            asking: false,
+            nap: false,
+            worker: false,
+            lead: false,
+        });
+        expect(rows.find((r) => r.id === "nap")?.sleeping).toBe(true);
+        expect(rows.find((r) => r.id === "claude")?.sleeping).toBe(false);
+    });
+
+    it("canSleep reads the roster agent alone: no run, no terminal, not asleep", () => {
+        expect(canSleep(vm("a", { state: "idle" }))).toBe(true);
+        expect(canSleep(vm("a", { state: "idle", agent: "agy" }))).toBe(true);
+        expect(canSleep(vm("a", { state: "idle", kind: "terminal" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "idle", kind: "background" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "idle", agent: undefined }))).toBe(false);
+        expect(canSleep(vm("a", { state: "idle", runId: "r" }))).toBe(false);
+        expect(canSleep(vm("a", { state: "working" }))).toBe(false);
+    });
+
+    it("never offers → Sonnet to a sleeping agent", () => {
+        const view = buildConsumers(
+            reading([agent("nap")]),
+            [vm("nap", { model: "opus", state: "idle", sleeping: { since: 1, freedBytes: 0 } })],
+            "ram"
+        );
+        expect(view.groups[0].rows[0].opus).toBe(true);
+        expect(view.groups[0].rows[0].canSonnet).toBe(false);
+    });
+
     it("warns about the busiest agent only above the threshold", () => {
         const over = buildConsumers(
             reading([
@@ -163,6 +279,18 @@ describe("buildConsumers", () => {
             "ram"
         );
         expect(under.groups[0].rows[0].burn).toBe(false);
+    });
+
+    it("never warns about a sleeping agent, whatever it spent before it slept", () => {
+        const view = buildConsumers(
+            reading([
+                agent("nap", { tokens: [bucket("claude-opus-4-8", BURN_WARN_TOKENS + 1)] }),
+                agent("a", { tokens: [bucket("claude-opus-4-8", 10)] }),
+            ]),
+            [vm("nap", { sleeping: { since: 1, freedBytes: 0 } }), vm("a")],
+            "ram"
+        );
+        expect(view.groups.flatMap((g) => g.rows).filter((r) => r.burn)).toEqual([]);
     });
 
     it("lists arcterm's own processes and keeps an unread one absent", () => {

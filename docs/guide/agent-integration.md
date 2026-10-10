@@ -45,7 +45,8 @@ Codex báo trạng thái lên rail (working, idle, **chờ quyền** khi Codex h
 - **Cài gì**: khi có `~/.codex/`, arcterm thêm một handler `wsh codex-hook` vào `~/.codex/hooks.json` cho `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`, `Interrupt`, `PreCompact` và `PostCompact`. Hook của công cụ khác giữ nguyên chỗ: handler của arcterm được nối vào cuối mỗi event, hoặc ghi đè đúng chỗ cũ của nó.
 - **Lần đầu: trust hook.** Codex chỉ chạy hook người dùng sau khi bạn duyệt nó. Mở `codex` trong một terminal của arcterm, gõ `/hooks` và trust các handler `codex-hook`. Lệnh hook không đổi giữa các lần cập nhật nên chỉ cần làm một lần; chưa trust thì Codex vẫn chạy bình thường, chỉ là rail không có trạng thái.
 - **Chỉ báo, không chặn**: hook không in gì và luôn thoát 0, nên không đổi hành vi của Codex. Ngoài terminal của arcterm (kể cả app Codex desktop, dùng chung file này) nó không làm gì. Một `codex exec` chạy lồng trong block của agent khác không ghi đè trạng thái của agent đó.
-- **Chưa có**: trả lời hộp duyệt quyền từ cockpit, hàng đợi lệnh nặng, và Codex làm worker của run.
+- **Chưa có**: trả lời hộp duyệt quyền từ cockpit, và hàng đợi lệnh nặng (kể cả cho worker của run).
+- **Run**: Codex làm worker của task trong plan, không bao giờ làm lead hay reviewer. Worker chạy với hai cờ bypass nên không cần trust hook trước; xem [Chọn route và model](orchestrator.md#chọn-route-và-model).
 
 ## Antigravity (agy)
 

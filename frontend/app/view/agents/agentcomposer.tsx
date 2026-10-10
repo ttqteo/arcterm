@@ -5,6 +5,8 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { wakeAgent, wakeErrorToast } from "./agentsleep";
+import type { AgentVM } from "./agentsviewmodel";
 
 const ComposerMinH = 64; // ~3 lines at 12px
 const ComposerMaxH = 160; // grows up to here, then the textarea scrolls
@@ -20,17 +22,21 @@ export interface AgentComposerHandle {
 }
 
 // Sends free text to an agent's terminal block. "\r" submits (the PTY treats CR as Enter), mirroring
-// how term-model writes xterm input via ControllerInputCommand.
+// how term-model writes xterm input via ControllerInputCommand. A sleeping agent has no process to type into: given
+// its agent, the message goes through Wake instead, which delivers it once the agent is back, and the text stays in
+// the box until then (and for good when the wake fails).
 export const AgentComposer = forwardRef<
     AgentComposerHandle,
     {
         blockId?: string;
+        agent?: { id: string; name?: string; sleeping?: AgentVM["sleeping"] };
         placeholder: string;
         className?: string;
         onEscape?: () => void;
     }
->(function AgentComposer({ blockId, placeholder, className, onEscape }, ref) {
+>(function AgentComposer({ blockId, agent, placeholder, className, onEscape }, ref) {
     const [text, setText] = useState("");
+    const [waking, setWaking] = useState(false);
     const taRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(
         ref,
@@ -50,8 +56,23 @@ export const AgentComposer = forwardRef<
         el.style.height = "auto";
         el.style.height = `${Math.min(Math.max(el.scrollHeight, ComposerMinH), ComposerMaxH)}px`;
     }, [text]);
+    const canSend = canSendComposer(text, blockId) && !waking;
     const send = () => {
-        if (!canSendComposer(text, blockId)) {
+        if (!canSend) {
+            return;
+        }
+        if (agent?.sleeping) {
+            setWaking(true);
+            fireAndForget(async () => {
+                try {
+                    await wakeAgent(agent.id, { message: text.trim() });
+                    setText("");
+                } catch (e) {
+                    wakeErrorToast(agent.name, e);
+                } finally {
+                    setWaking(false);
+                }
+            });
             return;
         }
         fireAndForget(() =>
@@ -63,16 +84,21 @@ export const AgentComposer = forwardRef<
         setText("");
     };
     return (
-        <div className={cn("flex shrink-0 items-end gap-2 border-t border-border px-[14px] py-2", className)}>
+        <div
+            data-agent-composer
+            className={cn("flex shrink-0 items-end gap-2 border-t border-border px-[14px] py-2", className)}
+        >
             <textarea
                 ref={taRef}
                 value={text}
+                readOnly={waking}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         send();
-                    } else if (e.key === "Escape" && onEscape) {
+                    } else if (e.key === "Escape" && onEscape && !waking) {
+                        // not while waking: closing the composer would drop the text a failed wake keeps
                         e.preventDefault();
                         onEscape();
                     }
@@ -83,10 +109,10 @@ export const AgentComposer = forwardRef<
             <button
                 type="button"
                 onClick={send}
-                disabled={!canSendComposer(text, blockId)}
+                disabled={!canSend}
                 className="shrink-0 cursor-pointer rounded-[5px] border border-border px-2.5 py-1 text-[11px] text-secondary hover:bg-white/[0.04] disabled:opacity-40"
             >
-                Send
+                {waking ? "Waking…" : "Send"}
             </button>
         </div>
     );

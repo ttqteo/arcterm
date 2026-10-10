@@ -167,10 +167,21 @@ func planPreviewTasks(tasks []waveobj.TaskNode) []wshrpc.DagPlanPreviewTask {
 			out[i].Deps = t.Deps
 		}
 		if t.ModelSource == waveobj.TaskModelSource_Plan {
-			out[i].Model = t.RunSpec.Model
+			out[i].Model = planModelLine(t.RunSpec)
 		}
 	}
 	return out
+}
+
+// planModelLine is a plan task's Model line as the plan wrote it: runtime:model, a runtime alone, or a bare model.
+func planModelLine(spec waveobj.RunSpec) string {
+	switch {
+	case spec.Runtime == "":
+		return spec.Model
+	case spec.Model == "":
+		return spec.Runtime
+	}
+	return spec.Runtime + ":" + spec.Model
 }
 
 // checkDagEffort refuses a dag whose tasks name effort chunks the engine could not close when they land:

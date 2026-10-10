@@ -9,7 +9,7 @@ import (
 )
 
 func TestResolveRuntimeDefaults(t *testing.T) {
-	for _, runtime := range []string{"claude", "pi", "agy"} {
+	for _, runtime := range []string{"claude", "pi", "agy", "codex"} {
 		got, err := Resolve(waveobj.RoutePin{Runtime: runtime})
 		if err != nil {
 			t.Fatalf("%s default: %v", runtime, err)
@@ -22,16 +22,34 @@ func TestResolveRuntimeDefaults(t *testing.T) {
 
 func TestResolveRejectsUnsupportedRuntimes(t *testing.T) {
 	for _, pin := range []waveobj.RoutePin{
-		{Runtime: "codex"},
 		{Runtime: "opencode"},
 		{Runtime: "openrouter"},
 		{Runtime: ""},
-		{Runtime: "codex", Model: "gpt-5.4"},
 		{Runtime: "opencode", Model: "openai/gpt-5.4"},
 		{Runtime: "", Model: "sonnet"},
 	} {
 		if _, err := Resolve(pin); err == nil {
 			t.Errorf("Resolve(%+v) accepted an unsupported route", pin)
+		}
+	}
+}
+
+func TestResolveCodexModel(t *testing.T) {
+	got, err := Resolve(waveobj.RoutePin{Runtime: "codex", Model: "gpt-5.5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Runtime != "codex" || got.Model != "gpt-5.5" || got.ResolvedModel != "gpt-5.5" || !slices.Equal(got.ModelArgs, []string{"--model", "gpt-5.5"}) {
+		t.Fatalf("codex gpt-5.5 = %+v", got)
+	}
+	for _, model := range []string{"o3", "gpt-5.1-codex-max", "gpt-5.3-codex-spark"} {
+		if _, err := Resolve(waveobj.RoutePin{Runtime: "codex", Model: model}); err != nil {
+			t.Errorf("codex %q refused: %v", model, err)
+		}
+	}
+	for _, model := range []string{"gpt 5", "a;b", "openai/gpt-5.5", "-gpt", ".gpt", "a'b", "a\"b", "$(x)", "a|b", "a&b", "a`b"} {
+		if _, err := Resolve(waveobj.RoutePin{Runtime: "codex", Model: model}); err == nil {
+			t.Errorf("codex %q accepted", model)
 		}
 	}
 }

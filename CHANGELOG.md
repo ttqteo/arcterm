@@ -28,10 +28,17 @@ Add one line in the same commit as any change a user would notice, under `Added`
   was sent, and a message that could not go comes back to the box with the reason. Right-click an agent card and
   **Copy @mention** copies the id.
 
+- An agent idle for 30 minutes goes to sleep: its process ends and its RAM is freed, but its row and conversation
+  stay; **Wake**, or a message to it, picks it up where it was. When RAM runs low the longest-idle one sleeps early.
+  Settings → Agents → **Sleep idle agents** sets the time or turns it off; **Sleep** is also in the RAM panel and the
+  row's menu.
+- Codex can work a task in an orchestrator run: pick it as the run's Workers (it is listed once
+  `~/.codex/config.toml` names a `model`), or write `**Model:** codex:gpt-5.5` (or `codex`, or `agy:<model>`) on a
+  plan task and start the run on **Reviewer picks**. A Codex worker runs with its approval, sandbox and hook-trust
+  checks off, since no one is there to answer them, and its heavy commands skip the job queue.
 - The Jarvis pet's popup answers every agent question in place, not only one-pick ones: a question with several
   parts or several picks opens its answer form under the row (**Answer**, or `Enter`), where `1`–`9` pick, `←` / `→`
   change question and `Enter` sends. Clicking a "Needs you" bubble lands on that question with its form open.
-
 - Codex agents show working, idle and "needs you" on the rail with their session's title and model, and come back in
   their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
   `/hooks` in Codex.
@@ -68,6 +75,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - The RAM panel's arcterm section has an **Agents** line, every agent's RAM added up, so its rows add up to
   **Total, with agents**.
+- The Codex and Antigravity marks are a white mark on a dark tile, like pi's, so they read clearly on a dark theme
+  instead of fading into it.
 - The header button for a finished agent reads **✓ Close · 8.7M tok**, like its sidebar row's ✓ Close, instead of
   repeating itself as Done — Close.
 - A float window stays above your other apps from the moment it opens; its pin button turns that off.

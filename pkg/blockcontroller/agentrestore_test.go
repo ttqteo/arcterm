@@ -5,6 +5,7 @@ package blockcontroller
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -81,6 +82,72 @@ func TestShouldRestoreAgent(t *testing.T) {
 		if got := shouldRestoreAgent(c.meta); got != c.want {
 			t.Errorf("%s: shouldRestoreAgent = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestResumeArgs(t *testing.T) {
+	cases := []struct {
+		name, harness, session string
+		base, want             []string
+		ok                     bool
+	}{
+		{"claude puts the session first, the launch flags after", "claude", "abc", []string{"--model", "opus"}, []string{"--resume", "abc", "--model", "opus"}, true},
+		{"claude with no launch flags", "claude", "abc", nil, []string{"--resume", "abc"}, true},
+		{"claude drops a resume it already carried", "claude", "new", []string{"--resume", "old", "--continue", "--model", "opus"}, []string{"--resume", "new", "--model", "opus"}, true},
+		{"pi takes the transcript path whole", "pi", `C:\t\s.jsonl`, []string{"--session", "old", "--model", "x"}, []string{"--session", `C:\t\s.jsonl`, "--model", "x"}, true},
+		{"agy", "agy", "c1", []string{"--sandbox", "-c", "--conversation", "old"}, []string{"--conversation", "c1", "--sandbox"}, true},
+		{"opencode", "opencode", "ses_1", []string{"-s", "old", "--continue", "--x"}, []string{"-s", "ses_1", "--x"}, true},
+		{"codex has no resume flag", "codex", "abc", nil, nil, false},
+		{"no session to reopen", "claude", "", []string{"--model", "opus"}, nil, false},
+	}
+	for _, c := range cases {
+		base := append([]string(nil), c.base...)
+		got, ok := ResumeArgs(c.harness, c.session, c.base)
+		if ok != c.ok || !slices.Equal(got, c.want) {
+			t.Errorf("%s: ResumeArgs = %q, %v; want %q, %v", c.name, got, ok, c.want, c.ok)
+		}
+		if !slices.Equal(c.base, base) {
+			t.Errorf("%s: ResumeArgs changed its base args to %q", c.name, c.base)
+		}
+	}
+}
+
+func TestStripSessionArgs(t *testing.T) {
+	got := StripSessionArgs("pi", []string{"--session", "old.jsonl", "--model", "x"})
+	if !slices.Equal(got, []string{"--model", "x"}) {
+		t.Errorf("StripSessionArgs(pi) = %q, want the session dropped", got)
+	}
+	if got := StripSessionArgs("claude", nil); got == nil || len(got) != 0 {
+		t.Errorf("StripSessionArgs of nothing = %#v, want an empty list that is not nil", got)
+	}
+	if got := StripSessionArgs("codex", []string{"--resume", "x"}); !slices.Equal(got, []string{"--resume", "x"}) {
+		t.Errorf("StripSessionArgs(codex) = %q, want a harness with no session flags left alone", got)
+	}
+}
+
+// a woken agent must come back after a crash or an update: shouldRestoreAgent wants the flag and the session first
+func TestShouldRestoreAgentAcceptsResumeArgs(t *testing.T) {
+	for _, harness := range []string{"claude", "pi", "agy", "opencode"} {
+		args, ok := ResumeArgs(harness, "session-1", []string{"--model", "x", "--resume", "stale"})
+		if !ok {
+			t.Fatalf("%s: no resume args", harness)
+		}
+		meta := withMeta(agentMeta(harness, args...), MetaKey_AgentLive, "123")
+		if !shouldRestoreAgent(meta) {
+			t.Errorf("%s: shouldRestoreAgent rejects cmd:args %q", harness, args)
+		}
+	}
+}
+
+func TestAgentAsleep(t *testing.T) {
+	if agentAsleep(agentMeta("claude", "--resume", "abc")) {
+		t.Error("an agent with no sleep mark is awake")
+	}
+	if !agentAsleep(withMeta(agentMeta("claude", "--resume", "abc"), waveobj.MetaKey_AgentSleeping, float64(1790000000000))) {
+		t.Error("an agent with agent:sleeping set is asleep")
+	}
+	if agentAsleep(withMeta(agentMeta("claude", "--resume", "abc"), waveobj.MetaKey_AgentSleeping, float64(0))) {
+		t.Error("agent:sleeping of 0 is awake")
 	}
 }
 
@@ -185,6 +252,20 @@ func TestRestoreLiveAgents(t *testing.T) {
 		if mark := liveMark(t, id); mark != "" {
 			t.Errorf("block %s still marked %q", id, mark)
 		}
+	}
+}
+
+// a server relaunch (the boot restore, a pane mounting) must not start a sleeping agent; only a forced restart, which
+// a wake is, does. Stopping the check at the guard also keeps the test from launching a real process.
+func TestResyncLeavesASleepingAgentAsleepUnlessForced(t *testing.T) {
+	meta := withMeta(agentMeta("claude", "--resume", "abc"), waveobj.MetaKey_AgentSleeping, float64(1790000000000))
+	blockId, tabId := insertAgentBlock(t, meta)
+	if err := ResyncController(context.Background(), tabId, blockId, nil, false); err != nil {
+		t.Fatalf("ResyncController on a sleeping agent: %v", err)
+	}
+	if getController(blockId) != nil {
+		DestroyBlockController(blockId)
+		t.Fatal("a non-forced resync started a sleeping agent")
 	}
 }
 

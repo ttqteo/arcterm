@@ -75,12 +75,20 @@ const CARD_TAG: Partial<Record<RouteSource, string>> = {
     pinned: "pinned",
 };
 
-// cardModelTag marks a card whose task runs off the run's workers model, and says who put it there.
+// routeFace is how a route reads on a card or a chip: its short model, or the harness when it names no model
+// (`codex`, `agy`: a harness's default model has no id to show).
+function routeFace(r: RoutePin): string {
+    return r.model ? shortModel(r.model) : r.runtime;
+}
+
+// cardModelTag marks a card whose task runs off the run's workers route (in harness or in model), and says who put it there.
 export function cardModelTag(task: TaskNode, owner: Run, group: TaskGroup): string | null {
     const { route: r, source } = taskRoute(task, owner, group);
     const tag = CARD_TAG[source];
-    if (tag == null || (r.model ?? "") === (workersRoute(group, owner).model ?? "")) return null;
-    return `${shortModel(r.model)} · ${tag}`;
+    if (tag == null) return null;
+    const workers = workersRoute(group, owner);
+    if (r.runtime === workers.runtime && (r.model ?? "") === (workers.model ?? "")) return null;
+    return `${routeFace(r)} · ${tag}`;
 }
 
 export function reviewStateText(task: TaskNode): string {
@@ -102,12 +110,12 @@ export function reviewerRouteOf(group: TaskGroup, owner: Run): { route: RoutePin
 export function workersChip(group: TaskGroup, owner: Run): string {
     if (group.reviewerpicks) return "workers · reviewer picks";
     if (!names(group.workerroute)) return "workers · same as lead";
-    return `workers · ${shortModel(workersRoute(group, owner).model)}`;
+    return `workers · ${routeFace(workersRoute(group, owner))}`;
 }
 
 export function reviewersChip(group: TaskGroup, owner: Run): string {
     const { route: r, custom } = reviewerRouteOf(group, owner);
-    return custom ? `reviewers · ${shortModel(r.model)}` : "reviewers · same as lead";
+    return custom ? `reviewers · ${routeFace(r)}` : "reviewers · same as lead";
 }
 
 export type StageEntry = {

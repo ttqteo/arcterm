@@ -8,7 +8,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
 import { openPathFromTerminal } from "@/app/view/agents/pathlinkroute";
-import { shouldRelaunchWorker } from "@/app/view/agents/session-models/agentresumestore";
+import { isAgentSleeping, relaunchBlockedBy } from "@/app/view/agents/session-models/agentresumestore";
 import { recordPastedImage } from "@/app/view/agents/uploadsingest";
 import { pasteTextFor } from "@/app/view/agents/uploadsstore";
 import {
@@ -690,21 +690,25 @@ export class TermWrap {
         return replayed;
     }
 
-    // the status of the run an engine worker belongs to when a remount must not relaunch it (the run is over,
-    // or blocked on a stopped worker), so its last frame stays up; null when the block may relaunch
-    async unrelaunchableRunStatus(): Promise<string | null> {
+    // why a remount must not relaunch this block, so its last frame stays up; null when the block may relaunch.
+    // "sleeping": the agent was put to sleep and only Wake brings it back. Otherwise the status of the run an
+    // engine worker belongs to when that run is over, or blocked on a stopped worker.
+    async blockedFromRelaunch(): Promise<string | null> {
         const meta = WOS.getObjectValue<Block>(WOS.makeORef("block", this.blockId))?.meta;
         const runId = meta?.["agent:runid"];
-        if (typeof runId !== "string" || !runId) {
-            return null;
-        }
-        const run = await WOS.loadAndPinWaveObject<Run>(WOS.makeORef("run", runId)).catch(() => null);
-        return shouldRelaunchWorker(meta, run?.status) ? null : run.status;
+        const run =
+            typeof runId === "string" && runId && !isAgentSleeping(meta)
+                ? await WOS.loadAndPinWaveObject<Run>(WOS.makeORef("run", runId)).catch(() => null)
+                : null;
+        return relaunchBlockedBy(meta, run?.status);
     }
 
     async resyncController(reason: string) {
         dlog("resync controller", this.blockId, reason);
-        const runStatus = await this.unrelaunchableRunStatus();
+        const runStatus = await this.blockedFromRelaunch();
+        if (runStatus === "sleeping") {
+            return; // the Wake card over the terminal says so; the old output stays up
+        }
         if (runStatus != null) {
             const notice =
                 runStatus === "blocked"

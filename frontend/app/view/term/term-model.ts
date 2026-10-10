@@ -9,6 +9,7 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { makeFeBlockRouteId } from "@/app/store/wshrouter";
 import { DefaultRouter, TabRpcClient } from "@/app/store/wshrpcutil";
+import { isAgentSleeping } from "@/app/view/agents/session-models/agentresumestore";
 import { TerminalView } from "@/app/view/term/term";
 import { TermWshClient } from "@/app/view/term/term-wsh";
 import {
@@ -186,6 +187,9 @@ export class TermViewModel implements ViewModel {
 
             if (blockData?.meta?.["controller"] != "cmd" && shellProcStatus != "done") {
                 return rtn;
+            }
+            if (isAgentSleeping(blockData?.meta)) {
+                return rtn; // a sleeping agent restarts through Wake, never through this button
             }
             let iconName: string = null;
             let title: string = null;
@@ -491,6 +495,11 @@ export class TermViewModel implements ViewModel {
 
     async forceRestartController() {
         if (globalStore.get(this.isRestarting)) {
+            return;
+        }
+        // a sleeping agent stays asleep through Enter, the header button and this menu item: only Wake (which also
+        // clears agent:sleeping) brings it back, or the restarted process would run while the row reads asleep
+        if (isAgentSleeping(globalStore.get(this.blockAtom)?.meta)) {
             return;
         }
         this.triggerRestartAtom();

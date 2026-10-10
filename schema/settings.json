@@ -162,6 +162,15 @@
         "claude:activeaccount": {
           "type": "string"
         },
+        "agents:*": {
+          "type": "boolean"
+        },
+        "agents:sleepidle": {
+          "type": "boolean"
+        },
+        "agents:sleepaftermin": {
+          "type": "integer"
+        },
         "radar:auditruntime": {
           "type": "string"
         },

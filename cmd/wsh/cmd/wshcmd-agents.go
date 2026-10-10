@@ -21,6 +21,8 @@ const (
 	agentsWaitDefault    = 10 * time.Minute
 	agentsNoRun          = "-"
 	agentsAllProjectsTip = "wsh agents list --all shows every project"
+	// a send to a sleeping agent waits for its wake: the server gives it 60 s to report in
+	agentsSendTimeoutMs = 70_000
 )
 
 var agentsCmd = &cobra.Command{
@@ -47,7 +49,10 @@ prints it. The text is the argument or the contents of --file, never both.
 
 The message arrives marked as sent by this agent, not typed by the user. The target cannot send one
 back in the same turn: read its reply with 'wsh agents read <tab>', or pass --wait to have this
-command wait for it.`,
+command wait for it.
+
+A sleeping agent (state 'sleeping' in 'wsh agents list') is woken first, which can take up to a
+minute, and gets the message once it has reported in.`,
 	Args:    cobra.RangeArgs(1, 2),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    agentsSendRun,
@@ -157,7 +162,7 @@ func agentsSendRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	sent, err := wshclient.AgentsSendCommand(RpcClient, wshrpc.CommandAgentsSendData{Tab: args[0], Text: text, FromORef: from.String()},
-		&wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+		&wshrpc.RpcOpts{Timeout: agentsSendTimeoutMs})
 	if err != nil {
 		return err
 	}

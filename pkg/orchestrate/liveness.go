@@ -67,9 +67,10 @@ var sessionsRootFor = agentsessions.SessionRoot
 
 // livenessRuntimes are the worker runtimes whose transcript reads as a heartbeat: an append-only JSONL
 // named by the session id the worker was launched with, so the file's mtime is progress.
-// agy's transcript is named by the conversation id agy assigned itself, which arrives late (see
-// NoteWorkerSession); until then a tracked agy child has no path.
-var livenessRuntimes = map[string]bool{"claude": true, "pi": true, "agy": true}
+// agy's and codex's transcripts are named by the conversation id each assigned itself, which arrives late
+// (see NoteWorkerSession); until then a tracked agy or codex child has no path. A codex rollout is
+// rollout-<ts>-<id>.jsonl under a date tree, found by agentsessions.TranscriptForSession once the id is bound.
+var livenessRuntimes = map[string]bool{"claude": true, "pi": true, "agy": true, "codex": true}
 
 // firstTokenRuntimes are the runtimes whose transcript is written per event, which is the only thing
 // that makes "has written nothing yet" mean hung. claude is deliberately absent: in the 2026-09-05
@@ -82,11 +83,11 @@ var livenessRuntimes = map[string]bool{"claude": true, "pi": true, "agy": true}
 // by its process instead: workerStuckStarting and workerControllerGone.
 // The StallThreshold path is unaffected — it needs a transcript to exist before it can age one.
 //
-// agy is armed for a different reason than pi: its worker has no session id until its first hook reports
-// one, so an agy that is alive but never got that far (stuck in onboarding or signed out) is otherwise
-// invisible — the process runs, nothing is written, and no other check fires. It stalls at the deadline
-// and hungWake names it.
-var firstTokenRuntimes = map[string]bool{"pi": true, "agy": true}
+// agy and codex are armed for a different reason than pi: their workers have no session id until the first
+// hook reports one, so an agy or codex that is alive but never got that far (stuck in onboarding or signed
+// out) is otherwise invisible — the process runs, nothing is written, and no other check fires. It stalls at
+// the deadline and hungWake names it.
+var firstTokenRuntimes = map[string]bool{"pi": true, "agy": true, "codex": true}
 
 // firstTokenArmed reports whether a child may be judged by the first-token deadline, resolving an
 // empty runtime the same way lastActivityForRun does.
@@ -138,7 +139,7 @@ func transcriptForRun(run *waveobj.Run) (path, runtime string, tracked bool) {
 		runtime = defaultWorkerRuntime
 	}
 	if run.SessionId == "" {
-		// an agy worker names its own conversation, so it has no id until its first status report: tracked,
+		// an agy or codex worker names its own conversation, so it has no id until its first status report: tracked,
 		// with nothing written yet, rather than unobservable. Any other runtime without an id predates
 		// session ids.
 		if spec, ok := harness.Lookup(runtime); ok && spec.AssignsOwnSession && livenessRuntimes[runtime] {

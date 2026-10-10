@@ -28,6 +28,24 @@ export const STATE_DOT: Record<AgentState, string> = {
     idle: "bg-muted",
 };
 
+// the harnesses the server may put to sleep (agentsleep.Harnesses); codex never sleeps
+const SLEEP_HARNESSES: readonly string[] = ["claude", "pi", "agy"];
+
+/** Whether Sleep is offered for an agent: awake and idle, on a harness that resumes, and not working for a run (a run's
+ *  lead and workers never sleep). The server decides again when asked. */
+export function canSleep(vm: AgentVM): boolean {
+    return (
+        vm.sleeping == null &&
+        vm.state === "idle" &&
+        vm.kind == null &&
+        vm.runId == null &&
+        SLEEP_HARNESSES.includes(vm.agent ?? "")
+    );
+}
+
+// the group of sleeping agents: always the last, whatever else ranks above it
+export const SLEEPING_GROUP = "sleeping";
+
 export interface ConsumerRow {
     id: string; // tab id
     name: string;
@@ -40,13 +58,15 @@ export interface ConsumerRow {
     opus: boolean; // a Claude agent on Opus
     burn: boolean; // the busiest agent, past BURN_WARN_TOKENS
     canSonnet: boolean;
+    sleeping: boolean; // asleep: no process, so no RAM; Wake instead of Sleep
+    canSleep: boolean; // awake and idle, on a harness that resumes, and not working for a run
     dag?: ConsumerDag; // a run worker's task, for Stop
     vm: AgentVM;
 }
 
 export interface ConsumerGroup {
-    key: string; // the owner run id, or "agents" for the agents you opened
-    label?: string; // "Run 85548d0b"
+    key: string; // the owner run id, "agents" for the agents you opened, or SLEEPING_GROUP
+    label?: string; // "Run 85548d0b", "Sleeping"
     rows: ConsumerRow[];
 }
 
@@ -90,6 +110,14 @@ function byWeight(sort: ConsumersSort) {
     };
 }
 
+// moves the Sleeping group, if there is one, to the end; the rest keep their order
+function sleepingLast(groups: ConsumerGroup[]): void {
+    const at = groups.findIndex((g) => g.key === SLEEPING_GROUP);
+    if (at >= 0) {
+        groups.push(...groups.splice(at, 1));
+    }
+}
+
 export function buildConsumers(
     data: CommandGetConsumersRtnData,
     agents: AgentVM[],
@@ -104,30 +132,36 @@ export function buildConsumers(
         }
         const usage = c.tokensread ? aggregateSessionUsage(c.tokens ?? []) : undefined;
         const opus = vm.agent === "claude" && vm.model === "opus";
+        const sleeping = vm.sleeping != null;
         rows.push({
             id: vm.id,
             name: vm.name,
             project: vm.project,
             state: vm.state,
             model: vm.model,
-            ramBytes: c.rambytes,
+            // an asleep agent's process is gone: whatever the reading attributed to it is not its own
+            ramBytes: sleeping ? undefined : c.rambytes,
             tokens: usage === undefined ? undefined : countedTokens(usage),
             spendUsd: usage?.totalSpendUsd,
             opus,
             burn: false,
-            canSonnet: opus,
+            canSonnet: opus && !sleeping,
+            sleeping,
+            canSleep: c.dag == null && canSleep(vm),
             dag: c.dag,
             vm,
         });
     }
-    const busiest = [...rows].filter((r) => r.tokens !== undefined).sort(byWeight("tokens"))[0];
+    // an asleep agent spends nothing now, so it is never the one burning
+    const busiest = rows.filter((r) => r.tokens !== undefined && !r.sleeping).sort(byWeight("tokens"))[0];
     if (busiest != null && (busiest.tokens ?? 0) > BURN_WARN_TOKENS) {
         busiest.burn = true;
     }
     const groups = new Map<string, ConsumerGroup>();
     for (const r of rows) {
-        const key = r.dag?.runid ?? "agents";
-        const g = groups.get(key) ?? { key, label: r.dag ? `Run ${r.dag.runid.slice(0, 8)}` : undefined, rows: [] };
+        const key = r.sleeping ? SLEEPING_GROUP : (r.dag?.runid ?? "agents");
+        const label = r.sleeping ? "Sleeping" : r.dag ? `Run ${r.dag.runid.slice(0, 8)}` : undefined;
+        const g = groups.get(key) ?? { key, label, rows: [] };
         g.rows.push(r);
         groups.set(key, g);
     }
@@ -136,6 +170,7 @@ export function buildConsumers(
         g.rows.sort(byWeight(sort));
     }
     ordered.sort((a, b) => byWeight(sort)(a.rows[0], b.rows[0]));
+    sleepingLast(ordered);
     const own: OwnUsage[] = [
         { label: "Interface", bytes: data.interfacebytes },
         { label: "Server", bytes: data.serverbytes },
@@ -158,7 +193,8 @@ export function buildConsumers(
 /** Keeps the rows where they were while the panel stays open: a new reading does not move a row. `held` is the row
  * ids in the order the panel first drew them (null on open: the view's own ranking is kept). A row not in `held` (an
  * agent that started since) goes after the held ones of its group, a new group after the held groups, both in the
- * view's ranking. Returns the view in that order and the order to hold next. */
+ * view's ranking. The Sleeping group stays last whatever its rows' held places (an agent that fell asleep while the
+ * panel was open). Returns the view in that order and the order to hold next. */
 export function holdOrder(view: ConsumersView, held: string[] | null): { view: ConsumersView; order: string[] } {
     const flat = (groups: ConsumerGroup[]) => groups.flatMap((g) => g.rows.map((r) => r.id));
     if (held == null) {
@@ -171,6 +207,7 @@ export function holdOrder(view: ConsumersView, held: string[] | null): { view: C
     const groups = view.groups.map((g) => ({ ...g, rows: [...g.rows].sort((a, b) => byHeld(pos(a.id), pos(b.id))) }));
     const first = (g: ConsumerGroup) => Math.min(...g.rows.map((r) => pos(r.id)));
     groups.sort((a, b) => byHeld(first(a), first(b)));
+    sleepingLast(groups);
     return { view: { ...view, groups }, order: flat(groups) };
 }
 

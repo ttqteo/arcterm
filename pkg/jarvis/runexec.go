@@ -24,7 +24,8 @@ import (
 )
 
 // RunWorkerSpec is the unattended launch form for one harness's run worker: the executable plus the
-// argument prefix that goes before the prompt. The prompt travels positionally for both claude and pi.
+// argument prefix that goes before the prompt. The prompt travels positionally for claude, pi and codex,
+// and after -i for agy.
 type RunWorkerSpec struct {
 	Bin  string
 	Args []string
@@ -36,7 +37,7 @@ type RunWorkerSpec struct {
 // RunWorkerSpecFor resolves the unattended worker launch form from one validated capability. The
 // capability authority owns runtime/model compatibility and model selection; this adapter only supplies
 // each runtime's unattended base arguments. A non-empty sessionId names the worker's session: claude and pi
-// take --session-id and name the transcript by it; agy names its own conversation, so it never gets one.
+// take --session-id and name the transcript by it; agy and codex name their own session, so they never get one.
 func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWorkerSpec, bool) {
 	if !runroute.IsValid(cap) {
 		return RunWorkerSpec{}, false
@@ -56,6 +57,12 @@ func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWor
 	case "agy":
 		args = []string{"--dangerously-skip-permissions"}
 		promptFlag = []string{"-i"}
+	case "codex":
+		// a positional prompt opens the interactive TUI on it (never `codex exec`: the worker stays a live
+		// terminal). Setting the approval/sandbox mode on the command line also skips the "trust this folder"
+		// screen in a fresh worktree. Codex runs a user hook only once the person trusted it with /hooks, and
+		// a worker that never reports its session id stalls at the first-token deadline.
+		args = []string{"--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust"}
 	default:
 		return RunWorkerSpec{}, false
 	}
@@ -70,7 +77,7 @@ func RunWorkerSpecFor(cap runroute.Capability, sessionId, prompt string) (RunWor
 }
 
 // WorkerSessionId is the session id to hand a new worker of runtime: a fresh UUID for a runtime that takes
-// --session-id, "" for one that names its own session (agy), whose id the engine learns from its first
+// --session-id, "" for one that names its own session (agy, codex), whose id the engine learns from its first
 // status report (orchestrate.NoteWorkerSession).
 func WorkerSessionId(runtime string) string {
 	if spec, ok := harness.Lookup(runtime); ok && spec.AssignsOwnSession {
@@ -94,6 +101,9 @@ func ResumeWorkerArgs(runtime, sessionId string, baseArgs []string, nudge string
 		flag = "--session" // resolves a session id as well as a path
 	case "agy":
 		flag = "--conversation"
+	case "codex":
+		// a subcommand, not a flag: `codex resume <id> <options> <prompt>` (agentResumeFlags in blockcontroller)
+		flag = "resume"
 	default:
 		return nil, false
 	}

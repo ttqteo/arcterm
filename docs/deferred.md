@@ -10,6 +10,47 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Codex workers skip the job queue (deferred 2026-10-10)
+
+- **What:** a codex run worker's heavy commands (a build, the typecheck, a whole test suite) do not wait in the job
+  queue. Claude and pi call `wsh jobslot` before every Bash command (the Claude mod, the pi tools extension) and
+  agy's synchronous `PreToolUse` hook does the same (`jobslotTurn`, `cmd/wsh/cmd/wshcmd-jobslot.go`); codex's
+  `PreToolUse` hook does not. Until it does, **Workers at once** is the only bound on parallel codex builds. The
+  engine's own Verify, Final and heavy Setup still queue.
+- **Why:** codex's `PreToolUse` hook is installed async and only reports (`codexHooks`,
+  `cmd/wsh/cmd/wshcmd-installhooks.go`), so it cannot hold a command. Gating means making it a synchronous hook with a
+  long timeout, on every tool call of every codex agent, not only a worker's.
+- **Way back:** make the `PreToolUse` entry of `codexHooks` synchronous with a timeout long enough to wait out the
+  queue, and have `wsh codex-hook` (`cmd/wsh/cmd/wshcmd-codexhook.go`) ask `jobslotTurn` as `wshcmd-agyhook.go` does,
+  refusing the command with the "Not run: …" reason when the person skips it. Check first that codex lets a
+  `PreToolUse` hook deny a tool call. The commands and their RAM estimates are already one table in
+  `pkg/memgate/memgate.go`.
+- **Revive when** parallel codex workers push the machine into swap.
+
+## (arcterm) `wsh agents` cannot message a codex tab (deferred 2026-10-10)
+
+- **What:** `wsh agents` lists and messages live agent tabs, but a codex tab is not one: `agentHarnesses`
+  (`pkg/wshrpc/wshserver/wshserver_agentmsg.go`) holds claude, pi and agy. This is true of a codex run worker too.
+- **Why:** nothing in the run path needs it. `wsh jarvis dag tell` types into any worker, codex included, and covers a
+  lead talking to a codex worker. Typing into another TUI also means confirming its submit key; agy's was assumed to
+  match pi's (the comment above `agentHarnesses`).
+- **Way back:** add `"codex"` to `agentHarnesses`, confirm that the paste-then-Enter input `orchestrate.typeWake`
+  composes submits in codex's TUI, and add a codex case beside the agy ones in `wshserver_agentmsg_test.go`.
+- **Revive when** a person or a lead needs to message a codex agent that is not a run worker.
+
+## (arcterm) Codex as a run lead, reviewer or Quick-run lead (deferred 2026-10-10)
+
+- **What:** codex leading an orchestrator run, acting as a task reviewer, plan reviewer or stage session, or leading a
+  Quick run. codex is a task worker only: `harness.OperationLead` refuses it (`LeadCapable` is false in
+  `pkg/harness/catalog.go`), and the lead, reviewer and run-route pickers do not list it.
+- **Why:** a lead needs the handoff `/compact` and a re-orientation after compaction, which codex lacks, so a long
+  lead could not shed context or be re-oriented. A worker needs only liveness, ask delivery and route validation, which
+  the codex worker has (`docs/superpowers/specs/2026-10-10-codex-run-worker-design.md` §1). The same reasoning
+  keeps agy a worker (entry below).
+- **Way back:** `LeadCapable` in `pkg/harness/catalog.go` to allow the route; `HandoffCompact` in
+  `pkg/orchestrate/wake.go` for the compaction handoff; codex's `PreCompact` and `PostCompact` hooks (`codexHooks`) as
+  the place to re-orient a lead after it compacts.
+
 ## (arcterm) Saved actions: one-click repeated chores such as commit and pull (deferred 2026-10-09)
 
 - **Deferred:** a panel of saved actions run with ▶, like Claude Code's agents panel (one row per `.claude/agents`
@@ -464,11 +505,18 @@ runs a plan's Setup and Verify commands through the platform shell and serialize
   object (`attachJobObject`, `killJobTree`); export it and attach it in `execPlanCommand` after `Start`. For the
   hold, have `AutoMergeReady` scan the non-terminal dags whose owner run has the same `ProjectPath`.
 
-## Codex and opencode run workers (2026-09-14)
+## Codex and opencode run workers (2026-09-14) — codex ✅ RESOLVED 2026-10-10 as a task worker; opencode still open
 
 The orchestrator redesign (`docs/superpowers/specs/2026-09-14-orchestrator-redesign-design.md` §8) scopes
 run workers, both leads and task workers, to Claude Code and pi, the two harnesses the owner uses. Consults
 still run on codex and opencode; only the unattended run path lost them.
+
+**Update 2026-10-10:** codex came back as a task worker (never a lead, reviewer or stage session), on the same
+footing as agy: `docs/superpowers/specs/2026-10-10-codex-run-worker-design.md`. The catalog flag, the route
+validation, the `RunWorkerSpecFor` arm and the `livenessRuntimes` entry listed below were re-added for codex there,
+and that spec's launch form supersedes the old arm. **opencode did not come back:** everything below still describes
+it, and its recovery path is unchanged. What the codex worker leaves out is in the three entries dated 2026-10-10 at
+the top of this file.
 
 - **What was removed:**
   - `RunWorkerCapable` is false for codex and opencode (`pkg/harness/catalog.go`).

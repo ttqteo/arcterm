@@ -68,6 +68,10 @@ const (
 	ConfigKey_ClaudeClear                    = "claude:*"
 	ConfigKey_ClaudeActiveAccount            = "claude:activeaccount"
 
+	ConfigKey_AgentsClear                    = "agents:*"
+	ConfigKey_AgentsSleepIdle                = "agents:sleepidle"
+	ConfigKey_AgentsSleepAfterMin            = "agents:sleepaftermin"
+
 	ConfigKey_RadarAuditRuntime              = "radar:auditruntime"
 	ConfigKey_RadarAuditModel                = "radar:auditmodel"
 

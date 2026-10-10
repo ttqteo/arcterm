@@ -68,6 +68,16 @@ agent's connection, local default. Effort realistically L counting step 1. Full 
 history (pre-consolidation issue 5). The E8 connserver readiness handshake (patch saved, needs a live
 SSH/WSL verify) rides on step 1.
 
+### (arcterm) Codex sessions not shown on a Mac
+
+Reported 2026-10-10: Codex sessions do not show on a Mac; it is not yet known whether that is Conversation History or
+the rail. Not reproduced: no Mac at hand. The scanner reads `~/.codex/sessions/**/rollout-*.jsonl` on every OS
+(`pkg/agentsessions/agentsessions.go` `allProviders`), with nothing Mac-specific. Suspects: a newer Codex there that no
+longer writes rollout jsonl (Windows `codex-cli 0.162.0` already keeps `thread_history_1.sqlite` beside it), a
+`CODEX_HOME` the scanner ignores, or, for the rail, an install older than the Codex hook support (`a5deee7d`) or hooks
+not yet trusted with `/hooks`. On the Mac first run: `codex --version; echo $CODEX_HOME; ls ~/.codex/; find
+~/.codex/sessions -name 'rollout-*' -mtime -3 | head -3; grep -c codex-hook ~/.codex/hooks.json`.
+
 ---
 
 ## 3 · Held — pick up only on the named trigger
@@ -181,8 +191,9 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 - Codex/OpenAI 5h-window bars — Codex has no such window.
 - Codex subagents + depth>1 subagent nesting — no per-subagent files exist; closed no-go.
 - Usage pricing family-substring drift (historical Opus billed at current tier) — accepted estimate error.
-- Codex and opencode as run workers — declined 2026-09-17: this install only uses claude and pi.
-  Recovery path: `docs/deferred.md` 2026-09-14 entry.
+- OpenCode as a run worker — declined 2026-09-17: this install only uses claude and pi. Codex came back as a task
+  worker on 2026-10-10 (`docs/superpowers/specs/2026-10-10-codex-run-worker-design.md`). Recovery path for
+  opencode: `docs/deferred.md` 2026-09-14 entry.
 - Final stage: persisting a verifier's verdict held during Checking — declined 2026-09-30.
 - The memory subsystem and the Jarvis recall arm (Ask, proactive cards, embeddings) — removed
   2026-09-22/23 on measured usage. Revive only on evidence that note bodies, not index lines, change an

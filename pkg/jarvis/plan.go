@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wavetermdev/waveterm/pkg/harness"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
@@ -48,8 +49,9 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"at most one). A task may then list `**Chunk:** <exact chunk label>` lines, one per chunk, directly after its Depends on line " +
 	"(or first under the heading when it has none): the engine marks those chunks done when the task's merge passes Verify. " +
 	"A Chunk line anywhere else is task text, and a plan with a Chunk line but no Effort line is refused. " +
-	"A task may also carry one **Model:** <model id> line in that same place (not in backticks): the model its worker runs on, " +
-	"used when the run's workers setting is Reviewer picks and ignored otherwise. " +
+	"A task may also carry one **Model:** line in that same place (not in backticks): a model id (`sonnet`), a harness and model " +
+	"(`codex:gpt-5.5`, `agy:<model>`), or a harness alone for its default model (`codex`, `agy`); it is the model its worker " +
+	"runs on, used when the run's workers setting is Reviewer picks and ignored otherwise. Workers can be claude, pi, agy or codex. " +
 	"A task should also carry a **Files:** line in that same place: every repo-relative path the task creates, edits or deletes, " +
 	"generated files included, each in backticks and separated by commas (files, not directories or globs; a second Files line " +
 	"continues the list). Submit refuses a plan in which two tasks that can run at the same time list the same path. A task " +
@@ -71,7 +73,7 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"**Prototype:** <path to the design canvas>\n\n" +
 	"### Task 1: <title>\n" +
 	"**Depends on:** none\n" +
-	"**Model:** <model-id>\n" +
+	"**Model:** <model-id-or-harness:model>\n" +
 	"**Chunk:** <exact chunk label>\n" +
 	"**Files:** `<path>`, `<another path>`\n" +
 	"<what to do, and the tests that prove it>\n\n" +
@@ -232,7 +234,12 @@ func ParsePlan(src string) (Plan, error) {
 				if task.ModelSource != "" {
 					return Plan{}, fmt.Errorf("task %d: **Model:** appears twice; a task runs on one model", len(p.Tasks))
 				}
-				task.RunSpec.Model, task.ModelSource, dependsAllowed = m[1], waveobj.TaskModelSource_Plan, false
+				runtime, model, err := parsePlanModel(m[1], len(p.Tasks))
+				if err != nil {
+					return Plan{}, err
+				}
+				task.RunSpec.Runtime, task.RunSpec.Model = runtime, model
+				task.ModelSource, dependsAllowed = waveobj.TaskModelSource_Plan, false
 				continue
 			}
 			if m := planFilesRe.FindStringSubmatch(line); m != nil {
@@ -399,6 +406,24 @@ func planSpecPath(value string) string {
 		return value
 	}
 	return ""
+}
+
+// parsePlanModel reads a **Model:** value into the task's runtime and model. The split is on the first ":" and only
+// when what precedes it is a harness the catalog knows, so a pi model id that holds a colon still reads as a model;
+// a catalog runtime alone is that runtime on its default model; anything else is a model on the run's runtime.
+func parsePlanModel(value string, n int) (runtime, model string, err error) {
+	if _, ok := harness.Lookup(value); ok {
+		return value, "", nil
+	}
+	if head, tail, found := strings.Cut(value, ":"); found {
+		if _, ok := harness.Lookup(head); ok {
+			if tail == "" {
+				return "", "", fmt.Errorf("task %d: **Model:** %q names harness %s but no model; write %s alone for its default model", n, value, head, head)
+			}
+			return head, tail, nil
+		}
+	}
+	return "", value, nil
 }
 
 func parsePlanDepends(value string, n int) ([]string, error) {

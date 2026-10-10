@@ -31,10 +31,12 @@ import {
     FolderOpen,
     GitBranch,
     History as HistoryIcon,
+    Moon,
     Pencil,
     Play,
     Plus,
     SquareTerminal,
+    Sun,
     Trash2,
     Workflow,
     X,
@@ -86,6 +88,7 @@ import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./
 import { runSessionPrimary, SEG_COLOR, StatusMark } from "./sessionsdetail";
 import { defaultMember, runView, type RunView } from "./sessionsruns";
 import { duplicateSession } from "./session-models/sessionsidebarmodel";
+import { sleepingAge, sleepWithConfirm, wakeAgent, wakeErrorToast } from "./agentsleep";
 import { askingCount, askingLabel, displayAgeMs, formatAgeShort, formatTokens, type AgentVM } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
@@ -212,6 +215,40 @@ function splitMenuItem(model: AgentsViewModel, agent: AgentVM): ContextMenuItem[
             },
         },
     ];
+}
+
+// the harnesses wavesrv can sleep: the ones that resume a conversation (agentsleep.Harnesses; codex cannot)
+const SLEEPABLE_AGENTS = new Set(["claude", "pi", "agy"]);
+
+// Wake for a sleeping agent, Sleep for an awake idle one that the server may sleep: a terminal, a background agent,
+// a codex agent and anything a run owns (its engine wakes and ends those) are refused there, so the menu leaves
+// them out. A failed Wake toasts here; Sleep owns its confirm and toasts in sleepWithConfirm.
+function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
+    if (agent.sleeping) {
+        return [
+            {
+                label: "Wake",
+                icon: <Sun size={15} />,
+                click: () =>
+                    fireAndForget(async () => {
+                        try {
+                            await wakeAgent(agent.id);
+                        } catch (e) {
+                            wakeErrorToast(agent.name, e);
+                        }
+                    }),
+            },
+        ];
+    }
+    const sleepable =
+        agent.state === "idle" &&
+        (agent.kind == null || agent.kind === "agent") &&
+        agent.runId == null &&
+        SLEEPABLE_AGENTS.has(agent.agent ?? "");
+    if (!sleepable) {
+        return [];
+    }
+    return [{ label: "Sleep", icon: <Moon size={15} />, click: () => fireAndForget(() => sleepWithConfirm(agent)) }];
 }
 
 const PULSE = "pulse-dot";
@@ -449,8 +486,9 @@ function ParentRow({
     // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place
     const queued = queuedJobFor(useAtomValue(jobQueueAtom), agent.blockId);
     // its last turn committed, you have read it and no run it started is still going: the row offers to close it
-    // (donesuggest.ts)
-    const done = doneSuggestion(agent, unreadCount, useAtomValue(model.lineageAtom).runs);
+    // (donesuggest.ts). A sleeping agent offers no Close even when its last turn committed: it is parked, not finished
+    const lineageRuns = useAtomValue(model.lineageAtom).runs;
+    const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns);
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
     const settling = useSettle(agent.state === "idle");
 
@@ -470,6 +508,7 @@ function ParentRow({
                 click: () => void navigator.clipboard.writeText(agent.name),
             },
             laterMenuItem(agent.transcriptPath, laterAt != null),
+            ...sleepMenuItems(agent),
             { type: "separator" },
             {
                 label: "Close agent",
@@ -577,6 +616,15 @@ function ParentRow({
                             <Check size={10} strokeWidth={2.4} aria-hidden />
                             Close
                         </button>
+                    ) : agent.sleeping ? (
+                        // not the count's stand-in: the moon is what says it is parked, so an unread count sits beside it
+                        <Moon
+                            size={10}
+                            strokeWidth={2}
+                            aria-label="sleeping"
+                            data-agent-sleeping={agent.id}
+                            className="flex-none text-muted"
+                        />
                     ) : mark || (unread && agent.state === "idle") ? null : (
                         <StatusDot
                             state={agent.state}
@@ -585,7 +633,9 @@ function ParentRow({
                         />
                     )}
                     {tokens ? <span className={TOKENS_COL}>{formatTokens(tokens)}</span> : null}
-                    <span className={AGE_COL}>{formatAgeShort(displayAgeMs(agent, now))}</span>
+                    <span className={AGE_COL}>
+                        {agent.sleeping ? sleepingAge(agent, now) : formatAgeShort(displayAgeMs(agent, now))}
+                    </span>
                     {step ? (
                         <span
                             data-agent-step={step}

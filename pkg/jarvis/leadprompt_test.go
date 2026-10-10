@@ -19,6 +19,26 @@ func TestAskToolByRuntime(t *testing.T) {
 	}
 }
 
+// codex has no ask tool the cockpit sees: it asks through the shell, and the text has to carry everything a
+// codex worker needs to write the command unaided and to keep it alive while the lead or the human answers.
+func TestAskToolCodexIsTheWshAskShellForm(t *testing.T) {
+	got := AskTool("codex")
+	for _, want := range []string{
+		"wsh ask --wait --questions-json '",
+		`"questions"`, `"question"`, `"header"`, `"options"`, `"label"`, `"description"`,
+		"1800000",
+		"keep reading that session until it prints the answers JSON",
+		"never start a second ask",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("AskTool(\"codex\") lacks %q:\n%s", want, got)
+		}
+	}
+	if got == AskTool("claude") {
+		t.Error("codex must not be told to call AskUserQuestion, which it does not have")
+	}
+}
+
 // the launch prompt is the whole goal-run protocol: a lead not told the submit command, the ask tool or
 // the plan format either never reaches the engine or reaches it with a plan the parser rejects.
 func TestEngineLaunchPromptCarriesTheGoalRunProtocol(t *testing.T) {

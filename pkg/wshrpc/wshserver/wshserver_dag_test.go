@@ -311,7 +311,7 @@ func TestDagSubmitRejectsInvalidTaskRoutesBeforePersistence(t *testing.T) {
 		{name: "unknown-runtime", task: waveobj.TaskNode{ID: "t", Label: "a", RunSpec: waveobj.RunSpec{Runtime: "missing"}}},
 		{name: "cross-namespace-model", task: waveobj.TaskNode{ID: "t", Label: "a", RunSpec: waveobj.RunSpec{Runtime: "pi", Model: "sonnet"}}},
 		{name: "model-foreign-to-inherited-runtime", task: waveobj.TaskNode{ID: "t", Label: "a", RunSpec: waveobj.RunSpec{Model: "opencode/deepseek-v4-pro"}}},
-		{name: "non-worker-runtime", task: waveobj.TaskNode{ID: "t", Label: "a", RunSpec: waveobj.RunSpec{Runtime: "codex"}}},
+		{name: "non-worker-runtime", task: waveobj.TaskNode{ID: "t", Label: "a", RunSpec: waveobj.RunSpec{Runtime: "opencode"}}},
 		{name: "unavailable", task: waveobj.TaskNode{ID: "t", Label: "a", RunSpec: waveobj.RunSpec{Runtime: "pi", Model: "opencode/deepseek-v4-pro"}}, unavailable: true},
 	}
 	for _, tc := range cases {
