@@ -63,6 +63,8 @@ Một **route** là một harness cộng một model cụ thể; không có tier
 
 OpenCode chỉ để consult, không chạy được trong run. Codex chỉ làm worker của task: nó không làm lead, reviewer hay stage session. Bộ chọn route lọc theo harness (**All / Pi / Claude Code**), nhận cả model id gõ tay, và bộ chọn của lead/reviewer chỉ liệt kê harness có thể lead.
 
+Codex chỉ hiện trong bộ chọn Workers khi `~/.codex/config.toml` có dòng `model = "…"` (ở đầu file hoặc trong một profile): arcterm đọc danh sách model của Codex từ đó. Không có dòng đó thì vẫn giao task cho Codex được bằng dòng `**Model:** codex` trong plan.
+
 Worker Codex khác các worker còn lại ở ba điểm:
 
 - **Hai cờ bypass.** Nó khởi động bằng `codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust` (thêm `--model <id>` nếu route có model), prompt đặt ngay sau, nên vẫn là một terminal sống để bạn xem và engine gõ vào. Cờ đầu vì worker không có người ở các prompt xin quyền (nó cũng bỏ qua màn hình "trust this folder" trong worktree mới). Cờ sau vì Codex chỉ chạy hook của người dùng khi bạn đã tin nó bằng `/hooks`; thiếu cờ này, worker không bao giờ báo session id và kẹt ở hạn token đầu tiên. Đổi lại, trong worker mọi hook đang bật trong `~/.codex/hooks.json` (cả của công cụ khác) chạy mà chưa được tin.
