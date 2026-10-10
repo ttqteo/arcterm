@@ -42,7 +42,8 @@ func TestTracksAgentLive(t *testing.T) {
 		{"pi", agentMeta("pi"), true},
 		{"opencode", agentMeta("opencode"), true},
 		{"agy", agentMeta("agy", "-i", "do the thing"), true},
-		{"codex cannot resume", agentMeta("codex"), false},
+		{"codex", agentMeta("codex", "fix the bug"), true},
+		{"an unknown harness", agentMeta("aider"), false},
 		{"a shell", waveobj.MetaMapType{waveobj.MetaKey_Controller: BlockController_Shell}, false},
 		{"a run's worker comes back through its run", withMeta(agentMeta("claude"), metaKeyAgentRunId, "r1"), false},
 	}
@@ -71,7 +72,8 @@ func TestShouldRestoreAgent(t *testing.T) {
 		{"no session yet: a relaunch would replay its task", live(agentMeta("claude", "fix the bug")), false},
 		{"another harness's flag", live(agentMeta("claude", "--session", "abc")), false},
 		{"an empty session key", live(agentMeta("claude", "--resume", "")), false},
-		{"codex", live(agentMeta("codex", "resume", "abc")), false},
+		{"codex with its session baked", live(agentMeta("codex", "resume", "abc", "--full-auto")), true},
+		{"codex still on its task", live(agentMeta("codex", "--full-auto", "fix the bug")), false},
 		{"a run's worker", withMeta(live(agentMeta("claude", "--resume", "abc")), metaKeyAgentRunId, "r1"), false},
 		{"not a cmd block", live(waveobj.MetaMapType{waveobj.MetaKey_Controller: BlockController_Shell}), false},
 	}

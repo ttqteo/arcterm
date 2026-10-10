@@ -9,11 +9,12 @@ import {
     isRuntimeOffered,
     resumeArgsForAgy,
     resumeArgsForClaude,
+    resumeArgsForCodex,
     resumeArgsForOpencode,
     resumeArgsForPi,
     RUNTIME_FLAGS,
-    runtimeLaunchLabel,
     runtimeCreatesAgentPanel,
+    runtimeLaunchLabel,
     runtimeShowsTask,
     runtimeStartupCommand,
     runtimeSupportsWorktree,
@@ -89,9 +90,9 @@ describe("worktreeOutcome", () => {
         );
     });
     it("checks out an existing non-current branch", () => {
-        expect(
-            worktreeOutcome({ branch: "feat/x", currentBranch: "main", branchNames: ["main", "feat/x"] })
-        ).toBe("Checks out existing branch feat/x in a worktree");
+        expect(worktreeOutcome({ branch: "feat/x", currentBranch: "main", branchNames: ["main", "feat/x"] })).toBe(
+            "Checks out existing branch feat/x in a worktree"
+        );
     });
     it("creates a new branch for an unknown name", () => {
         expect(worktreeOutcome({ branch: "feat/new", currentBranch: "main", branchNames: ["main"] })).toBe(
@@ -151,8 +152,18 @@ describe("buildLaunchMeta", () => {
         expect(m).toEqual({ view: "term", controller: "shell", "cmd:cwd": "/x" });
     });
     it("passes the opencode task positionally with cwd", () => {
-        const m = buildLaunchMeta({ runtime: "opencode", startupCommand: "opencode", task: "refactor auth", cwd: "/x" });
-        expect(m).toMatchObject({ cmd: "opencode", "cmd:args": ["refactor auth"], "cmd:shell": false, "cmd:cwd": "/x" });
+        const m = buildLaunchMeta({
+            runtime: "opencode",
+            startupCommand: "opencode",
+            task: "refactor auth",
+            cwd: "/x",
+        });
+        expect(m).toMatchObject({
+            cmd: "opencode",
+            "cmd:args": ["refactor auth"],
+            "cmd:shell": false,
+            "cmd:cwd": "/x",
+        });
         expect(m["agent:baseargs"]).toEqual([]);
     });
     it("passes the agy task after -i as two args, a task with spaces and quotes staying one arg", () => {
@@ -261,7 +272,12 @@ describe("resumeArgsForOpencode", () => {
         expect(resumeArgsForOpencode("s1", ["--auto"])).toEqual(["-s", "s1", "--auto"]);
     });
     it("preserves value-taking options (does not mistake the value for a prompt)", () => {
-        expect(resumeArgsForOpencode("s1", ["--model", "openai/gpt-5"])).toEqual(["-s", "s1", "--model", "openai/gpt-5"]);
+        expect(resumeArgsForOpencode("s1", ["--model", "openai/gpt-5"])).toEqual([
+            "-s",
+            "s1",
+            "--model",
+            "openai/gpt-5",
+        ]);
     });
     it("drops a prior -s <id> so resuming twice never stacks", () => {
         expect(resumeArgsForOpencode("s2", ["-s", "s1", "--auto"])).toEqual(["-s", "s2", "--auto"]);
@@ -286,12 +302,9 @@ describe("resumeArgsForPi", () => {
         ]);
     });
     it("replaces a prior --session <path> with the new path (never stacks two resume directives)", () => {
-        expect(resumeArgsForPi("C:\\new path\\s.jsonl", ["--session", "C:\\old path\\s.jsonl", "--model", "x"])).toEqual([
-            "--session",
-            "C:\\new path\\s.jsonl",
-            "--model",
-            "x",
-        ]);
+        expect(
+            resumeArgsForPi("C:\\new path\\s.jsonl", ["--session", "C:\\old path\\s.jsonl", "--model", "x"])
+        ).toEqual(["--session", "C:\\new path\\s.jsonl", "--model", "x"]);
     });
     it("keeps the path with spaces as one argv element", () => {
         const args = resumeArgsForPi("C:\\Users\\Jane Doe\\.pi\\agent\\sessions\\s.jsonl");
@@ -315,6 +328,24 @@ describe("isRuntimeOffered", () => {
     });
     it("offers everything while the catalog is empty", () => {
         expect(isRuntimeOffered("codex", [])).toBe(true);
+    });
+});
+
+describe("resumeArgsForCodex", () => {
+    it("puts the subcommand and id before the launch flags", () => {
+        expect(resumeArgsForCodex("s1", ["--full-auto", "--search"])).toEqual([
+            "resume",
+            "s1",
+            "--full-auto",
+            "--search",
+        ]);
+    });
+    it("replaces a prior resume and drops --last", () => {
+        expect(resumeArgsForCodex("s2", ["resume", "s1", "--full-auto"])).toEqual(["resume", "s2", "--full-auto"]);
+        expect(resumeArgsForCodex("s2", ["resume", "--last"])).toEqual(["resume", "s2"]);
+    });
+    it("handles no launch flags", () => {
+        expect(resumeArgsForCodex("s1", [])).toEqual(["resume", "s1"]);
     });
 });
 

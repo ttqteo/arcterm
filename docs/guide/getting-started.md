@@ -25,7 +25,7 @@ Hiện chưa có bản phát hành hay trang tải về: bạn build từ source
 | Claude Code | `claude` | Hỗ trợ đầy đủ nhất. Có thể làm lead và worker của run. |
 | pi | `pi` | Có thể làm lead và worker của run. |
 | Antigravity | `agy` | Chạy `agy` một lần trong terminal trước (xem [Tích hợp agent](agent-integration.md#antigravity-agy)). Chỉ làm worker của run, không làm lead. |
-| Codex | `codex` | Mở, resume, xem lịch sử và thống kê token. arcterm không cài hook báo trạng thái cho Codex. |
+| Codex | `codex` | Trạng thái trên rail, mở, resume, lịch sử và token. Trust hook của arcterm một lần bằng `/hooks` trong Codex (xem [Tích hợp agent](agent-integration.md#codex)). |
 | OpenCode | `opencode` | Có plugin báo trạng thái. |
 
 ## Chạy bản dev
@@ -86,7 +86,7 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này idempotent: 
 | pi | Các extension `waveterm-status.ts`, `waveterm-tools.ts`, `waveterm-ask.ts`, `waveterm-simplify-gate.ts` (kèm file `-core`) trong `~/.pi/agent/extensions/`; theme `arc` ở `~/.pi/agent/themes/arc.json`; trong `~/.pi/agent/settings.json` thêm `theme` và `packages` nếu chưa có; `keybindings.json` chỉ khi bạn chưa có file | Khi `pi` có trên PATH |
 | OpenCode | Plugin `~/.config/opencode/plugins/waveterm-status.js` | Khi `opencode` có trên PATH |
 | Antigravity | Khóa `arcterm` trong `~/.gemini/config/hooks.json` | Khi `~/.gemini/antigravity-cli/` tồn tại, tức là bạn đã chạy `agy` ít nhất một lần |
-| Codex | Không cài gì | — |
+| Codex | Handler `wsh codex-hook` trong `~/.codex/hooks.json`, nối vào sau hook sẵn có | Khi `~/.codex/` tồn tại, tức là bạn đã chạy `codex` ít nhất một lần |
 
 Ngoài terminal của arcterm các tích hợp của pi, OpenCode và mod Claude không làm gì: chúng chỉ chạy khi có biến môi trường mà arcterm đặt cho terminal của nó. Chi tiết từng tích hợp ở [Tích hợp agent](agent-integration.md).
 

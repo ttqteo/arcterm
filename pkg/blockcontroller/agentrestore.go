@@ -36,7 +36,8 @@ const metaKeyAgentRunId = "agent:runid"
 var restoreAgentStagger = 300 * time.Millisecond
 
 // the flag each harness's resume key sits behind, first in cmd:args (launch.ts resumeArgsFor*)
-var agentResumeFlags = map[string]string{"claude": "--resume", "opencode": "-s", "pi": "--session", "agy": "--conversation"}
+// codex resumes through a subcommand, `codex resume <id>`, which sits where the others put their flag
+var agentResumeFlags = map[string]string{"claude": "--resume", "opencode": "-s", "pi": "--session", "agy": "--conversation", "codex": "resume"}
 
 // Pure: whether a block runs a hand-launched agent whose session can be resumed, so its process is marked live.
 func tracksAgentLive(meta waveobj.MetaMapType) bool {

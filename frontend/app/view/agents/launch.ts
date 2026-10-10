@@ -249,6 +249,26 @@ export function resumeArgsForAgy(sessionId: string, baseArgs: string[]): string[
     return ["--conversation", sessionId, ...kept];
 }
 
+// Recompose a codex launch as a resume: `codex resume <id> <baseArgs>`. codex resumes through a subcommand, so the
+// id follows `resume` where the other harnesses put a flag. The id is the status's session id (the rollout's file
+// name carries a timestamp before it). A prior `resume <id>` or `--last` is stripped so a repeated resume cannot stack
+// directives.
+export function resumeArgsForCodex(sessionId: string, baseArgs: string[]): string[] {
+    const kept: string[] = [];
+    for (let i = 0; i < baseArgs.length; i++) {
+        const a = baseArgs[i];
+        if (a === "resume") {
+            i++; // also skip its id value
+            continue;
+        }
+        if (a === "--last") {
+            continue;
+        }
+        kept.push(a);
+    }
+    return ["resume", sessionId, ...kept];
+}
+
 // Recompose a pi launch as a resume: `pi --session <full transcript path> <baseArgs>`. Pi's resume
 // key is the native file path (never an id), so it is passed whole — never decoded or re-tokenized.
 // A prior --session <path> is stripped so a repeated resume cannot stack two directives.

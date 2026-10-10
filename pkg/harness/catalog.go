@@ -171,3 +171,18 @@ func ProbeAll(ctx context.Context) []ProbeResult {
 	wg.Wait()
 	return results
 }
+
+// OwnsBlock reports whether a harness's status hook may report on a block with this meta controller and cmd. A
+// nested run (`agy -p`, `codex exec`) inside another agent's block inherits its WAVETERM_BLOCKID, and reporting there
+// would overwrite that agent's status and transcript path. A cmd block belongs to the harness only when its program
+// is that harness; a shell block (a person typed the command) does.
+func OwnsBlock(controller, cmd, program string) bool {
+	if controller != "cmd" {
+		return true
+	}
+	name := cmd
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		name = name[i+1:]
+	}
+	return strings.TrimSuffix(strings.ToLower(name), ".exe") == program
+}

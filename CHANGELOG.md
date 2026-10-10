@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Codex agents show working, idle and "needs you" on the rail with their session's title and model, and come back in
+  their own session after arcterm restarts. arcterm adds its hooks to `~/.codex/hooks.json`; trust them once with
+  `/hooks` in Codex.
 - Builds, typechecks and whole test suites from every agent and run now wait their turn in one queue, one at a time by
   default, so several runs no longer stall the machine; the new Jobs chip in the app bar shows what runs and what waits,
   with Run now and Skip.

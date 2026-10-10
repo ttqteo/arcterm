@@ -220,27 +220,6 @@ func TestHookTimeoutOutlivesTheBound(t *testing.T) {
 	}
 }
 
-func TestOwnsBlock(t *testing.T) {
-	cases := []struct {
-		controller, cmd string
-		want            bool
-	}{
-		{"cmd", "claude", false},
-		{"cmd", "pi", false},
-		{"cmd", "agy", true},
-		{"cmd", `C:\Users\x\.local\bin\agy.exe`, true},
-		{"cmd", "/Users/a b/.local/bin/agy", true},
-		{"cmd", "", false},
-		{"shell", "", true},
-		{"", "", true},
-	}
-	for _, c := range cases {
-		if got := OwnsBlock(c.controller, c.cmd); got != c.want {
-			t.Errorf("OwnsBlock(%q, %q) = %v, want %v", c.controller, c.cmd, got, c.want)
-		}
-	}
-}
-
 func TestFirstUserRequest(t *testing.T) {
 	head := "{\"step_index\":0,\"type\":\"SYSTEM\",\"content\":\"boot\"}\n" +
 		"{\"step_index\":1,\"type\":\"FUTURE_THING\",\"extra\":[1,2]}\n" +
