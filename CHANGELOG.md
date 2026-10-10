@@ -40,6 +40,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- The Codex and Antigravity marks are a white mark on a dark tile, like pi's, so they read clearly on a dark theme
+  instead of fading into it.
 - The Low RAM card is gone: a heavy command waits in the job queue instead.
 - On a Mac the job queue judges RAM by macOS's own memory pressure, which counts compressed memory and swap, so heavy
   jobs no longer wait on a machine that only looks full: they run at green, one at a time at yellow, and wait at red.
