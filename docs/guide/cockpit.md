@@ -345,10 +345,11 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
 
 - Bấm vào nó, hoặc `Ctrl+G` rồi `w`, để mở popup **việc đang chờ**: duyệt, retry, acknowledge, land again hoặc trả lời câu hỏi một lựa chọn bằng `1`–`9` ngay tại đó; `Space` xem trước nơi nút **Open** sẽ dẫn tới; `Esc` đóng.
 - Ở chế độ **Float**, con vật đi trên một gờ dưới đáy cửa sổ, không bao giờ đứng lên dấu nhắc của terminal, kèm chip
-  số việc đang chờ; bấm vào nó mở cùng popup.
-- **Thu vào Sprout:** nút **Sprout** trên app bar hoặc trên thanh Float, hay nút minimize (nút vàng và `⌘M` trên
-  macOS), thu cả cửa sổ vào con vật ngay chỗ nó đang đứng. Nó bay trên mọi app, đeo dấu và số việc đang chờ, kéo đi đâu
-  cũng được. Rê chuột lên nó để thấy mọi agent và trạng thái: bấm một agent để mở Float trên agent đó, **Restore**
+  số việc đang chờ, và chấm "…" cùng số agent đang chạy cạnh đầu nó; bấm vào nó mở cùng popup.
+- **Thu vào Sprout:** nút **Sprout** trên app bar hoặc trên thanh Float, nút minimize (nút vàng trên macOS), hay `⌘M`
+  (`Ctrl+M` trên Windows, chạy cả khi đang gõ trong terminal) thu cả cửa sổ vào con vật ngay chỗ nó đang đứng. Nó bay
+  trên mọi app, đeo dấu và số việc đang chờ, chấm "…" cùng số agent đang chạy, kéo đi đâu cũng được. Rê chuột lên nó
+  để thấy mọi agent và trạng thái: bấm một agent để mở Float trên agent đó, **Restore**
   (hoặc bấm đúp con vật) để về đúng chế độ trước khi thu, đầy đủ hay Float, đúng khung cũ. Bấm vào nó để mở chat (hàng
   chờ và ô **Ask Jarvis**), `Esc` để thu lại; điều nó nói và câu trả lời đến lúc chat đang thu hiện thành bong bóng
   cạnh nó. Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.

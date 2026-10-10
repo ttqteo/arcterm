@@ -11,11 +11,26 @@ const errand = (status: PetErrand["status"]): PetErrand => ({
     text: "arc-dev is waiting on a plan review.",
     status,
 });
-const base: MiniLookInput = { posture: "none", waiting: 0, errand: null, unread: false, chatOpen: false, frame: 0 };
+const base: MiniLookInput = {
+    posture: "none",
+    waiting: 0,
+    working: 0,
+    errand: null,
+    unread: false,
+    chatOpen: false,
+    frame: 0,
+};
 
 describe("miniLook", () => {
     it("stands bare when there is nothing to say", () => {
-        expect(miniLook(base)).toEqual({ pose: "stand", marks: [], chip: null, bob: false, label: "Open Jarvis chat" });
+        expect(miniLook(base)).toEqual({
+            pose: "stand",
+            marks: [],
+            chip: null,
+            working: null,
+            bob: false,
+            label: "Open Jarvis chat",
+        });
     });
     it("types at the laptop while a reply streams, one frame per tick", () => {
         expect(miniLook({ ...base, errand: errand("streaming") }).pose).toBe("work1");
@@ -41,6 +56,23 @@ describe("miniLook", () => {
             marks: ["gate"],
             chip: 2,
             label: "Open Jarvis chat — 2 waiting on you",
+        });
+    });
+    it("shows how many agents work, and says so when nothing else does", () => {
+        expect(miniLook({ ...base, working: 2 })).toMatchObject({
+            working: 2,
+            label: "Open Jarvis chat — 2 agents working",
+        });
+        expect(miniLook({ ...base, working: 1 }).label).toBe("Open Jarvis chat — 1 agent working");
+    });
+    it("shows no working dots when no agent works", () => {
+        expect(miniLook(base).working).toBeNull();
+    });
+    it("lets what waits on you lead the label over what works", () => {
+        expect(miniLook({ ...base, waiting: 1, working: 3 })).toMatchObject({
+            chip: 1,
+            working: 3,
+            label: "Open Jarvis chat — 1 waiting on you",
         });
     });
     it("counts a plain question with the chip alone", () => {

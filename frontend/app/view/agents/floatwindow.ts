@@ -181,6 +181,17 @@ export function sproutFromWindow(win: WinRect, sides: MiniSides, scale: number):
     };
 }
 
+// Whether a window's frame is the one asked for, give or take the pixel a rounding moves it: macOS can still be animating
+// the window (an unmaximize's zoom) when a frame is set, and the animation's next step overrides it
+export function framesMatch(got: WinRect, want: WinRect, tolerance = 1.5): boolean {
+    return (
+        Math.abs(got.x - want.x) <= tolerance &&
+        Math.abs(got.y - want.y) <= tolerance &&
+        Math.abs(got.width - want.width) <= tolerance &&
+        Math.abs(got.height - want.height) <= tolerance
+    );
+}
+
 export function parseMiniRestore(raw: unknown): MiniRestore | null {
     const r = raw as Partial<MiniRestore> | null;
     if (r == null || typeof r !== "object") {

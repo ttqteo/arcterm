@@ -61,3 +61,8 @@ export function foldedList(
         .map((r) => r.agent);
     return cut(ranked, max, null);
 }
+
+/** How many agents are working now: the count beside Sprout's "…" in Float and folded. */
+export function workingCount(agents: readonly AgentVM[]): number {
+    return agents.reduce((n, a) => (a.state === "working" ? n + 1 : n), 0);
+}

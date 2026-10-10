@@ -6,6 +6,7 @@ import {
     FLOAT_DEFAULT_SIZE,
     FLOAT_MIN_SIZE,
     floatRect,
+    framesMatch,
     MINI_CHAT_SIZE,
     MINI_REST_SIZE,
     miniSides,
@@ -224,5 +225,19 @@ describe("toSpace and spaceScale", () => {
     it("scales logical sizes by 1 in points and by the monitor's scale in physical pixels", () => {
         expect(spaceScale(2, true)).toBe(1);
         expect(spaceScale(1.5, false)).toBe(1.5);
+    });
+});
+
+// macOS can still be animating a window (an unmaximize's zoom) when the fold sets its frame; the fold reads the frame
+// back and sets it again until it holds
+describe("framesMatch", () => {
+    const want = { x: 1000, y: 600, width: 320, height: 232 };
+    it("holds a frame that landed, give or take a rounding pixel", () => {
+        expect(framesMatch(want, want)).toBe(true);
+        expect(framesMatch({ ...want, x: 1001, height: 231 }, want)).toBe(true);
+    });
+    it("does not hold a frame something else moved or resized", () => {
+        expect(framesMatch({ ...want, y: 25 }, want)).toBe(false);
+        expect(framesMatch({ ...want, width: 1440, height: 875 }, want)).toBe(false);
     });
 });

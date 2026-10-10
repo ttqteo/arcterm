@@ -8,7 +8,7 @@
 // same window, see-through, around the spot it stood on; a restore gives back the size and frame it was folded from.
 
 import { MOTION } from "@/app/element/motiontokens";
-import { getSettingsKeyAtom } from "@/app/store/global";
+import { getApi, getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
@@ -32,6 +32,7 @@ import type { AgentsViewModel } from "./agents";
 import {
     FLOAT_MIN_SIZE,
     floatRect,
+    framesMatch,
     MAIN_MIN_SIZE,
     MINI_CHAT_SIZE,
     MINI_REST_SIZE,
@@ -315,10 +316,10 @@ async function screenOfRect(rect: WinRect | null): Promise<Screen> {
     return screenFor(rect, monitors.map(spaceScreen), spaceScreen(current));
 }
 
-// Size the folded window around Sprout: the resting box, or room for the chat. Inside the queue.
-async function placeMini(win: Window, chat: boolean): Promise<void> {
+// Size the folded window around Sprout: the resting box, or room for the chat. Inside the queue. Returns the frame set.
+async function placeMini(win: Window, chat: boolean): Promise<WinRect | null> {
     if (sprout == null) {
-        return;
+        return null;
     }
     globalStore.set(miniResizingAtom, true);
     try {
@@ -327,8 +328,36 @@ async function placeMini(win: Window, chat: boolean): Promise<void> {
         const rect = miniWindowRect(sprout, chat ? MINI_CHAT_SIZE : MINI_REST_SIZE, sides, screen.area, screen.scale);
         await setSpaceFrame(win, rect);
         await nextFrame();
+        return rect;
     } finally {
         globalStore.set(miniResizingAtom, false);
+    }
+}
+
+// The fold's own lines in waveapp.log, where a person's report can be checked against what the window did
+function foldLog(msg: string): void {
+    try {
+        getApi().sendLog(`[fold] ${msg}`);
+    } catch {
+        // a log that cannot be written is not worth failing a fold for
+    }
+}
+
+function rectText(r: WinRect | null): string {
+    return r == null ? "none" : `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+}
+
+// A frame set can still be overridden by an animation macOS runs on its own (an unmaximize's zoom, begun just before):
+// read it back and set it again until it holds, for up to a second. Each drift is logged.
+async function holdFrame(win: Window, want: WinRect): Promise<void> {
+    for (let i = 1; i <= 10; i++) {
+        const got = await spaceFrame(win);
+        if (framesMatch(got, want)) {
+            return;
+        }
+        foldLog(`frame ${rectText(got)} is not ${rectText(want)}, setting it again (try ${i})`);
+        await new Promise((r) => setTimeout(r, 100));
+        await setSpaceFrame(win, want);
     }
 }
 
@@ -449,7 +478,17 @@ export function foldToSprout(): Promise<void> {
             sprout = miniSproutRect(spot, screen.area, screen.scale);
             globalStore.set(miniSidesAtom, miniSides(sprout, screen.area));
             await win.setMinSize(null);
-            await placeMini(win, false);
+            const placed = await placeMini(win, false);
+            foldLog(
+                `from ${origin}${maximized ? " maximized" : ""}${fullscreen ? " fullscreen" : ""}: window ${rectText(frame)}, ` +
+                    `content at ${Math.round(inner.x)},${Math.round(inner.y)} scale ${scale}, sprite ` +
+                    `${sprite == null ? "none" : `${Math.round(sprite.x)},${Math.round(sprite.y)}`} in ` +
+                    `${viewport.width}x${viewport.height} -> spot ${rectText(spot)}, Sprout ${rectText(sprout)} on ` +
+                    `${rectText(screen.area)}, folded window ${rectText(placed)}`
+            );
+            if (placed != null) {
+                await holdFrame(win, placed);
+            }
             await win.setAlwaysOnTop(true);
             startClickThrough();
         } catch (e) {

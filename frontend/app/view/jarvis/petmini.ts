@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What Sprout looks like while the float is folded into it (cockpit/sprout-mini.tsx): the walking pet's posture marks,
-// a count of what waits, the errand's progress and a reply nobody has read. Pure, like petcondition.ts.
+// a count of what waits, how many agents work, the errand's progress and a reply nobody has read. Pure, like petcondition.ts.
 
 import type { PetPosture } from "./petcondition";
 import type { PetMark, PetPose } from "./petsprite";
@@ -12,6 +12,8 @@ import { POSTURE_MARK } from "./petwalk";
 export interface MiniLookInput {
     posture: PetPosture;
     waiting: number;
+    // agents working now: the "…" beside Sprout's head
+    working: number;
     errand: PetErrand | null;
     unread: boolean;
     chatOpen: boolean;
@@ -23,6 +25,8 @@ export interface MiniLook {
     pose: PetPose;
     marks: PetMark[];
     chip: number | null;
+    // the agents working, shown as "…" and a count; null when none is
+    working: number | null;
     bob: boolean;
     label: string;
 }
@@ -35,13 +39,23 @@ export function miniLook(input: MiniLookInput): MiniLook {
     // the typing pose draws notes where the marks go
     const marks: PetMark[] = busy ? [] : postureMark != null ? [postureMark] : told ? ["unread"] : [];
     const chip = input.waiting > 0 ? input.waiting : null;
-    const status = chip != null ? `${chip} waiting on you` : busy ? "thinking" : told ? "new reply" : null;
+    const working = input.working > 0 ? input.working : null;
+    const status =
+        chip != null
+            ? `${chip} waiting on you`
+            : busy
+              ? "thinking"
+              : told
+                ? "new reply"
+                : working != null
+                  ? `${working} ${working === 1 ? "agent" : "agents"} working`
+                  : null;
     const label = input.chatOpen
         ? "Collapse Jarvis chat"
         : status == null
           ? "Open Jarvis chat"
           : `Open Jarvis chat — ${status}`;
-    return { pose, marks, chip, bob: input.frame === 1, label };
+    return { pose, marks, chip, working, bob: input.frame === 1, label };
 }
 
 // A reply that lands, or fails, while the chat is folded stays unread until the chat opens or its bubble is dismissed:

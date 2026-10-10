@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { foldedList, switcherAgents } from "./sproutroster";
+import { foldedList, switcherAgents, workingCount } from "./sproutroster";
 
 const a = (id: string, state: AgentVM["state"], kind?: string): AgentVM =>
     ({ id, name: id, task: "", state, kind }) as AgentVM;
@@ -44,4 +44,11 @@ describe("foldedList", () => {
         expect(ids(foldedList([a("x", "idle")], [a("t", "idle", "terminal")], "t").shown)).toEqual(["t", "x"]);
     });
     it("is empty with no agents", () => expect(foldedList([], [], null)).toEqual({ shown: [], more: 0 }));
+});
+
+describe("workingCount", () => {
+    it("counts the agents that are working, not those idle or asking", () => {
+        expect(workingCount([a("x", "working"), a("y", "asking"), a("z", "working"), a("w", "idle")])).toBe(2);
+        expect(workingCount([])).toBe(0);
+    });
 });

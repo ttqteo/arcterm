@@ -18,6 +18,7 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
 import { floatMiniAtom, floatModeAtom } from "@/app/view/agents/floatstore";
+import { workingCount } from "@/app/view/agents/sproutroster";
 import { usePlanDonuts } from "@/app/view/agents/usagemeters";
 import { useWorkerCapacity } from "@/app/view/agents/workercapacitystore";
 import { useAtomValue } from "jotai";
@@ -61,6 +62,7 @@ import {
     type WalkerState,
     type WalkerStep,
 } from "./petwalk";
+import { WorkingDots } from "./workingdots";
 
 // pkg/jarvis/attention.go's three kinds. Named here rather than inlined so the mapping to the creature's
 // posture vocabulary is one line to check against the server.
@@ -101,6 +103,12 @@ export function usePetSignals(model: AgentsViewModel): PetSignals {
             blockedWorkers: count(attention, ATTENTION_ASK),
         },
     };
+}
+
+// How many agents are working: the "…" beside Sprout in Float and folded (the rail shows it in Full)
+export function useWorkingCount(model: AgentsViewModel): number {
+    const agents = useAtomValue(model.agentsAtom);
+    return useMemo(() => workingCount(agents), [agents]);
 }
 
 // How many things wait on you, the count on Sprout's chip in Float and folded (the nav badge's in Full)
@@ -199,6 +207,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
     // in Float the nav badge is gone: the count of what waits rides beside Sprout
     const floating = useAtomValue(floatModeAtom);
     const waiting = useWaitingCount(model);
+    const working = useWorkingCount(model);
     const reduce = useReducedMotion() === true;
     // state, not a ref: the bubble and the peek re-position when it lands
     const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
@@ -275,6 +284,7 @@ export function PetView({ model }: { model: AgentsViewModel }) {
                 onCorner={setCorner}
                 openPeek={openPeek}
                 chip={floating && waiting > 0 ? waiting : null}
+                working={floating && working > 0 ? working : null}
             />
             {folded ? null : (
                 <PetBubble
@@ -306,6 +316,7 @@ function PetSprite({
     onCorner,
     openPeek,
     chip,
+    working,
 }: {
     expression: PetExpression["kind"];
     posture: PetPosture;
@@ -320,6 +331,8 @@ function PetSprite({
     openPeek: () => void;
     // the count chip, Float only
     chip: number | null;
+    // the agents working, Float only
+    working: number | null;
 }) {
     const [frame, setFrame] = useState<PetFrame | null>(null);
     const [forced, setForced] = useState<PetForce | null>(null);
@@ -644,6 +657,7 @@ function PetSprite({
                     {chip}
                 </span>
             ) : null}
+            {working != null ? <WorkingDots count={working} className="absolute -right-2 -top-1" /> : null}
         </motion.div>
     );
 }

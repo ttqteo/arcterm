@@ -24,7 +24,7 @@ import {
 } from "@/app/view/agents/floatstore";
 import type { MiniSides } from "@/app/view/agents/floatwindow";
 import { miniHoverAtom } from "@/app/view/agents/miniclickthrough";
-import { foldedList } from "@/app/view/agents/sproutroster";
+import { foldedList, workingCount } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
 import { closePeek, openPetPeek } from "@/app/view/jarvis/peekstore";
 import { PetBubble } from "@/app/view/jarvis/petbubble";
@@ -43,6 +43,7 @@ import {
 } from "@/app/view/jarvis/petstore";
 import { dismissPetBubble, openPetBubble, usePetSignals, useWaitingCount } from "@/app/view/jarvis/petview";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
+import { WorkingDots } from "@/app/view/jarvis/workingdots";
 import { cn, fireAndForget } from "@/util/util";
 import type { Placement } from "@floating-ui/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -107,7 +108,8 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const character = petCharacter(useAtomValue(petCharacterAtom));
     const frame = useBobFrame();
     const waiting = useWaitingCount(model);
-    const look = miniLook({ posture: postureFor(signals), waiting, errand, unread, chatOpen, frame });
+    const working = useMemo(() => workingCount(agents), [agents]);
+    const look = miniLook({ posture: postureFor(signals), waiting, working, errand, unread, chatOpen, frame });
     const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
     const list = useMemo(() => foldedList(agents, terminals, focusId ?? null), [agents, terminals, focusId]);
     // state, not a ref: the chat and the bubble position themselves once this lands
@@ -212,6 +214,7 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         {look.chip}
                     </span>
                 ) : null}
+                {look.working != null ? <WorkingDots count={look.working} className="absolute right-0 top-0" /> : null}
             </div>
 
             {told ? (
