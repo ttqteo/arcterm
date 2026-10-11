@@ -108,6 +108,12 @@ type SettingsType struct {
 
 	UsageInsightsLang string `json:"usage:insightslang,omitempty"` // language the usage analysis answers in; empty is English
 
+	TokenGateClear     bool     `json:"tokengate:*,omitempty"`
+	TokenGateEnabled   *bool    `json:"tokengate:enabled,omitempty"`   // nil = on: a costly spawn waits on the Token burn card
+	TokenGateSharePct  *float64 `json:"tokengate:sharepct,omitempty"`  // ask when a spawn would take this % of the 5h window; nil = 10, 0 = off
+	TokenGateWindowPct *float64 `json:"tokengate:windowpct,omitempty"` // ask when the 5h window is this % used; nil = 70, 0 = off
+	TokenGateAgents    *int     `json:"tokengate:agents,omitempty"`    // ask when a group starts this many agents; nil = 3, 0 = off
+
 	JobsSlots *int   `json:"jobs:slots,omitempty"` // heavy jobs run at once (pkg/jobqueue), 1–4; unset is 1
 	JobsMode  string `json:"jobs:mode,omitempty"`  // how the queue starts them: "auto" (unset; as RAM allows), "slots" (jobs:slots at once), "off" (at once)
 	// JobsPauseUntil turns the queue off until then (Unix ms): the Jobs popover's Pause 1h / 4h; 0 or past is no pause
