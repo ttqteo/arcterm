@@ -62,7 +62,7 @@ export function CockpitAppBar({ model }: { model: AgentsViewModel }) {
             data-app-bar
             data-tauri-drag-region
             className={clsx(
-                "flex h-[38px] shrink-0 items-center gap-4 border-b border-border bg-surface",
+                "flex h-[38px] shrink-0 select-none items-center gap-4 border-b border-border bg-surface",
                 mac ? "pr-4" : null,
                 mac && !fullscreen ? "pl-[92px]" : "pl-4"
             )}

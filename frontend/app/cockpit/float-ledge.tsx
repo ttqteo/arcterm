@@ -44,7 +44,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
             e
         );
     return (
-        <div data-tauri-drag-region className="flex h-[52px] shrink-0 border-t border-border bg-surface">
+        <div data-tauri-drag-region className="flex h-[52px] shrink-0 select-none border-t border-border bg-surface">
             {tabs.shown.length > 0 ? (
                 <div data-float-tabs data-tauri-drag-region className="flex min-w-0 items-center gap-1 pl-2">
                     {tabs.shown.map((a) => {

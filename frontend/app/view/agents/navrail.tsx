@@ -166,7 +166,7 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     return (
         <nav
             className={cn(
-                "flex shrink-0 flex-col gap-[3px] border-r border-border bg-surface py-2.5",
+                "flex shrink-0 select-none flex-col gap-[3px] border-r border-border bg-surface py-2.5",
                 narrow ? "w-[56px]" : "w-[78px]"
             )}
         >

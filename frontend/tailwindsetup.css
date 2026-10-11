@@ -286,6 +286,23 @@
     [role="button"]:not([aria-disabled="true"]) {
         cursor: pointer;
     }
+
+    /* a control's label is not text: WebKit (macOS) selects a word in a button on a double- or right-click,
+       where Chromium does not. An explicit select-text utility still wins. */
+    button,
+    [role="button"],
+    [role="tab"] {
+        -webkit-user-select: none;
+        user-select: none;
+    }
+
+    /* and a box you type in keeps selecting inside a row or bar that is select-none */
+    input,
+    textarea,
+    [contenteditable="true"] {
+        -webkit-user-select: text;
+        user-select: text;
+    }
 }
 
 /* With Ctrl held (cockpit-root.tsx sets the flag), a link that opens a target shows that a click peeks it

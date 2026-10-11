@@ -30,7 +30,7 @@ function FooterBar({ model, children, dim }: { model: AgentsViewModel; children?
     return (
         <div
             data-pet-ledge
-            className="flex h-7 shrink-0 items-center gap-4 border-t border-edge-strong bg-modalbg px-4"
+            className="flex h-7 shrink-0 select-none items-center gap-4 border-t border-edge-strong bg-modalbg px-4"
         >
             <div className={cn("flex min-w-0 flex-1 items-center gap-4", dim && "opacity-60")}>{children}</div>
             <FooterStatus model={model} />
