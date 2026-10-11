@@ -18,11 +18,28 @@ describe("quotaUsage", () => {
                 capturedat: 1_759_720_000_000,
                 source: "live",
             })
-        ).toEqual({ fivehourpct: 50, fivehourreset: 1_759_733_999, weekpct: 41, weekreset: 1_760_187_599 });
+        ).toEqual({
+            fivehourpct: 50,
+            fivehourreset: 1_759_733_999,
+            weekpct: 41,
+            weekreset: 1_760_187_599,
+            scopedweeks: [],
+        });
     });
 
     it("keeps a window the answer left out unknown", () => {
-        expect(quotaUsage({ weekpct: 3, capturedat: 1, source: "cache" })).toEqual({ weekpct: 3 });
+        expect(quotaUsage({ weekpct: 3, capturedat: 1, source: "cache" })).toEqual({ weekpct: 3, scopedweeks: [] });
+    });
+
+    // a Team Premium seat: the 5-hour window, no week, and Fable's own weekly window
+    it("carries each model's own weekly window", () => {
+        const fable = { model: "Fable", pct: 0, reset: 1_760_464_800 };
+        expect(quotaUsage({ fivehourpct: 12, scopedweeks: [fable], capturedat: 1, source: "live" })).toEqual({
+            fivehourpct: 12,
+            fivehourreset: undefined,
+            scopedweeks: [fable],
+        });
+        expect(quotaUsage({ scopedweeks: [fable], capturedat: 1, source: "live" })).toEqual({ scopedweeks: [fable] });
     });
 
     it("is null when nothing is known", () => {

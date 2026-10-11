@@ -46,6 +46,10 @@ running**, wavesrv reads them itself (`pkg/claudequota`, the `GetClaudeQuotaComm
   is null and its only weekly row is `weekly_scoped`, one model's share (a Premium seat's Fable use, at most
   half the week). That row counts that model alone and stays at 0% however much Opus runs, so wavesrv never
   takes it for the week, and a Team seat shows no week. Its statusline carries no `seven_day` either.
+- Each `weekly_scoped` row that names its model travels apart from the week, as `scopedweeks` on the RPC
+  answer (model, percent, reset). The snapshot keeps the list (`scoped`, read time `scopedAt`): the quota read
+  replaces it when newer and a session's report keeps it. The app bar draws each one after the week as
+  "<model> wk", and the Usage surface's Claude tab as a "<model> weekly" card (`planWindows`).
 - The frontend (`frontend/app/view/agents/claudequota.ts`, started at boot) polls the RPC every 5
   minutes and saves the answer as the claude snapshot in `ratelimitstore.ts`, stamped with the time
   it is as of. Each window keeps its newest reading (`mergeSnapshot`): a live agent's newer report

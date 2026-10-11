@@ -56,13 +56,23 @@ const (
 )
 
 // Quota is the account's two windows as of CapturedAt; a nil pct is a window the answer left out.
+// ScopedWeeks are the weekly windows of one model each (a Team Premium seat's Fable share), kept apart
+// from the week because each counts that model's use alone.
 type Quota struct {
 	FiveHourPct   *float64
 	FiveHourReset *int64 // epoch seconds
 	WeekPct       *float64
 	WeekReset     *int64 // epoch seconds
+	ScopedWeeks   []ScopedWeek
 	CapturedAt    time.Time
 	Source        string
+}
+
+// ScopedWeek is one model's weekly window, named by the model's display name.
+type ScopedWeek struct {
+	Model string
+	Pct   float64
+	Reset *int64 // epoch seconds
 }
 
 type usageWindow struct {
@@ -84,6 +94,11 @@ type usageLimit struct {
 	Kind     string   `json:"kind"`
 	Percent  *float64 `json:"percent"`
 	ResetsAt *string  `json:"resets_at"`
+	Scope    *struct {
+		Model *struct {
+			DisplayName string `json:"display_name"`
+		} `json:"model"`
+	} `json:"scope"`
 }
 
 type credentialsFile struct {
@@ -314,7 +329,7 @@ func (r *Reader) loginEmail() string {
 	return strings.ToLower(strings.TrimSpace(cfg.OauthAccount.EmailAddress))
 }
 
-// nil when the answer carries neither window
+// nil when the answer carries no window at all
 func quotaFrom(body usageBody, at time.Time, source string) *Quota {
 	q := &Quota{CapturedAt: at, Source: source}
 	q.FiveHourPct, q.FiveHourReset = readWindow(body.FiveHour)
@@ -322,10 +337,29 @@ func quotaFrom(body usageBody, at time.Time, source string) *Quota {
 	if q.WeekPct == nil {
 		q.WeekPct, q.WeekReset = readWindow(weekFromLimits(body.Limits))
 	}
-	if q.FiveHourPct == nil && q.WeekPct == nil {
+	q.ScopedWeeks = scopedWeeks(body.Limits)
+	if q.FiveHourPct == nil && q.WeekPct == nil && len(q.ScopedWeeks) == 0 {
 		return nil
 	}
 	return q
+}
+
+// limits[]'s weekly_scoped rows that name their model and carry a percent
+func scopedWeeks(limits []usageLimit) []ScopedWeek {
+	var out []ScopedWeek
+	for _, l := range limits {
+		if l.Kind != "weekly_scoped" || l.Percent == nil || l.Scope == nil || l.Scope.Model == nil ||
+			l.Scope.Model.DisplayName == "" {
+			continue
+		}
+		w := &usageWindow{Utilization: l.Percent}
+		if l.ResetsAt != nil {
+			w.ResetsAt = *l.ResetsAt
+		}
+		pct, reset := readWindow(w)
+		out = append(out, ScopedWeek{Model: l.Scope.Model.DisplayName, Pct: *pct, Reset: reset})
+	}
+	return out
 }
 
 // the week when seven_day is absent: the all-models weekly row; nil when limits[] has none. A

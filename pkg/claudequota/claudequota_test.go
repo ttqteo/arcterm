@@ -318,6 +318,35 @@ func TestTeamScopedRowsAreNotTheWeek(t *testing.T) {
 	}
 }
 
+// each model-scoped weekly row is kept apart from the week, named by its model, so it can be shown as that
+// model's share; a row with no percent or no model name is left out
+func TestScopedWeeksAreKeptByModel(t *testing.T) {
+	q := quotaOf(t, `{"five_hour":{"utilization":12,"resets_at":"2026-10-11T14:40:00Z"},"seven_day":null,"limits":[`+
+		`{"kind":"session","percent":12,"resets_at":"2026-10-11T14:40:00Z","scope":null},`+
+		`{"kind":"weekly_scoped","percent":0,"resets_at":"2026-10-14T18:00:00+00:00","scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}},`+
+		`{"kind":"weekly_scoped","percent":null,"resets_at":null,"scope":{"model":{"display_name":"Opus"}}},`+
+		`{"kind":"weekly_scoped","percent":5,"resets_at":null,"scope":null},`+
+		`{"kind":"weekly_all","percent":20,"resets_at":null}]}`)
+	if q == nil || len(q.ScopedWeeks) != 1 {
+		t.Fatalf("scoped weeks = %+v, want Fable alone", q)
+	}
+	fable := q.ScopedWeeks[0]
+	if fable.Model != "Fable" || fable.Pct != 0 || fable.Reset == nil ||
+		*fable.Reset != time.Date(2026, 10, 14, 18, 0, 0, 0, time.UTC).Unix() {
+		t.Errorf("Fable = %+v", fable)
+	}
+	if *q.WeekPct != 20 {
+		t.Errorf("week = %v, want the weekly_all row's 20", *q.WeekPct)
+	}
+}
+
+func TestScopedWeeksAloneAreAReading(t *testing.T) {
+	q := quotaOf(t, `{"limits":[{"kind":"weekly_scoped","percent":7,"resets_at":null,"scope":{"model":{"display_name":"Fable"}}}]}`)
+	if q == nil || len(q.ScopedWeeks) != 1 || q.ScopedWeeks[0].Reset != nil {
+		t.Fatalf("q = %+v, want a reading with Fable's week and no reset", q)
+	}
+}
+
 func TestWeeklyAllRowIsTheWeek(t *testing.T) {
 	q := quotaOf(t, `{"five_hour":null,"limits":[`+
 		`{"kind":"weekly_scoped","percent":80,"resets_at":"2026-10-14T18:00:00+00:00"},`+

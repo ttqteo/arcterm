@@ -228,6 +228,17 @@ type CommandGetClaudeQuotaRtnData struct {
 	Source        string   `json:"source,omitempty"`     // "live" or "cache"
 	Email         string   `json:"email,omitempty"`      // the /login account these numbers belong to, lowercased
 	RetryAt       int64    `json:"retryat,omitempty"`    // epoch ms the usage endpoint may be asked again, set when a 429 backoff holds it
+
+	// one model's weekly window each (a Team Premium seat's Fable share), never the week itself; absent when
+	// the answer has none
+	ScopedWeeks []ClaudeScopedWeek `json:"scopedweeks,omitempty"`
+}
+
+// a weekly window that counts one model's use alone
+type ClaudeScopedWeek struct {
+	Model string  `json:"model"` // the model's display name, e.g. "Fable"
+	Pct   float64 `json:"pct"`
+	Reset *int64  `json:"reset,omitempty"` // epoch seconds
 }
 
 type CommandGetCacheStatusData struct {

@@ -290,6 +290,9 @@ func claudeQuotaAnswer(q *claudequota.Quota, retryAt time.Time) *wshrpc.CommandG
 	out.FiveHourReset = q.FiveHourReset
 	out.WeekPct = q.WeekPct
 	out.WeekReset = q.WeekReset
+	for _, w := range q.ScopedWeeks {
+		out.ScopedWeeks = append(out.ScopedWeeks, wshrpc.ClaudeScopedWeek{Model: w.Model, Pct: w.Pct, Reset: w.Reset})
+	}
 	out.CapturedAt = q.CapturedAt.UnixMilli()
 	out.Source = q.Source
 	out.Email = loginEmail()

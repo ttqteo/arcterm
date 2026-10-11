@@ -32,7 +32,15 @@ export interface SavedSnapshot {
     // when a window was read, set only when earlier than capturedAt: a later reading left it out
     fivehourAt?: number;
     weekAt?: number;
+    // one model's weekly window each (a Team Premium seat's Fable share), never the week; only the quota read
+    // carries them, and scopedAt is when, set as fivehourAt is
+    scoped?: ClaudeScopedWeek[];
+    scopedAt?: number;
 }
+
+// What a reading carries: an agent's AgentUsage, or the quota read's, which also has each model's own weekly
+// window (an empty list when the account has none).
+export type WindowReading = AgentUsage & { scopedweeks?: ClaudeScopedWeek[] };
 
 const SNAPSHOT_WINDOWS = [
     { pct: "fivehourpct", reset: "fivehourreset", at: "fivehourAt" },
@@ -43,14 +51,15 @@ const SNAPSHOT_WINDOWS = [
 // a reading that leaves one out keeps the earlier one (a Claude Team session's statusline reports only its
 // 5-hour window). A `complete` reading (the quota read) carries every window the account reports, so one it
 // leaves out has none as of then, and an earlier reading of it is dropped: a Team seat's quota read has no
-// week. null when the reading changes nothing.
+// week. The models' own weekly windows go together, as one list: a reading that carries the list (the quota
+// read) replaces it when newer, and one that does not keeps it. null when the reading changes nothing.
 export function mergeSnapshot(
     prev: SavedSnapshot | undefined,
-    usage: AgentUsage,
+    usage: WindowReading,
     capturedAt: number,
     complete = false
 ): SavedSnapshot | null {
-    if (usage == null || (usage.fivehourpct == null && usage.weekpct == null)) {
+    if (usage == null || (usage.fivehourpct == null && usage.weekpct == null && !usage.scopedweeks?.length)) {
         return null;
     }
     const next: SavedSnapshot = { capturedAt: Math.max(prev?.capturedAt ?? 0, capturedAt) };
@@ -77,14 +86,37 @@ export function mergeSnapshot(
             next[w.at] = at;
         }
     }
+    const prevScopedAt = prev?.scoped == null ? -Infinity : (prev.scopedAt ?? prev.capturedAt);
+    if (usage.scopedweeks != null && capturedAt >= prevScopedAt) {
+        if (usage.scopedweeks.length > 0) {
+            next.scoped = usage.scopedweeks;
+            if (capturedAt !== next.capturedAt) {
+                next.scopedAt = capturedAt;
+            }
+        }
+        changed ||= usage.scopedweeks.length > 0 || prev?.scoped != null;
+    } else if (prev?.scoped != null) {
+        next.scoped = prev.scoped;
+        if (prevScopedAt !== next.capturedAt) {
+            next.scopedAt = prevScopedAt;
+        }
+    }
     return changed ? next : null;
 }
 
-// A saved snapshot's two windows as of `now`, each rolled over by the time it was read.
-export function savedWindows(s: SavedSnapshot, now: number): { fivehour: DonutWindow; week: DonutWindow } {
+// A saved snapshot's windows as of `now`, each rolled over by the time it was read.
+export function savedWindows(
+    s: SavedSnapshot,
+    now: number
+): { fivehour: DonutWindow; week: DonutWindow; scoped: ScopedDonut[] } {
+    const scopedAt = s.scopedAt ?? s.capturedAt;
     return {
         fivehour: windowFromSaved(s.fivehourpct, s.fivehourreset, s.fivehourAt ?? s.capturedAt, FIVE_HOUR_MS, now),
         week: windowFromSaved(s.weekpct, s.weekreset, s.weekAt ?? s.capturedAt, WEEK_MS, now),
+        scoped: (s.scoped ?? []).map((w) => ({
+            model: w.model,
+            ...windowFromSaved(w.pct, w.reset, scopedAt, WEEK_MS, now),
+        })),
     };
 }
 
@@ -93,11 +125,51 @@ export interface DonutWindow {
     reset?: number;
 }
 
+// one model's weekly window, as a donut shows it
+export interface ScopedDonut extends DonutWindow {
+    model: string;
+}
+
 export interface ProviderDonuts {
     provider: string;
     fivehour: DonutWindow;
     week: DonutWindow;
+    // each model's own weekly window (a Team Premium seat's Fable share), apart from the week
+    scoped?: ScopedDonut[];
     stale?: { capturedAt: number }; // present iff sourced from a saved (not-live) snapshot
+}
+
+export interface PlanWindow {
+    key: string; // "fivehour", "week", or "scoped:<model>"
+    short: string; // the app bar's label
+    label: string; // the tooltip's
+    w: DonutWindow;
+    windowMs: number;
+    tokens?: "fivehour" | "week"; // the window whose used tokens the tooltip names; none for a model's own week
+}
+
+// A provider's windows in the order they are shown: the 5-hour one, the week, then each model's own weekly
+// window, named by its model so it never reads as the week (on a Team seat it stays at 0% however much Opus
+// runs). Whether each is worth a bar is the caller's call (usageBarVisible).
+export function planWindows(d: ProviderDonuts): PlanWindow[] {
+    return [
+        {
+            key: "fivehour",
+            short: "5h",
+            label: "5-hour window",
+            w: d.fivehour,
+            windowMs: FIVE_HOUR_MS,
+            tokens: "fivehour",
+        },
+        { key: "week", short: "wk", label: "Weekly", w: d.week, windowMs: WEEK_MS, tokens: "week" },
+        ...(d.scoped ?? []).map((s) => ({
+            key: `scoped:${s.model}`,
+            short: `${s.model} wk`,
+            label: `${s.model} weekly`,
+            w: { pct: s.pct, reset: s.reset },
+            windowMs: WEEK_MS,
+        })),
+    ];
 }
 
 // What arcterm knows of who the Claude accounts are: the /login account's email, and each token account
@@ -257,7 +329,12 @@ export const savedRateLimitsAtom = atom<Record<string, SavedSnapshot>>(
 // `capturedAt` is when the reading is as of (now, for an agent's report); per window, a newer reading
 // already saved wins over an older one (mergeSnapshot). `complete` says the reading carries every window
 // the account reports, so an older saved window it leaves out is dropped.
-export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt = Date.now(), complete = false): void {
+export function recordRateLimit(
+    provider: string,
+    usage: WindowReading,
+    capturedAt = Date.now(),
+    complete = false
+): void {
     const saved = globalStore.get(savedRateLimitsAtom);
     const snapshot = mergeSnapshot(saved[provider], usage, capturedAt, complete);
     if (snapshot != null) {
@@ -340,6 +417,8 @@ export function mergeRateLimitWindows(
                         ? { pct: u.fivehourpct, reset: u.fivehourreset }
                         : (fromSaved?.fivehour ?? {}),
                 week: u.weekpct != null ? { pct: u.weekpct, reset: u.weekreset } : (fromSaved?.week ?? {}),
+                // no session reports a model's own week: it is the quota read's alone
+                scoped: fromSaved?.scoped ?? [],
             };
         })
         .sort((a, b) => (PROVIDER_RANK[a.provider] ?? 99) - (PROVIDER_RANK[b.provider] ?? 99));

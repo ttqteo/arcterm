@@ -11,6 +11,7 @@ import {
     mergeSnapshot,
     migrateSaved,
     planDonuts,
+    planWindows,
     projectActiveAccount,
     rateLimitKey,
     readSavedRateLimits,
@@ -488,6 +489,78 @@ describe("mergeSnapshot keeps each window's newest reading", () => {
         expect(out[0].fivehour).toEqual({ pct: 3, reset: 100 });
         expect(out[0].week).toEqual({ pct: 30, reset: now / 1000 + 600 });
         expect(out[0].stale).toBeUndefined();
+    });
+});
+
+// A Team Premium seat's quota read carries a weekly window for one model (Fable) and no week. It is kept apart from
+// the week and shown under its model's name.
+describe("a model's own weekly window", () => {
+    const fable = { model: "Fable", pct: 4, reset: 900 };
+
+    it("is taken from a reading that carries it", () => {
+        expect(mergeSnapshot(undefined, { fivehourpct: 3, scopedweeks: [fable] }, 1000, true)).toEqual({
+            fivehourpct: 3,
+            scoped: [fable],
+            capturedAt: 1000,
+        });
+    });
+
+    it("is dropped by a newer reading that carries none", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, scoped: [fable], capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3, scopedweeks: [] }, 2000, true)).toEqual({
+            fivehourpct: 3,
+            capturedAt: 2000,
+        });
+    });
+
+    it("is kept by a session's report, which never carries it, stamped with when it was read", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, scoped: [fable], capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3 }, 2000)).toEqual({
+            fivehourpct: 3,
+            scoped: [fable],
+            scopedAt: 1000,
+            capturedAt: 2000,
+        });
+    });
+
+    it("is kept over an older reading's", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, scoped: [fable], capturedAt: 3000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 9, scopedweeks: [{ ...fable, pct: 1 }] }, 1000, true)).toBeNull();
+    });
+
+    it("rolls over by when it was read", () => {
+        const now = 1_800_000_000_000;
+        const reset = now / 1000 + 600;
+        const fresh: SavedSnapshot = { fivehourpct: 5, scoped: [{ ...fable, reset }], capturedAt: now - 5000 };
+        expect(savedWindows(fresh, now).scoped).toEqual([{ model: "Fable", pct: 4, reset }]);
+        const old: SavedSnapshot = { ...fresh, scopedAt: now - 8 * 24 * 3600_000 };
+        expect(savedWindows(old, now).scoped).toEqual([{ model: "Fable", pct: 0, reset: undefined }]);
+    });
+
+    it("fills a live session's donut from the saved snapshot", () => {
+        const now = 1_800_000_000_000;
+        const reset = now / 1000 + 600;
+        const out = mergeRateLimitWindows(
+            [{ provider: "claude", usage: { fivehourpct: 3, fivehourreset: 100 } }],
+            { claude: { fivehourpct: 1, scoped: [{ ...fable, reset }], capturedAt: now - 5000 } },
+            now
+        );
+        expect(out[0].scoped).toEqual([{ model: "Fable", pct: 4, reset }]);
+        expect(out[0].week).toEqual({});
+    });
+
+    it("is listed after the 5-hour window and the week, under its model's name", () => {
+        const windows = planWindows({
+            provider: "claude",
+            fivehour: { pct: 12, reset: 100 },
+            week: {},
+            scoped: [{ model: "Fable", pct: 0, reset: 900 }],
+        });
+        expect(windows.map((w) => [w.key, w.short, w.label, w.w.pct, w.tokens])).toEqual([
+            ["fivehour", "5h", "5-hour window", 12, "fivehour"],
+            ["week", "wk", "Weekly", undefined, "week"],
+            ["scoped:Fable", "Fable wk", "Fable weekly", 0, undefined],
+        ]);
     });
 });
 

@@ -339,6 +339,13 @@ declare global {
         sessions: number;
     };
 
+    // wshrpc.ClaudeScopedWeek
+    type ClaudeScopedWeek = {
+        model: string;
+        pct: number;
+        reset?: number;
+    };
+
     // waveobj.Client
     type Client = WaveObj & {
         windowids: string[];
@@ -995,6 +1002,7 @@ declare global {
         source?: string;
         email?: string;
         retryat?: number;
+        scopedweeks?: ClaudeScopedWeek[];
     };
 
     // wshrpc.CommandGetConsumersRtnData
