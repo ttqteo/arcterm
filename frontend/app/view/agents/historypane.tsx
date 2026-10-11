@@ -26,7 +26,7 @@ import {
 import { GraphGutter } from "./graphgutter";
 import { HistoryFilterRow } from "./historyfilterrow";
 import { HISTORY_PAGE_SIZE, NEAR_BOTTOM_PX, SCROLL_THROTTLE_MS, noMatchSentence, slowSeconds } from "./historyquery";
-import { refChipClass, type HistoryRow } from "./historyrows";
+import { authorInitials, refChipClass, rowTitle, type HistoryRow } from "./historyrows";
 
 const ROW_H = 28;
 const HASH_W = 48;
@@ -134,6 +134,7 @@ function Row({
     return (
         <button
             onClick={onSelect}
+            title={rowTitle(row)}
             style={{ height: ROW_H, paddingLeft: laneIndent }}
             className={cn(
                 "relative flex w-full items-center gap-[7px] rounded-[7px] pr-[8px] text-left transition-colors duration-[140ms] hover:bg-surface-hover",
@@ -189,7 +190,15 @@ function Row({
                 <span className="flex-none text-[10.5px] tabular-nums text-ink-mid">
                     {row.fileCount} {row.fileCount === 1 ? "file" : "files"}
                 </span>
-            ) : null}
+            ) : (
+                // the name itself is the row's title; the mark only tells one author's commits from another's
+                <span
+                    aria-hidden
+                    className="flex h-[16px] w-[16px] flex-none items-center justify-center rounded-full border border-edge-mid bg-surface-raised text-xxxs font-semibold leading-none text-ink-mid"
+                >
+                    {authorInitials(row.author)}
+                </span>
+            )}
             <span className="flex-none text-right text-[10.5px] tabular-nums text-muted">{row.when}</span>
         </button>
     );

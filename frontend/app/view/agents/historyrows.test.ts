@@ -4,11 +4,14 @@
 import { describe, expect, it } from "vitest";
 import {
     WORKING_TREE,
+    authorInitials,
     buildRows,
     classifyRef,
     defaultSelection,
     keepSelection,
     refChipClass,
+    rowTitle,
+    toRow,
     worktreeCaption,
     type RefKind,
 } from "./historyrows";
@@ -229,5 +232,37 @@ describe("worktreeCaption", () => {
         expect(worktreeCaption({ kind: "run", runId: "r", baseCommit: "b41d000aaaa" }, "wave/r", "x", "")).toBe(
             "On wave/r, measured from run base b41d000"
         );
+    });
+});
+
+describe("authorInitials", () => {
+    it("takes the first and last word's initial of a full name", () => {
+        expect(authorInitials("dana k")).toBe("DK");
+        expect(authorInitials("Trần Tú Quang")).toBe("TQ");
+    });
+    it("takes a lone word's first two letters", () => {
+        expect(authorInitials("ttqteo")).toBe("TT");
+        expect(authorInitials("x")).toBe("X");
+    });
+    it("reads only letters, so a bot or a dotted handle still gets a mark", () => {
+        expect(authorInitials("dependabot[bot]")).toBe("DB");
+        expect(authorInitials("jane.doe")).toBe("JD");
+        expect(authorInitials("  ")).toBe("?");
+        expect(authorInitials("123")).toBe("?");
+    });
+});
+
+describe("rowTitle", () => {
+    it("names the author, their email and the commit's date", () => {
+        const t = rowTitle(toRow(commit("aaa"), NOW))!;
+        expect(t.startsWith("dana k <dana@example.com> · ")).toBe(true);
+        expect(t).toContain("2027");
+    });
+    it("leaves the email out when the commit has none", () => {
+        expect(rowTitle(toRow(commit("aaa", { email: "" }), NOW))!.startsWith("dana k · ")).toBe(true);
+    });
+    it("gives the uncommitted row no title: it has no author", () => {
+        const rows = buildRows([commit("aaa")], { head: "aaa", dirtyFileCount: 2, now: NOW });
+        expect(rowTitle(rows[0])).toBeUndefined();
     });
 });

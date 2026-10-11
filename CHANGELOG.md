@@ -61,6 +61,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The **File** tab keeps your place: switching agents, tabs, or Back and Forward brings a file back where you left it
   in Source, Preview and Diff, not at the top. A file opened afresh from a link still starts at its line. A PDF or a
   web page still opens at the top.
+- Diff's **Log** shows who made each commit again: a round mark with the author's initials beside its age, and the
+  author's name, email and the exact date when you hover the row.
 
 ### Changed
 

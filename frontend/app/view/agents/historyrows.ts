@@ -149,6 +149,42 @@ export function buildRows(commits: HistoryCommit[], opts: BuildRowsOpts): Histor
     return rows;
 }
 
+// The row's round author mark, where the 340px panel has no room for a name: the first and last word's initials
+// ("Trần Tú Quang" -> "TQ"), or a lone word's first two letters ("ttqteo" -> "TT"). Words are runs of letters, so a bot
+// or a dotted handle still gets a mark ("dependabot[bot]" -> "DB"); NFC first, so a decomposed accent stays inside its
+// word.
+export function authorInitials(name: string): string {
+    const words = name
+        .normalize("NFC")
+        .split(/[^\p{L}\p{M}]+/u)
+        .filter(Boolean);
+    if (words.length === 0) {
+        return "?";
+    }
+    if (words.length === 1) {
+        return Array.from(words[0]).slice(0, 2).join("").toUpperCase();
+    }
+    return (Array.from(words[0])[0] + Array.from(words[words.length - 1])[0]).toUpperCase();
+}
+
+// The row's hover title: who made the commit and exactly when, which the row itself only shows as initials and an
+// age. The uncommitted row has no author, so no title.
+export function rowTitle(row: HistoryRow): string | undefined {
+    if (row.workingTree) {
+        return undefined;
+    }
+    const who = row.email ? `${row.author} <${row.email}>` : row.author;
+    const when = new Date(row.ts).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    });
+    return `${who} · ${when}`;
+}
+
 // The working-tree pane's one-line answer to "measured from what". HEAD is not a branch, so a
 // detached checkout says so rather than printing "On HEAD".
 export function worktreeCaption(range: DiffRange, branch: string, head: string, ref: string): string {
