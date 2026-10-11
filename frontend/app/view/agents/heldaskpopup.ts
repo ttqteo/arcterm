@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Which held command's card (`wsh memgate`'s Low RAM) pops up over the cockpit. A held command blocks its agent until
+// Which held card (the Token burn card, an Antigravity question) pops up over the cockpit. A held card blocks its agent until
 // someone answers, and its card sits only above that agent's terminal, so from any other surface it went unseen. Pure;
 // heldaskdialog.tsx draws it.
 

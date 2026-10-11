@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A held command's card (`wsh memgate`'s Low RAM) as a dialog over any surface. Mounted once in CockpitShell; it pops
+// A held command's card (the Token burn card, an Antigravity question) as a dialog over any surface. Mounted once in CockpitShell; it pops
 // for the first held ask whose card is not already on screen (heldaskpopup.ts). Later hides it and leaves the ask open
 // on the agent's own card; answering or clearing it closes the dialog by itself.
 
@@ -12,7 +12,7 @@ import { useAtomValue } from "jotai";
 import { ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
-import { answerDigitTarget, canSubmitAsk, type AgentVM } from "./agentsviewmodel";
+import { answerDigitTarget, askingLabel, canSubmitAsk, type AgentVM } from "./agentsviewmodel";
 import { AskRow, jumpToAgent } from "./channelsprimitives";
 import { heldAskDismissedAtom, heldAskKey, heldAskOpenAtom, heldAskToPop } from "./heldaskpopup";
 
@@ -80,7 +80,7 @@ export function HeldAskDialog({ model }: { model: AgentsViewModel }) {
                 <div data-held-ask-dialog={agent.id} onKeyDown={onKeyDown} className="flex flex-col gap-3 p-4">
                     <div className="flex min-w-0 items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-[12.5px] text-secondary">
-                            <span className="font-semibold text-asking">Low RAM</span>
+                            <span className="font-semibold text-asking">{askingLabel(agent)}</span>
                             <span className="text-ink-faint"> · </span>
                             {agent.name}
                         </span>
