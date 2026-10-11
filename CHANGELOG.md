@@ -51,6 +51,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Ctrl+Tab and the folded Sprout's list skip them too. A worker you opened keeps its tab while you are on it.
 - Holding **Ctrl** shows the **Agent** rail item's digit again: the count of working agents was drawn over it, and
   now steps aside until you let go.
+- **Float** has a close button for the agent or terminal it shows, next to **Leave float**, as the agent header has
+  outside Float; it asks first, like ⌘W.
 
 ## 0.15.9 — 2026-10-11
 

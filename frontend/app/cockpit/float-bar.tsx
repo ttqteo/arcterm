@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useBindingKeys } from "@/app/store/keybindings/store";
+import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
 import { CTX_TEXT, ICON_BTN, ICON_BTN_ON, STATE_COLOR, STATE_LABEL } from "@/app/view/agents/agentheader";
 import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -15,15 +16,15 @@ import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { PictureInPicture2, Pin } from "lucide-react";
+import { PictureInPicture2, Pin, X } from "lucide-react";
 import { FOLD_SPRITE, useFoldTitle, WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
-// the pin and the way back; the tabs to switch it are on the ledge under the terminal (float-ledge.tsx). The arrow
-// cursor and no text selection over all of it, as over a native title bar. 38px on a Mac, because macOS overlays its
-// traffic lights at the centre line of a bar that tall (tauri.macos.conf.json); 40px elsewhere, room for the 32px
-// Sprout and little more.
+// the pin, the way back and its close; the tabs to switch it are on the ledge under the terminal (float-ledge.tsx).
+// The arrow cursor and no text selection over all of it, as over a native title bar. 38px on a Mac, because macOS
+// overlays its traffic lights at the centre line of a bar that tall (tauri.macos.conf.json); 40px elsewhere, room for
+// the 32px Sprout and little more.
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
@@ -111,6 +112,23 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
             >
                 <PictureInPicture2 size={15} strokeWidth={1.8} />
             </button>
+            {/* the agent header's close, which steps out with the header in float; it still asks first */}
+            {agent != null ? (
+                <button
+                    type="button"
+                    data-float-close
+                    aria-label={agent.kind === "terminal" ? "Close terminal" : "Close agent"}
+                    title={
+                        agent.kind === "terminal"
+                            ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
+                            : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
+                    }
+                    onClick={() => confirmCloseSession(agent, model)}
+                    className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error")}
+                >
+                    <X size={15} strokeWidth={1.9} />
+                </button>
+            ) : null}
             {mac ? null : <WindowControls />}
         </div>
     );
