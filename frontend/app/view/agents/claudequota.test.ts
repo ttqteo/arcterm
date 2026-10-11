@@ -96,6 +96,28 @@ describe("refreshClaudeQuota", () => {
         expect(globalStore.get(savedRateLimitsAtom)["claude:mozox@example.com"]?.fivehourpct).toBe(70);
     });
 
+    it("drops a saved week the answer no longer carries", async () => {
+        globalStore.set(savedRateLimitsAtom, {
+            "claude:mozox@example.com": {
+                fivehourpct: 4,
+                weekpct: 0,
+                weekreset: 1_760_464_800,
+                capturedAt: 1_759_700_000_000,
+            },
+        });
+        refreshCommand.mockResolvedValue({
+            fivehourpct: 12,
+            capturedat: 1_759_720_000_000,
+            source: "live",
+            email: "mozox@example.com",
+        });
+        await refreshClaudeQuota();
+        expect(globalStore.get(savedRateLimitsAtom)["claude:mozox@example.com"]).toEqual({
+            fivehourpct: 12,
+            capturedAt: 1_759_720_000_000,
+        });
+    });
+
     it("is not ok, and saves nothing, when wavesrv knows nothing", async () => {
         refreshCommand.mockResolvedValue({});
         expect(await refreshClaudeQuota()).toEqual({ ok: false });

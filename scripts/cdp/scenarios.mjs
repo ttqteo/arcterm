@@ -3001,6 +3001,148 @@ const cockpitNeedsYouCrossChannel = {
     },
 };
 
+// A held Token burn card (a costly Agent/Task/Workflow spawn waiting on the person) is headed by its own card, not the
+// "Low RAM" of memgate's removed card: the popup over a non-Agent surface reads "Token burn · <agent>", and opening
+// the agent hands the card to the bar above its terminal. A fixture roster holds the working agent and the asking one.
+const TOKEN_BURN_AGENT_ID = "fx-token-burn";
+const TOKEN_BURN_AGENT_NAME = "token-burn worker";
+const TOKEN_BURN_ASK_ID = "fx-token-burn-ask";
+const TOKEN_BURN_OPTIONS = ["Allow", "Allow this turn", "Allow this session", "Don't spawn"];
+
+const tokenBurnCard = {
+    name: "token-burn-card",
+    surface: "cockpit",
+    async arrange() {
+        const ctx = {};
+        try {
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: "fx-token-burn-work",
+                            name: "steady worker",
+                            project: "waveterm",
+                            task: "keep working",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 120_000,
+                            blockId: "fx-blk-token-burn-work",
+                        },
+                        {
+                            id: TOKEN_BURN_AGENT_ID,
+                            name: TOKEN_BURN_AGENT_NAME,
+                            project: "waveterm",
+                            task: "fan out to subagents",
+                            state: "asking",
+                            agent: "claude",
+                            model: "opus",
+                            blockedMs: 20_000,
+                            blockId: "fx-blk-token-burn",
+                            ask: {
+                                askId: TOKEN_BURN_ASK_ID,
+                                oref: "block:fx-blk-token-burn",
+                                hold: true,
+                                questions: [
+                                    {
+                                        header: "Token burn",
+                                        question: "An agent wants to start 3 subagents, about 4.5M tokens (rough).",
+                                        options: TOKEN_BURN_OPTIONS.map((label) => ({ label })),
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const popupStep = "1. the popup over the Cockpit is headed Token burn and lists the 4 options";
+        if (ctx.arrangeError != null) {
+            rec(popupStep, false, ctx.arrangeError);
+            return steps;
+        }
+        // load the fixture roster, then land on a surface that is not Agent
+        await h.ev("location.reload()");
+        await settle(2500);
+        await h.goto("cockpit");
+        await settle(800);
+
+        const popup = () =>
+            h.ev(`(() => {
+                const d = document.querySelector('[data-held-ask-dialog="${TOKEN_BURN_AGENT_ID}"]');
+                if (!d) return null;
+                const head = d.querySelector('span.truncate');
+                const text = (d.textContent || '');
+                return {
+                    head: head ? head.textContent.replace(/\\s+/g, ' ').trim() : null,
+                    options: ${JSON.stringify(TOKEN_BURN_OPTIONS)}.filter((o) => text.includes(o)),
+                    lowRam: /low ram/i.test(text),
+                };
+            })()`);
+        let shown = await popup();
+        for (let i = 0; i < 10 && shown == null; i++) {
+            await settle(300);
+            shown = await popup();
+        }
+        const headOk = shown?.head === `Token burn · ${TOKEN_BURN_AGENT_NAME}`;
+        rec(
+            popupStep,
+            shown != null && headOk && !shown.lowRam && shown.options.length === TOKEN_BURN_OPTIONS.length,
+            JSON.stringify(shown)
+        );
+        await h.shot("cdp-shots/token-burn-card-popup.png");
+
+        // 2. Open agent routes to the Agent surface: the popup closes and the bar above the terminal takes the card
+        const opened = await h.ev(`(() => {
+            const d = document.querySelector('[data-held-ask-dialog="${TOKEN_BURN_AGENT_ID}"]');
+            const b = d && [...d.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Open agent');
+            if (!b) return false;
+            b.click();
+            return true;
+        })()`);
+        await settle(1200);
+        const bar = () =>
+            h.ev(`(() => {
+                const b = document.querySelector('[data-held-ask="${TOKEN_BURN_AGENT_ID}"]');
+                if (!b) return null;
+                const text = b.textContent || '';
+                return { options: ${JSON.stringify(TOKEN_BURN_OPTIONS)}.filter((o) => text.includes(o)) };
+            })()`);
+        let barState = await bar();
+        for (let i = 0; i < 10 && barState == null; i++) {
+            await settle(300);
+            barState = await bar();
+        }
+        const popupGone = await h.ev(`!document.querySelector('[data-held-ask-dialog]')`);
+        rec(
+            "2. opening the agent closes the popup and the bar above its terminal shows the 4 options",
+            opened === true && popupGone === true && barState?.options?.length === TOKEN_BURN_OPTIONS.length,
+            JSON.stringify({ opened, popupGone, bar: barState })
+        );
+        await h.shot("cdp-shots/token-burn-card-bar.png");
+        return steps;
+    },
+    async teardown(h, ctx) {
+        if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
+        // onto the live roster again, and settled: the next scenario's first act is a nav click
+        await h.ev("location.reload()");
+        await h.ev("new Promise((r) => setTimeout(r, 2500))");
+    },
+};
+
 // --- git history: filters, paging, the two repository-failure panels, persistence ----------------
 // Every state is arranged for real — globalStore is not on window, so nothing can be injected. The
 // broken repo is a genuine failure: its ref file resolves but the object it names is gone, so
@@ -28575,6 +28717,7 @@ export const SCENARIOS = [
     usageInsights,
     attentionCrossChannel,
     cockpitNeedsYouCrossChannel,
+    tokenBurnCard,
     harnessPicker,
     dagLifecycle,
     routePickerFlat,

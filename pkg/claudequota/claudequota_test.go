@@ -303,29 +303,30 @@ func quotaOf(t *testing.T, body string) *Quota {
 	return quotaFrom(b, time.Date(2026, 10, 11, 3, 0, 0, 0, time.UTC), SourceCache)
 }
 
-// a Team plan's answer: seven_day null, the week only as a model-scoped row of limits[]
-func TestTeamWeekComesFromTheFullestScopedRow(t *testing.T) {
+// a Team plan's answer: seven_day null, and limits[] has no all-models weekly row, only a weekly row for one
+// model (a Premium seat's Fable share). That row counts that model alone, so it is not the account's week.
+func TestTeamScopedRowsAreNotTheWeek(t *testing.T) {
 	q := quotaOf(t, `{"five_hour":{"utilization":3,"resets_at":"2026-10-11T09:00:00.290763+00:00"},"seven_day":null,`+
 		`"limits":[{"kind":"session","group":"session","percent":3,"resets_at":"2026-10-11T09:00:00.290763+00:00"},`+
 		`{"kind":"weekly_scoped","group":"weekly","percent":12,"resets_at":"2026-10-14T18:00:00+00:00","scope":{"model":{"display_name":"Fable"}}},`+
 		`{"kind":"weekly_scoped","group":"weekly","percent":30,"resets_at":"2026-10-15T18:00:00+00:00","scope":{"model":{"display_name":"Opus"}}}]}`)
-	if q == nil || q.WeekPct == nil || *q.WeekPct != 30 {
-		t.Fatalf("week = %+v, want the fullest scoped row (30)", q)
+	if q == nil || q.FiveHourPct == nil || *q.FiveHourPct != 3 {
+		t.Fatalf("five-hour = %+v, want 3", q)
 	}
-	if *q.WeekReset != time.Date(2026, 10, 15, 18, 0, 0, 0, time.UTC).Unix() {
-		t.Errorf("week reset = %v", *q.WeekReset)
-	}
-	if *q.FiveHourPct != 3 {
-		t.Errorf("five-hour = %v", *q.FiveHourPct)
+	if q.WeekPct != nil || q.WeekReset != nil {
+		t.Errorf("week = %v (reset %v), want none: a model-scoped row is not the account's week", *q.WeekPct, q.WeekReset)
 	}
 }
 
-func TestWeeklyAllRowBeatsScopedRows(t *testing.T) {
+func TestWeeklyAllRowIsTheWeek(t *testing.T) {
 	q := quotaOf(t, `{"five_hour":null,"limits":[`+
 		`{"kind":"weekly_scoped","percent":80,"resets_at":"2026-10-14T18:00:00+00:00"},`+
-		`{"kind":"weekly_all","percent":20,"resets_at":null}]}`)
-	if q == nil || *q.WeekPct != 20 || q.WeekReset != nil {
-		t.Fatalf("week = %+v, want the all-models row (20, no reset)", q)
+		`{"kind":"weekly_all","percent":20,"resets_at":"2026-10-15T18:00:00+00:00"}]}`)
+	if q == nil || q.WeekPct == nil || *q.WeekPct != 20 {
+		t.Fatalf("week = %+v, want the all-models row (20)", q)
+	}
+	if *q.WeekReset != time.Date(2026, 10, 15, 18, 0, 0, 0, time.UTC).Unix() {
+		t.Errorf("week reset = %v", *q.WeekReset)
 	}
 }
 

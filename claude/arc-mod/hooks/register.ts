@@ -11,6 +11,8 @@ import { jobslotArgs, jobslotLine } from "./jobslot-core";
 import type { Ran } from "./mention-core";
 import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention-core";
 import { idleArgs } from "./status-core";
+import { createSpawnGate, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
+import type { Group, SpawnVerdict } from "./tokengate-core";
 import { usageArgs } from "./usage-core";
 
 const WSH = "__WSH_PATH__";
@@ -146,9 +148,47 @@ async function withJobSlot<T>(
     }
 }
 
+// the last context reading, for the Token burn card
+let lastContext: { tokens: number; window: number } | null = null;
+
+// gathers parallel spawns onto one card and keeps the person's say; session.start clears it
+const spawnGate = createSpawnGate((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+// `wsh tokengate` for one group. never rejects: a failure of wsh's lets the spawn run, so only a verdict line
+// changes the default, not wsh's exit or an empty stdout
+async function askTokengate($: EngineInterface, group: Group): Promise<SpawnVerdict> {
+    let verdict = RUN_VERDICT;
+    let buffered = "";
+    try {
+        for await (const chunk of $.process.spawn({ argv: [WSH, ...tokengateArgs(group, lastContext)] })) {
+            if (chunk.stream !== "stdout") {
+                continue;
+            }
+            const taken = takeLines(buffered + chunk.text);
+            buffered = taken.rest;
+            for (const line of taken.lines) {
+                const read = tokengateLine(line);
+                if (read && "hold" in read) {
+                    $.ui.log(`arc: ${read.hold}`);
+                } else if (read) {
+                    verdict = read.verdict;
+                }
+            }
+        }
+    } catch (err) {
+        $.ui.log(`arc: wsh tokengate failed: ${String(err)}`, { to: "debug" });
+        return RUN_VERDICT;
+    }
+    if (verdict.note) {
+        $.ui.log(`arc: ${verdict.note}`);
+    }
+    return verdict;
+}
+
 export const register: Register = (on) => {
     on("session.start", async ($, e, next) => {
         active = Boolean((await $.env.get("WAVETERM_BLOCKID")) && (await $.env.get("WAVETERM_JWT")));
+        spawnGate.sessionStarted();
         const started = await next(e);
         if (active) {
             void listenToCockpit($);
@@ -168,6 +208,9 @@ export const register: Register = (on) => {
                 // a dropped measurement self-heals on the next one, as a dropped statusLine publish did
                 $.ui.log(`arc: wsh agentstatus --usage failed: ${String(err)}`, { to: "debug" });
             }
+        }
+        if (e.context.percent != null) {
+            lastContext = { tokens: (e.context.percent / 100) * e.context.window, window: e.context.window };
         }
         return next(e);
     });
@@ -203,6 +246,7 @@ export const register: Register = (on) => {
 
     on("classic.UserPromptSubmit", ($, e, next) => {
         transcriptPath = e.transcript_path || null;
+        spawnGate.promptSubmitted();
         return next(e);
     });
 
@@ -252,6 +296,16 @@ export const register: Register = (on) => {
         const why = await refusal($, e.command);
         return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
     });
+
+    // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
+    for (const tool of ["Agent", "Task", "Workflow"] as const) {
+        on("tool.call", { tool }, async ($, e, next) => {
+            const why = active
+                ? await spawnGate.check(tool, e as unknown as Record<string, unknown>, (g) => askTokengate($, g))
+                : null;
+            return why === null ? next(e) : { deny: why };
+        });
+    }
 
     // claude's own dialog asks in the terminal while the cockpit card asks beside it, and the first answer
     // wins. a hook that settles before next(e) takes the dialog down (probed on 2.1.291), so the terminal

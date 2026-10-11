@@ -95,7 +95,7 @@ export function deriveKeyContext(): KeyContext {
         // outlives a switch away, since opening a worker from the graph lands on the Agent surface.
         (surface === "jarvis" && globalStore.get(dagModalStateAtom) != null) ||
         globalStore.get(docReviewAtom) != null ||
-        // the Low RAM card over any surface: its digits answer it, not the surface underneath
+        // a held card over any surface: its digits answer it, not the surface underneath
         globalStore.get(heldAskOpenAtom) != null ||
         // the avatar popup is window chrome over any surface, and its own keys (Enter, f, Space, Escape) are
         // surface keys too; uncounted, the Agent surface's f toggled fullscreen under an open item

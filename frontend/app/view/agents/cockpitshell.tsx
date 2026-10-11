@@ -167,7 +167,7 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             </div>
             {/* outside the surface switch: a lead's review opens over whichever surface is showing */}
             <DocReviewDialog model={model} />
-            {/* a held command (Low RAM) blocks its agent until answered: its card pops over any surface */}
+            {/* a held card (Token burn, an Antigravity question) blocks its agent until answered: it pops over any surface */}
             <HeldAskDialog model={model} />
             {/* a turn can end or an ask can land while any surface shows */}
             <NotifySync model={model} />

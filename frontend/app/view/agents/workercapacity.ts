@@ -29,7 +29,7 @@ function moreFit(n: number): string {
 }
 
 /** Free RAM below this is low: pkg/memgate's Headroom, below which the machine swaps hard and a heavy command
- * waits on the Low RAM card. */
+ * waits in the job queue. */
 export const LOW_RAM_BYTES = 512 * 1024 ** 2;
 
 /** The app bar chip's text: the free RAM, which is what a glance wants. How many workers that holds is in the

@@ -492,7 +492,12 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
                                     data-claude-account-quota={id || "default"}
                                     className="mt-[7px] flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[11.5px] text-muted"
                                 >
-                                    {quota == null ? (
+                                    {account?.notoken ? (
+                                        <span data-claude-account-notoken={id} className="text-warning">
+                                            Token lost: new agents run on your /login account. Remove this account and
+                                            add it again.
+                                        </span>
+                                    ) : quota == null ? (
                                         <span>{quotaLine(null, now).text}</span>
                                     ) : (
                                         <>

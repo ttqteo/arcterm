@@ -15,6 +15,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Jarvis has a tour: the **?** button in its header walks you through the Brief, Initiatives, the run sheet and the
   Profile one control at a time, in Vietnamese or English, and Jarvis offers it once the first time you open it.
 
+- Before an agent starts a costly batch of subagents or a workflow, a Token burn card shows its context, the
+  5-hour window and a rough cost, and waits for Allow, Allow this turn, Allow this session or Don't spawn. A
+  single subagent with room in the window runs without asking. Tune it with the `tokengate:*` settings.
+
 - **Setup → Skills** shows a selected skill's SKILL.md in its side panel: the description under the name for
   every skill, then the file itself, read from the copy **Open SKILL.md** opens. A relative link in it opens its
   file in Code.
@@ -116,10 +120,15 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
-- On a Claude Team plan the weekly usage gauge shows the plan's weekly limit (the model-scoped one, such as Fable's)
-  instead of "—", and a running Team agent no longer blanks it.
+- A held card that pops up over the cockpit, such as an Antigravity agent's question, is headed by its own title
+  instead of "Low RAM".
+- On a Claude Team plan the app bar no longer shows Fable's weekly share as your weekly usage ("wk 0%" however much
+  you used). Anthropic does not report a Team seat's all-models week, so a Team seat shows its 5-hour window only.
 - On macOS, the Claude usage in the app bar and on the Usage surface is read fresh from Anthropic for your `/login`
   account, as on Windows, instead of from Claude Code's own saved copy, which could be hours old.
+- On macOS, a Claude account added with a token stays signed in after arcterm restarts. Before, its token was lost on
+  every restart and new agents quietly ran on your `/login` account; an account whose token is gone now says so in
+  **Settings → Claude account**.
 - On macOS, a right-click or double-click on a sidebar row, a file in Code's tree, the agent header or a worker on a
   lead card no longer selects a word of its text. The rename and new-file boxes still select as before.
 - On macOS, folding into Sprout or floating from a maximized window no longer shows the window jumping to an old size

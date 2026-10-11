@@ -5,7 +5,7 @@ import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { AskRow } from "./channelsprimitives";
 
-// A held command's card (`wsh memgate`'s Low RAM) above the agent's terminal. The terminal shows only the shell
+// A held command's card (the Token burn card, an Antigravity question) above the agent's terminal. The terminal shows only the shell
 // command waiting, so without this the card could be answered only from the Cockpit or Jarvis.
 export function HeldAskBar({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
     if (agent.state !== "asking" || !agent.ask?.hold) {
