@@ -5,6 +5,7 @@ import { buildTree, visibleRows } from "@/app/view/code/codetree";
 import { describe, expect, it } from "vitest";
 import {
     clickRow,
+    collapseAll,
     dragPaths,
     EMPTY_RAIL_TREE,
     moveCursorTo,
@@ -209,6 +210,26 @@ describe("revealRow", () => {
 
     it("does not add a folder that is already open", () => {
         expect(revealRow(state({ expanded: ["src"] }), "src/util.ts").expanded).toEqual(["src"]);
+    });
+});
+
+describe("collapseAll", () => {
+    it("closes every folder and moves the cursor to the top-level row that held it", () => {
+        const s = state({ expanded: ["docs", "src", "src/app"], selected: ["src/app/main.ts", "src/util.ts"] });
+        expect(collapseAll({ ...s, cursor: "src/app/main.ts" })).toEqual({
+            expanded: [],
+            selected: ["src"],
+            anchor: "src",
+            cursor: "src",
+        });
+    });
+
+    it("keeps a cursor already at the top", () => {
+        expect(collapseAll(state({ expanded: ["src"], cursor: "README.md" })).cursor).toBe("README.md");
+    });
+
+    it("clears a selection with no cursor to keep", () => {
+        expect(collapseAll(state({ expanded: ["src"], selected: ["src/util.ts"] }))).toEqual(EMPTY_RAIL_TREE);
     });
 });
 

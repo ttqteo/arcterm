@@ -981,6 +981,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     <RailStats
                         stats={planRailStats(railInput)}
                         canAttach={agent.blockId != null}
+                        hold={shown === "file"}
                         onOpen={openSection}
                         onAttach={() => {
                             if (agent.blockId) {
@@ -992,7 +993,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             }
             body={
                 shown === "file" && fileRef != null ? (
-                    <FileTab model={model} agent={agent} file={panel.file} />
+                    <FileTab model={model} agent={agent} file={panel.file} cwd={railState?.cwd ?? null} />
                 ) : shown === "tree" && railState?.cwd != null ? (
                     // keyed by agent and cwd: the pane's reload bookkeeping (railtreepane.tsx) belongs to one of each
                     <RailTreePane

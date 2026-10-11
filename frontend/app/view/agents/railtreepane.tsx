@@ -8,6 +8,7 @@
 // the surface changes. The files pinned in Code for this folder list above the tree, and pin from here too: one list
 // (codepins.ts), so a pin on either side shows on the other.
 
+import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { FileIcon } from "@/app/element/fileicon";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
@@ -16,16 +17,18 @@ import { pinsFor } from "@/app/view/code/codepins";
 import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { visibleRows, type TreeRow } from "@/app/view/code/codetree";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
+import { revealInList } from "@/app/view/code/treescroll";
 import { joinRepoPath, repoBasename } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, Pin, PinOff, RefreshCw, X } from "lucide-react";
-import { useEffect, useMemo, useRef, type MouseEvent } from "react";
-import { openFileInPanel } from "./agentrailstore";
+import { ChevronDown, ChevronRight, ChevronsDownUp, LocateFixed, Pin, PinOff, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { openFileInPanel, railPanelsAtom } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { encodePathsDrag, setDraggedPathsCount } from "./pathdrop";
 import {
     clickRow,
+    collapseAll,
     dragPaths,
     moveCursorTo,
     revealRow,
@@ -55,7 +58,7 @@ const KEYS: Record<string, TreeKey> = {
 const BTN =
     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] border border-edge-mid bg-transparent px-2 text-[11.5px] font-medium text-secondary hover:border-edge-strong";
 const ICON_BTN =
-    "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary";
+    "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary disabled:cursor-default disabled:text-edge-strong disabled:hover:bg-transparent";
 
 function clickMod(ev: MouseEvent): ClickMod {
     return ev.shiftKey ? "range" : ev.ctrlKey || ev.metaKey ? "toggle" : "none";
@@ -77,7 +80,13 @@ export function RailTreePane({
     const stateAtom = railTreeStateAtom(agentId);
     const state = useAtomValue(stateAtom);
     const pinned = pinsFor(useAtomValue(codePinsAtom), cwd);
+    // the file the File tab holds, when it is in this tree: what Locate finds
+    const shownFile = useAtomValue(railPanelsAtom)[agentId]?.file.current;
+    const shownRel = shownFile != null && isUnderRoot(cwd, shownFile.abs) ? toRel(cwd, shownFile.abs) : null;
+    // bumped by Locate, so the tree scrolls to the file even when its cursor was on it already
+    const [locate, setLocate] = useState(0);
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
+    const treeRef = useRef<HTMLDivElement>(null);
     const seen = useRef<TreeReloadObservation | null>(null);
 
     // The pane only exists while the Files tab shows, so mounting is the tab being shown, and a later change of the
@@ -100,12 +109,12 @@ export function RailTreePane({
         fireAndForget(() => listIgnoredDirs(cwd, state.expanded));
     }, [cwd, state.expanded, listing, listed]);
 
-    // the keys move the cursor, which may be off-screen
+    // the keys move the cursor, which may be off-screen; a pinned file or Locate jumps it, to the middle (treescroll.ts)
     useEffect(() => {
         if (state.cursor != null) {
-            rowRefs.current.get(state.cursor)?.scrollIntoView({ block: "nearest" });
+            revealInList(treeRef.current, rowRefs.current.get(state.cursor));
         }
-    }, [state.cursor]);
+    }, [state.cursor, locate]);
 
     // A handler reads the state from the store, not from this render: a click and the drag or key right after it can
     // beat a re-render. The rows are recomputed from it, since a plain click on a directory flips `expanded` itself.
@@ -118,6 +127,12 @@ export function RailTreePane({
     const openPinned = (rel: string) => {
         globalStore.set(stateAtom, revealRow(globalStore.get(stateAtom), rel));
         openFile(rel);
+    };
+    const locateShown = () => {
+        if (shownRel != null) {
+            globalStore.set(stateAtom, revealRow(globalStore.get(stateAtom), shownRel));
+            setLocate((n) => n + 1);
+        }
     };
 
     const onKeyDown = (ev: React.KeyboardEvent) => {
@@ -277,6 +292,7 @@ export function RailTreePane({
                     />
                 ) : null}
                 <div
+                    ref={treeRef}
                     role="tree"
                     aria-label="Worktree files"
                     aria-multiselectable
@@ -298,6 +314,27 @@ export function RailTreePane({
                 <span title={cwd} className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink-hi">
                     {repoBasename(cwd)}
                 </span>
+                <button
+                    type="button"
+                    data-rail-tree-locate
+                    aria-label="Locate the open file"
+                    title="Locate the File tab's file in the tree"
+                    disabled={shownRel == null}
+                    onClick={locateShown}
+                    className={ICON_BTN}
+                >
+                    <LocateFixed size={13} aria-hidden />
+                </button>
+                <button
+                    type="button"
+                    data-rail-tree-collapse
+                    aria-label="Collapse all folders"
+                    title="Collapse all folders"
+                    onClick={() => globalStore.set(stateAtom, collapseAll(globalStore.get(stateAtom)))}
+                    className={ICON_BTN}
+                >
+                    <ChevronsDownUp size={13} aria-hidden />
+                </button>
                 <button
                     type="button"
                     data-rail-tree-refresh

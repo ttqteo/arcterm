@@ -36,6 +36,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - An **HTML file** opens as the page itself in **Code** and the agent panel's file tab, with **Source** one toggle
   away: images, styles and scripts beside it load, so an exported slide deck shows and pages through as it would in a
   browser. It shows the saved file, and a page too big to open as text still previews.
+- **Locate** and **Collapse All** at the top of Code's file tree and of the agent panel's Files tab. Locate opens
+  the folders down to the file you are reading and puts it under the cursor, in the middle of the list (IntelliJ's
+  Select Opened File); Collapse All closes every folder.
+- The agent panel's file tab has a **Pin** button, as Code's path bar does: it pins the file in the agent's folder, to
+  the same Pinned list the Files tab and Code show.
 
 ### Changed
 
@@ -97,6 +102,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
   outside Float; it asks first, like ⌘W.
 - Search's **Files** scope (⌘P) finds a file an agent created after the project's file list was loaded: each time it
   opens, it reads the list again, and the Code tree picks up the new file too.
+- A file reached by a jump (**Open in Code**, a pinned file, a search result) lands in the middle of the file tree,
+  not on its bottom edge. The arrow keys still scroll a row at a time.
+- The agent panel's file tab shows a long file name in full when the panel has room, instead of cutting it at a fixed
+  width; a narrow panel cuts the name, never the counts beside it.
 
 ## 0.15.9 — 2026-10-11
 

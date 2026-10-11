@@ -71,7 +71,9 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
             aria-label="Agent panel"
             data-owns-keys
             onKeyDown={onKeyDown}
-            className="flex items-stretch"
+            // on File the tab is as wide as its name, and the strip gives way only when the panel runs out of room
+            // (RailStats holds its width there), cutting the name rather than the counts
+            className={cn("flex items-stretch", shown === "file" && "min-w-0")}
         >
             <button
                 type="button"
@@ -103,10 +105,7 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
                             closeRailFile(agentId);
                         }
                     }}
-                    className={cn(
-                        "ml-0.5 flex min-w-0 max-w-[190px] items-center border-b-2",
-                        shown === "file" ? TAB_ON : TAB_OFF
-                    )}
+                    className={cn("ml-0.5 flex min-w-0 items-center border-b-2", shown === "file" ? TAB_ON : TAB_OFF)}
                 >
                     <button
                         type="button"
@@ -168,14 +167,17 @@ function statTitle(s: AgentRailStat, canAttach: boolean): string {
 // RailStats counts the agent's lists after the tabs, one icon each in a fixed order, only those a click acts on: a count
 // opens its section, or closes it when it is open on screen (railStatClick); an empty Uploads attaches (inert, with aria-disabled, where there is no terminal to attach to; not
 // disabled: a disabled button shows no tooltip). An empty list has no icon.
+// `hold`: on File, where the file tab's name gives way first (RailTabStrip), the counts keep their width.
 export function RailStats({
     stats,
     canAttach,
+    hold,
     onOpen,
     onAttach,
 }: {
     stats: AgentRailStat[];
     canAttach: boolean;
+    hold?: boolean;
     onOpen: (id: AgentRailStatId) => void;
     onAttach: () => void;
 }) {
@@ -187,7 +189,7 @@ export function RailStats({
             role="group"
             aria-label="Agent counts"
             data-owns-keys
-            className="ml-1 flex min-w-0 items-center overflow-hidden"
+            className={cn("ml-1 flex min-w-0 items-center overflow-hidden", hold && "shrink-0")}
         >
             {stats.map((s) => {
                 const action = railStatAction(s);

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { ancestorsOf, buildTree, dirsToList, lazyDirs, visibleRows } from "./codetree";
+import { ancestorsOf, buildTree, dirsToList, lazyDirs, topEntry, visibleRows } from "./codetree";
 
 const PATHS = ["README.md", "src/app/main.ts", "src/app/util.ts", "src/lib.ts", "docs/a/b/c.md"];
 
@@ -63,6 +63,17 @@ describe("ancestorsOf", () => {
 
     it("returns nothing for a root-level file", () => {
         expect(ancestorsOf("README.md")).toEqual([]);
+    });
+});
+
+describe("topEntry", () => {
+    it("names the top-level directory a path sits under", () => {
+        expect(topEntry("docs/a/b/c.md")).toBe("docs");
+        expect(topEntry("docs")).toBe("docs");
+    });
+
+    it("is the path itself for a root-level file", () => {
+        expect(topEntry("README.md")).toBe("README.md");
     });
 });
 

@@ -6,7 +6,7 @@
 // (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md). Every path is repo-relative with forward slashes,
 // as codetree.ts's rows name them. Pure: no React, no Wave runtime; every function returns a new state.
 
-import type { TreeNode, TreeRow } from "@/app/view/code/codetree";
+import { topEntry, type TreeNode, type TreeRow } from "@/app/view/code/codetree";
 
 export interface RailTreeState {
     expanded: string[];
@@ -63,6 +63,12 @@ export function revealRow(s: RailTreeState, path: string): RailTreeState {
         }
     }
     return { ...moveCursorTo(s, path), expanded };
+}
+
+// Collapse All: every folder closes, and the cursor climbs to the top-level row that held it, the one place it still shows
+export function collapseAll(s: RailTreeState): RailTreeState {
+    const closed = { ...s, expanded: [] };
+    return s.cursor == null ? { ...closed, selected: [], anchor: null } : moveCursorTo(closed, topEntry(s.cursor));
 }
 
 // What dragging `path` carries: the visible selected rows, in row order, when `path` is one of them; otherwise `path`

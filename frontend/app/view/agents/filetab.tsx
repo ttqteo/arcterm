@@ -9,10 +9,12 @@
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { isHtmlPath, isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
+import { isPinned } from "@/app/view/code/codepins";
+import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, ChevronLeft, ChevronRight, Copy, FileCode2, GitCompare, WrapText } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
@@ -24,7 +26,7 @@ import {
     railFileForward,
     railMdModeAtom,
 } from "./agentrailstore";
-import { currentFileView, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
+import { currentFileView, fileLabel, filePinTarget, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { savedScroll, saveScroll } from "./filescroll";
@@ -58,13 +60,25 @@ const ICON_BTN =
 const BTN =
     "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] border border-edge-mid bg-transparent px-2 text-[11.5px] font-medium text-secondary hover:border-edge-strong";
 
-export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent: AgentVM; file: FileHistory }) {
+// `cwd`: the agent's folder, whose pins (Code's, codepins.ts) the Pin toggle sets, as the Files tab beside it lists them
+export function FileTab({
+    model,
+    agent,
+    file,
+    cwd,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    file: FileHistory;
+    cwd: string | null;
+}) {
     const agentId = agent.id;
     const ref = file.current;
     const [state, setState] = useState<PanelFile>({ kind: "loading" });
     const [mdMode, setMdMode] = useAtom(railMdModeAtom);
     const [diffOn, setDiffOn] = useAtom(railDiffOnAtom);
     const drafts = useAtomValue(mdCommentAtom(agentId));
+    const pins = useAtomValue(codePinsAtom);
     const [following, setFollowing] = useState(!!ref?.live);
     const [copied, setCopied] = useState(false);
     const followingRef = useRef(following);
@@ -138,6 +152,8 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     const diffable = view === "diff" && (state.kind === "text" || state.kind === "missing");
     const { dir, name } = fileLabel(ref);
     const history = file.back.length > 0 || file.forward.length > 0;
+    const pin = filePinTarget(ref, cwd);
+    const pinned = pin != null && isPinned(pins, pin.folder, pin.rel);
     const openCode = () => fireAndForget(() => openRefInCode(model, ref));
     const openWholeDiff = (rel: string) => {
         globalStore.set(model.focusIdAtom, agentId);
@@ -395,6 +411,19 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                             className={cn("h-1.5 w-1.5 rounded-full", following ? "pulse-dot bg-working" : "bg-muted")}
                         />
                         Live
+                    </button>
+                ) : null}
+                {pin != null ? (
+                    <button
+                        type="button"
+                        data-file-pin
+                        aria-pressed={pinned}
+                        title={pinned ? "Unpin this file" : "Pin this file to the top of Files, here and in Code"}
+                        onClick={() => toggleCodePinIn(pin.folder, pin.rel)}
+                        className={cn(BTN, pinned && "border-accent/40 text-accent-soft hover:border-accent/60")}
+                    >
+                        <Pin size={11} aria-hidden />
+                        {pinned ? "Pinned" : "Pin"}
                     </button>
                 ) : null}
                 {diff != null ? (

@@ -117,3 +117,10 @@ export function ancestorsOf(path: string): string[] {
     }
     return out;
 }
+
+// the top-level entry `path` sits under, or `path` itself at the top: the row a cursor climbs to when every directory
+// closes (Collapse All)
+export function topEntry(path: string): string {
+    const cut = path.indexOf("/");
+    return cut < 0 ? path : path.slice(0, cut);
+}

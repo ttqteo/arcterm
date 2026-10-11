@@ -88,7 +88,7 @@ import {
     startCreate,
     type CodeProject,
 } from "./codestore";
-import { CodeTreePane } from "./codetreepane";
+import { CodeTreePane, CodeTreeTools } from "./codetreepane";
 
 export function CodeSurface({ model }: { model: AgentsViewModel }) {
     const registry = useAtomValue(projectsAtom);
@@ -766,6 +766,7 @@ function CodePanes({ model }: { model: AgentsViewModel }) {
                             </button>
                         ))}
                     </div>
+                    {mode === "files" ? <CodeTreeTools /> : null}
                     <button
                         ref={collapseRef}
                         type="button"

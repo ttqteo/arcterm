@@ -224,7 +224,8 @@ Cây file của thư mục làm việc (worktree) của agent, lấy từ git: f
 
 - **Chọn:** bấm một dòng (bấm thư mục thì mở/đóng nó), `Ctrl`+bấm để thêm/bớt, `Shift`+bấm để chọn cả đoạn. `↑`/`↓` di chuyển, `←`/`→` đóng/mở thư mục, `Enter` mở thư mục hoặc mở file ở tab File; bấm đúp một file cũng mở nó.
 - **Kéo vào terminal:** kéo file hoặc thư mục (kéo một dòng đang chọn thì kéo cả vùng chọn) thả lên terminal; đường dẫn được gõ vào prompt, chưa nhấn Enter. Trên terminal của agent nó thành `@src/util.ts`, thư mục là `@src/app/`, đường dẫn có khoảng trắng là `@"docs/my notes.md"`, tính tương đối theo thư mục của agent nhận. Trên terminal thường thì không có `@`.
-- **Ghim:** file đã ghim ở Code cho đúng thư mục này hiện trong mục **Pinned** trên cây (agent trong worktree thấy pin của worktree đó, như khi mở worktree ở Code). Bấm một file ghim thì nó mở ở tab File và cây mở tới chỗ của nó; kéo vào terminal được như một dòng của cây; `×` hoặc chuột phải → **Unpin** để bỏ ghim. Chuột phải một file trong cây → **Pin**/**Unpin**. Hai bên dùng chung một danh sách, nên ghim ở đâu thì bên kia cũng thấy ngay.
+- **Ghim:** file đã ghim ở Code cho đúng thư mục này hiện trong mục **Pinned** trên cây (agent trong worktree thấy pin của worktree đó, như khi mở worktree ở Code). Bấm một file ghim thì nó mở ở tab File và cây mở tới chỗ của nó; kéo vào terminal được như một dòng của cây; `×` hoặc chuột phải → **Unpin** để bỏ ghim. Chuột phải một file trong cây → **Pin**/**Unpin**, hoặc bấm **Pin** ở đầu tab File. Hai bên dùng chung một danh sách, nên ghim ở đâu thì bên kia cũng thấy ngay.
+- **Locate / Collapse All:** hai nút ở đầu tab, cạnh **Refresh**. **Locate** mở cây tới file đang mở ở tab File, đặt con trỏ lên nó và cuộn nó vào giữa (như Select Opened File của IntelliJ); **Collapse All** gập mọi thư mục.
 
 Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent khi bạn đổi agent hay đổi surface. Tab Files mở rộng bằng Overview; kéo mép rail để đổi, độ rộng đó được nhớ riêng, không ảnh hưởng tab File.
 
@@ -235,7 +236,7 @@ Mở khi bạn bấm một file trong **Files changed**, một output trong **Ba
 - File HTML: **Preview** (chính trang đó, kèm ảnh và CSS cạnh nó) / **Source**.
 - File markdown: **Preview** / **Source**. Bôi chọn chữ rồi nhấn `c` (hoặc bấm `+` cạnh một khối) để viết comment; khay comment gửi tất cả cho agent trong một tin nhắn (`Ctrl+Enter`) hoặc sao chép.
 - File mở từ **Files changed**: thêm **Diff**, và nút **Open in Diff**.
-- **Wrap** (bật/tắt xuống dòng), **Live** (output của task nền: bám theo đuôi khi nó dài ra), **Open in Code**.
+- **Wrap** (bật/tắt xuống dòng), **Live** (output của task nền: bám theo đuôi khi nó dài ra), **Pin** (ghim file vào mục **Pinned** của tab Files và của Code; chỉ có khi file nằm trong thư mục của agent), **Open in Code**.
 
 Tab File rộng hơn Overview; kéo mép của rail (**Resize panel**) để đổi độ rộng. `Esc` đóng file (hoặc hủy comment đang viết). Phím `←`/`→`/`Home`/`End` chuyển tab khi thanh tab đang focus.
 

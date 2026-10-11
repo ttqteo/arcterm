@@ -22,9 +22,11 @@ import { useAtomValue } from "jotai";
 import {
     ChevronDown,
     ChevronRight,
+    ChevronsDownUp,
     Columns2,
     FilePlus,
     FolderPlus,
+    LocateFixed,
     Pencil,
     Pin,
     PinOff,
@@ -65,6 +67,8 @@ import {
     toggleDir,
 } from "./codestore";
 import type { TreeRow } from "./codetree";
+import { codeLocateAtom, collapseAllDirs, locateOpenFile } from "./codetreeactions";
+import { revealInList } from "./treescroll";
 
 export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     void model;
@@ -82,6 +86,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     const expanded = useAtomValue(codeExpandedAtom);
     const ignoredListed = useAtomValue(codeIgnoredListedAtom);
     const pins = useAtomValue(codePinsAtom);
+    const locate = useAtomValue(codeLocateAtom);
     const pinned = project == null ? [] : pinsFor(pins, project.path);
     const openFile = file.kind === "none" ? null : file.path;
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -107,12 +112,12 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
         edit?.kind === "create" && edit.dir !== "" ? (rows.find((r) => r.path === edit.dir)?.depth ?? -1) + 1 : 0;
 
     // a finder or search jump expands ancestors, which is invisible if the row it revealed is
-    // off-screen; the cursor is what makes the landing visible
+    // off-screen; the cursor is what makes the landing visible, in the middle for a jump (treescroll.ts)
     useEffect(() => {
         if (cursor != null) {
-            rowRefs.current.get(cursor)?.scrollIntoView({ block: "nearest" });
+            revealInList(treeRef.current, rowRefs.current.get(cursor));
         }
-    }, [cursor]);
+    }, [cursor, locate]);
 
     const provisionalInput =
         edit?.kind === "create" ? (
@@ -322,6 +327,40 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 {provisional >= rows.length ? provisionalInput : null}
             </div>
         </div>
+    );
+}
+
+const TOOL_BTN =
+    "flex size-6 flex-none cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent disabled:cursor-default disabled:text-edge-strong disabled:hover:bg-transparent";
+
+// the sidebar toolbar's Files buttons, beside its collapse: Locate shows the open file in the tree, Collapse All closes
+// every folder
+export function CodeTreeTools() {
+    const file = useAtomValue(codeFileAtom);
+    return (
+        <>
+            <button
+                type="button"
+                data-code-tree-locate
+                aria-label="Locate the open file"
+                title="Locate the open file in the tree"
+                disabled={file.kind === "none"}
+                onClick={locateOpenFile}
+                className={TOOL_BTN}
+            >
+                <LocateFixed size={14} strokeWidth={1.8} aria-hidden />
+            </button>
+            <button
+                type="button"
+                data-code-tree-collapse
+                aria-label="Collapse all folders"
+                title="Collapse all folders"
+                onClick={collapseAllDirs}
+                className={TOOL_BTN}
+            >
+                <ChevronsDownUp size={14} strokeWidth={1.8} aria-hidden />
+            </button>
+        </>
     );
 }
 

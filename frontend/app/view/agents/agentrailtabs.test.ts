@@ -7,6 +7,7 @@ import {
     closeFile,
     currentFileView,
     fileLabel,
+    filePinTarget,
     fileTabLabel,
     fileViews,
     goBack,
@@ -136,6 +137,25 @@ describe("the File tab", () => {
 
     it("names a file at the root by its name alone, so the File tab's header is never empty", () => {
         expect(fileLabel({ abs: "D:/repo/AGENTS.md", root: "D:/repo" })).toEqual({ dir: "", name: "AGENTS.md" });
+    });
+});
+
+describe("filePinTarget", () => {
+    it("pins under the agent's folder first, so the pin lists in its Files tab", () => {
+        expect(filePinTarget({ abs: "D:/repo/sub/x.md", root: "D:/repo/sub" }, "D:/repo")).toEqual({
+            folder: "D:/repo",
+            rel: "sub/x.md",
+        });
+    });
+
+    it("falls back to the folder the file was opened against", () => {
+        expect(filePinTarget(a, "D:/other")).toEqual({ folder: "D:/repo", rel: "src/a.ts" });
+        expect(filePinTarget(a, null)).toEqual({ folder: "D:/repo", rel: "src/a.ts" });
+    });
+
+    it("has nowhere to pin a file under neither, or a background task's output", () => {
+        expect(filePinTarget({ abs: "C:/elsewhere/x.go", root: "D:/repo" }, "D:/repo")).toBeNull();
+        expect(filePinTarget({ abs: "D:/repo/out.log", root: "D:/repo", live: true }, "D:/repo")).toBeNull();
     });
 });
 

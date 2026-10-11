@@ -50,6 +50,8 @@ Ba biểu tượng ở đầu cột chuyển giữa ba chế độ; nút ‹ thu
 
 Cây dựng từ cùng danh sách file mà ô tìm tên dùng, nên hai chỗ không bao giờ lệch nhau. Bên phải mỗi file có chữ trạng thái git: `A` thêm, `M` sửa, `D` xóa, `?` chưa theo dõi, `R` đổi tên, `C` sao chép. Thư mục đang gập mà bên trong có thay đổi thì có một chấm nhỏ ("Contains changes"). Một chấm đậm khác là "Unsaved edits": bạn đang có bản nháp chưa lưu cho file đó, kể cả khi bạn không nhìn thấy nó. Thư mục mà git bỏ qua (`.gitignore`) hiện mờ và được liệt kê khi bạn mở nó.
 
+Hai nút ở đầu cột, cạnh ‹, khi đang ở Files: **Locate the open file** mở cây tới file đang mở, đặt con trỏ lên nó và cuộn nó vào giữa (như Select Opened File của IntelliJ); **Collapse all folders** gập mọi thư mục. Một cú nhảy tới file (**Open in Code**, file ghim, ô tìm) cũng đặt dòng của nó vào giữa cây, còn `↑`/`↓` vẫn cuộn từng dòng.
+
 Cây chỉ nhận phím khi nó đang có focus (vào bằng `Alt+T`, hoặc ngay lúc mở surface). Với con trỏ trên một dòng:
 
 | Phím | Việc |

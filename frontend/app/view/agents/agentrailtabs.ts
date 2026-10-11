@@ -186,6 +186,21 @@ export function fileLabel(ref: FileRef): { dir: string; name: string } {
     return i < 0 ? { dir: "", name: shown } : { dir: shown.slice(0, i + 1), name: shown.slice(i + 1) };
 }
 
+// Where the File tab's Pin pins its file. Pins are Code's, kept per folder (codepins.ts): the agent's folder first, so the
+// pin lists in the Files tab beside it, then the folder the file was opened against. A file under neither, or a
+// background task's output (a temp file), has no Pin.
+export function filePinTarget(ref: FileRef, cwd: string | null): { folder: string; rel: string } | null {
+    if (ref.live) {
+        return null;
+    }
+    for (const root of [cwd, ref.root]) {
+        if (root != null && isUnderRoot(root, ref.abs)) {
+            return { folder: root, rel: toRel(root, ref.abs) };
+        }
+    }
+    return null;
+}
+
 // how the File tab names what it holds: the title it was opened with, else the file's name
 export function fileTabLabel(ref: FileRef): string {
     return ref.title || fileLabel(ref).name;
