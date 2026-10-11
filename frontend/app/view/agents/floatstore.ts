@@ -4,8 +4,9 @@
 // The window's sizes and their Tauri window calls: the arithmetic is floatwindow.ts, the rules windowsize.ts. Entering
 // Float keeps the window's frame to give back, turns the terminal fullscreen, lifts the minimum size and shrinks the
 // window to the last float's place; leaving gives the frame back. The window is never left pinned on top outside Float
-// and the fold. Folding (foldToSprout), from Full or Float, scales the content toward the screen's top-left corner and
-// shrinks the same window, see-through, around Sprout there; a restore gives back the size and frame it was folded from.
+// and the fold. Folding (foldToSprout), from Full or Float, scales the content toward the screen's bottom-right corner
+// and shrinks the same window, see-through, around Sprout there; a restore gives back the size and frame it was folded
+// from.
 // The pet teleports across both (teleportstore.ts): it departs from where it walks and arrives in the corner, and back.
 
 import { MOTION } from "@/app/element/motiontokens";
@@ -455,8 +456,8 @@ function clearContentMotion(): void {
     el.style.removeProperty("transform-origin");
 }
 
-/** Fold the window into Sprout, from Full or Float: the content scales toward the top-left corner of the window's
- *  screen, then the window shrinks, see-through, around Sprout there. Every fold lands in that one corner. */
+/** Fold the window into Sprout, from Full or Float: the content scales toward the bottom-right corner of the
+ *  window's screen, then the window shrinks, see-through, around Sprout there. Every fold lands in that one corner. */
 export function foldToSprout(): Promise<void> {
     return miniOps(async () => {
         const now = currentSize();

@@ -21,7 +21,7 @@ import type { TeleportRun } from "./teleportstore";
 type Sprite = ReturnType<typeof spriteFor>;
 
 function useTeleportClock(run: TeleportRun): number {
-    const [t, setT] = useState(() => performance.now() - run.at);
+    const [clock, setClock] = useState(() => ({ run, t: performance.now() - run.at }));
     useEffect(() => {
         if (run.kind === "gone") {
             return;
@@ -30,7 +30,7 @@ function useTeleportClock(run: TeleportRun): number {
         let raf = 0;
         const tick = () => {
             const now = performance.now() - run.at;
-            setT(now);
+            setClock({ run, t: now });
             if (now < tail) {
                 raf = requestAnimationFrame(tick);
             }
@@ -38,7 +38,8 @@ function useTeleportClock(run: TeleportRun): number {
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
     }, [run]);
-    return t;
+    // a run that has just replaced another (gone, then an arrival) starts from its own beginning, not the last one's t
+    return clock.run === run ? clock.t : performance.now() - run.at;
 }
 
 // scale about a point

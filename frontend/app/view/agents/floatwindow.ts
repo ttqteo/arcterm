@@ -131,13 +131,13 @@ export function miniSides(sprout: WinRect, work: WinRect): MiniSides {
     };
 }
 
-// Sprout's box on screen: where a drag left it, pulled back on screen; with no spot, a fold's, the work area's top-left
-// corner, so Sprout is always found in the same place
+// Sprout's box on screen: where a drag left it, pulled back on screen; with no spot, a fold's, the work area's
+// bottom-right corner, so Sprout is always found in the same place
 export function miniSproutRect(spot: WinRect | null, work: WinRect, scale: number): WinRect {
     const size = MINI_SPROUT_BOX * scale;
     const margin = MINI_MARGIN * scale;
-    const x = spot?.x ?? work.x + margin;
-    const y = spot?.y ?? work.y + margin;
+    const x = spot?.x ?? work.x + work.width - size - margin;
+    const y = spot?.y ?? work.y + work.height - size - margin;
     return {
         x: clamp(x, work.x, work.x + work.width - size),
         y: clamp(y, work.y, work.y + work.height - size),

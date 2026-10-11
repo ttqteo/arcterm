@@ -166,13 +166,16 @@ describe("sproutCenter", () => {
             x: viewport.width,
             y: 0,
         }));
-    // a fold: Sprout lands in the screen's top-left corner, 24px in, under the menu bar on a Mac
+    // a fold: Sprout lands in the screen's bottom-right corner, 24px in, above the Dock on a Mac
     const work = { x: 0, y: 25, width: 1440, height: 875 };
-    it("folds a full-screen window's content into Sprout in the top-left corner", () =>
+    it("folds a full-screen window's content into Sprout in the bottom-right corner", () =>
         expect(sproutCenter(miniSproutRect(null, work, 1), { x: 0, y: 25 }, 1, viewport)).toEqual({
-            x: 24 + 32,
-            y: 24 + 32,
+            x: 1440 - 24 - 32,
+            y: 875 - 24 - 32,
         }));
-    it("folds a window away from the corner into its own top-left", () =>
-        expect(sproutCenter(miniSproutRect(null, work, 1), { x: 400, y: 300 }, 1, viewport)).toEqual({ x: 0, y: 0 }));
+    it("folds a window away from the corner into its own bottom-right", () =>
+        expect(sproutCenter(miniSproutRect(null, work, 1), { x: 0, y: 25 }, 1, { width: 800, height: 500 })).toEqual({
+            x: 800,
+            y: 500,
+        }));
 });

@@ -3,6 +3,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { PET_GRID } from "./petsprite";
 import {
     BEAM_CELLS,
     DISC_CELLS,
@@ -72,13 +73,15 @@ describe("teleportFrame", () => {
         expect(teleportFrame(kind, -50)).toEqual(teleportFrame(kind, 0));
     });
     // the folded pet sits 8px (under three cells) inside its box at the window's edge: a cell further out is cut off
-    it.each(KINDS)("%s: draws no more than 2 cells left of or above the pet's grid", (kind) => {
+    it.each(KINDS)("%s: draws no more than 2 cells past the pet's grid on any side", (kind) => {
         const cells: TeleportCell[] = [...BEAM_CELLS, ...DISC_CELLS];
         for (const { t, f } of frames(kind)) {
             cells.push(...f.sparks, ...ringCells(t).back, ...ringCells(t).front);
         }
         expect(Math.min(...cells.map((c) => c.x))).toBeGreaterThanOrEqual(-2);
         expect(Math.min(...cells.map((c) => c.y))).toBeGreaterThanOrEqual(-2);
+        expect(Math.max(...cells.map((c) => c.x))).toBeLessThanOrEqual(PET_GRID + 1);
+        expect(Math.max(...cells.map((c) => c.y))).toBeLessThanOrEqual(PET_GRID + 1);
     });
     it.each(KINDS)("%s: sparks sit on whole cells", (kind) => {
         for (const { f } of frames(kind)) {

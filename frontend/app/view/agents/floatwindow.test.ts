@@ -86,10 +86,10 @@ describe("parseRect and parseRestore", () => {
 });
 
 describe("miniSproutRect", () => {
-    it("puts a Sprout with no spot, a fold's, in the top-left corner of the work area, 24px in", () => {
+    it("puts a Sprout with no spot, a fold's, in the bottom-right corner of the work area, 24px in", () => {
         expect(miniSproutRect(null, laptop, 2)).toEqual({
-            x: laptop.x + 48,
-            y: laptop.y + 48,
+            x: laptop.x + laptop.width - 128 - 48,
+            y: laptop.y + laptop.height - 128 - 48,
             width: 128,
             height: 128,
         });
