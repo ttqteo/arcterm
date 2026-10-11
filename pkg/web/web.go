@@ -23,6 +23,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/authkey"
 	"github.com/wavetermdev/waveterm/pkg/canvasserve"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/htmlserve"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/schema"
@@ -431,6 +432,8 @@ func RunWebServer(listener net.Listener) {
 	// Other routes without timeout
 	// no auth key: a board loads in an iframe, which cannot send one. the token in the path stands in for it
 	gr.PathPrefix(canvasserve.PathPrefix).Handler(canvasserve.Handler())
+	// the same for a previewed HTML page, which loads its images and styles from its own folder
+	gr.PathPrefix(htmlserve.PathPrefix).Handler(htmlserve.Handler())
 	gr.PathPrefix(schemaPrefix).Handler(http.StripPrefix(schemaPrefix, schema.GetSchemaHandler()))
 
 	handler := http.Handler(gr)

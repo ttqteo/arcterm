@@ -19,6 +19,7 @@ type WshRpcFileInterface interface {
 	FileInfoCommand(ctx context.Context, data FileData) (*FileInfo, error)
 	FileJoinCommand(ctx context.Context, paths []string) (*FileInfo, error)
 	CanvasServeCommand(ctx context.Context, designDir string) (string, error) // serves a .superpowers/design folder; returns its URL path on the web listener
+	HtmlPreviewServeCommand(ctx context.Context, path string) (string, error) // serves an HTML file's folder; returns the file's URL path on the web listener
 }
 
 type WshRpcRemoteFileInterface interface {

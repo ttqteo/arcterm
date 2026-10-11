@@ -775,6 +775,12 @@ func GitReviewPatchCommand(w *wshutil.WshRpc, data wshrpc.CommandGitReviewPatchD
 	return resp, err
 }
 
+// command "htmlpreviewserve", wshserver.HtmlPreviewServeCommand
+func HtmlPreviewServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "htmlpreviewserve", data, opts)
+	return resp, err
+}
+
 // command "jarvisctx", wshserver.JarvisCtxCommand
 func JarvisCtxCommand(w *wshutil.WshRpc, data wshrpc.CommandJarvisCtxData, opts *wshrpc.RpcOpts) (*wshrpc.CommandJarvisCtxRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandJarvisCtxRtnData](w, "jarvisctx", data, opts)

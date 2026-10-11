@@ -7,6 +7,7 @@ import {
     classifyFile,
     defaultWrap,
     hasNulByte,
+    isHtmlPath,
     isMarkdownPath,
     languageForPath,
     lineAtOffset,
@@ -122,11 +123,29 @@ describe("defaultWrap", () => {
     });
 });
 
+describe("isHtmlPath", () => {
+    it("matches .html and .htm, any case", () => {
+        expect(isHtmlPath("slides/slide.html")).toBe(true);
+        expect(isHtmlPath("INDEX.HTM")).toBe(true);
+    });
+
+    it("rejects names that only contain html", () => {
+        expect(isHtmlPath("page.html.txt")).toBe(false);
+        expect(isHtmlPath("page.xhtml5")).toBe(false);
+        expect(isHtmlPath("htmlfile")).toBe(false);
+    });
+});
+
 describe("viewModesFor", () => {
     it("offers preview to markdown and .tex, pdf only to a .tex with a built PDF", () => {
         expect(viewModesFor("README.md", false)).toEqual(["preview", "source", "diff"]);
         expect(viewModesFor("main.tex", false)).toEqual(["preview", "source", "diff"]);
         expect(viewModesFor("main.tex", true)).toEqual(["preview", "source", "diff", "pdf"]);
+    });
+
+    it("offers preview to an HTML page", () => {
+        expect(viewModesFor("slides/slide.html", false)).toEqual(["preview", "source", "diff"]);
+        expect(viewModesFor("index.htm", true)).toEqual(["preview", "source", "diff"]);
     });
 
     it("offers source and diff to any other text file, PDF or not", () => {

@@ -780,6 +780,12 @@ export class RpcApiType {
         return client.wshRpcCall("gitreviewpatch", data, opts);
     }
 
+    // command "htmlpreviewserve" [call]
+    HtmlPreviewServeCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "htmlpreviewserve", data, opts);
+        return client.wshRpcCall("htmlpreviewserve", data, opts);
+    }
+
     // command "jarvisctx" [call]
     JarvisCtxCommand(client: WshClient, data: CommandJarvisCtxData, opts?: RpcOpts): Promise<CommandJarvisCtxRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "jarvisctx", data, opts);

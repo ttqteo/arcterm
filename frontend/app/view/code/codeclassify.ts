@@ -16,6 +16,14 @@ export function isMarkdownPath(rel: string): boolean {
     return MARKDOWN_EXT.test(rel);
 }
 
+// a web page (an exported slide deck, a report) previews as the page itself, served from its folder so its
+// relative images and styles load; Source stays one toggle away
+const HTML_EXT = /\.html?$/i;
+
+export function isHtmlPath(rel: string): boolean {
+    return HTML_EXT.test(rel);
+}
+
 // application/* types that are really text. Anything else outside text/* is binary.
 const TEXTISH_MIME = new Set([
     "application/json",
@@ -87,7 +95,7 @@ export type ViewMode = "preview" | "source" | "diff" | "pdf";
 // `previewable` false: a .tex file with no title, heading or prose (a macros file, numbers.tex) has nothing for
 // Preview to draw, so it offers none and opens on Source
 export function viewModesFor(path: string, hasPdf: boolean, previewable = true): ViewMode[] {
-    if (isMarkdownPath(path)) {
+    if (isMarkdownPath(path) || isHtmlPath(path)) {
         return ["preview", "source", "diff"];
     }
     if (isTexPath(path)) {

@@ -11,6 +11,7 @@ import { openLink } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatSize, readPanelFile, type PanelFile } from "@/app/view/agents/filetabload";
+import { HtmlFrame } from "@/app/view/agents/htmlframe";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
 import { formatChordString } from "@/util/keysym";
@@ -21,7 +22,7 @@ import { ArrowLeftToLine, X } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { OUTLINE_SELECTOR, WithOutline } from "../agents/docoutlineview";
-import { isMarkdownPath, isTexPath, languageForPath } from "./codeclassify";
+import { isHtmlPath, isMarkdownPath, isTexPath, languageForPath } from "./codeclassify";
 import { splitFrontmatter } from "./codefrontmatter";
 import { isPreviewable } from "./codepreviewable";
 import { closeSide, effectiveSideMode, setSideMode, sideModesFor, type CodeSide } from "./codeside";
@@ -143,6 +144,11 @@ export function CodeSidePane({ project, side }: { project: CodeProject; side: Co
             break;
         case "binary":
         case "toolarge":
+            // a page too big to read as text still previews: the frame streams it
+            if (file.kind === "toolarge" && isHtmlPath(side.rel)) {
+                body = <HtmlFrame data-code-side-html={side.rel} path={abs} version={file.size} title={name} />;
+                break;
+            }
             body = (
                 <SurfaceEmptyState
                     title={file.kind === "binary" ? "Binary file" : "File too large to display"}
@@ -178,6 +184,8 @@ export function CodeSidePane({ project, side }: { project: CodeProject; side: Co
                         />
                     </WithOutline>
                 );
+            } else if (mode === "preview" && isHtmlPath(side.rel)) {
+                body = <HtmlFrame data-code-side-html={side.rel} path={abs} version={file.stamp} title={name} />;
             } else if (mode === "preview" && isMarkdownPath(side.rel)) {
                 const doc = splitFrontmatter(text);
                 body = (

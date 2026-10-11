@@ -230,6 +230,7 @@ Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent kh
 
 Mở khi bạn bấm một file trong **Files changed**, một output trong **Background tasks**/**Servers**, hoặc một đường dẫn trong terminal. Tab có nút Back/Forward qua các file đã mở, nút **×** đóng file, và công cụ tùy loại file:
 
+- File HTML: **Preview** (chính trang đó, kèm ảnh và CSS cạnh nó) / **Source**.
 - File markdown: **Preview** / **Source**. Bôi chọn chữ rồi nhấn `c` (hoặc bấm `+` cạnh một khối) để viết comment; khay comment gửi tất cả cho agent trong một tin nhắn (`Ctrl+Enter`) hoặc sao chép.
 - File mở từ **Files changed**: thêm **Diff**, và nút **Open in Diff**.
 - **Wrap** (bật/tắt xuống dòng), **Live** (output của task nền: bám theo đuôi khi nó dài ra), **Open in Code**.

@@ -92,6 +92,7 @@ Thanh đường dẫn phía trên trình soạn thảo cho biết file đang m�
 |---|---|---|
 | Markdown (`.md`, `.markdown`) | preview, source, diff | preview |
 | LaTeX (`.tex`) có chữ để hiện | preview, source, diff; thêm PDF khi đã có PDF build | preview |
+| HTML (`.html`, `.htm`) | preview, source, diff | preview |
 | `.tex` không có tiêu đề/đoạn văn (file macro sinh tự động) | source, diff | source |
 | Mọi file văn bản khác | source, diff | source |
 | `.pdf` | một trình xem PDF | |
@@ -100,6 +101,7 @@ Chế độ bạn chọn áp dụng cho mọi file; file nào không có chế �
 
 - **preview** của Markdown dựng tài liệu với khối thông tin front matter ở đầu, trong một cột đọc ở giữa. Liên kết tương đối trong tài liệu mở file đích ngay trong Code (kể cả neo kiểu GitHub `#L12`); liên kết ngoài mở như bình thường. Chữ đang soạn (chưa lưu) hiện ngay trong preview, nên bạn thấy đúng thứ sẽ lưu.
 - **preview** của `.tex` hiện tiêu đề và tác giả, các đề mục đánh số, đoạn văn với khóa `\cite` / `\ref` và công thức đã dựng. Bấm đúp một câu để chuyển sang **source** tại dòng đó. Chế độ **PDF** hiện PDF đã build gần nhất (từ Doc review, hoặc file PDF cạnh file chính) cùng ghi chú nó cũ bao nhiêu; Code không tự biên dịch.
+- **preview** của HTML hiện chính trang đó, như trong trình duyệt: ảnh, CSS và script nằm cạnh file đều tải, nên một deck slide xuất ra HTML (Marp chẳng hạn) hiện và chuyển trang được. Nó hiện bản đã lưu trên đĩa, không phải chữ đang soạn; file HTML quá 2 MB vẫn preview được dù không mở được ở source. Trang chỉ đọc được các file trong thư mục của nó, trừ file và thư mục bắt đầu bằng dấu chấm (`.env`, `.git`).
 - **source** là Monaco: tô màu theo ngôn ngữ, gồm cả LaTeX và BibTeX. Trình soạn thảo giữ lại con trỏ, vùng chọn, vị trí cuộn và lịch sử undo của mỗi file khi bạn đổi file hay rời surface.
 - **diff** đặt file với `HEAD`, xem [phần so sánh](#diff-của-code-và-surface-diff).
 

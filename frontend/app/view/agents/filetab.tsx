@@ -8,7 +8,7 @@
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
-import { isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
+import { isHtmlPath, isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
@@ -29,6 +29,7 @@ import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { FileTabDiff } from "./filetabdiff";
 import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
+import { HtmlFrame } from "./htmlframe";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
 import { MdDoc } from "./mddoc";
@@ -123,9 +124,11 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
         return null;
     }
     const markdown = isMarkdownPath(ref.abs);
+    const html = isHtmlPath(ref.abs);
     const diff = ref.diff;
-    const views = fileViews(markdown, diff != null);
-    const view = currentFileView(markdown, diff != null, mdMode, diffOn);
+    // a web page has a Preview too, and shares markdown's choice between Preview and Source
+    const views = fileViews(markdown || html, diff != null);
+    const view = currentFileView(markdown || html, diff != null, mdMode, diffOn);
     const preview = view === "preview";
     // a file deleted since the base still has a diff: everything removed
     const diffable = view === "diff" && (state.kind === "text" || state.kind === "missing");
@@ -183,6 +186,16 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
         );
     } else if (state.kind === "pdf") {
         body = <PdfFrame data-file-pdf={ref.abs} path={ref.abs} version={state.modtime} title={name} />;
+    } else if (html && preview && (state.kind === "text" || state.kind === "toolarge")) {
+        // the page from disk, not the text read here; one too big to read as text still streams
+        body = (
+            <HtmlFrame
+                data-file-html={ref.abs}
+                path={ref.abs}
+                version={state.kind === "text" ? state.stamp : state.size}
+                title={name}
+            />
+        );
     } else if (state.kind === "text" && preview) {
         body = <MdDoc model={model} agent={agent} fileRef={ref} text={state.text} />;
     } else if (state.kind === "text") {
@@ -316,7 +329,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                                 aria-pressed={view === m}
                                 onClick={() => {
                                     setDiffOn(m === "diff");
-                                    if (m !== "diff" && markdown) {
+                                    if (m !== "diff" && (markdown || html)) {
                                         setMdMode(m);
                                     }
                                 }}

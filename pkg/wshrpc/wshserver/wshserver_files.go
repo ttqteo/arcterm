@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/canvasserve"
+	"github.com/wavetermdev/waveterm/pkg/htmlserve"
 	"github.com/wavetermdev/waveterm/pkg/memroots"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -43,6 +44,10 @@ func (ws *WshServer) FileInfoCommand(ctx context.Context, data wshrpc.FileData) 
 
 func (ws *WshServer) CanvasServeCommand(ctx context.Context, designDir string) (string, error) {
 	return canvasserve.Register(designDir)
+}
+
+func (ws *WshServer) HtmlPreviewServeCommand(ctx context.Context, path string) (string, error) {
+	return htmlserve.Register(path)
 }
 
 func (ws *WshServer) FileWriteCommand(ctx context.Context, data wshrpc.FileData) error {

@@ -14,6 +14,7 @@
     --color-panel: rgba(48, 48, 46, 0.6);
     --color-modalbg: #30302e;
     --color-lane: #141414; /* agent-card lane fill (handoff laneBg) */
+    --color-page-canvas: #ffffff; /* a previewed web page's own canvas: browsers draw white under a page with no background */
 
     /* Text (handoff ink ramp) */
     --color-foreground: #ece9e0;

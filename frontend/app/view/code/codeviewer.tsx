@@ -14,6 +14,7 @@ import { Markdown } from "@/app/element/markdown";
 import { openLink } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { HtmlFrame } from "@/app/view/agents/htmlframe";
 import { PdfFrame } from "@/app/view/agents/pdfframe";
 import { SurfaceEmptyState } from "@/app/view/agents/surfacescaffold";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
@@ -24,7 +25,7 @@ import { useAtomValue } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
 import { useEffect, useRef, type ReactNode } from "react";
 import { OUTLINE_SELECTOR, WithOutline } from "../agents/docoutlineview";
-import { isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
+import { isHtmlPath, isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
 import { splitFrontmatter } from "./codefrontmatter";
@@ -234,6 +235,20 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                 </div>
             );
         case "toolarge":
+            // a page too big for the editor (an exported deck with its images inlined) still previews: the frame
+            // streams it
+            if (isHtmlPath(file.path)) {
+                return (
+                    <div className="flex h-full min-h-0 flex-col">
+                        <HtmlFrame
+                            data-code-html={file.path}
+                            path={project != null ? joinRepoPath(project.path, file.path) : file.path}
+                            version={file.size}
+                            title={file.path}
+                        />
+                    </div>
+                );
+            }
             return (
                 <SurfaceEmptyState
                     title="File too large to display"
@@ -297,6 +312,14 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                             />
                         </WithOutline>
                     </KeptScroll>
+                );
+            }
+            // a web page renders as itself, from the file on disk: unsaved edits show once saved
+            if (isHtmlPath(file.path) && mode === "preview") {
+                return (
+                    <div className="flex h-full min-h-0 flex-col">
+                        <HtmlFrame data-code-html={file.path} path={abs} version={file.modtime} title={file.path} />
+                    </div>
                 );
             }
             // READMEs and other prose render as documents; Source (the CodeEditor below) stays one
