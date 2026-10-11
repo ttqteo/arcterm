@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Setup → Skills** shows a selected skill's SKILL.md in its side panel: the description under the name for
+  every skill, then the file itself, read from the copy **Open SKILL.md** opens. A relative link in it opens its
+  file in Code.
+
 - A chunk of an initiative can carry a due day (`wsh effort chunk due <effort> <chunk> 2026-10-20`, or `+14d`).
   From that day it waits in Needs you, in the Brief's queue and in Sprout's list, with **Work on** to start an agent
   on what its notes say, and Sprout tells you once when it comes due. It leaves when the chunk is done, deferred or

@@ -9,7 +9,10 @@ import {
     copyDelta,
     manageLabel,
     skillFilePath,
+    skillFileSource,
     skillGroups,
+    skillLinkTarget,
+    skillPreview,
     skillRows,
     skillsSummary,
     type SkillKeep,
@@ -189,6 +192,58 @@ describe("skillFilePath", () => {
         const r = rows().find((x) => x.name === "translate")!;
         expect(skillFilePath(r, "", {})).toBe("C:\\h\\claude\\skills\\translate\\SKILL.md");
         expect(skillFilePath(r, "", { translate: "codex" })).toBe("C:\\h\\codex\\skills\\translate\\SKILL.md");
+    });
+});
+
+describe("skillFileSource", () => {
+    it("names the copy the preview reads only when there is a choice", () => {
+        const rows = skillRows(sample(), {});
+        const translate = rows.find((x) => x.name === "translate")!;
+        expect(skillFileSource(translate, {})).toBe("Claude Code");
+        expect(skillFileSource(translate, { translate: "codex" })).toBe("Codex");
+        expect(skillFileSource(rows.find((x) => x.name === "graphify")!, {})).toBeNull();
+        expect(skillFileSource(rows.find((x) => x.name === "vaulted")!, {})).toBeNull();
+    });
+});
+
+describe("skillPreview", () => {
+    const text = "---\nname: lint\ndescription: Lints the repo.\nallowed-tools: Bash\n---\n# Lint\n";
+
+    it("takes an unmanaged skill's description from its file and leaves the rest for the card", () => {
+        const lint = skillRows(sample(), {}).find((x) => x.name === "lint")!;
+        expect(skillPreview(lint, text)).toEqual({
+            description: "Lints the repo.",
+            fields: [["allowed-tools", "Bash"]],
+            body: "# Lint\n",
+        });
+    });
+
+    it("keeps the vault's description for a managed skill", () => {
+        const vaulted = skillRows(sample(), {}).find((x) => x.name === "vaulted")!;
+        expect(skillPreview(vaulted, text).description).toBe("A canonical skill.");
+    });
+
+    it("reads a file with no frontmatter as all body", () => {
+        const lint = skillRows(sample(), {}).find((x) => x.name === "lint")!;
+        expect(skillPreview(lint, "# Lint\n")).toEqual({ description: "", fields: [], body: "# Lint\n" });
+    });
+});
+
+describe("skillLinkTarget", () => {
+    beforeEach(() => setPlatform("win32"));
+    const file = "C:\\vault\\skills\\lint\\SKILL.md";
+
+    it("opens a relative link in the skill's folder", () => {
+        expect(skillLinkTarget(file, "references/rules.md#L4")).toEqual({
+            path: "C:\\vault\\skills\\lint\\references\\rules.md",
+            line: 4,
+        });
+    });
+
+    it("leaves web links, anchors and links out of the folder alone", () => {
+        expect(skillLinkTarget(file, "https://example.com")).toBeNull();
+        expect(skillLinkTarget(file, "#usage")).toBeNull();
+        expect(skillLinkTarget(file, "../other/SKILL.md")).toBeNull();
     });
 });
 

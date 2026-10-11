@@ -5,6 +5,8 @@
 // unmanaged rows from the adopt plan's per-copy moves, grouped here by name. The keep map is the
 // user's answer for skills whose copies differ in body text; adopt skips any such skill without one.
 
+import { splitFrontmatter } from "@/app/view/code/codefrontmatter";
+import { resolveDocLink } from "@/app/view/code/codelink";
 import { joinRepoPath } from "@/util/paths";
 import type { Tone } from "./setupmodel";
 
@@ -289,14 +291,49 @@ export function manageLabel(n: number): string {
     return `Manage ${plural(n, "skill")} in arcterm`;
 }
 
+function shownCopy(row: SkillRow, keep: SkillKeep): SkillCopy {
+    const kept = validKeep(keep, row.name, row.copies);
+    return row.copies.find((c) => c.runtime === kept) ?? row.copies.find((c) => c.seed) ?? row.copies[0];
+}
+
 // The SKILL.md that Open shows: the vault copy once arcterm owns it, else the kept copy, else the base copy.
 export function skillFilePath(row: SkillRow, skillsroot: string, keep: SkillKeep): string {
     if (row.kind === "managed") {
         return joinRepoPath(skillsroot, `${row.name}/${SKILL_FILE}`);
     }
-    const kept = validKeep(keep, row.name, row.copies);
-    const copy = row.copies.find((c) => c.runtime === kept) ?? row.copies.find((c) => c.seed) ?? row.copies[0];
-    return joinRepoPath(copy.path, SKILL_FILE);
+    return joinRepoPath(shownCopy(row, keep).path, SKILL_FILE);
+}
+
+// Whose copy the rail's preview reads, named only when there is more than one to choose from.
+export function skillFileSource(row: SkillRow, keep: SkillKeep): string | null {
+    return row.copies.length > 1 ? shownCopy(row, keep).label : null;
+}
+
+export interface SkillPreview {
+    description: string;
+    fields: [string, string][];
+    body: string;
+}
+
+// The rail's read of a SKILL.md: the description for its head (the vault's for a managed skill, else the file's),
+// and the frontmatter left for the card, without the name and description the head already shows.
+export function skillPreview(row: SkillRow, text: string): SkillPreview {
+    const doc = splitFrontmatter(text);
+    return {
+        description: row.description || (doc.fields.find(([k]) => k === "description")?.[1] ?? ""),
+        fields: doc.fields.filter(([k]) => k !== "name" && k !== "description"),
+        body: doc.body,
+    };
+}
+
+// A relative link in the previewed SKILL.md (references/x.md, scripts/run.sh) as a file in the skill's folder;
+// null for a web link, an anchor, or one that climbs out of the folder.
+export function skillLinkTarget(skillFile: string, href: string): { path: string; line: number | null } | null {
+    const target = resolveDocLink(SKILL_FILE, href);
+    if (target == null) {
+        return null;
+    }
+    return { path: joinRepoPath(skillFile.replace(/[\\/][^\\/]*$/, ""), target.rel), line: target.line };
 }
 
 // What one copy carries against the base copy, for the rail's "What differs" list.
@@ -323,6 +360,6 @@ export function skillNote(row: SkillRow): string {
         case "only":
             return `Kept in ${row.copies[0].label}'s skills folder only. Managing it in arcterm also writes it into the other harnesses.`;
         case "managed":
-            return row.description || "One copy in the vault, written into every harness.";
+            return "One copy in the vault, written into every harness.";
     }
 }

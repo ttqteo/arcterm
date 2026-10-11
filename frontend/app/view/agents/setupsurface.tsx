@@ -6,7 +6,10 @@
 // The Skills tab views every harness's skills and moves them into the vault; it never creates or edits
 // one. Logic lives in setupmodel.ts and skillsmatrix.ts, the RPCs and the atoms in setupstore.ts.
 
+import { openFileInCode } from "@/app/cockpit/openfilestore";
+import { Markdown } from "@/app/element/markdown";
 import { globalStore } from "@/app/store/jotaiStore";
+import { FrontmatterCard } from "@/app/view/code/frontmattercard";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -55,13 +58,18 @@ import {
     copyDelta,
     manageLabel,
     skillFilePath,
+    skillFileSource,
     skillGroups,
+    skillLinkTarget,
     skillNote,
+    skillPreview,
     skillsSummary,
     type SkillCell,
     type SkillGroup,
+    type SkillPreview,
     type SkillRow,
 } from "./skillsmatrix";
+import { useFileText } from "./usefiletext";
 
 const SECTION_HEAD = cn(REGION_LABEL, "text-muted");
 const BTN_SECONDARY =
@@ -619,62 +627,106 @@ function KeepChoice({ row }: { row: SkillRow }) {
     );
 }
 
+// The kept SKILL.md read as a document under the rail's facts, so a skill can be read without leaving Setup.
+// Relative links open their file in Code; the frontmatter card leaves out what the rail's head already shows.
+function SkillFilePreview({ model, path, preview }: { model: AgentsViewModel; path: string; preview: SkillPreview }) {
+    return (
+        <Markdown
+            text={preview.body}
+            header={preview.fields.length > 0 ? <FrontmatterCard fields={preview.fields} /> : null}
+            scrollable={false}
+            className="markdown-doc markdown-rail"
+            contentClassName="p-0"
+            fontSizeOverride={14}
+            resolveOpts={{ connName: "local", baseDir: path.replace(/[\\/][^\\/]*$/, "") }}
+            onClickLink={(href) => {
+                const target = skillLinkTarget(path, href);
+                if (target == null) {
+                    return false;
+                }
+                fireAndForget(() => openFileInCode(model, target.path, false, target.line ?? undefined));
+                return true;
+            }}
+        />
+    );
+}
+
 function SkillRail({ model, row, skillsroot }: { model: AgentsViewModel; row: SkillRow; skillsroot: string }) {
     const keep = useAtomValue(setupSkillKeepAtom);
     const busy = useAtomValue(setupBusyAtom);
+    const path = skillFilePath(row, skillsroot, keep);
+    const [file] = useFileText(path);
+    const preview = file.status === "ok" ? skillPreview(row, file.text) : null;
+    const description = preview?.description ?? row.description;
+    const source = skillFileSource(row, keep);
     const differs = row.kind === "decide" || row.kind === "differs";
     const card = "flex flex-col gap-[5px] rounded border border-border px-2.5 py-[9px]";
     return (
         <aside
             aria-label="Skill detail"
-            className="flex w-[360px] flex-none flex-col gap-3.5 overflow-y-auto border-l border-border bg-surface p-4"
+            className="flex w-[440px] flex-none flex-col border-l border-border bg-surface"
         >
-            <div className="flex flex-col gap-1.5">
-                <div className="text-[14px] font-medium text-primary">{row.name}</div>
-                <div className="text-[12.5px] leading-[1.5] text-ink-mid">{skillNote(row)}</div>
-            </div>
-            <div className="flex flex-col gap-2">
-                <div className={SECTION_HEAD}>{differs ? "What differs" : "Where it lives"}</div>
-                {row.kind === "managed" ? (
-                    <>
-                        <div className={card}>
-                            <span className="text-[12.5px] font-semibold text-secondary">arcterm vault</span>
-                            <span className="truncate text-[10.5px] text-muted">
-                                {skillFilePath(row, skillsroot, keep)}
-                            </span>
-                        </div>
-                        {Object.entries(row.deltas).map(([runtime, over]) => (
-                            <div key={runtime} className={card}>
-                                <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
-                                    <HarnessMark runtime={runtime} />
-                                    {runtimeMeta(runtime).label}
-                                </span>
-                                <span className="text-[10.5px] text-muted">Overrides {over.join(", ")}</span>
+            <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
+                <div className="flex flex-col gap-1.5">
+                    <div className="text-[14px] font-medium text-primary">{row.name}</div>
+                    {description ? <div className="text-[13px] leading-[1.5] text-secondary">{description}</div> : null}
+                    <div className="text-[12.5px] leading-[1.5] text-muted">{skillNote(row)}</div>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <div className={SECTION_HEAD}>{differs ? "What differs" : "Where it lives"}</div>
+                    {row.kind === "managed" ? (
+                        <>
+                            <div className={card}>
+                                <span className="text-[12.5px] font-semibold text-secondary">arcterm vault</span>
+                                <span className="truncate text-[10.5px] text-muted">{path}</span>
                             </div>
-                        ))}
-                    </>
-                ) : (
-                    row.copies.map((c) => (
-                        <div key={c.runtime} className={card}>
-                            <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
-                                <HarnessMark runtime={c.runtime} />
-                                {c.label}
-                                {differs ? (
-                                    <span className="ml-auto text-[11px] font-normal text-muted">{copyDelta(c)}</span>
-                                ) : null}
-                            </span>
-                            <PathTail path={c.path} />
+                            {Object.entries(row.deltas).map(([runtime, over]) => (
+                                <div key={runtime} className={card}>
+                                    <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
+                                        <HarnessMark runtime={runtime} />
+                                        {runtimeMeta(runtime).label}
+                                    </span>
+                                    <span className="text-[10.5px] text-muted">Overrides {over.join(", ")}</span>
+                                </div>
+                            ))}
+                        </>
+                    ) : (
+                        row.copies.map((c) => (
+                            <div key={c.runtime} className={card}>
+                                <span className="flex items-center gap-2 text-[12.5px] font-semibold text-secondary">
+                                    <HarnessMark runtime={c.runtime} />
+                                    {c.label}
+                                    {differs ? (
+                                        <span className="ml-auto text-[11px] font-normal text-muted">
+                                            {copyDelta(c)}
+                                        </span>
+                                    ) : null}
+                                </span>
+                                <PathTail path={c.path} />
+                            </div>
+                        ))
+                    )}
+                </div>
+                {row.needsKeep ? <KeepChoice row={row} /> : null}
+                <div className="flex flex-col gap-2">
+                    <div className="flex items-baseline gap-2">
+                        <span className={SECTION_HEAD}>SKILL.md</span>
+                        {source != null ? <span className="text-[11px] text-muted">{source}'s copy</span> : null}
+                    </div>
+                    {preview != null ? (
+                        <SkillFilePreview model={model} path={path} preview={preview} />
+                    ) : (
+                        <div className="text-[12.5px] text-muted">
+                            {file.status === "loading" ? "Reading…" : "SKILL.md could not be read."}
                         </div>
-                    ))
-                )}
+                    )}
+                </div>
             </div>
-            {row.needsKeep ? <KeepChoice row={row} /> : null}
-            <div className="flex-1" />
-            <div className="flex gap-2">
+            <div className="flex flex-none gap-2 border-t border-border px-4 py-3">
                 <button
                     type="button"
                     disabled={busy}
-                    onClick={() => fireAndForget(() => openSkillFile(model, skillFilePath(row, skillsroot, keep)))}
+                    onClick={() => fireAndForget(() => openSkillFile(model, path))}
                     className={BTN_SECONDARY}
                 >
                     Open SKILL.md
