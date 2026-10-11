@@ -974,6 +974,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             ariaLabel="Agent details"
             sections={sections}
             width={shown === "overview" ? RAIL_OVERVIEW_PX : wide.width}
+            widthKey={shown}
             tabs={
                 <>
                     <RailTabStrip agentId={agent.id} panel={panel} hasTree={hasTree} />

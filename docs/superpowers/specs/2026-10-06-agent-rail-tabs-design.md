@@ -100,8 +100,9 @@ Out of scope:
    - The width defaults to 520px and is dragged on the panel's left edge.
    - It is clamped between 360px and whatever leaves the centre `stage-min` (640px), and persisted as
      `agent.rail.wideWidth`.
-   - The width change between Overview and a wide tab is not animated: one layout commit is one PTY resize for the
-     centre's terminal.
+   - The width change between Overview and a wide tab slides, as opening and collapsing do (changed 2026-10-11; it
+     first snapped, for one PTY resize). The centre's terminal still resizes once: `termwrap.ts` debounces its refit
+     until the width stops. A drag of the edge follows at once (`railslide.ts`).
 8. **Persistence.**
    - The selected tab is per agent, so returning to an agent finds the tab you left it on. Overview is the default.
      Selections live in a jotai atom keyed by agent id, and the last choice is persisted (`agent.rail.tab`) as the

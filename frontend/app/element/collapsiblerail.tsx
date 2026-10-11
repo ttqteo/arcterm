@@ -21,6 +21,7 @@ import {
     toggleSection,
     type RailSectionHeader,
 } from "./railsections";
+import { railSlides, type RailMode } from "./railslide";
 import { Tooltip } from "./tooltip";
 
 export interface RailSection {
@@ -134,6 +135,7 @@ export function CollapsibleRail({
     forceCollapsed,
     strip,
     width,
+    widthKey,
     tabs,
     body,
     stripTabs,
@@ -160,6 +162,9 @@ export function CollapsibleRail({
     strip?: { content: ReactNode; title: string };
     // the open width; 300 when absent
     width?: number;
+    // what the open width belongs to (a tab): a change of key slides to the new width, a width changed under the same
+    // key (a drag) follows at once (railslide.ts)
+    widthKey?: string;
     // a tab strip in place of the bare collapse row: the 44px band and rule of a titled header, the collapse chevron
     // at its end
     tabs?: ReactNode;
@@ -172,12 +177,10 @@ export function CollapsibleRail({
     const [open, setOpen] = useAtom(openAtom);
     const collapsedWidth = hideWhenCollapsed ? 0 : RAIL_COLLAPSED_PX;
     const railWidth = forceCollapsed ? 0 : open ? (width ?? RAIL_EXPANDED_PX) : collapsedWidth;
-    // only opening and collapsing slide: a width change while open (Overview to a wide tab) is one layout commit, so
-    // the centre's terminal sees one PTY resize instead of one per animation frame
-    const prevMode = useRef({ open, forceCollapsed });
-    const slide = prevMode.current.open !== open || prevMode.current.forceCollapsed !== forceCollapsed;
+    const prevMode = useRef<RailMode>({ open, forceCollapsed, widthKey });
+    const slide = railSlides(prevMode.current, { open, forceCollapsed, widthKey });
     useEffect(() => {
-        prevMode.current = { open, forceCollapsed };
+        prevMode.current = { open, forceCollapsed, widthKey };
     });
     const headed = sections.some((s) => s.header != null);
 
