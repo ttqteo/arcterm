@@ -328,6 +328,7 @@ declare global {
         label: string;
         createdts: number;
         email?: string;
+        notoken?: boolean;
     };
 
     // wshrpc.ClaudeProjectData

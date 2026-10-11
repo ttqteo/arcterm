@@ -1,13 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-//go:build !windows
+//go:build !windows && !darwin
 
 package secretstore
 
-// Tauri packaging is Windows-only today (see CLAUDE.md), and the shell-side keyring that used to serve
-// macOS/Linux is gone with Electron. Rather than ship an untested keyring integration, these report
-// unsupported: the store degrades to in-memory, which is exactly what every platform does today.
+// Tauri packaging targets Windows (crypt_windows.go) and macOS (crypt_darwin.go); the shell-side keyring
+// that used to serve Linux is gone with Electron. Rather than ship an untested keyring integration, these
+// report unsupported: the store degrades to in-memory, so its secrets last until wavesrv exits.
 
 func protect(_ []byte) ([]byte, error) { return nil, ErrPersistUnsupported }
 

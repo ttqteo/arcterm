@@ -98,7 +98,8 @@ export interface ProviderDonuts {
 // with the email it was tied to (if any).
 export interface ClaudeIdentity {
     loginEmail: string;
-    accounts: { id: string; label: string; email?: string }[];
+    // notoken: the account's token is gone from wavesrv's store, so it runs as Default
+    accounts: { id: string; label: string; email?: string; notoken?: boolean }[];
 }
 
 const NO_IDENTITY: ClaudeIdentity = { loginEmail: "", accounts: [] };
@@ -115,6 +116,7 @@ export function identityFromList(list: CommandClaudeAccountListRtnData | null | 
             id: a.id,
             label: a.label,
             email: normalizeEmail(a.email) || undefined,
+            notoken: a.notoken || undefined,
         })),
     };
 }
@@ -209,8 +211,15 @@ export function projectActiveAccount(
     return out;
 }
 
+// The account the setting names, as wavesrv applies it: one whose token is gone runs as Default ("").
+export function appliedClaudeAccount(setting: string, identity: ClaudeIdentity): string {
+    return identity.accounts.find((a) => a.id === setting)?.notoken ? "" : setting;
+}
+
 // The Claude account wavesrv runs new sessions on; "" is Default.
-export const activeClaudeAccountAtom = atom((get) => (get(getSettingsKeyAtom("claude:activeaccount")) as string) || "");
+export const activeClaudeAccountAtom = atom((get) =>
+    appliedClaudeAccount((get(getSettingsKeyAtom("claude:activeaccount")) as string) || "", get(claudeIdentityAtom))
+);
 
 // Who the accounts are, as wavesrv last said (claudeidentity.ts refreshes it).
 export const claudeIdentityAtom = atom<ClaudeIdentity>(NO_IDENTITY) as PrimitiveAtom<ClaudeIdentity>;

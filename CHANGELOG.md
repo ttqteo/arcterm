@@ -117,6 +117,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
   instead of "—", and a running Team agent no longer blanks it.
 - On macOS, the Claude usage in the app bar and on the Usage surface is read fresh from Anthropic for your `/login`
   account, as on Windows, instead of from Claude Code's own saved copy, which could be hours old.
+- On macOS, a Claude account added with a token stays signed in after arcterm restarts. Before, its token was lost on
+  every restart and new agents quietly ran on your `/login` account; an account whose token is gone now says so in
+  **Settings → Claude account**.
 - On macOS, a right-click or double-click on a sidebar row, a file in Code's tree, the agent header or a worker on a
   lead card no longer selects a word of its text. The rename and new-file boxes still select as before.
 - On macOS, folding into Sprout or floating from a maximized window no longer shows the window jumping to an old size

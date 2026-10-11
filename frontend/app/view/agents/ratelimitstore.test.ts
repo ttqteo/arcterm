@@ -3,6 +3,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import {
     adoptDefaultSnapshot,
     agentQuotaKey,
+    appliedClaudeAccount,
     blockLoginEmail,
     claudeQuotaKey,
     identityFromList,
@@ -135,6 +136,33 @@ describe("identityFromList", () => {
     });
     it("is empty for no answer", () => {
         expect(identityFromList(null)).toEqual({ loginEmail: "", accounts: [] });
+    });
+    it("keeps an account whose token is gone marked", () => {
+        const identity = identityFromList({
+            accounts: [{ id: "a1", label: "Home", createdts: 1, notoken: true }],
+            active: "",
+        });
+        expect(identity.accounts[0].notoken).toBe(true);
+    });
+});
+
+describe("appliedClaudeAccount", () => {
+    const identity: ClaudeIdentity = {
+        loginEmail: "",
+        accounts: [
+            { id: "a1", label: "Home" },
+            { id: "a2", label: "Lost", notoken: true },
+        ],
+    };
+    it("is the setting while its token is stored", () => {
+        expect(appliedClaudeAccount("a1", identity)).toBe("a1");
+        expect(appliedClaudeAccount("", identity)).toBe("");
+    });
+    it("is Default for an account whose token is gone, as wavesrv applies it", () => {
+        expect(appliedClaudeAccount("a2", identity)).toBe("");
+    });
+    it("is the setting for an account the identity does not list yet", () => {
+        expect(appliedClaudeAccount("a9", identity)).toBe("a9");
     });
 });
 
