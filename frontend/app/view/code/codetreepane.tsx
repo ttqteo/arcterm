@@ -19,9 +19,21 @@ import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, Columns2, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import {
+    ChevronDown,
+    ChevronRight,
+    Columns2,
+    FilePlus,
+    FolderPlus,
+    Pencil,
+    Pin,
+    PinOff,
+    Trash2,
+    X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { nameErrorMessage, provisionalIndex, validateName } from "./codemutate";
+import { pinsFor } from "./codepins";
 import { CODE_PATH_MIME, codeTreeDragAtom, openSide } from "./codeside";
 import { statusGlyph, type CodeStatus } from "./codestatus";
 import {
@@ -34,6 +46,7 @@ import {
     codeFileAtom,
     codeIgnoredListedAtom,
     codeIndexAtom,
+    codePinsAtom,
     codeProjectAtom,
     codeRowsAtom,
     codeStatusAtom,
@@ -45,8 +58,10 @@ import {
     listIgnoredDirs,
     openPath,
     renamePath,
+    revealPath,
     startCreate,
     startRename,
+    toggleCodePin,
     toggleDir,
 } from "./codestore";
 import type { TreeRow } from "./codetree";
@@ -66,6 +81,8 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
     const index = useAtomValue(codeIndexAtom);
     const expanded = useAtomValue(codeExpandedAtom);
     const ignoredListed = useAtomValue(codeIgnoredListedAtom);
+    const pins = useAtomValue(codePinsAtom);
+    const pinned = project == null ? [] : pinsFor(pins, project.path);
     const openFile = file.kind === "none" ? null : file.path;
     const rowRefs = useRef(new Map<string, HTMLDivElement>());
     const treeRef = useRef<HTMLDivElement>(null);
@@ -153,6 +170,17 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                                       accel: "Mod:\\",
                                       click: () => openSide(row.path),
                                   },
+                                  pinned.includes(row.path)
+                                      ? {
+                                            label: "Unpin",
+                                            icon: <PinOff size={13} strokeWidth={1.8} />,
+                                            click: () => toggleCodePin(row.path),
+                                        }
+                                      : {
+                                            label: "Pin",
+                                            icon: <Pin size={13} strokeWidth={1.8} />,
+                                            click: () => toggleCodePin(row.path),
+                                        },
                                   { type: "separator" as const },
                               ]),
                         {
@@ -230,6 +258,11 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                 <span className="min-w-0 truncate">{row.name}</span>
             )}
             <span className="ml-auto flex flex-none items-center gap-1.5">
+                {row.kind === "file" && pinned.includes(row.path) ? (
+                    <span aria-label="Pinned" title="Pinned" className="flex text-muted">
+                        <Pin size={10} strokeWidth={1.8} />
+                    </span>
+                ) : null}
                 {row.kind === "file" ? <StatusMark s={status?.get(row.path)} /> : null}
                 {/* a collapsed directory is the only place the roll-up has anything to say:
                     expanded, the rows underneath speak for themselves */}
@@ -265,6 +298,7 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     File list truncated — showing the first 20,000 files only.
                 </div>
             ) : null}
+            {pinned.length > 0 ? <PinnedFiles pinned={pinned} openFile={openFile} /> : null}
             <div
                 ref={treeRef}
                 role="tree"
@@ -286,6 +320,75 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     return out;
                 })}
                 {provisional >= rows.length ? provisionalInput : null}
+            </div>
+        </div>
+    );
+}
+
+// Files pinned from the tree or the path bar, above the tree so they never scroll away. Opening one also reveals it in
+// the tree, which is the answer to "where did that file live".
+function PinnedFiles({ pinned, openFile }: { pinned: readonly string[]; openFile: string | null }) {
+    return (
+        <div data-code-pinned className="flex max-h-[40%] flex-none flex-col border-b border-border">
+            <div className="flex-none px-3 pb-1 pt-2 text-[10.5px] text-muted">Pinned</div>
+            <div className="min-h-0 overflow-y-auto pb-1.5">
+                {pinned.map((rel) => {
+                    const cut = rel.lastIndexOf("/");
+                    const dir = cut === -1 ? "" : rel.slice(0, cut);
+                    const name = cut === -1 ? rel : rel.slice(cut + 1);
+                    return (
+                        <div
+                            key={rel}
+                            data-code-pinned-row={rel}
+                            title={rel}
+                            onClick={() => {
+                                revealPath(rel);
+                                globalStore.set(codeCursorAtom, rel);
+                                fireAndForget(() => openPath(rel));
+                            }}
+                            onContextMenu={(ev) =>
+                                ContextMenuModel.getInstance().showContextMenu(
+                                    [
+                                        {
+                                            label: "Open to the Side",
+                                            icon: <Columns2 size={13} strokeWidth={1.8} />,
+                                            click: () => openSide(rel),
+                                        },
+                                        {
+                                            label: "Unpin",
+                                            icon: <PinOff size={13} strokeWidth={1.8} />,
+                                            click: () => toggleCodePin(rel),
+                                        },
+                                    ],
+                                    ev
+                                )
+                            }
+                            className={cn(
+                                "group flex w-full cursor-pointer items-center gap-1.5 py-[3px] pl-3 pr-1.5 text-left text-[12.5px] text-secondary hover:bg-accent/10 hover:text-primary",
+                                rel === openFile && "text-accent-soft"
+                            )}
+                        >
+                            <FileIcon path={rel} />
+                            <span className="min-w-0 flex-1 truncate">
+                                {name}
+                                {dir !== "" ? <span className="ml-1.5 text-[11px] text-muted">{dir}</span> : null}
+                            </span>
+                            <button
+                                type="button"
+                                data-code-unpin={rel}
+                                aria-label={`Unpin ${name}`}
+                                title="Unpin"
+                                onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    toggleCodePin(rel);
+                                }}
+                                className="flex size-4 flex-none cursor-pointer items-center justify-center rounded-[4px] text-muted opacity-0 hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+                            >
+                                <X size={11} strokeWidth={1.8} />
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );

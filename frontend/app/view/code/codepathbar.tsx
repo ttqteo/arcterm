@@ -12,14 +12,16 @@
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, Columns2, Copy, WrapText } from "lucide-react";
+import { Check, Columns2, Copy, Pin, WrapText } from "lucide-react";
 import { useState } from "react";
 import { resolveViewMode, viewModesFor } from "./codeclassify";
+import { isPinned } from "./codepins";
 import { isPreviewable } from "./codepreviewable";
 import { closeSide } from "./codeside";
 import {
     codeDraftsAtom,
     codeFileAtom,
+    codePinsAtom,
     codeProjectAtom,
     codeTexPdfAtom,
     codeViewModeAtom,
@@ -27,6 +29,7 @@ import {
     openPath,
     refreshTexPdf,
     texPdfFor,
+    toggleCodePin,
 } from "./codestore";
 import { toggleWrap, useWrap } from "./codewrap";
 
@@ -39,6 +42,7 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
     const shownAbs = project != null && file.kind !== "none" ? draftKey(project, file.path) : "";
     const wrap = useWrap(shownAbs);
     const hasPdf = texPdfFor(useAtomValue(codeTexPdfAtom), shownAbs) != null;
+    const pins = useAtomValue(codePinsAtom);
 
     if (project == null || file.kind === "none") {
         return null;
@@ -83,6 +87,7 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
                 </button>
             ) : null}
             {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
+            <PinToggle on={isPinned(pins, project.path, file.path)} onToggle={() => toggleCodePin(file.path)} />
             <button
                 type="button"
                 aria-label="Copy absolute path"
@@ -135,6 +140,26 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
                 </button>
             ))}
         </div>
+    );
+}
+
+// pinned files list at the top of the Files tab (codetreepane.tsx PinnedFiles)
+function PinToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+    return (
+        <button
+            type="button"
+            data-code-pin
+            aria-pressed={on}
+            title={on ? "Unpin this file" : "Pin this file to the top of Files"}
+            onClick={onToggle}
+            className={cn(
+                "flex flex-none cursor-pointer items-center gap-1 rounded-[6px] border px-2 py-[3px] text-[11px]",
+                on ? "border-accent/40 text-accent-soft" : "border-border text-muted hover:text-primary"
+            )}
+        >
+            <Pin size={11} strokeWidth={1.8} />
+            <span>{on ? "Pinned" : "Pin"}</span>
+        </button>
     );
 }
 

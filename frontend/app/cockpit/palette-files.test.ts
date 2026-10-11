@@ -19,6 +19,20 @@ describe("assembleFileGroups", () => {
         expect(groups[1].items.map((f) => f.path)).not.toContain("frontend/app/cockpit/palette-groups.ts");
     });
 
+    it("leads with pinned files on an empty query, ahead of recent, each listed once", () => {
+        const recent = ["frontend/app/cockpit/palette-groups.ts", "README.md"];
+        const { groups } = assembleFileGroups("", paths, recent, "#w", 50, ["README.md", "gone.ts"]);
+        expect(groups.map((g) => g.key)).toEqual(["pinned-files", "recent-files", "files"]);
+        expect(groups[0].items.map((f) => f.path)).toEqual(["README.md"]);
+        expect(groups[1].items.map((f) => f.path)).toEqual(["frontend/app/cockpit/palette-groups.ts"]);
+        expect(groups[2].items.map((f) => f.path)).not.toContain("README.md");
+    });
+
+    it("ranks pinned files like any other once something is typed", () => {
+        const { groups } = assembleFileGroups("scope", paths, [], "#w", 50, ["README.md"]);
+        expect(groups.map((g) => g.key)).toEqual(["files"]);
+    });
+
     it("drops a recent file the index no longer lists", () => {
         const { groups } = assembleFileGroups("", paths, ["gone.ts"], "#w", 50);
         expect(groups.map((g) => g.key)).toEqual(["files"]);

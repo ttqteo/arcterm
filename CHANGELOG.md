@@ -8,6 +8,14 @@ Add one line in the same commit as any change a user would notice, under `Added`
 `Unreleased` with the build date. If the top section already has a date, open a new
 `## Unreleased` above it, and give it a version number at the bump.
 
+## Unreleased
+
+### Added
+
+- **Code** can pin files: right-click a file → **Pin**, or **Pin** in the bar above the editor. Pinned files list at
+  the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
+  file search (Ctrl+P, ⌘P on a Mac) lists them first.
+
 ## 0.15.9 — 2026-10-11
 
 ### Added

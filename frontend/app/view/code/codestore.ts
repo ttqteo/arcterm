@@ -43,6 +43,7 @@ import {
 } from "./codehistory";
 import { deleteWarning, renamedPath, targetDir } from "./codemutate";
 import { cleanPathInput, pathErrorMessage, statPathError, validatePathInput } from "./codepathinput";
+import { parsePins, renamePins, togglePin, unpinUnder } from "./codepins";
 import { pruneRecent, pushRecent } from "./coderecents";
 import { resetSearch } from "./codesearchstore";
 import { changedDirs, statusByPath, type CodeStatus } from "./codestatus";
@@ -106,6 +107,11 @@ export const codeRecentsAtom = atomWithStorage<CodeProject[]>("code.project.rece
     getOnInit: true,
 }) as PrimitiveAtom<CodeProject[]>;
 export const codePickerErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// pinned files per project (codepins.ts), persisted; read through codePinsAtom, which drops anything malformed
+const codePinsStoredAtom = atomWithStorage<unknown>("code.pins", {}, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<unknown>;
+export const codePinsAtom = atom((get) => parsePins(get(codePinsStoredAtom)));
 const DRAFTS_STORAGE_KEY = "code.drafts";
 // JSON characters: a conservative slice of the origin's localStorage quota, which the rest of the app
 // shares. A draft that does not fit stays in memory only.
@@ -686,6 +692,7 @@ export async function renamePath(rel: string, newName: string): Promise<void> {
 
 function carryRename(project: CodeProject, rel: string, next: string): void {
     globalStore.set(codeDraftsAtom, (d) => renameDraftKeys(d, draftKey(project, rel), draftKey(project, next)));
+    globalStore.set(codePinsStoredAtom, renamePins(globalStore.get(codePinsAtom), project.path, rel, next));
 
     const file = globalStore.get(codeFileAtom);
     if (file.kind !== "none") {
@@ -719,6 +726,7 @@ export async function deletePath(rel: string, isDir: boolean): Promise<void> {
             path: joinRepoPath(project.path, rel),
             recursive: isDir,
         });
+        globalStore.set(codePinsStoredAtom, unpinUnder(globalStore.get(codePinsAtom), project.path, rel));
     } catch (e) {
         globalStore.set(codeMutateErrorAtom, `Could not delete ${rel}: ${errorText(e)}`);
     }
@@ -753,6 +761,14 @@ export function confirmDelete(rel: string, isDir: boolean): void {
         destructive: true,
         onConfirm: () => fireAndForget(() => deletePath(rel, isDir)),
     });
+}
+
+// pins or unpins a file of the open project
+export function toggleCodePin(rel: string): void {
+    const project = globalStore.get(codeProjectAtom);
+    if (project != null) {
+        globalStore.set(codePinsStoredAtom, togglePin(globalStore.get(codePinsAtom), project.path, rel));
+    }
 }
 
 export function toggleDir(path: string): void {

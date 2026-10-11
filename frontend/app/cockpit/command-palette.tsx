@@ -27,10 +27,12 @@ import { runStatusView, type RunStatusTone } from "@/app/view/agents/runmodel";
 import { loadSessionsArchive, sessionsArchiveAtom } from "@/app/view/agents/sessionsarchivestore";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
 import { recentPaths } from "@/app/view/code/codehistory";
+import { pinsFor } from "@/app/view/code/codepins";
 import {
     codeHistoryAtom,
     codeIndexAtom,
     codePendingLineAtom,
+    codePinsAtom,
     codeProjectAtom,
     loadFileIndex,
     openInCode,
@@ -238,6 +240,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const codeProject = useAtomValue(codeProjectAtom);
     const codeIndex = useAtomValue(codeIndexAtom);
     const codeHistory = useAtomValue(codeHistoryAtom);
+    const codePins = useAtomValue(codePinsAtom);
     // every thing the palette can act on, per kind; computed only while open, as its sources move often
     const thingsAtom = useMemo(
         () =>
@@ -1018,7 +1021,8 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             return { groups: empty(`${label} isn’t a git repository, so there is no file list.`) };
         }
         const recent = codeOwnsTarget ? recentPaths(codeHistory) : [];
-        const fg = assembleFileGroups(nav.query, fileIndex.paths, recent, label, MAX_IN_SCOPE);
+        const pinned = pinsFor(codePins, fileTarget.path);
+        const fg = assembleFileGroups(nav.query, fileIndex.paths, recent, label, MAX_IN_SCOPE, pinned);
         const rows: PaletteGroup<PaletteItem>[] = fg.groups.map((g) => ({
             key: g.key,
             label: g.label,
