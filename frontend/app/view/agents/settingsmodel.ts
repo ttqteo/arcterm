@@ -8,6 +8,7 @@
 
 import { formatAgo } from "./agentsviewmodel";
 import { RUNTIME_FLAGS, type Runtime } from "./launch";
+import { CARD_COPY, CARD_ORDER } from "./storagemodel";
 
 // Where a row's value lives. "synced" travels with settings.json; "local" stays on this machine
 // (localStorage prefs, and the OS secret store). Read-only build info leaves it off — a provenance
@@ -430,6 +431,38 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             key: LAUNCH_FLAGS_KEY,
                             scope: "local" as const,
                         })),
+                    ],
+                },
+            ],
+        },
+        {
+            id: "storage",
+            name: "Storage",
+            blurb: "What arcterm and its agents leave on disk, and cleaning it. Nothing in use is ever removed.",
+            cards: [
+                // Each category's items live behind the storage RPCs, not in settings, so its card has no rows for
+                // the index to count or search, only its label; settingspages/storage.tsx draws them from the report.
+                ...CARD_ORDER.map((cat) => ({ id: cat, label: CARD_COPY[cat].title, rows: [] })),
+                {
+                    id: "autoclean",
+                    label: "Auto-clean",
+                    rows: [
+                        {
+                            id: "storage.autoclean",
+                            title: "Clean the safe parts daily",
+                            desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output and the cache wait for you.",
+                            key: "storage:autoclean",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "storage.nudge",
+                            title: "Remind me above",
+                            desc: "A toast, at most once a day, when more than this can be cleaned.",
+                            key: "storage:nudgegb",
+                            scope: "synced",
+                            config: true,
+                        },
                     ],
                 },
             ],

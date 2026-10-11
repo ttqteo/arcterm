@@ -403,6 +403,8 @@ func main() {
 	go tempAttachmentCleanupLoop()
 	// trashed sessions older than 7 days are removed: now, then daily
 	sessiontrash.StartPurgeLoop(context.Background())
+	// Settings → Storage: a scan after a short delay, then the daily auto-clean when storage:autoclean is on
+	wshserver.StartStorage(context.Background())
 	// the machine slept: the pet says so when agents were working through it
 	sleepwatch.StartLoop(context.Background(), func(d baseds.SleptData) {
 		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_Slept, Data: d})

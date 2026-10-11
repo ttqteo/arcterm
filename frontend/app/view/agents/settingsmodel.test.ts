@@ -211,6 +211,8 @@ describe("settingsSections", () => {
             "term:copyonselect",
             "agents:sleepidle",
             "agents:sleepaftermin",
+            "storage:autoclean",
+            "storage:nudgegb",
             "headless:runtime",
             "headless:openroutercheapmodel",
             "radar:auditruntime",
@@ -267,12 +269,13 @@ describe("radarAuditRoute", () => {
 });
 
 describe("settings pages", () => {
-    it("has six pages in order", () => {
+    it("has seven pages in order", () => {
         expect(sections().map((s) => s.id)).toEqual([
             "general",
             "appearance",
             "terminal",
             "agents",
+            "storage",
             "headless",
             "about",
         ]);
@@ -281,6 +284,7 @@ describe("settings pages", () => {
             "Appearance",
             "Terminal",
             "Agents",
+            "Storage",
             "Background AI",
             "About",
         ]);
@@ -318,6 +322,11 @@ describe("settings pages", () => {
         expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
         expect(cards["agents/runs"]).toEqual(["run.route"]);
         expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
+        expect(cards["storage/runworktrees"]).toEqual([]);
+        expect(cards["storage/sessions"]).toEqual([]);
+        expect(cards["storage/housekeeping"]).toEqual([]);
+        expect(cards["storage/buildoutput"]).toEqual([]);
+        expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge"]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit"]);
@@ -330,7 +339,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(39 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(41 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

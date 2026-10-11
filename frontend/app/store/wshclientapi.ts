@@ -222,6 +222,12 @@ export class RpcApiType {
         return client.wshRpcCall("claudeaccountsetemail", data, opts);
     }
 
+    // command "cleanstorage" [call]
+    CleanStorageCommand(client: WshClient, data: CommandCleanStorageData, opts?: RpcOpts): Promise<StorageCleanResult> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "cleanstorage", data, opts);
+        return client.wshRpcCall("cleanstorage", data, opts);
+    }
+
     // command "consult" [responsestream]
 	ConsultCommand(client: WshClient, data: CommandConsultData, opts?: RpcOpts): AsyncGenerator<ConsultChunk, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "consult", data, opts);
@@ -630,6 +636,12 @@ export class RpcApiType {
         return client.wshRpcCall("getsessionusage", data, opts);
     }
 
+    // command "getstorage" [call]
+    GetStorageCommand(client: WshClient, opts?: RpcOpts): Promise<StorageReport> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getstorage", null, opts);
+        return client.wshRpcCall("getstorage", null, opts);
+    }
+
     // command "getsubagents" [call]
     GetSubagentsCommand(client: WshClient, data: CommandGetSubagentsData, opts?: RpcOpts): Promise<CommandGetSubagentsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsubagents", data, opts);
@@ -970,6 +982,12 @@ export class RpcApiType {
     ReportRunPhaseCommand(client: WshClient, data: CommandReportRunPhaseData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "reportrunphase", data, opts);
         return client.wshRpcCall("reportrunphase", data, opts);
+    }
+
+    // command "rescanstorage" [call]
+    RescanStorageCommand(client: WshClient, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "rescanstorage", null, opts);
+        return client.wshRpcCall("rescanstorage", null, opts);
     }
 
     // command "resolveambient" [call]

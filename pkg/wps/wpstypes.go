@@ -27,6 +27,7 @@ const (
 	Event_AgentAsk         = "agent:ask"        // type: baseds.AgentAskData
 	Event_JarvisVolunteer  = "jarvis:volunteer" // type: baseds.VolunteerData
 	Event_Slept            = "system:slept"     // type: baseds.SleptData
+	Event_StorageScan      = "storage:scan"     // type: storage.StorageReport
 	Event_JobQueue         = "jobqueue"         // type: wshrpc.JobQueueData
 	// orchestration engine events (pkg/orchestrate publishes these; the cockpit rail mirrors them)
 	DagEventChildDone   = "dag:child-done"   // type: string (task id)
@@ -54,6 +55,7 @@ var AllEvents []string = []string{
 	Event_JarvisVolunteer,
 	Event_Slept,
 	Event_JobQueue,
+	Event_StorageScan,
 	DagEventChildDone,
 	DagEventGateOpen,
 	DagEventBlocked,

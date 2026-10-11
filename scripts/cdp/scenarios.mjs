@@ -15,6 +15,7 @@ import {
     mkdtempSync,
     readFileSync,
     rmSync,
+    utimesSync,
     writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -26578,8 +26579,8 @@ const settingsVaultSync = {
     },
 };
 
-// --- settings-pages: six pages of cards, the key pill on hover, a changed row end to end ----------------
-// docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the six in order;
+// --- settings-pages: seven pages of cards, the key pill on hover, a changed row end to end ----------------
+// docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the seven in order;
 // the page's card ids in order; a shot), then one detail step per page that draws something the card ids do not show
 // (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the runtime
 // list and the OpenRouter warning band, the right-aligned versions), then the key pill on Terminal (hidden at rest,
@@ -26588,10 +26589,11 @@ const settingsVaultSync = {
 // scenario restores term:fontsize in a finally and again in teardown, each retried: the packaged app and a final-verify
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
-    { id: "general", cards: ["startup", "notifications", "vault"] },
+    { id: "general", cards: ["startup", "notifications", "window", "vault"] },
     { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "runs", "flags"] },
+    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "autoclean"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
     { id: "about", cards: ["versions", "agents"] },
 ];
@@ -26697,7 +26699,7 @@ const settingsPages = {
         await polishWaitFor(h, `document.querySelector('button[data-section]') != null`, 5000);
         const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute("data-section"))`);
         rec(
-            "index: one flat list of six pages in order",
+            "index: one flat list of seven pages in order",
             JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)),
             `index=${JSON.stringify(index)}`
         );
@@ -28330,6 +28332,488 @@ const jarvisModes = {
     },
 };
 
+// --- settings-storage: Settings → Storage over fixture data ----------------------------------------------------
+// docs/superpowers/specs/2026-10-08-storage-cleanup-design.md. arrange leaves storage:autoclean as the person has it
+// (turning it on in a main dev app would let the 2-minute pass clean their own projects): when it is on, it waits for
+// the server's first pass, so the Last auto-clean line exists and no later pass can take a fixture; when it is off,
+// ctx.autoOff is set, nothing is waited for and step 11 skips that line. Then it registers two temp git projects: SS_PROJECT, with an ignored node_modules and three folders in
+// .waveterm/worktrees (an engine-named tree with no run and no changes, one with an uncommitted file, and `scratch`,
+// a name the engine never makes), and SS_BROKEN, whose .waveterm/worktrees is a file, so the run worktrees scan
+// fails there. It writes seven Claude transcripts under ~/.claude/projects (six 40 days old, one 10), and rescans.
+// No step presses a category's own clean button (it would take the developer's real sessions and trash): fixtures
+// are cleaned through their rows. Teardown removes every fixture and puts storage:autoclean, storage:nudgegb and the
+// nudge's day back; settings.json is the vault's, shared with the packaged app.
+const SS_PROJECT = "verify-storage";
+const SS_BROKEN = "verify-storage-broken";
+const SS_RUN_CLEAN = "5a0c0de0-0000-4000-8000-000000000001";
+const SS_RUN_DIRTY = "5a0c0de0-0000-4000-8000-000000000002";
+const SS_NUDGE_DAY_KEY = "storage.nudge.lastday"; // storagenudge.tsx
+const SS_DAY_MS = 24 * 60 * 60 * 1000;
+const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "autoclean"];
+const ssCard = (cat) => `document.querySelector('[data-settings-section="storage"] [data-setting-card="${cat}"]')`;
+// a row is found by the end of its id: a session's id is its path, a project's row its project's path
+const ssRowIds = (cat) =>
+    `[...(${ssCard(cat)}?.querySelectorAll('[data-storage-row]') ?? [])].map((r) => r.getAttribute('data-storage-row'))`;
+const ssRow = (cat, suffix) =>
+    `[...(${ssCard(cat)}?.querySelectorAll('[data-storage-row]') ?? [])].find((r) => r.getAttribute('data-storage-row').endsWith(${JSON.stringify(suffix)}))`;
+const ssRowState = (cat, suffix) => `(() => {
+    const r = ${ssRow(cat, suffix)};
+    if (!r) return null;
+    const why = r.querySelector('[data-storage-reason]');
+    return {
+        text: r.textContent,
+        reason: why ? why.textContent : null,
+        warn: why ? why.classList.contains('text-warning') : false,
+        remove: !!r.querySelector('[data-storage-remove]'),
+    };
+})()`;
+const SS_HEAD = `document.querySelector('[data-storage-head]')`;
+const ssToast = (text) =>
+    `[...document.querySelectorAll('[data-notification-toast]')].some((t) => (t.textContent || '').includes(${JSON.stringify(text)}))`;
+// a scan that started at or after `since` has landed in the page, and none is running
+const ssWaitScan = (h, since) =>
+    polishWaitFor(
+        h,
+        `Number(${SS_HEAD}?.getAttribute('data-storage-scanned') ?? 0) >= ${since} && !${SS_HEAD}.hasAttribute('data-storage-scanning')`,
+        60000
+    );
+// settings.json is the vault's, which the packaged app shares; a write can lose a rename race, so three tries
+const ssSetConfig = async (h, patch) => {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await h.rpc("setconfig", patch);
+            return;
+        } catch (e) {
+            last = e;
+            await polishNap(300);
+        }
+    }
+    throw last;
+};
+const ssWaitConfig = async (h, key, want) => {
+    for (let waited = 0; waited < 5000; waited += 250) {
+        if ((await h.rpc("getfullconfig", null))?.settings?.[key] === want) return true;
+        await polishNap(250);
+    }
+    return false;
+};
+// opens a card's Show all when it has one, so every row is in the DOM
+const ssExpand = async (h, cat) => {
+    await h.ev(`(() => {
+        const more = ${ssCard(cat)}?.querySelector('[data-storage-more]');
+        if (more && more.textContent.startsWith('Show all')) more.click();
+    })()`);
+    await polishNap(150);
+};
+const ssDismissToasts = (h) => h.ev(`document.querySelectorAll('[data-notification-close]').forEach((b) => b.click())`);
+// clicks what opens a confirm, returns the dialog's text, and presses its confirm button
+const ssConfirm = async (h, openExpr, label) => {
+    await ssDismissToasts(h);
+    await h.ev(`${openExpr}?.click()`);
+    const up = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+    const text = up ? await h.ev(`document.querySelector('[role="dialog"]').textContent`) : null;
+    await h.ev(
+        `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes(${JSON.stringify(label)}))?.click()`
+    );
+    await polishWaitFor(h, `document.querySelector('[role="dialog"]') == null`, 3000);
+    return text;
+};
+
+const settingsStorage = {
+    name: "settings-storage",
+    surface: "settings",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+            ctx.prevAuto = settings["storage:autoclean"] ?? null;
+            ctx.prevNudge = settings["storage:nudgegb"] ?? null;
+            ctx.prevNudgeDay = await h.ev(`localStorage.getItem(${JSON.stringify(SS_NUDGE_DAY_KEY)})`);
+            ctx.autoOff = ctx.prevAuto === false;
+            if (!ctx.autoOff) {
+                // the first auto-clean runs 2 minutes after the server starts (storage.AutoCleanDelay)
+                const autoBy = Date.now() + 200_000;
+                while ((await h.rpc("getstorage", null))?.lastauto == null) {
+                    if (Date.now() > autoBy) {
+                        throw new Error("no auto-clean ran within 200 s (was storage:autoclean off at the 2-minute pass?)");
+                    }
+                    await polishNap(2000);
+                }
+            }
+
+            ctx.repo = mkdtempSync(join(tmpdir(), "verify-storage-"));
+            ctx.dirs.push(ctx.repo);
+            git(ctx.repo, "init", "-q");
+            writeFileSync(join(ctx.repo, ".gitignore"), "node_modules/\n.waveterm/\n");
+            git(ctx.repo, "add", ".gitignore");
+            git(ctx.repo, "commit", "-q", "-m", "init");
+            mkdirSync(join(ctx.repo, "node_modules", "left-pad"), { recursive: true });
+            writeFileSync(join(ctx.repo, "node_modules", "left-pad", "index.js"), "x".repeat(64 * 1024));
+            const trees = join(ctx.repo, ".waveterm", "worktrees");
+            ctx.cleanTree = join(trees, SS_RUN_CLEAN);
+            ctx.dirtyTree = join(trees, SS_RUN_DIRTY);
+            git(ctx.repo, "worktree", "add", "-q", "-b", `wave/${SS_RUN_CLEAN}`, ctx.cleanTree);
+            git(ctx.repo, "worktree", "add", "-q", "-b", `wave/${SS_RUN_DIRTY}`, ctx.dirtyTree);
+            writeFileSync(join(ctx.dirtyTree, "notes.txt"), "uncommitted\n".repeat(4096));
+            mkdirSync(join(trees, "scratch"));
+            writeFileSync(join(trees, "scratch", "notes.txt"), "mine\n");
+
+            ctx.broken = mkdtempSync(join(tmpdir(), "verify-storage-broken-"));
+            ctx.dirs.push(ctx.broken);
+            mkdirSync(join(ctx.broken, ".waveterm"));
+            writeFileSync(join(ctx.broken, ".waveterm", "worktrees"), "a file, not a folder\n");
+
+            for (const [name, path] of [
+                [SS_PROJECT, ctx.repo],
+                [SS_BROKEN, ctx.broken],
+            ]) {
+                await h.rpc("createproject", { name, path });
+                ctx.projects.push(name);
+                await waitForProjectInConfig(h, name);
+            }
+
+            ctx.sessionDir = join(homedir(), ".claude", "projects", `verify-storage-${randomUUID().slice(0, 8)}`);
+            ctx.dirs.push(ctx.sessionDir);
+            mkdirSync(ctx.sessionDir, { recursive: true });
+            ctx.oldSessions = [];
+            for (let i = 0; i < 7; i++) {
+                const name = `${randomUUID()}.jsonl`;
+                const file = join(ctx.sessionDir, name);
+                writeFileSync(file, JSON.stringify({ type: "user", message: { role: "user", content: "fixture" } }) + "\n");
+                const at = (Date.now() - (i < 6 ? 40 : 10) * SS_DAY_MS) / 1000;
+                utimesSync(file, at, at);
+                if (i < 6) ctx.oldSessions.push(name);
+                else ctx.recentSession = name;
+            }
+
+            ctx.scanFrom = Date.now();
+            await h.rpc("rescanstorage", null);
+            const scanBy = Date.now() + 60_000;
+            for (;;) {
+                const r = await h.rpc("getstorage", null);
+                if (r?.scannedts >= ctx.scanFrom && !r.scanning) break;
+                if (Date.now() > scanBy) throw new Error("no scan of the fixtures within 60 s");
+                await polishNap(500);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. the fixtures were made and a scan saw them (and, with auto-clean on, its first pass ran)", false, ctx.arrangeError);
+            return steps;
+        }
+        const repoName = ctx.repo.split(/[\\/]/).pop();
+
+        // 1. the page in the index, its cards, which cards have a clean button
+        await h.goto("settings");
+        await polishWaitFor(h, `document.querySelector('button[data-section="storage"]') != null`, 5000);
+        await h.ev(`document.querySelector('button[data-section="storage"]').click()`);
+        const up = await polishWaitFor(h, `document.querySelector('[data-settings-section="storage"]') != null`, 5000);
+        const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute('data-section'))`);
+        const cards = await h.ev(
+            `[...document.querySelectorAll('[data-settings-section="storage"] [data-setting-card]')].map((c) => c.getAttribute('data-setting-card'))`
+        );
+        const cleans = await h.ev(`[...document.querySelectorAll('[data-storage-clean]')].map((b) => b.getAttribute('data-storage-clean'))`);
+        await polishNap(350);
+        await h.shot("cdp-shots/settings-storage-1-page.png");
+        rec(
+            "1. Storage sits after Agents in the index; its page holds the four category cards, then Auto-clean; run worktrees, sessions and logs have a clean button, build output none",
+            up &&
+                index.indexOf("storage") === index.indexOf("agents") + 1 &&
+                JSON.stringify(cards) === JSON.stringify(SS_CARDS) &&
+                JSON.stringify(cleans) === JSON.stringify(["runworktrees", "sessions", "housekeeping"]),
+            `index=${JSON.stringify(index)} cards=${JSON.stringify(cards)} cleans=${JSON.stringify(cleans)}`
+        );
+
+        // 2. the head
+        const seen = await ssWaitScan(h, ctx.scanFrom);
+        const head = await h.ev(`${SS_HEAD}?.textContent ?? ''`);
+        rec(
+            "2. the head says what arcterm uses and what can be cleaned, and when it last scanned",
+            seen && /arcterm uses \d.* · \d.* can be cleaned/.test(head) && head.includes("scanned"),
+            `head="${head}"`
+        );
+
+        // 3. Rescan: Scanning… with the button disabled, then a newer scan
+        await h.ev(`(() => {
+            window.__ssSawScanning = false;
+            const look = () => {
+                const head = ${SS_HEAD};
+                const btn = document.querySelector('[data-storage-rescan="head"]');
+                if (head && head.hasAttribute('data-storage-scanning') && head.textContent.includes('Scanning…') && btn && btn.disabled) {
+                    window.__ssSawScanning = true;
+                }
+            };
+            window.__ssObserver = new MutationObserver(look);
+            window.__ssObserver.observe(document.querySelector('[data-settings-section="storage"]'), {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                characterData: true,
+            });
+        })()`);
+        const rescanFrom = Date.now();
+        await h.ev(`document.querySelector('[data-storage-rescan="head"]').click()`);
+        const rescanned = await ssWaitScan(h, rescanFrom);
+        const sawScanning = await h.ev(`(window.__ssObserver.disconnect(), window.__ssSawScanning)`);
+        rec(
+            "3. Rescan turns the head to Scanning… with Rescan disabled, then a newer scan lands",
+            sawScanning === true && rescanned,
+            `sawScanning=${sawScanning} newScan=${rescanned}`
+        );
+
+        // 4. run worktrees: guarded, foreign, cleanable, and the broken project's scan error
+        await ssExpand(h, "runworktrees");
+        const cleanRow = await h.ev(ssRowState("runworktrees", SS_RUN_CLEAN));
+        const dirtyRow = await h.ev(ssRowState("runworktrees", SS_RUN_DIRTY));
+        const scratchRow = await h.ev(ssRowState("runworktrees", "scratch"));
+        const scanError = await h.ev(`(() => {
+            const e = ${ssCard("runworktrees")}?.querySelector('[data-storage-error]');
+            return e ? { text: e.textContent, rescan: !!e.querySelector('[data-storage-rescan="runworktrees"]') } : null;
+        })()`);
+        await h.shot("cdp-shots/settings-storage-4-worktrees.png");
+        rec(
+            "4. run worktrees: the dirty tree reads has uncommitted changes in the warning color with its own Remove; scratch reads not a run worktree with no button; the clean tree has its own Remove and no reason; the broken project shows Couldn't scan with a Rescan",
+            dirtyRow?.reason === "has uncommitted changes" &&
+                dirtyRow.warn &&
+                dirtyRow.remove &&
+                scratchRow?.reason === "not a run worktree" &&
+                !scratchRow.remove &&
+                cleanRow != null &&
+                cleanRow.remove &&
+                cleanRow.reason == null &&
+                scanError != null &&
+                scanError.text.startsWith("Couldn't scan:") &&
+                scanError.rescan,
+            JSON.stringify({ cleanRow, dirtyRow, scratchRow, scanError })
+        );
+
+        // 5. sessions: the age switch and the count
+        const sessionsAt = async (days) => {
+            await h.ev(
+                `[...(${ssCard("sessions")}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === '${days} days')?.click()`
+            );
+            await polishNap(200);
+            await ssExpand(h, "sessions");
+            const ids = await h.ev(ssRowIds("sessions"));
+            const count = await h.ev(
+                `Number(${ssCard("sessions")}?.querySelector('[data-storage-count]')?.getAttribute('data-storage-count') ?? -1)`
+            );
+            const has = (name) => ids.some((id) => id.endsWith(name));
+            return { old: ctx.oldSessions.filter(has).length, recent: has(ctx.recentSession), rows: ids.length, count };
+        };
+        const at30 = await sessionsAt(30);
+        await h.shot("cdp-shots/settings-storage-5-sessions.png");
+        const at7 = await sessionsAt(7);
+        const at90 = await sessionsAt(90);
+        rec(
+            "5. sessions: at 30 days the six 40-day transcripts show and the 10-day one does not; 7 days adds it; 90 drops them all; the count matches the rows at each",
+            at30.old === 6 &&
+                !at30.recent &&
+                at7.old === 6 &&
+                at7.recent &&
+                at90.old === 0 &&
+                !at90.recent &&
+                [at30, at7, at90].every((s) => s.count === s.rows) &&
+                at7.count > at30.count &&
+                at30.count >= at90.count,
+            JSON.stringify({ at30, at7, at90 })
+        );
+
+        // 6. Show all and Show fewer, on the sessions card at 7 days (seven fixtures or more)
+        const more = `${ssCard("sessions")}?.querySelector('[data-storage-more]')`;
+        const clickMore = async () => {
+            await h.ev(`${more}?.click()`);
+            await polishNap(150);
+        };
+        await sessionsAt(7); // leaves the card open
+        await clickMore();
+        const foldedRows = (await h.ev(ssRowIds("sessions"))).length;
+        const foldedText = await h.ev(`${more}?.textContent ?? null`);
+        await clickMore();
+        const openRows = (await h.ev(ssRowIds("sessions"))).length;
+        const openText = await h.ev(`${more}?.textContent ?? null`);
+        await clickMore();
+        const refolded = (await h.ev(ssRowIds("sessions"))).length;
+        rec(
+            "6. past five rows a card shows five and Show all N; Show all lists all N; Show fewer folds back to five",
+            foldedRows === 5 &&
+                foldedText === `Show all ${at7.count}` &&
+                openRows === at7.count &&
+                openText === "Show fewer" &&
+                refolded === 5,
+            JSON.stringify({ foldedRows, foldedText, openRows, openText, refolded })
+        );
+        await sessionsAt(30);
+
+        // 7. build output: one row per project with one button
+        await ssExpand(h, "buildoutput");
+        const projectRow = await h.ev(ssRowState("buildoutput", repoName));
+        const noCleanAll = await h.ev(`${ssCard("buildoutput")}?.querySelector('[data-storage-clean]') == null`);
+        await h.shot("cdp-shots/settings-storage-7-build.png");
+        rec(
+            "7. build output: the fixture project is one row listing node_modules with its own Remove, and the card has no Clean all",
+            projectRow != null && projectRow.text.includes("node_modules") && projectRow.remove && noCleanAll === true,
+            JSON.stringify({ projectRow, noCleanAll })
+        );
+
+        // 8. a clean re-checks at removal: the clean tree changes after the scan, so the server skips it
+        writeFileSync(join(ctx.cleanTree, "late.txt"), "changed after the scan\n");
+        const skipFrom = Date.now();
+        const skipDialog = await ssConfirm(h, `${ssRow("runworktrees", SS_RUN_CLEAN)}?.querySelector('[data-storage-remove]')`, "Remove");
+        const skipToast = await polishWaitFor(h, ssToast("1 skipped"), 15000);
+        await ssWaitScan(h, skipFrom);
+        await ssExpand(h, "runworktrees");
+        const skippedRow = await h.ev(ssRowState("runworktrees", SS_RUN_CLEAN));
+        await h.shot("cdp-shots/settings-storage-8-skipped.png");
+        rec(
+            "8. the clean tree, changed after the scan: its Remove asks to remove 1 run worktree, the server skips it (toast: 1 skipped), it stays, and its row says has uncommitted changes",
+            (skipDialog ?? "").includes("1 run worktree") &&
+                skipToast &&
+                skippedRow?.reason === "has uncommitted changes" &&
+                existsSync(ctx.cleanTree),
+            JSON.stringify({ skipDialog, skipToast, skippedRow })
+        );
+
+        // 9. the guarded tree's own button: its confirm says the changes are lost; the branch stays
+        const guardFrom = Date.now();
+        const guardDialog = await ssConfirm(h, `${ssRow("runworktrees", SS_RUN_DIRTY)}?.querySelector('[data-storage-remove]')`, "Remove");
+        const guardToast = await polishWaitFor(h, ssToast("Reclaimed"), 15000);
+        await ssWaitScan(h, guardFrom);
+        await ssExpand(h, "runworktrees");
+        const guardRowGone = !(await h.ev(`!!(${ssRow("runworktrees", SS_RUN_DIRTY)})`));
+        let branchKept = false;
+        try {
+            branchKept = git(ctx.repo, "branch", "--list", `wave/${SS_RUN_DIRTY}`).toString().trim() !== "";
+        } catch {
+            branchKept = false;
+        }
+        rec(
+            "9. the dirty tree's own Remove warns its uncommitted changes are lost; then a Reclaimed toast shows, the row and the folder are gone, and its branch stays",
+            (guardDialog ?? "").includes("uncommitted changes") &&
+                guardToast &&
+                guardRowGone &&
+                !existsSync(ctx.dirtyTree) &&
+                branchKept,
+            JSON.stringify({ guardDialog, guardToast, guardRowGone, branchKept })
+        );
+
+        // 10. the project's one button
+        const buildFrom = Date.now();
+        const buildDialog = await ssConfirm(h, `${ssRow("buildoutput", repoName)}?.querySelector('[data-storage-remove]')`, "Remove");
+        const buildToast = await polishWaitFor(h, ssToast("Reclaimed"), 30000);
+        await ssWaitScan(h, buildFrom);
+        const buildRowGone = !(await h.ev(`!!(${ssRow("buildoutput", repoName)})`));
+        rec(
+            "10. the project's Remove confirms naming node_modules; then a Reclaimed toast shows, node_modules is gone and so is the row",
+            (buildDialog ?? "").includes("node_modules") &&
+                buildToast &&
+                !existsSync(join(ctx.repo, "node_modules")) &&
+                buildRowGone,
+            JSON.stringify({ buildDialog, buildToast, buildRowGone })
+        );
+
+        // 11. the Auto-clean card: the switch flips from the person's value and back
+        const toggle = `document.querySelector('[data-setting-row="storage.autoclean"] [role="switch"]')`;
+        const wasOn = ((await h.rpc("getfullconfig", null))?.settings ?? {})["storage:autoclean"] ?? true;
+        await h.ev(`${toggle}?.scrollIntoView({ block: "center" })`);
+        await h.ev(`${toggle}?.click()`);
+        const flipped = await ssWaitConfig(h, "storage:autoclean", !wasOn);
+        const flippedShown = (await h.ev(`${toggle}?.getAttribute('aria-checked') ?? null`)) === String(!wasOn);
+        await h.ev(`${toggle}?.click()`);
+        const restored = await ssWaitConfig(h, "storage:autoclean", wasOn);
+        await h.ev(
+            `[...document.querySelectorAll('[data-setting-row="storage.nudge"] button')].find((b) => b.textContent.trim() === '5 GB')?.click()`
+        );
+        const five = await ssWaitConfig(h, "storage:nudgegb", 5);
+        const lastAuto = await h.ev(`document.querySelector('[data-storage-lastauto]')?.textContent ?? null`);
+        await h.shot("cdp-shots/settings-storage-11-autoclean.png");
+        rec(
+            "11. Auto-clean: the switch writes storage:autoclean to the other value and back, 5 GB writes storage:nudgegb, and the last line says when auto-clean ran and what it reclaimed",
+            flipped &&
+                flippedShown &&
+                restored &&
+                five &&
+                (ctx.autoOff || /^Last auto-clean .+: reclaimed /.test(lastAuto ?? "")),
+            JSON.stringify({ wasOn, flipped, flippedShown, restored, five, lastAuto }) +
+                (ctx.autoOff ? " (storage:autoclean was off: the last auto-clean line was not checked)" : "")
+        );
+
+        // 12. the nudge: past the threshold a toast, once that day, that opens Settings → Storage
+        await ssDismissToasts(h);
+        await h.goto("cockpit");
+        await h.ev(`localStorage.removeItem(${JSON.stringify(SS_NUDGE_DAY_KEY)})`);
+        // a threshold the fixtures pass; teardown puts the person's back
+        await ssSetConfig(h, { "storage:nudgegb": 0.000000001 });
+        const nudgeToast = `[...document.querySelectorAll('[data-notification-toast][data-notification-open]')].find((t) => t.textContent.includes('can be cleaned'))`;
+        const nudged = await polishWaitFor(h, `!!(${nudgeToast})`, 15000);
+        await h.shot("cdp-shots/settings-storage-12-nudge.png");
+        await h.ev(`${nudgeToast}?.click()`);
+        const opened = await polishWaitFor(h, `document.querySelector('[data-settings-section="storage"]') != null`, 5000);
+        const day = await h.ev(`localStorage.getItem(${JSON.stringify(SS_NUDGE_DAY_KEY)})`);
+        const againFrom = Date.now();
+        await h.rpc("rescanstorage", null);
+        await ssWaitScan(h, againFrom);
+        await polishNap(500);
+        const again = await h.ev(ssToast("can be cleaned"));
+        rec(
+            "12. past storage:nudgegb a toast says what can be cleaned; clicking it opens Settings → Storage; a later scan that day brings no second one",
+            nudged && opened && day != null && again === false,
+            JSON.stringify({ nudged, opened, day, again })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`settings-storage teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // only what arrange read: a null deletes the key, which is how it was
+        if (ctx.prevAuto !== undefined) {
+            await step("restore the storage settings", () =>
+                ssSetConfig(h, { "storage:autoclean": ctx.prevAuto, "storage:nudgegb": ctx.prevNudge })
+            );
+        }
+        if (ctx.prevNudgeDay !== undefined) {
+            const key = JSON.stringify(SS_NUDGE_DAY_KEY);
+            await step("restore the nudge's day", () =>
+                h.ev(
+                    ctx.prevNudgeDay === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevNudgeDay)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            await step(`delete ${name}`, () => h.rpc("deleteproject", { name }));
+        }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step(`remove ${dir}`, () => rmSync(dir, { recursive: true, force: true }));
+        }
+        await step("leave Settings", () => h.goto("cockpit"));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -28431,4 +28915,5 @@ export const SCENARIOS = [
     jobqueueAgentTag,
     floatMini,
     jarvisModes,
+    settingsStorage,
 ];

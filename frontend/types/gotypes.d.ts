@@ -602,6 +602,14 @@ declare global {
         email: string;
     };
 
+    // wshrpc.CommandCleanStorageData
+    type CommandCleanStorageData = {
+        category: string;
+        itemids: string[];
+        olderthandays?: number;
+        allowguarded?: boolean;
+    };
+
     // wshrpc.CommandConsultData
     type CommandConsultData = {
         channelid: string;
@@ -2994,6 +3002,9 @@ declare global {
         "notify:os"?: boolean;
         "notify:toast"?: boolean;
         "notify:reply"?: boolean;
+        "storage:*"?: boolean;
+        "storage:autoclean"?: boolean;
+        "storage:nudgegb"?: number;
         "term:*"?: boolean;
         "term:fontsize"?: number;
         "term:fontfamily"?: string;
@@ -3113,6 +3124,60 @@ declare global {
         style: {[key: string]: any};
         clickopts?: StickerClickOptsType;
         display: StickerDisplayOptsType;
+    };
+
+    // storage.StorageAutoClean
+    type StorageAutoClean = {
+        ts: number;
+        reclaimed: number;
+        error?: string;
+    };
+
+    // storage.StorageCategoryReport
+    type StorageCategoryReport = {
+        category: string;
+        bytes: number;
+        cleanablebytes: number;
+        items: StorageItem[];
+        error?: string;
+    };
+
+    // storage.StorageCleanResult
+    type StorageCleanResult = {
+        reclaimed: number;
+        trashed?: number;
+        deferred?: boolean;
+        cleaned: string[];
+        skipped: StorageSkipped[];
+    };
+
+    // storage.StorageItem
+    type StorageItem = {
+        id: string;
+        kind: string;
+        label: string;
+        detail?: string;
+        path?: string;
+        bytes: number;
+        modts?: number;
+        cleanable: boolean;
+        guarded?: boolean;
+        reason?: string;
+    };
+
+    // storage.StorageReport
+    type StorageReport = {
+        scannedts: number;
+        scanning: boolean;
+        categories: StorageCategoryReport[];
+        storebytes: number;
+        lastauto?: StorageAutoClean;
+    };
+
+    // storage.StorageSkipped
+    type StorageSkipped = {
+        id: string;
+        reason: string;
     };
 
     // wshrpc.StreamMeta

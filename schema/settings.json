@@ -26,6 +26,15 @@
         "notify:reply": {
           "type": "boolean"
         },
+        "storage:*": {
+          "type": "boolean"
+        },
+        "storage:autoclean": {
+          "type": "boolean"
+        },
+        "storage:nudgegb": {
+          "type": "number"
+        },
         "term:*": {
           "type": "boolean"
         },

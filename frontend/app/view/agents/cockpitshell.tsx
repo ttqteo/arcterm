@@ -30,6 +30,7 @@ import { useUnreadTracking } from "./unreadagentsstore";
 import { RadarSurface } from "./radarsurface";
 import { SettingsSurface } from "./settingssurface";
 import { SetupSurface } from "./setupsurface";
+import { StorageNudge } from "./storagenudge";
 import { UsageSurface } from "./usagesurface";
 
 // One always-mounted synchronization hook: seed the shared preferred-harness state from the persisted
@@ -171,6 +172,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             <HeldAskDialog model={model} />
             {/* a turn can end or an ask can land while any surface shows */}
             <NotifySync model={model} />
+            {/* a scan can finish while any surface shows */}
+            <StorageNudge model={model} />
         </div>
     );
 }

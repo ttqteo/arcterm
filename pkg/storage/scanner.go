@@ -26,9 +26,9 @@ type Scanner struct {
 	lastAuto *StorageAutoClean
 }
 
-// defaultProviders is every category in the order the Settings section shows them. Task 7 fills it.
+// defaultProviders is every category in the order the Settings section shows them.
 func defaultProviders() []provider {
-	return []provider{}
+	return []provider{runWorktrees{}, oldSessions{}, housekeeping{}, buildOutput{}}
 }
 
 func NewScanner(env *Env, publish func(StorageReport)) *Scanner {

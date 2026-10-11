@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Settings → Storage** shows what arcterm and its agents leave on disk (finished runs' worktrees, old Claude
+  sessions, logs, cache and trash, your projects' build output) and cleans each with a button; the safe parts clean
+  themselves daily, and a toast says when more than 2 GB can go.
+
 - **Setup → Skills** shows a selected skill's SKILL.md in its side panel: the description under the name for
   every skill, then the file itself, read from the copy **Open SKILL.md** opens. A relative link in it opens its
   file in Code.

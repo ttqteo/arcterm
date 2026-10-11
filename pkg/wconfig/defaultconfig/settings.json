@@ -3,6 +3,8 @@
     "notify:os": true,
     "notify:toast": true,
     "notify:reply": true,
+    "storage:autoclean": true,
+    "storage:nudgegb": 2,
     "window:minimize": "sprout",
     "editor:minimapenabled": true,
     "window:magnifiedblockopacity": 0.6,

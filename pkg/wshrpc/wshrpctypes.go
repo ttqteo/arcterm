@@ -40,6 +40,7 @@ type WshRpcInterface interface {
 	AgentCommands
 	AgentSyncCommands
 	SessionCommands
+	StorageCommands
 	ChannelCommands
 	RunCommands
 	DagCommands

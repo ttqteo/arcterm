@@ -43,8 +43,9 @@ import { AgentsPage } from "./settingspages/agents";
 import { AppearancePage } from "./settingspages/appearance";
 import { BackgroundAIPage } from "./settingspages/backgroundai";
 import { GeneralPage } from "./settingspages/general";
+import { StoragePage } from "./settingspages/storage";
 import { TerminalPage } from "./settingspages/terminal";
-import { takePendingSettingsSection } from "./settingsstore";
+import { pendingSettingsSectionAtom, takePendingSettingsSection } from "./settingsstore";
 import { RowCtx, writeConfig, type RowCtxValue } from "./settingsui";
 import type { OverrideRole } from "./themes";
 import { DEFAULT_THEME_PRESET, themeOverridesAtom, themePresetAtom } from "./themestore";
@@ -185,12 +186,15 @@ export function SettingsSurface({ model }: { model: AgentsViewModel }) {
     const selected = resolveSelection(visibleSections, wanted);
     const bindings = useRowBindings(sections, flagRuntime);
 
+    // a deep link (openSettingsSection) lands on mount, and while Settings already shows
+    const pendingSection = useAtomValue(pendingSettingsSectionAtom);
     useEffect(() => {
         const want = takePendingSettingsSection();
         if (want != null) {
+            setQuery("");
             setWanted(resolveSectionId(want));
         }
-    }, []);
+    }, [pendingSection]);
 
     const section = sections.find((s) => s.id === selected) ?? null;
     const filtered = visibleSections.find((s) => s.id === selected) ?? null;
@@ -345,6 +349,8 @@ function SectionBody({
             return <TerminalPage />;
         case "agents":
             return <AgentsPage model={model} runtime={runtime} onRuntime={onRuntime} />;
+        case "storage":
+            return <StoragePage />;
         case "headless":
             return <BackgroundAIPage />;
         case "about":
