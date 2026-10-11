@@ -36,6 +36,10 @@ export interface TaskWithImages {
     extraArgs: string[];
 }
 
+const ATTACHED_IMAGES_HEADER = "Attached images:";
+// POSIX /…, Windows X:\… or X:/…, or a UNC \\server\…: what WriteTempFileCommand returns
+const ABSOLUTE_PATH = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
+
 export function composeTaskWithImages(
     runtime: Runtime,
     task: string,
@@ -51,6 +55,27 @@ export function composeTaskWithImages(
     if (runtime === "codex" && !resuming && paths.every((p) => !p.includes(","))) {
         return { task: trimmed, extraArgs: ["--image", paths.join(",")] };
     }
-    const block = ["Attached images:", ...paths.map((p) => `- ${p}`)].join("\n");
+    const block = [ATTACHED_IMAGES_HEADER, ...paths.map((p) => `- ${p}`)].join("\n");
     return { task: trimmed ? `${trimmed}\n\n${block}` : block, extraArgs: [] };
+}
+
+/** Pure: the reverse of composeTaskWithImages, for a transcript that shows such a prompt: its text without the
+ *  trailing "Attached images:" block, and the paths that block names. A prompt whose last lines are not that block, or
+ *  whose block names a path that is not absolute, comes back whole with no paths. */
+export function splitAttachedImages(prompt: string): { text: string; paths: string[] } {
+    const lines = prompt.trimEnd().split(/\r?\n/);
+    let i = lines.length - 1;
+    while (i >= 0 && lines[i].startsWith("- ")) {
+        i--;
+    }
+    const paths = lines.slice(i + 1).map((l) => l.slice(2).trim());
+    if (
+        paths.length === 0 ||
+        i < 0 ||
+        lines[i].trim() !== ATTACHED_IMAGES_HEADER ||
+        !paths.every((p) => ABSOLUTE_PATH.test(p))
+    ) {
+        return { text: prompt, paths: [] };
+    }
+    return { text: lines.slice(0, i).join("\n").trimEnd(), paths };
 }

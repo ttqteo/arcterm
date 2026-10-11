@@ -103,13 +103,15 @@ function patchImage(id: string, patch: Partial<TaskImage>): void {
     globalStore.set(launcherImagesAtom, (prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
 }
 
-// A paste is a bare blob (createTempFileFromBlob names it); a drop keeps its file name (createTempFileFromFile).
+// A paste is a bare blob (createTempFileFromBlob names it); a drop keeps its file name (createTempFileFromFile). Both are
+// kept (~/.arc/attachments), not temp: the task names the file, and the transcript shows it from there long after a
+// temp sweep would have removed it.
 export function addTaskImages(files: File[], from: "paste" | "drop"): void {
     const room = imageRoom(globalStore.get(launcherImagesAtom).length, files.length);
     for (const f of files.slice(0, room)) {
         const id = crypto.randomUUID();
         globalStore.set(launcherImagesAtom, (prev) => [...prev, { id, previewUrl: URL.createObjectURL(f) }]);
-        const write = from === "paste" ? createTempFileFromBlob(f) : createTempFileFromFile(f);
+        const write = from === "paste" ? createTempFileFromBlob(f, true) : createTempFileFromFile(f, true);
         write.then(
             (path) => patchImage(id, { path }),
             (e) => patchImage(id, { error: String(e?.message ?? e) })

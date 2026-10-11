@@ -45,10 +45,11 @@ export const MIME_TO_EXT: Record<string, string> = {
  * and returns the file path.
  *
  * @param blob - The Blob to save
+ * @param keep - write it under ~/.arc/attachments, which no sweep removes, instead of the OS temp dir
  * @returns The path to the created temporary file
  * @throws Error if blob is too large (over MAX_UPLOAD_BYTES, see uploadfile.ts) or its type is not an image
  */
-export async function createTempFileFromBlob(blob: Blob): Promise<string> {
+export async function createTempFileFromBlob(blob: Blob, keep = false): Promise<string> {
     // Check size limit (MAX_UPLOAD_BYTES)
     if (checkUploadFile(blob) != null) {
         throw new Error(`Image too large (>${MAX_UPLOAD_LABEL})`);
@@ -68,7 +69,7 @@ export async function createTempFileFromBlob(blob: Blob): Promise<string> {
     const random = Math.random().toString(36).substring(2, 8);
     const filename = `waveterm_paste_${timestamp}_${random}.${ext}`;
 
-    return writeTempFile(filename, blob);
+    return writeTempFile(filename, blob, keep);
 }
 
 // How long the write may take. Without a timeout the call never settles when its message is lost (ws.ts drops one
@@ -76,8 +77,9 @@ export async function createTempFileFromBlob(blob: Blob): Promise<string> {
 const TempFileWriteTimeoutMs = 30000;
 
 // Writes the blob's bytes to a file called `filename` in a fresh temp directory (WriteTempFileCommand makes one
-// per call, so two files with the same name never collide) and returns its path.
-async function writeTempFile(filename: string, blob: Blob): Promise<string> {
+// per call, so two files with the same name never collide) and returns its path. `keep` puts that directory under
+// ~/.arc/attachments, which the temp sweep never touches (Settings → Storage cleans it).
+async function writeTempFile(filename: string, blob: Blob, keep: boolean): Promise<string> {
     const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as ArrayBuffer);
@@ -92,6 +94,7 @@ async function writeTempFile(filename: string, blob: Blob): Promise<string> {
         {
             filename,
             data64: base64Data,
+            keep: keep || undefined,
         },
         { timeout: TempFileWriteTimeoutMs }
     );
@@ -105,13 +108,13 @@ async function writeTempFile(filename: string, blob: Blob): Promise<string> {
  * @returns The path to the created temporary file
  * @throws UploadError "too-large" if the file is over MAX_UPLOAD_BYTES (checkUploadFile), "error" if the copy failed
  */
-export async function createTempFileFromFile(file: File): Promise<string> {
+export async function createTempFileFromFile(file: File, keep = false): Promise<string> {
     const rejection = checkUploadFile(file);
     if (rejection != null) {
         throw new UploadError(rejection, file.name);
     }
     try {
-        return await writeTempFile(sanitizeFileName(file.name), file);
+        return await writeTempFile(sanitizeFileName(file.name), file, keep);
     } catch (err) {
         console.error("Temp file write error:", err);
         throw new UploadError("error", file.name);

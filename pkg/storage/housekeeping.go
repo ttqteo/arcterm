@@ -20,12 +20,13 @@ const (
 	// LogMaxAge is how old a rolled log must be before auto-clean removes it
 	LogMaxAge = 7 * 24 * time.Hour
 
-	trashItemID = "trash"
-	cacheItemID = "webviewcache"
+	trashItemID       = "trash"
+	cacheItemID       = "webviewcache"
+	attachmentsItemID = "attachments"
 )
 
-// housekeeping is the small stuff: logs the host rolled aside, the session trash (removed for good), and the
-// webview's cache (cleared at the next launch).
+// housekeeping is the small stuff: logs the host rolled aside, the session trash (removed for good), the images sent
+// with a new agent's task (kept so its transcript can show them), and the webview's cache (cleared at the next launch).
 type housekeeping struct{}
 
 func (housekeeping) category() StorageCategory { return CategoryHousekeeping }
@@ -74,6 +75,11 @@ func (housekeeping) measure(ctx context.Context, env *Env) StorageCategoryReport
 	trash := dirSize(env.TrashDir)
 	items = append(items, StorageItem{ID: trashItemID, Kind: KindTrash, Label: "Session trash", Detail: "removed for good",
 		Path: env.TrashDir, Bytes: trash, Cleanable: trash > 0})
+	if env.AttachmentsDir != "" {
+		sent := dirSize(env.AttachmentsDir)
+		items = append(items, StorageItem{ID: attachmentsItemID, Kind: KindAttachments, Label: "Images sent at launch",
+			Detail: "their transcripts show them", Path: env.AttachmentsDir, Bytes: sent, Cleanable: sent > 0})
+	}
 	// A build with no cache dirs (a dev app on a Mac, which shares the packaged app's WebKit cache) offers no item.
 	if len(env.WebviewCacheDirs) > 0 {
 		var cache int64
@@ -101,6 +107,22 @@ func (housekeeping) clean(ctx context.Context, env *Env, ids []string, opts Clea
 				continue
 			}
 			freed, err := emptyDir(env.TrashDir)
+			res.Reclaimed += freed
+			if err != nil {
+				skip(&res, id, "couldn't remove: "+err.Error())
+				continue
+			}
+			res.Cleaned = append(res.Cleaned, id)
+		case attachmentsItemID:
+			if opts.Auto {
+				skip(&res, id, "the images are removed only when you ask")
+				continue
+			}
+			if env.AttachmentsDir == "" {
+				skip(&res, id, "no images kept here")
+				continue
+			}
+			freed, err := emptyDir(env.AttachmentsDir)
 			res.Reclaimed += freed
 			if err != nil {
 				skip(&res, id, "couldn't remove: "+err.Error())

@@ -90,7 +90,16 @@ func (ws *WshServer) WriteTempFileCommand(ctx context.Context, data wshrpc.Comma
 	if name == "" || name == "." || name == ".." {
 		return "", fmt.Errorf("invalid filename")
 	}
-	tempDir, err := os.MkdirTemp("", tempAttachPrefix)
+	// one dir per file either way, so two files with the same name never collide; a kept one's dir starts with the
+	// day it was sent, which is how a person browsing the folder tells them apart
+	parent, prefix := "", tempAttachPrefix
+	if data.Keep {
+		parent, prefix = keptAttachmentsDir(), time.Now().Format("2006-01-02")+"-"
+		if err := os.MkdirAll(parent, 0700); err != nil {
+			return "", fmt.Errorf("error creating attachments directory: %w", err)
+		}
+	}
+	tempDir, err := os.MkdirTemp(parent, prefix)
 	if err != nil {
 		return "", fmt.Errorf("error creating temp directory: %w", err)
 	}

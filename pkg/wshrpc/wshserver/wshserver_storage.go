@@ -29,6 +29,12 @@ var storageScanner *storage.Scanner
 
 var errStorageNotStarted = errors.New("storage is not started")
 
+// keptAttachmentsDir is where WriteTempFileCommand puts a file it is asked to keep (the images sent with a new agent's
+// task), and what Settings → Storage measures and empties.
+func keptAttachmentsDir() string {
+	return filepath.Join(wavebase.GetHomeDir(), ".arc", "attachments")
+}
+
 // StartStorage builds the scanner from the config, the store and the roster, and starts its loop: after
 // storage.AutoCleanDelay, then daily, it auto-cleans when storage:autoclean allows it, else only rescans.
 func StartStorage(ctx context.Context) {
@@ -43,6 +49,7 @@ func StartStorage(ctx context.Context) {
 		RemoveWorktree:   orchestrate.RemoveWorktreeKeepBranch,
 		DataDir:          dataDir,
 		TrashDir:         sessiontrash.TrashDir(),
+		AttachmentsDir:   keptAttachmentsDir(),
 		SessionDirs:      sessiontrash.ProjectsDirs(),
 		WebviewCacheDirs: webviewCacheDirsFor(runtime.GOOS, wavebase.IsDevMode(), wavebase.GetHomeDir(), dataDir),
 	}

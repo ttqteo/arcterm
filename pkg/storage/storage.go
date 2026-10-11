@@ -39,6 +39,7 @@ const (
 	KindTrash        = "trash"
 	KindWebviewCache = "webviewcache"
 	KindBuild        = "build"
+	KindAttachments  = "attachments"
 )
 
 // StorageItem is one thing a category can clean: a run's worktree, a session, a rolled log, the trash, the
@@ -116,6 +117,7 @@ type Env struct {
 	RemoveWorktree   func(ctx context.Context, projectPath, wt string) error
 	DataDir          string // <data>: logs, the store, the cache marker
 	TrashDir         string
+	AttachmentsDir   string // ~/.arc/attachments: the images sent with a new agent's task, which its transcript shows
 	SessionDirs      []string
 	WebviewCacheDirs []string
 }

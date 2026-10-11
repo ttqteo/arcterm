@@ -4,12 +4,17 @@
 package wshserver
 
 import (
+	"context"
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 func mkDir(t *testing.T, base, name string, age time.Duration) string {
@@ -139,5 +144,33 @@ func TestSweepCanvasFeedbackSkipsLinkedDir(t *testing.T) {
 
 	if !exists(target) {
 		t.Errorf("a feedback dir that is a link must not be swept")
+	}
+}
+
+// A kept file goes under ~/.arc/attachments, in a dir of its own named by the day, where no temp sweep looks; a plain
+// one still goes to the OS temp dir under the prefix the sweep owns.
+func TestWriteTempFileKeep(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	data64 := base64.StdEncoding.EncodeToString([]byte("png"))
+	kept, err := (&WshServer{}).WriteTempFileCommand(context.Background(), wshrpc.CommandWriteTempFileData{FileName: "shot.png", Data64: data64, Keep: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(kept)
+	if filepath.Dir(dir) != filepath.Join(home, ".arc", "attachments") || !strings.HasPrefix(filepath.Base(dir), time.Now().Format("2006-01-02")+"-") {
+		t.Fatalf("kept at %s, want ~/.arc/attachments/<day>-*/shot.png", kept)
+	}
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "png" {
+		t.Fatalf("read %q, %v", b, err)
+	}
+	temp, err := (&WshServer{}).WriteTempFileCommand(context.Background(), wshrpc.CommandWriteTempFileData{FileName: "shot.png", Data64: data64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(filepath.Dir(temp)) })
+	if !strings.HasPrefix(filepath.Base(filepath.Dir(temp)), tempAttachPrefix) || strings.HasPrefix(temp, home) {
+		t.Fatalf("a plain temp file at %s, want the OS temp dir under %s", temp, tempAttachPrefix)
 	}
 }

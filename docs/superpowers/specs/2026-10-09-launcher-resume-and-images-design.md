@@ -42,6 +42,9 @@ Antigravity, opencode and pi).
   untouched.
 - Drop: image files dropped on the Task box go through `createTempFileFromFile`; other files are ignored.
 - At most 8 images.
+- Both write with `keep` (changed 2026-10-11): the file goes under `~/.arc/attachments/<day>-*/` instead of the OS
+  temp dir, whose `waveterm-attach-*` dirs are swept after 24 hours. The prompt names the file, and transcripts show
+  it from there (`splitAttachedImages`, `PromptImages`); Settings → Storage's Logs, cache and trash card removes them.
 
 **Display.** A row of 48px thumbnails under the textarea (`URL.createObjectURL` previews), each with an ✕. An image
 still writing shows a spinner and holds the launch button until it lands. A failed write (over 3.5 MB, unsupported

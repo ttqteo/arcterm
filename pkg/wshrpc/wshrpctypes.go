@@ -165,6 +165,9 @@ type CommandEventReadHistoryData struct {
 type CommandWriteTempFileData struct {
 	FileName string `json:"filename"`
 	Data64   string `json:"data64"`
+	// Keep writes it under ~/.arc/attachments instead of the OS temp dir: no sweep removes it, so a transcript that
+	// names it still shows it later; Settings → Storage cleans them
+	Keep bool `json:"keep,omitempty"`
 }
 
 const (

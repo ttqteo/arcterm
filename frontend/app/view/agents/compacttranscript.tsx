@@ -21,6 +21,7 @@ import {
     workedFor,
     type WorkItem,
 } from "./compacttimeline";
+import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import {
     CommandChip,
@@ -51,7 +52,9 @@ function UserMessage({
     images?: string[];
     onContextMenu: (e: React.MouseEvent) => void;
 }) {
-    const clamp = userNeedsClamp(text);
+    // a launch's attached images ride the prompt as paths; they show as pictures, not as the block that names them
+    const said = splitAttachedImages(text);
+    const clamp = userNeedsClamp(said.text);
     const [open, setOpen] = useState(false);
     return (
         <div
@@ -67,7 +70,7 @@ function UserMessage({
                     clamp && !open && "line-clamp-6"
                 )}
             >
-                {text}
+                {said.text}
             </p>
             {clamp ? (
                 <button
@@ -78,7 +81,7 @@ function UserMessage({
                     {open ? "Show less" : "Show more"}
                 </button>
             ) : null}
-            {images ? <PromptImages images={images} /> : null}
+            {images || said.paths.length > 0 ? <PromptImages images={images} paths={said.paths} /> : null}
         </div>
     );
 }
@@ -237,7 +240,9 @@ export function CompactTranscript({
     const visible = items.length > RENDER_CAP ? items.slice(items.length - RENDER_CAP) : items;
     const rootRef = useRef<HTMLDivElement>(null);
     const pinned = usePinnedPrompt(rootRef);
-    const prompts = visible.flatMap((item) => (item.kind === "user" ? [item.text || "Image"] : []));
+    const prompts = visible.flatMap((item) =>
+        item.kind === "user" ? [splitAttachedImages(item.text).text || "Image"] : []
+    );
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [

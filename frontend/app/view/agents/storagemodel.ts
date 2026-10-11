@@ -30,7 +30,7 @@ export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blu
     },
     housekeeping: {
         title: "Logs, cache and trash",
-        blurb: "Rolled logs, the session trash and the interface's cache.",
+        blurb: "Rolled logs, the session trash, the images sent with a new agent's task and the interface's cache.",
         action: "Clean",
     },
     buildoutput: {
@@ -221,7 +221,7 @@ export function confirmFor(
         case "housekeeping":
             return {
                 title: "Clean logs, cache and trash",
-                message: `Remove rolled logs and empty the session trash for good (${size})? The interface cache clears when arcterm next opens.`,
+                message: `Remove rolled logs, empty the session trash for good and remove the images sent at launch (${size})? Their transcripts no longer show those images. The interface cache clears when arcterm next opens.`,
                 confirmLabel: "Clean",
             };
         default:

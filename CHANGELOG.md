@@ -23,6 +23,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A **sleeping agent** shows its conversation where its terminal was: the terminal kept only the lines printed before
   the agent started and the kill that put it to sleep. **Wake** brings the live terminal back.
+- Images attached to a **new agent's task** show as pictures in its transcript, not as a list of paths. They are kept
+  in `~/.arc/attachments` rather than a temp folder emptied after a day, so the pictures stay; **Settings → Storage**
+  removes them under Logs, cache and trash. An image whose file is gone is named in its place.
 
 ### Fixed
 

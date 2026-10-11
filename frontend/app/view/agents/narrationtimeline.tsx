@@ -2,10 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { getApi } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
 import { FAINT_TEXT } from "@/app/view/jarvis/briefstyle";
+import { getWebServerEndpoint } from "@/util/endpoints";
 import { cn } from "@/util/util";
-import { ArrowUpRight, Ban, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Layers, X } from "lucide-react";
+import {
+    ArrowUpRight,
+    Ban,
+    Check,
+    ChevronDown,
+    ChevronRight,
+    ChevronUp,
+    Copy,
+    ImageOff,
+    Layers,
+    X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { MOTION, composerReveal, shouldFadeEntry } from "@/app/element/motiontokens";
 import { Fragment, useMemo, useRef, useState } from "react";
@@ -21,6 +34,8 @@ import {
     type AgentEntry,
     type EditFile,
 } from "./agentsviewmodel";
+import { urlFor } from "./docpdf";
+import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import { PathLink } from "./pathlinkcontext";
 import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
@@ -315,28 +330,55 @@ export function ToolLine({ action }: { action: AgentActionEntry }) {
 
 // A folded run of consecutive edits (Wave-transcript-feed.dc.html burst). Summary row: "N files
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
-// the images pasted with a prompt, as thumbnails; a click shows one at its full width, another click shrinks it back
-export function PromptImages({ images }: { images: string[] }) {
-    const [open, setOpen] = useState<number | null>(null);
+// the images pasted with a prompt, as thumbnails; a click shows one at its full width, another click shrinks it back.
+// `paths` are the images a launch attached by path (splitAttachedImages, launcherimages.ts), read from disk; one whose
+// file is gone (a temp sweep, or Settings → Storage) is named in its place.
+export function PromptImages({ images = [], paths = [] }: { images?: string[]; paths?: string[] }) {
+    const [open, setOpen] = useState<string | null>(null);
+    const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+    const thumb = (key: string, src: string, alt: string, onError?: () => void) => (
+        <img
+            key={key}
+            src={src}
+            alt={alt}
+            onError={onError}
+            onClick={(e) => {
+                e.stopPropagation();
+                setOpen((cur) => (cur === key ? null : key));
+            }}
+            className={cn(
+                "max-w-full rounded-[6px] border border-edge-mid object-contain",
+                open === key ? "cursor-zoom-out" : "max-h-[160px] cursor-zoom-in"
+            )}
+        />
+    );
     return (
         <div data-prompt-images className="mt-1.5 flex flex-wrap gap-1.5">
-            {images.map((src, i) => (
-                <img
-                    key={i}
-                    src={src}
-                    alt={`Pasted image ${i + 1}`}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setOpen((cur) => (cur === i ? null : i));
-                    }}
-                    className={cn(
-                        "max-w-full rounded-[6px] border border-edge-mid object-contain",
-                        open === i ? "cursor-zoom-out" : "max-h-[160px] cursor-zoom-in"
-                    )}
-                />
-            ))}
+            {images.map((src, i) => thumb(`pasted:${i}`, src, `Pasted image ${i + 1}`))}
+            {paths.map((path) => {
+                const name = path.split(/[\\/]/).pop() ?? path;
+                return gone.has(path) ? (
+                    <span
+                        key={`path:${path}`}
+                        data-prompt-image-gone
+                        title={path}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-[6px] border border-edge-mid px-2 py-1 text-[11.5px] text-muted"
+                    >
+                        <ImageOff size={13} aria-hidden className="flex-none" />
+                        <span className="min-w-0 truncate">{name} · no longer on disk</span>
+                    </span>
+                ) : (
+                    thumb(`path:${path}`, attachedImageUrl(path), name, () =>
+                        setGone((prev) => new Set(prev).add(path))
+                    )
+                );
+            })}
         </div>
     );
+}
+
+function attachedImageUrl(path: string): string {
+    return urlFor(path, getWebServerEndpoint(), getApi().getAuthKey());
 }
 
 export function CommandChip({ name, args, isSkill }: { name: string; args?: string; isSkill?: boolean }) {
@@ -570,7 +612,9 @@ export function NarrationTimeline({
     const visibleItems = items.length > TIMELINE_RENDER_CAP ? items.slice(items.length - TIMELINE_RENDER_CAP) : items;
     const rootRef = useRef<HTMLDivElement>(null);
     const pinned = usePinnedPrompt(rootRef);
-    const prompts = visibleItems.flatMap((item) => (item.kind === "user" ? [item.text || "Image"] : []));
+    const prompts = visibleItems.flatMap((item) =>
+        item.kind === "user" ? [splitAttachedImages(item.text).text || "Image"] : []
+    );
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [
@@ -622,6 +666,7 @@ export function NarrationTimeline({
                     );
                 }
                 if (item.kind === "user") {
+                    const said = splitAttachedImages(item.text);
                     return (
                         <motion.div
                             key={item.index}
@@ -636,8 +681,10 @@ export function NarrationTimeline({
                                 <div className="mb-0.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                                     You
                                 </div>
-                                {item.text ? <p className="text-[13px] leading-[1.5] text-primary">{item.text}</p> : null}
-                                {item.images ? <PromptImages images={item.images} /> : null}
+                                {said.text ? <p className="text-[13px] leading-[1.5] text-primary">{said.text}</p> : null}
+                                {item.images || said.paths.length > 0 ? (
+                                    <PromptImages images={item.images} paths={said.paths} />
+                                ) : null}
                             </div>
                         </motion.div>
                     );

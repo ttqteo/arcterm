@@ -1827,6 +1827,7 @@ declare global {
     type CommandWriteTempFileData = {
         filename: string;
         data64: string;
+        keep?: boolean;
     };
 
     // wconfig.ConfigError

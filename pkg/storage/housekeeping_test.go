@@ -18,6 +18,7 @@ func houseEnv(t *testing.T) *Env {
 		Now:              time.Now,
 		DataDir:          filepath.Join(base, "data"),
 		TrashDir:         filepath.Join(base, "trash"),
+		AttachmentsDir:   filepath.Join(base, "attachments"),
 		WebviewCacheDirs: []string{filepath.Join(base, "cache", "NetworkCache"), filepath.Join(base, "cache", "CacheStorage")},
 	}
 }
@@ -95,6 +96,40 @@ func TestEmptyingTheTrashKeepsTheTrashDir(t *testing.T) {
 	entries, err := os.ReadDir(env.TrashDir)
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("the trash dir must stay, empty: %v %v", entries, err)
+	}
+}
+
+func TestHousekeepingListsTheImagesSentAtLaunch(t *testing.T) {
+	env := houseEnv(t)
+	if it := itemByID(housekeeping{}.measure(context.Background(), env).Items, "attachments"); it.Kind != KindAttachments || it.Bytes != 0 || it.Cleanable {
+		t.Fatalf("with none sent: %+v", it)
+	}
+	writeFile(t, filepath.Join(env.AttachmentsDir, "2026-10-11-123", "shot.png"), 70)
+	if it := itemByID(housekeeping{}.measure(context.Background(), env).Items, "attachments"); it.Bytes != 70 || !it.Cleanable || it.Path != env.AttachmentsDir {
+		t.Fatalf("with one sent: %+v", it)
+	}
+	env.AttachmentsDir = ""
+	if it := itemByID(housekeeping{}.measure(context.Background(), env).Items, "attachments"); it.ID != "" {
+		t.Fatalf("no dir, no item: %+v", it)
+	}
+}
+
+func TestOnlyAskingRemovesTheImagesSentAtLaunch(t *testing.T) {
+	env := houseEnv(t)
+	img := filepath.Join(env.AttachmentsDir, "2026-10-11-123", "shot.png")
+	writeFile(t, img, 70)
+	aged(t, img, 400*24*time.Hour)
+	auto := housekeeping{}.clean(context.Background(), env, []string{"attachments"}, CleanOpts{Auto: true})
+	if len(auto.Cleaned) != 0 || !fileExists(img) {
+		t.Fatalf("auto-clean removed the images: %+v", auto)
+	}
+	res := housekeeping{}.clean(context.Background(), env, []string{"attachments"}, CleanOpts{})
+	if res.Reclaimed != 70 || !reflect.DeepEqual(res.Cleaned, []string{"attachments"}) {
+		t.Fatalf("got %+v, want 70 bytes freed", res)
+	}
+	entries, err := os.ReadDir(env.AttachmentsDir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("the attachments dir must stay, empty: %v %v", entries, err)
 	}
 }
 
