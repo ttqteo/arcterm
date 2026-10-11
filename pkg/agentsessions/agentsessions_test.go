@@ -53,6 +53,24 @@ func recordReads(t *testing.T) func() []string {
 	}
 }
 
+// claude writes a "<synthetic>" assistant turn for an interrupt or an API error: it names no model, so the session
+// keeps the one before it
+func TestScanRoot_skipsSyntheticModel(t *testing.T) {
+	dir := t.TempDir()
+	writeJSONL(t, dir, "sess-s.jsonl",
+		`{"type":"user","cwd":"/home/me/web","message":{"role":"user","content":"Fix it"}}`,
+		`{"type":"assistant","message":{"model":"claude-opus-5-5"}}`,
+		`{"type":"assistant","message":{"model":"<synthetic>"}}`,
+	)
+	got := scanProvider(claudeProvider(dir), 0, 10)
+	if len(got) != 1 {
+		t.Fatalf("want 1 session, got %d", len(got))
+	}
+	if got[0].Model != "claude-opus-5-5" {
+		t.Errorf("model = %q, want claude-opus-5-5", got[0].Model)
+	}
+}
+
 func TestScanRoot_parsesAndSortsNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	writeJSONL(t, dir, "sess-a.jsonl",

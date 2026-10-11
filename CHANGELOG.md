@@ -65,6 +65,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- An agent's model, and a past conversation's in History, no longer reads `<synthetic>` after you interrupt Claude
+  or an API error ends a turn: it keeps the model the session last answered with.
 - On macOS, a double-click or right-click on a button, the app bar (its search box too), the surface rail or the
   footer no longer selects a word of its text. Text boxes still select as before.
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;

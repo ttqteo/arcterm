@@ -312,7 +312,8 @@ func readLastModel(path string) string {
 				Model string `json:"model"`
 			} `json:"message"`
 		}
-		if json.Unmarshal([]byte(ln), &rec) == nil && rec.Message.Model != "" {
+		// a "<synthetic>" turn (an interrupt, an API error) names no model, so the one before it stands
+		if json.Unmarshal([]byte(ln), &rec) == nil && rec.Message.Model != "" && rec.Message.Model != "<synthetic>" {
 			model = rec.Message.Model
 		}
 	}

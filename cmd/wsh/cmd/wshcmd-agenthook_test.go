@@ -159,6 +159,20 @@ func TestReadLastModelAndTitle(t *testing.T) {
 	}
 }
 
+// a "<synthetic>" turn (an interrupt, an API error) names no model: the row keeps the model before it
+func TestReadLastModelSkipsSynthetic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	content := `{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}
+{"type":"assistant","message":{"model":"<synthetic>","content":[]}}
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLastModel(path); got != "claude-opus-5-5" {
+		t.Fatalf("model = %q, want claude-opus-5-5", got)
+	}
+}
+
 func TestReadLastTitleMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "t.jsonl")

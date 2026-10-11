@@ -180,8 +180,9 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 		if s.Branch == "" && rec.GitBranch != "" {
 			s.Branch = rec.GitBranch
 		}
-		if rec.Message.Model != "" {
-			s.Model = rec.Message.Model // last assistant model wins
+		// last assistant model wins; a "<synthetic>" turn (an interrupt, an API error) names none
+		if rec.Message.Model != "" && rec.Message.Model != "<synthetic>" {
+			s.Model = rec.Message.Model
 		}
 		if rec.Message.Usage != nil {
 			u := rec.Message.Usage
