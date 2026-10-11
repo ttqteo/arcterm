@@ -35,7 +35,7 @@ hand), disk space of other apps, and a storage chip on the app bar (the person c
 
 ## Decisions
 
-1. **Settings → Storage.** A new section id `storage` in `settingssurface.tsx`. Its head reads `arcterm
+1. **Settings → Storage.** A new section id `storage` in `settingsmodel.ts`, drawn by `settingspages/storage.tsx`. Its head reads `arcterm
    uses 4.1 GB · 3.7 GB can be cleaned`, with **Rescan** and the time of the last scan. Below, one card per
    category (decision 4), each with its size, one line on what it is, its items in a collapsible list, and
    its clean button. At the bottom, the auto-clean switch and threshold (decision 8) with the last auto-clean's
@@ -55,8 +55,9 @@ hand), disk space of other apps, and a storage chip on the app bar (the person c
       (`projects`), each matched to its run and task in the store by the engine's folder names (`<runId>`,
       `<runId>-<task>`, `-final`, `-base`, `-bisect`); any other folder is listed but never cleaned. Cleanable
       when the run is done or cancelled (runs have no failed status; a blocked run can still be retried, so it
-      counts as not finished) **and** `git status --porcelain` in the worktree is empty; a directory no run
-      claims counts as finished. Removed by a new engine export that removes the tree and keeps its branch
+      counts as not finished; so does a done run whose land into its base is still pending or held, since the
+      engine retries the merge and Check in its worktree, read `run still landing`) **and** `git status
+      --porcelain` in the worktree is empty; a directory no run claims counts as finished. Removed by a new engine export that removes the tree and keeps its branch
       (`RemoveRunWorktree` deletes the `wave/<runId>` branch). The engine's cleanup debt is left to the engine,
       whose own retry clears it once the tree is gone. A finished worktree with uncommitted changes is left
       out of **Clean all** and auto-clean; its own row's button removes it after a confirm that says those
@@ -71,16 +72,19 @@ hand), disk space of other apps, and a storage chip on the app bar (the person c
       `EBWebView/Default/Cache`, `Code Cache`, `GPUCache`, in the `EBWebView` folder beside the data folder). The cache is in use while the app runs, so
       its clean only writes a marker file, `<data>/clear-webview-cache`; at the next launch the host removes
       the cache directories and the marker **before** it creates the webview. The card says "cleared when
-      arcterm next opens".
+      arcterm next opens". A macOS dev build offers no cache item and its host never clears the cache: dev and
+      packaged builds share `~/Library/Caches/dev.arc.app/WebKit`, so a dev clean would empty the installed
+      app's cache.
    4. **Build output.** Per project in config, directories up to three levels deep (enough for
       `src-tauri/target` and `frontend/node_modules`), not descending into a match, `.git` or
       `.waveterm/worktrees`. A directory qualifies only when all hold: its name is `node_modules`, `target`,
       `dist`, `build`, `.next` or `__pycache__`; a `target` sits beside a `Cargo.toml`; and
-      `git check-ignore` says the project ignores it, so tracked files are never removed. Each project's row
+      `git check-ignore` says the project ignores it and `git ls-files` lists nothing under it, so tracked
+      files, force-added ones too, are never removed; the clean checks both again. Each project's row
       has its own button; there is no Clean all. A project with an agent in state `working` or a running run
       is refused, since removing output under a running build breaks it.
 
-5. **Two RPCs and an event.** `GetStorageCommand` returns the last scan (per category: size, items with
+5. **Three RPCs and an event.** `GetStorageCommand` returns the last scan (per category: size, items with
    their ids, sizes and whether each is cleanable with its reason) plus the scan time and whether a scan is
    running. `CleanStorageCommand{category, itemids, olderthandays}` cleans and returns bytes reclaimed and the
    skipped items with reasons, then rescans. `RescanStorageCommand` starts a scan. A finished scan publishes a
@@ -119,5 +123,6 @@ hand), disk space of other apps, and a storage chip on the app bar (the person c
   threshold and once-a-day rule.
 - **CDP:** a `settings-storage` scenario in `scripts/cdp/scenarios.mjs` opens Settings → Storage over fixture
   data; on a Mac the plan's Final guards it as AGENTS.md says.
-- **By hand on the Mac:** a scan of this repo against `du`; cleaning the `memgate` worktree and the trash;
-  the cache marker followed by a relaunch.
+- **By hand on the Mac**, left to the person as a chunk on the Storage cleanup initiative, since no run can do
+  it: a scan of this repo against `du`; cleaning the `memgate` worktree and the trash; the cache marker
+  followed by a relaunch of the packaged app.
