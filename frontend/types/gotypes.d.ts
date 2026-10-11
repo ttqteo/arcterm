@@ -3044,6 +3044,11 @@ declare global {
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
         "usage:insightslang"?: string;
+        "tokengate:*"?: boolean;
+        "tokengate:enabled"?: boolean;
+        "tokengate:sharepct"?: number;
+        "tokengate:windowpct"?: number;
+        "tokengate:agents"?: number;
         "jobs:slots"?: number;
         "jobs:mode"?: string;
         "jobs:pauseuntil"?: number;

@@ -73,7 +73,7 @@ export interface AgentAsk {
     replySuggestions?: string[]; // free-form quick-replies (populated by test-data scenarios; undefined on the live path)
     prose?: boolean; // projected prose question (pi bridge): chips submit as text answers
     note?: string; // why the ask is back in front of the human (e.g. a typed answer that never cleared)
-    hold?: boolean; // a held command's card (`wsh memgate`): answered on the card, not in the agent's terminal
+    hold?: boolean; // a held card (an `AskCommand` with Hold): answered on the card, not in the agent's terminal
 }
 
 export interface AgentVM {
@@ -730,7 +730,7 @@ export function cycleId(ids: string[], current: string | undefined, delta: numbe
 }
 
 /** Pure: is the agent asking a question its terminal answers (Claude Code's picker, driven by ↑/↓, Enter and digits)?
- *  A held command's card (`wsh memgate`) is answered on the card above the terminal instead. */
+ *  A held card (an `AskCommand` with Hold) is answered on the card above the terminal instead. */
 export function asksInTerminal(agent: Pick<AgentVM, "state" | "ask"> | undefined): boolean {
     return agent?.state === "asking" && !agent.ask?.hold;
 }
@@ -967,7 +967,7 @@ export function withAsk(vm: AgentVM, ask: AgentAskData | null, now: number): Age
     };
 }
 
-/** Pure: the word an asking agent's status reads as. A held command's card (`wsh memgate`'s Low RAM) is not a
+/** Pure: the word an asking agent's status reads as. A held card (the Token burn card, an Antigravity question) is not a
  *  question the agent asked in its terminal, so it reads as its card's header instead of "asking". */
 export function askingLabel(a: Pick<AgentVM, "ask">): string {
     if (a.ask?.hold) {

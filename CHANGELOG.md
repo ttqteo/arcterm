@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Before an agent starts a costly batch of subagents or a workflow, a Token burn card shows its context, the
+  5-hour window and a rough cost, and waits for Allow, Allow this turn, Allow this session or Don't spawn. A
+  single subagent with room in the window runs without asking. Tune it with the `tokengate:*` settings.
+
 - **Setup → Skills** shows a selected skill's SKILL.md in its side panel: the description under the name for
   every skill, then the file itself, read from the copy **Open SKILL.md** opens. A relative link in it opens its
   file in Code.
@@ -113,6 +117,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- A held card that pops up over the cockpit, such as an Antigravity agent's question, is headed by its own title
+  instead of "Low RAM".
 - On a Claude Team plan the weekly usage gauge shows the plan's weekly limit (the model-scoped one, such as Fable's)
   instead of "—", and a running Team agent no longer blanks it.
 - On macOS, the Claude usage in the app bar and on the Usage surface is read fresh from Anthropic for your `/login`

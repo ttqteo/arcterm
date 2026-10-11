@@ -788,6 +788,8 @@ func codexHookCommand(wshExe, goos string) string {
 // isCodexManagedCommand reports whether a Codex hook command is arcterm's, whatever wsh path it names.
 func isCodexManagedCommand(command string) bool {
 	exe, rest := splitFirstToken(strings.TrimPrefix(strings.TrimSpace(command), "& "))
+	// a Windows command names a backslash path, which filepath.Base on a Mac does not split
+	exe = strings.ReplaceAll(exe, `\`, "/")
 	return strings.HasPrefix(strings.ToLower(filepath.Base(exe)), "wsh") && rest == "codex-hook"
 }
 
