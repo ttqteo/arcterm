@@ -97,7 +97,10 @@ function DefaultRow({
     children: ReactNode;
 }) {
     return (
-        <div className="grid grid-cols-[156px_minmax(0,1fr)_140px] items-center gap-x-3.5 px-3.5 py-[11px]">
+        <div
+            data-jarvis-profile-row={label}
+            className="grid grid-cols-[156px_minmax(0,1fr)_140px] items-center gap-x-3.5 px-3.5 py-[11px]"
+        >
             <div className="flex flex-col gap-0.5">
                 <span className="text-[13px] font-medium text-ink-hi">{label}</span>
                 <span className="text-[11.5px] leading-[1.35] text-muted">{hint}</span>

@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Jarvis has a tour: the **?** button in its header walks you through the Brief, Initiatives, the run sheet and the
+  Profile one control at a time, in Vietnamese or English, and Jarvis offers it once the first time you open it.
+
 - Before an agent starts a costly batch of subagents or a workflow, a Token burn card shows its context, the
   5-hour window and a rough cost, and waits for Allow, Allow this turn, Allow this session or Don't spawn. A
   single subagent with room in the window runs without asking. Tune it with the `tokengate:*` settings.

@@ -171,6 +171,7 @@ import {
     readingNoteAtom,
 } from "./jarvisstore";
 import { clearSubject, persistedSubjectAtom, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
+import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
 import { openChannelSheet, openOrPeek, openOrPeekAddress } from "./openref";
@@ -1526,6 +1527,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 >
                     <SlidersHorizontal aria-hidden size={14} strokeWidth={1.8} />
                 </button>
+                <TourButton />
                 <span aria-hidden className="mx-0.5 h-[18px] w-px flex-none bg-border" />
                 <NewInitiativeControl model={model} />
             </header>
@@ -2145,6 +2147,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             ) : null}
             {/* the plan-gate modal, mounted here because the Stage was the surface that hosted it */}
             <DagModal />
+            <TourOffer />
+            <JarvisTour model={model} />
         </div>
     );
 }
