@@ -62,6 +62,15 @@ type usageWindow struct {
 type usageBody struct {
 	FiveHour *usageWindow `json:"five_hour"`
 	SevenDay *usageWindow `json:"seven_day"`
+	Limits   []usageLimit `json:"limits"`
+}
+
+// a row of the answer's limits[], classified on its kind ("session", "weekly_all", "weekly_scoped"). A
+// Team plan leaves seven_day null and has its weekly window only here, as a model-scoped row.
+type usageLimit struct {
+	Kind     string   `json:"kind"`
+	Percent  *float64 `json:"percent"`
+	ResetsAt *string  `json:"resets_at"`
 }
 
 type credentialsFile struct {
@@ -273,10 +282,40 @@ func quotaFrom(body usageBody, at time.Time, source string) *Quota {
 	q := &Quota{CapturedAt: at, Source: source}
 	q.FiveHourPct, q.FiveHourReset = readWindow(body.FiveHour)
 	q.WeekPct, q.WeekReset = readWindow(body.SevenDay)
+	if q.WeekPct == nil {
+		q.WeekPct, q.WeekReset = readWindow(weekFromLimits(body.Limits))
+	}
 	if q.FiveHourPct == nil && q.WeekPct == nil {
 		return nil
 	}
 	return q
+}
+
+// the week when seven_day is absent: the all-models weekly row, else the fullest model-scoped one, since
+// it runs out first; nil when limits[] has neither
+func weekFromLimits(limits []usageLimit) *usageWindow {
+	var week *usageLimit
+	for i := range limits {
+		l := &limits[i]
+		if l.Percent == nil {
+			continue
+		}
+		if l.Kind == "weekly_all" {
+			week = l
+			break
+		}
+		if l.Kind == "weekly_scoped" && (week == nil || *l.Percent > *week.Percent) {
+			week = l
+		}
+	}
+	if week == nil {
+		return nil
+	}
+	w := &usageWindow{Utilization: week.Percent}
+	if week.ResetsAt != nil {
+		w.ResetsAt = *week.ResetsAt
+	}
+	return w
 }
 
 func readWindow(w *usageWindow) (*float64, *int64) {

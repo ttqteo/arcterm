@@ -29,6 +29,57 @@ export interface SavedSnapshot {
     weekpct?: number;
     weekreset?: number;
     capturedAt: number; // epoch ms at record time
+    // when a window was read, set only when earlier than capturedAt: a later reading left it out
+    fivehourAt?: number;
+    weekAt?: number;
+}
+
+const SNAPSHOT_WINDOWS = [
+    { pct: "fivehourpct", reset: "fivehourreset", at: "fivehourAt" },
+    { pct: "weekpct", reset: "weekreset", at: "weekAt" },
+] as const;
+
+// The snapshot after a reading as of `capturedAt`: each window is the newest reading that carried it, so
+// a reading that leaves one out keeps the earlier one (a Claude Team session reports only its 5-hour
+// window; its week comes from the quota read). null when the reading changes nothing.
+export function mergeSnapshot(
+    prev: SavedSnapshot | undefined,
+    usage: AgentUsage,
+    capturedAt: number
+): SavedSnapshot | null {
+    if (usage == null || (usage.fivehourpct == null && usage.weekpct == null)) {
+        return null;
+    }
+    const next: SavedSnapshot = { capturedAt: Math.max(prev?.capturedAt ?? 0, capturedAt) };
+    let changed = false;
+    for (const w of SNAPSHOT_WINDOWS) {
+        const prevAt = prev?.[w.pct] == null ? -Infinity : (prev[w.at] ?? prev.capturedAt);
+        let at: number;
+        if (usage[w.pct] != null && capturedAt >= prevAt) {
+            next[w.pct] = usage[w.pct];
+            next[w.reset] = usage[w.reset];
+            at = capturedAt;
+            changed = true;
+        } else if (prev?.[w.pct] != null) {
+            next[w.pct] = prev[w.pct];
+            next[w.reset] = prev[w.reset];
+            at = prevAt;
+        } else {
+            continue;
+        }
+        if (at !== next.capturedAt) {
+            next[w.at] = at;
+        }
+    }
+    return changed ? next : null;
+}
+
+// A saved snapshot's two windows as of `now`, each rolled over by the time it was read.
+export function savedWindows(s: SavedSnapshot, now: number): { fivehour: DonutWindow; week: DonutWindow } {
+    return {
+        fivehour: windowFromSaved(s.fivehourpct, s.fivehourreset, s.fivehourAt ?? s.capturedAt, FIVE_HOUR_MS, now),
+        week: windowFromSaved(s.weekpct, s.weekreset, s.weekAt ?? s.capturedAt, WEEK_MS, now),
+    };
 }
 
 export interface DonutWindow {
@@ -188,24 +239,14 @@ export const savedRateLimitsAtom = atom<Record<string, SavedSnapshot>>(
 
 // Save a snapshot under `provider` (a rateLimitKey) — only when the usage carries a 5h or weekly window field.
 // Window fields + capturedAt only; context/cost are per-session and deliberately dropped.
-// `capturedAt` is when the reading is as of (now, for an agent's report); a newer snapshot already
-// saved wins over an older reading.
+// `capturedAt` is when the reading is as of (now, for an agent's report); per window, a newer reading
+// already saved wins over an older one (mergeSnapshot).
 export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt = Date.now()): void {
-    if (usage == null || (usage.fivehourpct == null && usage.weekpct == null)) {
-        return;
-    }
     const saved = globalStore.get(savedRateLimitsAtom);
-    if ((saved[provider]?.capturedAt ?? 0) > capturedAt) {
-        return;
+    const snapshot = mergeSnapshot(saved[provider], usage, capturedAt);
+    if (snapshot != null) {
+        persistSaved({ ...saved, [provider]: snapshot });
     }
-    const snapshot: SavedSnapshot = {
-        fivehourpct: usage.fivehourpct,
-        fivehourreset: usage.fivehourreset,
-        weekpct: usage.weekpct,
-        weekreset: usage.weekreset,
-        capturedAt,
-    };
-    persistSaved({ ...saved, [provider]: snapshot });
 }
 
 function persistSaved(next: Record<string, SavedSnapshot>): void {
@@ -259,8 +300,8 @@ export function windowFromSaved(
     return { pct, reset };
 }
 
-// Live wins (no stale); else build from the saved snapshot with per-window rollover. Union of live
-// + saved provider keys, claude-first.
+// Live wins (no stale), a window it leaves out coming from the saved snapshot; else build from the saved
+// snapshot with per-window rollover. Union of live + saved provider keys, claude-first.
 export function mergeRateLimitWindows(
     live: { provider: string; usage: AgentUsage }[],
     saved: Record<string, SavedSnapshot>,
@@ -271,19 +312,18 @@ export function mergeRateLimitWindows(
     return providers
         .map((provider) => {
             const u = liveMap.get(provider);
-            if (u != null) {
-                return {
-                    provider,
-                    fivehour: { pct: u.fivehourpct, reset: u.fivehourreset },
-                    week: { pct: u.weekpct, reset: u.weekreset },
-                };
-            }
             const s = saved[provider];
+            if (u == null) {
+                return { provider, ...savedWindows(s, now), stale: { capturedAt: s.capturedAt } };
+            }
+            const fromSaved = s == null ? undefined : savedWindows(s, now);
             return {
                 provider,
-                fivehour: windowFromSaved(s.fivehourpct, s.fivehourreset, s.capturedAt, FIVE_HOUR_MS, now),
-                week: windowFromSaved(s.weekpct, s.weekreset, s.capturedAt, WEEK_MS, now),
-                stale: { capturedAt: s.capturedAt },
+                fivehour:
+                    u.fivehourpct != null
+                        ? { pct: u.fivehourpct, reset: u.fivehourreset }
+                        : (fromSaved?.fivehour ?? {}),
+                week: u.weekpct != null ? { pct: u.weekpct, reset: u.weekreset } : (fromSaved?.week ?? {}),
             };
         })
         .sort((a, b) => (PROVIDER_RANK[a.provider] ?? 99) - (PROVIDER_RANK[b.provider] ?? 99));

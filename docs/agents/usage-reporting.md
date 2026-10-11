@@ -38,10 +38,16 @@ running**, wavesrv reads them itself (`pkg/claudequota`, the `GetClaudeQuotaComm
   and backs off on a 429 (10 minutes doubling to an hour, or the `Retry-After` when longer).
 - Without a live answer it falls back to `cachedUsageUtilization` in Claude Code's config file, Claude
   Code's own copy of an earlier answer. That copy can be a day old.
+- The week is `seven_day`. A Team plan answers `seven_day: null` and has its weekly window only in the
+  answer's `limits[]` array, as a `weekly_scoped` row for one model (e.g. Fable); wavesrv then takes the
+  `weekly_all` row, else the fullest `weekly_scoped` one. A Team session's statusline carries no
+  `seven_day` either, so for Team the week comes only from this read.
 - The frontend (`frontend/app/view/agents/claudequota.ts`, started at boot) polls the RPC every 5
   minutes and saves the answer as the claude snapshot in `ratelimitstore.ts`, stamped with the time
-  it is as of. A newer snapshot from a live agent is kept. Every place that shows saved windows shows
-  it, labeled "as of".
+  it is as of. Each window keeps its newest reading (`mergeSnapshot`): a live agent's newer report
+  replaces the windows it carries and keeps the one it leaves out, with that window's own read time
+  (`fivehourAt` / `weekAt`), and a live agent's donut takes a window it lacks from the snapshot. Every
+  place that shows saved windows shows it, labeled "as of".
 
 This reverses the 2026-06-26 specs' choice to avoid the endpoint, made by the user on 2026-10-06 so
 the windows are known before any claude runs.

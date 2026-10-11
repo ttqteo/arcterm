@@ -113,6 +113,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- On a Claude Team plan the weekly usage gauge shows the plan's weekly limit (the model-scoped one, such as Fable's)
+  instead of "—", and a running Team agent no longer blanks it.
 - On macOS, a right-click or double-click on a sidebar row, a file in Code's tree, the agent header or a worker on a
   lead card no longer selects a word of its text. The rename and new-file boxes still select as before.
 - On macOS, folding into Sprout or floating from a maximized window no longer shows the window jumping to an old size

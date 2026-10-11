@@ -12,14 +12,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatAgeShort, type AgentState, type AgentVM } from "./agentsviewmodel";
 import { resumeArgsForClaude, sessionIdFromTranscript } from "./launch";
-import {
-    FIVE_HOUR_MS,
-    normalizeEmail,
-    WEEK_MS,
-    windowFromSaved,
-    type ClaudeIdentity,
-    type SavedSnapshot,
-} from "./ratelimitstore";
+import { normalizeEmail, savedWindows, type ClaudeIdentity, type SavedSnapshot } from "./ratelimitstore";
 
 export interface RestartCandidate {
     tabId: string;
@@ -70,11 +63,8 @@ export function rowQuota(saved: Record<string, SavedSnapshot>, key: string, now:
     if (s == null) {
         return null;
     }
-    return {
-        fivehourpct: windowFromSaved(s.fivehourpct, s.fivehourreset, s.capturedAt, FIVE_HOUR_MS, now).pct,
-        weekpct: windowFromSaved(s.weekpct, s.weekreset, s.capturedAt, WEEK_MS, now).pct,
-        capturedAt: s.capturedAt,
-    };
+    const { fivehour, week } = savedWindows(s, now);
+    return { fivehourpct: fivehour.pct, weekpct: week.pct, capturedAt: s.capturedAt };
 }
 
 // The Default row's name: the /login account's email, else "Claude login".

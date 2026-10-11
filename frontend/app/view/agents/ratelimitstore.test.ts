@@ -7,6 +7,7 @@ import {
     claudeQuotaKey,
     identityFromList,
     mergeRateLimitWindows,
+    mergeSnapshot,
     migrateSaved,
     planDonuts,
     projectActiveAccount,
@@ -14,6 +15,7 @@ import {
     readSavedRateLimits,
     recordRateLimit,
     savedRateLimitsAtom,
+    savedWindows,
     topProviderUsage,
     type ClaudeIdentity,
     type SavedSnapshot,
@@ -383,6 +385,65 @@ describe("mergeRateLimitWindows", () => {
             now
         );
         expect(out.map((p) => p.provider)).toEqual(["claude", "codex"]);
+    });
+});
+
+// A Claude Team session reports only its 5-hour window; the week comes from the quota read, which is
+// often older than the session's last report.
+describe("mergeSnapshot keeps each window's newest reading", () => {
+    it("keeps the saved week when a newer reading leaves it out, stamped with when it was read", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, weekpct: 30, weekreset: 900, capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3, fivehourreset: 500 }, 2000)).toEqual({
+            fivehourpct: 3,
+            fivehourreset: 500,
+            weekpct: 30,
+            weekreset: 900,
+            weekAt: 1000,
+            capturedAt: 2000,
+        });
+    });
+
+    it("takes the week from an older reading when the newer snapshot has none", () => {
+        const prev: SavedSnapshot = { fivehourpct: 5, capturedAt: 2000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3, weekpct: 30 }, 1000)).toEqual({
+            fivehourpct: 5,
+            weekpct: 30,
+            weekAt: 1000,
+            capturedAt: 2000,
+        });
+    });
+
+    it("replaces a kept week with a newer one, dropping its own stamp", () => {
+        const prev: SavedSnapshot = { fivehourpct: 5, weekpct: 30, weekAt: 1000, capturedAt: 2000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 4, weekpct: 31 }, 3000)).toEqual({
+            fivehourpct: 4,
+            weekpct: 31,
+            capturedAt: 3000,
+        });
+    });
+
+    it("changes nothing when every window it carries was read later", () => {
+        const prev: SavedSnapshot = { fivehourpct: 5, weekpct: 40, weekAt: 1500, capturedAt: 2000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 9, weekpct: 30 }, 1000)).toBeNull();
+    });
+
+    it("rolls a kept week over by when it was read, not by the snapshot's time", () => {
+        const now = 1_800_000_000_000;
+        const s: SavedSnapshot = { fivehourpct: 5, weekpct: 40, weekAt: now - 8 * 24 * 3600_000, capturedAt: now };
+        expect(savedWindows(s, now).week).toEqual({ pct: 0, reset: undefined });
+        expect(savedWindows(s, now).fivehour).toEqual({ pct: 5, reset: undefined });
+    });
+
+    it("fills the week a live session leaves out from the saved snapshot", () => {
+        const now = 1_800_000_000_000;
+        const out = mergeRateLimitWindows(
+            [{ provider: "claude", usage: { fivehourpct: 3, fivehourreset: 100 } }],
+            { claude: { fivehourpct: 1, weekpct: 30, weekreset: now / 1000 + 600, capturedAt: now - 5000 } },
+            now
+        );
+        expect(out[0].fivehour).toEqual({ pct: 3, reset: 100 });
+        expect(out[0].week).toEqual({ pct: 30, reset: now / 1000 + 600 });
+        expect(out[0].stale).toBeUndefined();
     });
 });
 

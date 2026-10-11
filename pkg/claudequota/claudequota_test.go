@@ -5,6 +5,7 @@ package claudequota
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -290,5 +291,48 @@ func TestRefreshWithoutCredentialsAnswersTheCache(t *testing.T) {
 	}
 	if q == nil || q.Source != SourceCache {
 		t.Fatalf("want the cached reading, got %+v", q)
+	}
+}
+
+func quotaOf(t *testing.T, body string) *Quota {
+	t.Helper()
+	var b usageBody
+	if err := json.Unmarshal([]byte(body), &b); err != nil {
+		t.Fatal(err)
+	}
+	return quotaFrom(b, time.Date(2026, 10, 11, 3, 0, 0, 0, time.UTC), SourceCache)
+}
+
+// a Team plan's answer: seven_day null, the week only as a model-scoped row of limits[]
+func TestTeamWeekComesFromTheFullestScopedRow(t *testing.T) {
+	q := quotaOf(t, `{"five_hour":{"utilization":3,"resets_at":"2026-10-11T09:00:00.290763+00:00"},"seven_day":null,`+
+		`"limits":[{"kind":"session","group":"session","percent":3,"resets_at":"2026-10-11T09:00:00.290763+00:00"},`+
+		`{"kind":"weekly_scoped","group":"weekly","percent":12,"resets_at":"2026-10-14T18:00:00+00:00","scope":{"model":{"display_name":"Fable"}}},`+
+		`{"kind":"weekly_scoped","group":"weekly","percent":30,"resets_at":"2026-10-15T18:00:00+00:00","scope":{"model":{"display_name":"Opus"}}}]}`)
+	if q == nil || q.WeekPct == nil || *q.WeekPct != 30 {
+		t.Fatalf("week = %+v, want the fullest scoped row (30)", q)
+	}
+	if *q.WeekReset != time.Date(2026, 10, 15, 18, 0, 0, 0, time.UTC).Unix() {
+		t.Errorf("week reset = %v", *q.WeekReset)
+	}
+	if *q.FiveHourPct != 3 {
+		t.Errorf("five-hour = %v", *q.FiveHourPct)
+	}
+}
+
+func TestWeeklyAllRowBeatsScopedRows(t *testing.T) {
+	q := quotaOf(t, `{"five_hour":null,"limits":[`+
+		`{"kind":"weekly_scoped","percent":80,"resets_at":"2026-10-14T18:00:00+00:00"},`+
+		`{"kind":"weekly_all","percent":20,"resets_at":null}]}`)
+	if q == nil || *q.WeekPct != 20 || q.WeekReset != nil {
+		t.Fatalf("week = %+v, want the all-models row (20, no reset)", q)
+	}
+}
+
+func TestSevenDayStillBeatsLimits(t *testing.T) {
+	q := quotaOf(t, `{"seven_day":{"utilization":41.5,"resets_at":"2026-10-11T12:59:59Z"},`+
+		`"limits":[{"kind":"weekly_scoped","percent":90,"resets_at":"2026-10-14T18:00:00+00:00"}]}`)
+	if q == nil || *q.WeekPct != 41.5 {
+		t.Fatalf("week = %+v, want seven_day's 41.5", q)
 	}
 }
