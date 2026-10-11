@@ -56,6 +56,8 @@ const row = (i: number, over: Partial<SessionRow> = {}): SessionRow => ({
     spendUsd: 100 - i,
     subSpendUsd: 0,
     share: 0.01,
+    fiveHourPct: null,
+    weekPct: null,
     avgCtx: 150_000,
     maxCtx: 250_000,
     coldResumes: 0,

@@ -9,6 +9,7 @@ import {
     LONG_LIVED_MS,
     SESSION_ROWS,
     visibleSessionRows,
+    windowSharePct,
 } from "./usagesessions";
 
 const HOUR = 3600_000;
@@ -329,5 +330,43 @@ describe("liveSessionTabs", () => {
         const rows = buildSessionRows([sess("running"), sess("ended")], live);
         expect(rows.find((r) => r.id === "running")?.liveTabId).toBe("tab-9");
         expect(rows.find((r) => r.id === "ended")?.liveTabId).toBeUndefined();
+    });
+});
+
+describe("windowSharePct", () => {
+    it("apportions the window's percent by tokens, clamped to the window", () => {
+        expect(windowSharePct(4_000_000, 20_000_000, 62, 1)).toBe(12);
+        expect(windowSharePct(30_000_000, 20_000_000, 62, 1)).toBe(62);
+    });
+    it("is unknown without a percent, a reset, or tokens on either side", () => {
+        expect(windowSharePct(1, 10, undefined, 1)).toBeNull();
+        expect(windowSharePct(1, 10, 50, undefined)).toBeNull(); // a Team seat's week has no reset
+        expect(windowSharePct(0, 10, 50, 1)).toBeNull();
+        expect(windowSharePct(1, 0, 50, 1)).toBeNull();
+    });
+});
+
+describe("buildSessionRows quota windows", () => {
+    const quota = {
+        fiveHourPct: 62,
+        fiveHourReset: 1,
+        weekPct: 41,
+        weekReset: 2,
+        windowFiveHourTokens: 20_000_000,
+        windowWeekTokens: 200_000_000,
+    };
+    it("gives each row its share of the 5-hour and weekly windows", () => {
+        const rows = buildSessionRows(
+            [sess("a", { fivehourtokens: 4_000_000, weektokens: 20_000_000 }), sess("b")],
+            none,
+            quota
+        );
+        const a = rows.find((r) => r.id === "a")!;
+        const b = rows.find((r) => r.id === "b")!;
+        expect([a.fiveHourPct, a.weekPct]).toEqual([12, 4]);
+        expect([b.fiveHourPct, b.weekPct]).toEqual([null, null]);
+    });
+    it("leaves both unknown with no quota", () => {
+        expect(buildSessionRows([sess("a", { fivehourtokens: 4_000_000 })], none)[0].fiveHourPct).toBeNull();
     });
 });

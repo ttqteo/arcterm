@@ -2725,6 +2725,195 @@ const usageInsights = {
     },
 };
 
+// --- usage token burn: By session's 5h / Wk columns and the Subagent cost card ---------------------------------
+// (docs/superpowers/specs/2026-10-11-token-burn-guard-v2-design.md.) Seeded like usage-insights, minus the open agent:
+// the first three sessions get tokens inside the quota windows, the fixture carries every session's window totals and
+// three Subagent cost rows, and the Claude snapshot reads 62% of 5 hours and 41% of the week. The rows then read 12% / 4%
+// (4M of 20M at 62%, 20M of 200M at 41%), <1% / <1%, 3% / 1%, and — / — from the fourth on. Step 3: the fixture loses its
+// costs and the card shows its empty line. Step 4: the fixture's delayms holds both loaders, and the loading states
+// (By session's skeleton with the 5h and Wk cells, the card's skeleton rows) show.
+const usageTokenBurn = {
+    name: "usage-token-burn",
+    surface: "usage",
+    async arrange(h) {
+        const now = Date.now();
+        const sessions = usageInsightsSessions(now).map((s, i) => ({
+            ...s,
+            fivehourtokens: [4_000_000, 10_000, 1_000_000][i] ?? 0,
+            weektokens: [20_000_000, 100_000, 3_000_000][i] ?? 0,
+        }));
+        const ctx = {
+            prevUsage: await h.ev(`localStorage.getItem('wave:dev-usage-buckets')`),
+            prevRate: await h.ev(`localStorage.getItem('wave:ratelimits')`),
+            prevInsights: await h.ev(`localStorage.getItem(${JSON.stringify(UI_KEY)})`),
+        };
+        try {
+            const nowSec = Math.floor(now / 1000);
+            const rateLimits = {
+                "claude:default": {
+                    fivehourpct: 62,
+                    fivehourreset: nowSec + 3 * 3600,
+                    weekpct: 41,
+                    weekreset: nowSec + 6 * 24 * 3600,
+                    capturedAt: now,
+                },
+            };
+            const insights = {
+                sessions,
+                saved: usageInsightsSaved(now),
+                analyze: "ok",
+                windowfivehourtokens: 20_000_000,
+                windowweektokens: 200_000_000,
+                costs: [
+                    { type: "general-purpose", samples: 14, mean: 2_800_000, p25: 300_000, p90: 6_100_000 },
+                    { type: "web-fetch", samples: 2, mean: 100_000, p25: 80_000, p90: 420_000 },
+                    { type: "all", samples: 16, mean: 2_500_000, p25: 100_000, p90: 6_100_000 },
+                ],
+            };
+            await h.ev(
+                `localStorage.setItem('wave:dev-usage-buckets', ${JSON.stringify(JSON.stringify(buildUsageFixture()))})`
+            );
+            await h.ev(`localStorage.setItem('wave:ratelimits', ${JSON.stringify(JSON.stringify(rateLimits))})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(UI_KEY)}, ${JSON.stringify(JSON.stringify(insights))})`);
+            // the quota snapshot seeds an atom at module load
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        try {
+            rec(
+                "0. the sessions, the window totals, the costs and the quota snapshot are in place",
+                ctx.arrangeError == null,
+                ctx.arrangeError ?? "seeded"
+            );
+            const ready = await ahWait(
+                h,
+                `document.querySelectorAll("[data-usage-session]").length > 0 && document.querySelectorAll("[data-subagent-cost]").length > 0`,
+                20000
+            );
+            const table = await h.ev(`(() => {
+                const head = document.querySelector("[data-usage-sessions] .grid");
+                const header = head ? [...head.children].map((c) => c.textContent.trim()) : [];
+                const rows = [...document.querySelectorAll("[data-usage-session]")].slice(0, 4).map((r) => [
+                    r.querySelector("[data-usage-session-5h]")?.textContent.trim() ?? null,
+                    r.querySelector("[data-usage-session-wk]")?.textContent.trim() ?? null,
+                ]);
+                return { header, rows };
+            })()`);
+            await h.shot("cdp-shots/usage-token-burn-sessions.png");
+            rec(
+                "1. usage-token-burn-sessions: By session shows 5h and Wk after Share of window, each row's share of the quota windows",
+                ready === true &&
+                    JSON.stringify(table?.header?.slice(1, 4)) === JSON.stringify(["Share of window", "5h", "Wk"]) &&
+                    JSON.stringify(table?.rows) ===
+                        JSON.stringify([
+                            ["12%", "4%"],
+                            ["<1%", "<1%"],
+                            ["3%", "1%"],
+                            ["—", "—"],
+                        ]),
+                JSON.stringify({ ready, table })
+            );
+
+            await h.ev(`document.querySelector("[data-subagent-costs]")?.scrollIntoView({ block: "center" })`);
+            const card = await h.ev(
+                `[...document.querySelectorAll("[data-subagent-cost]")].map((r) => [...r.children].map((c) => c.textContent.trim()))`
+            );
+            await h.shot("cdp-shots/usage-token-burn-costs.png");
+            rec(
+                "2. usage-token-burn-costs: the Subagent cost card lists each type and All types last, with samples, average and range",
+                JSON.stringify(card) ===
+                    JSON.stringify([
+                        ["general-purpose", "14", "2.8M", "300K–6.1M"],
+                        ["web-fetch", "2", "100K", "80K–420K"],
+                        ["All types", "16", "2.5M", "100K–6.1M"],
+                    ]),
+                JSON.stringify(card)
+            );
+
+            // no finished subagents: the fixture loses its costs, and the card, reloaded with the surface, says so
+            await h.ev(`(() => {
+                const fixture = JSON.parse(localStorage.getItem(${JSON.stringify(UI_KEY)}));
+                fixture.costs = [];
+                localStorage.setItem(${JSON.stringify(UI_KEY)}, JSON.stringify(fixture));
+            })()`);
+            await h.goto("cockpit");
+            await h.goto("usage");
+            const emptied = await ahWait(
+                h,
+                `document.querySelector("[data-subagent-costs]") != null && document.querySelectorAll("[data-subagent-cost]").length === 0`,
+                20000
+            );
+            await h.ev(`document.querySelector("[data-subagent-costs]")?.scrollIntoView({ block: "center" })`);
+            const empty = await h.ev(`(() => ({
+                text: document.querySelector("[data-subagent-costs]")?.textContent ?? null,
+                rows: document.querySelectorAll("[data-subagent-cost]").length,
+            }))()`);
+            await h.shot("cdp-shots/usage-token-burn-costs-empty.png");
+            rec(
+                "3. usage-token-burn-costs-empty: with no finished subagents the card says so and lists no row",
+                emptied === true &&
+                    empty?.rows === 0 &&
+                    (empty?.text ?? "").includes("No finished subagents in the last 30 days"),
+                JSON.stringify({ emptied, empty })
+            );
+
+            // loading: the fixture holds both loaders for 8 s, and the reload starts them over
+            await h.ev(`(() => {
+                const fixture = JSON.parse(localStorage.getItem(${JSON.stringify(UI_KEY)}));
+                fixture.delayms = 8000;
+                localStorage.setItem(${JSON.stringify(UI_KEY)}, JSON.stringify(fixture));
+            })()`);
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("usage");
+            const held = await ahWait(
+                h,
+                `document.querySelector("[data-usage-sessions-skeleton]") != null && document.querySelector("[data-subagent-costs-skeleton]") != null`,
+                6000
+            );
+            const loading = await h.ev(`(() => ({
+                sessionCells: document.querySelector("[data-usage-sessions-skeleton]")?.firstElementChild?.children.length ?? null,
+                costRows: document.querySelector("[data-subagent-costs-skeleton]")?.children.length ?? null,
+            }))()`);
+            await h.shot("cdp-shots/usage-token-burn-loading.png");
+            rec(
+                "4. usage-token-burn-loading: while the loads are held, By session's skeleton has the 5h and Wk cells and the Subagent cost card shows skeleton rows",
+                held === true && loading?.sessionCells === 9 && loading?.costRows === 3,
+                JSON.stringify({ held, loading })
+            );
+        } catch (e) {
+            rec("usage-token-burn ran to the end", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    // puts the three storage keys back, reloads onto them, and leaves for the Cockpit
+    async teardown(h, ctx) {
+        const errors = [];
+        const step = async (label, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                errors.push(`${label}: ${String(e?.message ?? e)}`);
+            }
+        };
+        await step("restore the storage keys", async () => {
+            await h.ev(restoreStorageKey("wave:dev-usage-buckets", ctx.prevUsage));
+            await h.ev(restoreStorageKey("wave:ratelimits", ctx.prevRate));
+            await h.ev(restoreStorageKey(UI_KEY, ctx.prevInsights));
+        });
+        await step("reload onto the restored keys", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
+        if (errors.length > 0) throw new Error(errors.join("; "));
+    },
+};
+
 // --- the review-gate blind spot ----------------------------------------------------------------
 // The whole defect in three steps: hold a run's DAG at a gate in one channel, make a DIFFERENT channel
 // the active subject, then walk away to Usage and read the Cockpit nav badge. Before the attention list
@@ -29199,6 +29388,7 @@ export const SCENARIOS = [
     jarvisVolunteer,
     usageCharts,
     usageInsights,
+    usageTokenBurn,
     attentionCrossChannel,
     cockpitNeedsYouCrossChannel,
     tokenBurnCard,
