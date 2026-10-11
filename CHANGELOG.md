@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **@mention another agent** without looking up its id: right-click an agent in the sidebar (or a segment of the split
+  row) → **Copy @mention**, its `@` token shown beside the label. Or drag an agent onto a Claude agent's pane holding
+  ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split.
 - **Home** in the New agent dialog: the last row of the Project column starts Claude Code or a terminal in your home
   folder, outside any project. Claude Code there is ask-only: it cannot edit files, every shell command asks first
   (even one you once allowed for good), keys and `.env` files stay unreadable, and bypass and auto mode are off.

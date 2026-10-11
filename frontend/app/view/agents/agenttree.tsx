@@ -17,6 +17,7 @@ import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import {
     ArrowRight,
     ArrowUpRight,
+    AtSign,
     Check,
     Bookmark,
     BookmarkCheck,
@@ -46,6 +47,7 @@ import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
+import { mentionToken } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
@@ -507,6 +509,7 @@ function ParentRow({
                 icon: <Copy size={15} />,
                 click: () => void navigator.clipboard.writeText(agent.name),
             },
+            mentionMenuItem(agent),
             laterMenuItem(agent.transcriptPath, laterAt != null),
             ...sleepMenuItems(agent),
             { type: "separator" },
@@ -1158,6 +1161,18 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
+// A row menu's mention item: the token another Claude agent's prompt takes to send this one a message
+// (mention-core.ts in the Claude mod), shown beside the label so it can be typed without copying.
+function mentionMenuItem(agent: AgentVM): ContextMenuItem {
+    const token = mentionToken(agent.id);
+    return {
+        label: "Copy @mention",
+        sublabel: token,
+        icon: <AtSign size={15} />,
+        click: () => void navigator.clipboard.writeText(token),
+    };
+}
+
 // A row menu's later item (latermodel.ts): Mark for later, or Done once marked. Disabled for a session with no
 // transcript yet, which has no id to file the mark under.
 function laterMenuItem(transcriptPath: string | undefined, marked: boolean): ContextMenuItem {
@@ -1452,6 +1467,7 @@ function SplitRow({
                 icon: <Copy size={15} />,
                 click: () => void navigator.clipboard.writeText(agent.name),
             },
+            mentionMenuItem(agent),
             { type: "separator" },
             {
                 label: "Close agent",

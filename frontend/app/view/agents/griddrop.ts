@@ -5,6 +5,8 @@
 // zones a grid of N cells offers, and what to say about the zone. The overlay (griddropoverlay.tsx) only draws it.
 
 import { MAX_CELLS, type DropZone } from "./agentgrid";
+import { mentionToken } from "./agentrowmodel";
+import type { AgentVM } from "./agentsviewmodel";
 
 // Carried by a drag that starts on an agent row or a cell bar; its data is the agent's id. A drag without it
 // (an OS file, say) is none of the grid's business.
@@ -98,4 +100,16 @@ export function zoneLabel(zone: DropZone, moving: boolean): string {
         return moving ? "Swap" : "Replace";
     }
     return zone === "left" || zone === "top" ? "Place before" : "Place after";
+}
+
+// A drop with Alt (Option on a Mac) held types the dragged agent's @mention at the cell's prompt instead of placing it,
+// and the Claude mod sends what follows on to the dragged agent (mention-core.ts). The terminal it types into, or null
+// when the cell takes no mention: only claude's prompt routes one, and a sleeping agent has no prompt.
+export function mentionTarget(cell: Pick<AgentVM, "agent" | "blockId" | "sleeping">): string | null {
+    return cell.agent === "claude" && cell.sleeping == null && cell.blockId ? cell.blockId : null;
+}
+
+// the space lets the message be typed straight after it
+export function mentionDropText(draggedId: string): string {
+    return mentionToken(draggedId) + " ";
 }

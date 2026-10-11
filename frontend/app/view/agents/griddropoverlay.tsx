@@ -2,22 +2,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The zones that appear over a grid cell while an agent is being dragged: centre swaps (or replaces), an edge
-// inserts. One overlay per cell, a child of the cell, so it is exactly the cell's size; it renders nothing at all
-// unless an agent drag is active, and never over the cell being dragged.
+// inserts, and with Alt (Option) held the whole cell types the dragged agent's @mention at its prompt. One overlay per
+// cell, a child of the cell, so it is exactly the cell's size; it renders nothing at all unless an agent drag is
+// active, and never over the cell being dragged.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
+import { focusTerm, pasteIntoTerm } from "@/app/view/term/termpaste";
+import { isMacOS } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
 import { agentDragAtom, endAgentDrag } from "./agentdragstore";
 import type { DropZone } from "./agentgrid";
-import { AGENT_DRAG_MIME, allowedZones, isAgentDrag, resolveDrop, zoneBox, zoneFromPoint, zoneLabel } from "./griddrop";
+import { mentionToken } from "./agentrowmodel";
+import {
+    AGENT_DRAG_MIME,
+    allowedZones,
+    isAgentDrag,
+    mentionDropText,
+    resolveDrop,
+    zoneBox,
+    zoneFromPoint,
+    zoneLabel,
+} from "./griddrop";
 import { currentGrid, dropAgentOnGrid, type GridModel } from "./gridstore";
 
 interface OverlayProps {
     model: GridModel;
     id: string; // the cell's agent
     ids: readonly string[]; // every cell of the grid the surface drew, in order (what the overlay shows; a drop re-reads the grid)
+    mentionTo: string | null; // the cell's terminal block when its prompt takes an @mention (griddrop.ts mentionTarget)
 }
+
+const MENTION_KEY = isMacOS() ? "⌥" : "Alt";
 
 const FOCUS_DELAY_MS = 120; // let the xterm become visible
 
@@ -40,8 +57,9 @@ export function GridDropOverlay(props: OverlayProps) {
     return <ActiveOverlay {...props} dragId={drag.id} />;
 }
 
-function ActiveOverlay({ model, id, ids, dragId }: OverlayProps & { dragId: string }) {
+function ActiveOverlay({ model, id, ids, mentionTo, dragId }: OverlayProps & { dragId: string }) {
     const [zone, setZone] = useState<DropZone | null>(null);
+    const [mention, setMention] = useState(false);
     const zones = allowedZones(ids.length);
     const moving = ids.includes(dragId);
 
@@ -54,7 +72,11 @@ function ActiveOverlay({ model, id, ids, dragId }: OverlayProps & { dragId: stri
             return;
         }
         e.preventDefault(); // a drop is only delivered to a target that accepted the dragover
-        e.dataTransfer.dropEffect = "move";
+        const mentioning = mentionTo != null && e.altKey;
+        if (mentioning !== mention) {
+            setMention(mentioning);
+        }
+        e.dataTransfer.dropEffect = mentioning ? "copy" : "move";
         const z = zoneAt(e);
         if (z !== zone) {
             setZone(z);
@@ -68,7 +90,17 @@ function ActiveOverlay({ model, id, ids, dragId }: OverlayProps & { dragId: stri
         const dropped = e.dataTransfer.getData(AGENT_DRAG_MIME) || dragId;
         const picked = zoneAt(e);
         setZone(null);
+        setMention(false);
         endAgentDrag();
+        if (mentionTo != null && e.altKey) {
+            // typed, not sent: the person writes the message after it and presses Enter
+            if (!pasteIntoTerm(mentionTo, mentionDropText(dropped))) {
+                pushToast({ title: "The terminal is not ready for input", message: "", level: "warn" });
+                return;
+            }
+            focusTerm(mentionTo);
+            return;
+        }
         // dropAgentOnGrid's index is a position in the grid it reads now (currentGrid), which can have moved on since
         // this overlay rendered; a target that has left the grid takes no drop
         const target = resolveDrop(currentGrid(model).ids, id, picked);
@@ -79,7 +111,7 @@ function ActiveOverlay({ model, id, ids, dragId }: OverlayProps & { dragId: stri
         focusCellSoon(dropped);
     };
 
-    const box = zone != null ? zoneBox(zone) : null;
+    const box = mention ? { left: 0, top: 0, width: 100, height: 100 } : zone != null ? zoneBox(zone) : null;
     return (
         <div
             aria-hidden="true"
@@ -88,7 +120,10 @@ function ActiveOverlay({ model, id, ids, dragId }: OverlayProps & { dragId: stri
             data-drop-zone={zone ?? ""}
             onDragEnter={onOver}
             onDragOver={onOver}
-            onDragLeave={() => setZone(null)}
+            onDragLeave={() => {
+                setZone(null);
+                setMention(false);
+            }}
             onDrop={onDrop}
             className="absolute inset-0 z-30 bg-background/40"
         >
@@ -105,7 +140,12 @@ function ActiveOverlay({ model, id, ids, dragId }: OverlayProps & { dragId: stri
                         height: `${box.height}%`,
                     }}
                 >
-                    <span className="text-[12px] font-semibold text-accent-soft">{zoneLabel(zone, moving)}</span>
+                    <span className="flex flex-col items-center gap-[2px] text-[12px] font-semibold text-accent-soft">
+                        {mention ? `Mention ${mentionToken(dragId)}` : zoneLabel(zone, moving)}
+                        {mentionTo != null && !mention ? (
+                            <span className="text-[10.5px] font-medium text-muted">hold {MENTION_KEY} to mention</span>
+                        ) : null}
+                    </span>
                 </div>
             ) : null}
         </div>

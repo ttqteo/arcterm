@@ -7,6 +7,8 @@ import {
     EDGE_FRACTION,
     allowedZones,
     isAgentDrag,
+    mentionDropText,
+    mentionTarget,
     resolveDrop,
     zoneBox,
     zoneFromPoint,
@@ -136,5 +138,22 @@ describe("zoneLabel", () => {
         expect(zoneLabel("top", true)).toBe("Place before");
         expect(zoneLabel("right", false)).toBe("Place after");
         expect(zoneLabel("bottom", true)).toBe("Place after");
+    });
+});
+
+describe("mention drop", () => {
+    it("takes a live claude agent's terminal", () => {
+        expect(mentionTarget({ agent: "claude", blockId: "b1" })).toBe("b1");
+    });
+
+    it("refuses an agent whose prompt does not route an @mention, or that has no prompt", () => {
+        expect(mentionTarget({ agent: "pi", blockId: "b1" })).toBeNull();
+        expect(mentionTarget({ agent: undefined, blockId: "b1" })).toBeNull();
+        expect(mentionTarget({ agent: "claude" })).toBeNull();
+        expect(mentionTarget({ agent: "claude", blockId: "b1", sleeping: { since: 1, freedBytes: 0 } })).toBeNull();
+    });
+
+    it("types the dragged agent's token and a space, so the message follows it", () => {
+        expect(mentionDropText("1a2b3c4d-5e6f-7a8b-9c0d-112233445566")).toBe("@1a2b3c4d ");
     });
 });

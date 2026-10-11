@@ -53,6 +53,7 @@ import { floatModeAtom } from "./floatstore";
 import { DivergenceBanner } from "./divergencebanner";
 import { subjectDecision } from "./focussubject";
 import { GridCellBar } from "./gridcellbar";
+import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
 import { agentGridAtom, currentGrid, eligibleIds, removeFromGrid } from "./gridstore";
@@ -613,7 +614,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 (a drop prunes against the roster as it is), and not on a cell the saved
                                                 grid does not hold (a terminal shown alone): a drop is an index into the grid. */}
                                             {cell != null && seeded && reconciled.ids.includes(a.id) ? (
-                                                <GridDropOverlay model={model} id={a.id} ids={reconciled.ids} />
+                                                <GridDropOverlay
+                                                    model={model}
+                                                    id={a.id}
+                                                    ids={reconciled.ids}
+                                                    mentionTo={mentionTarget(a)}
+                                                />
                                             ) : null}
                                         </div>
                                     );
