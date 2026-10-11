@@ -8657,6 +8657,211 @@ const briefProfile = {
     },
 };
 
+// The Jarvis tour (jarvistourview.tsx): the first-visit offer; the Brief track in Vietnamese, then English, stepped on
+// with → and Enter, back with ← and Back, its last step a centered card ended by Done; the ? menu; the Profile
+// track opening the Profile itself, closing it on Skip, and on Escape ending with it while Jarvis stays. Run sheet
+// and Initiatives show their first step whether or not the dev store has a run or an initiative: a missing target is
+// a centered card, which is the designed fallback, not a failure.
+const jarvisTour = {
+    name: "jarvis-tour",
+    surface: "jarvis",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const wait = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const click = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.click()`);
+        const key = async (key, code, keyCode) => {
+            await pressKey(h, { key, code, keyCode });
+            await wait(300);
+        };
+        const profileOpen = () => h.ev(`!!document.querySelector('[data-jarvis-brief-modal="profile"]')`);
+        const startTrack = async (track) => {
+            await click("[data-jarvis-tour-button]");
+            await wait(300);
+            await click(`[data-jarvis-tour-track="${track}"]`);
+            await wait(1200);
+        };
+        const CARD = `(() => {
+            const c = document.querySelector('[data-jarvis-tour-card]');
+            const v = document.querySelector('[data-jarvis-tour-view]');
+            const next = document.querySelector('[data-jarvis-tour-next]');
+            const back = document.querySelector('[data-jarvis-tour-back]');
+            return c ? {
+                step: c.dataset.jarvisTourStep,
+                lang: c.dataset.jarvisTourLang,
+                view: v?.dataset.jarvisTourView ?? null,
+                spots: document.querySelectorAll('[data-jarvis-tour-spot]').length,
+                next: (next?.innerText || '').trim(),
+                backDisabled: back?.disabled ?? null,
+                text: (c.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
+            } : null;
+        })()`;
+
+        // a fresh look: forget the offer and the language, then come back to Jarvis so the Brief mounts again
+        await h.ev("localStorage.removeItem('jarvis.tour.offered'); localStorage.removeItem('jarvis.tour.lang')");
+        await h.goto("cockpit");
+        await h.goto("jarvis");
+        await wait(800);
+        const offer = await h.ev(`!!document.querySelector('[data-jarvis-tour-offer]')`);
+        steps.push({ step: "1. the first visit offers the tour", ok: offer === true, detail: String(offer) });
+        await h.shot("cdp-shots/jarvis-tour-offer.png");
+
+        await click("[data-jarvis-tour-offer-start]");
+        await wait(1200);
+        const first = await h.ev(CARD);
+        const offered = await h.ev(`localStorage.getItem('jarvis.tour.offered')`);
+        steps.push({
+            step: "2. Take the tour starts the Brief track in Vietnamese, lit, Back disabled, and the offer is gone for good",
+            ok:
+                first?.step === "brief:waiting" &&
+                first.lang === "vi" &&
+                first.view === "spot" &&
+                first.spots > 0 &&
+                first.backDisabled === true &&
+                offered === "true" &&
+                !(await h.ev(`!!document.querySelector('[data-jarvis-tour-offer]')`)),
+            detail: JSON.stringify({ first, offered }),
+        });
+        await h.shot("cdp-shots/jarvis-tour-brief.png");
+
+        await key("ArrowRight", "ArrowRight", 39);
+        const second = await h.ev(CARD);
+        steps.push({ step: "3. → steps on", ok: second?.step === "brief:regions", detail: JSON.stringify(second) });
+
+        await click('[data-jarvis-tour-lang-toggle="en"]');
+        await wait(300);
+        const english = await h.ev(CARD);
+        steps.push({
+            step: "4. EN switches the card to English",
+            ok: english?.lang === "en" && english.text.includes("The Brief's regions"),
+            detail: JSON.stringify(english),
+        });
+        await h.shot("cdp-shots/jarvis-tour-english.png");
+
+        await key("ArrowLeft", "ArrowLeft", 37);
+        const backed = await h.ev(CARD);
+        steps.push({ step: "5. ← steps back", ok: backed?.step === "brief:waiting", detail: JSON.stringify(backed) });
+
+        await key("Enter", "Enter", 13);
+        const entered = await h.ev(CARD);
+        await click("[data-jarvis-tour-back]");
+        await wait(300);
+        const backButton = await h.ev(CARD);
+        steps.push({
+            step: "6. Enter steps on and Back steps back",
+            ok: entered?.step === "brief:regions" && backButton?.step === "brief:waiting",
+            detail: JSON.stringify({ entered: entered?.step, backButton: backButton?.step }),
+        });
+
+        // a step whose target is missing shows no card (and no Next) for up to a second, so each click waits it out
+        for (let i = 0; i < 5; i++) {
+            await click("[data-jarvis-tour-next]");
+            await wait(1200);
+        }
+        const keys = await h.ev(CARD);
+        steps.push({
+            step: "7. the Brief's keys are a centered card with no spotlight, and Next reads Done",
+            ok: keys?.step === "brief:keys" && keys.view === "center" && keys.spots === 0 && keys.next === "Done",
+            detail: JSON.stringify(keys),
+        });
+        await h.shot("cdp-shots/jarvis-tour-keys.png");
+
+        await click("[data-jarvis-tour-next]");
+        await wait(600);
+        const done = { card: await h.ev(CARD), surface: await h.activeSurfaceLabel() };
+        steps.push({
+            step: "8. Done ends the track and stays on Jarvis",
+            ok: done.card == null && /jarvis/i.test(done.surface ?? ""),
+            detail: JSON.stringify(done),
+        });
+
+        await click("[data-jarvis-tour-button]");
+        await wait(300);
+        const tracks = await h.ev(`[...document.querySelectorAll('[data-jarvis-tour-track]')].map((b) => b.dataset.jarvisTourTrack)`);
+        steps.push({
+            step: "9. ? lists the four tracks",
+            ok: JSON.stringify(tracks) === JSON.stringify(["brief", "initiatives", "runsheet", "profile"]),
+            detail: JSON.stringify(tracks),
+        });
+        await h.shot("cdp-shots/jarvis-tour-menu.png");
+
+        await click('[data-jarvis-tour-track="profile"]');
+        await wait(600);
+        for (let i = 0; i < 3; i++) {
+            await click("[data-jarvis-tour-next]");
+            await wait(1200);
+        }
+        const routes = await h.ev(CARD);
+        const routesProfile = await profileOpen();
+        steps.push({
+            step: "10. the Profile track opens the Profile itself and lights the route rows",
+            ok: routesProfile && routes?.step === "profile:routes" && routes.view === "spot" && routes.spots > 0,
+            detail: JSON.stringify({ routes, routesProfile }),
+        });
+        await h.shot("cdp-shots/jarvis-tour-profile.png");
+
+        await click("[data-jarvis-tour-skip]");
+        await wait(800);
+        const afterSkip = { card: await h.ev(CARD), profile: await profileOpen() };
+        steps.push({
+            step: "11. Skip ends the track and closes the Profile it opened",
+            ok: afterSkip.card == null && afterSkip.profile === false,
+            detail: JSON.stringify(afterSkip),
+        });
+
+        await startTrack("profile");
+        await click("[data-jarvis-tour-next]");
+        await wait(1200);
+        const scope = { card: await h.ev(CARD), profile: await profileOpen() };
+        await key("Escape", "Escape", 27);
+        await wait(500);
+        const escaped = { card: await h.ev(CARD), profile: await profileOpen(), surface: await h.activeSurfaceLabel() };
+        steps.push({
+            step: "12. Escape with the Profile open ends the tour, closes the Profile and stays on Jarvis",
+            ok:
+                scope.card?.step === "profile:scope" &&
+                scope.profile === true &&
+                escaped.card == null &&
+                escaped.profile === false &&
+                /jarvis/i.test(escaped.surface ?? ""),
+            detail: JSON.stringify({ scope, escaped }),
+        });
+
+        for (const [n, track] of [["13", "initiatives"], ["14", "runsheet"]]) {
+            await startTrack(track);
+            await wait(300);
+            const card = await h.ev(CARD);
+            steps.push({
+                step: `${n}. the ${track} track shows its first step, lit or centered`,
+                ok: card != null && card.step.startsWith(track + ":") && (card.view === "spot" || card.view === "center"),
+                detail: JSON.stringify(card),
+            });
+            await h.shot(`cdp-shots/jarvis-tour-${track}.png`);
+            if (track === "runsheet") {
+                // back to the default language: removing jarvis.tour.lang does not reset the atom the app already
+                // read, so a rerun in this app would start in English and fail step 2
+                await click('[data-jarvis-tour-lang-toggle="vi"]');
+                await wait(200);
+            }
+            await click("[data-jarvis-tour-skip]");
+            await wait(800);
+        }
+        return steps;
+    },
+    async teardown(h) {
+        // a run that stopped mid-tour: the language back to Vietnamese through its own switch, then end the tour
+        await h
+            .ev(`(() => {
+                document.querySelector('[data-jarvis-tour-lang-toggle="vi"]')?.click();
+                document.querySelector('[data-jarvis-tour-skip]')?.click();
+            })()`)
+            .catch(() => {});
+        await h.ev("localStorage.setItem('jarvis.tour.offered', 'true')").catch(() => {});
+    },
+};
+
 // --- jarvis-motion: the structural facts the motion pass rests on -------------------------------
 // The animations themselves are not assertable here — a tween is a sequence of transient computed
 // styles, and reading one mid-flight is a race rather than a check. What IS assertable is the
@@ -28363,6 +28568,7 @@ export const SCENARIOS = [
     peekCtrlClick,
     peekItemViews,
     briefProfile,
+    jarvisTour,
     jarvisPeek,
     jarvisVolunteer,
     usageCharts,

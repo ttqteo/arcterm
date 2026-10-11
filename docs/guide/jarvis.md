@@ -6,6 +6,14 @@ Các trang liên quan: [Orchestrator](orchestrator.md) (cách một run chạy),
 
 <!-- shot: jarvis-brief.png | Brief của Jarvis với vùng Waiting on you, các thẻ initiative có thanh chunk và cột Ideas | Demo store, project acme-store; tạo một initiative bằng `wsh effort` và một run Quick đang chạy, rồi mở Jarvis -->
 
+## Tour
+
+Nút **?** trên header của Jarvis (cạnh **Profile**) mở bốn tour: **Brief**, **Initiatives**, **Run sheet** và
+**Profile**. Mỗi bước làm sáng một chỗ trên màn hình kèm một thẻ giải thích, bằng tiếng Việt hoặc tiếng Anh (công tắc
+**VI | EN** trên thẻ, được nhớ lại). `→` hoặc `Enter` sang bước kế, `←` về bước trước, `Esc` kết thúc. Tour tự mở
+những gì bước cần (Profile, run sheet của run mới nhất) và đóng lại khi xong; bước nào không có gì để chỉ, như khi
+chưa có run nào, hiện thẻ ở giữa màn hình. Lần đầu mở Jarvis, một thẻ nhỏ mời bạn xem tour Brief.
+
 ## Brief
 
 Brief là một cột các vùng (region), mỗi vùng chỉ hiện khi có gì để hiện:

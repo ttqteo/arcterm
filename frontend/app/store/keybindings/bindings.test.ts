@@ -32,6 +32,7 @@ import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { graphPeekOpenAtom, briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom } from "@/app/view/jarvis/jarvissubjectstore";
+import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
@@ -45,6 +46,7 @@ import {
     buildGlobalBindings,
     buildJarvisBindings,
     buildJarvisGraphBindings,
+    buildJarvisTourBindings,
     buildListNavBindings,
     buildUsageBindings,
     closeTargetForDoubleCtrlC,
@@ -1338,6 +1340,37 @@ describe("final shots viewer bindings", () => {
         const { bindings } = build();
         expect(bindings.some((b) => b.when!(ctx("jarvis")))).toBe(false);
         globalStore.set(finalShotsViewerOpenAtom, true);
+        expect(bindings.every((b) => b.when!({ ...ctx("jarvis"), modalOpen: true }))).toBe(true);
+    });
+});
+
+describe("jarvis tour bindings", () => {
+    afterEach(() => globalStore.set(tourAtom, null));
+
+    function build() {
+        const calls: string[] = [];
+        const bindings = buildJarvisTourBindings({
+            next: () => calls.push("next"),
+            back: () => calls.push("back"),
+            close: () => calls.push("close"),
+        });
+        return { bindings, calls };
+    }
+
+    it("maps →, Enter, ← and Escape onto their handlers", () => {
+        const { bindings, calls } = build();
+        const byKey = new Map(bindings.map((b) => [b.keys, b]));
+        for (const key of ["ArrowRight", "Enter", "ArrowLeft", "Escape"]) {
+            byKey.get(key)!.run(ctx("jarvis"));
+        }
+        expect(calls).toEqual(["next", "next", "back", "close"]);
+        expect(bindings).toHaveLength(4);
+    });
+
+    it("is active only while a tour shows, whatever the context says", () => {
+        const { bindings } = build();
+        expect(bindings.some((b) => b.when!(ctx("jarvis")))).toBe(false);
+        globalStore.set(tourAtom, { track: "brief", index: 0 });
         expect(bindings.every((b) => b.when!({ ...ctx("jarvis"), modalOpen: true }))).toBe(true);
     });
 });

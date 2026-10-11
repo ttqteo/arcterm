@@ -270,6 +270,9 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `1`…`9` | Answer an ask option on a run body |
 | `Enter` | Submit the answer |
 | `Esc` | Leave the composer |
+| `→` / `Enter` | While a Jarvis tour shows: next step |
+| `←` | While a Jarvis tour shows: previous step |
+| `Esc` | While a Jarvis tour shows: end the tour |
 
 ### Code
 

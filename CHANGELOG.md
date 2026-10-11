@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Jarvis has a tour: the **?** button in its header walks you through the Brief, Initiatives, the run sheet and the
+  Profile one control at a time, in Vietnamese or English, and Jarvis offers it once the first time you open it.
+
 - **Setup → Skills** shows a selected skill's SKILL.md in its side panel: the description under the name for
   every skill, then the file itself, read from the copy **Open SKILL.md** opens. A relative link in it opens its
   file in Code.
