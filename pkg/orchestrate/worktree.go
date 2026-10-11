@@ -174,6 +174,20 @@ func removeWorktreeDir(ctx context.Context, projectPath, wt string) error {
 	return nil
 }
 
+// RemoveWorktreeKeepBranch unregisters and deletes a linked worktree and keeps its branch: Settings → Storage
+// cleans a finished run's leftover tree without touching the commits on wave/<runId>. RemoveRunWorktree, by
+// contrast, deletes the branch too.
+func RemoveWorktreeKeepBranch(ctx context.Context, projectPath, wt string) error {
+	return removeWorktreeDir(ctx, projectPath, wt)
+}
+
+// RunOfWorktree is runOfWorktree for callers outside the engine: the run that owns a path in one of the engine's
+// worktrees, ok false for a name the engine never makes.
+func RunOfWorktree(path string) (runID string, ok bool) {
+	id, _, ok := runOfWorktree(path)
+	return id, ok
+}
+
 func isWorktreeRegistered(ctx context.Context, projectPath, wt string) bool {
 	out, err := gitLocked(ctx, projectPath, "worktree", "list", "--porcelain")
 	if err != nil {
