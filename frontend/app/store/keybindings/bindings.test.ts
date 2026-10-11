@@ -26,7 +26,10 @@ import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
-import { minimizeRequested } from "@/app/view/agents/floatstore";
+import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
+import { terminalFullscreenAtom } from "@/app/view/agents/railstore";
+import { NO_LINEAGE } from "@/app/view/agents/runlineage";
+import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
@@ -53,6 +56,7 @@ import {
 } from "./bindings";
 import { setPlatform } from "@/util/platformutil";
 import { listNavAtom } from "./listnav";
+import { matchBinding } from "./matcher";
 import type { KeyContext } from "./types";
 
 vi.mock("@/app/view/jarvis/openref", async (orig) => ({
@@ -152,6 +156,76 @@ describe("close-agent chord", () => {
         vi.mocked(confirmCloseSession).mockClear();
         b.run(ctx("agent"));
         expect(confirmCloseSession).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), m);
+    });
+});
+
+describe("Ctrl+Tab switcher", () => {
+    afterEach(() => {
+        closeSwitcher();
+        globalStore.set(floatModeAtom, false);
+        globalStore.set(terminalFullscreenAtom, false);
+        globalStore.set(centerModeAtom, "terminal");
+        vi.useRealTimers();
+    });
+
+    const model = () =>
+        ({
+            surfaceAtom: atom<SurfaceKey>("agent"),
+            agentsAtom: atom([
+                { id: "a1", name: "one", state: "working" },
+                { id: "a2", name: "two", state: "idle" },
+            ]),
+            terminalsAtom: atom([{ id: "t1", name: "zsh", state: "idle", kind: "terminal" }]),
+            focusIdAtom: atom<string | undefined>("a1"),
+            lineageAtom: atom(NO_LINEAGE),
+        }) as any;
+    const ctrlTab: WaveKeyboardEvent = {
+        control: true,
+        shift: false,
+        cmd: false,
+        option: false,
+        meta: false,
+        alt: false,
+        key: "Tab",
+        code: "Tab",
+        location: 0,
+        repeat: false,
+        type: "keydown",
+    } as WaveKeyboardEvent;
+    // what the dispatcher would run for Ctrl+Tab from inside the terminal
+    const ctrlTabRuns = (m: any) => {
+        const r = matchBinding(ctrlTab, { ...ctx("agent"), editable: true }, buildGlobalBindings(m));
+        return r.kind === "run" ? r.binding.id : r.kind;
+    };
+
+    it("cycles the Active list in the plain Agent surface", () => expect(ctrlTabRuns(model())).toBe("cycle-agent-next"));
+
+    it("opens the switcher in terminal fullscreen", () => {
+        globalStore.set(terminalFullscreenAtom, true);
+        expect(ctrlTabRuns(model())).toBe("switcher:next");
+    });
+
+    it("opens the switcher in a float", () => {
+        globalStore.set(floatModeAtom, true);
+        expect(ctrlTabRuns(model())).toBe("switcher:next");
+    });
+
+    it("leaves fullscreen History to the cycle, where the tree shows", () => {
+        globalStore.set(terminalFullscreenAtom, true);
+        globalStore.set(centerModeAtom, "history");
+        expect(ctrlTabRuns(model())).toBe("cycle-agent-next");
+    });
+
+    it("picks the next tab and draws the switcher after a moment", () => {
+        vi.useFakeTimers();
+        globalStore.set(terminalFullscreenAtom, true);
+        const m = model();
+        buildGlobalBindings(m)
+            .find((b) => b.id === "switcher:next")!
+            .run(ctx("agent"));
+        expect(globalStore.get(tabSwitcherAtom)).toMatchObject({ ids: ["a1", "a2", "t1"], sel: 1, shown: false });
+        vi.runAllTimers();
+        expect(globalStore.get(tabSwitcherAtom)?.shown).toBe(true);
     });
 });
 
