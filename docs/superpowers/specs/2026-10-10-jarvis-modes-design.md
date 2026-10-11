@@ -22,11 +22,13 @@ first fold" below). Mockup: `.superpowers/design/jarvis-modes/project/` (gitigno
 | Full ↔ Float | `Shift+F` and the Float button, as today |
 | Sprout → back | Double-click Sprout, **Restore** in the chat or in the hover list. Back to the size it was folded from, at the same frame |
 
-- **Sprout folds where it stands.** The folded Sprout appears at the screen spot the walking Sprout stood on in the
-  window (the footer in Full, the ledge in Float). The window's content scales and fades into that spot (300 ms, the
-  motion tokens' easing), then the window shrinks; restoring grows the window first, then scales the content out of
-  Sprout. Reduced motion skips both animations. While folded, Sprout can still be dragged anywhere; the next fold starts
-  again from where it stands in the window, so no separate "last dropped" spot is kept.
+- **Sprout folds into the screen's top-left corner** (revised 2026-10-11; it first folded where the walking Sprout
+  stood, which put it somewhere different each time). The folded Sprout appears in the top-left corner of the work area
+  of the window's screen, 24 px in, under the menu bar on macOS. The window's content scales and fades toward that
+  corner (300 ms, the motion tokens' easing), pulled inside the window when the corner is outside it, then the window
+  shrinks; restoring grows the window first, then scales the content out of Sprout. Reduced motion skips both
+  animations. While folded, Sprout can still be dragged anywhere; the next fold lands in the corner again, so no "last
+  dropped" spot is kept.
 - **Minimize goes to Sprout in every size**, by default. A new setting, **Settings → General → Minimize: Sprout / Dock**
   (`window:minimize`, `"sprout"` default), puts the Dock or taskbar back. On macOS the yellow button is redirected
   whenever the setting is `"sprout"`, not only while floating.
@@ -84,7 +86,7 @@ Every click on Sprout, in any size, opens the same panel (`JarvisChat`), which r
 ### What changes from the first fold
 
 - The fold can start from Full, and Restore returns to the size it came from (it always returned to Float).
-- Sprout is 48 px folded (it was 64), and its folded spot is where it stood in the window (it was a remembered spot,
+- Sprout is 48 px folded (it was 64), and its folded spot is the screen's top-left corner (it was a remembered spot,
   `arc.float.mini.v2`, which is dropped).
 - The hover chip of one agent becomes the list of agents; the chat is `JarvisChat`, not `PetPeek` with a mini corner.
 - Kept: one window, the shell hidden under `display:none` while folded so the terminal never refits, the transparent

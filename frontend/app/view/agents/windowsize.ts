@@ -3,11 +3,10 @@
 //
 // The window's three sizes (docs/superpowers/specs/2026-10-10-jarvis-modes-design.md): Full (the cockpit), Float (one
 // agent's terminal) and Sprout (folded: Sprout alone, over every app). Which size a move lands in, the size a restore
-// returns to, what minimize does, and where a fold starts and a restore grows from. Pure: floatstore.ts makes the
-// window calls.
+// returns to, what minimize does, and the point a fold shrinks into and a restore grows from. Pure: floatstore.ts makes
+// the window calls.
 
-import { PET_PX } from "@/app/view/jarvis/petsprite";
-import { MINI_SPRITE_INSET, MINI_SPROUT_BOX, type WinRect } from "./floatwindow";
+import { type WinRect } from "./floatwindow";
 
 export type WindowSize = "full" | "float" | "sprout";
 // the size a fold was made from, which a restore returns to
@@ -95,8 +94,6 @@ export interface Viewport {
     height: number;
 }
 
-// where the walking Sprout is taken to stand when none is drawn to measure: the content's bottom-right corner, this far in
-export const FOLD_FALLBACK_MARGIN = 24;
 // the fold's motion: the content scales to this and fades over this long (MOTION.easeFluid)
 export const FOLD_MS = 300;
 export const FOLD_SCALE = 0.04;
@@ -116,44 +113,15 @@ export function foldFade(to: "sprout" | "window"): FoldFade {
         : { opacity: [0, 1, 1], times: [0, 1 - FOLD_FADE_FROM, 1] };
 }
 
-// the walking sprite's top-left in CSS px, or the fallback corner's
-function spriteAt(sprite: Pt | null, viewport: Viewport): Pt {
-    return (
-        sprite ?? {
-            x: viewport.width - PET_PX - FOLD_FALLBACK_MARGIN,
-            y: viewport.height - PET_PX - FOLD_FALLBACK_MARGIN,
-        }
-    );
-}
-
-/** The point the content scales into on a fold: the walking sprite's middle, in CSS px. */
-export function foldCenter(sprite: Pt | null, viewport: Viewport): Pt {
-    const at = spriteAt(sprite, viewport);
-    return { x: at.x + PET_PX / 2, y: at.y + PET_PX / 2 };
-}
-
-/** Sprout's box on screen for a fold, in the fold's space (floatwindow.ts toSpace): the folded sprite sits
- *  MINI_SPRITE_INSET inside it, so it lands on the pixels the walking one stood on. inner is the window content's
- *  top-left in that space, scale what a CSS px is in it (floatwindow.ts spaceScale). */
-export function foldSpot(inner: Pt, scale: number, sprite: Pt | null, viewport: Viewport): WinRect {
-    const at = spriteAt(sprite, viewport);
-    const size = MINI_SPROUT_BOX * scale;
-    return {
-        x: inner.x + (at.x - MINI_SPRITE_INSET) * scale,
-        y: inner.y + (at.y - MINI_SPRITE_INSET) * scale,
-        width: size,
-        height: size,
-    };
-}
-
 function clamp(n: number, lo: number, hi: number): number {
     return Math.max(lo, Math.min(hi, n));
 }
 
-/** The point the content grows out of on a restore: Sprout's middle as the restored window sees it, in CSS px, pulled
- *  inside the window when Sprout was dragged away from it (another monitor), so the content never flies in from off
- *  screen. frame is the restored window's top-left in the fold's space; its content starts there. */
-export function unfoldCenter(sprout: WinRect, frame: Pt, scale: number, viewport: Viewport): Pt {
+/** The point the content scales into on a fold and grows out of on a restore: Sprout's middle as the window sees it, in
+ *  CSS px, pulled inside the window when Sprout is outside it (the screen's corner past a small window, or dragged to
+ *  another monitor), so the content never flies to or from off screen. frame is the window content's top-left in the
+ *  fold's space, scale what a CSS px is in it (floatwindow.ts spaceScale). */
+export function sproutCenter(sprout: WinRect, frame: Pt, scale: number, viewport: Viewport): Pt {
     return {
         x: clamp((sprout.x + sprout.width / 2 - frame.x) / scale, 0, viewport.width),
         y: clamp((sprout.y + sprout.height / 2 - frame.y) / scale, 0, viewport.height),

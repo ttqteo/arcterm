@@ -100,8 +100,6 @@ export function parseRestore(raw: unknown): FloatRestore | null {
 // grows for the chat, always around Sprout's own place on screen, so Sprout never moves when the chat opens or closes.
 // Sizes are logical here and in the fold's space in the rects (toSpace).
 export const MINI_SPROUT_BOX = 64; // the 48px sprite (petsprite.ts PET_PX) with room for its bob and the count chip
-// the sprite sits this far inside the box, so a fold puts it on the pixels the walking one stood on (windowsize.ts)
-export const MINI_SPRITE_INSET = 8;
 export const MINI_REST_SIZE = { width: 320, height: 232 }; // room beside Sprout for the agent list and the bubble
 export const MINI_CHAT_SIZE = { width: 380, height: 620 };
 const MINI_MARGIN = 24;
@@ -133,13 +131,13 @@ export function miniSides(sprout: WinRect, work: WinRect): MiniSides {
     };
 }
 
-// Sprout's box on screen: the fold's spot (windowsize.ts foldSpot) or where a drag left it, pulled back on screen; the
-// work area's bottom-right corner when there is none
+// Sprout's box on screen: where a drag left it, pulled back on screen; with no spot, a fold's, the work area's top-left
+// corner, so Sprout is always found in the same place
 export function miniSproutRect(spot: WinRect | null, work: WinRect, scale: number): WinRect {
     const size = MINI_SPROUT_BOX * scale;
     const margin = MINI_MARGIN * scale;
-    const x = spot?.x ?? work.x + work.width - size - margin;
-    const y = spot?.y ?? work.y + work.height - size - margin;
+    const x = spot?.x ?? work.x + margin;
+    const y = spot?.y ?? work.y + margin;
     return {
         x: clamp(x, work.x, work.x + work.width - size),
         y: clamp(y, work.y, work.y + work.height - size),

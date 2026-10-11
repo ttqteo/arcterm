@@ -4,8 +4,8 @@
 // The window's sizes and their Tauri window calls: the arithmetic is floatwindow.ts, the rules windowsize.ts. Entering
 // Float keeps the window's frame to give back, turns the terminal fullscreen, lifts the minimum size and shrinks the
 // window to the last float's place; leaving gives the frame back. The window is never left pinned on top outside Float
-// and the fold. Folding (foldToSprout), from Full or Float, scales the content into the walking Sprout and shrinks the
-// same window, see-through, around the spot it stood on; a restore gives back the size and frame it was folded from.
+// and the fold. Folding (foldToSprout), from Full or Float, scales the content toward the screen's top-left corner and
+// shrinks the same window, see-through, around Sprout there; a restore gives back the size and frame it was folded from.
 
 import { MOTION } from "@/app/element/motiontokens";
 import { getApi, getSettingsKeyAtom } from "@/app/store/global";
@@ -59,16 +59,14 @@ import { serialQueue } from "./serialqueue";
 import {
     FOLD_MS,
     FOLD_SCALE,
-    foldCenter,
     foldFade,
-    foldSpot,
     minimizeAction,
     minimizeChoice,
     move,
     onReopen,
     onSurfaceChange,
     sizeState,
-    unfoldCenter,
+    sproutCenter,
     windowSize,
     type FoldOrigin,
     type Pt,
@@ -400,12 +398,6 @@ function reducedMotion(): boolean {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// The walking Sprout's top-left in CSS px (petview.tsx marks it data-pet-sprite), or null when none is drawn.
-function walkingSprite(): Pt | null {
-    const r = document.querySelector("[data-pet-sprite]")?.getBoundingClientRect();
-    return r == null || r.width === 0 ? null : { x: r.left, y: r.top };
-}
-
 // Scale the content into Sprout's spot and fade it (a fold), or grow it out of the spot (a restore): the scale on the
 // motion tokens' easing, the fade held to the fold's end (windowsize.ts foldFade). Reduced motion skips it.
 async function scaleContent(at: Pt, to: "sprout" | "window"): Promise<void> {
@@ -445,8 +437,8 @@ function clearContentMotion(): void {
     el.style.removeProperty("transform-origin");
 }
 
-/** Fold the window into Sprout, from Full or Float: the content scales into the walking Sprout, then the window shrinks,
- *  see-through, around the spot it stood on. */
+/** Fold the window into Sprout, from Full or Float: the content scales toward the top-left corner of the window's
+ *  screen, then the window shrinks, see-through, around Sprout there. Every fold lands in that one corner. */
 export function foldToSprout(): Promise<void> {
     return miniOps(async () => {
         const now = currentSize();
@@ -459,7 +451,6 @@ export function foldToSprout(): Promise<void> {
             const fullscreen = await win.isFullscreen();
             await leaveNativeFullscreen(win);
             await nextFrame();
-            const sprite = walkingSprite();
             const viewport = { width: window.innerWidth, height: window.innerHeight };
             const [frame, maximized, inner, scale] = await Promise.all([
                 spaceFrame(win),
@@ -475,13 +466,15 @@ export function foldToSprout(): Promise<void> {
                 pinned: globalStore.get(floatPinnedAtom),
             };
             writeJson(session, MINI_RESTORE_KEY, restore);
+            const screen = await screenOfRect(frame);
+            const spot = miniSproutRect(null, screen.area, screen.scale);
             closePeek();
             globalStore.set(foldOriginAtom, origin);
             // the page goes see-through as the content leaves it; the content paints its own background
             document.documentElement.dataset.floatMini = "";
             await setTrafficLightsHidden(true);
             await win.setShadow(false);
-            await scaleContent(foldCenter(sprite, viewport), "sprout");
+            await scaleContent(sproutCenter(spot, inner, spaceScale(scale, MAC), viewport), "sprout");
             // hide the shell before the window shrinks: a terminal that saw the small window would refit its PTY to it.
             // The folded Sprout waits unseen until the window stands around its spot, or it shows in a corner of the
             // big window first.
@@ -493,17 +486,14 @@ export function foldToSprout(): Promise<void> {
             if (maximized) {
                 await leaveMaximized(win);
             }
-            const spot = foldSpot(inner, spaceScale(scale, MAC), sprite, viewport);
-            const screen = await screenOfRect(spot);
-            sprout = miniSproutRect(spot, screen.area, screen.scale);
+            sprout = spot;
             globalStore.set(miniSidesAtom, miniSides(sprout, screen.area));
             await win.setMinSize(null);
             const placed = await placeMini(win, false);
             foldLog(
                 `from ${origin}${maximized ? " maximized" : ""}${fullscreen ? " fullscreen" : ""}: window ${rectText(frame)}, ` +
-                    `content at ${Math.round(inner.x)},${Math.round(inner.y)} scale ${scale}, sprite ` +
-                    `${sprite == null ? "none" : `${Math.round(sprite.x)},${Math.round(sprite.y)}`} in ` +
-                    `${viewport.width}x${viewport.height} -> spot ${rectText(spot)}, Sprout ${rectText(sprout)} on ` +
+                    `content at ${Math.round(inner.x)},${Math.round(inner.y)} scale ${scale} in ` +
+                    `${viewport.width}x${viewport.height} -> Sprout ${rectText(sprout)} on ` +
                     `${rectText(screen.area)}, folded window ${rectText(placed)}`
             );
             if (placed != null) {
@@ -560,7 +550,7 @@ async function leaveMini(win: Window): Promise<Unfold> {
     const frame = restore.rect;
     const viewport = { width: frame.width / scale, height: frame.height / scale };
     return {
-        at: unfoldCenter(was, { x: frame.x, y: frame.y }, scale, viewport),
+        at: sproutCenter(was, { x: frame.x, y: frame.y }, scale, viewport),
         fullscreen: origin === "full" && restore.fullscreen,
         sprout: was,
     };
@@ -570,7 +560,7 @@ async function leaveMini(win: Window): Promise<Unfold> {
 async function growCenter(win: Window, from: WinRect): Promise<Pt> {
     const [frame, scaleFactor] = await Promise.all([spaceFrame(win), win.scaleFactor()]);
     const scale = spaceScale(scaleFactor, MAC);
-    return unfoldCenter(from, { x: frame.x, y: frame.y }, scale, {
+    return sproutCenter(from, { x: frame.x, y: frame.y }, scale, {
         width: frame.width / scale,
         height: frame.height / scale,
     });
