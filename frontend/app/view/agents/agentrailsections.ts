@@ -67,6 +67,17 @@ export function railStatAction(s: AgentRailStat): "open" | "attach" | null {
     return s.id === "uploads" ? "attach" : null;
 }
 
+// railStatClick is what a strip count's "open" does to its section: close it when it is open and its header row is on
+// the rail's screen, else open it and bring it into view; closing one scrolled out of sight would look like nothing
+// happened. head is undefined while Overview is not showing the section.
+export function railStatClick(
+    open: boolean,
+    head: { top: number; bottom: number } | undefined,
+    view: { top: number; bottom: number }
+): "close" | "open" {
+    return open && head != null && head.top >= view.top && head.bottom <= view.bottom ? "close" : "open";
+}
+
 export function planAgentRail(i: AgentRailInput): AgentRailSectionPlan[] {
     const out: AgentRailSectionPlan[] = [];
     if (i.inSubagent) {

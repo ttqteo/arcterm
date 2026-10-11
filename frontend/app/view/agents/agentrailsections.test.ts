@@ -4,6 +4,7 @@ import {
     planAgentRail,
     planRailStats,
     railStatAction,
+    railStatClick,
     type AgentRailInput,
     type AgentRailSectionId,
 } from "./agentrailsections";
@@ -119,6 +120,23 @@ describe("railStatAction", () => {
     it("any other empty stat is inert", () => {
         expect(railStatAction({ id: "subagents", count: 0 })).toBeNull();
         expect(railStatAction({ id: "bgtasks", count: 0 })).toBeNull();
+    });
+});
+
+describe("railStatClick", () => {
+    const view = { top: 100, bottom: 600 };
+    it("closes an open section whose header row is on screen", () => {
+        expect(railStatClick(true, { top: 200, bottom: 226 }, view)).toBe("close");
+    });
+    it("opens a closed section", () => {
+        expect(railStatClick(false, { top: 200, bottom: 226 }, view)).toBe("open");
+    });
+    it("brings an open section scrolled out of view back instead of closing it unseen", () => {
+        expect(railStatClick(true, { top: 40, bottom: 66 }, view)).toBe("open");
+        expect(railStatClick(true, { top: 590, bottom: 616 }, view)).toBe("open");
+    });
+    it("opens a section Overview is not showing", () => {
+        expect(railStatClick(false, undefined, view)).toBe("open");
     });
 });
 

@@ -186,7 +186,7 @@ Có thể xem tới **bốn** agent cùng lúc.
 1. Thêm ô: kéo hàng của một agent đang chạy từ sidebar thả lên terminal; hoặc chuột phải hàng → **Open in split**; hoặc nút **Split** ở header → chọn agent trong danh sách *Show beside this agent*; hoặc `Ctrl+P` → agent → `→` → **Open in split**.
 2. Khi thả, vùng giữa ô thay thế (hoặc đổi chỗ) agent trong ô đó; một phần tư mép ngoài chèn agent vào trước/sau ô.
 3. Mỗi ô có thanh tiêu đề: kéo thanh để đổi chỗ ô; `×` bỏ agent khỏi lưới (agent vẫn chạy).
-4. Bấm vào một ô để focus nó; header và rail chi tiết đi theo ô đang focus. **Show only this agent** (trong menu Split) đưa lưới về một ô; `f` (toàn màn hình) chỉ tạm hiện mỗi ô đang focus.
+4. Bấm vào một ô để focus nó; header và rail chi tiết đi theo ô đang focus. **Close split** (trong menu Split) đưa lưới về một ô; `f` (toàn màn hình) chỉ tạm hiện mỗi ô đang focus.
 
 Cách các ô xếp: 1 ô chiếm cả vùng, 2 ô cạnh nhau, 3 ô là hai ô trên và một ô trải ngang bên dưới, 4 ô là lưới 2x2. Lưới được lưu lại và còn nguyên sau khi mở lại app. Canvas, review, phần bên trong subagent, Conversation History, transcript của phiên đã kết thúc hoặc của worker đã xong, và terminal chọn từ mục Terminals mỗi thứ hiện thay cho lưới; lưới trở lại như cũ khi bạn rời đi.
 

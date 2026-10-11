@@ -51,6 +51,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
   removes them under Logs, cache and trash. An image whose file is gone is named in its place.
 - In the **New agent** dialog, **Resume** now sits left of **Task**: pick the session first, then write what to send
   it, the first prompt of a new session or the next message of a resumed one. Tab follows the same order.
+- The counts beside the **Agent panel**'s tabs (files changed, uploads, background tasks…) toggle their section: a
+  click closes one already open on screen, and opens it, scrolled into view, otherwise.
+- The **Split** menu's **Show only this agent** is now **Close split**.
+- The **File** tab's header shows the file's whole path, `slides/slide.pdf`, not only its folder, and a middle click
+  on the tab closes it, as an editor's tab.
 
 ### Changed
 

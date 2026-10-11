@@ -24,7 +24,7 @@ import {
     railFileForward,
     railMdModeAtom,
 } from "./agentrailstore";
-import { currentFileView, fileHeadPath, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
+import { currentFileView, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { FileTabDiff } from "./filetabdiff";
@@ -133,7 +133,6 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     // a file deleted since the base still has a diff: everything removed
     const diffable = view === "diff" && (state.kind === "text" || state.kind === "missing");
     const { dir, name } = fileLabel(ref);
-    const head = fileHeadPath(ref);
     const history = file.back.length > 0 || file.forward.length > 0;
     const openCode = () => fireAndForget(() => openRefInCode(model, ref));
     const openWholeDiff = (rel: string) => {
@@ -310,8 +309,8 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                     </>
                 ) : null}
                 <span data-file-head title={ref.abs} className="min-w-0 flex-1 truncate pl-1 text-[11.5px]">
-                    <span className="text-muted">{head.dir}</span>
-                    <span className="text-ink-hi">{head.name}</span>
+                    <span className="text-muted">{dir}</span>
+                    <span className="text-ink-hi">{name}</span>
                     {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
                 </span>
                 {views.length > 0 ? (

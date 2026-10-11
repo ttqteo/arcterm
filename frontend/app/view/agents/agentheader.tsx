@@ -289,7 +289,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
         });
         if (s.cells > 1) {
             items.push({
-                label: "Show only this agent",
+                label: "Close split",
                 icon: <Minimize2 size={15} />,
                 click: () => {
                     for (const id of grid.ids) {

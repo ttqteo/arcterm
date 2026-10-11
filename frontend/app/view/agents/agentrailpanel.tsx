@@ -94,7 +94,15 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
                 </button>
             ) : null}
             {file != null ? (
+                // a middle click closes it, as an editor's tab; the mousedown keeps Windows' autoscroll from starting
                 <div
+                    onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+                    onAuxClick={(e) => {
+                        if (e.button === 1) {
+                            e.preventDefault();
+                            closeRailFile(agentId);
+                        }
+                    }}
                     className={cn(
                         "ml-0.5 flex min-w-0 max-w-[190px] items-center border-b-2",
                         shown === "file" ? TAB_ON : TAB_OFF
@@ -158,7 +166,7 @@ function statTitle(s: AgentRailStat, canAttach: boolean): string {
 }
 
 // RailStats counts the agent's lists after the tabs, one icon each in a fixed order, only those a click acts on: a count
-// opens its section; an empty Uploads attaches (inert, with aria-disabled, where there is no terminal to attach to; not
+// opens its section, or closes it when it is open on screen (railStatClick); an empty Uploads attaches (inert, with aria-disabled, where there is no terminal to attach to; not
 // disabled: a disabled button shows no tooltip). An empty list has no icon.
 export function RailStats({
     stats,

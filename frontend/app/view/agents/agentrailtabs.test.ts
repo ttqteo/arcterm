@@ -6,7 +6,6 @@ import {
     clampWideWidth,
     closeFile,
     currentFileView,
-    fileHeadPath,
     fileLabel,
     fileTabLabel,
     fileViews,
@@ -135,14 +134,8 @@ describe("the File tab", () => {
         });
     });
 
-    it("heads a file with its folder alone, since the tab already names it", () => {
-        expect(fileHeadPath(a)).toEqual({ dir: "src/", name: "" });
-        expect(fileHeadPath({ abs: "D:/repo/AGENTS.md", root: "D:/repo" })).toEqual({ dir: "", name: "" });
-    });
-
-    it("heads a titled file with its name too, since its tab shows the title", () => {
-        const log = { abs: "C:/tmp/tasks/bwwscwi9k.output", root: null, live: true, title: "build" };
-        expect(fileHeadPath(log)).toEqual({ dir: "C:/tmp/tasks/", name: "bwwscwi9k.output" });
+    it("names a file at the root by its name alone, so the File tab's header is never empty", () => {
+        expect(fileLabel({ abs: "D:/repo/AGENTS.md", root: "D:/repo" })).toEqual({ dir: "", name: "AGENTS.md" });
     });
 });
 

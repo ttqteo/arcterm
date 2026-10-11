@@ -256,6 +256,7 @@ export function CollapsibleRail({
                                 <div className="flex min-h-0 flex-1 flex-col">{body}</div>
                             ) : (
                                 <div
+                                    data-rail-scroll
                                     className={cn(
                                         "flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[8px]",
                                         headed ? "gap-[4px]" : "gap-[24px]"

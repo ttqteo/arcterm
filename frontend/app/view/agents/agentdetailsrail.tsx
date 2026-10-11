@@ -41,6 +41,7 @@ import {
     bgTaskStatusLabel,
     planAgentRail,
     planRailStats,
+    railStatClick,
     type AgentRailSectionId,
     type BgTaskLabel,
 } from "./agentrailsections";
@@ -657,8 +658,20 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
               : "";
     const project = agentProject(lineage, agents, agent);
 
-    // a strip count, or the spend, opens its section on Overview: open it, then bring it into view once it has rendered
+    // a strip count toggles its section on Overview: a click closes one open on screen, else opens it, then brings it
+    // into view once it has rendered
     const openSection = (id: AgentRailSectionId) => {
+        const el = document.querySelector<HTMLElement>(`aside[aria-label="Agent details"] [data-rail-section="${id}"]`);
+        const head = el?.querySelector("h3")?.getBoundingClientRect();
+        const view = el?.closest("[data-rail-scroll]")?.getBoundingClientRect();
+        if (
+            shown === "overview" &&
+            view != null &&
+            railStatClick(el?.dataset.open === "true", head, view) === "close"
+        ) {
+            globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: false }));
+            return;
+        }
         selectRailTab(agent.id, "overview", hasTree);
         showRail();
         globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
