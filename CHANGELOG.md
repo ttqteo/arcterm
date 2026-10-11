@@ -45,6 +45,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;
   Ctrl+Tab and the folded Sprout's list skip them too. A worker you opened keeps its tab while you are on it.
+- Holding **Ctrl** shows the **Agent** rail item's digit again: the count of working agents was drawn over it, and
+  now steps aside until you let go.
 
 ## 0.15.9 — 2026-10-11
 

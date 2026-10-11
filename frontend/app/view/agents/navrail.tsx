@@ -148,7 +148,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                             {unreadLabel(badge)}
                         </span>
                     ) : null}
-                    {busy > 0 ? (
+                    {/* the digit hint takes the same bottom-right corner, so the count steps aside while Ctrl is held */}
+                    {busy > 0 && digit == null ? (
                         <span
                             data-nav-working={key}
                             className="absolute -bottom-1.5 -right-2.5 flex h-[13px] items-center gap-[2px] rounded-full bg-surface px-[3px] text-[9px] font-bold tabular-nums text-working"
