@@ -87,9 +87,12 @@ The tour opens the Profile (`briefProfileAtom` set to `""`).
   (`atomWithStorage`, `jarvis.tour.lang`, `getOnInit: true`). The offer's flag `jarvis.tour.offered` is read from
   `localStorage` when the Brief mounts, not held in an atom read at module load, so the CDP harness can set it after
   load and keep the offer out of every other scenario's shots.
-- `frontend/app/view/jarvis/jarvistour.tsx`, thin: the overlay, the card and the **?** menu.
+- `frontend/app/view/jarvis/jarvistouractions.ts`: what a step's `prepare` opens and closes (`openPrepare`,
+  `closePrepare`) and the rects its selectors find (`targetRects`).
+- `frontend/app/view/jarvis/jarvistourview.tsx`, thin: the overlay, the card and the **?** menu. (Not
+  `jarvistour.tsx`: beside the pure `jarvistour.ts` it would clash on `./jarvistour` imports.)
   - The overlay is a fixed layer above dialogs: a dim with a cut-out round the target's `getBoundingClientRect`,
-    measured again on resize, scroll and a DOM change. It takes every click, so a click outside the card does
+    measured again on resize, scroll and every 250 ms. It takes every click, so a click outside the card does
     nothing; the tour teaches by showing, not by letting a click open things mid-step.
   - The card is placed with `@floating-ui/react` (`offset`, `flip`, `shift`, `autoUpdate`, as
     `autonomyladderview.tsx` does) against the target's rect, or centered.
