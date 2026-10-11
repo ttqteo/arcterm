@@ -6,9 +6,10 @@
 "Token burn" card (context, 5h window, rough cost; Allow / Allow this turn / Allow this session / Don't spawn);
 a cheap one runs at once with a log line. On by default, thresholds in settings.
 
-**Architecture:** the memgate shape. Pure Go `pkg/tokengate` (estimate, rules, card, verdicts) → hidden
-`wsh tokengate` (reads settings, quota, window tokens; asks with `AskCommand`) → the Claude mod's `tool.call`
-hooks gather parallel spawns into one call and keep the turn's or session's decision. Spec:
+**Architecture:** the `wsh jobslot` shape. Pure Go `pkg/tokengate` (estimate, rules, card, verdicts) → hidden
+`wsh tokengate` (reads settings, quota, window tokens; asks with a held `AskCommand`) → the Claude mod's `tool.call`
+hooks, through a pure gate in `tokengate-core.ts` that gathers parallel spawns into one call and keeps the turn's or
+session's decision. Spec:
 `docs/superpowers/specs/2026-10-08-token-burn-guard-design.md`.
 
 **Tech Stack:** Go, cobra (`wsh`), TypeScript Claude Code mod (`claude/arc-mod`), vitest.
@@ -17,9 +18,12 @@ hooks gather parallel spawns into one call and keep the turn's or session's deci
 
 **Verify:** `node scripts/verify.mjs ./pkg/tokengate ./cmd/wsh/...`
 
-**Final:** `go test ./pkg/tokengate -run 'TestEstimate|TestWindowShare|TestRulesFrom|TestAsks|TestFormatTokens|TestNote|TestQuestion|TestChoice|TestVerdictFor' && go test ./cmd/wsh/cmd -run Tokengate && npx vitest run claude/arc-mod/hooks/tokengate-core.test.ts && claude plugin validate claude/arc-mod`
+**Final:** `{ go test ./pkg/tokengate -run 'TestEstimate|TestWindowShare|TestRulesFrom|TestAsks|TestFormatTokens|TestNote|TestQuestion|TestChoice|TestVerdictFor' && go test ./cmd/wsh/cmd -run Tokengate && npx vitest run claude/arc-mod/hooks/tokengate-core.test.ts && claude plugin validate claude/arc-mod; } || exit 1; if [ "$(uname -s)" = Darwin ]; then echo "unverified: token-burn-card needs CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs token-burn-card`
 
-No view changes: the card is the existing ask card memgate uses, so no CDP scenario applies.
+One view change: the held card's popup over the cockpit wrote "Low RAM" whatever the card was; Task 6 makes it show
+the card's own header, and its `token-burn-card` scenario shows the Token burn card in the popup and in the bar above
+the agent's terminal. The live check (real subagents) is the person's: chunk 1 of the effort "Token burn guard:
+follow-ups" (`1dce9cf9-1464-456b-831c-7c5d13a12fc9`), due 2026-10-14. No task runs it.
 
 ---
 
@@ -194,8 +198,8 @@ Expected: FAIL, undefined `Estimate`, `Spawn`, …
 
 // Package tokengate holds a costly spawn (subagents, a workflow) for the person's say before it spends tokens:
 // cost grows as context × calls × agents, nearly all of it cache reads. `wsh tokengate` asks; the Claude mod
-// calls it before every Agent, Task or Workflow tool call. memgate's twin, for tokens instead of RAM. It asks
-// only when a rule says the spawn matters: a card on every spawn trains a reflex Allow.
+// calls it before every Agent, Task or Workflow tool call, as it calls `wsh jobslot` before a heavy shell command.
+// It asks only when a rule says the spawn matters: a card on every spawn trains a reflex Allow.
 package tokengate
 
 import (
@@ -468,8 +472,8 @@ Expected: exit 0
 **Step 4: Commit**
 
 ```bash
-git add pkg/wconfig frontend/types
-git commit -m "feat(settings): tokengate keys" -- pkg/wconfig frontend/types
+git add pkg/wconfig frontend/types schema/settings.json
+git commit -m "feat(settings): tokengate keys" -- pkg/wconfig frontend/types schema/settings.json
 ```
 
 ### Task 3: `wsh tokengate`
@@ -483,7 +487,8 @@ Reuses `rpcWithContext` (`wshcmd-jobslot.go`), `resolveBlockArg` and `blockArg` 
 line with a `json.Encoder` on stdout, as `jobslotRun` does. The held card itself (`Hold: true` on `AskCommand`)
 is still drawn by `heldaskbar.tsx` / `heldaskpopup.ts`.
 
-**Step 1: Write the failing test** (a done context returns at once, without asking)
+**Step 1: Write the failing tests** (a done context returns at once, without asking; the card's outcome maps to
+the verdict, and no answer before the deadline is the deny option, as the spec says)
 
 ```go
 // Copyright 2026, Command Line Inc.
@@ -497,7 +502,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 func TestTokengateDecideReturnsPromptlyOnADoneContext(t *testing.T) {
@@ -512,10 +519,28 @@ func TestTokengateDecideReturnsPromptlyOnADoneContext(t *testing.T) {
 		t.Fatalf("took %s", time.Since(start))
 	}
 }
+
+func TestTokengateAnsweredMapsTheCardsOutcome(t *testing.T) {
+	s := tokengate.Spawn{Tool: "Agent", Agents: 3}
+	if v, err := tokengateAnswered(s, wshrpc.AskRtnData{}, context.DeadlineExceeded); err != nil || v.Run || v.Reason == "" {
+		t.Fatalf("no answer before the deadline = %+v, %v; want the deny verdict", v, err)
+	}
+	if v, err := tokengateAnswered(s, wshrpc.AskRtnData{Cancelled: true}, nil); err != nil || v.Run {
+		t.Fatalf("a dismissed card = %+v, %v; want a deny", v, err)
+	}
+	pick := []baseds.AgentAnswerItem{{SelectedIndexes: []int{tokengate.OptionAllowTurn}}}
+	if v, err := tokengateAnswered(s, wshrpc.AskRtnData{Answers: pick}, nil); err != nil || !v.Run || v.Scope != tokengate.ScopeTurn {
+		t.Fatalf("Allow this turn = %+v, %v", v, err)
+	}
+	broken := errors.New("no route to the cockpit")
+	if _, err := tokengateAnswered(s, wshrpc.AskRtnData{}, broken); !errors.Is(err, broken) {
+		t.Fatalf("a broken card's error = %v, want it passed on", err)
+	}
+}
 ```
 
 Run: `go test ./cmd/wsh/cmd -run TestTokengate`
-Expected: FAIL, undefined `tokengateDecide`
+Expected: FAIL, undefined `tokengateDecide`, `tokengateAnswered`
 
 **Step 2: Implement**
 
@@ -528,6 +553,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -638,14 +664,28 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, onHold func(any)) (
 	}
 	question := tokengate.Question(s, quota, time.Local)
 	onHold(tokengate.Asking(s))
-	rtn, err := rpcWithContext(ctx, func() (wshrpc.AskRtnData, error) {
+	// the card's ceiling is this local deadline; the RPC's own is a minute later, so no answer reads as the
+	// deadline, which is the deny option, never as an EC-TIME error, which would let the spawn run
+	askCtx, cancel := context.WithTimeout(ctx, askWaitTimeout)
+	defer cancel()
+	rtn, err := rpcWithContext(askCtx, func() (wshrpc.AskRtnData, error) {
 		return wshclient.AskCommand(RpcClient, wshrpc.CommandAskData{
 			ORef:      oref.String(),
 			Questions: []baseds.AgentAskQuestion{question},
 			Wait:      true,
 			Hold:      true,
-		}, &wshrpc.RpcOpts{Timeout: int64(askWaitTimeout / time.Millisecond)})
+		}, &wshrpc.RpcOpts{Timeout: int64((askWaitTimeout + time.Minute) / time.Millisecond)})
 	})
+	return tokengateAnswered(s, rtn, err)
+}
+
+// tokengateAnswered turns the card's outcome into the verdict. No answer before the deadline is the deny option, as a
+// dismissed card is; wsh then exits, and the server's waiter cancel takes the card down. Any other error is a broken
+// gate, which the mod answers by letting the spawn run.
+func tokengateAnswered(s tokengate.Spawn, rtn wshrpc.AskRtnData, err error) (tokengate.Verdict, error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return tokengate.VerdictFor(tokengate.OptionDeny, s), nil
+	}
 	if err != nil {
 		return tokengate.Verdict{}, err
 	}
@@ -665,18 +705,21 @@ git add cmd/wsh/cmd/wshcmd-tokengate.go cmd/wsh/cmd/wshcmd-tokengate_test.go
 git commit -m "feat(wsh): tokengate holds a costly spawn behind the person's card" -- cmd/wsh/cmd/wshcmd-tokengate.go cmd/wsh/cmd/wshcmd-tokengate_test.go
 ```
 
-### Task 4: the mod's pure core
+### Task 4: the mod's pure core, the gate included
 
 **Depends on:** none
 **Files:** `claude/arc-mod/hooks/tokengate-core.ts`, `claude/arc-mod/hooks/tokengate-core.test.ts`, `cmd/wsh/cmd/claude-mod/hooks/tokengate-core.ts`
 
 `cmd/wsh/cmd/claude-mod/` is the committed copy `wsh` embeds: `task sync:claudemod` writes it (minus tests).
+The gate's state machine (gathering parallel spawns, the turn's and session's say, the clears) lives here with its
+sleep and ask injected, so vitest covers it; Task 5 only wires it into `register.ts`.
 
 **Step 1: Write the failing tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { decisionAfter, joinGroup, spawnCount, tokengateArgs, tokengateLine } from "./tokengate-core";
+import { createSpawnGate, decisionAfter, joinGroup, spawnCount, tokengateArgs, tokengateLine } from "./tokengate-core";
+import type { Group, SpawnVerdict } from "./tokengate-core";
 
 describe("spawnCount", () => {
     it("counts one agent per Agent or Task call", () => {
@@ -732,6 +775,93 @@ describe("decisionAfter", () => {
         expect(decisionAfter(v(false, null))).toBe("deny-turn");
     });
 });
+
+describe("createSpawnGate", () => {
+    const allow = (scope: "turn" | "session" | null): SpawnVerdict => ({ run: true, scope, reason: null, note: null });
+    const DENY: SpawnVerdict = { run: false, scope: null, reason: "Not run: no", note: null };
+    const now = () => Promise.resolve();
+    // an ask that answers v and records each group it was asked about
+    const asker = (v: SpawnVerdict) => {
+        const asked: Group[] = [];
+        const ask = async (g: Group) => {
+            asked.push(g);
+            return v;
+        };
+        return { asked, ask };
+    };
+
+    it("asks once for spawns that arrive while it gathers, as one group", async () => {
+        let wake = () => {};
+        const gate = createSpawnGate(() => new Promise<void>((resolve) => (wake = resolve)));
+        const { asked, ask } = asker(allow(null));
+        const a = gate.check("Agent", {}, ask);
+        const b = gate.check("Agent", {}, ask);
+        wake();
+        expect(await Promise.all([a, b])).toEqual([null, null]);
+        expect(asked).toEqual([{ tool: "Agent", agents: 2, atLeast: false }]);
+    });
+
+    it("gives a spawn that arrives while the card waits the same verdict", async () => {
+        let answer: (v: SpawnVerdict) => void = () => {};
+        const asked: Group[] = [];
+        const ask = (g: Group) => {
+            asked.push(g);
+            return new Promise<SpawnVerdict>((resolve) => (answer = resolve));
+        };
+        const gate = createSpawnGate(now);
+        const a = gate.check("Agent", {}, ask);
+        await new Promise((resolve) => setTimeout(resolve, 0)); // the card is up
+        const b = gate.check("Task", {}, ask);
+        answer(DENY);
+        expect(await Promise.all([a, b])).toEqual(["Not run: no", "Not run: no"]);
+        expect(asked).toHaveLength(1);
+    });
+
+    it("asks again after a plain Allow", async () => {
+        const gate = createSpawnGate(now);
+        const { asked, ask } = asker(allow(null));
+        await gate.check("Agent", {}, ask);
+        expect(await gate.check("Agent", {}, ask)).toBeNull();
+        expect(asked).toHaveLength(2);
+    });
+
+    it("lets every spawn through after Allow this turn, until the next prompt or a new session", async () => {
+        const gate = createSpawnGate(now);
+        const { asked, ask } = asker(allow("turn"));
+        await gate.check("Agent", {}, ask);
+        expect(await gate.check("Workflow", { name: "review" }, ask)).toBeNull();
+        expect(asked).toHaveLength(1);
+        gate.promptSubmitted();
+        await gate.check("Agent", {}, ask);
+        expect(asked).toHaveLength(2);
+        gate.sessionStarted();
+        await gate.check("Agent", {}, ask);
+        expect(asked).toHaveLength(3);
+    });
+
+    it("keeps Allow this session past a prompt, not past a new session", async () => {
+        const gate = createSpawnGate(now);
+        const { asked, ask } = asker(allow("session"));
+        await gate.check("Agent", {}, ask);
+        gate.promptSubmitted();
+        expect(await gate.check("Agent", {}, ask)).toBeNull();
+        expect(asked).toHaveLength(1);
+        gate.sessionStarted();
+        await gate.check("Agent", {}, ask);
+        expect(asked).toHaveLength(2);
+    });
+
+    it("refuses the rest of the turn after Don't spawn, with its reason, until the next prompt", async () => {
+        const gate = createSpawnGate(now);
+        const { asked, ask } = asker(DENY);
+        expect(await gate.check("Agent", {}, ask)).toBe("Not run: no");
+        expect(await gate.check("Agent", {}, ask)).toBe("Not run: no");
+        expect(asked).toHaveLength(1);
+        gate.promptSubmitted();
+        await gate.check("Agent", {}, ask);
+        expect(asked).toHaveLength(2);
+    });
+});
 ```
 
 Run: `npx vitest run claude/arc-mod/hooks/tokengate-core.test.ts`
@@ -742,7 +872,7 @@ Expected: FAIL, cannot resolve `./tokengate-core`
 ```ts
 // what `wsh tokengate` says before an agent starts subagents or a workflow: a costly spawn waits for the
 // person's say on arcterm's "Token burn" card, a cheap one runs with a note. kept free of the engine so vitest
-// can run it; register.ts holds the tool.call hooks, the gathering of parallel spawns and the decision.
+// can run it, the gate's gathering and decisions included; register.ts only wires the tool.call hooks to it.
 
 export type SpawnTool = "Agent" | "Task" | "Workflow";
 export type SpawnCount = { agents: number; atLeast: boolean };
@@ -823,6 +953,73 @@ export function decisionAfter(v: SpawnVerdict): Decision {
     }
     return v.scope === "turn" ? "allow-turn" : null;
 }
+
+// parallel Agent calls in one message reach their hooks together; the gate waits this long for the siblings
+export const GATHER_MS = 400;
+
+// the verdict that lets a spawn run: off, a cheap spawn, or a broken gate
+export const RUN_VERDICT: SpawnVerdict = { run: true, scope: null, reason: null, note: null };
+
+// one group's question to the person; register.ts passes `wsh tokengate`, which never rejects
+export type SpawnAsk = (g: Group) => Promise<SpawnVerdict>;
+
+// the gate for one session: the person's say on later spawns, and the open group, whose members share one card.
+// sleep is injected so vitest can drive the gathering
+export function createSpawnGate(sleep: (ms: number) => Promise<void>) {
+    let decision: { kind: Decision; reason: string | null } = { kind: null, reason: null };
+    let open: { group: Group; verdict: Promise<SpawnVerdict> } | null = null;
+    return {
+        // why the spawn may not run; null lets it
+        async check(tool: SpawnTool, input: Record<string, unknown>, ask: SpawnAsk): Promise<string | null> {
+            if (decision.kind === "allow-turn" || decision.kind === "allow-session") {
+                return null;
+            }
+            if (decision.kind === "deny-turn") {
+                return decision.reason;
+            }
+            const count = spawnCount(tool, input);
+            let mine = open;
+            if (mine) {
+                // gathering, or the card is already up: this spawn shares the group's verdict
+                mine.group = joinGroup(mine.group, tool, count);
+            } else {
+                const opened: { group: Group; verdict: Promise<SpawnVerdict> } = {
+                    group: joinGroup(null, tool, count),
+                    verdict: Promise.resolve(RUN_VERDICT),
+                };
+                opened.verdict = (async () => {
+                    try {
+                        await sleep(GATHER_MS);
+                        const v = await ask(opened.group);
+                        const kind = decisionAfter(v);
+                        if (kind) {
+                            decision = { kind, reason: v.reason };
+                        }
+                        return v;
+                    } finally {
+                        open = null;
+                    }
+                })();
+                mine = opened;
+                open = opened;
+            }
+            const v = await mine.verdict;
+            return v.run ? null : v.reason;
+        },
+        // the person's next prompt ends a turn's say, a deny included; a session's stays
+        promptSubmitted() {
+            if (decision.kind !== "allow-session") {
+                decision = { kind: null, reason: null };
+            }
+        },
+        // a new or cleared session forgets every say
+        sessionStarted() {
+            decision = { kind: null, reason: null };
+        },
+    };
+}
+
+export type SpawnGate = ReturnType<typeof createSpawnGate>;
 ```
 
 **Step 3: Run, expect PASS**
@@ -839,7 +1036,7 @@ Expected: `cmd/wsh/cmd/claude-mod/hooks/tokengate-core.ts` appears; no other fil
 
 ```bash
 git add claude/arc-mod/hooks/tokengate-core.ts claude/arc-mod/hooks/tokengate-core.test.ts cmd/wsh/cmd/claude-mod/hooks/tokengate-core.ts
-git commit -m "feat(claude-mod): tokengate core: spawn count, args, lines, decision" -- claude/arc-mod/hooks/tokengate-core.ts claude/arc-mod/hooks/tokengate-core.test.ts cmd/wsh/cmd/claude-mod/hooks/tokengate-core.ts
+git commit -m "feat(claude-mod): tokengate core: spawn count, args, lines, and the gate" -- claude/arc-mod/hooks/tokengate-core.ts claude/arc-mod/hooks/tokengate-core.test.ts cmd/wsh/cmd/claude-mod/hooks/tokengate-core.ts
 ```
 
 ### Task 5: wire the mod's hooks
@@ -847,31 +1044,26 @@ git commit -m "feat(claude-mod): tokengate core: spawn count, args, lines, decis
 **Depends on:** Task 3, Task 4
 **Files:** `claude/arc-mod/hooks/register.ts`, `cmd/wsh/cmd/claude-mod/hooks/register.ts`
 
-Edit `claude/arc-mod/hooks/register.ts` (imports; module state near `turn`; `askTokengate` and `spawnGate`
-after `withJobSlot`, which replaced memgate's `ramHold` on 2026-10-09; the `session.start`, `session.measure` and
-`classic.UserPromptSubmit` handlers; three `tool.call` handlers after the PowerShell one); `task sync:claudemod`
-writes the copy.
+Edit `claude/arc-mod/hooks/register.ts` (imports; module state near `turn`; `askTokengate` after `withJobSlot`; the
+`session.start`, `session.measure` and `classic.UserPromptSubmit` handlers; three `tool.call` handlers after the
+PowerShell one); `task sync:claudemod` writes the copy. The gate's logic is Task 4's `createSpawnGate`, already
+tested: this task only feeds it, so add no state machine here.
 
-**Step 1: Module state and the gate** (after `withJobSlot`)
+**Step 1: Module state and the ask** (after `withJobSlot`)
 
 ```ts
-import { decisionAfter, joinGroup, spawnCount, tokengateArgs, tokengateLine } from "./tokengate-core";
-import type { Decision, Group, SpawnTool, SpawnVerdict } from "./tokengate-core";
+import { createSpawnGate, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
+import type { Group, SpawnVerdict } from "./tokengate-core";
 
-// the person's say on later spawns: until the next prompt (turn) or the session's end, and a deny's reason
-let spawnDecision: { kind: Decision; reason: string | null } = { kind: null, reason: null };
 // the last context reading, for the card
 let lastContext: { tokens: number; window: number } | null = null;
-// the open group: parallel spawns arriving while it gathers or waits share its verdict
-let pendingSpawn: { group: Group; verdict: Promise<SpawnVerdict> } | null = null;
 
-// parallel Agent calls in one message reach their hooks together; wait this long for the siblings
-const GATHER_MS = 400;
-const RUN: SpawnVerdict = { run: true, scope: null, reason: null, note: null };
+// gathers parallel spawns onto one card and keeps the person's say; session.start clears it
+const spawnGate = createSpawnGate((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
-// `wsh tokengate` for one group; a failure of wsh's lets the spawn run
+// `wsh tokengate` for one group. never rejects: a failure of wsh's lets the spawn run
 async function askTokengate($: EngineInterface, group: Group): Promise<SpawnVerdict> {
-    let verdict = RUN;
+    let verdict = RUN_VERDICT;
     let buffered = "";
     try {
         for await (const chunk of $.process.spawn({ argv: [WSH, ...tokengateArgs(group, lastContext)] })) {
@@ -891,54 +1083,25 @@ async function askTokengate($: EngineInterface, group: Group): Promise<SpawnVerd
         }
     } catch (err) {
         $.ui.log(`arc: wsh tokengate failed: ${String(err)}`, { to: "debug" });
-        return RUN;
+        return RUN_VERDICT;
     }
     if (verdict.note) {
         $.ui.log(`arc: ${verdict.note}`);
     }
     return verdict;
 }
-
-// why the spawn does not run; null lets it, always outside arcterm
-async function spawnGate($: EngineInterface, tool: SpawnTool, input: Record<string, unknown>): Promise<string | null> {
-    if (!active || spawnDecision.kind === "allow-turn" || spawnDecision.kind === "allow-session") {
-        return null;
-    }
-    if (spawnDecision.kind === "deny-turn") {
-        return spawnDecision.reason;
-    }
-    const count = spawnCount(tool, input);
-    if (pendingSpawn) {
-        pendingSpawn.group = joinGroup(pendingSpawn.group, tool, count);
-    } else {
-        const open: { group: Group; verdict: Promise<SpawnVerdict> } = { group: joinGroup(null, tool, count), verdict: Promise.resolve(RUN) };
-        open.verdict = (async () => {
-            await new Promise((resolve) => setTimeout(resolve, GATHER_MS));
-            const v = await askTokengate($, open.group);
-            const kind = decisionAfter(v);
-            if (kind) {
-                spawnDecision = { kind, reason: v.reason };
-            }
-            pendingSpawn = null;
-            return v;
-        })();
-        pendingSpawn = open;
-    }
-    const mine = pendingSpawn!; // taken before the await: the verdict clears pendingSpawn
-    const v = await mine.verdict;
-    return v.run ? null : v.reason;
-}
 ```
 
-If the hook runtime has no `setTimeout`, drop the gather wait (one call per spawn; the agent-count rule then
-sees 1, "Allow this turn" covers the rest) and say so in the commit message and the spec.
+`setTimeout` is a global of the JS runtime the mod runs in. If `claude plugin validate` or the engine's types reject
+it, don't drop the gather wait silently and don't edit the spec: report it under Found not fixed, and the lead takes
+it to the spec.
 
 **Step 2: Feed it**
 
 In `session.start`, before `const started = await next(e);`:
 
 ```ts
-        spawnDecision = { kind: null, reason: null };
+        spawnGate.sessionStarted();
 ```
 
 In `session.measure`, before `return next(e)`:
@@ -952,18 +1115,18 @@ In `session.measure`, before `return next(e)`:
 In `classic.UserPromptSubmit`, before `return next(e)`:
 
 ```ts
-        if (spawnDecision.kind !== "allow-session") {
-            spawnDecision = { kind: null, reason: null };
-        }
+        spawnGate.promptSubmitted();
 ```
 
 After the PowerShell `tool.call`:
 
 ```ts
-    // a costly spawn waits on the person's card; refused in code, as the shell is
+    // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
     for (const tool of ["Agent", "Task", "Workflow"] as const) {
         on("tool.call", { tool }, async ($, e, next) => {
-            const why = await spawnGate($, tool, e as unknown as Record<string, unknown>);
+            const why = active
+                ? await spawnGate.check(tool, e as unknown as Record<string, unknown>, (g) => askTokengate($, g))
+                : null;
             return why === null ? next(e) : { deny: why };
         });
     }
@@ -985,8 +1148,8 @@ Expected: no errors
 Run: `task sync:claudemod`
 Expected: `cmd/wsh/cmd/claude-mod/hooks/register.ts` matches the source; no other file under it changes.
 
-The live check (a lone subagent passes with a note, three in parallel ask once, each option's effect) starts
-real subagents, so it is left to the person after the run lands; it is the spec's "Live" test line.
+Don't run the live check (a lone subagent passes with a note, three in parallel ask once, each option's effect): it
+starts real subagents, and it is the person's, chunk 1 of the effort "Token burn guard: follow-ups", due 2026-10-14.
 
 **Step 4: Commit**
 
@@ -995,13 +1158,84 @@ git add claude/arc-mod/hooks/register.ts cmd/wsh/cmd/claude-mod/hooks/register.t
 git commit -m "feat(claude-mod): hold costly Agent, Task and Workflow calls behind the Token burn card" -- claude/arc-mod/hooks/register.ts cmd/wsh/cmd/claude-mod/hooks/register.ts
 ```
 
-### Task 6: docs
+### Task 6: the held card's popup names its card, and a scenario shows the Token burn card
 
-**Depends on:** Task 5
+**Depends on:** none
+**Files:** `frontend/app/view/agents/heldaskdialog.tsx`, `frontend/app/view/agents/heldaskbar.tsx`, `frontend/app/view/agents/heldaskpopup.ts`, `frontend/app/view/agents/agentsviewmodel.ts`, `scripts/cdp/scenarios.mjs`
+
+`heldaskdialog.tsx:83` writes "Low RAM" before the agent's name for every held card, a leftover of memgate's card
+(removed 2026-10-09): an Antigravity question already pops up as "Low RAM · <agent>", and the Token burn card would
+too. The bar above the terminal (`heldaskbar.tsx`) and the agent's status already read the card's own header through
+`askingLabel` (`agentsviewmodel.ts:972`).
+
+**Step 1: The header**
+
+In `heldaskdialog.tsx`, import `askingLabel` from `./agentsviewmodel` and replace the hardcoded label:
+
+```tsx
+                            <span className="font-semibold text-asking">{askingLabel(agent)}</span>
+```
+
+Fix the comments that still name memgate's Low RAM card as the held card: the file comments of `heldaskdialog.tsx`,
+`heldaskbar.tsx` and `heldaskpopup.ts`, and `askingLabel`'s doc comment in `agentsviewmodel.ts` (comments only; a
+held card is any `AskCommand` with `Hold`: the Token burn card, an Antigravity question).
+
+**Step 2: The scenario `token-burn-card`** in `scripts/cdp/scenarios.mjs`
+
+Model it on `cockpit-needs-you-cross-channel` (`scenarios.mjs` ~2884): arrange writes a fixture roster to
+`TREE_RAIL_FIXTURE` and teardown removes it the same way. The roster: one working agent, and one asking agent whose
+ask is the Token burn card held:
+
+```js
+ask: {
+    askId: "fx-token-burn-ask",
+    oref: "block:fx-blk-token-burn",
+    hold: true,
+    questions: [{
+        header: "Token burn",
+        question: "An agent wants to start 3 subagents, about 4.5M tokens (rough).",
+        options: [{ label: "Allow" }, { label: "Allow this turn" }, { label: "Allow this session" }, { label: "Don't spawn" }],
+    }],
+},
+```
+
+Steps, each with a shot under `cdp-shots/`:
+
+1. On a surface other than Agent, the popup (`[data-held-ask-dialog="<id>"]`) shows; its header reads
+   `Token burn · <agent name>`, with no "Low RAM" in it, and it lists the 4 option labels.
+2. Opening that agent on the Agent surface (through `openref.ts`'s router or the helper other scenarios use to
+   focus an agent) closes the popup, and the bar above the terminal (`[data-held-ask="<id>"]`) shows the 4 options.
+
+Teardown also clears `heldAskDismissedAtom` if a step touched it.
+
+**Step 3: Check**
+
+Run: `node --check scripts/cdp/scenarios.mjs`
+Expected: exit 0
+
+Run: `npx vitest run frontend/app/view/agents/agentsviewmodel.test.ts frontend/app/view/agents/heldaskpopup.test.ts`
+Expected: all pass
+
+Run: `npx eslint frontend/app/view/agents/heldaskdialog.tsx frontend/app/view/agents/heldaskbar.tsx frontend/app/view/agents/heldaskpopup.ts`
+Expected: no errors
+
+Run: `NODE_OPTIONS=--max-old-space-size=4096 task check:ts` (about 2 minutes; give it a longer timeout)
+Expected: exit 0
+
+The scenario itself needs CDP, which only Windows' WebView2 answers: on Windows run
+`task verify:ui -- token-burn-card`; on a Mac, Final reports it unverified, so say so under Not verified.
+
+**Step 4: Commit**
+
+```bash
+git add frontend/app/view/agents/heldaskdialog.tsx frontend/app/view/agents/heldaskbar.tsx frontend/app/view/agents/heldaskpopup.ts frontend/app/view/agents/agentsviewmodel.ts scripts/cdp/scenarios.mjs
+git commit -m "fix(agents): a held card's popup is headed by its own card, not Low RAM; token-burn-card scenario" -- frontend/app/view/agents/heldaskdialog.tsx frontend/app/view/agents/heldaskbar.tsx frontend/app/view/agents/heldaskpopup.ts frontend/app/view/agents/agentsviewmodel.ts scripts/cdp/scenarios.mjs
+```
+
+### Task 7: docs
+
+**Depends on:** Task 5, Task 6
 **Files:** `CHANGELOG.md`, `docs/deferred.md`, `docs/open-issues.md`, `AGENTS.md`
-
-`AGENTS.md` and `docs/deferred.md` may hold other sessions' uncommitted edits: stage only this task's hunks
-(write them as a patch and `git apply --cached <patch>`), never the whole file.
 
 **Step 1: CHANGELOG** under `Added`:
 
@@ -1011,11 +1245,18 @@ git commit -m "feat(claude-mod): hold costly Agent, Task and Workflow calls behi
   single subagent with room in the window runs without asking. Tune it with the `tokengate:*` settings.
 ```
 
+and under `Fixed`:
+
+```
+- A held card that pops up over the cockpit, such as an Antigravity agent's question, is headed by its own title
+  instead of "Low RAM".
+```
+
 **Step 2: deferred.md:** in the Token burn guard entry, mark part (1) shipped (link the spec); parts (2), (3),
-calibrating `PerAgentTokens` and exempting engine runs stay deferred. Also drop the entry's **Status** paragraph
-(the paused-run note), and mirror the change in the Token burn guard row of
-`docs/open-issues.md` (part (1) shipped; the rest stays Actionable). memgate's Low RAM card was removed on
-2026-10-09, so no entry about it is added.
+calibrating `PerAgentTokens` and exempting engine runs stay deferred, and the live check is chunk 1 of the effort
+"Token burn guard: follow-ups". Also drop the entry's **Status** paragraph (the paused-run note), and mirror the
+change in the Token burn guard row of `docs/open-issues.md` (part (1) shipped; the rest stays Actionable). memgate's
+Low RAM card was removed on 2026-10-09, so no entry about it is added.
 
 **Step 3: AGENTS.md:** after the "A heavy shell command waits its turn" gotcha add:
 
