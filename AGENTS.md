@@ -71,6 +71,10 @@ Other useful commands:
   Final and heavy Setup queue too. A command the person skipped from the Jobs popover comes back "Not run: …": don't
   retry it — carry on and report it skipped. The commands and their RAM estimates are one table in
   `pkg/memgate/memgate.go`; a single test file or `-run` filter is light and never queues.
+- **A subagent or workflow spawn can come back "Not run: …".** The Claude mod asks `wsh tokengate` before every
+  `Agent`, `Task` or `Workflow` call; a costly one (a big share of the 5h window, a full window, 3+ agents, a
+  workflow) waits on a Token burn card. A refusal is the person's call for the rest of that prompt: don't retry
+  the spawn; do the work in the session and report it. Rules and estimate are in `pkg/tokengate`.
 - **Say what a fan-out will cost before starting it.** Token cost grows as context size × tool calls × agents,
   and almost all of it is cache reads: on 2026-10-08 a docs rewrite with four research subagents and a few real Claude
   agents staged for screenshots took the account from ~20M to ~220M tokens in an hour. Before you launch several

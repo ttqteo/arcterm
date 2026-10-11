@@ -79,21 +79,18 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   (and `Workflow`) can ask, the way `wsh memgate`'s Low RAM card asked before a heavy Bash command (removed
   2026-10-09 for the job queue, `pkg/jobqueue`; the ask's `Hold` flag that drew it is still there).
 - **Shape:** (1) a "token gate" beside memgate: before an agent spawns subagents or a workflow, show a card
-  with the projected cost (open context × expected calls × agents) and the 5h window left, Allow / Deny;
-  (2) a burn alert: a toast when a session's 10-minute burn would empty the 5h window before its reset, or
-  when its context passes ~150k while it keeps calling tools (suggest `/compact` or → Sonnet from the
-  Consumers row); (3) cache reads shown apart from fresh tokens in the Consumers Tokens view.
+  with the projected cost (open context × expected calls × agents) and the 5h window left, Allow / Deny
+  — **shipped** (`docs/superpowers/specs/2026-10-08-token-burn-guard-design.md`: `pkg/tokengate`, `wsh tokengate`,
+  the Claude mod's `tool.call` gate); (2) a burn alert: a toast when a session's 10-minute burn would empty the
+  5h window before its reset, or when its context passes ~150k while it keeps calling tools (suggest `/compact`
+  or → Sonnet from the Consumers row); (3) cache reads shown apart from fresh tokens in the Consumers Tokens view.
 - **Relation:** complements `docs/superpowers/specs/2026-10-07-quota-guard-design.md` (warns at 85%/95% of the
   window and holds engine work); this guard acts earlier, on the rate rather than the level.
 - **Pick up** with a brainstorm/spec; measure first how well "context × calls" predicts a session's spend
   from saved transcripts.
-- **Status (2026-10-11):** paused by the person. v1 has its spec and a plan
-  (`docs/superpowers/plans/2026-10-08-token-burn-guard.md`), patched on 2026-10-11 for the memgate → job queue
-  change of 2026-10-09 (`printLine` and `ramHold` are gone). Run `00552339` was cancelled in plan review, before
-  any worker started; nothing was built. Resume with `wsh runs start --plan <that plan> --runtime claude --model
-  opus`. Next after it: a whole-run cost estimate at plan submit, as a decision in
-  `docs/superpowers/specs/2026-10-07-quota-guard-design.md`, calibrated from past runs' per-task tokens (the
-  same measurement `PerAgentTokens` needs).
+- **Still deferred:** parts (2) and (3), calibrating `PerAgentTokens` against past runs' per-task tokens, and
+  exempting engine runs from the gate. The live check (real subagents) is chunk 1 of the effort "Token burn guard:
+  follow-ups" (`1dce9cf9-1464-456b-831c-7c5d13a12fc9`), due 2026-10-14.
 
 ## Radar's metadata collectors and clustering pipeline (retired 2026-10-06)
 
