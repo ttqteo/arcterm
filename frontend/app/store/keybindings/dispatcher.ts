@@ -10,6 +10,7 @@ import { docReviewAtom } from "@/app/view/agents/docreview";
 import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { heldAskOpenAtom } from "@/app/view/agents/heldaskpopup";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
+import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
 import { tourAtom, tourMenuOpenAtom } from "@/app/view/jarvis/jarvistourstore";
@@ -116,6 +117,8 @@ export function deriveKeyContext(): KeyContext {
         // the float folded into Sprout: the shell is hidden, and its keys (f, Escape, Shift+F, j/k) ended float or
         // changed the agent behind Sprout's back
         globalStore.get(floatMiniAtom) ||
+        // the Ctrl+Tab switcher over the terminal: its Escape closes it (switcher:cancel), not the surface underneath
+        globalStore.get(tabSwitcherAtom) != null ||
         globalStore.get(modalsModel.modalsAtom).length > 0;
     return {
         surface,

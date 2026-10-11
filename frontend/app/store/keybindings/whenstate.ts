@@ -33,8 +33,10 @@ import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { floatModeAtom } from "@/app/view/agents/floatstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
+import { terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
+import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { codeTreeFocusedAtom } from "@/app/view/code/codestore";
 import { autonomyPanelOpenAtom } from "@/app/view/jarvis/autonomyladder";
 import {
@@ -73,7 +75,9 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     renamingRowAtom, // buildAgentBindings: subagent:back
     focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:leave-center
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
-    floatModeAtom, // buildGlobalBindings: cycle-agent-next / -prev stand down for float:next-tab / prev-tab
+    floatModeAtom, // buildGlobalBindings switcherMode: cycle-agent-next / -prev stand down for switcher:next / prev
+    terminalFullscreenAtom, // buildGlobalBindings switcherMode, as floatModeAtom
+    tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
 ];
 
 function bumpWhenVersion() {

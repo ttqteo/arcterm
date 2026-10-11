@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import type { Lineage, RunInfo } from "./runlineage";
-import { FLOAT_TAB_MAX, floatTabs, foldedList, stepFloatTab, workingCount } from "./sproutroster";
+import { NO_LINEAGE, type Lineage, type RunInfo } from "./runlineage";
+import { FLOAT_TAB_MAX, floatTabOrder, floatTabs, foldedList, workingCount } from "./sproutroster";
 
 const a = (id: string, state: AgentVM["state"], kind?: string): AgentVM =>
     ({ id, name: id, task: "", state, kind }) as AgentVM;
@@ -65,25 +65,18 @@ describe("floatTabs", () => {
         expect(ids(floatTabs(runAgents, [a("w1", "idle", "terminal")], "x", run).shown)).toEqual(["x", "lead"]));
 });
 
-describe("stepFloatTab", () => {
+describe("floatTabOrder", () => {
     const agents = [a("x", "idle"), a("y", "idle")];
     const terminals = [a("t", "idle", "terminal")];
-    it("steps from the last agent to the first terminal", () =>
-        expect(stepFloatTab(agents, terminals, "y", 1)).toBe("t"));
-    it("wraps around both ends", () => {
-        expect(stepFloatTab(agents, terminals, "t", 1)).toBe("x");
-        expect(stepFloatTab(agents, terminals, "x", -1)).toBe("t");
-    });
-    it("reaches tabs past the cut", () => {
+    it("lists the agents, then the plain terminals", () =>
+        expect(ids(floatTabOrder(agents, terminals, "y", NO_LINEAGE))).toEqual(["x", "y", "t"]));
+    it("does not cut", () => {
         const many = "abcdefg".split("").map((id) => a(id, "idle"));
-        expect(stepFloatTab(many, [], "f", 1)).toBe("g");
+        expect(floatTabOrder(many, [], "a", NO_LINEAGE)).toHaveLength(7);
     });
-    it("has nowhere to go with one tab", () => expect(stepFloatTab([a("x", "idle")], [], "x", 1)).toBeNull());
-    it("skips a run's workers and stage sessions", () => {
-        expect(stepFloatTab(runAgents, [], "lead", 1, run)).toBe("x");
-        expect(stepFloatTab(runAgents, [], "x", -1, run)).toBe("lead");
-    });
-    it("steps on from a worker in view", () => expect(stepFloatTab(runAgents, [], "w1", 1, run)).toBe("x"));
+    it("skips a run's workers and stage sessions", () =>
+        expect(ids(floatTabOrder(runAgents, [], "lead", run))).toEqual(["x", "lead"]));
+    it("keeps a worker in view", () => expect(ids(floatTabOrder(runAgents, [], "w1", run))).toContain("w1"));
 });
 
 describe("foldedList", () => {

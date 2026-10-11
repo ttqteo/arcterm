@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Ctrl+Tab** in a float or in terminal fullscreen opens a tab switcher over the terminal, as the system's app
+  switcher works: hold Ctrl and press Tab to move through your agents and terminals, most recent first, then let go to
+  open the one picked. A quick Ctrl+Tab flips back to the tab you were on before, and passing over an agent leaves its
+  unread turns unread. Option+Tab works too on a Mac.
 - **Code** can pin files: right-click a file → **Pin**, or **Pin** in the bar above the editor. Pinned files list at
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
   file search (Ctrl+P, ⌘P on a Mac) lists them first.

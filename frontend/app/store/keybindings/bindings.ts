@@ -25,7 +25,7 @@ import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
-import { floatModeAtom, minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
+import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
     graphOnAtom,
@@ -40,8 +40,8 @@ import { canRequest } from "@/app/view/agents/proseanchor";
 import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
-import { stepFloatTab } from "@/app/view/agents/sproutroster";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
+import { closeSwitcher, switcherKey, switcherMode, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
@@ -170,18 +170,30 @@ export function closeTarget(items: AgentVM[], focusId: string | undefined, paneI
     return items.find((x) => x.id === id) ?? null;
 }
 
-// Ctrl+Tab in a float: show the tab beside the one in view, as a click on it does
-function stepFloat(model: AgentsViewModel, delta: 1 | -1): void {
-    const id = stepFloatTab(
-        globalStore.get(model.agentsAtom),
-        globalStore.get(model.terminalsAtom),
-        globalStore.get(model.focusIdAtom) ?? null,
-        delta,
-        globalStore.get(model.lineageAtom)
-    );
-    if (id != null) {
-        model.openTerminal(id);
-    }
+// Ctrl+Tab / Ctrl+Shift+Tab (or Option+Tab on a Mac) where the switcher replaces the Active list's cycle
+function switcherBindings(model: AgentsViewModel, mod: "ctrl" | "alt"): Binding[] {
+    const key = mod === "ctrl" ? "Ctrl" : "Alt";
+    const suffix = mod === "ctrl" ? "" : "-alt";
+    const when = (ctx: KeyContext) =>
+        ctx.surface === "agent" && switcherMode() && (!ctx.modalOpen || globalStore.get(tabSwitcherAtom) != null);
+    return [
+        {
+            id: `switcher:next${suffix}`,
+            keys: `${key}:Tab`,
+            group: "Agent",
+            label: "Switch tab",
+            when,
+            run: () => switcherKey(model, 1, mod),
+        },
+        {
+            id: `switcher:prev${suffix}`,
+            keys: `${key}:Shift:Tab`,
+            group: "Agent",
+            label: "Switch tab, backwards",
+            when,
+            run: () => switcherKey(model, -1, mod),
+        },
+    ];
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
@@ -338,7 +350,7 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "Ctrl:Tab",
             group: "Agent",
             label: "Next agent",
-            when: (ctx) => ctx.surface === "agent" && !globalStore.get(floatModeAtom),
+            when: (ctx) => ctx.surface === "agent" && !switcherMode(),
             run: () => model.cycleFocus(false),
         },
         {
@@ -348,49 +360,25 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             keys: "Ctrl:Shift:Tab",
             group: "Agent",
             label: "Previous agent",
-            when: (ctx) => ctx.surface === "agent" && !globalStore.get(floatModeAtom),
+            when: (ctx) => ctx.surface === "agent" && !switcherMode(),
             run: () => model.cycleFocus(true),
         },
-        {
-            // In Float the window is one terminal over its tabs (float-ledge.tsx), plain terminals among them, and has
-            // no rail: Ctrl+Tab steps through those tabs instead of the agents alone. From inside a terminal too.
-            id: "float:next-tab",
-            keys: "Ctrl:Tab",
-            group: "Agent",
-            label: "Next tab in a float",
-            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
-            run: () => stepFloat(model, 1),
-        },
-        {
-            id: "float:prev-tab",
-            keys: "Ctrl:Shift:Tab",
-            group: "Agent",
-            label: "Previous tab in a float",
-            when: (ctx) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
-            run: () => stepFloat(model, -1),
-        },
+        // In Float and in terminal fullscreen there is no tree to step through: Ctrl+Tab opens the switcher over the
+        // terminal instead (tabswitcher.ts), the plain terminals among its tabs, from inside a terminal too. Under
+        // another modal it stands down, but not under its own (the open switcher counts as one, for Escape).
+        ...switcherBindings(model, "ctrl"),
         // Option+Tab too on a Mac, where nothing else takes it. Not on Windows: Alt+Tab is the system's app switcher
-        // there and never reaches the window, so Ctrl+Tab alone switches a float's tabs.
-        ...(isMacOS()
-            ? [
-                  {
-                      id: "float:next-tab-alt",
-                      keys: "Alt:Tab",
-                      group: "Agent",
-                      label: "Next tab in a float",
-                      when: (ctx: KeyContext) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
-                      run: () => stepFloat(model, 1),
-                  },
-                  {
-                      id: "float:prev-tab-alt",
-                      keys: "Alt:Shift:Tab",
-                      group: "Agent",
-                      label: "Previous tab in a float",
-                      when: (ctx: KeyContext) => ctx.surface === "agent" && globalStore.get(floatModeAtom),
-                      run: () => stepFloat(model, -1),
-                  },
-              ]
-            : []),
+        // there and never reaches the window, so Ctrl+Tab alone switches.
+        ...(isMacOS() ? switcherBindings(model, "alt") : []),
+        {
+            // the switcher's Escape keeps the tab in view; consumed, so neither the terminal nor agent:back gets it
+            id: "switcher:cancel",
+            keys: "Escape",
+            group: "Agent",
+            label: "Close the tab switcher",
+            when: () => globalStore.get(tabSwitcherAtom) != null,
+            run: () => closeSwitcher(),
+        },
         {
             id: "close-agent",
             keys: closeAgentChord(),

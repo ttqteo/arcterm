@@ -25,6 +25,8 @@ import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { floatMiniAtom, floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
+import { trackRecentTabs } from "@/app/view/agents/tabswitcherstore";
+import { TabSwitcher } from "@/app/view/agents/tabswitcherview";
 import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";
 import { WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
@@ -102,6 +104,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     }, [model]);
     useEffect(() => setupUiClient(model), [model]);
     useEffect(() => setupFloatMode(model), [model]);
+    // the Ctrl+Tab switcher orders its tabs by when each was last in view, from any route that chose it
+    useEffect(() => trackRecentTabs(model), [model]);
     // in Float the window is the focused terminal: the float bar stands in for the app bar and a ledge for the footer,
     // which Sprout walks
     const floating = useAtomValue(floatModeAtom);
@@ -204,6 +208,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <ModalsRenderer />
                 <ContextMenuHost />
                 <NotificationToasts />
+                {/* Ctrl+Tab in Float and terminal fullscreen: over the window, so a surface switch never drops it */}
+                <TabSwitcher model={model} />
             </div>
             {/* window chrome, not a surface: every surface but Agent unmounts on a nav switch, and the creature is the
                 one object in the app that has to survive that. Outside the content, so a fold shrinks the window into

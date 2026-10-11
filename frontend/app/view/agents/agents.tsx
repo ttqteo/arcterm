@@ -186,8 +186,8 @@ export class AgentsViewModel implements ViewModel {
         }
     }
 
-    // a key pressed in a terminal brings typing along to the agent it moves to
-    private focusFromKeys(id: string) {
+    // a key pressed in a terminal brings typing along to the agent it moves to (also the Ctrl+Tab switcher's way in)
+    focusFromKeys(id: string) {
         if (document.activeElement?.closest("[data-agent-terminal]") != null) {
             globalStore.set(this.typingFollowsAtom, id);
         }
