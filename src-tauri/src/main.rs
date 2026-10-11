@@ -9,6 +9,7 @@ mod commands;
 mod notify;
 mod paths;
 mod shellenv;
+mod webcache;
 
 use init::InitState;
 use std::io::{BufRead, BufReader};
@@ -278,11 +279,32 @@ fn install_agent_hooks(app_path: &std::path::Path, child_path: Option<&str>) {
     }
 }
 
+// Clears the webview cache when Settings → Storage asked for it (webcache.rs). Runs before the builder, since the
+// window exists by the time setup runs. Returns the line to log once applog is open.
+fn clear_webview_cache_at_launch(identifier: &str) -> Option<String> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let targets = webcache::launch_targets(
+        paths::Os::current(),
+        identifier,
+        home.as_deref(),
+        local.as_deref(),
+        cfg!(debug_assertions),
+        std::env::var_os(paths::DEV_DATA_DIR_ENV),
+    )?;
+    match webcache::clear_if_marked(&targets.data_home, &targets.cache_dirs) {
+        Ok(true) => Some("[tauri] cleared the webview cache, as Settings → Storage asked".to_string()),
+        Ok(false) => None,
+        Err(e) => Some(format!("[tauri] clearing the webview cache failed: {}", e)),
+    }
+}
+
 fn main() {
     applog::install_panic_hook();
     let scrubbed_env = shellenv::scrub_inherited_agent_env();
     let path_probe = shellenv::PathProbe::start();
     let context = tauri::generate_context!();
+    let cache_note = clear_webview_cache_at_launch(&context.config().identifier);
     #[cfg(all(windows, not(debug_assertions)))]
     set_app_user_model_id(&context.config().identifier);
     // WebView2 reads these env vars before the webview is created, so they must be set here in
@@ -348,6 +370,9 @@ fn main() {
                 std::env::var_os(paths::DEV_DATA_DIR_ENV),
             );
             applog::init(&paths::data_home_dirs(&data_base).0);
+            if let Some(note) = &cache_note {
+                applog::log_line(note);
+            }
             if !scrubbed_env.is_empty() {
                 applog::log_line(&format!(
                     "[tauri] opened from an agent's shell; dropped {} so agents keep their transcripts",

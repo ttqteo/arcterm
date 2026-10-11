@@ -46,6 +46,42 @@ pub fn data_home_dirs(base: &Path) -> (PathBuf, PathBuf) {
     (base.join("data"), base.join("config"))
 }
 
+// The OS a path rule is for. Rules take it as an argument so one test machine covers every OS; `Os::current()` is
+// the one the app was compiled for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Os {
+    Windows,
+    MacOs,
+    Other,
+}
+
+impl Os {
+    pub fn current() -> Os {
+        if cfg!(windows) {
+            Os::Windows
+        } else if cfg!(target_os = "macos") {
+            Os::MacOs
+        } else {
+            Os::Other
+        }
+    }
+}
+
+// Tauri's app_local_data_dir for `identifier`, for code that runs before the app exists (main, before the
+// builder): %LOCALAPPDATA%\<identifier> on Windows, ~/Library/Application Support/<identifier> on macOS.
+pub fn app_local_data_dir_on(os: Os, identifier: &str, home: Option<&Path>, local_app_data: Option<&Path>) -> Option<PathBuf> {
+    match os {
+        Os::Windows => local_app_data.map(|d| d.join(identifier)),
+        Os::MacOs => home.map(|h| h.join("Library").join("Application Support").join(identifier)),
+        Os::Other => None,
+    }
+}
+
+#[cfg(test)]
+pub fn app_local_data_dir_for(identifier: &str, home: Option<&Path>, local_app_data: Option<&Path>) -> Option<PathBuf> {
+    app_local_data_dir_on(Os::current(), identifier, home, local_app_data)
+}
+
 // Dev-only WebView2 profile dir. app_local_data_dir is %LOCALAPPDATA%/<identifier>; Tauri would
 // otherwise default the WebView2 profile to <that>/EBWebView, which a co-installed packaged build
 // (same identifier) also uses. WebView2 runs one browser process per profile, so a dev launch
@@ -125,6 +161,35 @@ mod tests {
             dev_webview_data_dir(base),
             PathBuf::from("C:/u/AppData/Local/dev.arc.app-dev/EBWebView")
         );
+    }
+
+    #[test]
+    fn app_local_data_dir_matches_tauris() {
+        let got = app_local_data_dir_for("dev.arc.app", Some(Path::new("/Users/me")), Some(Path::new("C:/u/AppData/Local")));
+        if cfg!(windows) {
+            assert_eq!(got, Some(Path::new("C:/u/AppData/Local").join("dev.arc.app")));
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(got, Some(Path::new("/Users/me").join("Library").join("Application Support").join("dev.arc.app")));
+        } else {
+            assert_eq!(got, None);
+        }
+    }
+
+    #[test]
+    fn app_local_data_dir_on_each_os() {
+        let home = Some(Path::new("/Users/me"));
+        let local = Some(Path::new("C:/u/AppData/Local"));
+        assert_eq!(
+            app_local_data_dir_on(Os::Windows, "dev.arc.app", home, local),
+            Some(Path::new("C:/u/AppData/Local").join("dev.arc.app"))
+        );
+        assert_eq!(
+            app_local_data_dir_on(Os::MacOs, "dev.arc.app", home, local),
+            Some(Path::new("/Users/me").join("Library").join("Application Support").join("dev.arc.app"))
+        );
+        assert_eq!(app_local_data_dir_on(Os::Other, "dev.arc.app", home, local), None);
+        assert_eq!(app_local_data_dir_on(Os::MacOs, "dev.arc.app", None, local), None);
+        assert_eq!(app_local_data_dir_on(Os::Windows, "dev.arc.app", home, None), None);
     }
 
     #[test]
