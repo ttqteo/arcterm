@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package claudequota reads the Claude account's rate-limit windows (5-hour, weekly) with no claude
-// session running: from Anthropic's usage endpoint, asked with the OAuth token Claude Code stored,
-// else from the copy of that answer Claude Code caches in its config file. A session only learns
+// session running: from Anthropic's usage endpoint, asked with the OAuth token Claude Code stored (its
+// credentials file, or the login Keychain on macOS), else from the copy of that answer Claude Code
+// caches in its config file. A session only learns
 // its windows from its first response, so without this the cockpit knew nothing until one ran.
 //
 // The token is read, never refreshed: rotating it would sign Claude Code out. An expired one is
@@ -11,14 +12,19 @@
 package claudequota
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +42,12 @@ const (
 	liveFreshness = time.Hour
 	// a token this close to expiring is treated as expired
 	expirySlack = time.Minute
+	// Claude Code's Keychain item on macOS. It has this name only for the default config dir (one under
+	// CLAUDE_CONFIG_DIR is named apart), so the item is read only when that is unset.
+	keychainService = "Claude Code-credentials"
+	keychainTimeout = 5 * time.Second
+	// what `security` exits with when the item does not exist
+	keychainNotFound = 44
 )
 
 const (
@@ -106,6 +118,8 @@ type Reader struct {
 	now      func() time.Time
 	// the credentials file and the config file holding the cache
 	paths func() (credentials string, config string, err error)
+	// the credentials when there is no credentials file: macOS keeps them in the Keychain; nil elsewhere
+	keychain func() ([]byte, error)
 
 	// held across a fetch, so callers asking at once make one call
 	mu      sync.Mutex
@@ -121,6 +135,7 @@ var defaultReader = &Reader{
 	client:   &http.Client{Timeout: fetchTimeout},
 	now:      time.Now,
 	paths:    defaultPaths,
+	keychain: defaultKeychain(),
 }
 
 // Get answers the reading to show: a live one, asking the endpoint when the interval allows, or the
@@ -193,12 +208,8 @@ func (r *Reader) tryFetch(ctx context.Context, now time.Time) {
 
 // the stored access token, or "" when there is none or it has expired
 func (r *Reader) token(now time.Time) string {
-	credPath, _, err := r.paths()
-	if err != nil {
-		return ""
-	}
-	raw, err := os.ReadFile(credPath)
-	if err != nil {
+	raw := r.credentials()
+	if raw == nil {
 		return ""
 	}
 	var creds credentialsFile
@@ -210,6 +221,31 @@ func (r *Reader) token(now time.Time) string {
 		return ""
 	}
 	return oauth.AccessToken
+}
+
+// what Claude Code stored for the /login account: its credentials file, else the Keychain item; nil when
+// neither holds any
+func (r *Reader) credentials() []byte {
+	credPath, _, err := r.paths()
+	if err != nil {
+		return nil
+	}
+	raw, err := os.ReadFile(credPath)
+	if err == nil {
+		return raw
+	}
+	if !errors.Is(err, fs.ErrNotExist) || r.keychain == nil {
+		return nil
+	}
+	raw, err = r.keychain()
+	if err != nil {
+		var exit *exec.ExitError
+		if !errors.Is(err, fs.ErrNotExist) && !(errors.As(err, &exit) && exit.ExitCode() == keychainNotFound) {
+			log.Printf("claudequota: reading the keychain: %v\n", err)
+		}
+		return nil
+	}
+	return raw
 }
 
 func (r *Reader) fetch(ctx context.Context, token string) (usageBody, error) {
@@ -361,6 +397,29 @@ func defaultPaths() (string, string, error) {
 		return credentials, filepath.Join(override, ".claude.json"), nil
 	}
 	return credentials, filepath.Join(home, ".claude.json"), nil
+}
+
+// on macOS Claude Code writes no credentials file and keeps them in the login Keychain instead
+func defaultKeychain() func() ([]byte, error) {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	return readKeychain
+}
+
+// the Keychain item's secret, read with `security` (Claude Code writes it with the same tool, so reading it
+// asks nothing of the user); fs.ErrNotExist under a CLAUDE_CONFIG_DIR, whose item is named apart
+func readKeychain() ([]byte, error) {
+	if os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+		return nil, fs.ErrNotExist
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), keychainTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "/usr/bin/security", "find-generic-password", "-s", keychainService, "-w").Output()
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimSpace(out), nil
 }
 
 func fileExists(path string) bool {

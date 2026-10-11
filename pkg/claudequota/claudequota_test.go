@@ -336,3 +336,52 @@ func TestSevenDayStillBeatsLimits(t *testing.T) {
 		t.Fatalf("week = %+v, want seven_day's 41.5", q)
 	}
 }
+
+// on macOS Claude Code keeps the /login token in the Keychain and writes no credentials file
+func TestTokenFromTheKeychainWhenNoCredentialsFile(t *testing.T) {
+	f := newFixture(t, "", "")
+	asked := 0
+	f.reader.keychain = func() ([]byte, error) {
+		asked++
+		return []byte(token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC))), nil
+	}
+	q := f.reader.Get(context.Background())
+	if q == nil || q.Source != SourceLive {
+		t.Fatalf("want a live reading, got %+v", q)
+	}
+	if f.auth != "Bearer tok-1" || asked != 1 {
+		t.Errorf("authorization = %q, keychain asked %d times", f.auth, asked)
+	}
+}
+
+func TestCredentialsFileBeatsTheKeychain(t *testing.T) {
+	f := newFixture(t, token(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)), "")
+	f.reader.keychain = func() ([]byte, error) {
+		t.Fatal("keychain read while a credentials file exists")
+		return nil, nil
+	}
+	f.reader.Get(context.Background())
+	if f.auth != "Bearer tok-1" {
+		t.Errorf("authorization = %q", f.auth)
+	}
+}
+
+func TestExpiredKeychainTokenIsNeverSent(t *testing.T) {
+	f := newFixture(t, "", cacheFile)
+	f.reader.keychain = func() ([]byte, error) {
+		return []byte(token(time.Date(2026, 10, 6, 2, 0, 0, 0, time.UTC))), nil
+	}
+	q := f.reader.Get(context.Background())
+	if f.calls != 0 || q == nil || q.Source != SourceCache {
+		t.Fatalf("calls = %d, reading %+v; want no call and the cache", f.calls, q)
+	}
+}
+
+func TestKeychainMissAnswersTheCache(t *testing.T) {
+	f := newFixture(t, "", cacheFile)
+	f.reader.keychain = func() ([]byte, error) { return nil, os.ErrNotExist }
+	q := f.reader.Get(context.Background())
+	if f.calls != 0 || q == nil || q.Source != SourceCache {
+		t.Fatalf("calls = %d, reading %+v; want no call and the cache", f.calls, q)
+	}
+}

@@ -31,9 +31,12 @@ about the account until a claude turn has run. For the **account's Claude window
 running**, wavesrv reads them itself (`pkg/claudequota`, the `GetClaudeQuotaCommand` RPC):
 
 - It asks `GET https://api.anthropic.com/api/oauth/usage` with the access token Claude Code stored in
-  `<config dir>/.credentials.json` (`CLAUDE_CONFIG_DIR`, else `~/.claude`). The token is only read,
-  never refreshed: rotating it would sign Claude Code out. An expired one is skipped until Claude Code
-  refreshes it on its next run.
+  `<config dir>/.credentials.json` (`CLAUDE_CONFIG_DIR`, else `~/.claude`). On macOS Claude Code writes
+  no such file and keeps the token in the login Keychain as `Claude Code-credentials`, which wavesrv reads
+  with `security find-generic-password` when the file is missing (only with `CLAUDE_CONFIG_DIR` unset:
+  Claude Code names the item apart for another config dir). The token is only read, never refreshed:
+  rotating it would sign Claude Code out. An expired one is skipped until Claude Code refreshes it on its
+  next run.
 - The endpoint is rate-limited, so wavesrv asks at most once per 5 minutes, whichever windows poll,
   and backs off on a 429 (10 minutes doubling to an hour, or the `Retry-After` when longer).
 - Without a live answer it falls back to `cachedUsageUtilization` in Claude Code's config file, Claude
