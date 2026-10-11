@@ -8,6 +8,7 @@ import {
     activePalette,
     applyThemeVars,
     buildThemeVars,
+    CLAUDE_BRAND,
     colorOf,
     DEFAULT_THEME_PRESET,
     deriveAnsi,
@@ -63,6 +64,9 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
         "--color-asking",
         "--color-success",
         "--color-working",
+        "--color-rt-claude",
+        "--color-rt-claude-soft",
+        "--color-rt-claude-line",
     ];
     const vars = buildThemeVars(activePalette(DEFAULT_THEME_PRESET), {});
     for (const k of keys) {
@@ -85,6 +89,20 @@ for (const id of [DEFAULT_THEME_PRESET, "graphite"]) {
         });
     });
 }
+
+describe("the Claude runtime mark", () => {
+    it("is the brand clay in a theme that does not tint it, the same as the provider dot", () => {
+        const vars = buildThemeVars(activePalette("graphite"), {});
+        expect(vars["--color-rt-claude"]).toBe(CLAUDE_BRAND);
+        expect(vars["--color-rt-claude-line"]).toBe("rgba(217, 119, 87, 0.34)");
+        expect(themeLiterals("--color-provider-claude")).toEqual([CLAUDE_BRAND]);
+    });
+    it("is not the accent in the Claude theme, whose accent is that clay", () => {
+        const vars = buildThemeVars(activePalette("claude"), {});
+        expect(vars["--color-accent"]).toBe(CLAUDE_BRAND);
+        expect(vars["--color-rt-claude"]).not.toBe(vars["--color-accent"]);
+    });
+});
 
 describe("color math (via override derivation)", () => {
     it("accent override propagates to accent-400 and accentbg", () => {
@@ -291,6 +309,12 @@ describe("deriveTermTheme", () => {
         const t = deriveTermTheme(midnight, { accent: "#66d9ef" });
         expect(t.cursor).toBe("#66d9ef");
         expect(t.blue).toBe("#66d9ef");
+    });
+
+    it("a theme's ansiBlue keeps ANSI blue a blue when its accent is not one", () => {
+        const t = deriveTermTheme(activePalette("claude"), {});
+        expect(t.cursor).toBe("#d97757");
+        expect(t.blue).toBe("#6a9bcc");
     });
 
     it("switching preset changes the background — this is what re-skins the live TUI", () => {

@@ -87,8 +87,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 ### Changed
 
 - arcterm now wears Claude's colors by default: a new **Claude** theme (claude.ai's warm greys, the clay accent and
-  Claude Code's status colors) heads **Settings → Appearance → Theme**, and the pi theme follows it. A theme you
-  picked yourself stays; pick **Graphite** to go back to the old look.
+  Claude Code's status colors) heads **Settings → Appearance → Theme**, and the pi theme follows it. In it the
+  terminal keeps a real blue, and the Claude Code mark is ivory like the Codex and Pi marks, so clay stays the
+  accent. A theme you picked yourself stays; pick **Graphite** to go back to the old look.
 - The Agent panel's File tab is roomier. Its header no longer repeats the file name the tab already shows, only its
   folder. Back and Forward appear only once you have opened a second file, and Open in Code is an icon. A markdown
   preview there has smaller headings and less margin, so more of the file fits.

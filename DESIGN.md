@@ -72,7 +72,7 @@ colors:
   graphlane-5: "#e0726c"
   graphlane-6: "#5cc8d8"
   graphlane-fold: "#6b7178"
-  rt-claude: "#d97757"
+  rt-claude: "#ece9e0"
   rt-codex: "#ececec"
   rt-opencode: "#a78bfa"
   rt-pi: "#ececec"
@@ -253,7 +253,9 @@ against `background`; `muted` on a hovered row (`surface-hover`) is 4.74:1.
 
 These stay at `@theme` defaults across all runtime themes so identity stays
 recognizable: **commit graph lanes** `graphlane-1..6` + `graphlane-fold` (positional, never
-identity), **runtime accents** `rt-claude` `#d97757` / `rt-codex` `#ececec` /
+identity), **runtime accents** `rt-claude` `#d97757` (the one a theme may tint: the
+Claude theme draws it in its ivory text, like the Codex and Pi marks, because its accent is that
+clay; `CLAUDE_BRAND` in `themes.ts` holds the clay) / `rt-codex` `#ececec` /
 `rt-opencode` `#a78bfa` / `rt-pi` `#ececec` / `rt-terminal` (with `-soft` and
 `-line` variants), **memory note types** (`mem-project` blue, `mem-reference`
 green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
@@ -278,8 +280,10 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
   like the image it frames; not in `themes.ts`.
 - **`--ansi-*`** literals are fallbacks only: `buildThemeVars` in
   `frontend/app/view/agents/themes.ts` derives ANSI + terminal palettes from
-  the active theme at runtime so CSS and the live terminal cannot drift. Do
-  not edit the literals to change terminal colors.
+  the active theme at runtime so CSS and the live terminal cannot drift. ANSI
+  blue is the accent unless the theme sets `ansiBlue` (the Claude theme's
+  `#6a9bcc`, Anthropic's blue), so a clay accent does not turn `ls`'s folders
+  orange. Do not edit the literals to change terminal colors.
 
 ### Runtime theming
 
@@ -288,9 +292,10 @@ onedark, monokai) maps each base palette to the full `--color-*` override set an
 them as inline styles on `document.documentElement` — highest specificity,
 beats `:root`, re-skins everything with zero component edits. Subtle greys
 (`muted-foreground`, `ink-mid`, `lane`, `feed-*`) and the identity palettes
-stay at defaults, safe across all dark themes. `DEFAULT_THEME_PRESET` in
+stay at defaults, safe across all dark themes; the Claude mark is the one
+exception (`claudeMark`, above). `DEFAULT_THEME_PRESET` in
 `themes.ts` must equal the `@theme` literals for the surface, ink, edge and
-status tokens (guarded by `themes.test.ts`). All dark only — light mode
+status tokens and the Claude mark (guarded by `themes.test.ts`). All dark only — light mode
 (Paper) was declined 2026-08-24 (see `docs/deferred.md`); an unknown preset
 id falls back to the default. Someone who already picked a preset keeps it
 (it is stored in localStorage), so a user who once reverted to an old

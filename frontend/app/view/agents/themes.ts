@@ -10,9 +10,9 @@
 import { colord } from "colord";
 
 // The base roles we theme. A deliberately small set: the identity-carrying "chrome". Subtle greys
-// (muted-foreground, ink-mid, lane, feed-*) and identity colors (mem/rt/ansi) are left at their
+// (muted-foreground, ink-mid, lane, feed-*) and identity colors (mem/rt) are left at their
 // tailwindsetup.css @theme defaults — safe across all dark themes (light mode was declined; see
-// docs/deferred.md).
+// docs/deferred.md). The one exception is the Claude runtime mark, which claudeMark can tint.
 export interface ThemePalette {
     bg: string;
     surface: string;
@@ -32,7 +32,15 @@ export interface ThemePalette {
     success: string;
     warning: string;
     error: string;
+    // The terminal's blue slot, for a theme whose accent is not a blue; left out, ANSI blue is the accent.
+    ansiBlue?: string;
+    // The Claude runtime mark, for a theme whose accent is Claude's own clay: the mark sits on every Claude row, so
+    // in clay it would read as the accent. Left out, the mark keeps the brand clay (CLAUDE_BRAND).
+    claudeMark?: string;
 }
+
+// Claude's trademark clay (claude-color.svg #D97757): the Claude runtime mark in every theme without a claudeMark.
+export const CLAUDE_BRAND = "#d97757";
 
 // Roles the "Custom colors" card can override; buildThemeVars merges {...palette, ...overrides}.
 export type OverrideRole = "accent" | "success" | "warning" | "error";
@@ -54,6 +62,8 @@ export const THEMES: ThemeDef[] = [
         // Claude's own dark palette: the claude.ai warm greys (#1f1e1d sidebar, #262624 canvas, #30302e input),
         // Anthropic's #141413 for code, the clay #d97757 accent, and Claude Code's dark-theme status colors. text
         // is the brand ivory #faf9f5 dimmed; the steps between are interpolated to the DESIGN.md contrast floor.
+        // The terminal keeps a real blue (Anthropic's #6a9bcc), and the Claude mark is drawn in the ivory text, as
+        // the Codex and Pi marks are, so the clay stays the accent.
         palette: {
             bg: "#1f1e1d",
             surface: "#262624",
@@ -73,6 +83,8 @@ export const THEMES: ThemeDef[] = [
             success: "#4eba65",
             warning: "#ffc107",
             error: "#ff6b80",
+            ansiBlue: "#6a9bcc",
+            claudeMark: "#ece9e0",
         },
     },
     {
@@ -369,8 +381,8 @@ export function deriveAnsi(palette: ThemePalette): AnsiPalette {
         brightGreen: lighten(palette.success, AnsiBrighten),
         yellow: palette.warning,
         brightYellow: lighten(palette.warning, AnsiBrighten),
-        blue: palette.accent,
-        brightBlue: lighten(palette.accent, AnsiBrighten),
+        blue: palette.ansiBlue ?? palette.accent,
+        brightBlue: lighten(palette.ansiBlue ?? palette.accent, AnsiBrighten),
         magenta,
         brightMagenta: lighten(magenta, AnsiBrighten),
         cyan,
@@ -412,6 +424,7 @@ export function buildThemeVars(
 ): Record<string, string> {
     const p = { ...palette, ...overrides };
     const ansi = deriveAnsi(p);
+    const claudeMark = p.claudeMark ?? CLAUDE_BRAND;
     return {
         // surfaces
         "--color-background": p.bg,
@@ -458,6 +471,10 @@ export function buildThemeVars(
         "--color-on-warning": darken(p.warning, 0.9),
         "--color-askingbg": rgba(p.warning, 0.12),
         "--color-error": p.error,
+        // the Claude runtime mark — always emitted, so leaving a theme that tints it puts the clay back
+        "--color-rt-claude": claudeMark,
+        "--color-rt-claude-soft": rgba(claudeMark, 0.13),
+        "--color-rt-claude-line": rgba(claudeMark, 0.34),
         // ANSI palette — same derivation the terminal uses (deriveTermTheme), so the CSS side and the
         // live xterm palette cannot drift. Names are lowercase to match the @theme declarations in
         // tailwindsetup.css, which these override.

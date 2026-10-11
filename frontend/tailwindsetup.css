@@ -124,10 +124,13 @@
     --color-graphlane-fold: #6b7178;
 
     /* Runtime accents — trademark colors: Claude coral (claude-color.svg #D97757); Codex is a
-       monochrome mark (codex.svg #111), inverted to near-white for legibility on the dark cockpit. */
-    --color-rt-claude: #d97757;
-    --color-rt-claude-soft: rgba(217, 119, 87, 0.13);
-    --color-rt-claude-line: rgba(217, 119, 87, 0.34);
+       monochrome mark (codex.svg #111), inverted to near-white for legibility on the dark cockpit.
+       The Claude mark is the one runtime color a theme tints (ThemePalette.claudeMark in
+       view/agents/themes.ts): these literals are the default Claude theme's ivory, since its accent is
+       the coral itself; every other theme puts the coral back. */
+    --color-rt-claude: #ece9e0;
+    --color-rt-claude-soft: rgba(236, 233, 224, 0.13);
+    --color-rt-claude-line: rgba(236, 233, 224, 0.34);
     --color-rt-codex: #ececec;
     --color-rt-codex-soft: rgba(236, 236, 236, 0.13);
     --color-rt-codex-line: rgba(236, 236, 236, 0.32);
