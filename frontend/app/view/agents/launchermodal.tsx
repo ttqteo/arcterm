@@ -41,6 +41,7 @@ import {
 import {
     agentRuntime,
     filterProjects,
+    focusLaunchProject,
     footerLine,
     HOME_NAME,
     HOME_PICK,
@@ -116,6 +117,7 @@ import {
     startAtom,
     workerRouteAtom,
 } from "./runconfigstore";
+import { agentProject } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
 import { newAgentRamWarning } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
@@ -375,6 +377,32 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             applyLauncherPrefill(rows.map((r) => r.name));
         }
     }, [open, rows, prefill]);
+
+    // Opened without a project of its own, the dialog starts on the project of the agent or terminal in focus on the
+    // Agent surface. A prefill names its own, and a kept draft keeps the project it was written for. Once per open,
+    // when the project list is there (it may arrive after the open, with the prefill's effect above).
+    const focusPickRef = useRef(false);
+    useEffect(() => {
+        focusPickRef.current = open;
+    }, [open]);
+    useEffect(() => {
+        if (!open || !focusPickRef.current || rows.length === 0) {
+            return;
+        }
+        focusPickRef.current = false;
+        if (prefill != null || restored || globalStore.get(model.surfaceAtom) !== "agent") {
+            return;
+        }
+        const id = globalStore.get(model.focusIdAtom);
+        const agents = globalStore.get(model.agentsAtom);
+        const focused = [...agents, ...globalStore.get(model.terminalsAtom)].find((a) => a.id === id);
+        const name = focused ? agentProject(globalStore.get(model.lineageAtom), agents, focused) : "";
+        const names = rows.map((r) => r.name);
+        const pick = focusLaunchProject(name, names);
+        if (pick != null) {
+            pickLauncherProject(pick, globalStore.get(launcherProjectAtom));
+        }
+    }, [open, rows, prefill, restored, model]);
 
     // DEV-only seam for the launcher CDP scenario: a canvas's Build this… prefill (the Prototype chip) comes only from
     // an agent's design canvas, which a scenario cannot stand up. A production build drops the branch.

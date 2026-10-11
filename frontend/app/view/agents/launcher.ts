@@ -142,6 +142,12 @@ export function selectedProject<T extends { name: string }>(rows: T[], picked: s
     return rows.find((r) => r.name === picked) ?? rows[0] ?? null;
 }
 
+// The project a New opened without one of its own starts on: the focused agent's or terminal's on the Agent surface,
+// when it is a registered project. null leaves the dialog's own pick (the last made in it, else the latest launch).
+export function focusLaunchProject(focusedProject: string, projectNames: readonly string[]): string | null {
+    return focusedProject !== "" && projectNames.includes(focusedProject) ? focusedProject : null;
+}
+
 // Home: the Project column's last row, which starts Claude Code (ask-only, askStartupCommand) or a terminal in the home
 // folder, outside any project. It is a pick key, not a registered project, and never the default: selectedProject only
 // falls back to registered rows, so a launch lands in Home only when Home was picked.

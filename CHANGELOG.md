@@ -58,6 +58,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The **Split** menu's **Show only this agent** is now **Close split**.
 - The **File** tab's header shows the file's whole path, `slides/slide.pdf`, not only its folder, and a middle click
   on the tab closes it, as an editor's tab.
+- **New** starts on the project of the agent or terminal you are focused on in the Agent surface, rather than the
+  last project picked in the dialog. A draft you closed keeps the project it was written for.
 - arcterm reopens at the **size and place** you left its window, maximized or not, instead of its default frame
   each launch. Quitting while in Float or folded into Sprout reopens at the full window you came from, and a window
   left on a display that is gone opens at the default.

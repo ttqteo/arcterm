@@ -6,6 +6,7 @@ import {
     agentRuntime,
     draftShown,
     filterProjects,
+    focusLaunchProject,
     footerLine,
     HOME_PICK,
     homeOffered,
@@ -331,5 +332,16 @@ describe("launcherKey", () => {
         expect(launcherKey(at("start"), key("Enter", { mod: true }))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("1", { mod: true }))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("Tab", { mod: true }))).toEqual({ kind: "none" });
+    });
+});
+
+describe("focusLaunchProject", () => {
+    const names = ["arcterm", "thesis", "IT2058_EdgeAI"];
+    it("starts New on the project of the agent or terminal in focus", () => {
+        expect(focusLaunchProject("thesis", names)).toBe("thesis");
+    });
+    it("leaves the dialog's own pick when the focused one is in no registered project", () => {
+        expect(focusLaunchProject("", names)).toBeNull();
+        expect(focusLaunchProject("scratch", names)).toBeNull();
     });
 });
