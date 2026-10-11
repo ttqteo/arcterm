@@ -12,7 +12,13 @@ use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, WindowEvent,
 };
 
-const FILE: &str = "window-frame.json";
+// the dev app shares the packaged app's identifier, and so its config dir: a frame file of its own keeps a quit dev
+// window from moving the installed arcterm
+const FILE: &str = if cfg!(debug_assertions) {
+    "window-frame-dev.json"
+} else {
+    "window-frame.json"
+};
 
 static HELD: AtomicBool = AtomicBool::new(false);
 static LAST: Mutex<Option<Frame>> = Mutex::new(None);
@@ -181,6 +187,12 @@ mod tests {
             minimized: false,
             fullscreen: false,
         }
+    }
+
+    // the dev app shares the packaged app's identifier, so the same config dir: it keeps a frame of its own
+    #[test]
+    fn a_dev_build_keeps_its_own_frame_file() {
+        assert_eq!(FILE, "window-frame-dev.json");
     }
 
     #[test]
