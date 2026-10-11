@@ -70,6 +70,7 @@ import {
 import { projectFocusTarget } from "./railterminals";
 import { isEndedWorkerId } from "./runlineage";
 import { SleepingCard } from "./sleepingcard";
+import { SleepingTranscript } from "./sleepingtranscript";
 import { SubagentInterior } from "./subagentinterior";
 import { focusSubagentAtom } from "./subagentsstore";
 import { clampDockHeight, splitDock } from "./terminaldock";
@@ -602,6 +603,11 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                             ) : null}
                                             {paneMounts.mounted.has(a.id) ? (
                                                 <CockpitFocusPane blockId={a.blockId!} tabId={tabId} />
+                                            ) : null}
+                                            {/* asleep, its terminal holds only the kill: the conversation covers it,
+                                                the pane staying mounted under it at its size */}
+                                            {a.sleeping != null && cell != null ? (
+                                                <SleepingTranscript agent={a} barred={multi} />
                                             ) : null}
                                             {/* Drop zones, only while an agent is dragged. Not before the roster is seeded
                                                 (a drop prunes against the roster as it is), and not on a cell the saved

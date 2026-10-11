@@ -82,8 +82,11 @@ footprint.
 
 - **Sidebar row:** a small moon in place of the state dot, and the age reads `sleeping 2h`. The name keeps
   its usual color: the row must not read as disabled.
-- **Terminal pane:** the old output stays, under a card: **Sleeping since 14:20 · freed 330 MB** with
-  **Wake**. The composer stays enabled.
+- **Terminal pane:** a card: **Sleeping since 14:20 · freed 330 MB** with **Wake**, and under it the
+  conversation (the transcript, read once) in the terminal's place. The composer stays enabled. (Changed
+  2026-10-11: the old output was meant to stay, but a TUI drawn on the alternate screen loses that screen
+  with its process, so the terminal kept only its startup lines and the kill. The pane stays mounted under
+  the transcript, so Wake brings it back with no remount.)
 - **Consumers panel:** sleeping agents in a **Sleeping** group at the bottom, RAM `—`, with **Wake** and
   **Stop**. Awake rows get **Sleep** beside **→ Sonnet**.
 - **Toast:** one per check that slept anything: `Put 2 agents to sleep · freed 520 MB`.

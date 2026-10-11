@@ -6,29 +6,24 @@
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
-import { RpcApi } from "@/app/store/wshclientapi";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { openOrPeek } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import { openDiff, projectDiffScope } from "./agentdiffnav";
 import type { AgentsViewModel } from "./agents";
-import type { AgentEntry } from "./agentsviewmodel";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { CompactTranscript } from "./compacttranscript";
 import type { Runtime } from "./launch";
-import { startTranscriptStream, stopTranscriptStream } from "./livetranscript";
-import { activityAtomFor } from "./livetranscriptatoms";
 import { runtimeMeta } from "./runtimemeta";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
 import type { LiveSession } from "./sessionsarchivestore";
 import { LEAD_MEMBER, sessionPrimary, type RunMember, type RunView, type Status, type StatusKey } from "./sessionsruns";
 import { atBottom } from "./transcriptfollow";
-import { projectorFor } from "./transcriptregistry";
+import { useTranscriptRead } from "./transcriptread";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
 const STATUS_STYLE: Record<StatusKey, { color: string; mark: "pulse" | "dot" | "check" | "ring" | "none" }> = {
@@ -200,63 +195,6 @@ function Meta({ items, className }: { items: { k: string; v: string }[]; classNa
     );
 }
 
-// A running session's transcript grows while it is read. The stream (livetranscript.ts) watches the file and stamps
-// its activity on every chunk; each stamp re-reads the window, which keeps the read the same shape as a finished
-// session's (the stream's own window is only its last few hundred lines).
-function useTranscriptChanges(
-    path: string | undefined,
-    runtime: string | undefined,
-    live: boolean
-): number | undefined {
-    const streamId = live && path ? `transcript-read:${path}` : "";
-    useEffect(() => {
-        if (!streamId) {
-            return;
-        }
-        startTranscriptStream(streamId, path, runtime);
-        return () => stopTranscriptStream(streamId);
-    }, [streamId]);
-    return useAtomValue(activityAtomFor(streamId));
-}
-
-function useTranscript(session: LiveSession | undefined): AgentEntry[] | null {
-    const [entries, setEntries] = useState<AgentEntry[] | null>(null);
-    const path = session?.transcriptpath;
-    const runtime = session?.runtime;
-    const changed = useTranscriptChanges(path, runtime, session?.live ?? false);
-    // a new session starts from the skeleton; a re-read of the same one keeps showing the last read until it lands
-    useEffect(() => {
-        setEntries(null);
-    }, [path, runtime]);
-    useEffect(() => {
-        let cancelled = false;
-        if (!path || !runtime) {
-            setEntries([]);
-            return;
-        }
-        fireAndForget(async () => {
-            try {
-                // Pi's parent-linked active branch needs the complete file; other runtimes tail the recent window.
-                const maxlines = runtime === "pi" ? -1 : 2000;
-                const rtn = await RpcApi.GetAgentTranscriptCommand(TabRpcClient, { path, maxlines });
-                const projected = projectorFor(runtime, path).project(rtn.lines ?? []);
-                if (!cancelled) {
-                    setEntries(projected);
-                }
-            } catch (e) {
-                console.warn(`reading transcript ${path} failed`, e);
-                if (!cancelled) {
-                    setEntries([]);
-                }
-            }
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [path, runtime, changed]);
-    return entries;
-}
-
 function clock(ts: number): string {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
@@ -302,7 +240,8 @@ function SessionBody({
     className?: string;
 }) {
     const view = useAtomValue(model.sessionsViewAtom);
-    const entries = useTranscript(view === "transcript" ? session : undefined);
+    const read = view === "transcript" ? session : undefined;
+    const entries = useTranscriptRead(read?.transcriptpath, read?.runtime, read?.live ?? false);
     const scrollRef = useRef<HTMLDivElement>(null);
     // opened at the end; after that, a re-read of a running session follows only a reader who is still at the end
     const opened = useRef<string | undefined>(undefined);

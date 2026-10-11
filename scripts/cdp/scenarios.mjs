@@ -23945,17 +23945,33 @@ const agentSleep = {
             JSON.stringify(row)
         );
 
-        // 2. focused, the sleeping agent's terminal has the card over it
+        // 2. focused, the sleeping agent's terminal has the card over it, and its conversation covers the terminal in its
+        // cell (the fixture has no transcript, so it reads that it found none); the awake agent's cell has no cover
         await h.ev(`${asRow(AS_SLEEPING_ID)}?.click()`);
         const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-sleeping-card="${AS_SLEEPING_ID}"]')`, 5000);
+        const coverUp = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-agent-terminal="${AS_SLEEPING_ID}"] [data-sleeping-transcript="${AS_SLEEPING_ID}"]')`,
+            5000
+        );
         const card = await h.ev(`(() => {
             const c = document.querySelector("[data-sleeping-card]");
-            return { text: c?.textContent.trim() ?? null, wake: c?.querySelector("[data-sleeping-wake]")?.textContent.trim() ?? null };
+            const cover = document.querySelector('[data-sleeping-transcript="${AS_SLEEPING_ID}"]');
+            const r = cover?.getBoundingClientRect();
+            return {
+                text: c?.textContent.trim() ?? null,
+                wake: c?.querySelector("[data-sleeping-wake]")?.textContent.trim() ?? null,
+                cover: cover?.textContent.trim() ?? null,
+                coverSize: r ? [Math.round(r.width), Math.round(r.height)] : null,
+                awakeCover: !!document.querySelector('[data-agent-terminal="${AS_AWAKE_ID}"] [data-sleeping-transcript]'),
+            };
         })()`);
         await h.shot("cdp-shots/agent-sleep-card.png");
         rec(
-            "2. focused, the card over the terminal says \"Sleeping since\" and offers Wake",
-            cardUp && (card.text ?? "").includes("Sleeping since") && card.wake === "Wake",
+            "2. focused, the card says \"Sleeping since\" and offers Wake, and the conversation covers the terminal",
+            cardUp && (card.text ?? "").includes("Sleeping since") && card.wake === "Wake" &&
+                coverUp && (card.cover ?? "").includes("No transcript found") &&
+                card.coverSize != null && card.coverSize[0] > 0 && card.coverSize[1] > 0 && !card.awakeCover,
             JSON.stringify(card)
         );
 

@@ -16,6 +16,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
   file search (Ctrl+P, ⌘P on a Mac) lists them first.
 
+### Changed
+
+- A **sleeping agent** shows its conversation where its terminal was: the terminal kept only the lines printed before
+  the agent started and the kill that put it to sleep. **Wake** brings the live terminal back.
+
 ### Fixed
 
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;

@@ -18,8 +18,8 @@ function since(ts: number): string {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-// A sleeping agent's card over its terminal: the old output stays below, and the terminal itself takes no input (its
-// process is gone), so Wake is how to get it back. When the wake fails (here, or from another place: the server keeps
+// A sleeping agent's card over its terminal: its conversation shows below in the terminal's place
+// (sleepingtranscript.tsx), and the terminal itself takes no input (its process is gone), so Wake is how to get it back. When the wake fails (here, or from another place: the server keeps
 // the agent asleep and sets the reason) the card says why and offers a fresh start or Close instead: --resume has
 // nothing to reopen.
 export function SleepingCard({ agent }: { agent: AgentVM }) {
