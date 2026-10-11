@@ -161,8 +161,9 @@ gathers them; `tokengateArgs` passes `--types` and the `--transcript` that `regi
   window, subagents included, by the session-share formula with the live Claude percents; `—` when unknown (no quota
   reading, no reset, a Team seat's week, or no tokens in the window). The table already reloads with the surface.
 - **Subagent cost** card under By session: one row per type (`Type`, `Samples`, `Avg`, `Range` p25–p90) and the
-  `all` row, with a caption that these price the Token burn card. Empty: "No finished subagents in the last 30 days".
-- A CDP scenario shows both with fixture data.
+  `all` row, with a caption that these price the Token burn card. Until its first load settles (a cold read walks 30
+  days of transcripts) it shows skeleton rows; once loaded with none: "No finished subagents in the last 30 days".
+- A CDP scenario shows both with fixture data, the card's empty state, and both loading skeletons.
 
 ## Failure and edge cases
 
