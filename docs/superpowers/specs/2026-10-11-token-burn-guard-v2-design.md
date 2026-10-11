@@ -90,6 +90,7 @@ same way is a candidate for the review to decide.
   `session` (the transcript's session id, "" when unknown), `tool`, `agents`, `types`, `estimate`, `low`, `high`
   (0 when no range), `verdict` (`run` without asking, `allow`, `allow-turn`, `allow-session`, `deny`). A failed write
   is ignored. Spawns the mod lets through on an earlier "Allow this turn/session" never reach wsh and are not logged.
+  The log is never trimmed: at about 200 bytes a group it grows a few MB a year, and the review reads only its period.
 - **Review** (`wsh tokengate review [--days 7]`): for each logged group of the last N days whose verdict let it run
   and whose session is known, the actual is the sum of that session's finished subagent files whose first record falls
   within 10 minutes after `ts`, the earliest first, at most `agents` of them. A group with none found is "unmatched".
@@ -107,9 +108,11 @@ same way is a candidate for the review to decide.
 - `SessionBurn(path string, fiveHourCutoff, weekCutoff, now time.Time) Burn`: `Session string`, `WindowFiveHour`,
   `WindowWeek`, `SessionFiveHour`, `SessionWeek`, `Subagents` (the session's subagent files with a record inside the
   week window), `Costs []SubagentCost`. One walk of the Claude transcripts serves both.
-- `ScanSessionUsage` takes the two window cutoffs and fills each session's `FiveHourTokens` / `WeekTokens`, and the
-  scan's window totals, for Usage's columns.
-- `ReviewEstimates(logPath string, days int, now time.Time) EstimateReview` for the review.
+- `ScanSessionWindows(fiveHourCutoff, weekCutoff, now time.Time) SessionWindows`: every session's tokens since each
+  window's cutoff, and the windows' totals, for Usage's columns (a zero cutoff is the trailing window).
+  `ScanSessionUsage` is unchanged; `GetSessionUsageCommand` joins the two.
+- `ReviewEstimates(logPath string, days int, now time.Time) (EstimateReview, error)` for the review: a missing log is an
+  empty review, an unreadable one an error.
 
 All of it goes through the per-file record cache (`cachedFileRecords`); measured 2026-10-11, a burn read took 462 ms
 cold and 25 ms warm.
@@ -133,7 +136,7 @@ cold and 25 ms warm.
   int }`; `Reading` and `QuotaFrom(r Reading, estimate int64) Quota` build it.
 - `Rules` gains `WeekPct` (default 80) and `SessionPct` (default 25); 0 turns either off.
 - `Note` and `Question` take the priced spawn and say the range, its basis, the week and the session.
-- `LogLine` builds the log's JSON line.
+- `LogLine` is the log's JSON line and `NewLogLine` builds it.
 
 ### `wsh tokengate`
 
@@ -174,7 +177,7 @@ gathers them; `tokengateArgs` passes `--types` and the `--transcript` that `regi
 
 - Go `pkg/usagestats`: `SubagentCosts` (types from meta, `unknown`, a running file left out, an old one left out,
   percentiles); `SessionBurn` (root plus nested subagents, records on both sides of each cutoff, a subagent path mapped
-  to its session, no path); `ScanSessionUsage` window tokens; `ReviewEstimates` (a matched group, a denied one skipped,
+  to its session, no path); `ScanSessionWindows`; `ReviewEstimates` (a matched group, a denied one skipped,
   an unmatched one, the 10-minute window, at most `agents` files).
 - Go `pkg/tokengate`: `Price` (per type, fallback to `all`, to 1.5M, range only when all priced), `SessionShare`,
   `QuotaFrom` (Team seat, unknown reset, not counted, no session), the new rules, `Note`/`Question` clauses, `LogLine`.
@@ -189,3 +192,4 @@ gathers them; `tokengateArgs` passes `--types` and the `--transcript` that `regi
   alone median 1.7M a task; the per-run transcripts sit under `…worktrees-<runId>[-t-N]`.
 - Weighing by price instead of raw tokens (the review decides).
 - Showing the session share on the rail or in Consumers.
+- Trimming `estimates.jsonl`.

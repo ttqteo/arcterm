@@ -23,7 +23,7 @@ vitest, CDP scenarios.
 **Final:** `{ go test ./pkg/usagestats -run 'TestSubagentCosts|TestNearestRank|TestSessionBurn|TestScanSessionWindows|TestReviewEstimates|TestParseFiles' && go test ./pkg/tokengate && go test ./cmd/wsh/cmd -run 'Tokengate|SplitTypes' && npx vitest run claude/arc-mod/hooks/tokengate-core.test.ts frontend/app/view/agents/usagesessions.test.ts frontend/app/view/agents/subagentcosts.test.ts && claude plugin validate claude/arc-mod; } || exit 1; if [ "$(uname -s)" = Darwin ]; then echo "unverified: usage-token-burn and usage-insights need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs usage-token-burn usage-insights`
 
 One view changes: Usage's Claude tab. Task 7 adds the **5h** and **Wk** columns to By session and the **Subagent
-cost** card under it, and its `usage-token-burn` scenario shows both; `usage-insights` reruns because the By session
+cost** card under it, and its `usage-token-burn` scenario shows both and the card's empty state; `usage-insights` reruns because the By session
 grid changed. The Token burn card's words change, but the card is drawn by the existing held card (v1's
 `token-burn-card` scenario, a fixture question). The live check (real subagents) is the person's, chunk 1 of the
 effort "Token burn guard: follow-ups"; the week-later review is its chunk 3, due 2026-10-19. No task runs either.
@@ -599,6 +599,8 @@ func TestReviewEstimates(t *testing.T) {
 	sub := filepath.Join(root, "proj", "s1", "subagents")
 	writeJSONL(t, filepath.Join(sub, "agent-a.jsonl"), asstLine("a1", t0.Add(time.Minute), testSonnet, "/w", 2000, 0, 0, 0, 0))
 	writeJSONL(t, filepath.Join(sub, "agent-b.jsonl"), asstLine("b1", t0.Add(2*time.Minute), testSonnet, "/w", 4000, 0, 0, 0, 0))
+	// agent-d starts inside the first group's 10 minutes but past its 2 agents: no group takes it
+	writeJSONL(t, filepath.Join(sub, "agent-d.jsonl"), asstLine("d1", t0.Add(3*time.Minute), testSonnet, "/w", 8000, 0, 0, 0, 0))
 	writeJSONL(t, filepath.Join(sub, "agent-c.jsonl"), asstLine("c1", t0.Add(30*time.Minute), testSonnet, "/w", 99999, 0, 0, 0, 0))
 	line := func(l EstimateLine) string {
 		data, err := json.Marshal(l)
@@ -610,7 +612,11 @@ func TestReviewEstimates(t *testing.T) {
 	logPath := filepath.Join(root, "estimates.jsonl")
 	writeJSONL(t, logPath,
 		// two general-purpose agents estimated at 3000 (1000–5000): agent-a and agent-b ran, 6000, twice it and over the range
+		// (without the at-most-agents cap it would take agent-d too)
 		line(EstimateLine{Ts: t0.Unix(), Session: "s1", Tool: "Agent", Agents: 2, Types: []string{"general-purpose", "general-purpose"}, Estimate: 3000, Low: 1000, High: 5000, Verdict: "run"}),
+		// one Plan agent 15 minutes in: the only subagent after it, agent-c, starts 15 minutes later, past the 10-minute
+		// window, so it is unmatched (without the window it would take agent-c from the Explore group)
+		line(EstimateLine{Ts: t0.Add(15 * time.Minute).Unix(), Session: "s1", Tool: "Agent", Agents: 1, Types: []string{"Plan"}, Estimate: 50000, Verdict: "allow-turn"}),
 		// one Explore 29 minutes later: agent-c, which started a minute after it
 		line(EstimateLine{Ts: t0.Add(29 * time.Minute).Unix(), Session: "s1", Tool: "Agent", Agents: 1, Types: []string{"Explore"}, Estimate: 100000, Verdict: "allow"}),
 		// refused: it never ran
@@ -625,8 +631,8 @@ func TestReviewEstimates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rev.Logged != 4 || rev.Run != 3 || rev.Matched != 2 {
-		t.Fatalf("logged/run/matched = %d/%d/%d, want 4/3/2", rev.Logged, rev.Run, rev.Matched)
+	if rev.Logged != 5 || rev.Run != 4 || rev.Matched != 2 {
+		t.Fatalf("logged/run/matched = %d/%d/%d, want 5/4/2", rev.Logged, rev.Run, rev.Matched)
 	}
 	// ratios 6000/3000 = 2 and 99999/100000
 	if math.Abs(rev.MedianRatio-(2+0.99999)/2) > 1e-9 {
@@ -2654,7 +2660,8 @@ git commit -m "feat(claude-mod): the Token burn gate passes each agent's subagen
   samples, mean, p25, p90 }`. From `ratelimitstore.ts`: `DonutWindow { pct?: number; reset?: number }` (reset in epoch
   seconds), as `claudeDonut.fivehour` / `.week` in `usagesurface.tsx`.
 - Produces: `SessionRow.fiveHourPct`, `SessionRow.weekPct` (`number | null`); `SessionQuota`; `windowSharePct`;
-  `costRows`; `<SubagentCostCard costs={…} />`; the scenario `usage-token-burn`.
+  `costRows`; `<SubagentCostCard costs={…} />`; the scenario `usage-token-burn`, whose steps show the columns (1),
+  the card's rows (2) and its empty state, "No finished subagents in the last 30 days" (3).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3095,7 +3102,8 @@ scenario object:
 // (docs/superpowers/specs/2026-10-11-token-burn-guard-v2-design.md.) Seeded like usage-insights, minus the open agent:
 // the first three sessions get tokens inside the quota windows, the fixture carries every session's window totals and
 // three Subagent cost rows, and the Claude snapshot reads 62% of 5 hours and 41% of the week. The rows then read 12% / 4%
-// (4M of 20M at 62%, 20M of 200M at 41%), <1% / <1%, 3% / 1%, and — / — from the fourth on.
+// (4M of 20M at 62%, 20M of 200M at 41%), <1% / <1%, 3% / 1%, and — / — from the fourth on. Last, the fixture loses its
+// costs and the card shows its empty line.
 const usageTokenBurn = {
     name: "usage-token-burn",
     surface: "usage",
@@ -3199,6 +3207,33 @@ const usageTokenBurn = {
                     ]),
                 JSON.stringify(card)
             );
+
+            // no finished subagents: the fixture loses its costs, and the card, reloaded with the surface, says so
+            await h.ev(`(() => {
+                const fixture = JSON.parse(localStorage.getItem(${JSON.stringify(UI_KEY)}));
+                fixture.costs = [];
+                localStorage.setItem(${JSON.stringify(UI_KEY)}, JSON.stringify(fixture));
+            })()`);
+            await h.goto("cockpit");
+            await h.goto("usage");
+            const emptied = await ahWait(
+                h,
+                `document.querySelector("[data-subagent-costs]") != null && document.querySelectorAll("[data-subagent-cost]").length === 0`,
+                20000
+            );
+            await h.ev(`document.querySelector("[data-subagent-costs]")?.scrollIntoView({ block: "center" })`);
+            const empty = await h.ev(`(() => ({
+                text: document.querySelector("[data-subagent-costs]")?.textContent ?? null,
+                rows: document.querySelectorAll("[data-subagent-cost]").length,
+            }))()`);
+            await h.shot("cdp-shots/usage-token-burn-costs-empty.png");
+            rec(
+                "3. usage-token-burn-costs-empty: with no finished subagents the card says so and lists no row",
+                emptied === true &&
+                    empty?.rows === 0 &&
+                    (empty?.text ?? "").includes("No finished subagents in the last 30 days"),
+                JSON.stringify({ emptied, empty })
+            );
         } catch (e) {
             rec("usage-token-burn ran to the end", false, String(e?.message ?? e));
         }
@@ -3269,8 +3304,10 @@ git commit -m "feat(usage): By session shows each tab's share of the 5h and week
 
 - [ ] **Step 1: CHANGELOG**
 
-In `CHANGELOG.md`, add as the first entries under `### Changed` of the top `## Unreleased` section (open
-`## Unreleased` above a dated top section if the top one has a date):
+In `CHANGELOG.md`, the top `## Unreleased` section has only `### Added` and `### Fixed`: open a `### Changed` heading
+between them (after the last `### Added` entry, before `### Fixed`) and put these two entries under it. If the top
+section has a date by then, open `## Unreleased` above it first; if it already has a `### Changed`, add them as its
+first entries.
 
 ```markdown
 - The Token burn card prices a spawn from what finished subagents of the same type cost (general-purpose, Explore,
