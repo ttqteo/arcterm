@@ -38,6 +38,9 @@ console.log(rendered ? `nav rendered after ${waited}s` : `nav not rendered after
 // this and restore it in teardown.
 const VERIFY_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
 await h.cdp("Emulation.setDeviceMetricsOverride", VERIFY_VIEWPORT);
+// the Jarvis tour's first-visit offer would sit under the header in every Jarvis scenario's shots; the
+// jarvis-tour scenario clears this itself to see the offer. The Brief reads it when it mounts (jarvistour.ts).
+await h.ev("localStorage.setItem('jarvis.tour.offered', 'true')").catch(() => {});
 
 const SHOTS_DIR = "cdp-shots";
 const results = [];
