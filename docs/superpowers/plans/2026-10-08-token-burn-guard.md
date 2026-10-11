@@ -477,10 +477,13 @@ git commit -m "feat(settings): tokengate keys" -- pkg/wconfig frontend/types
 **Depends on:** Task 1, Task 2
 **Files:** `cmd/wsh/cmd/wshcmd-tokengate.go`, `cmd/wsh/cmd/wshcmd-tokengate_test.go`
 
-Reuses `rpcWithContext` (`wshcmd-memgate-decide.go`), `printLine` (`wshcmd-memgate.go`), `resolveBlockArg`,
-`statusTarget`, `blockArg`, `askWaitTimeout` and `preRunSetupRpcClient`, as `memgateDecide` does.
+Reuses `rpcWithContext` (`wshcmd-jobslot.go`), `resolveBlockArg` and `blockArg` (`wshcmd-root.go`),
+`statusTarget` (`wshcmd-agenthosted.go`), `askWaitTimeout` (`wshcmd-ask.go`) and `preRunSetupRpcClient`.
+`wsh memgate` and its `printLine` were removed on 2026-10-09 (the job queue replaced them); write each output
+line with a `json.Encoder` on stdout, as `jobslotRun` does. The held card itself (`Hold: true` on `AskCommand`)
+is still drawn by `heldaskbar.tsx` / `heldaskpopup.ts`.
 
-**Step 1: Write the failing test** (as memgate's: a done context returns at once, without asking)
+**Step 1: Write the failing test** (a done context returns at once, without asking)
 
 ```go
 // Copyright 2026, Command Line Inc.
@@ -524,7 +527,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -560,11 +565,12 @@ func init() {
 }
 
 func tokengateRun(cmd *cobra.Command, args []string) error {
-	verdict, err := tokengateDecide(context.Background(), tokengateSpawn, func(hold any) { _ = printLine(hold) })
+	out := json.NewEncoder(os.Stdout)
+	verdict, err := tokengateDecide(context.Background(), tokengateSpawn, func(hold any) { _ = out.Encode(hold) })
 	if err != nil {
 		return err
 	}
-	return printLine(verdict)
+	return out.Encode(verdict)
 }
 
 // tokengateQuota reads the 5h window; a failed reading only leaves its numbers unknown
@@ -649,7 +655,7 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, onHold func(any)) (
 
 **Step 3: Run, expect PASS**
 
-Run: `go test ./cmd/wsh/cmd -run 'TestTokengate|TestMemgate'`
+Run: `go test ./cmd/wsh/cmd -run 'TestTokengate|TestJobslot'`
 Expected: `ok`
 
 **Step 4: Commit**
@@ -842,10 +848,11 @@ git commit -m "feat(claude-mod): tokengate core: spawn count, args, lines, decis
 **Files:** `claude/arc-mod/hooks/register.ts`, `cmd/wsh/cmd/claude-mod/hooks/register.ts`
 
 Edit `claude/arc-mod/hooks/register.ts` (imports; module state near `turn`; `askTokengate` and `spawnGate`
-after `ramHold`; the `session.start`, `session.measure` and `classic.UserPromptSubmit` handlers; three
-`tool.call` handlers after the PowerShell one); `task sync:claudemod` writes the copy.
+after `withJobSlot`, which replaced memgate's `ramHold` on 2026-10-09; the `session.start`, `session.measure` and
+`classic.UserPromptSubmit` handlers; three `tool.call` handlers after the PowerShell one); `task sync:claudemod`
+writes the copy.
 
-**Step 1: Module state and the gate** (after `ramHold`)
+**Step 1: Module state and the gate** (after `withJobSlot`)
 
 ```ts
 import { decisionAfter, joinGroup, spawnCount, tokengateArgs, tokengateLine } from "./tokengate-core";
@@ -991,7 +998,7 @@ git commit -m "feat(claude-mod): hold costly Agent, Task and Workflow calls behi
 ### Task 6: docs
 
 **Depends on:** Task 5
-**Files:** `CHANGELOG.md`, `docs/deferred.md`, `AGENTS.md`
+**Files:** `CHANGELOG.md`, `docs/deferred.md`, `docs/open-issues.md`, `AGENTS.md`
 
 `AGENTS.md` and `docs/deferred.md` may hold other sessions' uncommitted edits: stage only this task's hunks
 (write them as a patch and `git apply --cached <patch>`), never the whole file.
@@ -1005,20 +1012,12 @@ git commit -m "feat(claude-mod): hold costly Agent, Task and Workflow calls behi
 ```
 
 **Step 2: deferred.md:** in the Token burn guard entry, mark part (1) shipped (link the spec); parts (2), (3),
-calibrating `PerAgentTokens` and exempting engine runs stay deferred. Add an entry:
+calibrating `PerAgentTokens` and exempting engine runs stay deferred. Also drop the entry's **Status** paragraph
+(the paused-run note), and mirror the change in the Token burn guard row of
+`docs/open-issues.md` (part (1) shipped; the rest stays Actionable). memgate's Low RAM card was removed on
+2026-10-09, so no entry about it is added.
 
-```
-## (arcterm) memgate asks too often on a small Mac (deferred 2026-10-08)
-
-- **What:** on an 8 GB Mac most builds and test suites miss memgate's headroom, so the Low RAM card comes up
-  for nearly every heavy command and the person learns to click Run now.
-- **Ideas:** wait 30–60 s for RAM before asking (often a build just ended), an "Allow this session" for a job
-  kind, and a lower headroom or per-job peaks measured on the machine itself rather than fixed.
-- **Pick up** with a brainstorm; the token gate's ask-only-when-it-matters rules
-  (`docs/superpowers/specs/2026-10-08-token-burn-guard-design.md`) are the model.
-```
-
-**Step 3: AGENTS.md:** after the memgate gotcha add:
+**Step 3: AGENTS.md:** after the "A heavy shell command waits its turn" gotcha add:
 
 ```
 - **A subagent or workflow spawn can come back "Not run: …".** The Claude mod asks `wsh tokengate` before every
@@ -1030,5 +1029,5 @@ calibrating `PerAgentTokens` and exempting engine runs stay deferred. Add an ent
 **Step 4: Commit**
 
 ```bash
-git commit -m "docs: token burn guard v1" -- CHANGELOG.md docs/deferred.md AGENTS.md
+git commit -m "docs: token burn guard v1" -- CHANGELOG.md docs/deferred.md docs/open-issues.md AGENTS.md
 ```

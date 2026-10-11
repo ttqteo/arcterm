@@ -87,9 +87,13 @@ where it would plug in, and how to pick it back up. Append new entries at the to
   window and holds engine work); this guard acts earlier, on the rate rather than the level.
 - **Pick up** with a brainstorm/spec; measure first how well "context × calls" predicts a session's spend
   from saved transcripts.
-- **Status (2026-10-09):** an orchestrator run for version 1 (`8b822a9b`, started 2026-10-08 21:15) was
-  interrupted by an app restart at 21:20, before its lead submitted a plan. Nothing was built; the run sits
-  Blocked until it is resumed (the sheet's Resume lead) or cancelled.
+- **Status (2026-10-11):** paused by the person. v1 has its spec and a plan
+  (`docs/superpowers/plans/2026-10-08-token-burn-guard.md`), patched on 2026-10-11 for the memgate → job queue
+  change of 2026-10-09 (`printLine` and `ramHold` are gone). Run `00552339` was cancelled in plan review, before
+  any worker started; nothing was built. Resume with `wsh runs start --plan <that plan> --runtime claude --model
+  opus`. Next after it: a whole-run cost estimate at plan submit, as a decision in
+  `docs/superpowers/specs/2026-10-07-quota-guard-design.md`, calibrated from past runs' per-task tokens (the
+  same measurement `PerAgentTokens` needs).
 
 ## Radar's metadata collectors and clustering pipeline (retired 2026-10-06)
 
