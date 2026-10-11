@@ -12,6 +12,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **⌘J opens Jarvis's What's waiting popup** in one chord, from any surface and from inside a terminal (Ctrl+J on
+  Windows, outside a terminal, where it stays the newline). Hold ⌘ on its own and the creature shows a J.
 - **@mention another agent** without looking up its id: right-click an agent in the sidebar (or a segment of the split
   row) → **Copy @mention**, its `@` token shown beside the label. Or drag an agent onto a Claude agent's pane holding
   ⌥ (Alt on Windows) to type its token at that prompt; a drag without the key still places it in the split.

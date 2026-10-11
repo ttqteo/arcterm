@@ -6,6 +6,8 @@
 // destination's selection, which is the point of a peek.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import type { KeyContext } from "@/app/store/keybindings/types";
+import { isMacOS } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { OpenTarget } from "./address";
 import { bubbleRowKey } from "./petpeekmodel";
@@ -68,7 +70,7 @@ export function backToHub(): void {
 // click on "Needs you" lands on that question, not on whatever ranks first. The popup takes it once and clears it.
 export const peekLandRowAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
-// The popup on its hub, from a click on the creature or its key (g w). Opening it is the notice, so the bubble and
+// The popup on its hub, from a click on the creature or its keys (⌘J, g w). Opening it is the notice, so the bubble and
 // the unread mark go.
 export function openPetPeek(): void {
     globalStore.set(peekLandRowAtom, bubbleRowKey(globalStore.get(petBubbleAtom)) ?? null);
@@ -76,6 +78,13 @@ export function openPetPeek(): void {
     globalStore.set(petPeekOpenAtom, true);
     globalStore.set(petUnreadAtom, false);
     globalStore.set(petBubbleAtom, null);
+}
+
+// Whether ⌘J opens the popup in this posture: the binding's `when`, and the creature's J hint, which shows only where
+// the key works. On a Mac it works from a field or a terminal too; Ctrl+J is the terminal's newline (Claude Code's
+// too), so on Windows it stands down wherever you type.
+export function peekChordActive(ctx: Pick<KeyContext, "editable" | "modalOpen">): boolean {
+    return !ctx.modalOpen && (isMacOS() || !ctx.editable);
 }
 
 export function closePeek(): void {

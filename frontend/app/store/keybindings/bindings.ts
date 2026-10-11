@@ -76,7 +76,7 @@ import {
 import { activeRunIdAtom, activeSubjectAtom, setActiveRunId } from "@/app/view/jarvis/jarvissubjectstore";
 import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
-import { openPetPeek } from "@/app/view/jarvis/peekstore";
+import { openPetPeek, peekChordActive } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import { isMacOS } from "@/util/platformutil";
@@ -296,6 +296,16 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             group: "Go to",
             label: "What's waiting (Jarvis peek)",
             when: navigate,
+            run: () => openPetPeek(),
+        },
+        {
+            // The same peek in one chord (J for Jarvis), from inside the terminal too on a Mac; the creature shows a J
+            // while Mod is held. The palette keeps showing g w, its label twin (palette-commands.ts chordRank).
+            id: "jarvis:peek",
+            keys: "Mod:j",
+            group: "Global",
+            label: "What's waiting (Jarvis peek)",
+            when: peekChordActive,
             run: () => openPetPeek(),
         },
         {

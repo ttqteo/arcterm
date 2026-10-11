@@ -1649,6 +1649,33 @@ describe("g w: what's waiting", () => {
     });
 });
 
+// ⌘J: the same peek in one chord
+describe("jarvis:peek", () => {
+    afterEach(() => {
+        globalStore.set(petPeekOpenAtom, false);
+        setPlatform("darwin");
+    });
+    const find = () =>
+        buildGlobalBindings({ surfaceAtom: atom<SurfaceKey>("agent") } as any).find((x) => x.id === "jarvis:peek")!;
+
+    it("is Mod+J and opens the creature's peek, from inside the terminal too on a Mac", () => {
+        const b = find();
+        expect(b.keys).toBe("Mod:j");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+        b.run(ctx("agent"));
+        expect(globalStore.get(petPeekOpenAtom)).toBe(true);
+    });
+
+    // Ctrl+J is the terminal's newline, Claude Code's prompt included
+    it("leaves Ctrl+J to the terminal and fields on Windows", () => {
+        setPlatform("win32");
+        const b = find();
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(false);
+        expect(b.when?.(ctx("agent"))).toBe(true);
+    });
+});
+
 describe("agent:done-close", () => {
     const doneModel = (agent: Record<string, unknown>): any => ({
         focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,

@@ -40,6 +40,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`Shift`+`N` | Launch a Pi tab |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
+| `Mod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface. On a Mac it works from inside a terminal too; on Windows `Ctrl`+`J` stays the terminal's newline, so there it works only outside a terminal or field. Hold `Mod` on its own and the creature shows a `J` wherever the key works |
 | `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | On the Agent surface (a float and fullscreen included): the tab switcher, as the system's app switcher works. Hold `Ctrl`, press `Tab` to move through your agents and terminals (recent first; `Shift`+`Tab` goes back), and let go of `Ctrl` to open the one picked; `Esc` stays where you are. A quick `Ctrl`+`Tab` flips to the tab you were on before without drawing it. `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac, letting go of `Option` |
 | `Cmd`+`W` on macOS, `Ctrl`+`Shift`+`W` on Windows | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. Windows keeps `Ctrl`+`W` for the terminal, where it deletes a word |
 | `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal (on Windows it takes Ctrl+M from the terminal). Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |

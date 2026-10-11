@@ -11,10 +11,12 @@
 //
 // It never draws a number. The nav badge owns the count; the creature owns the kind (pet spec §3).
 
+import { digitHintAtom } from "@/app/cockpit/digithints";
 import { toastsAtom } from "@/app/cockpit/notificationstore";
 import { MOTION } from "@/app/element/motiontokens";
 import { atoms } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
+import { deriveKeyContext } from "@/app/store/keybindings/dispatcher";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { channelMessagesAtom } from "@/app/view/agents/channelsstore";
@@ -26,7 +28,7 @@ import { useAtomValue } from "jotai";
 import { animate, motion, useMotionValue, useReducedMotion, type AnimationPlaybackControls } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { closePeek, openPetPeek } from "./peekstore";
+import { closePeek, openPetPeek, peekChordActive } from "./peekstore";
 import { PetBubble } from "./petbubble";
 import { petCharacter } from "./petcharacter";
 import { expressionFor, postureFor, type PetExpression, type PetPosture, type PetSignals } from "./petcondition";
@@ -343,6 +345,8 @@ function PetSprite({
     // the fold's teleport (floatstore.ts): it plays in place of the cells, and holds the walk while it does
     const teleport = useAtomValue(petTeleportAtom).walk;
     const teleporting = teleport != null;
+    // Mod held on its own (digithints.ts, the rail's digits too): a J where ⌘J would open the peek
+    const keyHint = useAtomValue(digitHintAtom) === "ctrl" && !teleporting && peekChordActive(deriveKeyContext());
     const dragX = useMotionValue(0);
     const dragY = useMotionValue(0);
 
@@ -591,7 +595,7 @@ function PetSprite({
             // the walker owns left and top; motion's drag owns only the transform, reset on release
             style={{ left: step.x, top: ledge.top - PET_PX - step.lift, x: dragX, y: dragY }}
             initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: quiet && !teleporting ? 0.4 : 1 }}
+            animate={{ opacity: quiet && !teleporting && !keyHint ? 0.4 : 1 }}
             // opacity only: a scaled sprite would no longer stand on the ledge, and would smear its cells
             whileHover={{ opacity: 1 }}
             transition={reduce ? { duration: 0 } : { opacity: { duration: 0.3 } }}
@@ -701,6 +705,15 @@ function PetSprite({
             ) : null}
             {working != null && !teleporting ? (
                 <WorkingDots count={working} className="absolute -right-2 -top-1" />
+            ) : null}
+            {/* the rail's digit badge (digithint.tsx), on the same bottom-right corner */}
+            {keyHint ? (
+                <kbd
+                    data-pet-key-hint="j"
+                    className="pointer-events-none absolute -bottom-[4px] -right-[6px] flex h-[12px] min-w-[12px] items-center justify-center rounded-[3px] bg-accent px-[2px] font-sans text-[9px] font-bold leading-none text-background"
+                >
+                    J
+                </kbd>
             ) : null}
         </motion.div>
     );
