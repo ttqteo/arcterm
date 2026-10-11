@@ -402,6 +402,21 @@ export async function loadFileIndex(path: string): Promise<CodeIndex> {
     return idx;
 }
 
+// The same listing past the cache. The universal search's Files scope re-reads on every open: there is no watcher,
+// and an agent creates files while the palette is closed. When it is the project Code has open, Code takes the
+// fresh list too (and its git status, which badges a new file), so the tree and the search agree on what exists.
+export async function reloadFileIndex(path: string): Promise<CodeIndex> {
+    indexCache.delete(path);
+    const idx = await loadFileIndex(path);
+    const p = globalStore.get(codeProjectAtom);
+    // a null index is Code loading a project, whose own listing is about to land
+    if (p != null && sameRepoPath(p.path, path) && globalStore.get(codeIndexAtom) != null) {
+        globalStore.set(codeIndexAtom, idx);
+        void loadStatus();
+    }
+    return idx;
+}
+
 async function loadIndex(p: CodeProject): Promise<void> {
     const token = `index:${p.path}`;
     current.indexToken = token;

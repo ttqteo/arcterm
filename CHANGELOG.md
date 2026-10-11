@@ -95,6 +95,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
   now steps aside until you let go.
 - **Float** has a close button for the agent or terminal it shows, next to **Leave float**, as the agent header has
   outside Float; it asks first, like ⌘W.
+- Search's **Files** scope (⌘P) finds a file an agent created after the project's file list was loaded: each time it
+  opens, it reads the list again, and the Code tree picks up the new file too.
 
 ## 0.15.9 — 2026-10-11
 

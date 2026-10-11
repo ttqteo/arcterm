@@ -34,8 +34,8 @@ import {
     codePendingLineAtom,
     codePinsAtom,
     codeProjectAtom,
-    loadFileIndex,
     openInCode,
+    reloadFileIndex,
     type CodeIndex,
 } from "@/app/view/code/codestore";
 import { buildBriefIndex, rankBriefRows, type BriefRow } from "@/app/view/jarvis/briefpalette";
@@ -253,7 +253,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const [nav, setNavState] = useState<NavState>(() => initialNav(surface));
     const [sel, setSel] = useState(0);
     const [paletteError, setPaletteError] = useState<string | undefined>(undefined);
-    // Files off Code: the active project's index, loaded on first use of the scope
+    // Files: the target's listing, re-read each time the scope is shown
     const [loadedFiles, setLoadedFiles] = useState<{ path: string; index?: CodeIndex; error?: string } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
@@ -299,7 +299,6 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             return;
         }
         setNav(initialNav(globalStore.get(model.surfaceAtom)));
-        setLoadedFiles((cur) => (cur?.error != null ? null : cur)); // a failed listing gets another try
         const raf = requestAnimationFrame(() => inputRef.current?.focus());
         return () => cancelAnimationFrame(raf);
     }, [open]);
@@ -316,25 +315,28 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
         return null;
     }, [surface, codeProject, homeChannel, projects]);
     const codeOwnsTarget = codeProject != null && fileTarget != null && sameRepoPath(codeProject.path, fileTarget.path);
-    const needFileLoad = open && nav.scope === "files" && fileTarget != null && !(codeOwnsTarget && codeIndex != null);
+    // Re-read on every showing, never from a cached list alone: there is no watcher, and an agent creates files while
+    // the palette is closed. The list already shown stays until the fresh one lands; a failed re-read keeps it.
+    const filesShown = open && nav.scope === "files" && fileTarget != null;
     useEffect(() => {
-        if (!needFileLoad || loadedFiles?.path === fileTarget.path) {
+        if (!filesShown) {
             return;
         }
         const path = fileTarget.path;
-        setLoadedFiles({ path });
-        loadFileIndex(path).then(
+        setLoadedFiles((cur) => (cur?.path === path && cur.index != null ? cur : { path }));
+        reloadFileIndex(path).then(
             (index) => setLoadedFiles((cur) => (cur?.path === path ? { path, index } : cur)),
-            (e) => setLoadedFiles((cur) => (cur?.path === path ? { path, error: String(e) } : cur))
+            (e) => setLoadedFiles((cur) => (cur?.path === path && cur.index == null ? { path, error: String(e) } : cur))
         );
-    }, [needFileLoad, fileTarget?.path]);
+    }, [filesShown, fileTarget?.path]);
     const fileIndex: CodeIndex | undefined =
         codeOwnsTarget && codeIndex != null
             ? codeIndex
             : loadedFiles != null && loadedFiles.path === fileTarget?.path
               ? loadedFiles.index
               : undefined;
-    const fileError = loadedFiles?.path === fileTarget?.path ? loadedFiles?.error : undefined;
+    // only when there is nothing to list: a failed re-read must not cover the listing Code already has
+    const fileError = fileIndex == null && loadedFiles?.path === fileTarget?.path ? loadedFiles?.error : undefined;
 
     // --- Sources ----------------------------------------------------------------------------------
     const themeItems = useMemo<PaletteItem[]>(

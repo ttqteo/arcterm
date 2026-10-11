@@ -11,7 +11,9 @@ import {
     codeProjectAtom,
     createEntry,
     deletePath,
+    loadFileIndex,
     registeredProjects,
+    reloadFileIndex,
     renamePath,
 } from "./codestore";
 
@@ -125,5 +127,42 @@ describe("a create, rename or delete in the tree", () => {
         expect(await indexValuesDuring(() => createEntry("", "c.ts", false))).toEqual([["a.ts", "b.ts", "c.ts"]]);
         repo.files = ["a2.ts", "b.ts"];
         expect(await indexValuesDuring(() => renamePath("a.ts", "a2.ts"))).toEqual([["a2.ts", "b.ts"]]);
+    });
+});
+
+describe("the universal search's fresh file list", () => {
+    const gamma = { name: "gamma", path: "/repos/gamma" };
+    const delta = { name: "delta", path: "/repos/delta" };
+
+    it("reads past the cache, so a file an agent created since the last listing is found", async () => {
+        repo.files = ["a.ts"];
+        await loadFileIndex(gamma.path); // the cached listing
+        repo.files = ["a.ts", "new.md"];
+        expect((await loadFileIndex(gamma.path)).paths).toEqual(["a.ts"]);
+        expect((await reloadFileIndex(gamma.path)).paths).toEqual(["a.ts", "new.md"]);
+        expect((await loadFileIndex(gamma.path)).paths).toEqual(["a.ts", "new.md"]); // and the cache takes it
+    });
+
+    it("hands the fresh list to Code when Code has that project open, without blanking it first", async () => {
+        globalStore.set(codeProjectAtom, delta);
+        globalStore.set(codeIndexAtom, { paths: ["a.ts"], ignored: [], isRepo: true, truncated: false });
+        const seen: (string[] | null)[] = [];
+        const unsub = globalStore.sub(codeIndexAtom, () => seen.push(globalStore.get(codeIndexAtom)?.paths ?? null));
+        repo.files = ["a.ts", "new.md"];
+        try {
+            await reloadFileIndex(delta.path);
+        } finally {
+            unsub();
+        }
+        expect(seen).toEqual([["a.ts", "new.md"]]);
+    });
+
+    it("leaves Code's index alone for another project", async () => {
+        globalStore.set(codeProjectAtom, delta);
+        const shown = { paths: ["a.ts"], ignored: [], isRepo: true, truncated: false };
+        globalStore.set(codeIndexAtom, shown);
+        repo.files = ["x.ts"];
+        await reloadFileIndex(gamma.path);
+        expect(globalStore.get(codeIndexAtom)).toBe(shown);
     });
 });
