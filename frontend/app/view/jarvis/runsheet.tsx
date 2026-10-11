@@ -528,6 +528,7 @@ function Tasks({
                 {events.length > 0 ? (
                     <button
                         type="button"
+                        data-run-sheet-timeline-toggle
                         aria-expanded={timelineOpen}
                         onClick={() => setTimelineOpen((o) => !o)}
                         className={cn(LINK, "inline-flex flex-none items-center gap-1")}

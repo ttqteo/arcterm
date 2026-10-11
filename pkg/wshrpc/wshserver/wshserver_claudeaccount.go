@@ -26,7 +26,9 @@ func (ws *WshServer) ClaudeAccountListCommand(ctx context.Context) (*wshrpc.Comm
 	}
 	accounts := make([]wshrpc.ClaudeAccountData, 0, len(list))
 	for _, a := range list {
-		accounts = append(accounts, toClaudeAccountData(a))
+		d := toClaudeAccountData(a)
+		d.NoToken = !claudeaccount.HasToken(a.Id)
+		accounts = append(accounts, d)
 	}
 	return &wshrpc.CommandClaudeAccountListRtnData{
 		Accounts:   accounts,

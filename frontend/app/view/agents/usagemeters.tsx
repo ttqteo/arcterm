@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The app bar's plan-usage meters, beside the RAM chip: each provider's logo, then its 5-hour and weekly windows as two
-// small bars, each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
+// small bars, and after them any model's own weekly window (a Team seat's Fable share) under that model's name
+// (planWindows), each with a tick at how much of its window has passed and coloured by how much is used (usageLevel, not
 // by pace: a fast start read red at 27%), and the 5-hour window's countdown. Tokens and the weekly reset are on hover;
 // the button opens the Consumers panel sorted by tokens (consumerspanel.tsx). Float has no app bar: its ledge shows
 // FloatUsage, each provider's first window alone (the 5-hour one), the rest in its tooltip.
@@ -25,10 +26,9 @@ import { toggleConsumers } from "./consumersstore";
 import {
     activeClaudeKeyAtom,
     claudeIdentityAtom,
-    FIVE_HOUR_MS,
     planDonuts,
+    planWindows,
     savedRateLimitsAtom,
-    WEEK_MS,
 } from "./ratelimitstore";
 import { RuntimeMark } from "./runtimemark";
 import { loadWindowTokens, windowTokensAtom, type WindowTokens } from "./windowtokenstore";
@@ -40,11 +40,6 @@ const LEVEL_TXT: Record<"ok" | "warn" | "hot", string> = {
     warn: "text-warning",
     hot: "text-error",
 };
-
-const WINDOWS = [
-    ["fivehour", "5h", "5-hour window", FIVE_HOUR_MS],
-    ["week", "wk", "Weekly", WEEK_MS],
-] as const;
 
 // The app bar is always mounted, so this reads everything itself rather than borrowing a surface's state.
 // Rate-limit windows are account-scoped, not per-agent: every agent's live reading collapses to one block
@@ -140,22 +135,23 @@ function meterItems(
     now: number
 ): MeterItem[] {
     return donuts.flatMap((d) =>
-        WINDOWS.filter(([w]) => usageBarVisible(d[w].pct, d.stale != null, d[w].reset)).map(
-            ([w, short, label, windowMs], i) => {
-                const reset = d[w].reset;
+        planWindows(d)
+            .filter((p) => usageBarVisible(p.w.pct, d.stale != null, p.w.reset))
+            .map((p, i) => {
+                const reset = p.w.reset;
+                const used = p.tokens ? windowUsedTokens(d.provider, windowTokens, p.tokens) : undefined;
                 return {
-                    key: `${d.provider}:${w}`,
+                    key: `${d.provider}:${p.key}`,
                     provider: d.provider,
                     first: i === 0,
-                    short,
-                    pct: d[w].pct!,
-                    elapsed: windowElapsed(reset, windowMs, now),
-                    // the weekly window is days out and nobody waits it out: its tick says the pace, the tooltip the time
-                    countdown: w === "fivehour" && reset ? formatResetShort(reset, now) : null,
-                    title: meterTitle(label, d[w].pct!, windowUsedTokens(d.provider, windowTokens, w), reset, now),
+                    short: p.short,
+                    pct: p.w.pct!,
+                    elapsed: windowElapsed(reset, p.windowMs, now),
+                    // a weekly window is days out and nobody waits it out: its tick says the pace, the tooltip the time
+                    countdown: p.key === "fivehour" && reset ? formatResetShort(reset, now) : null,
+                    title: meterTitle(p.label, p.w.pct!, used, reset, now),
                 };
-            }
-        )
+            })
     );
 }
 

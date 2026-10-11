@@ -223,6 +223,12 @@ func ApplyEnv(id string) string {
 	return id
 }
 
+// HasToken reports whether account id's token is still stored; false too when the store cannot be read.
+func HasToken(id string) bool {
+	t, ok, err := getSecret(secretName(id))
+	return err == nil && ok && t != ""
+}
+
 // Active is the account ApplyEnv last applied ("" = Default).
 func Active() string {
 	mu.Lock()

@@ -10,6 +10,7 @@ import type { LauncherKind } from "@/app/view/agents/launcher";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
+import { tourAtom, tourMenuOpenAtom } from "@/app/view/jarvis/jarvistourstore";
 import { floatMiniAtom } from "@/app/view/agents/floatstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
@@ -21,6 +22,7 @@ import {
     buildFinalShotsBindings,
     buildGlobalBindings,
     buildJarvisBindings,
+    buildJarvisTourBindings,
     buildListNavBindings,
 } from "./bindings";
 import { deriveKeyContext, focusClaimed, initKeybindingDispatcher, isEditableTarget, ownsKeys } from "./dispatcher";
@@ -365,6 +367,73 @@ describe("the Final check viewer over the Jarvis surface", () => {
         expect(picked("ArrowDown")).toBe("list:next");
         expect(picked("Escape")).toBe("surface:back-home");
         expect(picked("z")).not.toBe("final-shots:zoom");
+        unbind();
+    });
+});
+
+describe("the Jarvis tour over the Jarvis surface", () => {
+    afterEach(() => {
+        globalStore.set(tourAtom, null);
+        globalStore.set(tourMenuOpenAtom, false);
+        globalStore.set(listNavAtom, null);
+        vi.unstubAllGlobals();
+    });
+
+    // the Jarvis list's cursor and the Brief's Escape-home are registered before the tour's keys; matchBinding runs
+    // the first active binding for a key, so without the tour counting as a modal Enter would open the row under the
+    // cursor and Escape would leave the surface
+    function setup() {
+        vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+        vi.stubGlobal("document", { activeElement: null });
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("jarvis"),
+            paletteOpenAtom: atom(false),
+            launcherAtom: atom<LauncherKind | null>(null),
+            newInitiativeOpenAtom: atom(false),
+            newProjectOpenAtom: atom(false),
+            focusIdAtom: atom<string | undefined>(undefined),
+        } as unknown as AgentsViewModel;
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+        const tour = buildJarvisTourBindings({ next() {}, back() {}, close() {} });
+        const bindings = [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildJarvisBindings(model),
+            ...tour,
+        ];
+        const unbind = initKeybindingDispatcher(model);
+        const picked = (key: string) => {
+            const r = matchBinding(ev(key), deriveKeyContext(), bindings);
+            return r.kind === "run" ? r.binding.id : r.kind;
+        };
+        return { picked, unbind };
+    }
+
+    it("takes →, Enter, ← and Escape while it shows", () => {
+        const { picked, unbind } = setup();
+        globalStore.set(tourAtom, { track: "brief", index: 0 });
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        expect(picked("ArrowRight")).toBe("jarvis-tour:next");
+        expect(picked("Enter")).toBe("jarvis-tour:next-enter");
+        expect(picked("ArrowLeft")).toBe("jarvis-tour:back");
+        expect(picked("Escape")).toBe("jarvis-tour:close");
+        unbind();
+    });
+
+    it("leaves them to the surface once it ends", () => {
+        const { picked, unbind } = setup();
+        expect(picked("Enter")).toBe("list:activate");
+        expect(picked("Escape")).toBe("surface:back-home");
+        expect(picked("ArrowRight")).not.toBe("jarvis-tour:next");
+        unbind();
+    });
+
+    it("leaves Escape to the ? menu while it is open, and keeps the list behind it still", () => {
+        const { picked, unbind } = setup();
+        globalStore.set(tourMenuOpenAtom, true);
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        expect(picked("Escape")).not.toBe("surface:back-home");
+        expect(picked("Enter")).not.toBe("list:activate");
         unbind();
     });
 });

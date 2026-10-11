@@ -17,7 +17,8 @@ type ClaudeAccountData struct {
 	Id        string `json:"id"`
 	Label     string `json:"label"`
 	CreatedTs int64  `json:"createdts"`
-	Email     string `json:"email,omitempty"` // the Claude account this token is for; lowercased
+	Email     string `json:"email,omitempty"`   // the Claude account this token is for; lowercased
+	NoToken   bool   `json:"notoken,omitempty"` // its token is gone from the secret store, so it runs as Default
 }
 
 type CommandClaudeAccountListRtnData struct {

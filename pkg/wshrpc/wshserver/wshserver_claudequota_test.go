@@ -83,3 +83,21 @@ func TestRefreshClaudeQuotaHeldByABackoffCarriesRetryAt(t *testing.T) {
 		t.Fatalf("held with no reading: got %+v", got)
 	}
 }
+
+func TestClaudeQuotaCarriesScopedWeeks(t *testing.T) {
+	oldEmail := loginEmail
+	loginEmail = func() string { return "mozox@example.com" }
+	t.Cleanup(func() { loginEmail = oldEmail })
+	reset := int64(1_760_464_800)
+	get := func(context.Context) *claudequota.Quota {
+		return &claudequota.Quota{
+			ScopedWeeks: []claudequota.ScopedWeek{{Model: "Fable", Pct: 4, Reset: &reset}},
+			CapturedAt:  time.UnixMilli(1000),
+		}
+	}
+	got := claudeQuotaFor(context.Background(), "", get)
+	if len(got.ScopedWeeks) != 1 || got.ScopedWeeks[0].Model != "Fable" || got.ScopedWeeks[0].Pct != 4 ||
+		got.ScopedWeeks[0].Reset == nil || *got.ScopedWeeks[0].Reset != reset {
+		t.Fatalf("scoped weeks = %+v", got.ScopedWeeks)
+	}
+}

@@ -81,6 +81,12 @@ const (
 
 	ConfigKey_UsageInsightsLang              = "usage:insightslang"
 
+	ConfigKey_TokenGateClear                 = "tokengate:*"
+	ConfigKey_TokenGateEnabled               = "tokengate:enabled"
+	ConfigKey_TokenGateSharePct              = "tokengate:sharepct"
+	ConfigKey_TokenGateWindowPct             = "tokengate:windowpct"
+	ConfigKey_TokenGateAgents                = "tokengate:agents"
+
 	ConfigKey_JobsSlots                      = "jobs:slots"
 	ConfigKey_JobsMode                       = "jobs:mode"
 	ConfigKey_JobsPauseUntil                 = "jobs:pauseuntil"

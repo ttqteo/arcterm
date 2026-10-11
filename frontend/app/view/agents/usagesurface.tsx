@@ -30,7 +30,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, typ
 import { showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatReset, moveCursor, usageLevel } from "./agentsviewmodel";
-import { providerDot, providerLabel } from "./cockpitrailmodel";
+import { providerDot, providerLabel, usageBarVisible } from "./cockpitrailmodel";
 import { DailyChart } from "./dailychart";
 import { harnessesAtom } from "./harnessstore";
 import {
@@ -688,6 +688,12 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     const fiveHour: AggregateWindow = all ? worstWindow(rows, "fivehour") : (selRow?.fivehour ?? {});
     const week: AggregateWindow = all ? worstWindow(rows, "week") : (selRow?.week ?? {});
     const hasLimits = all ? fiveHour.pct != null || week.pct != null : selRow != null && selRow.state !== "none";
+    // a model's own weekly window (a Team Premium seat's Fable share) is a card of its own on Claude's tab, named
+    // by its model: it is not the week, which a Team seat's reading leaves out
+    const scopedWeeks =
+        scope === "claude"
+            ? (claudeDonut?.scoped ?? []).filter((w) => usageBarVisible(w.pct, claudeDonut?.stale != null, w.reset))
+            : [];
     const projectionForWeek = all
         ? week.harness === "claude"
             ? weeklyProjectionMs
@@ -836,6 +842,15 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                         used={all && week.harness ? providerLabel(week.harness) : undefined}
                                         projectedExhaustion={projectionForWeek}
                                     />
+                                    {scopedWeeks.map((w) => (
+                                        <LimitCard
+                                            key={w.model}
+                                            kind={`scoped:${w.model}`}
+                                            title={`${w.model} weekly`}
+                                            w={w}
+                                            now={now}
+                                        />
+                                    ))}
                                 </div>
                             ) : (
                                 <p className="rounded-[11px] border border-border bg-surface px-4 py-3 text-[11px] leading-[1.55] text-muted">

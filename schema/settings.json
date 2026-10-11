@@ -189,6 +189,21 @@
         "usage:insightslang": {
           "type": "string"
         },
+        "tokengate:*": {
+          "type": "boolean"
+        },
+        "tokengate:enabled": {
+          "type": "boolean"
+        },
+        "tokengate:sharepct": {
+          "type": "number"
+        },
+        "tokengate:windowpct": {
+          "type": "number"
+        },
+        "tokengate:agents": {
+          "type": "integer"
+        },
         "jobs:slots": {
           "type": "integer"
         },

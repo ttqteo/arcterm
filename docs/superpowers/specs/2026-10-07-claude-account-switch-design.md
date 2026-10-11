@@ -31,8 +31,9 @@ profiles, macOS Keychain, and remote (ssh/wsl) connections.
    connectors).
 2. **"Default (/login)" is always an option** and means no token: claude uses whatever `/login` stored,
    exactly as today. It is the state after upgrade.
-3. **Tokens live in `pkg/secretstore`** (`secrets.enc`, DPAPI on Windows), one secret per account,
-   `CLAUDE_ACCOUNT_<id>` (ids are `a` + 8 hex, since secret names allow only `[A-Za-z0-9_]`). The account
+3. **Tokens live in `pkg/secretstore`** (`secrets.enc`: DPAPI on Windows; on macOS AES-GCM under a key in the
+   login Keychain, added 2026-10-11, before which the store was in memory there and a restart lost every token),
+   one secret per account, `CLAUDE_ACCOUNT_<id>` (ids are `a` + 8 hex, since secret names allow only `[A-Za-z0-9_]`). The account
    list (id, label) is a local file, `<data dir>/claude-accounts.json`, behind four RPCs, not a setting:
    `SetConfigCommand` rejects an array-of-objects value, the Settings "changed" check compares by
    identity, and settings sync through the vault to machines that do not hold the tokens. The active

@@ -74,6 +74,7 @@ import {
     trackerMenuAtom,
 } from "@/app/view/jarvis/jarvisstore";
 import { activeRunIdAtom, activeSubjectAtom, setActiveRunId } from "@/app/view/jarvis/jarvissubjectstore";
+import { tourAtom } from "@/app/view/jarvis/jarvistourstore";
 import { peekTarget } from "@/app/view/jarvis/openref";
 import { openPetPeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
@@ -1841,5 +1842,26 @@ export function buildFinalShotsBindings(handlers: {
         bind("zoom", "z", "Fit / actual size", handlers.zoom),
         bind("steps", "s", "Show or hide the steps", handlers.steps),
         bind("close", "Escape", "Close the viewer", handlers.close),
+    ];
+}
+
+// The Jarvis tour's keys, registered by the tour while it shows. Gated on its own atom, which the dispatcher counts
+// as modalOpen, so the Brief's list keys and the run sheet's Escape stand down under it.
+export function buildJarvisTourBindings(handlers: { next(): void; back(): void; close(): void }): Binding[] {
+    const open = () => globalStore.get(tourAtom) != null;
+    const bind = (id: string, keys: string, label: string, run: () => void): Binding => ({
+        id: `jarvis-tour:${id}`,
+        keys,
+        group: "Jarvis tour",
+        label,
+        when: open,
+        paletteHidden: true,
+        run,
+    });
+    return [
+        bind("next", "ArrowRight", "Next step", handlers.next),
+        bind("next-enter", "Enter", "Next step", handlers.next),
+        bind("back", "ArrowLeft", "Previous step", handlers.back),
+        bind("close", "Escape", "End the tour", handlers.close),
     ];
 }

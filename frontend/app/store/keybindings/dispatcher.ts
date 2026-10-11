@@ -12,6 +12,7 @@ import { heldAskOpenAtom } from "@/app/view/agents/heldaskpopup";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { uploadsLightboxOpenAtom } from "@/app/view/agents/uploadslightboxatom";
 import { finalShotsViewerOpenAtom } from "@/app/view/jarvis/finalshotsstore";
+import { tourAtom, tourMenuOpenAtom } from "@/app/view/jarvis/jarvistourstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
 import { dagModalStateAtom } from "@/app/view/orchestrate/dagmodalstate";
 import * as keyutil from "@/util/keyutil";
@@ -94,13 +95,18 @@ export function deriveKeyContext(): KeyContext {
         // outlives a switch away, since opening a worker from the graph lands on the Agent surface.
         (surface === "jarvis" && globalStore.get(dagModalStateAtom) != null) ||
         globalStore.get(docReviewAtom) != null ||
-        // the Low RAM card over any surface: its digits answer it, not the surface underneath
+        // a held card over any surface: its digits answer it, not the surface underneath
         globalStore.get(heldAskOpenAtom) != null ||
         // the avatar popup is window chrome over any surface, and its own keys (Enter, f, Space, Escape) are
         // surface keys too; uncounted, the Agent surface's f toggled fullscreen under an open item
         globalStore.get(petPeekOpenAtom) ||
         // the Final check viewer over the run sheet: its arrows and Escape are its own, not the Brief's list
         globalStore.get(finalShotsViewerOpenAtom) ||
+        // the Jarvis tour over the Brief: its arrows, Enter and Escape step the tour, not the list underneath
+        globalStore.get(tourAtom) != null ||
+        // and its ? menu in the header: Escape closes the menu (useDismiss runs after this capture handler) and Enter
+        // and j/k must not act on the list behind it
+        globalStore.get(tourMenuOpenAtom) ||
         // the Agent rail's Uploads lightbox is a ModalShell too, but one the dispatcher cannot see (component state);
         // uncounted, Escape left the surface with the lightbox still up, and j/k, the arrows, d and f acted behind it
         globalStore.get(uploadsLightboxOpenAtom) ||

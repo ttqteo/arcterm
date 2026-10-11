@@ -11,17 +11,24 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { activeClaudeAccountAtom, normalizeEmail, noteLoginEmail, recordRateLimit } from "./ratelimitstore";
+import {
+    activeClaudeAccountAtom,
+    normalizeEmail,
+    noteLoginEmail,
+    recordRateLimit,
+    type WindowReading,
+} from "./ratelimitstore";
 
 // wavesrv asks the endpoint at most once per five minutes, however many windows poll
 const POLL_MS = 5 * 60 * 1000;
 
-// the windows as AgentUsage spells them; null when nothing is known or the reading has no time
-export function quotaUsage(q: CommandGetClaudeQuotaRtnData): AgentUsage | null {
-    if (!q?.capturedat || (q.fivehourpct == null && q.weekpct == null)) {
+// the windows as AgentUsage spells them, and each model's own weekly window (none is an empty list, as the
+// answer carries all the account has); null when nothing is known or the reading has no time
+export function quotaUsage(q: CommandGetClaudeQuotaRtnData): WindowReading | null {
+    if (!q?.capturedat || (q.fivehourpct == null && q.weekpct == null && !q.scopedweeks?.length)) {
         return null;
     }
-    const usage: AgentUsage = {};
+    const usage: WindowReading = { scopedweeks: q.scopedweeks ?? [] };
     if (q.fivehourpct != null) {
         usage.fivehourpct = q.fivehourpct;
         usage.fivehourreset = q.fivehourreset;
@@ -48,7 +55,8 @@ function recordAnswer(q: CommandGetClaudeQuotaRtnData): boolean {
     // wavesrv answers only for the Default account; the identity learns its email first, so the
     // snapshot saved as "claude:default" before it was known moves to that account
     noteLoginEmail(q.email);
-    recordRateLimit(quotaKey(q), usage, q.capturedat);
+    // the answer carries every window the account reports: a week it lacks (a Team seat's) is none
+    recordRateLimit(quotaKey(q), usage, q.capturedat, true);
     return true;
 }
 

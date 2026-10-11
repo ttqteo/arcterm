@@ -3,6 +3,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import {
     adoptDefaultSnapshot,
     agentQuotaKey,
+    appliedClaudeAccount,
     blockLoginEmail,
     claudeQuotaKey,
     identityFromList,
@@ -10,6 +11,7 @@ import {
     mergeSnapshot,
     migrateSaved,
     planDonuts,
+    planWindows,
     projectActiveAccount,
     rateLimitKey,
     readSavedRateLimits,
@@ -135,6 +137,33 @@ describe("identityFromList", () => {
     });
     it("is empty for no answer", () => {
         expect(identityFromList(null)).toEqual({ loginEmail: "", accounts: [] });
+    });
+    it("keeps an account whose token is gone marked", () => {
+        const identity = identityFromList({
+            accounts: [{ id: "a1", label: "Home", createdts: 1, notoken: true }],
+            active: "",
+        });
+        expect(identity.accounts[0].notoken).toBe(true);
+    });
+});
+
+describe("appliedClaudeAccount", () => {
+    const identity: ClaudeIdentity = {
+        loginEmail: "",
+        accounts: [
+            { id: "a1", label: "Home" },
+            { id: "a2", label: "Lost", notoken: true },
+        ],
+    };
+    it("is the setting while its token is stored", () => {
+        expect(appliedClaudeAccount("a1", identity)).toBe("a1");
+        expect(appliedClaudeAccount("", identity)).toBe("");
+    });
+    it("is Default for an account whose token is gone, as wavesrv applies it", () => {
+        expect(appliedClaudeAccount("a2", identity)).toBe("");
+    });
+    it("is the setting for an account the identity does not list yet", () => {
+        expect(appliedClaudeAccount("a9", identity)).toBe("a9");
     });
 });
 
@@ -434,6 +463,22 @@ describe("mergeSnapshot keeps each window's newest reading", () => {
         expect(savedWindows(s, now).fivehour).toEqual({ pct: 5, reset: undefined });
     });
 
+    // a quota read carries every window the account reports: a Team seat's has no week, so a week saved
+    // before (an earlier build took the seat's Fable row for it) is dropped rather than kept
+    it("drops the saved week when a complete reading leaves it out", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, weekpct: 0, weekreset: 900, capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3, fivehourreset: 500 }, 2000, true)).toEqual({
+            fivehourpct: 3,
+            fivehourreset: 500,
+            capturedAt: 2000,
+        });
+    });
+
+    it("keeps a week read after the complete reading that leaves it out", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, weekpct: 30, weekAt: 3000, capturedAt: 4000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3 }, 2000, true)).toBeNull();
+    });
+
     it("fills the week a live session leaves out from the saved snapshot", () => {
         const now = 1_800_000_000_000;
         const out = mergeRateLimitWindows(
@@ -444,6 +489,78 @@ describe("mergeSnapshot keeps each window's newest reading", () => {
         expect(out[0].fivehour).toEqual({ pct: 3, reset: 100 });
         expect(out[0].week).toEqual({ pct: 30, reset: now / 1000 + 600 });
         expect(out[0].stale).toBeUndefined();
+    });
+});
+
+// A Team Premium seat's quota read carries a weekly window for one model (Fable) and no week. It is kept apart from
+// the week and shown under its model's name.
+describe("a model's own weekly window", () => {
+    const fable = { model: "Fable", pct: 4, reset: 900 };
+
+    it("is taken from a reading that carries it", () => {
+        expect(mergeSnapshot(undefined, { fivehourpct: 3, scopedweeks: [fable] }, 1000, true)).toEqual({
+            fivehourpct: 3,
+            scoped: [fable],
+            capturedAt: 1000,
+        });
+    });
+
+    it("is dropped by a newer reading that carries none", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, scoped: [fable], capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3, scopedweeks: [] }, 2000, true)).toEqual({
+            fivehourpct: 3,
+            capturedAt: 2000,
+        });
+    });
+
+    it("is kept by a session's report, which never carries it, stamped with when it was read", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, scoped: [fable], capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3 }, 2000)).toEqual({
+            fivehourpct: 3,
+            scoped: [fable],
+            scopedAt: 1000,
+            capturedAt: 2000,
+        });
+    });
+
+    it("is kept over an older reading's", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, scoped: [fable], capturedAt: 3000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 9, scopedweeks: [{ ...fable, pct: 1 }] }, 1000, true)).toBeNull();
+    });
+
+    it("rolls over by when it was read", () => {
+        const now = 1_800_000_000_000;
+        const reset = now / 1000 + 600;
+        const fresh: SavedSnapshot = { fivehourpct: 5, scoped: [{ ...fable, reset }], capturedAt: now - 5000 };
+        expect(savedWindows(fresh, now).scoped).toEqual([{ model: "Fable", pct: 4, reset }]);
+        const old: SavedSnapshot = { ...fresh, scopedAt: now - 8 * 24 * 3600_000 };
+        expect(savedWindows(old, now).scoped).toEqual([{ model: "Fable", pct: 0, reset: undefined }]);
+    });
+
+    it("fills a live session's donut from the saved snapshot", () => {
+        const now = 1_800_000_000_000;
+        const reset = now / 1000 + 600;
+        const out = mergeRateLimitWindows(
+            [{ provider: "claude", usage: { fivehourpct: 3, fivehourreset: 100 } }],
+            { claude: { fivehourpct: 1, scoped: [{ ...fable, reset }], capturedAt: now - 5000 } },
+            now
+        );
+        expect(out[0].scoped).toEqual([{ model: "Fable", pct: 4, reset }]);
+        expect(out[0].week).toEqual({});
+    });
+
+    it("is listed after the 5-hour window and the week, under its model's name", () => {
+        const windows = planWindows({
+            provider: "claude",
+            fivehour: { pct: 12, reset: 100 },
+            week: {},
+            scoped: [{ model: "Fable", pct: 0, reset: 900 }],
+        });
+        expect(windows.map((w) => [w.key, w.short, w.label, w.w.pct, w.tokens])).toEqual([
+            ["fivehour", "5h", "5-hour window", 12, "fivehour"],
+            ["week", "wk", "Weekly", undefined, "week"],
+            ["scoped:Fable", "Fable wk", "Fable weekly", 0, undefined],
+        ]);
     });
 });
 

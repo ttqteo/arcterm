@@ -328,6 +328,7 @@ declare global {
         label: string;
         createdts: number;
         email?: string;
+        notoken?: boolean;
     };
 
     // wshrpc.ClaudeProjectData
@@ -336,6 +337,13 @@ declare global {
         name: string;
         lastactivets: number;
         sessions: number;
+    };
+
+    // wshrpc.ClaudeScopedWeek
+    type ClaudeScopedWeek = {
+        model: string;
+        pct: number;
+        reset?: number;
     };
 
     // waveobj.Client
@@ -1002,6 +1010,7 @@ declare global {
         source?: string;
         email?: string;
         retryat?: number;
+        scopedweeks?: ClaudeScopedWeek[];
     };
 
     // wshrpc.CommandGetConsumersRtnData
@@ -3054,6 +3063,11 @@ declare global {
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
         "usage:insightslang"?: string;
+        "tokengate:*"?: boolean;
+        "tokengate:enabled"?: boolean;
+        "tokengate:sharepct"?: number;
+        "tokengate:windowpct"?: number;
+        "tokengate:agents"?: number;
         "jobs:slots"?: number;
         "jobs:mode"?: string;
         "jobs:pauseuntil"?: number;

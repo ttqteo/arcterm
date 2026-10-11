@@ -166,3 +166,19 @@ func TestApplyEnvUnknownAccountFallsBackToDefault(t *testing.T) {
 		t.Fatal("token var should stay unset")
 	}
 }
+
+// a token lost with the store (a macOS restart before secrets persisted there) leaves its account listed
+func TestHasTokenOnlyWhileTheTokenIsStored(t *testing.T) {
+	secrets := useTemp(t)
+	a, err := Add("personal", "sk-ant-oat01-abc", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !HasToken(a.Id) {
+		t.Fatal("HasToken = false right after Add")
+	}
+	delete(secrets, secretName(a.Id))
+	if HasToken(a.Id) {
+		t.Fatal("HasToken = true with the token gone")
+	}
+}
