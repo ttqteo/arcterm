@@ -111,7 +111,11 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const working = useMemo(() => workingCount(agents), [agents]);
     const look = miniLook({ posture: postureFor(signals), waiting, working, errand, unread, chatOpen, frame });
     const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
-    const list = useMemo(() => foldedList(agents, terminals, focusId ?? null), [agents, terminals, focusId]);
+    const lineage = useAtomValue(model.lineageAtom);
+    const list = useMemo(
+        () => foldedList(agents, terminals, focusId ?? null, lineage),
+        [agents, terminals, focusId, lineage]
+    );
     // state, not a ref: the chat and the bubble position themselves once this lands
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
     const dragged = useRef(false);

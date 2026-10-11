@@ -3,11 +3,24 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
+import type { Lineage, RunInfo } from "./runlineage";
 import { FLOAT_TAB_MAX, floatTabs, foldedList, stepFloatTab, workingCount } from "./sproutroster";
 
 const a = (id: string, state: AgentVM["state"], kind?: string): AgentVM =>
     ({ id, name: id, task: "", state, kind }) as AgentVM;
 const ids = (list: AgentVM[]) => list.map((x) => x.id);
+
+// run r1 led by "lead", worked by "w1" and "w2", its plan reviewed by "rev"
+const run: Lineage = {
+    roles: {
+        lead: { kind: "lead", runId: "r1" },
+        w1: { kind: "worker", leadRunId: "r1", taskId: "t1" },
+        w2: { kind: "worker", leadRunId: "r1", taskId: "t2" },
+        rev: { kind: "stage", leadRunId: "r1", stageRole: "planreview" },
+    },
+    runs: { r1: { runId: "r1" } as RunInfo },
+};
+const runAgents = [a("x", "idle"), a("lead", "idle"), a("w1", "working"), a("w2", "asking"), a("rev", "working")];
 
 describe("floatTabs", () => {
     const t = (id: string) => a(id, "idle", "terminal");
@@ -37,6 +50,19 @@ describe("floatTabs", () => {
         expect(ids(tabs.shown)).toContain("g");
         expect(ids(tabs.rest)).not.toContain("g");
     });
+    it("shows a run as its lead, not as every session the run spawned", () => {
+        const tabs = floatTabs(runAgents, [], "x", run);
+        expect(ids(tabs.shown)).toEqual(["x", "lead"]);
+        expect(tabs.rest).toEqual([]);
+    });
+    it("keeps a run's worker while it is the one in view", () =>
+        expect(ids(floatTabs(runAgents, [], "w1", run).shown)).toEqual(["x", "lead", "w1"]));
+    it("tabs a worker whose run the lineage does not hold", () => {
+        const orphan: Lineage = { roles: { w1: { kind: "worker", leadRunId: "gone", taskId: "t1" } }, runs: {} };
+        expect(ids(floatTabs([a("x", "idle"), a("w1", "idle")], [], "x", orphan).shown)).toEqual(["x", "w1"]);
+    });
+    it("does not bring a hidden worker back as a terminal", () =>
+        expect(ids(floatTabs(runAgents, [a("w1", "idle", "terminal")], "x", run).shown)).toEqual(["x", "lead"]));
 });
 
 describe("stepFloatTab", () => {
@@ -53,6 +79,11 @@ describe("stepFloatTab", () => {
         expect(stepFloatTab(many, [], "f", 1)).toBe("g");
     });
     it("has nowhere to go with one tab", () => expect(stepFloatTab([a("x", "idle")], [], "x", 1)).toBeNull());
+    it("skips a run's workers and stage sessions", () => {
+        expect(stepFloatTab(runAgents, [], "lead", 1, run)).toBe("x");
+        expect(stepFloatTab(runAgents, [], "x", -1, run)).toBe("lead");
+    });
+    it("steps on from a worker in view", () => expect(stepFloatTab(runAgents, [], "w1", 1, run)).toBe("x"));
 });
 
 describe("foldedList", () => {
@@ -70,6 +101,10 @@ describe("foldedList", () => {
         expect(ids(foldedList([a("x", "idle")], [a("t", "idle", "terminal")], "t").shown)).toEqual(["t", "x"]);
     });
     it("is empty with no agents", () => expect(foldedList([], [], null)).toEqual({ shown: [], more: 0 }));
+    it("leaves a run's workers and stage sessions to its lead", () =>
+        expect(foldedList(runAgents, [], null, run)).toEqual({ shown: [runAgents[0], runAgents[1]], more: 0 }));
+    it("keeps the worker in view", () =>
+        expect(ids(foldedList(runAgents, [], "w2", run).shown)).toEqual(["w2", "x", "lead"]));
 });
 
 describe("workingCount", () => {

@@ -16,6 +16,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
   file search (Ctrl+P, ⌘P on a Mac) lists them first.
 
+### Fixed
+
+- **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;
+  Ctrl+Tab and the folded Sprout's list skip them too. A worker you opened keeps its tab while you are on it.
+
 ## 0.15.9 — 2026-10-11
 
 ### Added

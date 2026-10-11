@@ -5,6 +5,7 @@
 // on the ledge under the terminal, and the folded Sprout's hover list. Pure.
 
 import type { AgentState, AgentVM } from "./agentsviewmodel";
+import { NO_LINEAGE, type Lineage } from "./runlineage";
 
 export interface RosterCut {
     shown: AgentVM[];
@@ -16,10 +17,28 @@ export interface RosterCut {
 export const FLOAT_TAB_MAX = 5;
 export const FOLDED_LIST_MAX = 4;
 
-// the agents, led by the terminal in view when a terminal is what floats
-function roster(agents: readonly AgentVM[], terminals: readonly AgentVM[], focusId: string | null): AgentVM[] {
+// a run's workers and stage sessions, which the Agent tree nests under the run's lead (agenttreemodel.ts buildAgentTree)
+function nestedInRun(a: AgentVM, lineage: Lineage): boolean {
+    const role = lineage.roles[a.id];
+    return (role?.kind === "worker" || role?.kind === "stage") && lineage.runs[role.leadRunId] != null;
+}
+
+// the agents the lists name: the tree's top level, so a run shows as its lead rather than as every session it spawned,
+// and the one in view (keepId) whatever it is
+function topLevel(agents: readonly AgentVM[], lineage: Lineage, keepId: string | null): AgentVM[] {
+    return agents.filter((a) => a.id === keepId || !nestedInRun(a, lineage));
+}
+
+// the top-level agents, led by the terminal in view when a terminal is what floats
+function roster(
+    agents: readonly AgentVM[],
+    terminals: readonly AgentVM[],
+    focusId: string | null,
+    lineage: Lineage
+): AgentVM[] {
     const term = focusId == null ? undefined : terminals.find((t) => t.id === focusId);
-    return term != null && !agents.some((x) => x.id === term.id) ? [term, ...agents] : [...agents];
+    const top = topLevel(agents, lineage, focusId);
+    return term != null && !agents.some((x) => x.id === term.id) ? [term, ...top] : top;
 }
 
 // cut at max, keeping keepId among those shown: past the cut, it takes the last place
@@ -41,21 +60,28 @@ export interface FloatTabs {
     rest: AgentVM[];
 }
 
-// every agent in roster order, which stays put as states change so a tab stays where it was, then every plain terminal
-function floatTabOrder(agents: readonly AgentVM[], terminals: readonly AgentVM[]): AgentVM[] {
+// every top-level agent in roster order, which stays put as states change so a tab stays where it was, then every
+// plain terminal (an agent's own terminal never, nested or not)
+function floatTabOrder(
+    agents: readonly AgentVM[],
+    terminals: readonly AgentVM[],
+    focusId: string | null,
+    lineage: Lineage
+): AgentVM[] {
     const seen = new Set(agents.map((x) => x.id));
-    return [...agents, ...terminals.filter((t) => !seen.has(t.id))];
+    return [...topLevel(agents, lineage, focusId), ...terminals.filter((t) => !seen.has(t.id))];
 }
 
-/** The float's tabs: what Float can switch to, the plain terminals included, cut at FLOAT_TAB_MAX with the one in view
- *  always among those shown; none when there is nothing to switch to. */
+/** The float's tabs: what Float can switch to, the plain terminals included and a run as its lead, cut at
+ *  FLOAT_TAB_MAX with the one in view always among those shown; none when there is nothing to switch to. */
 export function floatTabs(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
     focusId: string | null,
+    lineage: Lineage = NO_LINEAGE,
     max = FLOAT_TAB_MAX
 ): FloatTabs {
-    const order = floatTabOrder(agents, terminals);
+    const order = floatTabOrder(agents, terminals, focusId, lineage);
     if (order.length < 2) {
         return { shown: [], rest: [] };
     }
@@ -70,9 +96,10 @@ export function stepFloatTab(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
     focusId: string | null,
-    delta: 1 | -1
+    delta: 1 | -1,
+    lineage: Lineage = NO_LINEAGE
 ): string | null {
-    const ids = floatTabOrder(agents, terminals).map((x) => x.id);
+    const ids = floatTabOrder(agents, terminals, focusId, lineage).map((x) => x.id);
     if (ids.length < 2) {
         return null;
     }
@@ -82,15 +109,16 @@ export function stepFloatTab(
 
 const URGENCY: Record<AgentState, number> = { asking: 0, working: 1, idle: 2 };
 
-/** The folded Sprout's list: what needs you first, then what works, then the rest, each in roster order, cut at four so
- *  nothing that waits on you hides behind "+N". */
+/** The folded Sprout's list: what needs you first, then what works, then the rest, each in roster order, a run as its
+ *  lead, cut at four so nothing that waits on you hides behind "+N". */
 export function foldedList(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
     focusId: string | null,
+    lineage: Lineage = NO_LINEAGE,
     max = FOLDED_LIST_MAX
 ): RosterCut {
-    const ranked = roster(agents, terminals, focusId)
+    const ranked = roster(agents, terminals, focusId, lineage)
         .map((agent, i) => ({ agent, i }))
         .sort((p, q) => URGENCY[p.agent.state] - URGENCY[q.agent.state] || p.i - q.i)
         .map((r) => r.agent);

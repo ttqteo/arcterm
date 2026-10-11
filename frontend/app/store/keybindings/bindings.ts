@@ -185,7 +185,8 @@ function stepFloat(model: AgentsViewModel, delta: 1 | -1): void {
         globalStore.get(model.agentsAtom),
         globalStore.get(model.terminalsAtom),
         globalStore.get(model.focusIdAtom) ?? null,
-        delta
+        delta,
+        globalStore.get(model.lineageAtom)
     );
     if (id != null) {
         model.openTerminal(id);

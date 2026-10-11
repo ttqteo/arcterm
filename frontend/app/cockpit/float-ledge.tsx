@@ -3,10 +3,10 @@
 
 // The strip under the terminal in Float (docs/superpowers/specs/2026-10-10-jarvis-modes-design.md §2), 52px, tall enough
 // to hold the whole 48px sprite so Sprout never stands on the terminal's prompt (petledge.ts LedgeBox.holds). On its
-// left, the tabs Float can switch to, plain terminals included (sproutroster.ts floatTabs), when there is more than one,
-// their dots pulsing while that agent works or asks; on its right, the plan usage (usagemeters.tsx FloatUsage), since
-// Float has no app bar. What lies between is the floor Sprout walks. A press on the strip, away from a tab, drags the
-// window like the float bar.
+// left, the tabs Float can switch to, plain terminals included and a run as its lead (sproutroster.ts floatTabs), when
+// there is more than one, their dots pulsing while that agent works or asks; on its right, the plan usage
+// (usagemeters.tsx FloatUsage), since Float has no app bar. What lies between is the floor Sprout walks. A press on the
+// strip, away from a tab, drags the window like the float bar.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { STATE_LABEL } from "@/app/view/agents/agentheader";
@@ -31,7 +31,11 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
     const focusId = useAtomValue(model.focusIdAtom);
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
-    const tabs = useMemo(() => floatTabs(agents, terminals, focusId ?? null), [agents, terminals, focusId]);
+    const lineage = useAtomValue(model.lineageAtom);
+    const tabs = useMemo(
+        () => floatTabs(agents, terminals, focusId ?? null, lineage),
+        [agents, terminals, focusId, lineage]
+    );
     // a tab shows that agent's or terminal's terminal: Float shows the focused one
     const show = (id: string) => model.openTerminal(id);
     const showRest = (e: MouseEvent) =>
