@@ -43,6 +43,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Images attached to a **new agent's task** show as pictures in its transcript, not as a list of paths. They are kept
   in `~/.arc/attachments` rather than a temp folder emptied after a day, so the pictures stay; **Settings → Storage**
   removes them under Logs, cache and trash. An image whose file is gone is named in its place.
+- In the **New agent** dialog, **Resume** now sits left of **Task**: pick the session first, then write what to send
+  it, the first prompt of a new session or the next message of a resumed one. Tab follows the same order.
 
 ### Changed
 
@@ -57,6 +59,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Fixed
 
+- On macOS, a double-click or right-click on a button, the app bar (its search box too), the surface rail or the
+  footer no longer selects a word of its text. Text boxes still select as before.
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;
   Ctrl+Tab and the folded Sprout's list skip them too. A worker you opened keeps its tab while you are on it.
 - Holding **Ctrl** shows the **Agent** rail item's digit again: the count of working agents was drawn over it, and

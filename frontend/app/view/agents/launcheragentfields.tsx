@@ -235,12 +235,14 @@ export function AgentFields({
     const taskHint = resume
         ? "optional · sent as the next message · paste or drop images"
         : "optional · sent as the first prompt · paste or drop images";
-    // with sessions to resume, Task and Resume sit side by side so the dialog fits without scrolling
+    // with sessions to resume, Resume and Task sit side by side so the dialog fits without scrolling; Resume comes
+    // first, since which session is picked decides what the task is (a first prompt or the next message)
     const withResume = runtimeShowsTask(runtime) && resumeChoices.length > 0;
     return (
         <>
             {runtimeShowsTask(runtime) ? (
                 <div className={cn(withResume && "grid grid-cols-2 gap-4")}>
+                    {withResume ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
                     <div className="flex min-w-0 flex-col gap-2">
                         <div className="flex items-baseline gap-2">
                             <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
@@ -267,7 +269,6 @@ export function AgentFields({
                         />
                         <TaskImages />
                     </div>
-                    {withResume ? <ResumeList choices={resumeChoices} pickedId={resume?.id ?? null} /> : null}
                 </div>
             ) : null}
             <div className="flex flex-col gap-2">
