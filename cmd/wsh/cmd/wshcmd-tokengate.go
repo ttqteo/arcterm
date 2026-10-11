@@ -100,8 +100,8 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, onHold func(any)) (
 		return tokengate.Verdict{Run: true}, nil
 	}
 	quota := tokengateQuota(ctx, tokengate.Estimate(s))
-	if !tokengate.Asks(tokengate.RulesFrom(set.TokenGateSharePct, set.TokenGateWindowPct, set.TokenGateAgents), s, quota) {
-		return tokengate.Verdict{Run: true, Note: tokengate.Note(s, quota)}, nil
+	if !tokengate.Asks(tokengate.RulesFrom(set.TokenGateSharePct, set.TokenGateWindowPct, set.TokenGateAgents, nil, nil), s, quota) {
+		return tokengate.Verdict{Run: true, Note: tokengate.Note(s, tokengate.Price(s, nil), quota)}, nil
 	}
 
 	oref, err := resolveBlockArg()
@@ -115,7 +115,7 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, onHold func(any)) (
 		}
 		oref = target
 	}
-	question := tokengate.Question(s, quota, time.Local)
+	question := tokengate.Question(s, tokengate.Price(s, nil), quota, time.Local)
 	onHold(tokengate.Asking(s))
 	// the card's ceiling is this local deadline; the RPC's own is a minute later, so no answer reads as the
 	// deadline, which is the deny option, never as an EC-TIME error, which would let the spawn run
@@ -137,10 +137,10 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, onHold func(any)) (
 // gate, which the mod answers by letting the spawn run.
 func tokengateAnswered(s tokengate.Spawn, rtn wshrpc.AskRtnData, err error) (tokengate.Verdict, error) {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return tokengate.VerdictFor(tokengate.OptionDeny, s), nil
+		return tokengate.VerdictFor(tokengate.OptionDeny, s, tokengate.Estimate(s)), nil
 	}
 	if err != nil {
 		return tokengate.Verdict{}, err
 	}
-	return tokengate.VerdictFor(tokengate.Choice(rtn.Answers, rtn.Cancelled), s), nil
+	return tokengate.VerdictFor(tokengate.Choice(rtn.Answers, rtn.Cancelled), s, tokengate.Estimate(s)), nil
 }

@@ -10,18 +10,28 @@ package tokengate
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 )
 
-// PerAgentTokens is a subagent's typical run: ~30 tool calls at a ~50k average context, nearly all cache
-// reads. Rough and uncalibrated; measuring it from saved transcripts is the follow-up (docs/deferred.md).
+// PerAgentTokens prices an agent when no finished subagents say otherwise: ~30 tool calls at a ~50k average context,
+// nearly all cache reads. Price uses measured Costs first.
 const PerAgentTokens int64 = 1_500_000
 
-// below this much of the 5h window used, tokens/pct is too small a sample to give the window's size
+// below this much of a window used, tokens/pct is too small a sample to give the window's size
 const minPctForShare = 5.0
+
+// CostAll is the Cost row over every subagent type
+const CostAll = "all"
+
+// a type's row prices its agents from this many samples, the every-type row the rest from minAllSamples
+const (
+	minTypeSamples = 3
+	minAllSamples  = 5
+)
 
 // the card's options, by index
 const (
@@ -44,26 +54,72 @@ type Spawn struct {
 	AtLeast       bool // a workflow's agent count is a floor: loops multiply it
 	ContextTokens int64
 	ContextMax    int64
+	Types         []string // each agent's subagent type, in order; "" or missing is unknown (a Workflow's agents)
 }
 
-// Quota is what is known of the 5-hour window; nil fields are unknown, left out of the card, and fire no rule
+// Cost is what finished subagents of one type cost, as wavesrv measures them on their transcripts
+type Cost struct {
+	Type    string
+	Samples int
+	Mean    int64
+	P25     int64
+	P90     int64
+}
+
+// Priced is a spawn's estimate: the sum of its agents' mean costs, and a range (the sums of their p25 and p90) when
+// every agent was priced from samples. Basis names the rows used, "14 general-purpose" or "31 recent", in the order
+// first used; none means every agent was priced at PerAgentTokens.
+type Priced struct {
+	Estimate int64
+	Low      int64
+	High     int64 // 0: no range
+	Basis    []string
+}
+
+// SessionUse is the whole percent of each window the asking session, its subagents included, has used; nil is
+// unknown
+type SessionUse struct {
+	FiveHourPct *int
+	WeekPct     *int
+	Subagents   int
+}
+
+// Quota is what is known of the 5-hour and weekly windows; nil fields are unknown, left out of the card, and fire
+// no rule
 type Quota struct {
 	FiveHourPct   *float64
 	FiveHourReset *int64 // epoch seconds
-	Share         *int   // whole percent of the window the estimate would take
+	Share         *int   // whole percent of the 5h window the estimate would take
+	WeekPct       *float64
+	WeekReset     *int64 // epoch seconds
+	WeekShare     *int   // whole percent of the weekly window the estimate would take
+	Session       *SessionUse
+}
+
+// Reading is what `wsh tokengate` read for a spawn: the quota (nil fields unknown) and, when Counted, wavesrv's
+// token counts of both windows and of the asking session inside them
+type Reading struct {
+	FiveHourPct, WeekPct         *float64
+	FiveHourReset, WeekReset     *int64
+	Counted                      bool
+	WindowFiveHour, WindowWeek   int64
+	SessionFiveHour, SessionWeek int64
+	Subagents                    int
 }
 
 // Rules say when a spawn asks; a rule at 0 is off. A workflow always asks.
 type Rules struct {
-	SharePct  float64 // the spawn would take at least this much of the 5h window
-	WindowPct float64 // the 5h window is at least this full
-	Agents    int     // the group starts at least this many agents
+	SharePct   float64 // the spawn would take at least this much of the 5h window
+	WindowPct  float64 // the 5h window is at least this full
+	Agents     int     // the group starts at least this many agents
+	WeekPct    float64 // the weekly window is at least this full
+	SessionPct float64 // the asking session has already used at least this much of the 5h window
 }
 
-var DefaultRules = Rules{SharePct: 10, WindowPct: 70, Agents: 3}
+var DefaultRules = Rules{SharePct: 10, WindowPct: 70, Agents: 3, WeekPct: 80, SessionPct: 25}
 
 // RulesFrom fills unset settings with the defaults; a setting of 0 stays 0, which turns its rule off
-func RulesFrom(sharePct, windowPct *float64, agents *int) Rules {
+func RulesFrom(sharePct, windowPct *float64, agents *int, weekPct, sessionPct *float64) Rules {
 	r := DefaultRules
 	if sharePct != nil {
 		r.SharePct = *sharePct
@@ -73,6 +129,12 @@ func RulesFrom(sharePct, windowPct *float64, agents *int) Rules {
 	}
 	if agents != nil {
 		r.Agents = *agents
+	}
+	if weekPct != nil {
+		r.WeekPct = *weekPct
+	}
+	if sessionPct != nil {
+		r.SessionPct = *sessionPct
 	}
 	return r
 }
@@ -90,18 +152,104 @@ type Hold struct {
 	Hold string `json:"hold"`
 }
 
+// Estimate is the spawn at PerAgentTokens an agent, for a caller with no measured costs
 func Estimate(s Spawn) int64 {
 	return int64(max(s.Agents, 1)) * PerAgentTokens
 }
 
-// WindowShare is the estimate as a whole percent of the 5h window, whose size is read off the tokens the
-// window has seen and how full it is. false when that reading is too thin to divide by.
-func WindowShare(estimate, fiveHourTokens int64, fiveHourPct float64) (int, bool) {
-	if fiveHourPct < minPctForShare || fiveHourTokens <= 0 {
+// Price prices each agent from its type's row when that has minTypeSamples, else the every-type row when that has
+// minAllSamples, else at PerAgentTokens. An agent with no known type takes the every-type row.
+func Price(s Spawn, costs []Cost) Priced {
+	rows := map[string]Cost{}
+	for _, c := range costs {
+		rows[c.Type] = c
+	}
+	all, hasAll := rows[CostAll]
+	hasAll = hasAll && all.Samples >= minAllSamples
+	var p Priced
+	ranged := true
+	seen := map[string]bool{}
+	for i := 0; i < max(s.Agents, 1); i++ {
+		t := ""
+		if i < len(s.Types) {
+			t = s.Types[i]
+		}
+		c, ok := rows[t]
+		if t == "" || t == CostAll || !ok || c.Samples < minTypeSamples {
+			c, ok = all, hasAll
+		}
+		if !ok {
+			p.Estimate += PerAgentTokens
+			ranged = false
+			continue
+		}
+		p.Estimate += c.Mean
+		p.Low += c.P25
+		p.High += c.P90
+		if !seen[c.Type] {
+			seen[c.Type] = true
+			name := c.Type
+			if name == CostAll {
+				name = "recent"
+			}
+			p.Basis = append(p.Basis, fmt.Sprintf("%d %s", c.Samples, name))
+		}
+	}
+	if !ranged {
+		p.Low, p.High = 0, 0
+	}
+	return p
+}
+
+// WindowShare is the estimate as a whole percent of a window, whose size is read off the tokens the window has
+// seen and how full it is. false when that reading is too thin to divide by.
+func WindowShare(estimate, windowTokens int64, windowPct float64) (int, bool) {
+	if windowPct < minPctForShare || windowTokens <= 0 {
 		return 0, false
 	}
-	capacity := float64(fiveHourTokens) * 100 / fiveHourPct
+	capacity := float64(windowTokens) * 100 / windowPct
 	return int(math.Round(float64(estimate) * 100 / capacity)), true
+}
+
+// SessionShare is the whole percent of a window one session's tokens took: the window's reported percent,
+// apportioned by tokens. false when the session has no tokens in the window, or the window none at all
+func SessionShare(sessionTokens, windowTokens int64, windowPct float64) (int, bool) {
+	if sessionTokens <= 0 || windowTokens <= 0 {
+		return 0, false
+	}
+	sessionTokens = min(sessionTokens, windowTokens)
+	return int(math.Round(float64(sessionTokens) * windowPct / float64(windowTokens))), true
+}
+
+// QuotaFrom turns what was read into what the card and the rules use, for a spawn of estimate tokens. A window
+// whose percent or reset is unknown gets no shares: its token count's cutoff was only a guess.
+func QuotaFrom(r Reading, estimate int64) Quota {
+	q := Quota{FiveHourPct: r.FiveHourPct, FiveHourReset: r.FiveHourReset, WeekPct: r.WeekPct, WeekReset: r.WeekReset}
+	if !r.Counted {
+		return q
+	}
+	var use SessionUse
+	if r.FiveHourPct != nil && r.FiveHourReset != nil {
+		if share, ok := WindowShare(estimate, r.WindowFiveHour, *r.FiveHourPct); ok {
+			q.Share = &share
+		}
+		if pct, ok := SessionShare(r.SessionFiveHour, r.WindowFiveHour, *r.FiveHourPct); ok {
+			use.FiveHourPct = &pct
+		}
+	}
+	if r.WeekPct != nil && r.WeekReset != nil {
+		if share, ok := WindowShare(estimate, r.WindowWeek, *r.WeekPct); ok {
+			q.WeekShare = &share
+		}
+		if pct, ok := SessionShare(r.SessionWeek, r.WindowWeek, *r.WeekPct); ok {
+			use.WeekPct = &pct
+		}
+	}
+	if use.FiveHourPct != nil || use.WeekPct != nil {
+		use.Subagents = r.Subagents
+		q.Session = &use
+	}
+	return q
 }
 
 // Asks says whether the spawn is worth the person's say
@@ -114,6 +262,11 @@ func Asks(r Rules, s Spawn, q Quota) bool {
 	case r.WindowPct > 0 && q.FiveHourPct != nil && *q.FiveHourPct >= r.WindowPct:
 		return true
 	case r.SharePct > 0 && q.Share != nil && float64(*q.Share) >= r.SharePct:
+		return true
+	case r.WeekPct > 0 && q.WeekPct != nil && *q.WeekPct >= r.WeekPct:
+		return true
+	case r.SessionPct > 0 && q.Session != nil && q.Session.FiveHourPct != nil &&
+		float64(*q.Session.FiveHourPct) >= r.SessionPct:
 		return true
 	}
 	return false
@@ -149,15 +302,77 @@ func what(s Spawn) string {
 	return "start " + plural(n, "subagent")
 }
 
+// joinAnd lists parts as a sentence does: "a", "a and b", "a, b and c"
+func joinAnd(parts []string) string {
+	if len(parts) <= 1 {
+		return strings.Join(parts, "")
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+}
+
+// costText is the estimate and what it rests on; long is the card's spelling, else the note's
+func costText(p Priced, long bool) string {
+	est := FormatTokens(p.Estimate)
+	switch {
+	case len(p.Basis) == 0:
+		return fmt.Sprintf("about %s tokens (rough)", est)
+	case p.High == 0 && long:
+		return fmt.Sprintf("about %s tokens (rough, partly from %s subagents)", est, joinAnd(p.Basis))
+	case p.High == 0:
+		return fmt.Sprintf("about %s tokens (rough, partly %s)", est, strings.Join(p.Basis, ", "))
+	case long:
+		return fmt.Sprintf("about %s tokens, likely %s–%s (from %s subagents)",
+			est, FormatTokens(p.Low), FormatTokens(p.High), joinAnd(p.Basis))
+	}
+	return fmt.Sprintf("about %s tokens (%s–%s, %s)", est, FormatTokens(p.Low), FormatTokens(p.High), strings.Join(p.Basis, ", "))
+}
+
+// approx is a derived percent as the note says it: "~9%", or "<1%" below one
+func approx(pct int) string {
+	if pct < 1 {
+		return "<1%"
+	}
+	return fmt.Sprintf("~%d%%", pct)
+}
+
+// about is a derived percent as the card says it: "about 9%", or "less than 1%"
+func about(pct int) string {
+	if pct < 1 {
+		return "less than 1%"
+	}
+	return fmt.Sprintf("about %d%%", pct)
+}
+
+// sessionParts names the session's known shares, the 5h one first; say spells a percent, fiveHour names the window
+func sessionParts(u *SessionUse, say func(int) string, fiveHour string) []string {
+	if u == nil {
+		return nil
+	}
+	var parts []string
+	if u.FiveHourPct != nil {
+		parts = append(parts, say(*u.FiveHourPct)+" of "+fiveHour)
+	}
+	if u.WeekPct != nil {
+		parts = append(parts, say(*u.WeekPct)+" of the week")
+	}
+	return parts
+}
+
 // Note is the log line of a spawn that runs without asking
-func Note(s Spawn, q Quota) string {
+func Note(s Spawn, p Priced, q Quota) string {
 	var b strings.Builder
 	verb, rest, _ := strings.Cut(what(s), " ")
-	fmt.Fprintf(&b, "Token burn: %s %s, about %s tokens (rough)", ing(verb), rest, FormatTokens(Estimate(s)))
+	fmt.Fprintf(&b, "Token burn: %s %s, %s", ing(verb), rest, costText(p, false))
 	if q.Share != nil {
-		fmt.Fprintf(&b, ", ~%d%% of the 5h window", *q.Share)
+		fmt.Fprintf(&b, ", %s of the 5h window", approx(*q.Share))
+	}
+	if q.WeekShare != nil {
+		fmt.Fprintf(&b, ", %s of the week", approx(*q.WeekShare))
 	}
 	b.WriteString(".")
+	if parts := sessionParts(q.Session, approx, "5h"); len(parts) > 0 {
+		fmt.Fprintf(&b, " This session so far: %s.", strings.Join(parts, ", "))
+	}
 	return b.String()
 }
 
@@ -169,13 +384,20 @@ func ing(verb string) string {
 	return verb + "ing"
 }
 
-// Question is the card. loc is where the reset time is read; the caller passes time.Local
-func Question(s Spawn, q Quota, loc *time.Location) baseds.AgentAskQuestion {
+// Question is the card. loc is where the reset times are read; the caller passes time.Local
+func Question(s Spawn, p Priced, q Quota, loc *time.Location) baseds.AgentAskQuestion {
 	var b strings.Builder
-	fmt.Fprintf(&b, "An agent wants to %s, about %s tokens (rough).", what(s), FormatTokens(Estimate(s)))
+	fmt.Fprintf(&b, "An agent wants to %s, %s.", what(s), costText(p, true))
 	if s.ContextTokens > 0 && s.ContextMax > 0 {
 		fmt.Fprintf(&b, " Its own context is %s of %s, and each of its further calls re-reads that.",
 			FormatTokens(s.ContextTokens), FormatTokens(s.ContextMax))
+	}
+	if parts := sessionParts(q.Session, about, "the 5-hour window"); len(parts) > 0 {
+		fmt.Fprintf(&b, " This session has used %s so far", strings.Join(parts, " and "))
+		if n := q.Session.Subagents; n > 0 {
+			fmt.Fprintf(&b, ", its %s included", plural(n, "subagent"))
+		}
+		b.WriteString(".")
 	}
 	if q.FiveHourPct != nil {
 		fmt.Fprintf(&b, " The 5-hour window is %d%% used", int(math.Round(*q.FiveHourPct)))
@@ -183,7 +405,17 @@ func Question(s Spawn, q Quota, loc *time.Location) baseds.AgentAskQuestion {
 			fmt.Fprintf(&b, " and resets at %s", time.Unix(*q.FiveHourReset, 0).In(loc).Format("15:04"))
 		}
 		if q.Share != nil {
-			fmt.Fprintf(&b, "; this would take about %d%% more", *q.Share)
+			fmt.Fprintf(&b, "; this would take %s more", about(*q.Share))
+		}
+		b.WriteString(".")
+	}
+	if q.WeekPct != nil {
+		fmt.Fprintf(&b, " The week is %d%% used", int(math.Round(*q.WeekPct)))
+		if q.WeekReset != nil {
+			fmt.Fprintf(&b, " and resets %s", time.Unix(*q.WeekReset, 0).In(loc).Format("Mon 15:04"))
+		}
+		if q.WeekShare != nil {
+			fmt.Fprintf(&b, "; this would take %s of it", about(*q.WeekShare))
 		}
 		b.WriteString(".")
 	}
@@ -211,8 +443,8 @@ func Choice(answers []baseds.AgentAnswerItem, cancelled bool) int {
 	return OptionDeny
 }
 
-// VerdictFor turns the person's choice into the line the mod reads
-func VerdictFor(choice int, s Spawn) Verdict {
+// VerdictFor turns the person's choice into the line the mod reads; estimate is the spawn's priced tokens
+func VerdictFor(choice int, s Spawn, estimate int64) Verdict {
 	switch choice {
 	case OptionAllow:
 		return Verdict{Run: true}
@@ -225,10 +457,63 @@ func VerdictFor(choice int, s Spawn) Verdict {
 		"Not run: the person chose not to %s now (token budget, about %s tokens). "+
 			"Do not retry a spawn this turn; do the work in this session or ask the person, "+
 			"and say in your report that the spawn was refused.",
-		what(s), FormatTokens(Estimate(s)))}
+		what(s), FormatTokens(estimate))}
 }
 
 // Asking is the hold line while the card waits
 func Asking(s Spawn) Hold {
 	return Hold{fmt.Sprintf("Token burn: waiting for your answer on arcterm's card before the agent may %s.", what(s))}
+}
+
+// LogPath is the estimate log under home: one line per spawn group `wsh tokengate` decided, which
+// `wsh tokengate review` (usagestats.ReviewEstimates) reads back
+func LogPath(home string) string {
+	return filepath.Join(home, ".arc", "tokengate", "estimates.jsonl")
+}
+
+// LogLine is one line of the estimate log; usagestats.EstimateLine reads the same JSON
+type LogLine struct {
+	Ts       int64    `json:"ts"`
+	Session  string   `json:"session"`
+	Tool     string   `json:"tool"`
+	Agents   int      `json:"agents"`
+	Types    []string `json:"types"`
+	Estimate int64    `json:"estimate"`
+	Low      int64    `json:"low"`
+	High     int64    `json:"high"`
+	Verdict  string   `json:"verdict"`
+}
+
+// VerdictName is how the log names a verdict: "run" when no card asked, else what the person picked
+func VerdictName(v Verdict, asked bool) string {
+	switch {
+	case !v.Run:
+		return "deny"
+	case !asked:
+		return "run"
+	case v.Scope == ScopeTurn:
+		return "allow-turn"
+	case v.Scope == ScopeSession:
+		return "allow-session"
+	}
+	return "allow"
+}
+
+// NewLogLine is the log line for a decided spawn group
+func NewLogLine(now time.Time, session string, s Spawn, p Priced, v Verdict, asked bool) LogLine {
+	types := s.Types
+	if types == nil {
+		types = []string{}
+	}
+	return LogLine{
+		Ts:       now.Unix(),
+		Session:  session,
+		Tool:     s.Tool,
+		Agents:   max(s.Agents, 1),
+		Types:    types,
+		Estimate: p.Estimate,
+		Low:      p.Low,
+		High:     p.High,
+		Verdict:  VerdictName(v, asked),
+	}
 }
