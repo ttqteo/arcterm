@@ -86,6 +86,8 @@ const (
 	ConfigKey_TokenGateSharePct              = "tokengate:sharepct"
 	ConfigKey_TokenGateWindowPct             = "tokengate:windowpct"
 	ConfigKey_TokenGateAgents                = "tokengate:agents"
+	ConfigKey_TokenGateWeekPct               = "tokengate:weekpct"
+	ConfigKey_TokenGateSessionPct            = "tokengate:sessionpct"
 
 	ConfigKey_JobsSlots                      = "jobs:slots"
 	ConfigKey_JobsMode                       = "jobs:mode"

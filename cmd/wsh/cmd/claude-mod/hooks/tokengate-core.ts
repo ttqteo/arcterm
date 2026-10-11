@@ -3,20 +3,26 @@
 // can run it, the gate's gathering and decisions included; register.ts only wires the tool.call hooks to it.
 
 export type SpawnTool = "Agent" | "Task" | "Workflow";
-export type SpawnCount = { agents: number; atLeast: boolean };
+export type SpawnCount = { agents: number; atLeast: boolean; types: string[] };
 export type Group = { tool: SpawnTool } & SpawnCount;
 export type SpawnVerdict = { run: boolean; scope: "turn" | "session" | null; reason: string | null; note: string | null };
 export type Decision = "allow-turn" | "allow-session" | "deny-turn" | null;
 
-// a workflow's agents are its agent( call sites, a floor: a loop or parallel() over a list multiplies them.
-// one named or read from a file is unknown, so at least one
+// a call's agents and the subagent types known of them: Agent and Task start one, of the input's subagent_type
+// (general-purpose, Claude Code's default, when absent). a workflow's agents are its agent( call sites, a floor: a
+// loop or parallel() over a list multiplies them, and their types are unknown; one named or read from a file is at
+// least one
 export function spawnCount(tool: SpawnTool, input: Record<string, unknown>): SpawnCount {
     if (tool !== "Workflow") {
-        return { agents: 1, atLeast: false };
+        const type =
+            typeof input.subagent_type === "string" && input.subagent_type !== ""
+                ? input.subagent_type
+                : "general-purpose";
+        return { agents: 1, atLeast: false, types: [type] };
     }
     const script = typeof input.script === "string" ? input.script : "";
     const sites = script.match(/\bagent\s*\(/g)?.length ?? 0;
-    return { agents: Math.max(1, sites), atLeast: true };
+    return { agents: Math.max(1, sites), atLeast: true, types: [] };
 }
 
 // parallel spawns in one message ask on one card
@@ -28,16 +34,29 @@ export function joinGroup(g: Group | null, tool: SpawnTool, c: SpawnCount): Grou
         tool: g.tool === "Workflow" || tool === "Workflow" ? "Workflow" : g.tool,
         agents: g.agents + c.agents,
         atLeast: g.atLeast || c.atLeast,
+        types: [...g.types, ...c.types],
     };
 }
 
-export function tokengateArgs(g: Group, context: { tokens: number; window: number } | null): string[] {
+// the types let wsh price each agent from finished subagents of its type; the transcript lets it read what this
+// session, its subagents included, has used of each window
+export function tokengateArgs(
+    g: Group,
+    context: { tokens: number; window: number } | null,
+    transcript: string | null = null
+): string[] {
     const args = ["tokengate", "--tool", g.tool, "--agents", String(g.agents)];
     if (g.atLeast) {
         args.push("--at-least");
     }
+    if (g.types.length > 0) {
+        args.push("--types", g.types.join(","));
+    }
     if (context) {
         args.push("--context-tokens", String(Math.round(context.tokens)), "--context-max", String(context.window));
+    }
+    if (transcript) {
+        args.push("--transcript", transcript);
     }
     return args;
 }

@@ -42,6 +42,7 @@ import {
     type DonutWindow,
 } from "./ratelimitstore";
 import { sessionKey } from "./sessionsruns";
+import { SubagentCostCard } from "./subagentcostcard";
 import { SurfaceError, SurfaceHeader } from "./surfacescaffold";
 import { buildUsageDigest } from "./usagedigest";
 import { insightsCard, insightsHeld } from "./usageinsights";
@@ -53,10 +54,14 @@ import {
     insightsRunningAtom,
     loadSavedInsights,
     loadSessionUsage,
+    loadSubagentCosts,
     savedInsightsAtom,
     sessionShowAllAtom,
     sessionUsageAtom,
     sessionUsageLoadedAtom,
+    sessionWindowTokensAtom,
+    subagentCostsAtom,
+    subagentCostsLoadedAtom,
     usageSessionCursorAtom,
 } from "./usageinsightsstore";
 import { kpiGridClass, soloHarness, statGridClass, visibleClasses } from "./usagelayout";
@@ -515,11 +520,10 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         return () => clearInterval(refresh);
     }, [usageWindow]);
 
-    // The By session table and the saved analysis load with the window but not on the 60s tick above: a session
-    // scan reads every transcript line by line.
+    // The saved analysis loads with the window but not on the 60s tick above: a session scan reads every transcript
+    // line by line. (The By session rows load below, with the quota windows.)
     const windowDays = usageWindow === "7d" ? 7 : 0;
     useEffect(() => {
-        void loadSessionUsage(windowDays);
         void loadSavedInsights();
     }, [windowDays]);
     const sessions = useAtomValue(sessionUsageAtom);
@@ -578,9 +582,33 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
     // All of it is for the Claude tab only; elsewhere the lists stay empty and nothing is published to the list nav.
     const claude = scope === "claude";
     const windowLabel = usageWindow === "7d" ? "last 7 days" : "all time";
+    // Claude's 5-hour and weekly windows, as Live limits reads them. The By session rows load with the window and again
+    // when a quota window rolls over, since their 5h and Wk shares count tokens from each window's reset.
+    const claudeDonut = donuts.find((d) => d.provider === "claude");
+    const fiveHourPct = claudeDonut?.fivehour.pct;
+    const fiveHourReset = claudeDonut?.fivehour.reset;
+    const weekPct = claudeDonut?.week.pct;
+    const weekReset = claudeDonut?.week.reset;
+    useEffect(() => {
+        void loadSessionUsage(windowDays, fiveHourReset, weekReset);
+        void loadSubagentCosts();
+    }, [windowDays, fiveHourReset, weekReset]);
+    const sessionWindows = useAtomValue(sessionWindowTokensAtom);
+    const subagentCosts = useAtomValue(subagentCostsAtom);
+    const subagentCostsLoaded = useAtomValue(subagentCostsLoadedAtom);
     const sessionRows = useMemo(
-        () => (claude ? buildSessionRows(sessions, liveSessionTabs(agents)) : []),
-        [claude, sessions, agents]
+        () =>
+            claude
+                ? buildSessionRows(sessions, liveSessionTabs(agents), {
+                      fiveHourPct,
+                      fiveHourReset,
+                      weekPct,
+                      weekReset,
+                      windowFiveHourTokens: sessionWindows.fiveHour,
+                      windowWeekTokens: sessionWindows.week,
+                  })
+                : [],
+        [claude, sessions, agents, fiveHourPct, fiveHourReset, weekPct, weekReset, sessionWindows]
     );
     const visibleRows = useMemo(() => visibleSessionRows(sessionRows, showAllSessions), [sessionRows, showAllSessions]);
     const insights = insightsCard({
@@ -591,8 +619,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
         windowDays,
         now,
     });
-    // Claude's 5-hour and weekly windows, as Live limits reads them. A dev fixture can stand in for the 5-hour one.
-    const claudeDonut = donuts.find((d) => d.provider === "claude");
+    // A dev fixture can stand in for the 5-hour window.
     const heldPct = devHeldPct();
     const heldWindows: DonutWindow[] = [
         heldPct != null ? { ...claudeDonut?.fivehour, pct: heldPct } : (claudeDonut?.fivehour ?? {}),
@@ -912,6 +939,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                         onOpen={openSession}
                                     />
                                 ) : null}
+                                <SubagentCostCard costs={subagentCosts} loaded={subagentCostsLoaded} />
                             </>
                         ) : (
                             <>
@@ -932,6 +960,7 @@ export function UsageSurface({ model }: { model: AgentsViewModel }) {
                                     cursorId={undefined}
                                     onOpen={() => {}}
                                 />
+                                <SubagentCostCard costs={[]} loaded={false} />
                             </>
                         )
                     ) : null}

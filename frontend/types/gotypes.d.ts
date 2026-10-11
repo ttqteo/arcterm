@@ -1073,6 +1073,24 @@ declare global {
         sessions: SessionInfo[];
     };
 
+    // wshrpc.CommandGetSessionBurnData
+    type CommandGetSessionBurnData = {
+        path?: string;
+        fivehourcutoff?: number;
+        weekcutoff?: number;
+    };
+
+    // wshrpc.CommandGetSessionBurnRtnData
+    type CommandGetSessionBurnRtnData = {
+        session: string;
+        windowfivehour: number;
+        windowweek: number;
+        sessionfivehour: number;
+        sessionweek: number;
+        subagents: number;
+        costs: SubagentCostData[];
+    };
+
     // wshrpc.CommandGetSessionGroupData
     type CommandGetSessionGroupData = {
         cwd: string;
@@ -1087,11 +1105,15 @@ declare global {
     // wshrpc.CommandGetSessionUsageData
     type CommandGetSessionUsageData = {
         windowdays?: number;
+        fivehourcutoff?: number;
+        weekcutoff?: number;
     };
 
     // wshrpc.CommandGetSessionUsageRtnData
     type CommandGetSessionUsageRtnData = {
         sessions: UsageSession[];
+        windowfivehourtokens: number;
+        windowweektokens: number;
     };
 
     // wshrpc.CommandGetSessionsActivityData
@@ -1103,6 +1125,11 @@ declare global {
     // wshrpc.CommandGetSessionsActivityRtnData
     type CommandGetSessionsActivityRtnData = {
         sessions: SessionActivity[];
+    };
+
+    // wshrpc.CommandGetSubagentCostsRtnData
+    type CommandGetSubagentCostsRtnData = {
+        costs: SubagentCostData[];
     };
 
     // wshrpc.CommandGetSubagentsData
@@ -1614,6 +1641,24 @@ declare global {
     // wshrpc.CommandRetryRadarClusteringData
     type CommandRetryRadarClusteringData = {
         reportid: string;
+    };
+
+    // wshrpc.CommandReviewTokenEstimatesData
+    type CommandReviewTokenEstimatesData = {
+        days?: number;
+    };
+
+    // wshrpc.CommandReviewTokenEstimatesRtnData
+    type CommandReviewTokenEstimatesRtnData = {
+        days: number;
+        logged: number;
+        run: number;
+        matched: number;
+        medianratio: number;
+        withrange: number;
+        inrange: number;
+        bytype: TokenEstimateTypeReview[];
+        costs: SubagentCostData[];
     };
 
     // wshrpc.CommandRunAnswerData
@@ -3069,6 +3114,8 @@ declare global {
         "tokengate:sharepct"?: number;
         "tokengate:windowpct"?: number;
         "tokengate:agents"?: number;
+        "tokengate:weekpct"?: number;
+        "tokengate:sessionpct"?: number;
         "jobs:slots"?: number;
         "jobs:mode"?: string;
         "jobs:pauseuntil"?: number;
@@ -3203,6 +3250,15 @@ declare global {
         writerrouteid: string;
     };
 
+    // wshrpc.SubagentCostData
+    type SubagentCostData = {
+        type: string;
+        samples: number;
+        mean: number;
+        p25: number;
+        p90: number;
+    };
+
     // wshrpc.SubagentFileInfo
     type SubagentFileInfo = {
         agentid: string;
@@ -3335,6 +3391,13 @@ declare global {
         navtarget?: string;
     };
 
+    // wshrpc.TokenEstimateTypeReview
+    type TokenEstimateTypeReview = {
+        type: string;
+        matched: number;
+        medianratio: number;
+    };
+
     // waveobj.UIContext
     type UIContext = {
         windowid: string;
@@ -3410,6 +3473,8 @@ declare global {
         coldtokens: number;
         firstts: number;
         lastts: number;
+        fivehourtokens: number;
+        weektokens: number;
     };
 
     // wshrpc.UsageSessionModel

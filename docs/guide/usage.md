@@ -99,6 +99,8 @@ Một hàng cho mỗi tab Claude trong khoảng đang chọn, đắt nhất đ�
 |---|---|
 | **Tab** | Tên session (ai-title; `Untitled · <id>` nếu chưa có), chấm xanh `open` nếu tab còn mở, project, model, và các chip cảnh báo. Việc do engine chạy trong worktree hiện project là `engine run`. |
 | **Share of window** | Phần chi phí của tab trong tổng chi phí Claude của khoảng đó. |
+| **5h** | Phần cửa sổ quota 5 giờ tab đã dùng, tính cả subagent: phần trăm Live limits đọc được, chia theo token. `—` khi chưa đọc được quota hay giờ reset, hoặc tab không có token trong cửa sổ. |
+| **Wk** | Như **5h**, cho cửa sổ tuần. Ghế Claude Team không có cửa sổ tuần nên luôn là `—`. |
 | **Spend** | Chi phí ước tính. |
 | **Context avg / peak** | Kích thước context trung bình và lớn nhất của các lượt chính. |
 | **Cold** | Số lần *cold resume*: quay lại tab sau hơn 60 phút (cache 1 giờ đã hết) và phải ghi lại hơn 50k token cache. |
@@ -115,6 +117,16 @@ Các chip là phép kiểm xác định, không do model đoán:
 | `long-lived` | Sống hơn 24 giờ |
 
 Bảng hiện 25 hàng đầu (`Top 25 of 314 · 61% of the window`); **Show all N** mở hết, **Show top 25** thu lại. Bấm một hàng (hoặc `Enter` khi con trỏ đang ở hàng đó) để mở: tab còn mở thì nhảy tới nó trong **Agent**, tab đã đóng thì mở transcript của nó.
+
+## Thẻ Subagent cost
+
+Dưới bảng **By session**, thẻ **Subagent cost** liệt kê chi phí các subagent đã chạy xong trong 30 ngày qua, theo loại
+(`general-purpose`, `Explore`, `fork`…): số mẫu, trung bình và khoảng p25–p90, cùng dòng **All types** cho mọi loại.
+Thẻ **Token burn** ước tính một lần spawn từ đúng những con số này: loại có từ 3 mẫu tính theo loại đó, còn lại theo
+**All types** khi nó có từ 5 mẫu, không đủ nữa thì 1.5M mỗi agent. Dòng chưa đủ mẫu hiện mờ.
+
+Mỗi lần spawn được ghi vào `~/.arc/tokengate/estimates.jsonl`. `wsh tokengate review` (mặc định 7 ngày, `--days N`)
+so các ước tính đó với các subagent thực sự đã chạy: tỉ lệ thực tế ÷ ước tính và bao nhiêu lần rơi vào khoảng thẻ đã nêu.
 
 ## Thanh meter quota trên app bar
 

@@ -3,33 +3,47 @@ import { createSpawnGate, decisionAfter, joinGroup, spawnCount, tokengateArgs, t
 import type { Group, SpawnVerdict } from "./tokengate-core";
 
 describe("spawnCount", () => {
-    it("counts one agent per Agent or Task call", () => {
-        expect(spawnCount("Agent", { prompt: "x" })).toEqual({ agents: 1, atLeast: false });
-        expect(spawnCount("Task", {})).toEqual({ agents: 1, atLeast: false });
+    it("counts one agent per Agent or Task call, of its subagent type", () => {
+        expect(spawnCount("Agent", { prompt: "x", subagent_type: "Explore" })).toEqual({ agents: 1, atLeast: false, types: ["Explore"] });
+        expect(spawnCount("Agent", { prompt: "x" })).toEqual({ agents: 1, atLeast: false, types: ["general-purpose"] });
+        expect(spawnCount("Task", {})).toEqual({ agents: 1, atLeast: false, types: ["general-purpose"] });
     });
-    it("counts a workflow's agent( call sites, at least one", () => {
-        expect(spawnCount("Workflow", { script: "agent('a'); agent ('b'); subagent('c')" })).toEqual({ agents: 2, atLeast: true });
-        expect(spawnCount("Workflow", { script: "phase('x')" })).toEqual({ agents: 1, atLeast: true });
-        expect(spawnCount("Workflow", { name: "review" })).toEqual({ agents: 1, atLeast: true });
+    it("counts a workflow's agent( call sites, at least one, with no types", () => {
+        expect(spawnCount("Workflow", { script: "agent('a'); agent ('b'); subagent('c')" })).toEqual({ agents: 2, atLeast: true, types: [] });
+        expect(spawnCount("Workflow", { script: "phase('x')" })).toEqual({ agents: 1, atLeast: true, types: [] });
+        expect(spawnCount("Workflow", { name: "review" })).toEqual({ agents: 1, atLeast: true, types: [] });
     });
 });
 
 describe("joinGroup", () => {
-    it("sums parallel spawns, and any workflow makes the group a workflow", () => {
-        const one = { agents: 1, atLeast: false };
-        const g = joinGroup(joinGroup(null, "Agent", one), "Agent", one);
-        expect(g).toEqual({ tool: "Agent", agents: 2, atLeast: false });
-        expect(joinGroup(g, "Workflow", { agents: 3, atLeast: true })).toEqual({ tool: "Workflow", agents: 5, atLeast: true });
+    it("sums parallel spawns and their types, and any workflow makes the group a workflow", () => {
+        const gp = { agents: 1, atLeast: false, types: ["general-purpose"] };
+        const g = joinGroup(joinGroup(null, "Agent", gp), "Agent", { agents: 1, atLeast: false, types: ["Explore"] });
+        expect(g).toEqual({ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "Explore"] });
+        expect(joinGroup(g, "Workflow", { agents: 3, atLeast: true, types: [] })).toEqual({
+            tool: "Workflow",
+            agents: 5,
+            atLeast: true,
+            types: ["general-purpose", "Explore"],
+        });
     });
 });
 
 describe("tokengateArgs", () => {
-    it("passes the group, and the context when known", () => {
-        expect(tokengateArgs({ tool: "Agent", agents: 2, atLeast: false }, { tokens: 142000.4, window: 200000 })).toEqual([
-            "tokengate", "--tool", "Agent", "--agents", "2", "--context-tokens", "142000", "--context-max", "200000",
+    it("passes the group, its types, and the context when known", () => {
+        expect(
+            tokengateArgs({ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "Explore"] }, { tokens: 142000.4, window: 200000 })
+        ).toEqual([
+            "tokengate", "--tool", "Agent", "--agents", "2", "--types", "general-purpose,Explore",
+            "--context-tokens", "142000", "--context-max", "200000",
         ]);
-        expect(tokengateArgs({ tool: "Workflow", agents: 1, atLeast: true }, null)).toEqual([
+        expect(tokengateArgs({ tool: "Workflow", agents: 1, atLeast: true, types: [] }, null)).toEqual([
             "tokengate", "--tool", "Workflow", "--agents", "1", "--at-least",
+        ]);
+    });
+    it("passes the session's transcript when known", () => {
+        expect(tokengateArgs({ tool: "Agent", agents: 1, atLeast: false, types: [] }, null, "/h/.claude/projects/p/s1.jsonl")).toEqual([
+            "tokengate", "--tool", "Agent", "--agents", "1", "--transcript", "/h/.claude/projects/p/s1.jsonl",
         ]);
     });
 });
@@ -79,7 +93,7 @@ describe("createSpawnGate", () => {
         const b = gate.check("Agent", {}, ask);
         wake();
         expect(await Promise.all([a, b])).toEqual([null, null]);
-        expect(asked).toEqual([{ tool: "Agent", agents: 2, atLeast: false }]);
+        expect(asked).toEqual([{ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "general-purpose"] }]);
     });
 
     it("gives a spawn that arrives while the card waits the same verdict", async () => {

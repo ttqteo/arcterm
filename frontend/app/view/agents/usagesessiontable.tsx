@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Usage surface's By session table (Claude tab): one row per Claude tab in the window, most expensive first,
-// with the share of the window's Claude spend, the context it ran at, cold resumes, how much of it was subagents,
-// and the deterministic chips that say why it cost what it did. Thin: rows, chips and the 25-row cut come from
-// usagesessions.ts. Columns and sizes follow Main.dc.html in the usage-insights prototype.
+// with the share of the window's Claude spend, its share of the 5-hour and weekly quota windows (subagents included),
+// the context it ran at, cold resumes, how much of it was subagents, and the deterministic chips that say why it cost
+// what it did. Thin: rows, chips and the 25-row cut come from usagesessions.ts. Columns and sizes follow Main.dc.html
+// in the usage-insights prototype.
 
 import { Meter } from "@/app/element/meter";
 import { SkeletonLine } from "@/app/element/skeleton";
@@ -14,8 +15,8 @@ import { Fragment, useEffect, type ReactNode } from "react";
 import { CHIP_LABEL, SESSION_ROWS, type SessionRow } from "./usagesessions";
 import { fmt, usd } from "./usagestats";
 
-// title | share bar | spend | context avg / peak | cold | subagents | lifetime
-const GRID = "grid grid-cols-[minmax(0,1fr)_150px_78px_104px_52px_64px_56px] items-center gap-3.5 px-[18px]";
+// title | share bar | 5h | wk | spend | context avg / peak | cold | subagents | lifetime
+const GRID = "grid grid-cols-[minmax(0,1fr)_150px_44px_44px_78px_104px_52px_64px_56px] items-center gap-3.5 px-[18px]";
 const NUM = "text-right text-[11.5px] tabular-nums text-secondary";
 const BUTTON_SECONDARY =
     "h-[26px] flex-none cursor-pointer rounded-md border border-edge-mid bg-surface-raised px-2.5 text-[11.5px] font-medium text-ink-mid outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
@@ -36,6 +37,12 @@ function shareStr(share: number): string {
     if (p >= 10) return `${Math.round(p)}%`;
     if (p >= 0.1) return `${p.toFixed(1)}%`;
     return p > 0 ? "<0.1%" : "0%";
+}
+
+// a quota-window share: "12%", "<1%", "—" when unknown
+function pctStr(pct: number | null): string {
+    if (pct == null) return "—";
+    return pct < 1 ? "<1%" : `${pct}%`;
 }
 
 // "<1m", "40m", "1.5h", "57h"
@@ -126,6 +133,12 @@ function Row({
                     {shareStr(row.share)}
                 </span>
             </span>
+            <span data-usage-session-5h="" className={NUM}>
+                {pctStr(row.fiveHourPct)}
+            </span>
+            <span data-usage-session-wk="" className={NUM}>
+                {pctStr(row.weekPct)}
+            </span>
             <span className={NUM}>{usd(row.spendUsd)}</span>
             {/* a session with no main turns in the window has no context to average */}
             <span className={NUM}>{row.avgCtx > 0 ? `${fmt(row.avgCtx)} / ${fmt(row.maxCtx)}` : "—"}</span>
@@ -143,6 +156,12 @@ function Header() {
         <div className={cn(GRID, "border-b border-edge-faint py-2.5 text-[10.5px] whitespace-nowrap text-muted")}>
             <span>Tab</span>
             <span>Share of window</span>
+            <span className="text-right" title="This tab's share of the 5-hour quota window, subagents included">
+                5h
+            </span>
+            <span className="text-right" title="This tab's share of the weekly quota window, subagents included">
+                Wk
+            </span>
             <span className="text-right">Spend</span>
             <span className="text-right">Context avg / peak</span>
             <span className="text-right">Cold</span>
@@ -154,11 +173,13 @@ function Header() {
 
 function SkeletonRows() {
     return (
-        <div aria-hidden="true">
+        <div aria-hidden="true" data-usage-sessions-skeleton="">
             {[0, 1, 2, 3, 4].map((i) => (
                 <div key={i} className={cn(GRID, "border-b border-edge-faint py-3.5 last:border-b-0")}>
                     <SkeletonLine className="h-[11px] w-[55%]" />
                     <SkeletonLine className="h-[5px] w-full rounded-[3px]" />
+                    <SkeletonLine className="ml-auto h-[10px] w-[24px]" />
+                    <SkeletonLine className="ml-auto h-[10px] w-[24px]" />
                     <SkeletonLine className="ml-auto h-[10px] w-[40px]" />
                     <SkeletonLine className="ml-auto h-[10px] w-[64px]" />
                     <SkeletonLine className="ml-auto h-[10px] w-[16px]" />
@@ -213,7 +234,7 @@ export function UsageSessionTable({
             />
             <div className="overflow-hidden rounded-[14px] border border-border bg-surface-raised">
                 <div className="overflow-x-auto">
-                    <div className="min-w-[720px]">
+                    <div className="min-w-[820px]">
                         <Header />
                         {loaded ? (
                             visible.map((r) => (

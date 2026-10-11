@@ -27,6 +27,17 @@ Add one line in the same commit as any change a user would notice, under `Added`
   in `~/.arc/attachments` rather than a temp folder emptied after a day, so the pictures stay; **Settings → Storage**
   removes them under Logs, cache and trash. An image whose file is gone is named in its place.
 
+### Changed
+
+- The Token burn card prices a spawn from what finished subagents of the same type cost (general-purpose, Explore,
+  fork…), with a likely range, and says how much of the 5-hour and weekly windows the agent's session has used so
+  far, its subagents included. It also asks when the week is 80% used (`tokengate:weekpct`) or the session has used
+  25% of the 5-hour window (`tokengate:sessionpct`). `wsh tokengate review` shows how far the estimates of the last
+  week were from what ran.
+
+- **Usage → By session** shows each tab's share of the 5-hour and weekly quota windows (**5h**, **Wk**), and a
+  **Subagent cost** card lists what each subagent type costs: the figures the Token burn card prices from.
+
 ### Fixed
 
 - **Float** shows an orchestrator run as one tab, its lead, not a tab for every worker and reviewer it started;

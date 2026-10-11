@@ -474,16 +474,10 @@ func walkOpencodeFiles(root string, cutoff time.Time) []scanFile {
 	return files
 }
 
-// parseFiles reads + parses each transcript concurrently (through parseCache, so an unchanged file
-// is not read again), bounded to NumCPU workers, and returns the concatenated records, each file's
-// cut to its scanFile cutoff and not deduped across files. The all-time corpus is GBs across thousands of files, and
-// a single-threaded json.Unmarshal per line dominated load time; fanning the per-file parse across
-// cores is the bulk of the speedup. Result order is unspecified — callers dedupe + bucket, both
-// order-independent. Codex files are read whole (the model lives on a turn_context line, so they
-// can't be pre-filtered); Claude files skip lines that can't carry usage (readClaudeLines). OpenCode
-// files are whole-file JSON with the message timestamp as the window, and Pi files are whole
-// v3 sessions read via pisession with the entry timestamp as the window.
-func parseFiles(files []scanFile) []Record {
+// parseEach reads + parses each transcript concurrently (through parseCache, so an unchanged file is not read
+// again), bounded to NumCPU workers, and returns each file's records at its index in files: uncut, and shared with
+// the cache, so not to be modified.
+func parseEach(files []scanFile) [][]Record {
 	workers := runtime.NumCPU()
 	if workers < 1 {
 		workers = 1
@@ -501,8 +495,21 @@ func parseFiles(files []scanFile) []Record {
 		}(i, f)
 	}
 	wg.Wait()
+	return results
+}
+
+// parseFiles reads + parses each transcript concurrently (through parseCache, so an unchanged file
+// is not read again), bounded to NumCPU workers, and returns the concatenated records, each file's
+// cut to its scanFile cutoff and not deduped across files. The all-time corpus is GBs across thousands of files, and
+// a single-threaded json.Unmarshal per line dominated load time; fanning the per-file parse across
+// cores is the bulk of the speedup. Result order is unspecified — callers dedupe + bucket, both
+// order-independent. Codex files are read whole (the model lives on a turn_context line, so they
+// can't be pre-filtered); Claude files skip lines that can't carry usage (readClaudeLines). OpenCode
+// files are whole-file JSON with the message timestamp as the window, and Pi files are whole
+// v3 sessions read via pisession with the entry timestamp as the window.
+func parseFiles(files []scanFile) []Record {
 	var records []Record
-	for i, recs := range results {
+	for i, recs := range parseEach(files) {
 		cutoff := files[i].cutoff
 		for _, r := range recs {
 			if cutoff.IsZero() || !r.TS.Before(cutoff) {

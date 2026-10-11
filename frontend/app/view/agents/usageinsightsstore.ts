@@ -14,6 +14,17 @@ import { atom, type PrimitiveAtom } from "jotai";
 
 export const sessionUsageAtom = atom<UsageSession[]>([]) as PrimitiveAtom<UsageSession[]>;
 export const sessionUsageLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// every session's tokens since each quota window's cutoff, for the By session 5h and Wk columns
+export const sessionWindowTokensAtom = atom<{ fiveHour: number; week: number }>({
+    fiveHour: 0,
+    week: 0,
+}) as PrimitiveAtom<{ fiveHour: number; week: number }>;
+// what finished subagents cost by type, for the Subagent cost card
+export const subagentCostsAtom = atom<SubagentCostData[]>([]) as PrimitiveAtom<SubagentCostData[]>;
+export const subagentCostsLoadedAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+
+const FIVE_HOUR_S = 5 * 3600;
+const WEEK_S = 7 * 24 * 3600;
 // the last analysis: the saved one from disk, or the one Analyze just returned. undefined until one exists.
 export const savedInsightsAtom = atom<UsageInsights | undefined>(undefined) as PrimitiveAtom<UsageInsights | undefined>;
 export const insightsRunningAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
@@ -31,6 +42,9 @@ const ANALYZE_TIMEOUT_MS = 150_000;
 // (import.meta.env.DEV is false in a production build). A localStorage JSON object, read each time a
 // loader or analyzeUsage runs, so a scenario can change `analyze` and press `a` without a reload:
 //   sessions  the By session rows (absent: none)
+//   windowfivehourtokens, windowweektokens  every session's tokens in the 5-hour and weekly windows (absent: 0)
+//   costs     the Subagent cost rows (absent: none)
+//   delayms   how long loadSessionUsage and loadSubagentCosts wait before reading the fixture (absent: 0)
 //   saved     the last saved analysis (absent: never analysed)
 //   analyze   what the next Analyze does: "ok" resolves `result` after 1.5 s, "error" rejects after 1.5 s,
 //             "hang" never settles
@@ -43,6 +57,10 @@ const DEV_ANALYZE_ERROR = "the analysis did not finish: Claude gave no answer wi
 
 interface DevInsightsFixture {
     sessions?: UsageSession[];
+    windowfivehourtokens?: number;
+    windowweektokens?: number;
+    costs?: SubagentCostData[];
+    delayms?: number;
     saved?: UsageInsights;
     analyze?: "ok" | "error" | "hang";
     result?: UsageInsights;
@@ -65,6 +83,13 @@ function devInsights(): DevInsightsFixture | undefined {
 export function devHeldPct(): number | undefined {
     const pct = devInsights()?.heldPct;
     return typeof pct === "number" ? pct : undefined;
+}
+
+// holds a loader for the fixture's delayms, so a scenario can look at the loading state
+async function devDelay(fixture: DevInsightsFixture): Promise<void> {
+    if (fixture.delayms != null && fixture.delayms > 0) {
+        await new Promise((r) => setTimeout(r, fixture.delayms));
+    }
 }
 
 function devAnalyze(fixture: DevInsightsFixture, windowDays: number): Promise<UsageInsights> {
@@ -97,7 +122,9 @@ let sessionSeq = 0;
 // the window the held sessions were requested for; undefined until the first load
 let heldSessionWindow: number | undefined;
 
-export async function loadSessionUsage(windowDays: number): Promise<void> {
+// fiveHourReset / weekReset are the Claude windows' resets (epoch seconds) as Live limits reads them; the rows' 5h and
+// Wk tokens count from reset − window, and from the trailing window when a reset is unknown
+export async function loadSessionUsage(windowDays: number, fiveHourReset?: number, weekReset?: number): Promise<void> {
     const seq = ++sessionSeq;
     // the skeleton shows while a different window loads; reopening the surface keeps the rows it holds
     if (windowDays !== heldSessionWindow) {
@@ -106,19 +133,56 @@ export async function loadSessionUsage(windowDays: number): Promise<void> {
     }
     try {
         const fixture = devInsights();
-        const sessions =
-            fixture != null
-                ? (fixture.sessions ?? [])
-                : ((await RpcApi.GetSessionUsageCommand(TabRpcClient, { windowdays: windowDays })).sessions ?? []);
+        let sessions: UsageSession[];
+        let windows = { fiveHour: 0, week: 0 };
+        if (fixture != null) {
+            await devDelay(fixture);
+            sessions = fixture.sessions ?? [];
+            windows = { fiveHour: fixture.windowfivehourtokens ?? 0, week: fixture.windowweektokens ?? 0 };
+        } else {
+            const rtn = await RpcApi.GetSessionUsageCommand(TabRpcClient, {
+                windowdays: windowDays,
+                fivehourcutoff: fiveHourReset != null ? fiveHourReset - FIVE_HOUR_S : undefined,
+                weekcutoff: weekReset != null ? weekReset - WEEK_S : undefined,
+            });
+            sessions = rtn.sessions ?? [];
+            windows = { fiveHour: rtn.windowfivehourtokens ?? 0, week: rtn.windowweektokens ?? 0 };
+        }
         if (seq !== sessionSeq) {
             return; // a newer load superseded this one
         }
         globalStore.set(sessionUsageAtom, sessions);
+        globalStore.set(sessionWindowTokensAtom, windows);
     } catch {
         // keep the last-good rows
     } finally {
         if (seq === sessionSeq) {
             globalStore.set(sessionUsageLoadedAtom, true);
+        }
+    }
+}
+
+let costsSeq = 0;
+
+export async function loadSubagentCosts(): Promise<void> {
+    const seq = ++costsSeq;
+    try {
+        const fixture = devInsights();
+        let costs: SubagentCostData[];
+        if (fixture != null) {
+            await devDelay(fixture);
+            costs = fixture.costs ?? [];
+        } else {
+            costs = (await RpcApi.GetSubagentCostsCommand(TabRpcClient)).costs ?? [];
+        }
+        if (seq === costsSeq) {
+            globalStore.set(subagentCostsAtom, costs);
+        }
+    } catch {
+        // keep the last-good rows
+    } finally {
+        if (seq === costsSeq) {
+            globalStore.set(subagentCostsLoadedAtom, true);
         }
     }
 }

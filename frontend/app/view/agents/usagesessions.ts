@@ -32,6 +32,8 @@ export interface SessionRow {
     spendUsd: number;
     subSpendUsd: number;
     share: number; // 0..1 of the window's Claude spend over every session
+    fiveHourPct: number | null; // whole percent of the 5-hour quota window, subagents included; null unknown
+    weekPct: number | null; // the same for the weekly window
     avgCtx: number;
     maxCtx: number;
     coldResumes: number;
@@ -89,9 +91,39 @@ function chipsOf(
     return chips;
 }
 
+// The live Claude windows a row's 5h and Wk shares divide: their percents and resets (epoch seconds) as Live limits
+// reads them, and every session's tokens since each window's cutoff (GetSessionUsage)
+export interface SessionQuota {
+    fiveHourPct?: number;
+    fiveHourReset?: number;
+    weekPct?: number;
+    weekReset?: number;
+    windowFiveHourTokens: number;
+    windowWeekTokens: number;
+}
+
+// A session's share of a quota window, as a whole percent: the window's reported percent apportioned by tokens, as
+// the Token burn card does (pkg/tokengate SessionShare). null when the window's percent or reset is unknown, or the
+// session or the window has no tokens in it.
+export function windowSharePct(
+    sessionTokens: number,
+    windowTokens: number,
+    pct?: number,
+    reset?: number
+): number | null {
+    if (pct == null || reset == null || sessionTokens <= 0 || windowTokens <= 0) {
+        return null;
+    }
+    return Math.round((Math.min(sessionTokens, windowTokens) * pct) / windowTokens);
+}
+
 // One row per session, most expensive first. `live` maps a session id to the tab running it
-// (liveSessionTabs).
-export function buildSessionRows(sessions: UsageSession[], live: Map<string, string>): SessionRow[] {
+// (liveSessionTabs); `quota` gives each row its 5h and Wk shares (null leaves them unknown).
+export function buildSessionRows(
+    sessions: UsageSession[],
+    live: Map<string, string>,
+    quota: SessionQuota | null = null
+): SessionRow[] {
     const partial = sessions.map((s) => {
         let spendUsd = 0;
         let subSpendUsd = 0;
@@ -118,6 +150,17 @@ export function buildSessionRows(sessions: UsageSession[], live: Map<string, str
             coldResumes: s.coldresumes,
             coldSpendUsd: (s.coldtokens * coldRate) / 1_000_000,
             lifetimeMs,
+            fiveHourPct: quota
+                ? windowSharePct(
+                      s.fivehourtokens ?? 0,
+                      quota.windowFiveHourTokens,
+                      quota.fiveHourPct,
+                      quota.fiveHourReset
+                  )
+                : null,
+            weekPct: quota
+                ? windowSharePct(s.weektokens ?? 0, quota.windowWeekTokens, quota.weekPct, quota.weekReset)
+                : null,
         };
         return { ...row, chips: chipsOf(row) };
     });

@@ -160,7 +160,9 @@ async function askTokengate($: EngineInterface, group: Group): Promise<SpawnVerd
     let verdict = RUN_VERDICT;
     let buffered = "";
     try {
-        for await (const chunk of $.process.spawn({ argv: [WSH, ...tokengateArgs(group, lastContext)] })) {
+        for await (const chunk of $.process.spawn({
+            argv: [WSH, ...tokengateArgs(group, lastContext, transcriptPath)],
+        })) {
             if (chunk.stream !== "stdout") {
                 continue;
             }
