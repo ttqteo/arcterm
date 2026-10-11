@@ -31,21 +31,25 @@ Selectors are the ones already in the code unless marked *new*.
    opens its run sheet.
 4. `[data-jarvis-brief-region="behind"]` with `[data-jarvis-brief-mark-seen]`: what landed since you last looked.
 5. `[data-jarvis-brief-filter]`: `/` filters the Brief, `Esc` clears it.
-6. Centered card: the Brief's keys, `j` / `k`, `Enter`, `d`, `e`, `Shift+G`, `i`.
+6. Centered card: the Brief's keys, `j` / `k`, `Enter`, `e`, `Shift+G`, `i` (Jarvis binds no `d`; that key toggles
+   the Agent rail).
 
 ### Initiatives
 
 1. `[data-jarvis-new-initiative]`: a piece of work bigger than one run.
 2. `[data-jarvis-brief-row="initiative"]` with `[data-jarvis-segment-bar]`: one segment per chunk.
 3. `[data-jarvis-work-on]` and `[data-jarvis-initiative-menu]`: start an agent on it (`w`); rename, pause, archive.
-4. The tour reveals the first initiative (`briefRevealChunkAtom`) and lights `[data-jarvis-initiative-detail="true"]`:
+4. The tour opens the first initiative by clicking its card, as a person would (`briefRevealChunkAtom` jumps to a
+   named chunk and needs the initiative's detail loaded first), and lights `[data-jarvis-initiative-detail="true"]`:
    stages, chunks, `[data-jarvis-chunk-status]`, `[data-jarvis-add-chunk]`.
 5. `[data-jarvis-ideas]` with `[data-jarvis-jot-idea]`: ideas with no chunks yet; **Plan it** has an agent split one.
 6. `[data-jarvis-brief-archived]`: archived initiatives.
 
 ### Run sheet
 
-The tour opens the newest run's sheet (`openAddress(model, "run:<id>")`); with no run, every step is a centered card.
+The tour opens the newest run's sheet: the run the Brief lists first (its live runs in row order, which the sheet's
+Previous / Next step through), with `openAddress(model, "run:<id>")`; with no live run, the first Shipped row that
+opens a sheet. With no run at all, every step is a centered card.
 
 1. `[data-run-sheet-verb]` and the meter (`[data-run-sheet] [role="img"]`): where the run stands.
 2. `[data-run-sheet-rows]`: each task's state and action (Open in Agent, View child run, Open DAG), then `next:`.
@@ -73,9 +77,10 @@ The tour opens the Profile (`briefProfileAtom` set to `""`).
 ## Components
 
 - `frontend/app/view/jarvis/jarvistour.ts`, pure: the step and track types, the reducer (`start`, `next`, `back`,
-  `close`), and `stepView(step, found)`, which turns a step and whether its target was found into a spotlight or a
-  centered card. A step's `prepare` is data (`"brief" | "newestRun" | "profile" | "firstInitiative"`), not a function,
-  so the reducer stays testable and the component does the opening.
+  `close`), and `stepView(step, found, view)`, which turns a step and the rects its selectors found into a spotlight
+  (every element found lit, those that sit together in one box) or a centered card. A step's `prepare` is data
+  (`"newestRun" | "profile" | "firstInitiative"`; the Brief track needs nothing opened, as it starts on the Brief),
+  not a function, so the reducer stays testable and the component does the opening.
 - `frontend/app/view/jarvis/jarvistourcontent.ts`: the four tracks, each step `{ id, target?, prepare?, vi, en }` with
   a title and a body in each language.
 - `frontend/app/view/jarvis/jarvistourstore.ts`: `tourAtom` (the track and step, or null) and `tourLangAtom`

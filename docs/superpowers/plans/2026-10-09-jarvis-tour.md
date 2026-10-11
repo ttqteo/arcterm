@@ -3,21 +3,21 @@
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** A step-by-step tour of the Jarvis surface in four tracks (Brief, Initiatives, Run sheet, Profile): a
-spotlight on one real control and a card beside it in Vietnamese or English, opened from a **?** button in the
-Jarvis header and offered once on the first visit.
+spotlight on the real controls a step names and a card beside them in Vietnamese or English, opened from a **?**
+button in the Jarvis header and offered once on the first visit.
 
 **Architecture:** Frontend only, no Go and no new dependency. A pure model (`jarvistour.ts`: the reducer, what each
-step opens and closes, the spotlight geometry, the first-visit flag) and its content (`jarvistourcontent.ts`, every
+step opens and closes, the spotlight boxes, the first-visit flag) and its content (`jarvistourcontent.ts`, every
 step in both languages) are unit-tested. A thin view (`jarvistour.tsx`) draws the overlay, the card and the **?**
-menu, places the card with `@floating-ui/react`, runs each step's opening through DOM clicks and atoms
-(`jarvistouractions.ts`), and takes its keys through the keybinding dispatcher. A CDP scenario shoots each track.
+menu, places the card with `@floating-ui/react`, runs each step's opening through atoms, the router and DOM clicks
+(`jarvistouractions.ts`), and takes its keys through the keybinding dispatcher. A CDP scenario walks each track.
 
 **Tech stack:** React 19 + jotai + Tailwind 4, `@floating-ui/react` (already a dependency), vitest, CDP scenarios
 (`scripts/cdp/scenarios.mjs`).
 
 **Spec:** `docs/superpowers/specs/2026-10-09-jarvis-tour-design.md`
-**Verify:** `node scripts/verify.mjs`
-**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: jarvis-tour, brief-profile and brief-surface need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs jarvis-tour brief-profile brief-surface`
+**Verify:** `node scripts/verify.mjs ./pkg/jarvis`
+**Final:** `if [ "$(uname -s)" = Darwin ]; then echo "unverified: jarvis-tour and brief-surface need CDP, which WKWebView on macOS does not answer"; exit 3; fi; node scripts/cdp/final-verify.mjs jarvis-tour brief-surface`
 
 ## Conventions for every task
 
@@ -25,14 +25,16 @@ menu, places the card with `@floating-ui/react`, runs each step's opening throug
   - typecheck with `task check:ts`, never `npx tsc`, with a timeout above 2 min;
   - check only the files you touched with `npx eslint <paths>` / `npx prettier --check <paths>`;
   - never run prettier on `scripts/*.mjs`.
-- **Colors:** `@theme` tokens only (`DESIGN.md`, `frontend/tailwindsetup.css`). The dim is `bg-black/55`, as
-  ModalShell's `bg-black/60`; everything else uses the tokens the Brief header already uses (`text-ink-hi`,
-  `text-ink-mid`, `text-muted`, `bg-surface-raised`, `bg-modalbg`, `border-edge-mid`, `border-edge-strong`,
-  `shadow-popover`, `bg-accent`, `text-background`, `ring-accent`).
+- **Colors:** `@theme` tokens only (`DESIGN.md`, `frontend/tailwindsetup.css`). The dim is `bg-black/55` (on SVG,
+  `fill-black/55`), as ModalShell's `bg-black/60`; everything else uses the tokens the Brief header already uses
+  (`text-ink-hi`, `text-ink-mid`, `text-muted`, `bg-surface-raised`, `bg-modalbg`, `border-edge-mid`,
+  `border-edge-strong`, `shadow-popover`, `bg-accent`, `text-background`, `ring-accent`).
 - **Commits:** stage files by pathspec. Other sessions share this index, so never run a bare `git commit` or
   `git add -A`. No `Co-Authored-By` trailer.
 - **Running a scenario** needs the dev app (`task dev`). Run only the scenarios a task names:
-  `task verify:ui -- <name>`.
+  `task verify:ui -- <name>`. **On macOS** (`uname -s` is `Darwin`) a CDP step cannot run, because WKWebView answers
+  no CDP: skip it, list it under Not verified in your report, and leave it to the run's Final, which runs the
+  scenarios on Windows.
 
 ---
 
@@ -49,9 +51,10 @@ menu, places the card with `@floating-ui/react`, runs each step's opening throug
 import { describe, expect, it } from "vitest";
 import {
     OFFERED_KEY,
+    markOffered,
+    mergeBoxes,
     reconcile,
     shouldOffer,
-    markOffered,
     spotRect,
     stepView,
     textOf,
@@ -59,10 +62,14 @@ import {
     tourNext,
     tourStart,
     type TourPrepare,
+    type TourStep,
 } from "./jarvistour";
 import { TOUR_TRACKS, TOUR_UI } from "./jarvistourcontent";
 
 const VIEW = { width: 1600, height: 950 };
+const TEXT = { title: "t", body: "b" };
+const LIT: TourStep = { id: "x:lit", target: ["[data-x]"], vi: TEXT, en: TEXT };
+const CARD_ONLY: TourStep = { id: "x:card", vi: TEXT, en: TEXT };
 
 describe("the reducer", () => {
     it("starts a track on its first step", () => {
@@ -97,13 +104,31 @@ describe("the spotlight", () => {
     it("pads a rect and keeps it on screen", () => {
         expect(spotRect({ left: 2, top: 100, width: 50, height: 20 }, VIEW)).toEqual({ left: 0, top: 94, width: 58, height: 32 });
     });
-    it("lights the union of the rects found", () => {
-        const v = stepView([{ left: 100, top: 100, width: 50, height: 20 }, { left: 100, top: 200, width: 80, height: 30 }], VIEW);
-        expect(v).toEqual({ kind: "spot", rect: { left: 94, top: 94, width: 92, height: 142 } });
+    it("lights each element found in a box of its own", () => {
+        const v = stepView(LIT, [{ left: 100, top: 100, width: 50, height: 20 }, { left: 100, top: 300, width: 80, height: 30 }], VIEW);
+        expect(v).toEqual({
+            kind: "spot",
+            boxes: [
+                { left: 94, top: 94, width: 62, height: 32 },
+                { left: 94, top: 294, width: 92, height: 42 },
+            ],
+        });
     });
-    it("centers the card when nothing was found or what was found has no size", () => {
-        expect(stepView([], VIEW)).toEqual({ kind: "center" });
-        expect(stepView([{ left: 10, top: 10, width: 0, height: 0 }], VIEW)).toEqual({ kind: "center" });
+    it("makes one box of elements that sit together", () => {
+        const v = stepView(LIT, [{ left: 100, top: 100, width: 50, height: 20 }, { left: 100, top: 124, width: 80, height: 30 }], VIEW);
+        expect(v).toEqual({ kind: "spot", boxes: [{ left: 94, top: 94, width: 92, height: 66 }] });
+    });
+    it("merges again when a grown box reaches one already passed", () => {
+        // a touches neither c nor b, but the box b and c make together covers it
+        const a = { left: 0, top: 0, width: 10, height: 10 };
+        const c = { left: 20, top: 0, width: 10, height: 40 };
+        const b = { left: 0, top: 35, width: 25, height: 10 };
+        expect(mergeBoxes([a, c, b])).toEqual([{ left: 0, top: 0, width: 30, height: 45 }]);
+    });
+    it("centers the card when nothing was found, what was found has no size, or the step names nothing", () => {
+        expect(stepView(LIT, [], VIEW)).toEqual({ kind: "center" });
+        expect(stepView(LIT, [{ left: 10, top: 10, width: 0, height: 0 }], VIEW)).toEqual({ kind: "center" });
+        expect(stepView(CARD_ONLY, [{ left: 10, top: 10, width: 50, height: 20 }], VIEW)).toEqual({ kind: "center" });
     });
 });
 
@@ -145,7 +170,7 @@ describe("the content", () => {
                 }
                 // vitest runs in node here, with no document to parse a selector; the CDP scenario is what proves
                 // each one matches
-                for (const sel of step.target ?? []) {
+                for (const sel of [...(step.target ?? []), ...(step.also ?? [])]) {
                     expect(sel.trim()).not.toBe("");
                 }
             }
@@ -156,8 +181,14 @@ describe("the content", () => {
         expect(prep("runsheet").every((p) => p === "newestRun")).toBe(true);
         expect(prep("profile")[0]).toBeNull();
         expect(prep("profile").slice(1).every((p) => p === "profile")).toBe(true);
-        expect(prep("initiatives")).toContain("firstInitiative");
+        expect(prep("initiatives")).toEqual([null, null, null, "firstInitiative", null, null]);
         expect(prep("brief").every((p) => p === null)).toBe(true);
+    });
+    it("ends the Brief track on a card with no spotlight", () => {
+        const brief = TOUR_TRACKS.find((t) => t.id === "brief")!.steps;
+        const last = brief[brief.length - 1];
+        expect(last.id).toBe("brief:keys");
+        expect(last.target ?? last.also).toBeUndefined();
     });
     it("has every UI string in both languages", () => {
         expect(Object.keys(TOUR_UI.vi).sort()).toEqual(Object.keys(TOUR_UI.en).sort());
@@ -198,10 +229,10 @@ export interface TourText {
 
 export interface TourStep {
     id: string;
-    // selectors tried in order; the first that matches is lit. With `all`, every match of it is lit as one rect.
-    // None: the card shows in the middle.
+    // alternatives, tried in order: the first that matches is lit
     target?: string[];
-    all?: boolean;
+    // lit with the target, each by its first match; one that matches nothing is left out
+    also?: string[];
     prepare?: TourPrepare;
     vi: TourText;
     en: TourText;
@@ -255,7 +286,7 @@ export interface Rect {
 
 export const SPOT_PAD = 6;
 
-/** The lit rect: the target padded, kept inside the viewport. */
+/** A lit box: the element padded, kept inside the viewport. */
 export function spotRect(r: Rect, view: { width: number; height: number }): Rect {
     const left = Math.max(0, r.left - SPOT_PAD);
     const top = Math.max(0, r.top - SPOT_PAD);
@@ -264,19 +295,50 @@ export function spotRect(r: Rect, view: { width: number; height: number }): Rect
     return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
-export type StepView = { kind: "spot"; rect: Rect } | { kind: "center" };
+function touches(a: Rect, b: Rect): boolean {
+    return a.left <= b.left + b.width && b.left <= a.left + a.width && a.top <= b.top + b.height && b.top <= a.top + a.height;
+}
 
-/** A spotlight round the union of the rects found, or the card centered when none has a size. */
-export function stepView(rects: Rect[], view: { width: number; height: number }): StepView {
-    const sized = rects.filter((r) => r.width > 0 && r.height > 0);
-    if (sized.length === 0) {
+function bounds(a: Rect, b: Rect): Rect {
+    const left = Math.min(a.left, b.left);
+    const top = Math.min(a.top, b.top);
+    return {
+        left,
+        top,
+        width: Math.max(a.left + a.width, b.left + b.width) - left,
+        height: Math.max(a.top + a.height, b.top + b.height) - top,
+    };
+}
+
+/** Boxes that overlap or touch become their bounding box, until none do. The first box keeps the first rect. */
+export function mergeBoxes(rects: Rect[]): Rect[] {
+    const out = [...rects];
+    for (let i = 0; i < out.length; i++) {
+        for (let j = i + 1; j < out.length; j++) {
+            if (touches(out[i], out[j])) {
+                out[i] = bounds(out[i], out[j]);
+                out.splice(j, 1);
+                // the grown box may now reach one already passed
+                i = -1;
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+export type StepView = { kind: "spot"; boxes: Rect[] } | { kind: "center" };
+
+/**
+ * How a step shows, given the rects its selectors found: every element lit, those that sit together in one box,
+ * or the card centered when the step names nothing or nothing found has a size.
+ */
+export function stepView(step: TourStep, found: Rect[], view: { width: number; height: number }): StepView {
+    const sized = found.filter((r) => r.width > 0 && r.height > 0);
+    if ((step.target == null && step.also == null) || sized.length === 0) {
         return { kind: "center" };
     }
-    const left = Math.min(...sized.map((r) => r.left));
-    const top = Math.min(...sized.map((r) => r.top));
-    const right = Math.max(...sized.map((r) => r.left + r.width));
-    const bottom = Math.max(...sized.map((r) => r.top + r.height));
-    return { kind: "spot", rect: spotRect({ left, top, width: right - left, height: bottom - top }, view) };
+    return { kind: "spot", boxes: mergeBoxes(sized.map((r) => spotRect(r, view))) };
 }
 
 // The first-visit offer's flag. Read when the Brief mounts rather than held in an atomWithStorage, whose value is
@@ -325,9 +387,9 @@ export const tourAtom = atom<TourState | null>(null) as PrimitiveAtom<TourState 
 export const tourLangAtom = atomWithStorage<TourLang>("jarvis.tour.lang", "vi", undefined, { getOnInit: true });
 ```
 
-**Step 5: Write `frontend/app/view/jarvis/jarvistourcontent.ts`** with exactly this content. Before you write the
-Brief's last step, check each key it names against `buildJarvisBindings` in
-`frontend/app/store/keybindings/bindings.ts` and drop any that is not bound there.
+**Step 5: Write `frontend/app/view/jarvis/jarvistourcontent.ts`** with exactly this content. The Brief's last step
+names only keys the Jarvis surface binds (checked against `frontend/app/store/keybindings/bindings.ts`: the list
+nav's `j` / `k` / `Enter`, `jarvis:record-band` `e`, `jarvis:graph-peek` `Shift+G`, `jarvis:focus-composer` `i`).
 
 ```ts
 // Copyright 2026, Command Line Inc.
@@ -398,6 +460,7 @@ export const TOUR_TRACKS: TourTrack[] = [
             {
                 id: "brief:runs",
                 target: ['[data-jarvis-brief-region="sessions"]'],
+                also: ["[data-jarvis-run-kind]"],
                 vi: {
                     title: "Run đang chạy",
                     body: "Các run tự chạy, theo project. Nút lọc phía trên chọn loại run. Bấm một hàng để mở run sheet của nó; tour «Run sheet» giải thích sheet đó.",
@@ -410,6 +473,7 @@ export const TOUR_TRACKS: TourTrack[] = [
             {
                 id: "brief:behind",
                 target: ['[data-jarvis-brief-region="behind"]'],
+                also: ["[data-jarvis-brief-mark-seen]"],
                 vi: {
                     title: "Từ lần bạn nhìn",
                     body: "Run đã land và việc đã xong kể từ lần cuối bạn xem. «mark seen» đánh dấu đã xem để vùng này gọn lại.",
@@ -429,11 +493,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 id: "brief:keys",
                 vi: {
                     title: "Phím tắt của Brief",
-                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · d: rail ngữ cảnh · e: dải record · Shift+G: graph peek · Shift+N: initiative mới. Shift+? mở danh sách phím đầy đủ.",
+                    body: "j / k: lên xuống giữa các hàng · Enter: mở hàng · e: mở hoặc gập dải record · Shift+G: graph peek · i: vào ô composer. Shift+? mở danh sách phím đầy đủ.",
                 },
                 en: {
                     title: "The Brief's keys",
-                    body: "j / k: move between rows · Enter: open the row · d: context rail · e: record band · Shift+G: graph peek · Shift+N: new initiative. Shift+? lists every key.",
+                    body: "j / k: move between rows · Enter: open the row · e: open or fold the record band · Shift+G: graph peek · i: into the composer. Shift+? lists every key.",
                 },
             },
         ],
@@ -458,6 +522,7 @@ export const TOUR_TRACKS: TourTrack[] = [
             {
                 id: "initiatives:card",
                 target: ['[data-jarvis-brief-row="initiative"]'],
+                also: ["[data-jarvis-segment-bar]"],
                 vi: {
                     title: "Thẻ initiative",
                     body: "Mỗi initiative là một thẻ. Thanh màu có một đoạn cho mỗi chunk: thấy ngay bao nhiêu đã xong và chunk nào nên làm tiếp.",
@@ -469,7 +534,8 @@ export const TOUR_TRACKS: TourTrack[] = [
             },
             {
                 id: "initiatives:actions",
-                target: ["[data-jarvis-work-on]", "[data-jarvis-initiative-menu]"],
+                target: ["[data-jarvis-work-on]"],
+                also: ["[data-jarvis-initiative-menu]"],
                 vi: {
                     title: "Work on và menu",
                     body: "Work on (phím w) mở một agent mới làm initiative, hoặc nhảy tới agent đang làm nó. Menu … bên cạnh có Rename, Edit details, Pause, Archive và Delete.",
@@ -495,6 +561,7 @@ export const TOUR_TRACKS: TourTrack[] = [
             {
                 id: "initiatives:ideas",
                 target: ["[data-jarvis-ideas]"],
+                also: ["[data-jarvis-jot-idea]"],
                 vi: {
                     title: "Ideas",
                     body: "Ý tưởng chưa có chunk nằm ở cột này. «Jot down an idea» ghi nhanh một ý; mở ý tưởng ra, Plan it nhờ một agent chia nó thành chunk.",
@@ -526,6 +593,7 @@ export const TOUR_TRACKS: TourTrack[] = [
             {
                 id: "runsheet:status",
                 target: ["[data-run-sheet-verb]"],
+                also: ['[data-run-sheet] [role="img"]'],
                 prepare: "newestRun",
                 vi: {
                     title: "Run đang ở đâu",
@@ -551,7 +619,8 @@ export const TOUR_TRACKS: TourTrack[] = [
             },
             {
                 id: "runsheet:timeline",
-                target: ["[data-run-sheet-timeline-toggle]", "[data-run-sheet-timeline]"],
+                target: ["[data-run-sheet-timeline-toggle]"],
+                also: ["[data-run-sheet-timeline]"],
                 prepare: "newestRun",
                 vi: {
                     title: "Timeline",
@@ -603,7 +672,8 @@ export const TOUR_TRACKS: TourTrack[] = [
             },
             {
                 id: "runsheet:nav",
-                target: ['[aria-label="Next run"]'],
+                target: ['[aria-label="Previous run"]'],
+                also: ['[aria-label="Next run"]', '[data-jarvis-brief-band="composer"]'],
                 prepare: "newestRun",
                 vi: {
                     title: "Run kế / trước",
@@ -624,6 +694,7 @@ export const TOUR_TRACKS: TourTrack[] = [
             {
                 id: "profile:button",
                 target: ["[data-jarvis-brief-profile]"],
+                also: ['[data-jarvis-autonomy="chip"]'],
                 vi: {
                     title: "Profile",
                     body: "Nút này mở Profile: mặc định cho các run mới và nguyên tắc cho lead. Chip Autonomy bên cạnh đặt mức tự quyết của Jarvis.",
@@ -648,8 +719,8 @@ export const TOUR_TRACKS: TourTrack[] = [
             },
             {
                 id: "profile:shape",
-                target: ['[data-jarvis-profile-row="Default shape"], [data-jarvis-profile-row="Parallel workers"]'],
-                all: true,
+                target: ['[data-jarvis-profile-row="Default shape"]'],
+                also: ['[data-jarvis-profile-row="Parallel workers"]'],
                 prepare: "profile",
                 vi: {
                     title: "Hình dạng run",
@@ -662,8 +733,9 @@ export const TOUR_TRACKS: TourTrack[] = [
             },
             {
                 id: "profile:routes",
-                target: ['[data-jarvis-profile-row="Lead route"], [data-jarvis-profile-row="Worker route"], [data-jarvis-profile-row="Reviewer route"]'],
-                all: true,
+                // Lead route is drawn in Project scope only, so the always-present Worker route leads
+                target: ['[data-jarvis-profile-row="Worker route"]'],
+                also: ['[data-jarvis-profile-row="Lead route"]', '[data-jarvis-profile-row="Reviewer route"]'],
                 prepare: "profile",
                 vi: {
                     title: "Route: ai chạy, model nào",
@@ -748,8 +820,8 @@ If prettier reflows the long strings or the test table, run `npx prettier --writ
 grid `div`. Add `data-jarvis-profile-row={label}` to that `div`. Every row (Default shape, Parallel workers, Lead
 route, Worker route, Reviewer route, Runs land on) then carries its own label; no call site changes.
 
-**Step 2: The timeline's toggle.** In `runsheet.tsx`, the "timeline · N events" toggle button (around line 498, the
-one with `aria-expanded` above `[data-run-sheet-timeline]`) gets `data-run-sheet-timeline-toggle`.
+**Step 2: The timeline's toggle.** In `runsheet.tsx`, the "timeline · N events" toggle button (around line 531, the
+one with `aria-expanded={timelineOpen}` above `[data-run-sheet-timeline]`) gets `data-run-sheet-timeline-toggle`.
 
 **Step 3: The offer stays out of every other scenario.** In `scripts/cdp/verify.mjs`, right after the
 `Emulation.setDeviceMetricsOverride` call (around line 40), add:
@@ -760,9 +832,11 @@ one with `aria-expanded` above `[data-run-sheet-timeline]`) gets `data-run-sheet
 await h.ev("localStorage.setItem('jarvis.tour.offered', 'true')").catch(() => {});
 ```
 
-**Step 4: Check that the Profile scenario still passes.** With the dev app running:
-`task verify:ui -- brief-profile`. Expected: PASS. Then `npx eslint frontend/app/view/jarvis/briefprofileview.tsx
-frontend/app/view/jarvis/runsheet.tsx` and `npx prettier --check` on the same two files (not on `verify.mjs`).
+**Step 4: Check.** `npx eslint frontend/app/view/jarvis/briefprofileview.tsx frontend/app/view/jarvis/runsheet.tsx`
+and `npx prettier --check` on the same two files (not on `verify.mjs`). Nothing on screen changes in this task; the
+`jarvis-tour` scenario (Task 3, its step 10) lights the route rows through the new anchor. Do not run
+`brief-profile`: it is stale at HEAD (it still asserts the playbook and its customize button, removed in
+`1e4bb179c`), which is not this run's to fix.
 
 **Step 5: Commit**
 
@@ -775,12 +849,13 @@ git commit -m "feat(jarvis): Profile rows and the timeline toggle carry anchors;
 
 ### Task 3: The tour on screen: overlay, card, ? menu, offer, keys, scenario
 **Depends on:** Task 1, Task 2
-**Files:** `frontend/app/view/jarvis/jarvistour.tsx`, `frontend/app/view/jarvis/jarvistouractions.ts`, `frontend/app/view/jarvis/briefsurface.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/store/keybindings/dispatcher.ts`, `scripts/cdp/scenarios.mjs`
+**Files:** `frontend/app/view/jarvis/jarvistour.tsx`, `frontend/app/view/jarvis/jarvistouractions.ts`, `frontend/app/view/jarvis/briefsurface.tsx`, `frontend/app/store/keybindings/bindings.ts`, `frontend/app/store/keybindings/bindings.test.ts`, `frontend/app/store/keybindings/dispatcher.ts`, `frontend/app/store/keybindings/dispatcher.test.ts`, `scripts/cdp/scenarios.mjs`
 
 Read first: `frontend/app/view/jarvis/finalshotsviewer.tsx` (how an overlay over the run sheet takes the keys:
 its own bindings gated on its atom, the atom listed in the dispatcher's `modalOpen`, and `registerModal` so the
-ModalShell underneath yields Escape), and `frontend/app/view/jarvis/autonomyladderview.tsx:85-93` (the
-`useFloating` recipe).
+ModalShell underneath yields Escape), `frontend/app/view/jarvis/autonomyladderview.tsx:85-93` (the `useFloating`
+recipe), and the Final check viewer's tests (`bindings.test.ts` "final shots viewer bindings",
+`dispatcher.test.ts` "the Final check viewer over the Jarvis surface"), which this task's tests mirror.
 
 **Step 1: `frontend/app/view/jarvis/jarvistouractions.ts`**, the DOM side of `prepare`. Each `open*` returns whether
 the tour opened it (false when it was already open, so the tour never closes what you had open); each `close*`
@@ -790,12 +865,16 @@ undoes only that.
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What a tour step opens before it shows, done the way a person would: the Profile through its atom, a run's sheet
-// and an initiative's card by clicking them. Covered by the jarvis-tour CDP scenario, not by unit tests.
+// What a tour step opens before it shows: the Profile through its atom, the newest run's sheet through the router,
+// and an initiative's card by clicking it, the way a person opens one. Covered by the jarvis-tour CDP scenario, not
+// by unit tests.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import type { TourPrepare } from "./jarvistour";
-import { briefProfileAtom, briefSheetOpenAtom } from "./jarvisstore";
+import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { fireAndForget } from "@/util/util";
+import type { TourPrepare, TourStep } from "./jarvistour";
+import { briefProfileAtom, briefRunListAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { openAddress } from "./openref";
 
 function click(selector: string): boolean {
     const el = document.querySelector<HTMLElement>(selector);
@@ -803,7 +882,7 @@ function click(selector: string): boolean {
     return el != null;
 }
 
-export function openPrepare(p: TourPrepare): boolean {
+export function openPrepare(p: TourPrepare, model: AgentsViewModel): boolean {
     switch (p) {
         case "profile":
             if (globalStore.get(briefProfileAtom) != null) {
@@ -811,11 +890,20 @@ export function openPrepare(p: TourPrepare): boolean {
             }
             globalStore.set(briefProfileAtom, "");
             return true;
-        case "newestRun":
+        case "newestRun": {
             if (globalStore.get(briefSheetOpenAtom)) {
                 return false;
             }
-            return click('[data-jarvis-brief-row="session"]') || click('[data-jarvis-brief-row="shipped"]');
+            // the run the Brief lists first: its live runs in row order, which the sheet's Previous / Next step
+            // through. openAddress reports a run it cannot open; the steps then show as centered cards
+            const runId = globalStore.get(briefRunListAtom)[0];
+            if (runId != null) {
+                fireAndForget(() => openAddress(model, `run:${runId}`));
+                return true;
+            }
+            // no live run: the first Shipped row that opens a sheet ([data-peek]), through the same router
+            return click('[data-jarvis-brief-row="shipped"][data-peek]');
+        }
         case "firstInitiative":
             if (document.querySelector('[data-jarvis-initiative-card="open"]') != null) {
                 return false;
@@ -830,7 +918,7 @@ export function closePrepare(p: TourPrepare): void {
             globalStore.set(briefProfileAtom, null);
             return;
         case "newestRun":
-            click('[aria-label="Close detail sheet"]');
+            globalStore.set(briefSheetOpenAtom, false);
             return;
         case "firstInitiative":
             click('[data-jarvis-initiative-card="open"] > [role="button"]');
@@ -838,19 +926,122 @@ export function closePrepare(p: TourPrepare): void {
     }
 }
 
-/** The rects of a step's target: the first selector that matches, all of its matches with `all`. */
-export function targetRects(target: string[] | undefined, all: boolean | undefined): DOMRect[] {
-    for (const sel of target ?? []) {
-        const found = all ? [...document.querySelectorAll(sel)] : [document.querySelector(sel)].filter((e) => e != null);
-        if (found.length > 0) {
-            return found.map((e) => e!.getBoundingClientRect());
-        }
-    }
-    return [];
+/** The rects a step lights: the first of its target alternatives that matches, then the first match of each `also`. */
+export function targetRects(step: TourStep): DOMRect[] {
+    const main = (step.target ?? []).map((sel) => document.querySelector(sel)).find((e) => e != null);
+    const also = (step.also ?? []).map((sel) => document.querySelector(sel));
+    return [main, ...also].filter((e): e is Element => e != null).map((e) => e.getBoundingClientRect());
 }
 ```
 
-**Step 2: The keys.** In `bindings.ts`, next to `buildFinalShotsBindings`, add:
+**Step 2: The keys' tests first.** In `frontend/app/store/keybindings/bindings.test.ts`, after the
+`describe("final shots viewer bindings", …)` block, add (import `buildJarvisTourBindings` with the file's other
+`./bindings` imports and `tourAtom` from `@/app/view/jarvis/jarvistourstore`; `ctx` is the file's own helper):
+
+```ts
+describe("jarvis tour bindings", () => {
+    afterEach(() => globalStore.set(tourAtom, null));
+
+    function build() {
+        const calls: string[] = [];
+        const bindings = buildJarvisTourBindings({
+            next: () => calls.push("next"),
+            back: () => calls.push("back"),
+            close: () => calls.push("close"),
+        });
+        return { bindings, calls };
+    }
+
+    it("maps →, Enter, ← and Escape onto their handlers", () => {
+        const { bindings, calls } = build();
+        const byKey = new Map(bindings.map((b) => [b.keys, b]));
+        for (const key of ["ArrowRight", "Enter", "ArrowLeft", "Escape"]) {
+            byKey.get(key)!.run(ctx("jarvis"));
+        }
+        expect(calls).toEqual(["next", "next", "back", "close"]);
+        expect(bindings).toHaveLength(4);
+    });
+
+    it("is active only while a tour shows, whatever the context says", () => {
+        const { bindings } = build();
+        expect(bindings.some((b) => b.when!(ctx("jarvis")))).toBe(false);
+        globalStore.set(tourAtom, { track: "brief", index: 0 });
+        expect(bindings.every((b) => b.when!({ ...ctx("jarvis"), modalOpen: true }))).toBe(true);
+    });
+});
+```
+
+In `frontend/app/store/keybindings/dispatcher.test.ts`, after the `describe("the Final check viewer over the Jarvis
+surface", …)` block, add a block built the same way (import `buildJarvisTourBindings` beside
+`buildFinalShotsBindings`, and `tourAtom`):
+
+```ts
+describe("the Jarvis tour over the Jarvis surface", () => {
+    afterEach(() => {
+        globalStore.set(tourAtom, null);
+        globalStore.set(listNavAtom, null);
+        vi.unstubAllGlobals();
+    });
+
+    // the Jarvis list's cursor and the Brief's Escape-home are registered before the tour's keys; matchBinding runs
+    // the first active binding for a key, so without the tour counting as a modal Enter would open the row under the
+    // cursor and Escape would leave the surface
+    function setup() {
+        vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+        vi.stubGlobal("document", { activeElement: null });
+        const model = {
+            surfaceAtom: atom<SurfaceKey>("jarvis"),
+            paletteOpenAtom: atom(false),
+            launcherAtom: atom<LauncherKind | null>(null),
+            newInitiativeOpenAtom: atom(false),
+            newProjectOpenAtom: atom(false),
+            focusIdAtom: atom<string | undefined>(undefined),
+        } as unknown as AgentsViewModel;
+        globalStore.set(listNavAtom, { surface: "jarvis", navigableIds: ["a", "b"], cursorId: "a", setCursor() {} });
+        const tour = buildJarvisTourBindings({ next() {}, back() {}, close() {} });
+        const bindings = [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildJarvisBindings(model),
+            ...tour,
+        ];
+        const unbind = initKeybindingDispatcher(model);
+        const picked = (key: string) => {
+            const r = matchBinding(ev(key), deriveKeyContext(), bindings);
+            return r.kind === "run" ? r.binding.id : r.kind;
+        };
+        return { picked, unbind };
+    }
+
+    it("takes →, Enter, ← and Escape while it shows", () => {
+        const { picked, unbind } = setup();
+        globalStore.set(tourAtom, { track: "brief", index: 0 });
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        expect(picked("ArrowRight")).toBe("jarvis-tour:next");
+        expect(picked("Enter")).toBe("jarvis-tour:next-enter");
+        expect(picked("ArrowLeft")).toBe("jarvis-tour:back");
+        expect(picked("Escape")).toBe("jarvis-tour:close");
+        unbind();
+    });
+
+    it("leaves them to the surface once it ends", () => {
+        const { picked, unbind } = setup();
+        expect(picked("Enter")).toBe("list:activate");
+        expect(picked("Escape")).toBe("surface:back-home");
+        expect(picked("ArrowRight")).not.toBe("jarvis-tour:next");
+        unbind();
+    });
+});
+```
+
+The second case names the ids the surface binds today (`list:activate` for Enter, `surface:back-home` for Escape,
+as the Final check viewer's test reads them); if Enter reaches another surface binding first, assert that id
+instead. What the case proves is that the key is no longer the tour's.
+
+Run: `npx vitest run frontend/app/store/keybindings/bindings.test.ts frontend/app/store/keybindings/dispatcher.test.ts`
+Expected: FAIL, `buildJarvisTourBindings` is not exported.
+
+**Step 3: The keys.** In `bindings.ts`, next to `buildFinalShotsBindings`, add:
 
 ```ts
 // The Jarvis tour's keys, registered by the tour while it shows. Gated on its own atom, which the dispatcher counts
@@ -883,39 +1074,48 @@ with `import { tourAtom } from "@/app/view/jarvis/jarvistourstore";` at the top.
         globalStore.get(tourAtom) != null ||
 ```
 
-**Step 3: `frontend/app/view/jarvis/jarvistour.tsx`.** Three exports:
+Run the two test files again. Expected: PASS.
 
-- `JarvisTour()`: renders nothing while `tourAtom` is null. While a tour shows:
-  - **Each step change** (an effect on `track` and `index`): compute `reconcile(opened, step.prepare)`, run
-    `closePrepare` for each in `close` and `openPrepare` for `open` (remember it in a `useRef<TourPrepare[]>` only
-    when it returned true), then poll `targetRects(step.target, step.all)` every 50 ms for up to 1000 ms until it
-    finds something. After the prepare, call the previous `registerModal` unregister and `registerModal("jarvis-tour")`
-    again, so the tour is the top of the modal stack even over a Profile it just opened.
-  - **Measuring:** while a step shows, re-read `targetRects` every 250 ms and on window `resize` and capturing
-    `scroll`, and turn it into `stepView(rects, { width: innerWidth, height: innerHeight })`.
+**Step 4: `frontend/app/view/jarvis/jarvistour.tsx`.** Three exports:
+
+- `JarvisTour({ model }: { model: AgentsViewModel })`: renders nothing while `tourAtom` is null. While a tour
+  shows:
+  - **Each step change** (an effect on `track` and `index`, with a cancelled flag its cleanup sets): compute
+    `reconcile(opened, step.prepare)`, run `closePrepare` for each in `close` (dropping them from `opened`) and
+    `openPrepare(open, model)` for `open` (remember it in a `useRef<TourPrepare[]>` only when it returned true).
+    Then wait for the target: check `targetRects(step)` at once, then every 50 ms, for up to 1000 ms, until it finds
+    something; a step that names no selector skips the wait. Until the wait ends the layer shows the dim and no card.
+  - **The top of the modal stack, after the wait:** when the wait ends (found or timed out), call the previous
+    `registerModal` unregister and `registerModal("jarvis-tour")` again. Not right after `openPrepare`: a Profile it
+    opened registers its ModalShell a render later and would sit on top, taking Escape from the tour.
+  - **Measuring:** while a step shows, re-read `targetRects(step)` every 250 ms and on window `resize` and capturing
+    `scroll`, and turn it into `stepView(step, rects, { width: innerWidth, height: innerHeight })`.
   - **Ending** (Skip, Done, Escape, or the component unmounting because the surface changed): run
     `reconcile(opened, undefined)`'s closes, unregister the modal, set `tourAtom` null.
   - **Keys:** `useKeybindings(useMemo(() => buildJarvisTourBindings({...}), []))` through a handlers ref, as
-    `finalshotsviewer.tsx` does.
+    `finalshotsviewer.tsx` does. Next past the last step ends the track (`tourNext` returns null).
   - **Markup**, portalled to `document.body` (`createPortal`):
-    - a `fixed inset-0 z-[80]` layer that takes every pointer event (`onPointerDown`/`onClick` stop there), with
+    - a `fixed inset-0 z-[80]` layer that takes every pointer event (`onPointerDown`, `onMouseDown` and `onClick`
+      stop there, so the ModalShell under it never sees a click outside its panel), with
       `data-jarvis-tour-view={view.kind}`;
-    - for a spot, four `bg-black/55` rects round the hole and, over the hole, a `pointer-events-none
-      rounded-[8px] ring-2 ring-accent` box with `data-jarvis-tour-spot`; for center, one full `bg-black/55`;
+    - for a spot, one `pointer-events-none absolute inset-0 h-full w-full` SVG: a `<mask>` holding a full white
+      rect and a black `rx={8}` rect per box (mask luminance, not a theme color: say so in a comment), and a full
+      rect with `className="fill-black/55"` drawn through it; over each box, a `pointer-events-none absolute
+      rounded-[8px] ring-2 ring-accent` div with `data-jarvis-tour-spot`. For center, one full `bg-black/55`.
     - the card, `data-jarvis-tour-card`, `data-jarvis-tour-step={step.id}`, `data-jarvis-tour-lang={lang}`:
       `w-[340px] rounded-[12px] border border-edge-strong bg-modalbg p-4 shadow-popover`. Placed with
       `useFloating({ strategy: "fixed", placement: "bottom", middleware: [offset(12), flip(), shift({ padding: 12 })],
       whileElementsMounted: autoUpdate })` and `refs.setPositionReference({ getBoundingClientRect: () => new
-      DOMRect(rect.left, rect.top, rect.width, rect.height) })` for a spot; centered with `left-1/2 top-1/2
-      -translate-x-1/2 -translate-y-1/2` otherwise.
+      DOMRect(box.left, box.top, box.width, box.height) })` against the first box (the one holding the step's
+      target) for a spot; centered with `left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2` otherwise.
     - Card content, top to bottom: a row with `n / N · <track title>` in `text-[11.5px] text-muted` and on the
       right a two-segment `VI | EN` switch (buttons `data-jarvis-tour-lang-toggle="vi"` / `"en"`, `aria-pressed`,
       the Profile's segment look: `rounded-[6px] px-2 h-[22px] text-[12px]`, pressed `bg-surface-raised
       text-ink-hi`, else `text-ink-mid`), which sets `tourLangAtom`; the title in `text-[14px] font-semibold
       text-ink-hi`; the body in `text-[13px] leading-[1.5] text-ink-mid`; a footer with **Skip**
       (`data-jarvis-tour-skip`, a text button, `text-muted`) on the left and **Back** (`data-jarvis-tour-back`,
-      disabled on step 1, the Profile footer's Cancel look) and **Next** / **Done** on the last step
-      (`data-jarvis-tour-next`, `bg-accent text-background hover:bg-accenthover`) on the right. Words come from
+      `disabled` on step 1, the Profile footer's Cancel look) and **Next**, or **Done** on the last step
+      (`data-jarvis-tour-next`, `bg-accent text-background hover:bg-accenthover`), on the right. Words come from
       `TOUR_UI[lang]`.
 - `TourButton()`: the 28×28 header button, the Profile button's exact classes, a `CircleHelp` icon (lucide, 14,
   stroke 1.8), `data-jarvis-tour-button`, `aria-label`/`title` `TOUR_UI[lang].button`, `aria-haspopup="menu"`.
@@ -929,25 +1129,26 @@ with `import { tourAtom } from "@/app/view/jarvis/jarvistourstore";` at the top.
   buttons: **offerStart** (`data-jarvis-tour-offer-start`, accent) starts the Brief track, **offerLater**
   (`data-jarvis-tour-offer-later`) only hides it. Both call `markOffered(localStorage)`.
 
-**Step 4: Mount it.** In `briefsurface.tsx`:
+**Step 5: Mount it.** In `briefsurface.tsx`:
 - after the Profile button and before the divider `<span aria-hidden className="mx-0.5 h-[18px] w-px …" />`
   (around line 1521), render `<TourButton />`;
 - inside the surface root `<div data-jarvis-region="brief" …>` (around line 1416), render `<TourOffer />` and
-  `<JarvisTour />` once, at the end.
+  `<JarvisTour model={model} />` once, at the end.
 
-**Step 5: Typecheck and lint**
+**Step 6: Typecheck and lint**
 
-Run: `task check:ts` (timeout 5 min). Expected: exit 0. Then `npx eslint` and `npx prettier --check` on the five
+Run: `task check:ts` (timeout 5 min). Expected: exit 0. Then `npx eslint` and `npx prettier --check` on the seven
 `.ts`/`.tsx` files of this task.
 
-**Step 6: The CDP scenario.** In `scripts/cdp/scenarios.mjs`, add `jarvisTour` beside `briefProfile` and list it
-in `SCENARIOS` after `briefProfile`. Use the file's own `pressKey` helper for keys.
+**Step 7: The CDP scenario.** In `scripts/cdp/scenarios.mjs`, add `jarvisTour` beside `briefProfile` (below
+`pressKey`'s definition, around line 6963) and list it in `SCENARIOS` after `briefProfile`.
 
 ```js
-// The Jarvis tour (jarvistour.tsx): the first-visit offer, the Brief track's card and spotlight in Vietnamese,
-// switching to English, Escape, and the Profile track opening the Profile itself and closing it again on Skip.
-// Run sheet and Initiatives show their first step whether or not the dev store has a run or an initiative: a
-// missing target is a centered card, which is the designed fallback, not a failure.
+// The Jarvis tour (jarvistour.tsx): the first-visit offer; the Brief track in Vietnamese, then English, stepped on
+// with → and Enter, back with ← and Back, its last step a centered card ended by Done; the ? menu; the Profile
+// track opening the Profile itself, closing it on Skip, and on Escape ending with it while Jarvis stays. Run sheet
+// and Initiatives show their first step whether or not the dev store has a run or an initiative: a missing target is
+// a centered card, which is the designed fallback, not a failure.
 const jarvisTour = {
     name: "jarvis-tour",
     surface: "jarvis",
@@ -957,14 +1158,30 @@ const jarvisTour = {
     async assert(h) {
         const steps = [];
         const wait = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
+        const click = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.click()`);
+        const key = async (key, code, keyCode) => {
+            await pressKey(h, { key, code, keyCode });
+            await wait(300);
+        };
+        const profileOpen = () => h.ev(`!!document.querySelector('[data-jarvis-brief-modal="profile"]')`);
+        const startTrack = async (track) => {
+            await click("[data-jarvis-tour-button]");
+            await wait(300);
+            await click(`[data-jarvis-tour-track="${track}"]`);
+            await wait(1200);
+        };
         const CARD = `(() => {
             const c = document.querySelector('[data-jarvis-tour-card]');
             const v = document.querySelector('[data-jarvis-tour-view]');
+            const next = document.querySelector('[data-jarvis-tour-next]');
+            const back = document.querySelector('[data-jarvis-tour-back]');
             return c ? {
                 step: c.dataset.jarvisTourStep,
                 lang: c.dataset.jarvisTourLang,
                 view: v?.dataset.jarvisTourView ?? null,
-                spot: !!document.querySelector('[data-jarvis-tour-spot]'),
+                spots: document.querySelectorAll('[data-jarvis-tour-spot]').length,
+                next: (next?.innerText || '').trim(),
+                backDisabled: back?.disabled ?? null,
                 text: (c.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
             } : null;
         })()`;
@@ -978,28 +1195,29 @@ const jarvisTour = {
         steps.push({ step: "1. the first visit offers the tour", ok: offer === true, detail: String(offer) });
         await h.shot("cdp-shots/jarvis-tour-offer.png");
 
-        await h.ev(`document.querySelector('[data-jarvis-tour-offer-start]')?.click()`);
+        await click("[data-jarvis-tour-offer-start]");
         await wait(1200);
         const first = await h.ev(CARD);
         const offered = await h.ev(`localStorage.getItem('jarvis.tour.offered')`);
         steps.push({
-            step: "2. Take the tour starts the Brief track in Vietnamese, lit, and the offer is gone for good",
+            step: "2. Take the tour starts the Brief track in Vietnamese, lit, Back disabled, and the offer is gone for good",
             ok:
                 first?.step === "brief:waiting" &&
                 first.lang === "vi" &&
                 first.view === "spot" &&
-                first.spot &&
+                first.spots > 0 &&
+                first.backDisabled === true &&
                 offered === "true" &&
                 !(await h.ev(`!!document.querySelector('[data-jarvis-tour-offer]')`)),
             detail: JSON.stringify({ first, offered }),
         });
         await h.shot("cdp-shots/jarvis-tour-brief.png");
 
-        await pressKey(h, { key: "ArrowRight", code: "ArrowRight", keyCode: 39 });
+        await key("ArrowRight", "ArrowRight", 39);
         const second = await h.ev(CARD);
         steps.push({ step: "3. → steps on", ok: second?.step === "brief:regions", detail: JSON.stringify(second) });
 
-        await h.ev(`document.querySelector('[data-jarvis-tour-lang-toggle="en"]')?.click()`);
+        await click('[data-jarvis-tour-lang-toggle="en"]');
         await wait(300);
         const english = await h.ev(CARD);
         steps.push({
@@ -1009,58 +1227,98 @@ const jarvisTour = {
         });
         await h.shot("cdp-shots/jarvis-tour-english.png");
 
-        await pressKey(h, { key: "Escape", code: "Escape", keyCode: 27 });
-        const ended = await h.ev(CARD);
-        const surface = await h.activeSurfaceLabel();
+        await key("ArrowLeft", "ArrowLeft", 37);
+        const backed = await h.ev(CARD);
+        steps.push({ step: "5. ← steps back", ok: backed?.step === "brief:waiting", detail: JSON.stringify(backed) });
+
+        await key("Enter", "Enter", 13);
+        const entered = await h.ev(CARD);
+        await click("[data-jarvis-tour-back]");
+        await wait(300);
+        const backButton = await h.ev(CARD);
         steps.push({
-            step: "5. Escape ends the tour and stays on Jarvis",
-            ok: ended == null && /jarvis/i.test(surface ?? ""),
-            detail: JSON.stringify({ ended, surface }),
+            step: "6. Enter steps on and Back steps back",
+            ok: entered?.step === "brief:regions" && backButton?.step === "brief:waiting",
+            detail: JSON.stringify({ entered: entered?.step, backButton: backButton?.step }),
         });
 
-        await h.ev(`document.querySelector('[data-jarvis-tour-button]')?.click()`);
+        // a step whose target is missing shows no card (and no Next) for up to a second, so each click waits it out
+        for (let i = 0; i < 5; i++) {
+            await click("[data-jarvis-tour-next]");
+            await wait(1200);
+        }
+        const keys = await h.ev(CARD);
+        steps.push({
+            step: "7. the Brief's keys are a centered card with no spotlight, and Next reads Done",
+            ok: keys?.step === "brief:keys" && keys.view === "center" && keys.spots === 0 && keys.next === "Done",
+            detail: JSON.stringify(keys),
+        });
+        await h.shot("cdp-shots/jarvis-tour-keys.png");
+
+        await click("[data-jarvis-tour-next]");
+        await wait(600);
+        const done = { card: await h.ev(CARD), surface: await h.activeSurfaceLabel() };
+        steps.push({
+            step: "8. Done ends the track and stays on Jarvis",
+            ok: done.card == null && /jarvis/i.test(done.surface ?? ""),
+            detail: JSON.stringify(done),
+        });
+
+        await click("[data-jarvis-tour-button]");
         await wait(300);
         const tracks = await h.ev(`[...document.querySelectorAll('[data-jarvis-tour-track]')].map((b) => b.dataset.jarvisTourTrack)`);
         steps.push({
-            step: "6. ? lists the four tracks",
+            step: "9. ? lists the four tracks",
             ok: JSON.stringify(tracks) === JSON.stringify(["brief", "initiatives", "runsheet", "profile"]),
             detail: JSON.stringify(tracks),
         });
         await h.shot("cdp-shots/jarvis-tour-menu.png");
 
-        await h.ev(`document.querySelector('[data-jarvis-tour-track="profile"]')?.click()`);
+        await click('[data-jarvis-tour-track="profile"]');
         await wait(600);
-        await h.ev(`document.querySelector('[data-jarvis-tour-next]')?.click()`);
-        await wait(1200);
-        await h.ev(`document.querySelector('[data-jarvis-tour-next]')?.click()`);
-        await h.ev(`document.querySelector('[data-jarvis-tour-next]')?.click()`);
-        await wait(1200);
+        for (let i = 0; i < 3; i++) {
+            await click("[data-jarvis-tour-next]");
+            await wait(1200);
+        }
         const routes = await h.ev(CARD);
-        const profileOpen = await h.ev(`!!document.querySelector('[data-jarvis-brief-modal="profile"]')`);
+        const routesProfile = await profileOpen();
         steps.push({
-            step: "7. the Profile track opens the Profile itself and lights the route rows",
-            ok: profileOpen && routes?.step === "profile:routes" && routes.view === "spot",
-            detail: JSON.stringify({ routes, profileOpen }),
+            step: "10. the Profile track opens the Profile itself and lights the route rows",
+            ok: routesProfile && routes?.step === "profile:routes" && routes.view === "spot" && routes.spots > 0,
+            detail: JSON.stringify({ routes, routesProfile }),
         });
         await h.shot("cdp-shots/jarvis-tour-profile.png");
 
-        await h.ev(`document.querySelector('[data-jarvis-tour-skip]')?.click()`);
+        await click("[data-jarvis-tour-skip]");
         await wait(800);
-        const afterSkip = {
-            card: await h.ev(CARD),
-            profile: await h.ev(`!!document.querySelector('[data-jarvis-brief-modal="profile"]')`),
-        };
+        const afterSkip = { card: await h.ev(CARD), profile: await profileOpen() };
         steps.push({
-            step: "8. Skip ends the track and closes the Profile it opened",
+            step: "11. Skip ends the track and closes the Profile it opened",
             ok: afterSkip.card == null && afterSkip.profile === false,
             detail: JSON.stringify(afterSkip),
         });
 
-        for (const [n, track] of [["9", "initiatives"], ["10", "runsheet"]]) {
-            await h.ev(`document.querySelector('[data-jarvis-tour-button]')?.click()`);
+        await startTrack("profile");
+        await click("[data-jarvis-tour-next]");
+        await wait(1200);
+        const scope = { card: await h.ev(CARD), profile: await profileOpen() };
+        await key("Escape", "Escape", 27);
+        await wait(500);
+        const escaped = { card: await h.ev(CARD), profile: await profileOpen(), surface: await h.activeSurfaceLabel() };
+        steps.push({
+            step: "12. Escape with the Profile open ends the tour, closes the Profile and stays on Jarvis",
+            ok:
+                scope.card?.step === "profile:scope" &&
+                scope.profile === true &&
+                escaped.card == null &&
+                escaped.profile === false &&
+                /jarvis/i.test(escaped.surface ?? ""),
+            detail: JSON.stringify({ scope, escaped }),
+        });
+
+        for (const [n, track] of [["13", "initiatives"], ["14", "runsheet"]]) {
+            await startTrack(track);
             await wait(300);
-            await h.ev(`document.querySelector('[data-jarvis-tour-track="${track}"]')?.click()`);
-            await wait(1500);
             const card = await h.ev(CARD);
             steps.push({
                 step: `${n}. the ${track} track shows its first step, lit or centered`,
@@ -1068,32 +1326,43 @@ const jarvisTour = {
                 detail: JSON.stringify(card),
             });
             await h.shot(`cdp-shots/jarvis-tour-${track}.png`);
-            await h.ev(`document.querySelector('[data-jarvis-tour-skip]')?.click()`);
+            if (track === "runsheet") {
+                // back to the default language: removing jarvis.tour.lang does not reset the atom the app already
+                // read, so a rerun in this app would start in English and fail step 2
+                await click('[data-jarvis-tour-lang-toggle="vi"]');
+                await wait(200);
+            }
+            await click("[data-jarvis-tour-skip]");
             await wait(800);
         }
         return steps;
     },
     async teardown(h) {
-        await h.ev(`document.querySelector('[data-jarvis-tour-skip]')?.click()`).catch(() => {});
+        // a run that stopped mid-tour: the language back to Vietnamese through its own switch, then end the tour
+        await h
+            .ev(`(() => {
+                document.querySelector('[data-jarvis-tour-lang-toggle="vi"]')?.click();
+                document.querySelector('[data-jarvis-tour-skip]')?.click();
+            })()`)
+            .catch(() => {});
         await h.ev("localStorage.setItem('jarvis.tour.offered', 'true')").catch(() => {});
     },
 };
 ```
 
-If `pressKey` sits below this scenario in the file, move the scenario below `pressKey`'s definition or call
-`h.cdp("Input.dispatchKeyEvent", …)` inline the same way.
+**Step 8: Run it**
 
-**Step 7: Run it**
+On macOS skip this step (see Conventions): note `jarvis-tour` and `brief-surface` as not verified; the run's Final
+runs them. Elsewhere, with the dev app running: `task verify:ui -- jarvis-tour brief-surface`. Expected: all PASS.
+Open `cdp-shots/index.html` and look at the shots: the spotlight sits on the named controls, the card does not
+cover them, the card reads in Vietnamese and then English, the keys card is centered, and the colors follow the
+theme.
 
-With the dev app running: `task verify:ui -- jarvis-tour brief-profile brief-surface`. Expected: all PASS. Open
-`cdp-shots/index.html` and look at the shots: the spotlight sits on the named control, the card does not cover it,
-the card reads in Vietnamese and then English, and the colors follow the theme.
-
-**Step 8: Commit**
+**Step 9: Commit**
 
 ```bash
-git add -- frontend/app/view/jarvis/jarvistour.tsx frontend/app/view/jarvis/jarvistouractions.ts frontend/app/view/jarvis/briefsurface.tsx frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/dispatcher.ts scripts/cdp/scenarios.mjs
-git commit -m "feat(jarvis): a step-by-step tour of the Brief, Initiatives, the run sheet and the Profile" -- frontend/app/view/jarvis/jarvistour.tsx frontend/app/view/jarvis/jarvistouractions.ts frontend/app/view/jarvis/briefsurface.tsx frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/dispatcher.ts scripts/cdp/scenarios.mjs
+git add -- frontend/app/view/jarvis/jarvistour.tsx frontend/app/view/jarvis/jarvistouractions.ts frontend/app/view/jarvis/briefsurface.tsx frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/bindings.test.ts frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/dispatcher.test.ts scripts/cdp/scenarios.mjs
+git commit -m "feat(jarvis): a step-by-step tour of the Brief, Initiatives, the run sheet and the Profile" -- frontend/app/view/jarvis/jarvistour.tsx frontend/app/view/jarvis/jarvistouractions.ts frontend/app/view/jarvis/briefsurface.tsx frontend/app/store/keybindings/bindings.ts frontend/app/store/keybindings/bindings.test.ts frontend/app/store/keybindings/dispatcher.ts frontend/app/store/keybindings/dispatcher.test.ts scripts/cdp/scenarios.mjs
 ```
 
 ---
