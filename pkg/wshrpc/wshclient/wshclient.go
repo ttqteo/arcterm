@@ -7,6 +7,7 @@ package wshclient
 
 import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -215,6 +216,12 @@ func ClaudeAccountRenameCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAcco
 func ClaudeAccountSetEmailCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountSetEmailData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "claudeaccountsetemail", data, opts)
 	return err
+}
+
+// command "cleanstorage", wshserver.CleanStorageCommand
+func CleanStorageCommand(w *wshutil.WshRpc, data wshrpc.CommandCleanStorageData, opts *wshrpc.RpcOpts) (*storage.StorageCleanResult, error) {
+	resp, err := sendRpcRequestCallHelper[*storage.StorageCleanResult](w, "cleanstorage", data, opts)
+	return resp, err
 }
 
 // command "consult", wshserver.ConsultCommand
@@ -624,6 +631,12 @@ func GetSessionUsageCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSessionUsag
 	return resp, err
 }
 
+// command "getstorage", wshserver.GetStorageCommand
+func GetStorageCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*storage.StorageReport, error) {
+	resp, err := sendRpcRequestCallHelper[*storage.StorageReport](w, "getstorage", nil, opts)
+	return resp, err
+}
+
 // command "getsubagents", wshserver.GetSubagentsCommand
 func GetSubagentsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetSubagentsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetSubagentsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetSubagentsRtnData](w, "getsubagents", data, opts)
@@ -961,6 +974,12 @@ func RemoveBackgroundAgentCommand(w *wshutil.WshRpc, data wshrpc.CommandRemoveBa
 // command "reportrunphase", wshserver.ReportRunPhaseCommand
 func ReportRunPhaseCommand(w *wshutil.WshRpc, data wshrpc.CommandReportRunPhaseData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "reportrunphase", data, opts)
+	return err
+}
+
+// command "rescanstorage", wshserver.RescanStorageCommand
+func RescanStorageCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "rescanstorage", nil, opts)
 	return err
 }
 

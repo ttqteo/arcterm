@@ -15,6 +15,10 @@ const (
 	ConfigKey_NotifyToast                    = "notify:toast"
 	ConfigKey_NotifyReply                    = "notify:reply"
 
+	ConfigKey_StorageClear                   = "storage:*"
+	ConfigKey_StorageAutoClean               = "storage:autoclean"
+	ConfigKey_StorageNudgeGb                 = "storage:nudgegb"
+
 	ConfigKey_TermClear                      = "term:*"
 	ConfigKey_TermFontSize                   = "term:fontsize"
 	ConfigKey_TermFontFamily                 = "term:fontfamily"

@@ -2,6 +2,8 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -487,5 +489,36 @@ func TestConcurrentWorktreeAddAndRemoveDoNotFail(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+func TestRemoveWorktreeKeepBranchKeepsTheBranch(t *testing.T) {
+	dir := newGitRepo(t)
+	base := gitCmd(t, dir, "rev-parse", "HEAD")
+	wt, err := CreateRunWorktree(context.Background(), dir, "run-1", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveWorktreeKeepBranch(context.Background(), dir, wt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(wt); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the tree must be gone, stat says %v", err)
+	}
+	if out := gitCmd(t, dir, "branch", "--list", "wave/run-1"); out == "" {
+		t.Fatal("the branch must stay: Storage never deletes a run's commits")
+	}
+}
+
+func TestRunOfWorktreeNamesTheOwnerRun(t *testing.T) {
+	id := "11111111-2222-3333-4444-555555555555"
+	for _, key := range []string{id, id + "-t-2", id + "-final", id + "-bisect"} {
+		got, ok := RunOfWorktree(filepath.Join("/p", ".waveterm", "worktrees", key))
+		if !ok || got != id {
+			t.Fatalf("RunOfWorktree(%s) = %q, %v; want %s", key, got, ok, id)
+		}
+	}
+	if _, ok := RunOfWorktree(filepath.Join("/p", ".waveterm", "worktrees", "scratch")); ok {
+		t.Fatal("a name the engine never makes has no run")
 	}
 }

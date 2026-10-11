@@ -11,6 +11,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -23,6 +24,7 @@ var WaveEventDataTypes = map[string]reflect.Type{
 	wps.Event_BlockClose:       reflect.TypeOf(""),
 	wps.Event_ControllerStatus: reflect.TypeOf((*blockcontroller.BlockControllerRuntimeStatus)(nil)),
 	wps.Event_WaveObjUpdate:    reflect.TypeOf(waveobj.WaveObjUpdate{}),
+	wps.Event_StorageScan:      reflect.TypeOf(storage.StorageReport{}),
 	wps.Event_BlockFile:        reflect.TypeOf((*wps.WSFileEventData)(nil)),
 	wps.Event_Config:           reflect.TypeOf(wconfig.WatcherUpdate{}),
 	wps.Event_Badge:            reflect.TypeOf(baseds.BadgeEvent{}),

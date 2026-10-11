@@ -48,6 +48,10 @@ type SettingsType struct {
 	NotifyToast *bool `json:"notify:toast,omitempty"`
 	NotifyReply *bool `json:"notify:reply,omitempty"`
 
+	StorageClear     bool     `json:"storage:*,omitempty"`
+	StorageAutoClean *bool    `json:"storage:autoclean,omitempty"`
+	StorageNudgeGb   *float64 `json:"storage:nudgegb,omitempty"`
+
 	TermClear                  bool     `json:"term:*,omitempty"`
 	TermFontSize               float64  `json:"term:fontsize,omitempty"`
 	TermFontFamily             string   `json:"term:fontfamily,omitempty"`

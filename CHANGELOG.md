@@ -12,6 +12,10 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- **Settings → Storage** shows what arcterm and its agents leave on disk (finished runs' worktrees, old Claude
+  sessions, logs, cache and trash, your projects' build output) and cleans each with a button; the safe parts clean
+  themselves daily, and a toast says when more than 2 GB can go.
+
 - Jarvis has a tour: the **?** button in its header walks you through the Brief, Initiatives, the run sheet and the
   Profile one control at a time, in Vietnamese or English, and Jarvis offers it once the first time you open it.
 

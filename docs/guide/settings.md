@@ -1,6 +1,6 @@
 # Settings
 
-**Settings** gom mọi tùy chọn của arcterm vào sáu trang: **General**, **Appearance**, **Terminal**, **Agents**, **Background AI** và **About**. Trang này chỉ cách làm những việc thường gặp (đổi tài khoản Claude, chọn model cho run, bật cờ khởi chạy, đổi theme, cấu hình AI nền) rồi liệt kê từng trang.
+**Settings** gom mọi tùy chọn của arcterm vào bảy trang: **General**, **Appearance**, **Terminal**, **Agents**, **Storage**, **Background AI** và **About**. Trang này chỉ cách làm những việc thường gặp (đổi tài khoản Claude, chọn model cho run, bật cờ khởi chạy, đổi theme, cấu hình AI nền) rồi liệt kê từng trang.
 
 Mở bằng nút **Settings** ở đáy nav rail, hoặc `Ctrl+G` rồi `,`. Settings không có phím số `Ctrl+1`…`Ctrl+7` và không lọc theo project.
 
@@ -111,6 +111,18 @@ Cả ba công tắc thông báo mặc định bật.
 Gồm bốn thẻ: **Claude account**, **Sleep idle agents**, **Runs** (**Run route**) và **Launch flags**. Cách dùng ở phần "Làm thế nào" bên trên.
 
 **Sleep idle agents** (bật sẵn, 30 phút): agent rảnh quá số phút này thì ngủ, tức tiến trình dừng để trả RAM nhưng hàng và hội thoại vẫn còn; **Wake**, hoặc một tin gửi tới nó, cho nó làm tiếp từ chỗ cũ. Khi RAM thiếu, agent rảnh lâu nhất ngủ sớm hơn. Không bao giờ ngủ: agent bạn đang xem, agent của run, agent còn việc chạy nền.
+
+### Storage
+
+Những gì arcterm và các agent để lại trên đĩa, và nút dọn từng phần. Đầu trang ghi tổng dung lượng và phần dọn được, nút **Rescan** và giờ quét gần nhất. Lần dọn nào cũng hỏi xác nhận trước, nói rõ cái gì đi và lấy lại bao nhiêu. Thứ đang dùng không bao giờ bị xóa: mục bị bỏ qua vẫn nằm trong danh sách, lý do ghi bên cạnh.
+
+| Thẻ | Dọn gì | Ghi chú |
+|---|---|---|
+| **Run worktrees** | Worktree của run đã xong trong `.waveterm/worktrees`. Nhánh `wave/<run>` vẫn giữ. | Không bao giờ dọn worktree của run còn chạy hoặc còn đang land. Worktree có thay đổi chưa commit nằm ngoài **Clean all**: nút trên chính hàng của nó xóa sau khi xác nhận rằng các thay đổi đó sẽ mất. |
+| **Old Claude sessions** | Transcript trong `~/.claude/projects` không đổi từ 7, 30 (mặc định) hoặc 90 ngày. | Chuyển vào `~/.arc/trash`, nằm đó 7 ngày rồi mới xóa hẳn. Session đang mở trong một tab được giữ. |
+| **Logs, cache and trash** | Log đã cuộn (`waveapp.1.log`), thùng rác session và cache của giao diện. | Thùng rác bị xóa hẳn ngay. Cache được xóa lần sau arcterm mở. Bản dev trên macOS không có mục cache, vì nó dùng chung cache với bản cài. |
+| **Build output** | `node_modules`, `target`, `dist`, `build`, `.next`, `__pycache__` mà git bỏ qua trong các project của bạn. | Mỗi project một nút **Remove**, không có Clean all. Thư mục có file git đang theo dõi không bao giờ bị xóa. Project có agent đang làm hoặc run đang chạy bị từ chối. |
+| **Auto-clean** | **Clean the safe parts daily** (`storage:autoclean`, bật sẵn), **Remind me above** (`storage:nudgegb`, 2 GB) | Mỗi ngày (lần đầu 2 phút sau khi mở app), dọn worktree của run đã xong không có thay đổi và log cuộn cũ hơn 7 ngày. Session, build output và cache chờ bạn. Khi dọn được nhiều hơn ngưỡng, một toast mở trang này, mỗi ngày tối đa một lần. |
 
 ### Background AI
 
