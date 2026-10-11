@@ -29,6 +29,7 @@ import { openFileInPanel, openRefInCode, railMdModeAtom } from "./agentrailstore
 import type { FileRef } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { savedScroll, saveScroll } from "./filescroll";
 import { CardSlot, MdDocContext, type MdDocCtx } from "./mdcommentcards";
 import {
     blockForLine,
@@ -158,8 +159,41 @@ export function MdDoc({
         };
     }, [text]);
 
+    // back where the reader left this file, tried again as the document fills in (images, diagrams) until it lands or
+    // the reader scrolls; a saved place wins over the line the file was opened at
+    const pending = useRef(savedScroll(fileRef, "preview"));
+    const restoredTo = useRef<number | null>(null);
+    useLayoutEffect(() => {
+        const el = scrollRef.current;
+        const place = pending.current;
+        if (el == null || place == null) {
+            return;
+        }
+        el.scrollTop = place;
+        restoredTo.current = el.scrollTop;
+        if (Math.abs(el.scrollTop - place) < 1) {
+            pending.current = undefined;
+        }
+    }, [els]);
+    const onScroll = () => {
+        const el = scrollRef.current;
+        if (el == null) {
+            return;
+        }
+        if (pending.current != null) {
+            if (el.scrollTop === restoredTo.current) {
+                return;
+            }
+            pending.current = undefined;
+        }
+        // a hidden document has no height and clamps to the top: not the reader's place
+        if (el.clientHeight > 0) {
+            saveScroll(fileRef, "preview", el.scrollTop);
+        }
+    };
+
     // opened at a line: centre its block once per file and line, not on every later DOM change
-    const scrolledTo = useRef("");
+    const scrolledTo = useRef(pending.current != null ? `${fileRef.abs}:${line ?? ""}` : "");
     useLayoutEffect(() => {
         const key = `${fileRef.abs}:${line ?? ""}`;
         if (line == null || hitIndex < 0 || scrolledTo.current === key) {
@@ -375,6 +409,7 @@ export function MdDoc({
             tabIndex={-1}
             data-md-doc
             onKeyDown={onKeyDown}
+            onScroll={onScroll}
             className="min-h-0 flex-1 overflow-y-auto bg-background outline-none focus:ring-1 focus:ring-inset focus:ring-accent/40"
         >
             <div

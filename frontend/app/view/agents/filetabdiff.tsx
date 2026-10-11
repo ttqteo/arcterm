@@ -10,8 +10,10 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { languageForPath } from "@/app/view/code/codeclassify";
 import { fireAndForget } from "@/util/util";
 import type * as MonacoTypes from "monaco-editor";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { FileRef } from "./agentrailtabs";
 import { MAX_DIFF_BYTES } from "./diffcontentstore";
+import { savedScroll, saveScroll } from "./filescroll";
 
 const MonacoDiffViewer = lazy(() => import("@/app/monaco/monaco-react").then((m) => ({ default: m.MonacoDiffViewer })));
 
@@ -32,6 +34,7 @@ const OPTIONS: MonacoTypes.editor.IDiffEditorOptions = {
 };
 
 export function FileTabDiff({
+    fileRef,
     abs,
     cwd,
     rel,
@@ -40,6 +43,7 @@ export function FileTabDiff({
     reread,
     wrap,
 }: {
+    fileRef: FileRef; // whose place in the diff is kept (filescroll.ts)
     abs: string;
     cwd: string;
     rel: string;
@@ -49,6 +53,9 @@ export function FileTabDiff({
     wrap: boolean;
 }) {
     const [orig, setOrig] = useState<Base>({ kind: "loading" });
+    // the ref open now: reopening the file on screen keeps its editor, whose scroll is then that open's to keep
+    const refNow = useRef(fileRef);
+    refNow.current = fileRef;
     const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
     useEffect(() => {
         let live = true;
@@ -102,6 +109,28 @@ export function FileTabDiff({
                     modified={modified}
                     language={languageForPath(abs)}
                     options={options}
+                    onMount={(diff) => {
+                        // back where the reader left it, once the diff is computed too: its folded regions and
+                        // removed lines change the height under the first restore
+                        const ed = diff.getModifiedEditor();
+                        const place = savedScroll(fileRef, "diff");
+                        const restore = () => place != null && ed.setScrollTop(place);
+                        restore();
+                        const computed = diff.onDidUpdateDiff(() => {
+                            computed.dispose();
+                            restore();
+                        });
+                        const scrolled = ed.onDidScrollChange((e) => {
+                            // a hidden editor lays out at no height and clamps to the top: not the reader's place
+                            if (e.scrollTopChanged && ed.getLayoutInfo().height > 0) {
+                                saveScroll(refNow.current, "diff", e.scrollTop);
+                            }
+                        });
+                        return () => {
+                            computed.dispose();
+                            scrolled.dispose();
+                        };
+                    }}
                 />
             </Suspense>
         </div>

@@ -56,6 +56,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - The **Split** menu's **Show only this agent** is now **Close split**.
 - The **File** tab's header shows the file's whole path, `slides/slide.pdf`, not only its folder, and a middle click
   on the tab closes it, as an editor's tab.
+- The **File** tab keeps your place: switching agents, tabs, or Back and Forward brings a file back where you left it
+  in Source, Preview and Diff, not at the top. A file opened afresh from a link still starts at its line. A PDF or a
+  web page still opens at the top.
 
 ### Changed
 

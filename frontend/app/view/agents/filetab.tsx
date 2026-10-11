@@ -27,6 +27,7 @@ import {
 import { currentFileView, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
 import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { HtmlFrame } from "./htmlframe";
@@ -71,6 +72,9 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     const stampRef = useRef<string | undefined>(undefined);
     stampRef.current = state.kind === "text" ? state.stamp : undefined;
     const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
+    // the ref open now: reopening the file on screen keeps its editor, whose scroll is then that open's to keep
+    const refNow = useRef(ref);
+    refNow.current = ref;
     const stickRef = useRef(true); // the view sits at the end, so new output keeps it there
     const wrap = useWrap(ref?.abs ?? "", !!ref?.live);
     const options = useMemo(() => ({ ...OPTIONS, wordWrap: wrap ? ("on" as const) : ("off" as const) }), [wrap]);
@@ -174,6 +178,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     } else if (diffable && diff != null && ref.root != null) {
         body = (
             <FileTabDiff
+                fileRef={ref}
                 abs={ref.abs}
                 cwd={ref.root}
                 rel={diff.rel}
@@ -213,10 +218,17 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                     onMount={(editor, monacoApi) => {
                         editorRef.current = editor;
                         const toEnd = () => editor.revealLine(editor.getModel()?.getLineCount() ?? 1);
+                        // back where the reader left it, unless it follows the output to its end
+                        const place = followingRef.current ? undefined : savedScroll(ref, view);
                         // scrolled by the reader (not by the text growing): stuck when it ends at the bottom
                         const scrolled = editor.onDidScrollChange((e) => {
                             if (e.scrollTopChanged) {
-                                stickRef.current = e.scrollTop + editor.getLayoutInfo().height >= e.scrollHeight - 24;
+                                const height = editor.getLayoutInfo().height;
+                                stickRef.current = e.scrollTop + height >= e.scrollHeight - 24;
+                                // a hidden editor lays out at no height and clamps to the top: not the reader's place
+                                if (height > 0 && refNow.current != null) {
+                                    saveScroll(refNow.current, view, e.scrollTop);
+                                }
                             }
                         });
                         const grew = editor.onDidChangeModelContent(() => {
@@ -229,14 +241,19 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                             grew.dispose();
                             editorRef.current = null;
                         };
+                        if (place != null) {
+                            editor.setScrollTop(place);
+                        }
                         if (line == null) {
                             if (followingRef.current) {
                                 toEnd();
                             }
                             return unmount;
                         }
-                        editor.revealLineInCenter(line);
-                        editor.setPosition({ lineNumber: line, column: 1 });
+                        if (place == null) {
+                            editor.revealLineInCenter(line);
+                            editor.setPosition({ lineNumber: line, column: 1 });
+                        }
                         const hit = editor.createDecorationsCollection([
                             {
                                 range: new monacoApi.Range(line, 1, line, 1),
