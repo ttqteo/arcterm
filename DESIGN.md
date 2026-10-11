@@ -1,59 +1,59 @@
 ---
 version: alpha
 name: arcterm Cockpit
-description: Design system of the Tauri agent-cockpit frontend. Tokens mirror frontend/tailwindsetup.css @theme values (Graphite default); prose explains how they are applied. The code is authoritative when this file disagrees.
+description: Design system of the Tauri agent-cockpit frontend. Tokens mirror frontend/tailwindsetup.css @theme values (Claude default); prose explains how they are applied. The code is authoritative when this file disagrees.
 colors:
   # core surfaces
-  background: "#101010"
-  surface: "#161616"
-  surface-raised: "#1c1c1c"
-  surface-hover: "#252525"
-  surface-code: "#0c0c0c"
-  surface-selected: "#2d2d2d"
-  panel: "rgba(28, 28, 28, 0.6)"
+  background: "#1f1e1d"
+  surface: "#262624"
+  surface-raised: "#30302e"
+  surface-hover: "#363532"
+  surface-code: "#141413"
+  surface-selected: "#3d3c38"
+  panel: "rgba(48, 48, 46, 0.6)"
   lane: "#141414"
-  modalbg: "#1c1c1c"
+  modalbg: "#30302e"
   # text (ink ramp)
-  foreground: "#d6d6d6"
-  white: "#d6d6d6"
-  primary: "#d6d6d6"
-  secondary: "#cccccc"
+  foreground: "#ece9e0"
+  white: "#ece9e0"
+  primary: "#ece9e0"
+  secondary: "#c2c0b6"
   muted-foreground: "#c9c9c9"
   ink-hi: "#e3e3e3"
   ink-mid: "#a2a2a2"
-  muted: "#8e8e8e"
-  ink-faint: "#666666"
+  muted: "#a3a198"
+  ink-faint: "#7b7972"
   # borders (edge ramp)
-  border: "#1f1f1f"
-  edge-mid: "#2a2a2a"
-  edge-strong: "#3d3d3d"
-  edge-faint: "#1a1a1a"
-  # accent (blue, with a periwinkle ramp)
-  accent: "#5e9cff"
-  accent-50: "#e8ecff"
-  accent-100: "#cdd6ff"
-  accent-200: "#aebfff"
-  accent-300: "#8da3ff"
-  accent-400: "#5e9cff"
-  accent-500: "#5f74e0"
-  accent-600: "#4f61c4"
-  accent-700: "#3f4ea0"
-  accent-800: "#2f3b7a"
-  accent-900: "#232c5c"
-  accenthover: "#8da3ff"
-  accent-soft: "#aebfff"
-  accentbg: "rgba(94, 156, 255, 0.12)"
+  border: "#2e2d2b"
+  edge-mid: "#383734"
+  edge-strong: "#4a4945"
+  edge-faint: "#282725"
+  # accent (Claude's clay, with its derived ramp)
+  accent: "#d97757"
+  accent-50: "#f7e4dd"
+  accent-100: "#efc6b8"
+  accent-200: "#e4a089"
+  accent-300: "#de8a6f"
+  accent-400: "#d97757"
+  accent-500: "#b26247"
+  accent-600: "#8f4f39"
+  accent-700: "#713e2d"
+  accent-800: "#522d21"
+  accent-900: "#3d2118"
+  accenthover: "#de8a6f"
+  accent-soft: "#e4a089"
+  accentbg: "rgba(217, 119, 87, 0.12)"
   # status
-  error: "#e0726c"
+  error: "#ff6b80"
   error-soft: "#f0a9a4"
-  warning: "#e6b450"
-  asking: "#e6b450"
+  warning: "#ffc107"
+  asking: "#ffc107"
   warning-soft: "#f0d79f"
-  success: "#54c79a"
-  working: "#54c79a"
-  success-soft: "#bfe6d6"
-  on-warning: "#1a1306"
-  askingbg: "rgba(230, 180, 80, 0.12)"
+  success: "#4eba65"
+  working: "#4eba65"
+  success-soft: "#95d6a3"
+  on-warning: "#1a1301"
+  askingbg: "rgba(255, 193, 7, 0.12)"
   pill: "rgba(255, 255, 255, 0.05)"
   # identity (theme-agnostic by design)
   skill: "#c58cff"
@@ -166,10 +166,10 @@ is terminal-native: information density is high, chrome is thin, and every
 interactive element answers to the keyboard before the mouse (the app is
 designed to be operated entirely from the keyboard; the mouse is a fallback).
 
-The visual identity is **graphite**: neutral greys with no hue, layered in a
+The visual identity is **Claude's palette**: claude.ai's warm greys, layered in a
 tonal surface ramp so regions are separated by tone rather than by lines. Text
-rides an ink ramp that steps from `ink-faint` through `muted` to near-white.
-The blue accent (`#5e9cff`) is used sparingly (the primary CTA, focus, links
+rides an ink ramp that steps from `ink-faint` through `muted` to a warm ivory.
+The clay accent (`#d97757`) is used sparingly (the primary CTA, focus, links
 and the running state) so it still reads as a signal. Status is semantic and
 never color-alone: amber = asking, green = working, red = error.
 
@@ -181,7 +181,7 @@ exclusively from shared motion tokens.
 
 The whole cockpit re-skins at runtime by overriding `--color-*` custom
 properties on `<html>` — no component edits, no `.dark` class, no
-ThemeProvider. `graphite` is the default palette and is guaranteed to equal
+ThemeProvider. `claude` is the default palette and is guaranteed to equal
 the `@theme` literals in `frontend/tailwindsetup.css` (guarded by
 `themes.test.ts`).
 
@@ -189,61 +189,61 @@ the `@theme` literals in `frontend/tailwindsetup.css` (guarded by
 
 All colors come from `@theme` tokens in `frontend/tailwindsetup.css`; **raw
 hex/rgba never appears in component `className` or `style`**. Values below are
-the Graphite defaults, verbatim from that file.
+the Claude defaults, verbatim from that file.
 
 ### Surface ramp (layering, not shadows)
 
 Backgrounds step from the app backdrop up to hovered/selected rows:
 
-- **`background` `#101010`** — app canvas.
-- **`surface` `#161616`** — base containers.
-- **`surface-raised` `#1c1c1c`** — cards, panels, modals, app-bar buttons.
-- **`surface-hover` `#252525`** — hover state for raised elements.
-- **`surface-code` `#0c0c0c`** — diff/terminal body, one step *below* surface.
-- **`surface-selected` `#2d2d2d`** — persistent selected row; a grey fill, not
+- **`background` `#1f1e1d`** — app canvas.
+- **`surface` `#262624`** — base containers.
+- **`surface-raised` `#30302e`** — cards, panels, modals, app-bar buttons.
+- **`surface-hover` `#363532`** — hover state for raised elements.
+- **`surface-code` `#141413`** — diff/terminal body, one step *below* surface.
+- **`surface-selected` `#3d3c38`** — persistent selected row; a grey fill, not
   an accent tint.
-- **`panel` `rgba(28,28,28,0.6)`** — translucent overlay panels.
+- **`panel` `rgba(48,48,46,0.6)`** — translucent overlay panels.
 - **`lane` `#141414`** — agent-card lane fill.
 
 ### Ink ramp (text)
 
 Stepped for readability, with a documented contrast floor (see Do's and
-Don'ts): `ink-faint 3.31:1 < muted 5.81:1 < secondary 11.85:1 < text 13.09:1`
-against `background`; `muted` on a hovered row (`surface-hover`) is 4.68:1.
+Don'ts): `ink-faint 3.82:1 < muted 6.43:1 < secondary 9.12:1 < text 13.71:1`
+against `background`; `muted` on a hovered row (`surface-hover`) is 4.74:1.
 
-- **`foreground` / `primary` / `white` `#d6d6d6`** — primary text.
-- **`secondary` `#cccccc`** — secondary text; **`muted-foreground`
-  `#c9c9c9`** sits just below it.
+- **`foreground` / `primary` / `white` `#ece9e0`** — primary text.
+- **`secondary` `#c2c0b6`** — secondary text; **`muted-foreground`
+  `#c9c9c9`** is one of the untinted greys every theme shares.
 - **`ink-hi` `#e3e3e3`** — high-emphasis body text.
 - **`ink-mid` `#a2a2a2`** — tool badges, secondary button text.
-- **`muted` `#8e8e8e`** — captions/meta; clears WCAG AA (4.5:1) on background
+- **`muted` `#a3a198`** — captions/meta; clears WCAG AA (4.5:1) on background
   and on a hovered row.
-- **`ink-faint` `#666666`** — gutters/separators; clears the 3:1 non-text
+- **`ink-faint` `#7b7972`** — gutters/separators; clears the 3:1 non-text
   minimum but is not for body text.
 
 ### Edge ramp (borders)
 
-- **`border` `#1f1f1f`**, **`edge-faint` `#1a1a1a`**, **`edge-mid` `#2a2a2a`**,
-  **`edge-strong` `#3d3d3d`** — faint for dividers, strong for hover/focus
+- **`border` `#2e2d2b`**, **`edge-faint` `#282725`**, **`edge-mid` `#383734`**,
+  **`edge-strong` `#4a4945`** — faint for dividers, strong for hover/focus
   outlines. Prefer a tone step over a border where the surface ramp already
   separates two regions.
 
-### Accent ramp (blue, used sparingly)
+### Accent ramp (clay, used sparingly)
 
-- **`accent` `#5e9cff`** — the main accent: the primary CTA, focus rings,
+- **`accent` `#d97757`** — the main accent: the primary CTA, focus rings,
   links, the running state. Selection and hover are grey, not accent.
-- **`accent-50…900`** — full ramp (`#e8ecff` → `#232c5c`) for gradients and
+- **`accent-50…900`** — full ramp (`#f7e4dd` → `#3d2118`) for gradients and
   emphasis tiers.
-- **`accenthover` `#8da3ff`**, **`accent-soft` `#aebfff`**, **`accentbg`
-  `rgba(94,156,255,0.12)`** — hover, soft text on tinted backgrounds, and
+- **`accenthover` `#de8a6f`**, **`accent-soft` `#e4a089`**, **`accentbg`
+  `rgba(217,119,87,0.12)`** — hover, soft text on tinted backgrounds, and
   tinted fills.
 
 ### Status (semantic, never color alone)
 
-- **`working` / `success` `#54c79a`** (green), **`asking` / `warning`
-  `#e6b450`** (amber), **`error` `#e0726c`** (red), each with a `-soft`
-  variant for tinted fills; **`on-warning` `#1a1306`** for text on filled
-  amber badges, **`askingbg` `rgba(230,180,80,0.12)`** for asking-tint fills
+- **`working` / `success` `#4eba65`** (green), **`asking` / `warning`
+  `#ffc107`** (amber), **`error` `#ff6b80`** (red), each with a `-soft`
+  variant for tinted fills; **`on-warning` `#1a1301`** for text on filled
+  amber badges, **`askingbg` `rgba(255,193,7,0.12)`** for asking-tint fills
   (theme-derived like `accentbg`), and **`pill` `rgba(255,255,255,0.05)`**
   for faint pill/chip overlays (preserved across themes with the neutral
   overlays). Status is always paired with an icon, label, or dot — color
@@ -283,7 +283,7 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
 
 ### Runtime theming
 
-`themes.ts` (`THEMES`: graphite (default), midnight, slate, carbon, nocturne,
+`themes.ts` (`THEMES`: claude (default), graphite, midnight, slate, carbon, nocturne,
 onedark, monokai) maps each base palette to the full `--color-*` override set and writes
 them as inline styles on `document.documentElement` — highest specificity,
 beats `:root`, re-skins everything with zero component edits. Subtle greys
@@ -293,8 +293,8 @@ stay at defaults, safe across all dark themes. `DEFAULT_THEME_PRESET` in
 status tokens (guarded by `themes.test.ts`). All dark only — light mode
 (Paper) was declined 2026-08-24 (see `docs/deferred.md`); an unknown preset
 id falls back to the default. Someone who already picked a preset keeps it
-(it is stored in localStorage), so a user who once reverted to the old
-default stays on Midnight.
+(it is stored in localStorage), so a user who once reverted to an old
+default stays on it (Midnight, or Graphite before Claude took over).
 
 ## Typography
 
@@ -534,7 +534,7 @@ engine):
   with a which-key hint bar, `?` cheat sheet.
 - **Theming.** Tailwind v4 `@theme` tokens → `var(--color-*)` utilities →
   `themes.ts` `buildThemeVars` inline overrides on `<html>`. The default
-  (Graphite) must equal the `@theme` literals (golden-tested). ANSI/terminal derived from the
+  (Claude) must equal the `@theme` literals (golden-tested). ANSI/terminal derived from the
   same palette.
 - **File organization.** `view/<family>/` holds everything for a surface
   (flat); `element/` shared primitives; `modals/` global overlays; `store/`

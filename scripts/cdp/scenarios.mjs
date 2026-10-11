@@ -10014,15 +10014,15 @@ const agentTreeRail = {
             preset: localStorage.getItem("cockpit.theme.preset"),
             bg: getComputedStyle(document.documentElement).getPropertyValue("--color-background").trim(),
         }))()`);
-        // atomWithStorage keeps JSON, so a picked Graphite is the quoted string
+        // atomWithStorage keeps JSON, so a picked Claude is the quoted string
         steps.push(
-            theme.preset == null || theme.preset === '"graphite"'
+            theme.preset == null || theme.preset === '"claude"'
                 ? {
-                      step: "12. with no preset picked the cockpit is Graphite",
-                      ok: theme.bg === "#101010",
+                      step: "12. with no preset picked the cockpit is Claude",
+                      ok: theme.bg === "#1f1e1d",
                       detail: JSON.stringify(theme),
                   }
-                : skipStep("12. with no preset picked the cockpit is Graphite", `this profile picked ${theme.preset}`)
+                : skipStep("12. with no preset picked the cockpit is Claude", `this profile picked ${theme.preset}`)
         );
 
         // a project row is the Active section's folder row; a plain agent row is a top-level row: no tree guides, no

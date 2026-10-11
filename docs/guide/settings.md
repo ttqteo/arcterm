@@ -85,7 +85,7 @@ Cả ba công tắc thông báo mặc định bật.
 
 | Thẻ | Mục | Ghi chú |
 |---|---|---|
-| **Theme** | Preset | Graphite (mặc định), Midnight, Slate, Carbon, Nocturne, One Dark, Monokai. |
+| **Theme** | Preset | Claude (mặc định), Graphite, Midnight, Slate, Carbon, Nocturne, One Dark, Monokai. |
 | **Colors** | **Accent**, **Working / accept**, **Asking / attention**, **Blocked / reject** | Ghi đè màu vai trò; Accent có bảng màu sẵn và ô hex tùy ý. |
 | **Fonts** | **Interface font** | Inter (mặc định), Hanken Grotesk, System UI. |
 | | **Code font** | JetBrains Mono (mặc định), Hack, Fira Code. |

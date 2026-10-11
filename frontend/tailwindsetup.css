@@ -5,21 +5,21 @@
 
 @theme {
     /* Surfaces (handoff bg ramp) */
-    --color-background: #101010;
-    --color-surface: #161616;
-    --color-surface-raised: #1c1c1c;
-    --color-surface-hover: #252525;
-    --color-surface-code: #0c0c0c; /* diff / terminal body (design-system "Code") */
-    --color-surface-selected: #2d2d2d; /* persistent selected row (design-system "Selected"); distinct from transient surface-hover */
-    --color-panel: rgba(28, 28, 28, 0.6);
-    --color-modalbg: #1c1c1c;
+    --color-background: #1f1e1d;
+    --color-surface: #262624;
+    --color-surface-raised: #30302e;
+    --color-surface-hover: #363532;
+    --color-surface-code: #141413; /* diff / terminal body (design-system "Code") */
+    --color-surface-selected: #3d3c38; /* persistent selected row (design-system "Selected"); distinct from transient surface-hover */
+    --color-panel: rgba(48, 48, 46, 0.6);
+    --color-modalbg: #30302e;
     --color-lane: #141414; /* agent-card lane fill (handoff laneBg) */
 
     /* Text (handoff ink ramp) */
-    --color-foreground: #d6d6d6;
-    --color-white: #d6d6d6;
-    --color-primary: #d6d6d6;
-    --color-secondary: #cccccc;
+    --color-foreground: #ece9e0;
+    --color-white: #ece9e0;
+    --color-primary: #ece9e0;
+    --color-secondary: #c2c0b6;
     --color-muted-foreground: #c9c9c9;
     --color-ink-hi: #e3e3e3; /* high-emphasis body/content text (handoff memory surface content) */
     --color-ink-mid: #a2a2a2; /* mid grey — handoff tool badges + secondary button text */
@@ -28,49 +28,49 @@
        Measured against --color-background: muted was 3.92:1 (WCAG AA for text is 4.5:1) and, on a hovered
        row, 3.47:1; ink-faint was 1.90:1. Lifted so muted clears AA on both the background and a hovered row,
        and ink-faint clears the 3:1 non-text minimum for the separators and gutters it draws. Against the
-       Graphite background (#101010) the ramp steps cleanly: ink-faint 3.31 < muted 5.81 < secondary 11.85 <
-       text 13.09; muted on a hovered row (#252525) is 4.68.
+       Claude background (#1f1e1d) the ramp steps cleanly: ink-faint 3.82 < muted 6.43 < secondary 9.12 <
+       text 13.71; muted on a hovered row (#363532) is 4.74.
        Mirrored per theme in view/agents/themes.ts, which overrides both at runtime. */
-    --color-muted: #8e8e8e;
-    --color-ink-faint: #666666;
+    --color-muted: #a3a198;
+    --color-ink-faint: #7b7972;
 
     /* Borders (handoff edge) */
-    --color-border: #1f1f1f;
-    --color-edge-mid: #2a2a2a;
-    --color-edge-strong: #3d3d3d;
-    --color-edge-faint: #1a1a1a; /* faint dividers — handoff transcript tool-box rows */
+    --color-border: #2e2d2b;
+    --color-edge-mid: #383734;
+    --color-edge-strong: #4a4945;
+    --color-edge-faint: #282725; /* faint dividers — handoff transcript tool-box rows */
 
-    /* Accent (main accent follows pi's cc-dark blue #5e9cff; the ramp keeps the handoff periwinkle anchors #aebfff/#8da3ff/#7c95ff/#5f74e0, rest interpolated) */
-    --color-accent-50: #e8ecff;
-    --color-accent-100: #cdd6ff;
-    --color-accent-200: #aebfff;
-    --color-accent-300: #8da3ff;
-    --color-accent-400: #5e9cff; /* main accent color (pi cc-dark) */
-    --color-accent-500: #5f74e0;
-    --color-accent-600: #4f61c4;
-    --color-accent-700: #3f4ea0;
-    --color-accent-800: #2f3b7a;
-    --color-accent-900: #232c5c;
-    --color-accent: #5e9cff;
-    --color-accenthover: #8da3ff;
-    --color-accent-soft: #aebfff;
-    --color-accentbg: rgba(94, 156, 255, 0.12);
+    /* Accent (Claude's clay #d97757; the ramp is the one buildThemeVars derives from it in view/agents/themes.ts) */
+    --color-accent-50: #f7e4dd;
+    --color-accent-100: #efc6b8;
+    --color-accent-200: #e4a089;
+    --color-accent-300: #de8a6f;
+    --color-accent-400: #d97757; /* main accent color */
+    --color-accent-500: #b26247;
+    --color-accent-600: #8f4f39;
+    --color-accent-700: #713e2d;
+    --color-accent-800: #522d21;
+    --color-accent-900: #3d2118;
+    --color-accent: #d97757;
+    --color-accenthover: #de8a6f;
+    --color-accent-soft: #e4a089;
+    --color-accentbg: rgba(217, 119, 87, 0.12);
     /* skill invocation chip */
     --color-skill: #c58cff;
     --color-skill-soft: #dcc0ff;
 
     /* Status: amber = asking, green = working */
-    --color-error: #e0726c;
-    --color-warning: #e6b450;
-    --color-asking: #e6b450;
-    --color-success: #54c79a;
+    --color-error: #ff6b80;
+    --color-warning: #ffc107;
+    --color-asking: #ffc107;
+    --color-success: #4eba65;
     --color-cacheread: #656565; /* usage split: cache-read segment (low-value, high-volume) */
     /* handoff card-body colors (Wave-cockpit-live.dc.html) */
-    --color-on-warning: #1a1306; /* text on the filled needs-you badge */
+    --color-on-warning: #1a1301; /* text on the filled needs-you badge */
     --color-askingbg: rgba(
-        230,
-        180,
-        80,
+        255,
+        193,
+        7,
         0.12
     ); /* asking-tint fill (effortcard ring); mirrored per theme in themes.ts like accentbg */
     /* Provider brand identity (not theme-derived; single source for the plan-strip dots) */
@@ -79,14 +79,14 @@
     --color-provider-opencode: #a78bfa;
     --color-provider-agy: #8ecdf0;
     --color-provider-pi: #ececec; /* monochrome mark (pi.svg #09090b), inverted like codex */
-    --color-success-soft: #bfe6d6; /* working activity line */
+    --color-success-soft: #95d6a3; /* working activity line */
     --color-error-soft: #f0a9a4; /* danger CTA label on tinted fill (Canvas-13 confirm dialog) */
     --color-warning-soft: #f0d79f; /* warning accent, lightened */
     --color-feed-label: #7e7e7e; /* tool-line uppercase tool name */
     --color-feed-summary: #a2a2a2; /* tool-line summary text */
     --color-feed-time: #555555; /* tool-line faint meta */
     --color-feed-glyph: #4b4b4b; /* drag handle glyph */
-    --color-working: #54c79a;
+    --color-working: #4eba65;
 
     /* The Jarvis pet's Vietnam colours, the flag shirt and the flag in hand (petsprite.ts): the flag's own red and
        yellow, identity, never theme-derived */

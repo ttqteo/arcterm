@@ -73,16 +73,18 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
     }
 });
 
-describe("graphite — contrast floor (DESIGN.md)", () => {
-    const p = activePalette("graphite");
-    it("muted clears 4.5:1 on the background and on a hovered row", () => {
-        expect(contrast(p.muted, p.bg)).toBeGreaterThanOrEqual(4.5);
-        expect(contrast(p.muted, p.surfaceHover)).toBeGreaterThanOrEqual(4.5);
+for (const id of [DEFAULT_THEME_PRESET, "graphite"]) {
+    describe(`${id} — contrast floor (DESIGN.md)`, () => {
+        const p = activePalette(id);
+        it("muted clears 4.5:1 on the background and on a hovered row", () => {
+            expect(contrast(p.muted, p.bg)).toBeGreaterThanOrEqual(4.5);
+            expect(contrast(p.muted, p.surfaceHover)).toBeGreaterThanOrEqual(4.5);
+        });
+        it("ink-faint clears the 3:1 non-text minimum on the background", () => {
+            expect(contrast(p.inkFaint, p.bg)).toBeGreaterThanOrEqual(3);
+        });
     });
-    it("ink-faint clears the 3:1 non-text minimum on the background", () => {
-        expect(contrast(p.inkFaint, p.bg)).toBeGreaterThanOrEqual(3);
-    });
-});
+}
 
 describe("color math (via override derivation)", () => {
     it("accent override propagates to accent-400 and accentbg", () => {
@@ -111,13 +113,13 @@ describe("helpers", () => {
         expect(colorOf(p, {}, "accent")).toBe("#5e9cff");
         expect(colorOf(p, { accent: "#123456" }, "accent")).toBe("#123456");
     });
-    it("THEMES ships the seven dark presets — light mode was declined and removed", () => {
-        expect(THEMES).toHaveLength(7);
+    it("THEMES ships the eight dark presets — light mode was declined and removed", () => {
+        expect(THEMES).toHaveLength(8);
         expect(THEMES[0].id).toBe(DEFAULT_THEME_PRESET);
     });
     it("ACCENT_SWATCHES has 10 hex values", () => {
         expect(ACCENT_SWATCHES).toHaveLength(10);
-        expect(ACCENT_SWATCHES[0]).toBe("#5e9cff");
+        expect(ACCENT_SWATCHES[0]).toBe(activePalette(DEFAULT_THEME_PRESET).accent);
     });
     it("applyThemeVars sets each var on the root style", () => {
         const set: Record<string, string> = {};

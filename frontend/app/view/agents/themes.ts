@@ -45,9 +45,36 @@ export interface ThemeDef {
 
 // The preset a user who never picked one sees. It must equal the @theme literals in tailwindsetup.css (first
 // paint) — guarded by themes.test.ts — and be THEMES[0], which activePalette falls back to.
-export const DEFAULT_THEME_PRESET = "graphite";
+export const DEFAULT_THEME_PRESET = "claude";
 
 export const THEMES: ThemeDef[] = [
+    {
+        id: "claude",
+        name: "Claude",
+        // Claude's own dark palette: the claude.ai warm greys (#1f1e1d sidebar, #262624 canvas, #30302e input),
+        // Anthropic's #141413 for code, the clay #d97757 accent, and Claude Code's dark-theme status colors. text
+        // is the brand ivory #faf9f5 dimmed; the steps between are interpolated to the DESIGN.md contrast floor.
+        palette: {
+            bg: "#1f1e1d",
+            surface: "#262624",
+            surfaceRaised: "#30302e",
+            surfaceHover: "#363532",
+            surfaceSelected: "#3d3c38",
+            code: "#141413",
+            border: "#2e2d2b",
+            edgeMid: "#383734",
+            edgeStrong: "#4a4945",
+            edgeFaint: "#282725",
+            text: "#ece9e0",
+            secondary: "#c2c0b6",
+            muted: "#a3a198",
+            inkFaint: "#7b7972",
+            accent: "#d97757",
+            success: "#4eba65",
+            warning: "#ffc107",
+            error: "#ff6b80",
+        },
+    },
     {
         id: "graphite",
         name: "Graphite",
@@ -223,15 +250,15 @@ export const THEMES: ThemeDef[] = [
 ];
 
 // Accent quick-picks for the Custom colors card (ports the mockup accentPalette; the first
-// entry tracks the current default accent, graphite's cc-dark blue).
+// entry tracks the current default accent, Claude's clay).
 export const ACCENT_SWATCHES: string[] = [
+    "#d97757",
     "#5e9cff",
     "#4d9fff",
     "#66d9ef",
     "#2fb8a0",
     "#a6e22e",
     "#e6b450",
-    "#e08a4f",
     "#f92672",
     "#b57cff",
     "#e0726c",
