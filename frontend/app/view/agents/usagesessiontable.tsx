@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Usage surface's By session table (Claude tab): one row per Claude tab in the window, most expensive first,
-// with the share of the window's Claude spend, its share
-// of the 5-hour and weekly quota windows (subagents included), the context it ran at, cold resumes, how much of it was subagents,
-// and the deterministic chips that say why it cost what it did. Thin: rows, chips and the 25-row cut come from
-// usagesessions.ts. Columns and sizes follow Main.dc.html in the usage-insights prototype.
+// with the share of the window's Claude spend, its share of the 5-hour and weekly quota windows (subagents included),
+// the context it ran at, cold resumes, how much of it was subagents, and the deterministic chips that say why it cost
+// what it did. Thin: rows, chips and the 25-row cut come from usagesessions.ts. Columns and sizes follow Main.dc.html
+// in the usage-insights prototype.
 
 import { Meter } from "@/app/element/meter";
 import { SkeletonLine } from "@/app/element/skeleton";
