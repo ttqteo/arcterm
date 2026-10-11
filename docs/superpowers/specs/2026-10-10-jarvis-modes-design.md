@@ -29,6 +29,12 @@ first fold" below). Mockup: `.superpowers/design/jarvis-modes/project/` (gitigno
   shrinks; restoring grows the window first, then scales the content out of Sprout. Reduced motion skips both
   animations. While folded, Sprout can still be dragged anywhere; the next fold lands in the corner again, so no "last
   dropped" spot is kept.
+- **The pet teleports across the fold** (added 2026-10-11), whichever creature it is: it departs from where it walks
+  (a ring opens under it, it turns to light and is pulled up into a beam, 360 ms; the content starts to shrink 260 ms
+  in), arrives in the corner once the folded window stands there (a beam drops, the ring opens, it lands stretched,
+  squashes and settles, 480 ms), and on a restore departs the corner before the window grows and arrives where it walks
+  after. Drawn on the pet's cell grid in the `--color-teleport-*` tokens (a recall blue, identity like the Minion's);
+  the walk holds still while it plays. Reduced motion skips it. `petteleport.ts`, `teleportstore.ts`.
 - **Minimize goes to Sprout in every size**, by default. A new setting, **Settings → General → Minimize: Sprout / Dock**
   (`window:minimize`, `"sprout"` default), puts the Dock or taskbar back. On macOS the yellow button is redirected
   whenever the setting is `"sprout"`, not only while floating.

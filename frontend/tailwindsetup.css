@@ -103,6 +103,13 @@
     --color-minion-denim-dark: #2b4f8a;
     --color-minion-hair: #4a4a4a;
 
+    /* The Jarvis pet's teleport as the window folds into it and back (petteleport.ts): a game's recall blue for its
+       ring, beam and light, identity like the Minion's, never theme-derived, so it reads as the same effect on every
+       theme */
+    --color-teleport-deep: #2b6fd6;
+    --color-teleport: #4fa8ff;
+    --color-teleport-soft: #d6ecff;
+
     /* Connection status icon palette (legacy block/connectionbutton; identity, never theme-derived) */
     --color-conn-1: #53b4ea;
     --color-conn-2: #aa67ff;

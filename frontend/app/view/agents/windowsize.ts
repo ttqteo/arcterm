@@ -99,6 +99,8 @@ export const FOLD_MS = 300;
 export const FOLD_SCALE = 0.04;
 // the share of FOLD_MS the content stays solid on a fold, so the eye sees it shrink into Sprout before it fades
 export const FOLD_FADE_FROM = 0.6;
+// the content starts to shrink this far into the pet's departure (petteleport.ts), while its beam still stands
+export const FOLD_DEPART_LEAD_MS = 260;
 
 export interface FoldFade {
     opacity: number[];

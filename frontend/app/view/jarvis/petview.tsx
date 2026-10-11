@@ -52,6 +52,7 @@ import {
     setPetHome,
     setPetWatermark,
 } from "./petstore";
+import { PetTeleportLayers } from "./petteleportsvg";
 import { nextUtterance } from "./petvoice";
 import {
     dropAt,
@@ -64,6 +65,7 @@ import {
     type WalkerState,
     type WalkerStep,
 } from "./petwalk";
+import { petTeleportAtom } from "./teleportstore";
 import { WorkingDots } from "./workingdots";
 
 // pkg/jarvis/attention.go's three kinds. Named here rather than inlined so the mapping to the creature's
@@ -338,14 +340,17 @@ function PetSprite({
 }) {
     const [frame, setFrame] = useState<PetFrame | null>(null);
     const [forced, setForced] = useState<PetForce | null>(null);
+    // the fold's teleport (floatstore.ts): it plays in place of the cells, and holds the walk while it does
+    const teleport = useAtomValue(petTeleportAtom).walk;
+    const teleporting = teleport != null;
     const dragX = useMotionValue(0);
     const dragY = useMotionValue(0);
 
     // Everything the step reads, through refs: the step runs from timers and handlers, and a closure would
     // read the inputs of whichever render scheduled it.
     const speaking = utterance != null;
-    const liveRef = useRef({ expression, posture, speaking, peekOpen, reduce });
-    liveRef.current = { expression, posture, speaking, peekOpen, reduce };
+    const liveRef = useRef({ expression, posture, speaking, peekOpen, reduce, teleporting });
+    liveRef.current = { expression, posture, speaking, peekOpen, reduce, teleporting };
     const forceRef = useRef<PetForce | null>(null);
     const walkerRef = useRef<WalkerState | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -375,6 +380,11 @@ function PetSprite({
     const run = useCallback(function run() {
         clearTimeout(timerRef.current);
         timerRef.current = undefined;
+        // a teleport holds it where it stands: no step while it plays, so the ring stays under its feet and the walk
+        // picks up where it was
+        if (liveRef.current.teleporting && walkerRef.current != null) {
+            return;
+        }
         const ledge = readLedge();
         // a ledge that holds the sprite keeps it off the terminal already
         const avoid = ledge.holds ? [] : readAvoid(ledge.top);
@@ -416,7 +426,7 @@ function PetSprite({
 
     useEffect(() => {
         run();
-    }, [run, expression, peekOpen, reduce, speaking]);
+    }, [run, expression, peekOpen, reduce, speaking, teleporting]);
 
     // a posture change and an utterance are activity: they wake it and push its sleep back
     useEffect(() => {
@@ -581,7 +591,7 @@ function PetSprite({
             // the walker owns left and top; motion's drag owns only the transform, reset on release
             style={{ left: step.x, top: ledge.top - PET_PX - step.lift, x: dragX, y: dragY }}
             initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: quiet ? 0.4 : 1 }}
+            animate={{ opacity: quiet && !teleporting ? 0.4 : 1 }}
             // opacity only: a scaled sprite would no longer stand on the ledge, and would smear its cells
             whileHover={{ opacity: 1 }}
             transition={reduce ? { duration: 0 } : { opacity: { duration: 0.3 } }}
@@ -670,18 +680,28 @@ function PetSprite({
                 style={{ x: slideX, y: ledgeY }}
                 className="block"
             >
-                {/* under the body and never mirrored, like the marks: the flag stays at its left either way */}
-                {sprite.back.map(cellRect)}
-                {/* only the body turns to face left; marks drawn inside would read backwards */}
-                <g transform={step.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>{sprite.body.map(cellRect)}</g>
-                {sprite.overlay.map(cellRect)}
+                {teleport != null ? (
+                    <PetTeleportLayers run={teleport} sprite={sprite} cellPx={PET_CELL_PX} flip={step.flip} />
+                ) : (
+                    <>
+                        {/* under the body and never mirrored, like the marks: the flag stays at its left either way */}
+                        {sprite.back.map(cellRect)}
+                        {/* only the body turns to face left; marks drawn inside would read backwards */}
+                        <g transform={step.flip ? `matrix(-1 0 0 1 ${PET_PX} 0)` : undefined}>
+                            {sprite.body.map(cellRect)}
+                        </g>
+                        {sprite.overlay.map(cellRect)}
+                    </>
+                )}
             </motion.svg>
-            {chip != null ? (
+            {chip != null && !teleporting ? (
                 <span className="pointer-events-none absolute -left-1 top-1 min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums">
                     {chip}
                 </span>
             ) : null}
-            {working != null ? <WorkingDots count={working} className="absolute -right-2 -top-1" /> : null}
+            {working != null && !teleporting ? (
+                <WorkingDots count={working} className="absolute -right-2 -top-1" />
+            ) : null}
         </motion.div>
     );
 }

@@ -6,12 +6,14 @@
 // window to the last float's place; leaving gives the frame back. The window is never left pinned on top outside Float
 // and the fold. Folding (foldToSprout), from Full or Float, scales the content toward the screen's top-left corner and
 // shrinks the same window, see-through, around Sprout there; a restore gives back the size and frame it was folded from.
+// The pet teleports across both (teleportstore.ts): it departs from where it walks and arrives in the corner, and back.
 
 import { MOTION } from "@/app/element/motiontokens";
 import { getApi, getSettingsKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petPeekOpenAtom } from "@/app/view/jarvis/petstore";
+import { clearTeleports, hidePet, playTeleport } from "@/app/view/jarvis/teleportstore";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { listen } from "@tauri-apps/api/event";
@@ -57,6 +59,7 @@ import { startClickThrough, stopClickThrough } from "./miniclickthrough";
 import { terminalFullscreenAtom } from "./railstore";
 import { serialQueue } from "./serialqueue";
 import {
+    FOLD_DEPART_LEAD_MS,
     FOLD_MS,
     FOLD_SCALE,
     foldFade,
@@ -398,6 +401,21 @@ function reducedMotion(): boolean {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+// A walking pet is drawn (petview.tsx marks it data-pet-sprite): only then does a fold wait for it to depart.
+function walkingPetShown(): boolean {
+    const r = document.querySelector("[data-pet-sprite]")?.getBoundingClientRect();
+    return r != null && r.width > 0;
+}
+
+// After a restore the walking pet lands back where it stands, or with reduced motion simply shows; the folded one is
+// gone with the fold.
+function landPet(motion: boolean): void {
+    clearTeleports();
+    if (motion) {
+        void playTeleport("walk", "arrive");
+    }
+}
+
 // Scale the content into Sprout's spot and fade it (a fold), or grow it out of the spot (a restore): the scale on the
 // motion tokens' easing, the fade held to the fold's end (windowsize.ts foldFade). Reduced motion skips it.
 async function scaleContent(at: Pt, to: "sprout" | "window"): Promise<void> {
@@ -468,12 +486,22 @@ export function foldToSprout(): Promise<void> {
             writeJson(session, MINI_RESTORE_KEY, restore);
             const screen = await screenOfRect(frame);
             const spot = miniSproutRect(null, screen.area, screen.scale);
+            const motion = !reducedMotion();
             closePeek();
             globalStore.set(foldOriginAtom, origin);
+            if (motion) {
+                // the folded pet waits unseen until it lands in the corner
+                hidePet("mini");
+            }
             // the page goes see-through as the content leaves it; the content paints its own background
             document.documentElement.dataset.floatMini = "";
             await setTrafficLightsHidden(true);
             await win.setShadow(false);
+            if (motion && walkingPetShown()) {
+                // it departs from where it stands, and the content starts to shrink while its beam still stands
+                void playTeleport("walk", "depart");
+                await new Promise((r) => setTimeout(r, FOLD_DEPART_LEAD_MS));
+            }
             await scaleContent(sproutCenter(spot, inner, spaceScale(scale, MAC), viewport), "sprout");
             // hide the shell before the window shrinks: a terminal that saw the small window would refit its PTY to it.
             // The folded Sprout waits unseen until the window stands around its spot, or it shows in a corner of the
@@ -501,8 +529,12 @@ export function foldToSprout(): Promise<void> {
             }
             await win.setAlwaysOnTop(true);
             startClickThrough();
+            if (motion) {
+                void playTeleport("mini", "arrive");
+            }
         } catch (e) {
             console.error("folding the window into Sprout failed", e);
+            clearTeleports();
             const back = await leaveMini(win).catch(() => ({ at: null, fullscreen: false }));
             await showContent(win, back).catch(() => {});
         }
@@ -623,6 +655,12 @@ export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Pro
             if (agentId != null) {
                 model.openTerminal(agentId);
             }
+            const motion = !reducedMotion();
+            if (motion) {
+                // it leaves the corner first, and the walking one stays unseen until the window has grown back
+                hidePet("walk");
+                await playTeleport("mini", "depart");
+            }
             const to = move(now, agentId != null ? "open-agent" : "restore").size;
             const unfold = await leaveMini(win);
             if (to === "float" && now.origin === "full") {
@@ -636,11 +674,14 @@ export function restoreFromSprout(model: AgentsViewModel, agentId?: string): Pro
                 // grown out of Sprout into the float, as a restore grows into the frame it gives back
                 const at = unfold.sprout == null ? null : await growCenter(win, unfold.sprout);
                 await showContent(win, { at, fullscreen: false });
+                landPet(motion);
                 return;
             }
             await showContent(win, unfold);
+            landPet(motion);
         } catch (e) {
             console.error("restoring the window from Sprout failed", e);
+            clearTeleports();
         }
     });
 }
@@ -670,6 +711,8 @@ function exitMini(): Promise<void> {
             await showContent(win, { at: null, fullscreen: unfold.fullscreen });
         } catch (e) {
             console.error("giving the window back failed", e);
+        } finally {
+            clearTeleports();
         }
     });
 }

@@ -12,6 +12,9 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Added
 
+- Your pet (Sprout or the Minion) **teleports** when you minimize into it and back: it turns to light and leaves in a
+  blue beam from where it walks, then lands in the screen's corner on a ring with a burst of sparks; Restore plays it
+  the other way. Reduced motion skips it.
 - **Ctrl+Tab** in a float or in terminal fullscreen opens a tab switcher over the terminal, as the system's app
   switcher works: hold Ctrl and press Tab to move through your agents and terminals, most recent first, then let go to
   open the one picked. A quick Ctrl+Tab flips back to the tab you were on before, and passing over an agent leaves its

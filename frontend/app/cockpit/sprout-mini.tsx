@@ -41,8 +41,10 @@ import {
     petOutfitChoiceAtom,
     petPeekOpenAtom,
 } from "@/app/view/jarvis/petstore";
+import { PetTeleportSvg } from "@/app/view/jarvis/petteleportsvg";
 import { dismissPetBubble, openPetBubble, usePetSignals, useWaitingCount } from "@/app/view/jarvis/petview";
 import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
+import { petTeleportAtom } from "@/app/view/jarvis/teleportstore";
 import { WorkingDots } from "@/app/view/jarvis/workingdots";
 import { cn, fireAndForget } from "@/util/util";
 import type { Placement } from "@floating-ui/react";
@@ -111,6 +113,8 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
     const working = useMemo(() => workingCount(agents), [agents]);
     const look = miniLook({ posture: postureFor(signals), waiting, working, errand, unread, chatOpen, frame });
     const sprite = spriteFor(look.pose, look.marks, petOutfit(petOutfitChoice(outfitChoice), new Date()), character);
+    // the fold lands it in the corner with a teleport, and a restore takes it away with one (floatstore.ts)
+    const teleport = useAtomValue(petTeleportAtom).mini;
     const lineage = useAtomValue(model.lineageAtom);
     const list = useMemo(
         () => foldedList(agents, terminals, focusId ?? null, lineage),
@@ -211,14 +215,20 @@ export function SproutMini({ model }: { model: AgentsViewModel }) {
                         look.bob && "-translate-y-1"
                     )}
                 >
-                    <SproutSvg sprite={sprite} cellPx={PET_CELL_PX} />
+                    {teleport != null ? (
+                        <PetTeleportSvg run={teleport} sprite={sprite} cellPx={PET_CELL_PX} />
+                    ) : (
+                        <SproutSvg sprite={sprite} cellPx={PET_CELL_PX} />
+                    )}
                 </button>
-                {look.chip != null ? (
+                {look.chip != null && teleport == null ? (
                     <span className="pointer-events-none absolute left-1 top-3 min-w-4 rounded-full bg-warning px-1 text-center text-[10px] font-bold leading-4 text-on-warning tabular-nums">
                         {look.chip}
                     </span>
                 ) : null}
-                {look.working != null ? <WorkingDots count={look.working} className="absolute right-0 top-0" /> : null}
+                {look.working != null && teleport == null ? (
+                    <WorkingDots count={look.working} className="absolute right-0 top-0" />
+                ) : null}
             </div>
 
             {told ? (
