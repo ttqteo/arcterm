@@ -48,7 +48,8 @@ function recordAnswer(q: CommandGetClaudeQuotaRtnData): boolean {
     // wavesrv answers only for the Default account; the identity learns its email first, so the
     // snapshot saved as "claude:default" before it was known moves to that account
     noteLoginEmail(q.email);
-    recordRateLimit(quotaKey(q), usage, q.capturedat);
+    // the answer carries every window the account reports: a week it lacks (a Team seat's) is none
+    recordRateLimit(quotaKey(q), usage, q.capturedat, true);
     return true;
 }
 

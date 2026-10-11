@@ -462,6 +462,22 @@ describe("mergeSnapshot keeps each window's newest reading", () => {
         expect(savedWindows(s, now).fivehour).toEqual({ pct: 5, reset: undefined });
     });
 
+    // a quota read carries every window the account reports: a Team seat's has no week, so a week saved
+    // before (an earlier build took the seat's Fable row for it) is dropped rather than kept
+    it("drops the saved week when a complete reading leaves it out", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, weekpct: 0, weekreset: 900, capturedAt: 1000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3, fivehourreset: 500 }, 2000, true)).toEqual({
+            fivehourpct: 3,
+            fivehourreset: 500,
+            capturedAt: 2000,
+        });
+    });
+
+    it("keeps a week read after the complete reading that leaves it out", () => {
+        const prev: SavedSnapshot = { fivehourpct: 2, weekpct: 30, weekAt: 3000, capturedAt: 4000 };
+        expect(mergeSnapshot(prev, { fivehourpct: 3 }, 2000, true)).toBeNull();
+    });
+
     it("fills the week a live session leaves out from the saved snapshot", () => {
         const now = 1_800_000_000_000;
         const out = mergeRateLimitWindows(

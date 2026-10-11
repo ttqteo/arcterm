@@ -78,7 +78,8 @@ type usageBody struct {
 }
 
 // a row of the answer's limits[], classified on its kind ("session", "weekly_all", "weekly_scoped"). A
-// Team plan leaves seven_day null and has its weekly window only here, as a model-scoped row.
+// Team seat's answer leaves seven_day null and has no weekly_all row either, though the seat has a weekly
+// limit across all models: its only weekly row is model-scoped (a Premium seat's Fable share).
 type usageLimit struct {
 	Kind     string   `json:"kind"`
 	Percent  *float64 `json:"percent"`
@@ -327,31 +328,21 @@ func quotaFrom(body usageBody, at time.Time, source string) *Quota {
 	return q
 }
 
-// the week when seven_day is absent: the all-models weekly row, else the fullest model-scoped one, since
-// it runs out first; nil when limits[] has neither
+// the week when seven_day is absent: the all-models weekly row; nil when limits[] has none. A
+// weekly_scoped row counts one model's use alone (it stays at 0% however much Opus runs), so it is never
+// taken for the account's week.
 func weekFromLimits(limits []usageLimit) *usageWindow {
-	var week *usageLimit
-	for i := range limits {
-		l := &limits[i]
-		if l.Percent == nil {
+	for _, l := range limits {
+		if l.Kind != "weekly_all" || l.Percent == nil {
 			continue
 		}
-		if l.Kind == "weekly_all" {
-			week = l
-			break
+		w := &usageWindow{Utilization: l.Percent}
+		if l.ResetsAt != nil {
+			w.ResetsAt = *l.ResetsAt
 		}
-		if l.Kind == "weekly_scoped" && (week == nil || *l.Percent > *week.Percent) {
-			week = l
-		}
+		return w
 	}
-	if week == nil {
-		return nil
-	}
-	w := &usageWindow{Utilization: week.Percent}
-	if week.ResetsAt != nil {
-		w.ResetsAt = *week.ResetsAt
-	}
-	return w
+	return nil
 }
 
 func readWindow(w *usageWindow) (*float64, *int64) {

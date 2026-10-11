@@ -43,7 +43,9 @@ session's count and the window's count are comparable.
 
 - **Window share of the spawn** (v1's `WindowShare`, now called once per window): capacity ≈ window tokens ÷
   (window % ÷ 100), only when the window is ≥ 5% used and its tokens > 0. The week's tokens are read with cutoff =
-  week reset − 7 days, as `windowtokenstore.ts` does.
+  week reset − 7 days, as `windowtokenstore.ts` does. A Claude Team seat has no week to read: its usage answer
+  carries neither `seven_day` nor a `weekly_all` row, only a model-scoped one (a Premium seat's Fable share), which
+  `claudequota` does not take for the week. There every week number is unknown and the week rule does not fire.
 - **Session share:** `session tokens in the window ÷ window tokens × window %`, rounded to a whole percent ("<1%"
   below 1). It apportions the reported percent, so it needs no 5% floor, only window tokens > 0. A session count
   above the window count (a file read between the two sums) is clamped to the window %.

@@ -40,12 +40,15 @@ const SNAPSHOT_WINDOWS = [
 ] as const;
 
 // The snapshot after a reading as of `capturedAt`: each window is the newest reading that carried it, so
-// a reading that leaves one out keeps the earlier one (a Claude Team session reports only its 5-hour
-// window; its week comes from the quota read). null when the reading changes nothing.
+// a reading that leaves one out keeps the earlier one (a Claude Team session's statusline reports only its
+// 5-hour window). A `complete` reading (the quota read) carries every window the account reports, so one it
+// leaves out has none as of then, and an earlier reading of it is dropped: a Team seat's quota read has no
+// week. null when the reading changes nothing.
 export function mergeSnapshot(
     prev: SavedSnapshot | undefined,
     usage: AgentUsage,
-    capturedAt: number
+    capturedAt: number,
+    complete = false
 ): SavedSnapshot | null {
     if (usage == null || (usage.fivehourpct == null && usage.weekpct == null)) {
         return null;
@@ -60,6 +63,9 @@ export function mergeSnapshot(
             next[w.reset] = usage[w.reset];
             at = capturedAt;
             changed = true;
+        } else if (complete && usage[w.pct] == null && prev?.[w.pct] != null && capturedAt >= prevAt) {
+            changed = true;
+            continue;
         } else if (prev?.[w.pct] != null) {
             next[w.pct] = prev[w.pct];
             next[w.reset] = prev[w.reset];
@@ -249,10 +255,11 @@ export const savedRateLimitsAtom = atom<Record<string, SavedSnapshot>>(
 // Save a snapshot under `provider` (a rateLimitKey) — only when the usage carries a 5h or weekly window field.
 // Window fields + capturedAt only; context/cost are per-session and deliberately dropped.
 // `capturedAt` is when the reading is as of (now, for an agent's report); per window, a newer reading
-// already saved wins over an older one (mergeSnapshot).
-export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt = Date.now()): void {
+// already saved wins over an older one (mergeSnapshot). `complete` says the reading carries every window
+// the account reports, so an older saved window it leaves out is dropped.
+export function recordRateLimit(provider: string, usage: AgentUsage, capturedAt = Date.now(), complete = false): void {
     const saved = globalStore.get(savedRateLimitsAtom);
-    const snapshot = mergeSnapshot(saved[provider], usage, capturedAt);
+    const snapshot = mergeSnapshot(saved[provider], usage, capturedAt, complete);
     if (snapshot != null) {
         persistSaved({ ...saved, [provider]: snapshot });
     }

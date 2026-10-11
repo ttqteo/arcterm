@@ -119,8 +119,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 - A held card that pops up over the cockpit, such as an Antigravity agent's question, is headed by its own title
   instead of "Low RAM".
-- On a Claude Team plan the weekly usage gauge shows the plan's weekly limit (the model-scoped one, such as Fable's)
-  instead of "—", and a running Team agent no longer blanks it.
+- On a Claude Team plan the app bar no longer shows Fable's weekly share as your weekly usage ("wk 0%" however much
+  you used). Anthropic does not report a Team seat's all-models week, so a Team seat shows its 5-hour window only.
 - On macOS, the Claude usage in the app bar and on the Usage surface is read fresh from Anthropic for your `/login`
   account, as on Windows, instead of from Claude Code's own saved copy, which could be hours old.
 - On macOS, a Claude account added with a token stays signed in after arcterm restarts. Before, its token was lost on
