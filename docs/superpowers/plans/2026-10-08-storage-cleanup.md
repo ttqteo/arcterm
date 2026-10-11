@@ -4,7 +4,7 @@
 
 **Goal:** A Storage section in Settings that shows what arcterm and its agents leave on disk, per category, and cleans it safely — by button, by a daily auto-clean of the safe parts, and with a once-a-day nudge past a threshold.
 
-**Architecture:** A new `pkg/storage` in `wavesrv` holds one provider per category (run worktrees, old Claude sessions, logs/cache/trash, build output); each measures and cleans, and re-checks every rule at the moment of removal. A `Scanner` keeps the last scan in memory, rescans in the background and publishes a `storage:scan` event; three RPCs read it, rescan and clean. The Tauri host clears the webview cache at launch when the Go side has left a marker. The frontend is a pure model (`storagemodel.ts`) plus a thin section, a store and a nudge mounted in the cockpit shell.
+**Architecture:** A new `pkg/storage` in `wavesrv` holds one provider per category (run worktrees, old Claude sessions, logs/cache/trash, build output); each measures and cleans, and re-checks every rule at the moment of removal. A `Scanner` keeps the last scan in memory, rescans in the background and publishes a `storage:scan` event; three RPCs read it, rescan and clean. The Tauri host clears the webview cache at launch when the Go side has left a marker. The frontend is a pure model (`storagemodel.ts`) plus a thin Settings page (`settingspages/storage.tsx`), a store and a nudge mounted in the cockpit shell.
 
 **Tech Stack:** Go 1.25 (`pkg/storage`, wshrpc, wps, wconfig), Rust (Tauri host), React 19 + jotai + Tailwind 4, vitest, the CDP harness.
 
@@ -25,6 +25,8 @@
 - The webview cache is never deleted while the app runs: the clean writes `<data>/clear-webview-cache`; the host removes the cache dirs and the marker in `main()` before the Tauri builder creates the window. macOS: `~/Library/Caches/<identifier>/WebKit/{NetworkCache,CacheStorage}`. Windows: `<app base>/EBWebView/Default/{Cache,Code Cache,GPUCache}`, where `<app base>` is the parent of the data dir (the spec's `<data>/EBWebView` is a slip: EBWebView sits beside `data`, not in it).
 - Auto-clean: first pass 2 minutes after start, then every 24 hours, only when `storage:autoclean` is on; it cleans finished run worktrees with no uncommitted changes and rolled logs older than 7 days, nothing else.
 - Nudge: an in-app toast at most once a day when the cleanable total passes `storage:nudgegb` GB; it opens Settings → Storage.
+- Skip reasons the spec words are used as written: `run still running` (a run worktree), `agent working in this project` (build output); a project with a run going reads `run in progress in this project`.
+- Build output is cleaned per project: one row and one button per project in config (spec 4.4), over per-directory items whose `detail` is the project's path.
 - Event name: `storage:scan`, data `storage.StorageReport`.
 - Go types that reach TypeScript carry a `Storage` prefix (`StorageReport`, `StorageItem`…): generated TS names a type by its bare Go name, and `Item`/`Report` would collide.
 - UI copy is English. Colors only from `@theme` tokens (`text-primary`, `text-muted`, `text-warning`, `bg-surface-raised`, `border-edge-mid`…), never raw hex.
@@ -58,10 +60,10 @@
 - `src-tauri/src/webcache.rs`, `src-tauri/src/paths.rs`, `src-tauri/src/main.rs` — the launch-time cache clear.
 - `frontend/app/view/agents/storagemodel.ts` (+ `.test.ts`) — pure model.
 - `frontend/app/view/agents/storagestore.ts` — report atom, load, clean, rescan.
-- `frontend/app/view/agents/storagesection.tsx` — the cards (`StoragePanel`).
+- `frontend/app/view/agents/settingspages/storage.tsx` — the Storage page: the head, the four category cards, the Auto-clean card (`StoragePage`).
 - `frontend/app/view/agents/storagenudge.tsx` — the once-a-day toast.
 - `frontend/app/view/agents/settingsmodel.ts` (+ test), `settingssurface.tsx`, `settingsstore.ts`, `cockpitshell.tsx` — section wiring.
-- `scripts/cdp/scenarios.mjs` — `settings-storage`.
+- `scripts/cdp/scenarios.mjs` — `settings-storage`; `SP_PAGES` (settings-pages) gains the storage page.
 - `CHANGELOG.md` — one Added line.
 
 ---
@@ -91,7 +93,7 @@
   - `type provider interface{ category() StorageCategory; measure(ctx, *Env) StorageCategoryReport; clean(ctx, *Env, []string, CleanOpts) StorageCleanResult }`
   - test helpers `writeFile(t, path, size)`, `itemByID(items, id) StorageItem`, `testEnv(t)`, `waitFor(t, cond)` (in `storage_test.go`); helpers `report(cat, items, err) StorageCategoryReport`, `dirSize(root string) int64`, `SamePath(a, b string) bool`, `evalOrClean(p string) string`, `gitOut(ctx, dir string, args ...string) (string, error)`, `skip(res *StorageCleanResult, id, reason string)`, `fileExists(p string) bool`.
   - `func NewScanner(env *Env, publish func(StorageReport)) *Scanner`; methods `Report() StorageReport`, `Rescan(ctx)`, `ScanNow(ctx) StorageReport`, `Clean(ctx, StorageCategory, []string, CleanOpts) (StorageCleanResult, error)`. Fields used by Task 7: `env`, `providers`, `publish`, `mu`, `lastAuto`.
-  - `NewScanner` lists the providers `runWorktrees{}`, `oldSessions{}`, `housekeeping{}`, `buildOutput{}` (Tasks 2–5 define them). Until those land, keep the list in one place: Task 1 writes `defaultProviders()` returning an empty slice, and each of Tasks 2–5 appends its provider there in the same order (worktrees, sessions, housekeeping, build output).
+  - `NewScanner` lists the providers `runWorktrees{}`, `oldSessions{}`, `housekeeping{}`, `buildOutput{}` (Tasks 2–5 define them). Until those land, keep the list in one place: Task 1 writes `defaultProviders()` returning an empty slice, and Task 7 fills it in that order (worktrees, sessions, housekeeping, build output). Tasks 2–5 never edit `scanner.go`, so they can run side by side.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -506,7 +508,7 @@ type Scanner struct {
 	lastAuto *StorageAutoClean
 }
 
-// defaultProviders is every category in the order the Settings section shows them. Tasks 2–5 add theirs here.
+// defaultProviders is every category in the order the Settings section shows them. Task 7 fills it.
 func defaultProviders() []provider {
 	return []provider{}
 }
@@ -768,7 +770,7 @@ func TestRunWorktreesJudgeEachTree(t *testing.T) {
 	if it := itemByID(rep.Items, done); !it.Cleanable || it.Guarded || it.Bytes < 100 {
 		t.Fatalf("a finished, committed tree must be cleanable: %+v", it)
 	}
-	if it := itemByID(rep.Items, going); it.Cleanable || it.Reason != "run still going" {
+	if it := itemByID(rep.Items, going); it.Cleanable || it.Reason != "run still running" {
 		t.Fatalf("a running run's tree must stay: %+v", it)
 	}
 	if it := itemByID(rep.Items, orphan); !it.Cleanable {
@@ -801,7 +803,7 @@ func TestCleanReChecksTheRunAtRemoval(t *testing.T) {
 	// the scan saw it done; by the click the run is going again
 	env := worktreeEnv(repo, map[string]RunState{runDone: {Found: true, Status: "executing"}})
 	res := runWorktrees{}.clean(context.Background(), env, []string{wt}, CleanOpts{})
-	if len(res.Cleaned) != 0 || len(res.Skipped) != 1 || res.Skipped[0].Reason != "run still going" {
+	if len(res.Cleaned) != 0 || len(res.Skipped) != 1 || res.Skipped[0].Reason != "run still running" {
 		t.Fatalf("got %+v, want it skipped because its run is going", res)
 	}
 }
@@ -838,6 +840,16 @@ func TestWorktreeThatIsNotAnEngineTreeIsNeverCleaned(t *testing.T) {
 	}
 	if _, err := os.Stat(scratch); err != nil {
 		t.Fatal("it must still be there")
+	}
+}
+
+// settings-storage's "Couldn't scan" step stands on this: a project whose .waveterm/worktrees is a file. ReadDir's
+// error there must not read as "no worktrees" on any OS.
+func TestAWorktreesRootThatIsAFileIsAScanError(t *testing.T) {
+	repo := newRepo(t)
+	writeFile(t, worktreesRoot(repo), 3)
+	if rep := (runWorktrees{}).measure(context.Background(), worktreeEnv(repo, nil)); rep.Error == "" {
+		t.Fatalf("want a scan error, got %+v", rep)
 	}
 }
 
@@ -925,7 +937,7 @@ func (runWorktrees) judge(ctx context.Context, env *Env, wt string, it *StorageI
 		it.Detail += " · no run"
 	case !st.Finished:
 		it.Detail += " · " + st.Status
-		it.Reason = "run still going"
+		it.Reason = "run still running"
 		return
 	default:
 		it.Detail += " · " + st.Status
@@ -1725,8 +1737,8 @@ func TestBuildOutputFindsIgnoredBuildDirs(t *testing.T) {
 	if got := itemIDs(rep.Items); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("found %v, want %v", got, want)
 	}
-	if it := itemByID(rep.Items, filepath.Join(repo, "frontend", "node_modules")); it.Bytes != 15 || !it.Cleanable || it.Label != "frontend/node_modules" {
-		t.Fatalf("node_modules: %+v (nested node_modules counted in it, not listed apart)", it)
+	if it := itemByID(rep.Items, filepath.Join(repo, "frontend", "node_modules")); it.Bytes != 15 || !it.Cleanable || it.Label != "frontend/node_modules" || it.Detail != repo {
+		t.Fatalf("node_modules: %+v (nested node_modules counted in it, not listed apart; Detail is the project's path)", it)
 	}
 }
 
@@ -1754,9 +1766,9 @@ func TestBuildOutputNeverFollowsALink(t *testing.T) {
 
 func TestBusyProjectMatchesAPathWithATrailingSeparator(t *testing.T) {
 	repo := buildRepo(t)
-	env := buildEnv(repo, map[string]string{repo + string(filepath.Separator): "an agent is working in this project"})
+	env := buildEnv(repo, map[string]string{repo + string(filepath.Separator): "agent working in this project"})
 	nm := filepath.Join(repo, "frontend", "node_modules")
-	if it := itemByID(buildOutput{}.measure(context.Background(), env).Items, nm); it.Cleanable || it.Reason != "an agent is working in this project" {
+	if it := itemByID(buildOutput{}.measure(context.Background(), env).Items, nm); it.Cleanable || it.Reason != "agent working in this project" {
 		t.Fatalf("a busy project's output must stay: %+v", it)
 	}
 	if res := (buildOutput{}).clean(context.Background(), env, []string{nm}, CleanOpts{}); len(res.Cleaned) != 0 {
@@ -1924,7 +1936,8 @@ func (buildOutput) measure(ctx context.Context, env *Env) StorageCategoryReport 
 				continue
 			}
 			rel, _ := filepath.Rel(project, c)
-			items = append(items, StorageItem{ID: c, Kind: KindBuild, Label: filepath.ToSlash(rel), Detail: filepath.Base(project),
+			// Detail is the project's path: the Settings card folds a project's folders into one row with one button
+			items = append(items, StorageItem{ID: c, Kind: KindBuild, Label: filepath.ToSlash(rel), Detail: project,
 				Path: c, Bytes: dirSize(c), Cleanable: why == "", Reason: why})
 		}
 	}
@@ -2096,7 +2109,8 @@ Add `mod webcache;` after `mod shellenv;` in `src-tauri/src/main.rs`.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cargo test --manifest-path src-tauri/Cargo.toml webcache app_local_data_dir`
+Run: `PATH="/opt/homebrew/opt/rustup/bin:$PATH" cargo test --manifest-path src-tauri/Cargo.toml -- webcache app_local_data_dir`
+(cargo takes one filter before `--`; the test harness takes several after it. On a Mac cargo is off the agent PATH, in `/opt/homebrew/opt/rustup/bin`; the prefix is harmless elsewhere.)
 Expected: FAIL to compile — `cannot find function clear_if_marked`, `cache_dirs`, `app_local_data_dir_for`.
 
 - [ ] **Step 3: Write the functions**
@@ -2201,7 +2215,7 @@ In the `setup` closure, right after `applog::init(&paths::data_home_dirs(&data_b
 
 - [ ] **Step 4: Run the Rust tests and a build check**
 
-Run: `cargo test --manifest-path src-tauri/Cargo.toml`
+Run: `PATH="/opt/homebrew/opt/rustup/bin:$PATH" cargo test --manifest-path src-tauri/Cargo.toml`
 Expected: all pass, including `a_marker_clears_the_cache_dirs_and_itself`, `no_marker_leaves_the_cache_alone`, `cache_dirs_match_the_go_side`, `app_local_data_dir_matches_tauris`.
 
 - [ ] **Step 5: Commit**
@@ -2285,6 +2299,8 @@ func TestAutoCleanTakesOnlyTheSafeParts(t *testing.T) {
 	if r := s.Report(); r.LastAuto == nil || r.LastAuto.Reclaimed != res.Reclaimed {
 		t.Fatalf("the report must carry the last auto-clean: %+v", r.LastAuto)
 	}
+	// AutoClean ends with a background rescan: let it finish before TempDir cleanup removes what it walks.
+	waitFor(t, func() bool { return !s.Report().Scanning })
 }
 ```
 
@@ -2486,7 +2502,7 @@ func TestBusyProjectsOfNamesWorkingAgentsAndGoingRuns(t *testing.T) {
 		{ProjectPath: "/p/e", Status: jarvis.RunStatus_Blocked},
 	}
 	busy := busyProjectsOf(agents, runs)
-	if busy["/p/a"] != "an agent is working in this project" || busy["/p/c"] != "a run is going in this project" {
+	if busy["/p/a"] != "agent working in this project" || busy["/p/c"] != "run in progress in this project" {
 		t.Fatalf("got %v", busy)
 	}
 	for _, idle := range []string{"/p/b", "/p/d", "/p/e"} {
@@ -2617,13 +2633,13 @@ func busyProjectsOf(agents []wshrpc.AgentInfo, runs []*waveobj.Run) map[string]s
 		switch r.Status {
 		case jarvis.RunStatus_Planning, jarvis.RunStatus_AwaitingReview, jarvis.RunStatus_Executing:
 			if r.ProjectPath != "" {
-				busy[filepath.Clean(r.ProjectPath)] = "a run is going in this project"
+				busy[filepath.Clean(r.ProjectPath)] = "run in progress in this project"
 			}
 		}
 	}
 	for _, a := range agents {
 		if a.State == baseds.AgentState_Working && a.ProjectPath != "" {
-			busy[filepath.Clean(a.ProjectPath)] = "an agent is working in this project"
+			busy[filepath.Clean(a.ProjectPath)] = "agent working in this project"
 		}
 	}
 	return busy
@@ -2699,7 +2715,8 @@ git commit -m "feat(storage): RPCs, the storage:scan event, the settings and the
 
 **Interfaces:**
 - Consumes: the generated global types `StorageReport`, `StorageCategoryReport`, `StorageItem`, `StorageCleanResult`.
-- Produces: `SESSION_DAYS`, `type SessionDays`, `DEFAULT_SESSION_DAYS`, `NUDGE_GB_CHOICES`, `DEFAULT_NUDGE_GB`, `CARD_ORDER`, `type StorageRow`, `type StorageCard`, `sessionRows`, `storageCards`, `cleanAllIds`, `cleanableTotal`, `usedTotal`, `shouldNudge`, `dayKey`, `formatSize`, `cleanToast`, `skippedOf`, `confirmFor`.
+- Produces: `SESSION_DAYS`, `type SessionDays`, `DEFAULT_SESSION_DAYS`, `NUDGE_GB_CHOICES`, `DEFAULT_NUDGE_GB`, `CARD_ORDER`, `CARD_COPY` (each card's title, blurb and button; Task 9's settings index uses the titles as card labels), `type StorageRow`, `type StorageCard`, `type BuildProjectRow`, `sessionRows`, `storageCards`, `buildProjectRows`, `cleanAllIds`, `cleanableTotal`, `usedTotal`, `shouldNudge`, `dayKey`, `formatSize`, `cleanToast`, `skippedOf`, `confirmFor`.
+- Build output is cleaned per project (spec 4.4): `buildProjectRows` folds a project's folders (items whose `detail` is the project's path, Task 5) into one row whose one button cleans them all.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2708,6 +2725,7 @@ git commit -m "feat(storage): RPCs, the storage:scan event, the settings and the
 ```ts
 import { describe, expect, it } from "vitest";
 import {
+    buildProjectRows,
     cleanableTotal,
     cleanAllIds,
     cleanToast,
@@ -2740,12 +2758,17 @@ const report: StorageReport = {
     scanning: false,
     storebytes: 43 * MB,
     categories: [
-        { category: "buildoutput", bytes: 3 * GB, cleanablebytes: 3 * GB, items: [item("/p/target", { kind: "build", bytes: 3 * GB })] },
+        {
+            category: "buildoutput",
+            bytes: 3 * GB,
+            cleanablebytes: 3 * GB,
+            items: [item("/p/target", { kind: "build", label: "target", detail: "/p", bytes: 3 * GB })],
+        },
         {
             category: "runworktrees",
             bytes: 30 * MB,
             cleanablebytes: 10 * MB,
-            items: [item("a"), item("b", { cleanable: false, guarded: true, reason: "has uncommitted changes" }), item("c", { cleanable: false, reason: "run still going" })],
+            items: [item("a"), item("b", { cleanable: false, guarded: true, reason: "has uncommitted changes" }), item("c", { cleanable: false, reason: "run still running" })],
         },
         {
             category: "sessions",
@@ -2778,8 +2801,8 @@ describe("storageCards", () => {
         expect(sessions("30").bytes).toBe(20 * MB);
     });
     it("joins a clean's skipped reasons onto their rows and keeps a card's error", () => {
-        const cards = storageCards(report, "30", NOW, { a: "run still going" });
-        expect(cards[0].rows.find((r) => r.id === "a")!.skipped).toBe("run still going");
+        const cards = storageCards(report, "30", NOW, { a: "run still running" });
+        expect(cards[0].rows.find((r) => r.id === "a")!.skipped).toBe("run still running");
         expect(cards.find((c) => c.category === "housekeeping")!.error).toBe("couldn't read the trash");
     });
     it("is empty before the first report", () => {
@@ -2849,7 +2872,40 @@ describe("confirmFor", () => {
         expect(guarded.message).toContain("uncommitted changes");
         const sessions = cards[1];
         expect(confirmFor(sessions, sessions.rows, "30", false).message).toContain("older than 30 days");
-        expect(confirmFor(cards[3], cards[3].rows, "30", false).message).toContain("recreates it");
+        const build = confirmFor(cards[3], cards[3].rows, "30", false).message;
+        expect(build).toContain("build output of p");
+        expect(build).toContain("target");
+        expect(build).toContain("recreates it");
+    });
+});
+
+describe("buildProjectRows", () => {
+    const build = (items: StorageItem[], skipped: Record<string, string> = {}) =>
+        storageCards({ ...report, categories: [{ category: "buildoutput", bytes: 0, cleanablebytes: 0, items }] }, "30", NOW, skipped)[0];
+    it("folds a project's folders into one row with one button", () => {
+        const rows = buildProjectRows(
+            build(
+                [
+                    item("/p/node_modules", { kind: "build", label: "node_modules", detail: "/p", bytes: 2 * MB }),
+                    item("/p/src-tauri/target", { kind: "build", label: "src-tauri/target", detail: "/p", bytes: 3 * MB }),
+                    item("/q/dist", { kind: "build", label: "dist", detail: "/q", bytes: MB, cleanable: false, reason: "agent working in this project" }),
+                ],
+                { "/p/node_modules": "couldn't remove: in use" }
+            )
+        );
+        expect(rows.map((r) => r.name)).toEqual(["p", "q"]);
+        expect(rows[0]).toMatchObject({
+            project: "/p",
+            dirs: ["node_modules", "src-tauri/target"],
+            bytes: 5 * MB,
+            ids: ["/p/node_modules", "/p/src-tauri/target"],
+            skipped: "couldn't remove: in use",
+        });
+        expect(rows[1]).toMatchObject({ ids: [], reason: "agent working in this project" });
+    });
+    it("names a Windows project by its last segment", () => {
+        const rows = buildProjectRows(build([item("C:\\work\\app\\dist", { kind: "build", label: "dist", detail: "C:\\work\\app\\" })]));
+        expect(rows[0].name).toBe("app");
     });
 });
 
@@ -2873,7 +2929,7 @@ Expected: FAIL — `Failed to load ./storagemodel`.
 //
 // Pure: Settings → Storage as data. Orders the categories pkg/storage reports into cards, applies the sessions
 // card's age, joins the reasons a clean skipped onto their rows, words the confirms and the toasts, and decides when
-// the nudge shows. storagesection.tsx draws it; storagenudge.tsx toasts it. No React, no store.
+// the nudge shows. settingspages/storage.tsx draws it; storagenudge.tsx toasts it. No React, no store.
 
 export const SESSION_DAYS = ["7", "30", "90"] as const;
 export type SessionDays = (typeof SESSION_DAYS)[number];
@@ -2887,7 +2943,7 @@ const GIB = 1024 * MIB;
 
 export const CARD_ORDER = ["runworktrees", "sessions", "housekeeping", "buildoutput"] as const;
 
-const CARD_COPY: Record<string, { title: string; blurb: string; action: string | null }> = {
+export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blurb: string; action: string | null }> = {
     runworktrees: {
         title: "Run worktrees",
         blurb: "Trees that finished orchestrator runs left in .waveterm/worktrees. Their branches stay.",
@@ -2965,6 +3021,39 @@ export function storageCards(
 /** What the card's own button cleans: its cleanable rows that need no stronger confirm. */
 export function cleanAllIds(card: StorageCard): string[] {
     return card.rows.filter(isCleanAll).map((r) => r.id);
+}
+
+/** Build output's rows: one per project, holding its folders; its one button cleans `ids`. */
+export type BuildProjectRow = {
+    project: string;
+    name: string;
+    dirs: string[];
+    bytes: number;
+    ids: string[]; // the folders a clean may take now; empty while something runs in the project
+    reason?: string;
+    skipped?: string;
+};
+
+/** A path's last segment, either separator, a trailing one ignored. */
+export function projectName(path: string): string {
+    return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+export function buildProjectRows(card: StorageCard): BuildProjectRow[] {
+    const byProject = new Map<string, StorageRow[]>();
+    for (const r of card.rows) {
+        const key = r.detail ?? "";
+        byProject.set(key, [...(byProject.get(key) ?? []), r]);
+    }
+    return [...byProject].map(([project, rows]) => ({
+        project,
+        name: projectName(project),
+        dirs: rows.map((r) => r.label),
+        bytes: sum(rows.map((r) => r.bytes)),
+        ids: rows.filter((r) => r.cleanable).map((r) => r.id),
+        reason: rows.find((r) => r.reason)?.reason,
+        skipped: rows.find((r) => r.skipped)?.skipped,
+    }));
 }
 
 export function cleanableTotal(report: StorageReport | null, days: SessionDays, nowMs: number): number {
@@ -3061,7 +3150,7 @@ export function confirmFor(
         default:
             return {
                 title: "Remove build output",
-                message: `Remove ${rows[0]?.label ?? ""} in ${rows[0]?.detail ?? ""} (${size})? The next build or install recreates it.`,
+                message: `Remove the build output of ${projectName(rows[0]?.detail ?? "")} (${size}): ${rows.map((r) => r.label).join(", ")}? The next build or install recreates it.`,
                 confirmLabel: "Remove",
             };
     }
@@ -3082,30 +3171,50 @@ git commit -m "feat(storage): the Storage section's model"
 
 ---
 
-### Task 9: The Storage section, the nudge, the scenario
+### Task 9: The Storage page, the nudge, the scenario
 
 **Depends on:** Task 8
 
-**Files:** `frontend/app/view/agents/storagestore.ts`, `frontend/app/view/agents/storagesection.tsx`, `frontend/app/view/agents/storagenudge.tsx`, `frontend/app/view/agents/settingsstore.ts`, `frontend/app/view/agents/settingsstore.test.ts`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/cockpitshell.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`
+**Files:** `frontend/app/view/agents/storagestore.ts`, `frontend/app/view/agents/settingspages/storage.tsx`, `frontend/app/view/agents/storagenudge.tsx`, `frontend/app/view/agents/settingsstore.ts`, `frontend/app/view/agents/settingsstore.test.ts`, `frontend/app/view/agents/settingsmodel.ts`, `frontend/app/view/agents/settingsmodel.test.ts`, `frontend/app/view/agents/settingssurface.tsx`, `frontend/app/view/agents/cockpitshell.tsx`, `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 - Create: `frontend/app/view/agents/storagestore.ts`
-- Create: `frontend/app/view/agents/storagesection.tsx`
+- Create: `frontend/app/view/agents/settingspages/storage.tsx` (the page body, like the other `settingspages/*.tsx`)
 - Create: `frontend/app/view/agents/storagenudge.tsx`
 - Modify: `frontend/app/view/agents/settingsstore.ts` (add `openSettingsSection`)
 - Test: `frontend/app/view/agents/settingsstore.test.ts` (append)
-- Modify: `frontend/app/view/agents/settingsmodel.ts` (the `storage` section)
-- Test: `frontend/app/view/agents/settingsmodel.test.ts` (the config-rows list)
-- Modify: `frontend/app/view/agents/settingssurface.tsx` (the `storage` case, `StorageSection`, the pending-section effect)
+- Modify: `frontend/app/view/agents/settingsmodel.ts` (the `storage` section: four category cards and an Auto-clean card)
+- Test: `frontend/app/view/agents/settingsmodel.test.ts` (seven pages, the config-row list, the cards, the row count)
+- Modify: `frontend/app/view/agents/settingssurface.tsx` (the `storage` case in `SectionBody`; the pending-section effect follows the atom and keeps `resolveSectionId`)
 - Modify: `frontend/app/view/agents/cockpitshell.tsx` (mount `StorageNudge`)
-- Modify: `scripts/cdp/scenarios.mjs` (`settings-storage`)
+- Modify: `scripts/cdp/scenarios.mjs` (`settings-storage`; `SP_PAGES` gains the storage page)
 - Modify: `CHANGELOG.md`
 
 **Interfaces:**
-- Consumes: Task 8's model; Task 7's `RpcApi.GetStorageCommand`, `RpcApi.RescanStorageCommand`, `RpcApi.CleanStorageCommand`, the `"storage:scan"` event, the settings `storage:autoclean` and `storage:nudgegb`.
-- Produces: `storageReportAtom`, `storageSkippedAtom`, `loadStorage()`, `useStorageReport()`, `cleanStorage(category, itemids, opts)`, `rescanStorage()`; `StoragePanel`; `StorageNudge`; `openSettingsSection(model, id)`. DOM hooks for the scenario: `[data-storage-section]`, `[data-storage-head]`, `[data-storage-card="<category>"]`, `[data-storage-clean="<category>"]`, `[data-storage-row]`.
+- Consumes: Task 8's model (`CARD_ORDER`, `CARD_COPY`, `storageCards`, `buildProjectRows`, `cleanAllIds`, `confirmFor`, `cleanToast`, `skippedOf`, `cleanableTotal`, `usedTotal`, `shouldNudge`, `dayKey`, `formatSize`, `SESSION_DAYS`, `DEFAULT_SESSION_DAYS`, `NUDGE_GB_CHOICES`, `DEFAULT_NUDGE_GB`); Task 7's `RpcApi.GetStorageCommand`, `RpcApi.RescanStorageCommand`, `RpcApi.CleanStorageCommand`, the `"storage:scan"` event, the settings `storage:autoclean` and `storage:nudgegb`; the Settings primitives in `settingsui.tsx` (`SettingCard`, `SettingRow`, `CardFooter`, `Toggle`, `Segmented`, `writeConfig`).
+- Produces: `storageReportAtom`, `storageSkippedAtom`, `loadStorage(scanIfEmpty)`, `useStorageReport(scanIfEmpty?)`, `cleanStorage(category, itemids, opts)`, `rescanStorage()`; `StoragePage`; `StorageNudge`; `openSettingsSection(model, id)`.
+- DOM hooks the scenario reads (the card roots are `SettingCard`'s own `[data-setting-card="<id>"]`): `[data-storage-head]` with `data-storage-scanned="<scannedts>"` and `data-storage-scanning` while a scan runs; `[data-storage-rescan="head"]`, and `[data-storage-rescan="<category>"]` beside a card's scan error; `[data-storage-clean="<category>"]` (absent on build output); `[data-storage-count]` (sessions); `[data-storage-error]`; `[data-storage-row="<id>"]` (an item's id; for build output, the project's path); `[data-storage-reason]`; `[data-storage-remove]`; `[data-storage-more]`; `[data-storage-lastauto]`.
+
+**Layout.** Settings pages are cards of rows (`SettingSectionDef` is `{id, name, blurb, cards: [{id, label, rows}]}`). The `storage` page has five cards: `runworktrees`, `sessions`, `housekeeping`, `buildoutput` and `autoclean`. A category card has no rows in the model: its items live behind the storage RPCs, as the Claude account card's list does, so the index counts nothing in it and searches its label, the card's title from `CARD_COPY`. The Auto-clean card holds the two config rows. Above the cards sits the head (decision 1). The category cards always render, before the first report too, so the page's card list is the same on every machine.
+
+**Visual states and interactions, each shown by a `settings-storage` step** (Acceptance; Final runs this scenario):
+
+| What | Step |
+|---|---|
+| Storage in the index after Agents; the five cards in order; clean buttons on three categories, none on build output | 1 |
+| The head: `arcterm uses X · Y can be cleaned`, scanned time | 2 |
+| Rescan → `Scanning…` with Rescan disabled → a newer scan (the same `Scanning…` head shows before the first scan) | 3 |
+| A guarded row (`has uncommitted changes`, warning color, its own Remove); a reason row with no button (`not a run worktree`); a cleanable row's own Remove; `Couldn't scan: …` with a Rescan | 4 |
+| The 7/30/90 switch, the sessions count for that N | 5 |
+| More than five rows: five and `Show all N`; Show all; Show fewer | 6 |
+| Build output: one row per project with one Remove, no Clean all | 7 |
+| A skipped item: the confirm, the `1 skipped` toast, the reason on its row | 8 |
+| A guarded clean: the confirm saying the changes are lost, the `Reclaimed` toast, the row gone, the branch kept | 9 |
+| A project's clean: the confirm naming its folders, the `Reclaimed` toast, the row gone | 10 |
+| The auto-clean switch, the threshold, the last auto-clean line | 11 |
+| The nudge toast, once a day, opening Settings → Storage | 12 |
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `frontend/app/view/agents/settingsstore.test.ts` (add `openSettingsSection` to its import from `./settingsstore`, and `import { atom } from "jotai";` if absent):
+Append to `frontend/app/view/agents/settingsstore.test.ts` (add `openSettingsSection` to its import from `./settingsstore`, and `import { atom } from "jotai";`):
 
 ```ts
 describe("openSettingsSection", () => {
@@ -3118,55 +3227,78 @@ describe("openSettingsSection", () => {
 });
 ```
 
-In `frontend/app/view/agents/settingsmodel.test.ts`, in "marks exactly the wconfig-backed rows as config rows", insert after `"memory:vaultpath",`:
+In `frontend/app/view/agents/settingsmodel.test.ts`:
+
+- "has six pages in order" becomes "has seven pages in order", with `"storage"` after `"agents"` in the ids and `"Storage"` after `"Agents"` in the names.
+- In "marks exactly the wconfig-backed rows as config rows", insert after `"agents:sleepaftermin",` (the storage page sits between Agents and Background AI):
 
 ```ts
             "storage:autoclean",
             "storage:nudgegb",
 ```
 
+- In "puts each row in the card the spec names", add:
+
+```ts
+        expect(cards["storage/runworktrees"]).toEqual([]);
+        expect(cards["storage/sessions"]).toEqual([]);
+        expect(cards["storage/housekeeping"]).toEqual([]);
+        expect(cards["storage/buildoutput"]).toEqual([]);
+        expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge"]);
+```
+
+- In "keeps every row exactly once", `39 + RUNTIME_FLAGS.claude.length` becomes `41 + RUNTIME_FLAGS.claude.length`.
+
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `npx vitest run frontend/app/view/agents/settingsstore.test.ts frontend/app/view/agents/settingsmodel.test.ts`
-Expected: FAIL — `openSettingsSection is not a function`; the config-rows list lacks the two storage keys.
+Expected: FAIL — `openSettingsSection is not a function`; six pages, not seven; the config-rows list lacks the two storage keys.
 
 - [ ] **Step 3: Add `openSettingsSection` and the section definition**
 
 Append to `frontend/app/view/agents/settingsstore.ts` (add `import type { AgentsViewModel } from "./agents";`):
 
 ```ts
-/** Opens Settings on a section. Settings reads the pending section when it mounts and whenever it changes, so this
- *  works whichever surface is showing. */
+/** Opens Settings on a section, from any surface: Settings takes the pending section when it mounts, and while it
+ *  already shows. */
 export function openSettingsSection(model: Pick<AgentsViewModel, "surfaceAtom">, id: string): void {
     globalStore.set(pendingSettingsSectionAtom, id);
     globalStore.set(model.surfaceAtom, "settings");
 }
 ```
 
-In `frontend/app/view/agents/settingsmodel.ts`, inside `settingsSections`, insert this section object right before the one with `id: "headless"`:
+In `frontend/app/view/agents/settingsmodel.ts`, add `import { CARD_COPY, CARD_ORDER } from "./storagemodel";` and, inside `settingsSections`, insert this section right before the one with `id: "headless"`:
 
 ```ts
         {
             id: "storage",
             name: "Storage",
-            blurb: "What arcterm and its agents leave on disk, and cleaning it.",
-            group: "Data",
-            rows: [
+            blurb: "What arcterm and its agents leave on disk, and cleaning it. Nothing in use is ever removed.",
+            cards: [
+                // Each category's items live behind the storage RPCs, not in settings, so its card has no rows for
+                // the index to count or search, only its label; settingspages/storage.tsx draws them from the report.
+                ...CARD_ORDER.map((cat) => ({ id: cat, label: CARD_COPY[cat].title, rows: [] })),
                 {
-                    id: "storage.autoclean",
-                    title: "Clean the safe parts daily",
-                    desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output and the cache wait for you.",
-                    key: "storage:autoclean",
-                    scope: "synced",
-                    config: true,
-                },
-                {
-                    id: "storage.nudge",
-                    title: "Remind me above",
-                    desc: "A toast, at most once a day, when this much can be cleaned.",
-                    key: "storage:nudgegb",
-                    scope: "synced",
-                    config: true,
+                    id: "autoclean",
+                    label: "Auto-clean",
+                    rows: [
+                        {
+                            id: "storage.autoclean",
+                            title: "Clean the safe parts daily",
+                            desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output and the cache wait for you.",
+                            key: "storage:autoclean",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "storage.nudge",
+                            title: "Remind me above",
+                            desc: "A toast, at most once a day, when more than this can be cleaned.",
+                            key: "storage:nudgegb",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
                 },
             ],
         },
@@ -3183,7 +3315,7 @@ Expected: PASS.
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Storage report the section and the nudge share: one atom, loaded on mount and replaced by every storage:scan
+// The Storage report the page and the nudge share: one atom, loaded on mount and replaced by every storage:scan
 // event, and the reasons the last cleans skipped items, by item id.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -3201,23 +3333,24 @@ export const storageSkippedAtom = atom<Record<string, string>>({}) as PrimitiveA
 // removing a cargo target or node_modules can take a while: the RPC must outlast it
 const CLEAN_TIMEOUT_MS = 10 * 60_000;
 
-export async function loadStorage(): Promise<void> {
+/** Reads the server's last scan. `scanIfEmpty` (the Storage page) asks for a scan when there is none yet: the
+ *  server's own first scan waits 2 minutes after start, and the nudge must not move it earlier. */
+export async function loadStorage(scanIfEmpty: boolean): Promise<void> {
     try {
         const report = await RpcApi.GetStorageCommand(TabRpcClient);
         globalStore.set(storageReportAtom, report);
-        // the server scans 2 minutes after start: an earlier look asks for one now
-        if (report.scannedts === 0 && !report.scanning) {
+        if (scanIfEmpty && report.scannedts === 0 && !report.scanning) {
             rescanStorage();
         }
     } catch (e) {
-        console.warn("storage:", e);
+        console.warn("storage: reading the report failed:", e);
     }
 }
 
 /** Keeps storageReportAtom current while mounted: a load now, then each storage:scan event's report. */
-export function useStorageReport(): StorageReport | null {
+export function useStorageReport(scanIfEmpty = false): StorageReport | null {
     useEffect(() => {
-        void loadStorage();
+        void loadStorage(scanIfEmpty);
         return waveEventSubscribeSingle({
             eventType: "storage:scan",
             handler: (event) => {
@@ -3226,7 +3359,7 @@ export function useStorageReport(): StorageReport | null {
                 }
             },
         });
-    }, []);
+    }, [scanIfEmpty]);
     return useAtomValue(storageReportAtom);
 }
 
@@ -3235,53 +3368,89 @@ export async function cleanStorage(
     itemids: string[],
     opts: { olderthandays?: number; allowguarded?: boolean } = {}
 ): Promise<StorageCleanResult> {
-    const result = await RpcApi.CleanStorageCommand(TabRpcClient, { category, itemids, ...opts }, { timeout: CLEAN_TIMEOUT_MS });
+    const result = await RpcApi.CleanStorageCommand(
+        TabRpcClient,
+        { category, itemids, ...opts },
+        { timeout: CLEAN_TIMEOUT_MS }
+    );
     globalStore.set(storageSkippedAtom, (prev) => ({ ...prev, ...skippedOf(result) }));
     return result;
 }
 
+/** Starts a scan. The head says Scanning… at once, set before the RPC goes out: the server publishes only when a
+ *  scan ends, and that event's report replaces this one. A failed ask reads the server's report back. */
 export function rescanStorage(): void {
-    fireAndForget(() => RpcApi.RescanStorageCommand(TabRpcClient));
+    globalStore.set(storageReportAtom, (r) => (r == null ? r : { ...r, scanning: true }));
+    fireAndForget(async () => {
+        try {
+            await RpcApi.RescanStorageCommand(TabRpcClient);
+        } catch (e) {
+            console.warn("storage: rescan failed:", e);
+            await loadStorage(false);
+        }
+    });
 }
 ```
 
-- [ ] **Step 5: Write the section**
+- [ ] **Step 5: Write the page and wire it into Settings**
 
-`frontend/app/view/agents/storagesection.tsx`:
+`frontend/app/view/agents/settingspages/storage.tsx`:
 
 ```tsx
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings → Storage's cards: one per category, with its size, its rows and its clean button. The settings rows
-// (auto-clean, the nudge threshold) stay in settingssurface.tsx, which owns SettingRow.
+// Settings > Storage: what arcterm and its agents leave on disk, per category, and cleaning it. storagemodel.ts
+// decides what each card holds and says; pkg/storage measures and cleans, re-checking every rule at removal. The
+// head and the four category cards read the storage report; the Auto-clean card's rows are settings.json
+// (storage:*).
 
-import { Segmented } from "@/app/element/segmented";
 import { pushToast } from "@/app/cockpit/notificationstore";
+import { getSettingsKeyAtom } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
-import { formatAgo } from "./agentsviewmodel";
+import { formatAgo } from "../agentsviewmodel";
+import { CardFooter, Segmented, SettingCard, SettingRow, Toggle, writeConfig } from "../settingsui";
 import {
+    buildProjectRows,
+    CARD_COPY,
+    CARD_ORDER,
     cleanableTotal,
     cleanAllIds,
     cleanToast,
     confirmFor,
+    DEFAULT_NUDGE_GB,
     DEFAULT_SESSION_DAYS,
     formatSize,
+    NUDGE_GB_CHOICES,
     SESSION_DAYS,
     storageCards,
     usedTotal,
     type SessionDays,
     type StorageCard,
     type StorageRow,
-} from "./storagemodel";
-import { cleanStorage, rescanStorage, storageSkippedAtom, useStorageReport } from "./storagestore";
+} from "../storagemodel";
+import { cleanStorage, rescanStorage, storageSkippedAtom, useStorageReport } from "../storagestore";
+
+type Category = (typeof CARD_ORDER)[number];
 
 const BUTTON =
-    "rounded-md border border-edge-mid bg-surface-raised px-2.5 py-1 text-[12px] text-muted hover:border-edge-strong hover:bg-surface-hover disabled:opacity-50";
+    "flex-none cursor-pointer rounded-sm border border-edge-mid px-2.5 py-1 text-[12px] font-semibold text-ink-mid transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-50";
 const ROWS_SHOWN = 5;
+
+// one line of a card: an item, or for build output a project
+type Entry = {
+    id: string;
+    label: string;
+    title?: string;
+    detail?: string;
+    bytes: number;
+    why?: string;
+    warn: boolean;
+    onRemove?: () => void;
+};
 
 function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guarded: boolean) {
     const c = confirmFor(card, rows, days, guarded);
@@ -3296,9 +3465,16 @@ function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guar
                     const result = await cleanStorage(
                         card.category,
                         rows.map((r) => r.id),
-                        { olderthandays: card.category === "sessions" ? Number(days) : undefined, allowguarded: guarded || undefined }
+                        {
+                            olderthandays: card.category === "sessions" ? Number(days) : undefined,
+                            allowguarded: guarded || undefined,
+                        }
                     );
-                    pushToast({ title: "Storage", message: cleanToast(result), level: result.skipped?.length ? "warn" : "info" });
+                    pushToast({
+                        title: "Storage",
+                        message: cleanToast(result),
+                        level: result.skipped?.length ? "warn" : "info",
+                    });
                 } catch (e) {
                     pushToast({ title: "Storage", message: `Couldn't clean: ${String(e)}`, level: "error" });
                 }
@@ -3306,17 +3482,63 @@ function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guar
     });
 }
 
-function RowView({ card, row, days }: { card: StorageCard; row: StorageRow; days: SessionDays }) {
-    const ownButton = card.category === "buildoutput" || card.category === "runworktrees";
-    const why = row.skipped ?? row.reason;
+function entriesOf(category: Category, card: StorageCard | null, days: SessionDays): Entry[] {
+    if (card == null) {
+        return [];
+    }
+    if (category === "buildoutput") {
+        // cleaned per project (spec 4.4): one row and one button each; a busy project's row says why it stays
+        return buildProjectRows(card).map((p) => ({
+            id: p.project,
+            label: p.name,
+            title: p.project,
+            detail: p.dirs.join(", "),
+            bytes: p.bytes,
+            why: p.skipped ?? p.reason,
+            warn: false,
+            onRemove:
+                p.ids.length > 0
+                    ? () => runClean(card, card.rows.filter((r) => p.ids.includes(r.id)), days, false)
+                    : undefined,
+        }));
+    }
+    return card.rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        detail: r.detail,
+        bytes: r.bytes,
+        why: r.skipped ?? r.reason,
+        warn: !!r.guarded || r.skipped != null,
+        // a run worktree has its own button; a guarded one's confirm says what is lost
+        onRemove:
+            category === "runworktrees" && (r.cleanable || r.guarded)
+                ? () => runClean(card, [r], days, !!r.guarded)
+                : undefined,
+    }));
+}
+
+function EntryRow({ e }: { e: Entry }) {
     return (
-        <div data-storage-row className="flex min-w-0 items-center gap-3 py-1 text-[12px]">
-            <span className="min-w-0 flex-1 truncate font-mono text-primary">{row.label}</span>
-            <span className="shrink-0 truncate text-muted">{row.detail}</span>
-            <span className="w-[64px] shrink-0 text-right tabular-nums text-muted">{formatSize(row.bytes)}</span>
-            {why ? <span className={cn("shrink-0", row.guarded ? "text-warning" : "text-muted")}>{why}</span> : null}
-            {ownButton && (row.cleanable || row.guarded) ? (
-                <button type="button" className={BUTTON} onClick={() => runClean(card, [row], days, !!row.guarded)}>
+        <div
+            data-storage-row={e.id}
+            className="flex min-w-0 items-center gap-3 border-t border-edge-mid px-4 py-2 text-[12px]"
+        >
+            <span title={e.title ?? e.label} className="min-w-0 flex-1 truncate font-mono text-primary">
+                {e.label}
+            </span>
+            {e.detail ? (
+                <span title={e.detail} className="min-w-0 max-w-[220px] shrink truncate text-muted">
+                    {e.detail}
+                </span>
+            ) : null}
+            <span className="w-[64px] flex-none text-right tabular-nums text-muted">{formatSize(e.bytes)}</span>
+            {e.why ? (
+                <span data-storage-reason className={cn("flex-none", e.warn ? "text-warning" : "text-muted")}>
+                    {e.why}
+                </span>
+            ) : null}
+            {e.onRemove ? (
+                <button type="button" data-storage-remove className={BUTTON} onClick={e.onRemove}>
                     Remove
                 </button>
             ) : null}
@@ -3324,146 +3546,198 @@ function RowView({ card, row, days }: { card: StorageCard; row: StorageRow; days
     );
 }
 
-function CardView({ card, days, onDays }: { card: StorageCard; days: SessionDays; onDays: (d: SessionDays) => void }) {
+function CategoryCard({
+    category,
+    card,
+    days,
+    onDays,
+}: {
+    category: Category;
+    card: StorageCard | null;
+    days: SessionDays;
+    onDays: (d: SessionDays) => void;
+}) {
     const [open, setOpen] = useState(false);
-    const ids = cleanAllIds(card);
-    const rows = open ? card.rows : card.rows.slice(0, ROWS_SHOWN);
+    const copy = CARD_COPY[category];
+    const entries = entriesOf(category, card, days);
+    const shown = open ? entries : entries.slice(0, ROWS_SHOWN);
+    const ids = card != null ? cleanAllIds(card) : [];
     return (
-        <div data-storage-card={card.category} className="rounded-lg border border-edge-mid bg-surface-raised px-4 py-3">
-            <div className="flex items-center gap-3">
-                <span className="text-[13.5px] font-semibold text-primary">{card.title}</span>
-                <span className="text-[12px] tabular-nums text-muted">{formatSize(card.bytes)}</span>
-                <span className="flex-1" />
-                {card.category === "sessions" ? (
-                    <Segmented<SessionDays>
-                        value={days}
-                        onChange={onDays}
-                        options={SESSION_DAYS.map((d) => ({ key: d, label: `${d} days` }))}
-                        ariaLabel="Older than"
-                    />
-                ) : null}
-                {card.action != null ? (
-                    <button
-                        type="button"
-                        data-storage-clean={card.category}
-                        className={BUTTON}
-                        disabled={ids.length === 0}
-                        onClick={() => runClean(card, card.rows.filter((r) => ids.includes(r.id)), days, false)}
-                    >
-                        {card.action}
-                        {ids.length > 0 ? ` · ${formatSize(card.cleanableBytes)}` : ""}
-                    </button>
-                ) : null}
-            </div>
-            <div className="mt-1 text-[12px] leading-[1.5] text-muted">{card.blurb}</div>
-            {card.error ? <div className="mt-1 text-[12px] text-warning">Couldn't scan: {card.error}</div> : null}
-            {card.rows.length > 0 ? (
-                <div className="mt-2">
-                    {rows.map((r) => (
-                        <RowView key={r.id} card={card} row={r} days={days} />
-                    ))}
-                    {card.rows.length > ROWS_SHOWN ? (
-                        <button type="button" className="mt-1 text-[12px] text-muted hover:text-primary" onClick={() => setOpen(!open)}>
-                            {open ? "Show fewer" : `Show all ${card.rows.length}`}
+        <SettingCard
+            id={category}
+            label={copy.title}
+            footer={
+                entries.length > ROWS_SHOWN ? (
+                    <CardFooter>
+                        <button
+                            type="button"
+                            data-storage-more
+                            onClick={() => setOpen(!open)}
+                            className="cursor-pointer text-[12px] font-semibold text-secondary transition-colors hover:text-primary"
+                        >
+                            {open ? "Show fewer" : `Show all ${entries.length}`}
+                        </button>
+                    </CardFooter>
+                ) : undefined
+            }
+        >
+            <div className="flex flex-col gap-1 px-4 py-3">
+                <div className="flex min-h-[26px] items-center gap-3">
+                    <span className="text-[13px] font-semibold tabular-nums text-primary">
+                        {card == null ? "…" : formatSize(card.bytes)}
+                    </span>
+                    {category === "sessions" && card != null ? (
+                        <span data-storage-count={card.rows.length} className="text-[12px] text-muted">
+                            {card.rows.length === 1 ? "1 session" : `${card.rows.length} sessions`}
+                        </span>
+                    ) : null}
+                    <span className="flex-1" />
+                    {category === "sessions" ? (
+                        <Segmented<SessionDays>
+                            options={SESSION_DAYS.map((d) => ({ id: d, label: `${d} days` }))}
+                            value={days}
+                            onChange={onDays}
+                        />
+                    ) : null}
+                    {copy.action != null && card != null ? (
+                        <button
+                            type="button"
+                            data-storage-clean={category}
+                            className={BUTTON}
+                            disabled={ids.length === 0}
+                            onClick={() =>
+                                runClean(
+                                    card,
+                                    card.rows.filter((r) => ids.includes(r.id)),
+                                    days,
+                                    false
+                                )
+                            }
+                        >
+                            {copy.action}
+                            {ids.length > 0 ? ` · ${formatSize(card.cleanableBytes)}` : ""}
                         </button>
                     ) : null}
                 </div>
-            ) : (
-                <div className="mt-2 text-[12px] text-muted">Nothing here.</div>
-            )}
-        </div>
+                <div className="text-[12px] leading-[1.45] text-muted">{copy.blurb}</div>
+                {card?.error ? (
+                    <div data-storage-error className="flex items-center gap-2 text-[12px] text-warning">
+                        <span className="min-w-0 flex-1">Couldn't scan: {card.error}</span>
+                        <button type="button" data-storage-rescan={category} className={BUTTON} onClick={rescanStorage}>
+                            Rescan
+                        </button>
+                    </div>
+                ) : null}
+            </div>
+            {shown.map((e) => (
+                <EntryRow key={e.id} e={e} />
+            ))}
+        </SettingCard>
     );
 }
 
-export function StoragePanel() {
-    const report = useStorageReport();
+export function StoragePage() {
+    const report = useStorageReport(true);
     const skipped = useAtomValue(storageSkippedAtom);
     const [days, setDays] = useState<SessionDays>(DEFAULT_SESSION_DAYS);
-    if (report == null) {
-        return (
-            <div data-storage-section className="text-[12px] text-muted">
-                Reading what arcterm keeps on disk…
-            </div>
-        );
-    }
+    const auto = (useAtomValue(getSettingsKeyAtom("storage:autoclean")) as boolean | undefined) ?? true;
+    const nudge = (useAtomValue(getSettingsKeyAtom("storage:nudgegb")) as number | undefined) ?? DEFAULT_NUDGE_GB;
     const now = Date.now();
     const cards = storageCards(report, days, now, skipped);
+    const scanned = report != null && report.scannedts > 0;
+    // before the first scan the head keeps its shape, with … for the sizes and Scanning… for the time
+    const scanning = report == null || report.scanning || !scanned;
+    const size = (n: number) => (scanned ? formatSize(n) : "…");
     return (
-        <div data-storage-section className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-                <span data-storage-head className="text-[13.5px] font-semibold text-primary">
-                    arcterm uses {formatSize(usedTotal(report))} · {formatSize(cleanableTotal(report, days, now))} can be cleaned
+        <>
+            <div
+                data-storage-head
+                data-storage-scanned={report?.scannedts ?? 0}
+                data-storage-scanning={scanning ? "" : undefined}
+                className="flex items-center gap-3"
+            >
+                <span className="min-w-0 flex-1 text-[13.5px] font-semibold text-primary">
+                    arcterm uses {size(usedTotal(report))} · {size(cleanableTotal(report, days, now))} can be cleaned
                 </span>
-                <span className="text-[11.5px] text-muted">
-                    {report.scanning ? "Scanning…" : report.scannedts ? `scanned ${formatAgo(now - report.scannedts)}` : ""}
+                <span className="flex-none text-[12px] text-muted">
+                    {scanning ? "Scanning…" : `scanned ${formatAgo(now - (report?.scannedts ?? now))}`}
                 </span>
-                <span className="flex-1" />
-                <button type="button" className={BUTTON} disabled={report.scanning} onClick={rescanStorage}>
+                <button
+                    type="button"
+                    data-storage-rescan="head"
+                    className={BUTTON}
+                    disabled={scanning}
+                    onClick={rescanStorage}
+                >
                     Rescan
                 </button>
             </div>
-            {cards.map((card) => (
-                <CardView key={card.category} card={card} days={days} onDays={setDays} />
+            {CARD_ORDER.map((cat) => (
+                <CategoryCard
+                    key={cat}
+                    category={cat}
+                    card={cards.find((c) => c.category === cat) ?? null}
+                    days={days}
+                    onDays={setDays}
+                />
             ))}
-            {report.lastauto ? (
-                <div className="text-[11.5px] text-muted">
-                    Last auto-clean {formatAgo(now - report.lastauto.ts)}: reclaimed {formatSize(report.lastauto.reclaimed)}
-                    {report.lastauto.error ? ` · ${report.lastauto.error}` : ""}
-                </div>
-            ) : null}
-        </div>
+            <SettingCard
+                id="autoclean"
+                label="Auto-clean"
+                footer={
+                    report?.lastauto ? (
+                        <CardFooter dot>
+                            <span data-storage-lastauto>
+                                Last auto-clean {formatAgo(now - report.lastauto.ts)}: reclaimed{" "}
+                                {formatSize(report.lastauto.reclaimed)}
+                                {report.lastauto.error ? ` · ${report.lastauto.error}` : ""}
+                            </span>
+                        </CardFooter>
+                    ) : undefined
+                }
+            >
+                <SettingRow id="storage.autoclean">
+                    <Toggle
+                        on={auto}
+                        onToggle={() => writeConfig({ "storage:autoclean": !auto })}
+                        label="Clean the safe parts daily"
+                    />
+                </SettingRow>
+                <SettingRow id="storage.nudge">
+                    <Segmented<string>
+                        options={NUDGE_GB_CHOICES.map((v) => ({ id: v, label: `${v} GB` }))}
+                        value={String(nudge)}
+                        onChange={(v) => writeConfig({ "storage:nudgegb": Number(v) })}
+                    />
+                </SettingRow>
+            </SettingCard>
+        </>
     );
 }
 ```
 
 In `frontend/app/view/agents/settingssurface.tsx`:
-- add `import { StoragePanel } from "./storagesection";` and change the settingsstore import to `import { pendingSettingsSectionAtom, takePendingSettingsSection } from "./settingsstore";`;
-- in `SettingsSurface`, replace the mount-only pending effect with one that also follows the atom:
+- add `import { StoragePage } from "./settingspages/storage";` beside the other page imports, and change the settingsstore import to `import { pendingSettingsSectionAtom, takePendingSettingsSection } from "./settingsstore";`;
+- replace the mount-only pending effect in `SettingsSurface` with one that also follows the atom, so a deep link lands while Settings already shows; it keeps `resolveSectionId` (retired ids still land) and clears a search that would hide the section:
 
 ```tsx
+    // a deep link (openSettingsSection) lands on mount, and while Settings already shows
     const pendingSection = useAtomValue(pendingSettingsSectionAtom);
     useEffect(() => {
         const want = takePendingSettingsSection();
         if (want != null) {
-            setWanted(want);
+            setQuery("");
+            setWanted(resolveSectionId(want));
         }
     }, [pendingSection]);
 ```
 
-- in the section switch, before `case "about":`:
+- in `SectionBody`'s switch, before `case "headless":`:
 
 ```tsx
         case "storage":
-            return <StorageSection />;
+            return <StoragePage />;
 ```
-
-- next to `NotificationsSection`:
-
-```tsx
-function StorageSection() {
-    const auto = (useAtomValue(getSettingsKeyAtom("storage:autoclean")) as boolean | undefined) ?? true;
-    const nudge = (useAtomValue(getSettingsKeyAtom("storage:nudgegb")) as number | undefined) ?? 2;
-    return (
-        <div>
-            <div className="mb-4">
-                <StoragePanel />
-            </div>
-            <SettingRow id="storage.autoclean">
-                <Toggle on={auto} onToggle={() => writeConfig({ "storage:autoclean": !auto })} label="Clean the safe parts daily" />
-            </SettingRow>
-            <SettingRow id="storage.nudge">
-                <Segmented<string>
-                    value={String(nudge)}
-                    onChange={(v) => writeConfig({ "storage:nudgegb": Number(v) })}
-                    options={["1", "2", "5", "10"].map((v) => ({ id: v, label: `${v} GB` }))}
-                />
-            </SettingRow>
-        </div>
-    );
-}
-```
-
-(`Segmented` here is the surface's local one with `{ id, label }` options; `Toggle`, `SettingRow` and `writeConfig` are the surface's own.)
 
 - [ ] **Step 6: Write the nudge and mount it**
 
@@ -3536,47 +3810,503 @@ In `frontend/app/view/agents/cockpitshell.tsx`, import `StorageNudge` from `./st
             <StorageNudge model={model} />
 ```
 
-- [ ] **Step 7: Add the CDP scenario**
+- [ ] **Step 7: Add the CDP scenario and the storage page to settings-pages**
 
-In `scripts/cdp/scenarios.mjs`, before `export const SCENARIOS = [` (4-space indent, no prettier on this file):
+In `scripts/cdp/scenarios.mjs` (4-space indent; never run prettier on this file):
+
+1. Add `utimesSync` to the `node:fs` import at the top.
+2. In `SP_PAGES` (settings-pages), insert after the `agents` entry:
 
 ```js
-// --- Settings → Storage: the section, its four cards in order and its head ------------------------------------
+    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "autoclean"] },
+```
+
+   and add `"window"` to the `general` entry's cards after `"notifications"` (the Window card the General page gained on
+   2026-10-10, which `SP_PAGES` predates). In the settings-pages header comment and its first step's text, "six pages"
+   becomes "seven pages".
+3. Before `export const SCENARIOS = [`, add:
+
+```js
+// --- settings-storage: Settings → Storage over fixture data ----------------------------------------------------
+// docs/superpowers/specs/2026-10-08-storage-cleanup-design.md. arrange turns auto-clean on and waits for the server's
+// first pass (2 minutes after it starts), so the Last auto-clean line exists and no later pass can take a fixture.
+// Then it registers two temp git projects: SS_PROJECT, with an ignored node_modules and three folders in
+// .waveterm/worktrees (an engine-named tree with no run and no changes, one with an uncommitted file, and `scratch`,
+// a name the engine never makes), and SS_BROKEN, whose .waveterm/worktrees is a file, so the run worktrees scan
+// fails there. It writes seven Claude transcripts under ~/.claude/projects (six 40 days old, one 10), and rescans.
+// No step presses a category's own clean button (it would take the developer's real sessions and trash): fixtures
+// are cleaned through their rows. Teardown removes every fixture and puts storage:autoclean, storage:nudgegb and the
+// nudge's day back; settings.json is the vault's, shared with the packaged app.
+const SS_PROJECT = "verify-storage";
+const SS_BROKEN = "verify-storage-broken";
+const SS_RUN_CLEAN = "5a0c0de0-0000-4000-8000-000000000001";
+const SS_RUN_DIRTY = "5a0c0de0-0000-4000-8000-000000000002";
+const SS_NUDGE_DAY_KEY = "storage.nudge.lastday"; // storagenudge.tsx
+const SS_DAY_MS = 24 * 60 * 60 * 1000;
+const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "autoclean"];
+const ssCard = (cat) => `document.querySelector('[data-settings-section="storage"] [data-setting-card="${cat}"]')`;
+// a row is found by the end of its id: a session's id is its path, a project's row its project's path
+const ssRowIds = (cat) =>
+    `[...(${ssCard(cat)}?.querySelectorAll('[data-storage-row]') ?? [])].map((r) => r.getAttribute('data-storage-row'))`;
+const ssRow = (cat, suffix) =>
+    `[...(${ssCard(cat)}?.querySelectorAll('[data-storage-row]') ?? [])].find((r) => r.getAttribute('data-storage-row').endsWith(${JSON.stringify(suffix)}))`;
+const ssRowState = (cat, suffix) => `(() => {
+    const r = ${ssRow(cat, suffix)};
+    if (!r) return null;
+    const why = r.querySelector('[data-storage-reason]');
+    return {
+        text: r.textContent,
+        reason: why ? why.textContent : null,
+        warn: why ? why.classList.contains('text-warning') : false,
+        remove: !!r.querySelector('[data-storage-remove]'),
+    };
+})()`;
+const SS_HEAD = `document.querySelector('[data-storage-head]')`;
+const ssToast = (text) =>
+    `[...document.querySelectorAll('[data-notification-toast]')].some((t) => (t.textContent || '').includes(${JSON.stringify(text)}))`;
+// a scan that started at or after `since` has landed in the page, and none is running
+const ssWaitScan = (h, since) =>
+    polishWaitFor(
+        h,
+        `Number(${SS_HEAD}?.getAttribute('data-storage-scanned') ?? 0) >= ${since} && !${SS_HEAD}.hasAttribute('data-storage-scanning')`,
+        60000
+    );
+// settings.json is the vault's, which the packaged app shares; a write can lose a rename race, so three tries
+const ssSetConfig = async (h, patch) => {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await h.rpc("setconfig", patch);
+            return;
+        } catch (e) {
+            last = e;
+            await polishNap(300);
+        }
+    }
+    throw last;
+};
+const ssWaitConfig = async (h, key, want) => {
+    for (let waited = 0; waited < 5000; waited += 250) {
+        if ((await h.rpc("getfullconfig", null))?.settings?.[key] === want) return true;
+        await polishNap(250);
+    }
+    return false;
+};
+// opens a card's Show all when it has one, so every row is in the DOM
+const ssExpand = async (h, cat) => {
+    await h.ev(`(() => {
+        const more = ${ssCard(cat)}?.querySelector('[data-storage-more]');
+        if (more && more.textContent.startsWith('Show all')) more.click();
+    })()`);
+    await polishNap(150);
+};
+const ssDismissToasts = (h) => h.ev(`document.querySelectorAll('[data-notification-close]').forEach((b) => b.click())`);
+// clicks what opens a confirm, returns the dialog's text, and presses its confirm button
+const ssConfirm = async (h, openExpr, label) => {
+    await ssDismissToasts(h);
+    await h.ev(`${openExpr}?.click()`);
+    const up = await polishWaitFor(h, `document.querySelector('[role="dialog"]') != null`, 3000);
+    const text = up ? await h.ev(`document.querySelector('[role="dialog"]').textContent`) : null;
+    await h.ev(
+        `[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent.includes(${JSON.stringify(label)}))?.click()`
+    );
+    await polishWaitFor(h, `document.querySelector('[role="dialog"]') == null`, 3000);
+    return text;
+};
+
 const settingsStorage = {
     name: "settings-storage",
     surface: "settings",
     async arrange(h) {
-        await h.rpc("rescanstorage", null);
-        return {};
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+            ctx.prevAuto = settings["storage:autoclean"] ?? null;
+            ctx.prevNudge = settings["storage:nudgegb"] ?? null;
+            ctx.prevNudgeDay = await h.ev(`localStorage.getItem(${JSON.stringify(SS_NUDGE_DAY_KEY)})`);
+            if (ctx.prevAuto === false) {
+                await ssSetConfig(h, { "storage:autoclean": true });
+            }
+            // the first auto-clean runs 2 minutes after the server starts (storage.AutoCleanDelay)
+            const autoBy = Date.now() + 200_000;
+            while ((await h.rpc("getstorage", null))?.lastauto == null) {
+                if (Date.now() > autoBy) {
+                    throw new Error("no auto-clean ran within 200 s (was storage:autoclean off at the 2-minute pass?)");
+                }
+                await polishNap(2000);
+            }
+
+            ctx.repo = mkdtempSync(join(tmpdir(), "verify-storage-"));
+            ctx.dirs.push(ctx.repo);
+            git(ctx.repo, "init", "-q");
+            writeFileSync(join(ctx.repo, ".gitignore"), "node_modules/\n.waveterm/\n");
+            git(ctx.repo, "add", ".gitignore");
+            git(ctx.repo, "commit", "-q", "-m", "init");
+            mkdirSync(join(ctx.repo, "node_modules", "left-pad"), { recursive: true });
+            writeFileSync(join(ctx.repo, "node_modules", "left-pad", "index.js"), "x".repeat(64 * 1024));
+            const trees = join(ctx.repo, ".waveterm", "worktrees");
+            ctx.cleanTree = join(trees, SS_RUN_CLEAN);
+            ctx.dirtyTree = join(trees, SS_RUN_DIRTY);
+            git(ctx.repo, "worktree", "add", "-q", "-b", `wave/${SS_RUN_CLEAN}`, ctx.cleanTree);
+            git(ctx.repo, "worktree", "add", "-q", "-b", `wave/${SS_RUN_DIRTY}`, ctx.dirtyTree);
+            writeFileSync(join(ctx.dirtyTree, "notes.txt"), "uncommitted\n".repeat(4096));
+            mkdirSync(join(trees, "scratch"));
+            writeFileSync(join(trees, "scratch", "notes.txt"), "mine\n");
+
+            ctx.broken = mkdtempSync(join(tmpdir(), "verify-storage-broken-"));
+            ctx.dirs.push(ctx.broken);
+            mkdirSync(join(ctx.broken, ".waveterm"));
+            writeFileSync(join(ctx.broken, ".waveterm", "worktrees"), "a file, not a folder\n");
+
+            for (const [name, path] of [
+                [SS_PROJECT, ctx.repo],
+                [SS_BROKEN, ctx.broken],
+            ]) {
+                await h.rpc("createproject", { name, path });
+                ctx.projects.push(name);
+                await waitForProjectInConfig(h, name);
+            }
+
+            ctx.sessionDir = join(homedir(), ".claude", "projects", `verify-storage-${randomUUID().slice(0, 8)}`);
+            ctx.dirs.push(ctx.sessionDir);
+            mkdirSync(ctx.sessionDir, { recursive: true });
+            ctx.oldSessions = [];
+            for (let i = 0; i < 7; i++) {
+                const name = `${randomUUID()}.jsonl`;
+                const file = join(ctx.sessionDir, name);
+                writeFileSync(file, JSON.stringify({ type: "user", message: { role: "user", content: "fixture" } }) + "\n");
+                const at = (Date.now() - (i < 6 ? 40 : 10) * SS_DAY_MS) / 1000;
+                utimesSync(file, at, at);
+                if (i < 6) ctx.oldSessions.push(name);
+                else ctx.recentSession = name;
+            }
+
+            ctx.scanFrom = Date.now();
+            await h.rpc("rescanstorage", null);
+            const scanBy = Date.now() + 60_000;
+            for (;;) {
+                const r = await h.rpc("getstorage", null);
+                if (r?.scannedts >= ctx.scanFrom && !r.scanning) break;
+                if (Date.now() > scanBy) throw new Error("no scan of the fixtures within 60 s");
+                await polishNap(500);
+            }
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
     },
-    async assert(h) {
+    async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null) {
+            rec("0. auto-clean ran, the fixtures were made and a scan saw them", false, ctx.arrangeError);
+            return steps;
+        }
+        const repoName = ctx.repo.split(/[\\/]/).pop();
+
+        // 1. the page in the index, its cards, which cards have a clean button
         await h.goto("settings");
-        await h.ev(`document.querySelector('[data-section="storage"]')?.click()`);
-        const up = await polishWaitFor(h, `document.querySelector('[data-storage-section]') != null`, 5000);
-        rec("1. Settings opens on the Storage section", up, `section=${up}`);
-        const four = await polishWaitFor(h, `document.querySelectorAll('[data-storage-card]').length === 4`, 30000);
-        const order = await h.ev(`[...document.querySelectorAll('[data-storage-card]')].map((c) => c.getAttribute('data-storage-card'))`);
-        rec(
-            "2. the four category cards render in order",
-            four && JSON.stringify(order) === JSON.stringify(["runworktrees", "sessions", "housekeeping", "buildoutput"]),
-            `cards=${JSON.stringify(order)}`
+        await polishWaitFor(h, `document.querySelector('button[data-section="storage"]') != null`, 5000);
+        await h.ev(`document.querySelector('button[data-section="storage"]').click()`);
+        const up = await polishWaitFor(h, `document.querySelector('[data-settings-section="storage"]') != null`, 5000);
+        const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute('data-section'))`);
+        const cards = await h.ev(
+            `[...document.querySelectorAll('[data-settings-section="storage"] [data-setting-card]')].map((c) => c.getAttribute('data-setting-card'))`
         );
-        const head = await h.ev(`(document.querySelector('[data-storage-head]')?.textContent || '')`);
-        rec("3. the head says what arcterm uses and what can be cleaned", /uses .+ · .+ can be cleaned/.test(head), `head="${head}"`);
-        const noBuildButton = await h.ev(`document.querySelector('[data-storage-clean="buildoutput"]') == null`);
-        rec("4. build output has no clean-all button", noBuildButton === true, `absent=${noBuildButton}`);
-        await h.shot("cdp-shots/settings-storage.png");
+        const cleans = await h.ev(`[...document.querySelectorAll('[data-storage-clean]')].map((b) => b.getAttribute('data-storage-clean'))`);
+        await polishNap(350);
+        await h.shot("cdp-shots/settings-storage-1-page.png");
+        rec(
+            "1. Storage sits after Agents in the index; its page holds the four category cards, then Auto-clean; run worktrees, sessions and logs have a clean button, build output none",
+            up &&
+                index.indexOf("storage") === index.indexOf("agents") + 1 &&
+                JSON.stringify(cards) === JSON.stringify(SS_CARDS) &&
+                JSON.stringify(cleans) === JSON.stringify(["runworktrees", "sessions", "housekeeping"]),
+            `index=${JSON.stringify(index)} cards=${JSON.stringify(cards)} cleans=${JSON.stringify(cleans)}`
+        );
+
+        // 2. the head
+        const seen = await ssWaitScan(h, ctx.scanFrom);
+        const head = await h.ev(`${SS_HEAD}?.textContent ?? ''`);
+        rec(
+            "2. the head says what arcterm uses and what can be cleaned, and when it last scanned",
+            seen && /arcterm uses \d.* · \d.* can be cleaned/.test(head) && head.includes("scanned"),
+            `head="${head}"`
+        );
+
+        // 3. Rescan: Scanning… with the button disabled, then a newer scan
+        await h.ev(`(() => {
+            window.__ssSawScanning = false;
+            const look = () => {
+                const head = ${SS_HEAD};
+                const btn = document.querySelector('[data-storage-rescan="head"]');
+                if (head && head.hasAttribute('data-storage-scanning') && head.textContent.includes('Scanning…') && btn && btn.disabled) {
+                    window.__ssSawScanning = true;
+                }
+            };
+            window.__ssObserver = new MutationObserver(look);
+            window.__ssObserver.observe(document.querySelector('[data-settings-section="storage"]'), {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                characterData: true,
+            });
+        })()`);
+        const rescanFrom = Date.now();
+        await h.ev(`document.querySelector('[data-storage-rescan="head"]').click()`);
+        const rescanned = await ssWaitScan(h, rescanFrom);
+        const sawScanning = await h.ev(`(window.__ssObserver.disconnect(), window.__ssSawScanning)`);
+        rec(
+            "3. Rescan turns the head to Scanning… with Rescan disabled, then a newer scan lands",
+            sawScanning === true && rescanned,
+            `sawScanning=${sawScanning} newScan=${rescanned}`
+        );
+
+        // 4. run worktrees: guarded, foreign, cleanable, and the broken project's scan error
+        await ssExpand(h, "runworktrees");
+        const cleanRow = await h.ev(ssRowState("runworktrees", SS_RUN_CLEAN));
+        const dirtyRow = await h.ev(ssRowState("runworktrees", SS_RUN_DIRTY));
+        const scratchRow = await h.ev(ssRowState("runworktrees", "scratch"));
+        const scanError = await h.ev(`(() => {
+            const e = ${ssCard("runworktrees")}?.querySelector('[data-storage-error]');
+            return e ? { text: e.textContent, rescan: !!e.querySelector('[data-storage-rescan="runworktrees"]') } : null;
+        })()`);
+        await h.shot("cdp-shots/settings-storage-4-worktrees.png");
+        rec(
+            "4. run worktrees: the dirty tree reads has uncommitted changes in the warning color with its own Remove; scratch reads not a run worktree with no button; the clean tree has its own Remove and no reason; the broken project shows Couldn't scan with a Rescan",
+            dirtyRow?.reason === "has uncommitted changes" &&
+                dirtyRow.warn &&
+                dirtyRow.remove &&
+                scratchRow?.reason === "not a run worktree" &&
+                !scratchRow.remove &&
+                cleanRow != null &&
+                cleanRow.remove &&
+                cleanRow.reason == null &&
+                scanError != null &&
+                scanError.text.startsWith("Couldn't scan:") &&
+                scanError.rescan,
+            JSON.stringify({ cleanRow, dirtyRow, scratchRow, scanError })
+        );
+
+        // 5. sessions: the age switch and the count
+        const sessionsAt = async (days) => {
+            await h.ev(
+                `[...(${ssCard("sessions")}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === '${days} days')?.click()`
+            );
+            await polishNap(200);
+            await ssExpand(h, "sessions");
+            const ids = await h.ev(ssRowIds("sessions"));
+            const count = await h.ev(
+                `Number(${ssCard("sessions")}?.querySelector('[data-storage-count]')?.getAttribute('data-storage-count') ?? -1)`
+            );
+            const has = (name) => ids.some((id) => id.endsWith(name));
+            return { old: ctx.oldSessions.filter(has).length, recent: has(ctx.recentSession), rows: ids.length, count };
+        };
+        const at30 = await sessionsAt(30);
+        await h.shot("cdp-shots/settings-storage-5-sessions.png");
+        const at7 = await sessionsAt(7);
+        const at90 = await sessionsAt(90);
+        rec(
+            "5. sessions: at 30 days the six 40-day transcripts show and the 10-day one does not; 7 days adds it; 90 drops them all; the count matches the rows at each",
+            at30.old === 6 &&
+                !at30.recent &&
+                at7.old === 6 &&
+                at7.recent &&
+                at90.old === 0 &&
+                !at90.recent &&
+                [at30, at7, at90].every((s) => s.count === s.rows) &&
+                at7.count > at30.count &&
+                at30.count >= at90.count,
+            JSON.stringify({ at30, at7, at90 })
+        );
+
+        // 6. Show all and Show fewer, on the sessions card at 7 days (seven fixtures or more)
+        const more = `${ssCard("sessions")}?.querySelector('[data-storage-more]')`;
+        const clickMore = async () => {
+            await h.ev(`${more}?.click()`);
+            await polishNap(150);
+        };
+        await sessionsAt(7); // leaves the card open
+        await clickMore();
+        const foldedRows = (await h.ev(ssRowIds("sessions"))).length;
+        const foldedText = await h.ev(`${more}?.textContent ?? null`);
+        await clickMore();
+        const openRows = (await h.ev(ssRowIds("sessions"))).length;
+        const openText = await h.ev(`${more}?.textContent ?? null`);
+        await clickMore();
+        const refolded = (await h.ev(ssRowIds("sessions"))).length;
+        rec(
+            "6. past five rows a card shows five and Show all N; Show all lists all N; Show fewer folds back to five",
+            foldedRows === 5 &&
+                foldedText === `Show all ${at7.count}` &&
+                openRows === at7.count &&
+                openText === "Show fewer" &&
+                refolded === 5,
+            JSON.stringify({ foldedRows, foldedText, openRows, openText, refolded })
+        );
+        await sessionsAt(30);
+
+        // 7. build output: one row per project with one button
+        await ssExpand(h, "buildoutput");
+        const projectRow = await h.ev(ssRowState("buildoutput", repoName));
+        const noCleanAll = await h.ev(`${ssCard("buildoutput")}?.querySelector('[data-storage-clean]') == null`);
+        await h.shot("cdp-shots/settings-storage-7-build.png");
+        rec(
+            "7. build output: the fixture project is one row listing node_modules with its own Remove, and the card has no Clean all",
+            projectRow != null && projectRow.text.includes("node_modules") && projectRow.remove && noCleanAll === true,
+            JSON.stringify({ projectRow, noCleanAll })
+        );
+
+        // 8. a clean re-checks at removal: the clean tree changes after the scan, so the server skips it
+        writeFileSync(join(ctx.cleanTree, "late.txt"), "changed after the scan\n");
+        const skipFrom = Date.now();
+        const skipDialog = await ssConfirm(h, `${ssRow("runworktrees", SS_RUN_CLEAN)}?.querySelector('[data-storage-remove]')`, "Remove");
+        const skipToast = await polishWaitFor(h, ssToast("1 skipped"), 15000);
+        await ssWaitScan(h, skipFrom);
+        await ssExpand(h, "runworktrees");
+        const skippedRow = await h.ev(ssRowState("runworktrees", SS_RUN_CLEAN));
+        await h.shot("cdp-shots/settings-storage-8-skipped.png");
+        rec(
+            "8. the clean tree, changed after the scan: its Remove asks to remove 1 run worktree, the server skips it (toast: 1 skipped), it stays, and its row says has uncommitted changes",
+            (skipDialog ?? "").includes("1 run worktree") &&
+                skipToast &&
+                skippedRow?.reason === "has uncommitted changes" &&
+                existsSync(ctx.cleanTree),
+            JSON.stringify({ skipDialog, skipToast, skippedRow })
+        );
+
+        // 9. the guarded tree's own button: its confirm says the changes are lost; the branch stays
+        const guardFrom = Date.now();
+        const guardDialog = await ssConfirm(h, `${ssRow("runworktrees", SS_RUN_DIRTY)}?.querySelector('[data-storage-remove]')`, "Remove");
+        const guardToast = await polishWaitFor(h, ssToast("Reclaimed"), 15000);
+        await ssWaitScan(h, guardFrom);
+        await ssExpand(h, "runworktrees");
+        const guardRowGone = !(await h.ev(`!!(${ssRow("runworktrees", SS_RUN_DIRTY)})`));
+        let branchKept = false;
+        try {
+            branchKept = git(ctx.repo, "branch", "--list", `wave/${SS_RUN_DIRTY}`).toString().trim() !== "";
+        } catch {
+            branchKept = false;
+        }
+        rec(
+            "9. the dirty tree's own Remove warns its uncommitted changes are lost; then a Reclaimed toast shows, the row and the folder are gone, and its branch stays",
+            (guardDialog ?? "").includes("uncommitted changes") &&
+                guardToast &&
+                guardRowGone &&
+                !existsSync(ctx.dirtyTree) &&
+                branchKept,
+            JSON.stringify({ guardDialog, guardToast, guardRowGone, branchKept })
+        );
+
+        // 10. the project's one button
+        const buildFrom = Date.now();
+        const buildDialog = await ssConfirm(h, `${ssRow("buildoutput", repoName)}?.querySelector('[data-storage-remove]')`, "Remove");
+        const buildToast = await polishWaitFor(h, ssToast("Reclaimed"), 30000);
+        await ssWaitScan(h, buildFrom);
+        const buildRowGone = !(await h.ev(`!!(${ssRow("buildoutput", repoName)})`));
+        rec(
+            "10. the project's Remove confirms naming node_modules; then a Reclaimed toast shows, node_modules is gone and so is the row",
+            (buildDialog ?? "").includes("node_modules") &&
+                buildToast &&
+                !existsSync(join(ctx.repo, "node_modules")) &&
+                buildRowGone,
+            JSON.stringify({ buildDialog, buildToast, buildRowGone })
+        );
+
+        // 11. the Auto-clean card
+        const toggle = `document.querySelector('[data-setting-row="storage.autoclean"] [role="switch"]')`;
+        await h.ev(`${toggle}?.scrollIntoView({ block: "center" })`);
+        await h.ev(`${toggle}?.click()`);
+        const off = await ssWaitConfig(h, "storage:autoclean", false);
+        const offShown = (await h.ev(`${toggle}?.getAttribute('aria-checked') ?? null`)) === "false";
+        await h.ev(`${toggle}?.click()`);
+        const on = await ssWaitConfig(h, "storage:autoclean", true);
+        await h.ev(
+            `[...document.querySelectorAll('[data-setting-row="storage.nudge"] button')].find((b) => b.textContent.trim() === '5 GB')?.click()`
+        );
+        const five = await ssWaitConfig(h, "storage:nudgegb", 5);
+        const lastAuto = await h.ev(`document.querySelector('[data-storage-lastauto]')?.textContent ?? null`);
+        await h.shot("cdp-shots/settings-storage-11-autoclean.png");
+        rec(
+            "11. Auto-clean: the switch writes storage:autoclean off and on, 5 GB writes storage:nudgegb, and the last line says when auto-clean ran and what it reclaimed",
+            off && offShown && on && five && /^Last auto-clean .+: reclaimed /.test(lastAuto ?? ""),
+            JSON.stringify({ off, offShown, on, five, lastAuto })
+        );
+
+        // 12. the nudge: past the threshold a toast, once that day, that opens Settings → Storage
+        await ssDismissToasts(h);
+        await h.goto("cockpit");
+        await h.ev(`localStorage.removeItem(${JSON.stringify(SS_NUDGE_DAY_KEY)})`);
+        // a threshold the fixtures pass; teardown puts the person's back
+        await ssSetConfig(h, { "storage:nudgegb": 0.000000001 });
+        const nudgeToast = `[...document.querySelectorAll('[data-notification-toast][data-notification-open]')].find((t) => t.textContent.includes('can be cleaned'))`;
+        const nudged = await polishWaitFor(h, `!!(${nudgeToast})`, 15000);
+        await h.shot("cdp-shots/settings-storage-12-nudge.png");
+        await h.ev(`${nudgeToast}?.click()`);
+        const opened = await polishWaitFor(h, `document.querySelector('[data-settings-section="storage"]') != null`, 5000);
+        const day = await h.ev(`localStorage.getItem(${JSON.stringify(SS_NUDGE_DAY_KEY)})`);
+        const againFrom = Date.now();
+        await h.rpc("rescanstorage", null);
+        await ssWaitScan(h, againFrom);
+        await polishNap(500);
+        const again = await h.ev(ssToast("can be cleaned"));
+        rec(
+            "12. past storage:nudgegb a toast says what can be cleaned; clicking it opens Settings → Storage; a later scan that day brings no second one",
+            nudged && opened && day != null && again === false,
+            JSON.stringify({ nudged, opened, day, again })
+        );
         return steps;
     },
-    async teardown(h) {
-        await h.goto("cockpit");
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`settings-storage teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        // only what arrange read: a null deletes the key, which is how it was
+        if (ctx.prevAuto !== undefined) {
+            await step("restore the storage settings", () =>
+                ssSetConfig(h, { "storage:autoclean": ctx.prevAuto, "storage:nudgegb": ctx.prevNudge })
+            );
+        }
+        if (ctx.prevNudgeDay !== undefined) {
+            const key = JSON.stringify(SS_NUDGE_DAY_KEY);
+            await step("restore the nudge's day", () =>
+                h.ev(
+                    ctx.prevNudgeDay === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevNudgeDay)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            await step(`delete ${name}`, () => h.rpc("deleteproject", { name }));
+        }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step(`remove ${dir}`, () => rmSync(dir, { recursive: true, force: true }));
+        }
+        await step("leave Settings", () => h.goto("cockpit"));
     },
 };
 ```
 
-and add `settingsStorage,` at the end of the `SCENARIOS` array.
+4. Add `settingsStorage,` at the end of the `SCENARIOS` array.
+
+The module-level `git` helper (the git history scenario's) and `polishWaitFor`, `polishNap`, `waitForProjectInConfig` are the
+file's own. `h.rpc` names a command by its lowercased name without `Command` (`getstorage`, `rescanstorage`).
 
 - [ ] **Step 8: Add the CHANGELOG line**
 
@@ -3590,22 +4320,23 @@ In `CHANGELOG.md`, under `## Unreleased` → `### Added` (open the headings if t
 
 - [ ] **Step 9: Verify**
 
-Run: `npx vitest run frontend/app/view/agents/ && NODE_OPTIONS=--max-old-space-size=4096 task check:ts && npx prettier --check frontend/app/view/agents/storagestore.ts frontend/app/view/agents/storagesection.tsx frontend/app/view/agents/storagenudge.tsx frontend/app/view/agents/settingsstore.ts frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingssurface.tsx frontend/app/view/agents/cockpitshell.tsx && npx eslint frontend/app/view/agents/storagestore.ts frontend/app/view/agents/storagesection.tsx frontend/app/view/agents/storagenudge.tsx`
-Expected: tests pass, typecheck exit 0, prettier clean on these files (fix only these with `--write`), eslint clean. On Windows also run `task verify:ui -- settings-storage` against the dev app; on a Mac say it is unverified (WKWebView answers no CDP).
+Run: `npx vitest run frontend/app/view/agents/settingsstore.test.ts frontend/app/view/agents/settingsmodel.test.ts frontend/app/view/agents/storagemodel.test.ts && NODE_OPTIONS=--max-old-space-size=4096 task check:ts && node --check scripts/cdp/scenarios.mjs && npx prettier --check frontend/app/view/agents/storagestore.ts frontend/app/view/agents/settingspages/storage.tsx frontend/app/view/agents/storagenudge.tsx frontend/app/view/agents/settingsstore.ts frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingssurface.tsx frontend/app/view/agents/cockpitshell.tsx && npx eslint frontend/app/view/agents/storagestore.ts frontend/app/view/agents/settingspages/storage.tsx frontend/app/view/agents/storagenudge.tsx`
+Expected: tests pass, typecheck exit 0, the scenario file parses, prettier clean on these files (fix only these with `--write`), eslint clean. On Windows also run `task verify:ui -- settings-storage settings-pages` against the dev app (settings-storage's arrange waits for the first auto-clean, up to about 2 minutes after the app starts); on a Mac say both are unverified (WKWebView answers no CDP).
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add frontend/app/view/agents/storagestore.ts frontend/app/view/agents/storagesection.tsx frontend/app/view/agents/storagenudge.tsx frontend/app/view/agents/settingsstore.ts frontend/app/view/agents/settingsstore.test.ts frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingsmodel.test.ts frontend/app/view/agents/settingssurface.tsx frontend/app/view/agents/cockpitshell.tsx scripts/cdp/scenarios.mjs CHANGELOG.md
+git add frontend/app/view/agents/storagestore.ts frontend/app/view/agents/settingspages/storage.tsx frontend/app/view/agents/storagenudge.tsx frontend/app/view/agents/settingsstore.ts frontend/app/view/agents/settingsstore.test.ts frontend/app/view/agents/settingsmodel.ts frontend/app/view/agents/settingsmodel.test.ts frontend/app/view/agents/settingssurface.tsx frontend/app/view/agents/cockpitshell.tsx scripts/cdp/scenarios.mjs CHANGELOG.md
 git commit -m "feat(storage): Settings → Storage, its cleans and the once-a-day nudge"
 ```
 
 ---
 
+
 ## Self-Review
 
-- **Spec coverage.** Decision 1 (section, head, Rescan, cards, auto-clean switch): Tasks 8–9. Decision 2 (confirms, toast, skipped reasons): Tasks 8–9. Decision 3 (providers, re-check at removal): Tasks 1–5. Decision 4.1–4.4: Tasks 2, 3, 4 (+6), 5. Decision 5 (two RPCs + rescan + event): Task 7. Decision 6 (background scan, cached, rescans after clean and auto-clean): Tasks 1 and 7. Decision 7 (pure model): Task 8. Decision 8 (settings, auto-clean, nudge): Tasks 7 and 9. Decision 9 (errors): card error (Tasks 1, 8–9), partial clean (all providers' `Skipped`), auto-clean failures to the log and the last-auto line (Task 7, 9). Testing section: each task's tests; CDP in Task 9; the by-hand checks are the executor's on the Mac.
-- **Deviations from the spec, on purpose:** `RemoveRunWorktree` deletes the branch, so a new `RemoveWorktreeKeepBranch` keeps it as the spec wants; runs have no `failed` status and a `blocked` run is not finished; the task's cleanup debt is not written by Storage (the engine's `RetryCleanupDebt` clears a debt whose tree is gone); Windows' EBWebView is beside the data dir, not inside it; a directory under `.waveterm/worktrees` whose name the engine never makes is listed and never cleaned.
+- **Spec coverage.** Decision 1 (section, head, Rescan, cards, auto-clean switch): Tasks 8–9. Decision 2 (confirms, toast, skipped reasons): Tasks 8–9. Decision 3 (providers, re-check at removal): Tasks 1–5. Decision 4.1–4.4: Tasks 2, 3, 4 (+6), 5, with 4.2's count for N and 4.4's one button per project row drawn in Task 9. Decision 5 (three RPCs and an event): Task 7. Decision 6 (background scan, cached, rescans after clean and auto-clean): Tasks 1 and 7. Decision 7 (pure model): Task 8. Decision 8 (settings, auto-clean, nudge): Tasks 7 and 9. Decision 9 (errors): card error (Tasks 1, 8–9), partial clean (all providers' `Skipped`), auto-clean failures to the log and the last-auto line (Task 7, 9). Testing section: each task's tests; CDP in Task 9 (`settings-storage` over fixture projects, transcripts and settings, one step per visual state and interaction, listed in Task 9's Acceptance table); the by-hand checks are the executor's on the Mac.
+- **Deviations from the spec, on purpose:** `RemoveRunWorktree` deletes the branch, so a new `RemoveWorktreeKeepBranch` keeps it as the spec wants; runs have no `failed` status and a `blocked` run is not finished; the task's cleanup debt is not written by Storage (the engine's `RetryCleanupDebt` clears a debt whose tree is gone); Windows' EBWebView is beside the data dir, not inside it; a directory under `.waveterm/worktrees` whose name the engine never makes is listed and never cleaned; decision 5's heading says two RPCs while its list names three, and the plan has the three; `CleanStorageCommand` also carries `allowguarded`, which a guarded worktree's own button sends (decision 4.1's "its own row's button removes it after a confirm").
 - **Placeholders:** none; every code step has its code.
-- **Type consistency:** `StorageItem`/`StorageReport`/`StorageCleanResult`/`CleanOpts`/`Env` are defined in Task 1 and used unchanged after; `defaultProviders` grows in Tasks 2–5 and is final in Task 7; TS names come from `task generate` in Task 7 (`storagemodel.ts` uses `modts`, `cleanable`, `guarded`, `reclaimed`, `trashed`, `deferred`, `skipped` — the JSON tags of Task 1).
+- **Type consistency:** `StorageItem`/`StorageReport`/`StorageCleanResult`/`CleanOpts`/`Env` are defined in Task 1 and used unchanged after; `defaultProviders` is empty from Task 1 and filled once, in Task 7; TS names come from `task generate` in Task 7 (`storagemodel.ts` uses `modts`, `cleanable`, `guarded`, `reclaimed`, `trashed`, `deferred`, `skipped` — the JSON tags of Task 1).
 - **Review Focus** lines each have their test in the owning task (Tasks 1, 2, 3, 5).
