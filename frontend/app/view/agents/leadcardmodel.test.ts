@@ -252,16 +252,16 @@ describe("buildLeadCard", () => {
         expect(planning.planning).toBe(true);
         expect(planning.rows).toEqual([]);
         const vm = buildLeadCard(input(runInfo([])));
-        expect(vm.settings).toBe("lead opus · workers sonnet · 3 at a time");
+        expect(vm.settings).toBe("lead opus · workers sonnet 4 · 3 at a time");
         expect(buildLeadCard(input(runInfo([]), [], { lead: undefined })).settings).toBe(
-            "no lead · workers sonnet · 3 at a time"
+            "no lead · workers sonnet 4 · 3 at a time"
         );
     });
 
     it("names the branch a run lands on when it has its own", () => {
         const run = { ...runInfo([]), runId: "0123456789abcdef", landPath: "/p/.waveterm/worktrees/0123456789abcdef" };
         expect(buildLeadCard(input(run)).settings).toBe(
-            "lead opus · workers sonnet · 3 at a time · lands on wave/01234567"
+            "lead opus · workers sonnet 4 · 3 at a time · lands on wave/01234567"
         );
         // the label is shortened; the full name is what a human types into git
         expect(buildLeadCard(input(run)).settingsTitle).toBe("lands on wave/0123456789abcdef");

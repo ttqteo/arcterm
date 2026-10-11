@@ -139,7 +139,8 @@ describe("buildConsumers", () => {
     it("offers → Sonnet only to Claude on Opus", () => {
         const view = buildConsumers(
             reading([agent("opus"), agent("sonnet"), agent("pi")]),
-            [vm("opus", { model: "opus" }), vm("sonnet"), vm("pi", { agent: "pi", model: "opus" })],
+            // the roster's label carries the version (modelLabel): "opus 5.5"
+            [vm("opus", { model: "opus 5.5" }), vm("sonnet"), vm("pi", { agent: "pi", model: "opus 5.5" })],
             "ram"
         );
         const byId = Object.fromEntries(view.groups[0].rows.map((r) => [r.id, r]));

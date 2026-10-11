@@ -36,6 +36,8 @@ Add one line in the same commit as any change a user would notice, under `Added`
 
 ### Changed
 
+- An agent's model shows its version, **opus 5.5** rather than **opus**, in the sidebar, the agent header, the tab
+  switcher and a lead card's workers.
 - **Minimize into Sprout** always lands Sprout in the bottom-right corner of the screen (above the Dock on a Mac),
   rather than wherever Sprout happened to be walking, so it is always in the same place. You can still drag it
   anywhere while folded; the next minimize puts it back in the corner.

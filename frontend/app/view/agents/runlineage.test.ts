@@ -213,7 +213,7 @@ describe("ended workers", () => {
             task: "link model",
             state: "idle",
             agent: "claude",
-            model: "sonnet",
+            model: "sonnet 4.6",
             idleSince: 5000,
             transcriptPath: "C:/t.jsonl",
             runId: "child-1",

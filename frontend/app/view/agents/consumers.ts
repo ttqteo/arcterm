@@ -51,7 +51,7 @@ export interface ConsumerRow {
     name: string;
     project?: string;
     state: AgentState;
-    model?: string; // short family label ("opus")
+    model?: string; // the roster's family and version label ("opus 5.5")
     ramBytes?: number;
     tokens?: number; // tokens of the window, cache reads left out (countedTokens)
     spendUsd?: number; // their client-side cost estimate, as the rail prices it
@@ -131,7 +131,7 @@ export function buildConsumers(
             continue; // the roster has not seen it yet: nothing to name it by or open
         }
         const usage = c.tokensread ? aggregateSessionUsage(c.tokens ?? []) : undefined;
-        const opus = vm.agent === "claude" && vm.model === "opus";
+        const opus = vm.agent === "claude" && (vm.model ?? "").startsWith("opus");
         const sleeping = vm.sleeping != null;
         rows.push({
             id: vm.id,

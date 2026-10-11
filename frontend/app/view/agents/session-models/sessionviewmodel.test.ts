@@ -654,11 +654,20 @@ describe("reorderWithinGroup", () => {
 });
 
 describe("modelLabel", () => {
-    it("maps known families by substring", () => {
-        expect(modelLabel("claude-opus-4-8")).toBe("opus");
-        expect(modelLabel("claude-sonnet-4-6")).toBe("sonnet");
-        expect(modelLabel("claude-haiku-4-5-20251001")).toBe("haiku");
-        expect(modelLabel("claude-fable-5")).toBe("fable");
+    it("names the family and its version", () => {
+        expect(modelLabel("claude-opus-5-5")).toBe("opus 5.5");
+        expect(modelLabel("claude-opus-4-8")).toBe("opus 4.8");
+        expect(modelLabel("claude-sonnet-4-6")).toBe("sonnet 4.6");
+        expect(modelLabel("claude-haiku-4-5-20251001")).toBe("haiku 4.5");
+        expect(modelLabel("claude-fable-5")).toBe("fable 5");
+    });
+    it("reads the version through a date snapshot, a context suffix and a provider prefix", () => {
+        expect(modelLabel("claude-sonnet-4-20250514")).toBe("sonnet 4");
+        expect(modelLabel("claude-opus-5-5[1m]")).toBe("opus 5.5");
+        expect(modelLabel("anthropic/claude-opus-5-5")).toBe("opus 5.5");
+    });
+    it("keeps a bare family alias as it is", () => {
+        expect(modelLabel("sonnet")).toBe("sonnet");
     });
     it("strips a leading claude- for unknown ids", () => {
         expect(modelLabel("claude-foo-9")).toBe("foo-9");

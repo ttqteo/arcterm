@@ -1,5 +1,7 @@
 // Pure view-model logic for the session sidebar. No React, no Wave runtime imports.
 
+import { versionAfter } from "../modellabel";
+
 export const NO_CWD_LABEL = "ungrouped";
 
 export type SessionStatus = "working" | "waiting" | "asking" | "idle";
@@ -328,8 +330,9 @@ export function subagentExpanded(subagents: SubagentVM[], manualOverride?: boole
 
 const MODEL_FAMILIES = ["opus", "sonnet", "haiku", "fable"];
 
-/** Pure: a raw model id (e.g. "claude-opus-4-8") -> a short family label for the row tag.
- *  Unknown ids fall back to the id with a leading "claude-" stripped. Empty input -> "". */
+/** Pure: a raw model id (e.g. "claude-opus-5-5") -> the family and its version for the row tag ("opus 5.5"), read
+ *  as prettyModel reads it; a bare alias ("sonnet") stays the family alone. Unknown ids fall back to the id with a
+ *  leading "claude-" stripped. Empty input -> "". */
 export function modelLabel(modelId?: string): string {
     if (!modelId) {
         return "";
@@ -337,7 +340,7 @@ export function modelLabel(modelId?: string): string {
     const lower = modelId.toLowerCase();
     for (const fam of MODEL_FAMILIES) {
         if (lower.includes(fam)) {
-            return fam;
+            return fam + versionAfter(lower, fam);
         }
     }
     return modelId.replace(/^claude-/i, "");

@@ -82,7 +82,7 @@ export interface AgentVM {
     task: string; // e.g. "Fix duplicate-session race"
     state: AgentState;
     agent?: string; // coding-agent identity (claude | codex | …) — selects the transcript projector
-    model?: string; // short family label (e.g. "opus")
+    model?: string; // family and version label (e.g. "opus 5.5"; modelLabel)
     project?: string; // explicit project name; preferred over the lossy transcript-path derivation
     activity?: string; // working: live activity line; idle: reason
     blockedMs?: number; // asking: how long blocked (sort + age)

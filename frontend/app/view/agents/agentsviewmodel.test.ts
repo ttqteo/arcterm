@@ -262,7 +262,7 @@ describe("agentVMFromInput", () => {
             name: "waveterm",
             task: "",
             state: "working",
-            model: "sonnet",
+            model: "sonnet 4.6",
             activity: "go test ./pkg/wconfig/…",
             activeMs: 120_000,
             stateSince: NOW - 120_000,
@@ -283,7 +283,7 @@ describe("agentVMFromInput", () => {
         expect(vm.blockedMs).toBe(240_000);
         expect(vm.activeMs).toBeUndefined();
         expect(vm.atPrompt).toBe(true);
-        expect(vm.model).toBe("opus");
+        expect(vm.model).toBe("opus 4.8");
     });
 
     it("carries the agent identity through to the vm (drives projector selection)", () => {

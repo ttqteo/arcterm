@@ -6,7 +6,7 @@
 // a following 1-2 digit number is the minor (an 8-digit date snapshot is ignored). Unknown
 // models fall through to the raw id, so the label is always at least as informative as before.
 
-function versionAfter(m: string, family: string): string {
+export function versionAfter(m: string, family: string): string {
     const rest = m.slice(m.indexOf(family) + family.length);
     const nums = rest.match(/\d+/g);
     if (!nums || nums.length === 0) {
