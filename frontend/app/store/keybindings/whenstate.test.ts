@@ -14,7 +14,6 @@ import { setDocReviewMode, syncDocReview } from "@/app/view/agents/docreviewstor
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { NO_FILTERS } from "@/app/view/agents/historyquery";
 import { activeReviewKeyAtom, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
-import { terminalFullscreenAtom } from "@/app/view/agents/railstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
@@ -39,7 +38,6 @@ afterEach(() => {
     globalStore.set(focusSubagentAtom, null);
     globalStore.set(lineReviewsAtom, {});
     globalStore.set(activeReviewKeyAtom, "");
-    globalStore.set(terminalFullscreenAtom, false);
     globalStore.set(tabSwitcherAtom, null);
 });
 
@@ -133,13 +131,7 @@ describe("whenVersionAtom", () => {
         expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
     });
 
-    // buildGlobalBindings' switcherMode reads terminal fullscreen, and switcher:cancel the open switcher
-    it("bumps when the terminal goes fullscreen", () => {
-        const before = globalStore.get(whenVersionAtom);
-        globalStore.set(terminalFullscreenAtom, true);
-        expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
-    });
-
+    // buildGlobalBindings' switcher:cancel, and switcher:next / prev under the open switcher, read it
     it("bumps when the tab switcher opens", () => {
         const before = globalStore.get(whenVersionAtom);
         globalStore.set(tabSwitcherAtom, { ids: ["a", "b"], sel: 1, mod: "ctrl", shown: false });

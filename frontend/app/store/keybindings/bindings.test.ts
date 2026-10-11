@@ -198,7 +198,7 @@ describe("Ctrl+Tab switcher", () => {
         return r.kind === "run" ? r.binding.id : r.kind;
     };
 
-    it("cycles the Active list in the plain Agent surface", () => expect(ctrlTabRuns(model())).toBe("cycle-agent-next"));
+    it("opens the switcher in the plain Agent surface", () => expect(ctrlTabRuns(model())).toBe("switcher:next"));
 
     it("opens the switcher in terminal fullscreen", () => {
         globalStore.set(terminalFullscreenAtom, true);
@@ -210,10 +210,18 @@ describe("Ctrl+Tab switcher", () => {
         expect(ctrlTabRuns(model())).toBe("switcher:next");
     });
 
-    it("leaves fullscreen History to the cycle, where the tree shows", () => {
-        globalStore.set(terminalFullscreenAtom, true);
+    it("opens the switcher over History too", () => {
         globalStore.set(centerModeAtom, "history");
-        expect(ctrlTabRuns(model())).toBe("cycle-agent-next");
+        expect(ctrlTabRuns(model())).toBe("switcher:next");
+    });
+
+    it("stands down under another modal, not under its own", () => {
+        const m = model();
+        const b = buildGlobalBindings(m).find((x) => x.id === "switcher:next")!;
+        expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(false);
+        b.run(ctx("agent"));
+        expect(b.when?.({ ...ctx("agent"), modalOpen: true })).toBe(true);
+        expect(b.when?.(ctx("cockpit"))).toBe(false);
     });
 
     it("picks the next tab and draws the switcher after a moment", () => {
@@ -1138,8 +1146,8 @@ describe("agent canvas mode keys", () => {
             "agent:next",
             "agent:prev-k",
             "agent:next-j",
-            "cycle-agent-next",
-            "cycle-agent-prev",
+            "switcher:next",
+            "switcher:prev",
         ]) {
             expect(active(id), id).toBe(true);
         }

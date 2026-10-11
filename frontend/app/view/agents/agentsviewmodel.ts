@@ -720,15 +720,6 @@ export function moveCursor(ids: string[], current: string | undefined, delta: nu
     return ids[Math.max(0, Math.min(ids.length - 1, idx + delta))];
 }
 
-/** Pure: like moveCursor but wraps around the ends (for cycling shortcuts). Unknown current -> first. */
-export function cycleId(ids: string[], current: string | undefined, delta: number): string | undefined {
-    if (ids.length === 0) {
-        return undefined;
-    }
-    const idx = current != null ? ids.indexOf(current) : -1;
-    return ids[(idx + delta + ids.length) % ids.length];
-}
-
 /** Pure: is the agent asking a question its terminal answers (Claude Code's picker, driven by ↑/↓, Enter and digits)?
  *  A held card (an `AskCommand` with Hold) is answered on the card above the terminal instead. */
 export function asksInTerminal(agent: Pick<AgentVM, "state" | "ask"> | undefined): boolean {

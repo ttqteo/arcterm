@@ -51,8 +51,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:view-cycle"], keys: "Alt:c", label: "switch view" }, // a canvas or review, also in the terminal
         { ids: ["agent:back"], glyph: "esc", label: "back" },
         { ids: ["agent:leave-center"], glyph: "esc", label: "terminal" }, // History or a session only, via its binding
-        { ids: ["cycle-agent-next", "cycle-agent-prev"], keys: "Ctrl:Tab", label: "cycle" },
-        { ids: ["switcher:next", "switcher:prev"], keys: "Ctrl:Tab", label: "switch" }, // fullscreen terminal, in place of cycle
+        { ids: ["switcher:next", "switcher:prev"], keys: "Ctrl:Tab", label: "switch" },
         { ids: ["agent:return-nav"], keys: "Shift:Escape", label: "leave" }, // editable-only via its binding
         // canvas mode hides every chip above but leave; this order serves both canvas mode and marking
         { ids: ["agent:canvas-send"], keys: "Mod:Enter", label: "send" },

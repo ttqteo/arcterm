@@ -120,8 +120,7 @@ Bấm vào terminal để gõ cho agent. Nhấn `Shift+Esc` để trả focus v�
 | Thu cửa sổ thành ô nổi (Float) | Nút **Float** trên header hoặc `Shift+F`: cửa sổ thu lại chỉ còn terminal của agent đang chọn, một thanh tiêu đề ghi tên, trạng thái, model và context của agent (header của agent ẩn đi), và một gờ dưới đáy cho Sprout đi lại kèm số việc đang chờ; nó luôn nằm trên các app khác ngay khi bật (nút ghim trên thanh tắt điều đó). Dãy chấm trên thanh, mỗi chấm một agent, đổi sang terminal của agent khác. Thoát bằng nút trên thanh, `Shift+F`, hoặc thoát toàn màn hình; cửa sổ trở lại kích thước cũ, lần Float sau mở lại đúng chỗ lần trước. Nút **Sprout** trên thanh (hoặc nút minimize, nút vàng hay `⌘M` trên macOS) thu cửa sổ vào Sprout ngay chỗ nó đứng, xem [Con vật Jarvis](cockpit.md#con-vật-jarvis) |
 | Terminal bị vỡ chữ, chồng dòng hoặc lệch cột | Nút **Redraw** trên header (hoặc **Redraw terminal** trong menu chuột phải): vẽ lại terminal và cho agent tự vẽ lại toàn màn hình ở đúng kích thước, phiên vẫn chạy tiếp, không mất gì |
 | Ngắt lượt đang chạy | **Interrupt turn** trong menu header, hoặc `Esc` trong terminal, hoặc nút **Stop** ở chân rail |
-| Chuyển sang agent kế tiếp | `Ctrl+Tab`, dùng được cả khi con trỏ đang ở trong terminal; gõ phím theo sang terminal của agent mới |
-| Chuyển sang agent kế tiếp **đang hỏi** | `Ctrl+Shift+Tab` (đi tiến, chỉ qua các agent đang hỏi) |
+| Chuyển sang agent hoặc terminal khác | Giữ `Ctrl`, bấm `Tab`: một thanh hiện giữa màn hình với các agent và terminal, mới dùng gần đây nhất đứng đầu; bấm `Tab` tiếp (hoặc `Shift+Tab` để lùi) rồi thả `Ctrl` để mở cái đang chọn, `Esc` để ở lại. Bấm nhanh `Ctrl+Tab` thì quay về tab vừa xem, không hiện thanh. Dùng được cả khi con trỏ đang ở trong terminal (gõ phím theo sang terminal mới), cả khi Float hay toàn màn hình; trên macOS `Option+Tab` cũng được |
 | Mở file/đường dẫn in ra trong terminal | `Ctrl+click` trên đường dẫn: mở ở tab **File** của rail; trong một terminal thường thì mở ở [Code](code.md) |
 | Dán ảnh / thả file | Dán ảnh hoặc thả file lên terminal: đường dẫn được gõ vào prompt của agent; xem mục Uploads ở rail. Kéo từ tab [Files](#tab-files) của rail thì gõ `@đường/dẫn` |
 
@@ -191,7 +190,7 @@ Có thể xem tới **bốn** agent cùng lúc.
 
 Cách các ô xếp: 1 ô chiếm cả vùng, 2 ô cạnh nhau, 3 ô là hai ô trên và một ô trải ngang bên dưới, 4 ô là lưới 2x2. Lưới được lưu lại và còn nguyên sau khi mở lại app. Canvas, review, phần bên trong subagent, Conversation History, transcript của phiên đã kết thúc hoặc của worker đã xong, và terminal chọn từ mục Terminals mỗi thứ hiện thay cho lưới; lưới trở lại như cũ khi bạn rời đi.
 
-Khi chuyển giữa các agent bằng phím (`Ctrl+Tab`, `j`/`k`…): nếu agent đã có ô thì ô đó được focus; nếu chưa thì agent thế chỗ ô đang focus còn các ô khác giữ nguyên.
+Khi chuyển giữa các agent bằng phím (thanh `Ctrl+Tab`, `j`/`k`…): nếu agent đã có ô thì ô đó được focus; nếu chưa thì agent thế chỗ ô đang focus còn các ô khác giữ nguyên.
 
 ![Lưới terminal 2x2 với bốn agent, ô đang focus có viền accent, mỗi ô có thanh tiêu đề kèm nút ×](images/agent-grid.png)
 
@@ -305,7 +304,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | Phím | Tác dụng |
 |---|---|
 | `j` / `k` (hoặc `↓` / `↑`, `→` / `←`) | Agent kế tiếp / trước trong danh sách Active |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Agent kế tiếp / agent kế tiếp đang hỏi (dùng được cả trong terminal) |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Thanh chuyển tab: giữ `Ctrl`, `Tab` / `Shift+Tab` chọn, thả `Ctrl` để mở (dùng được cả trong terminal) |
 | `d` | Bật/tắt rail chi tiết |
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
 | `Shift+F` | Bật/tắt Float |

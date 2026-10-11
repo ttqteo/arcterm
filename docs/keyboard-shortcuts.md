@@ -40,7 +40,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`Shift`+`R` | New run: opens the New dialog on a run row |
 | `Mod`+`Shift`+`N` | Launch a Pi tab |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
-| `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | Next agent / next agent that is asking (it goes forward, not back). In a float and in terminal fullscreen: the tab switcher, as the system's app switcher works. Hold `Ctrl`, press `Tab` to move through the tabs (recent first, plain terminals included; `Shift`+`Tab` goes back), and let go of `Ctrl` to open the one picked; `Esc` stays where you are. A quick `Ctrl`+`Tab` flips to the tab you were on before without drawing it. `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac, letting go of `Option` |
+| `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab` | On the Agent surface (a float and fullscreen included): the tab switcher, as the system's app switcher works. Hold `Ctrl`, press `Tab` to move through your agents and terminals (recent first; `Shift`+`Tab` goes back), and let go of `Ctrl` to open the one picked; `Esc` stays where you are. A quick `Ctrl`+`Tab` flips to the tab you were on before without drawing it. `Option`+`Tab` / `Option`+`Shift`+`Tab` too on a Mac, letting go of `Option` |
 | `Cmd`+`W` on macOS, `Ctrl`+`Shift`+`W` on Windows | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. Windows keeps `Ctrl`+`W` for the terminal, where it deletes a word |
 | `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal (on Windows it takes Ctrl+M from the terminal). Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
 
@@ -192,8 +192,8 @@ A link inside an item view does a full open, even with `Mod` held.
 Opened with `Mod`+`G` `s` or the sidebar's Conversation History button. History and an ended session's transcript cover the terminal, so the keys
 that act on the focused agent stand down while either is open: `j` / `k`, the arrows, `d`, `f`, `r`, `c`, the canvas and review keys, `F11`,
 `Mod`+`Enter` (send marks, send review) and the `Esc` that goes back to the Cockpit. In History `j` / `k` (or `↓` / `↑`) move the list cursor,
-`Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. `Ctrl`+`Tab` still cycles agents and brings the
-terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
+`Enter` jumps to a live session or resumes an ended one, and `Esc` returns to the terminal. The `Ctrl`+`Tab` switcher still works and brings
+the terminal back. An ended session opened from the sidebar covers the terminal the same way, and `Esc` leaves it.
 
 ### Agent: terminal grid
 
@@ -215,8 +215,7 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 
 | Keys | Action |
 |---|---|
-| `Ctrl`+`Tab` | Next agent, by the rule above (in fullscreen, the tab switcher: see Global). Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
-| `Ctrl`+`Shift`+`Tab` | Next asking agent, by the rule above |
+| `Ctrl`+`Tab` | The tab switcher (see Global); the tab it opens follows the rule above. Works from inside a terminal, and pressed there, typing follows to the new agent's terminal |
 | `Alt`+`1`…`9` | The nth agent of the Active list, top to bottom (the split's agents first). Hold `Alt` a moment and each row shows its number. Works from inside a terminal, where typing follows as with `Ctrl`+`Tab` |
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
@@ -227,7 +226,7 @@ was.
 
 ### Agent: canvas mode
 
-`c` works when the focused agent has a canvas. In canvas mode, `[` / `]`, `d`, `f`, `F11` and `Esc` do not do their usual jobs; the agent keys (`j` / `k`, the arrows, `Ctrl`+`Tab`) still move between agents, since the tree stays beside the canvas.
+`c` works when the focused agent has a canvas. In canvas mode, `[` / `]`, `d`, `f`, `F11` and `Esc` do not do their usual jobs; the agent keys (`j` / `k`, the arrows, the `Ctrl`+`Tab` switcher) still move between agents, since the tree stays beside the canvas.
 
 | Keys | Action |
 |---|---|

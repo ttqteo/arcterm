@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The one focus rule: whatever writes focusIdAtom, AgentSurface reconciles the grid against it (reconcileGrid). The
-// keyboard's roster steps are modelled with the pure cycleId and moveCursor that cycleFocus (agents.tsx) and step
-// (buildAgentBindings) are built on; the wrappers themselves, which read atoms, are not driven here.
+// keyboard's ways in are modelled as the focus writes they make: the tab the Ctrl+Tab switcher opens
+// (tabswitcherstore.ts openFromSwitcher) and the pure moveCursor that step (buildAgentBindings) is built on; the
+// wrappers themselves, which read atoms, are not driven here.
 
 import { describe, expect, it } from "vitest";
 import { reconcileGrid, type GridState } from "./agentgrid";
-import { cycleId, moveCursor } from "./agentsviewmodel";
+import { moveCursor } from "./agentsviewmodel";
 import { resolveShownAgent } from "./cockpitsurfacemodel";
 
 const roster = ["a", "b", "c", "d", "e"];
@@ -17,8 +18,8 @@ const g = (ids: string[], focused: string | null = ids[0] ?? null): GridState =>
 // what the surface does after any write to focusIdAtom
 const settle = (s: GridState, focusId: string | undefined, eligible: ReadonlySet<string> = live) =>
     reconcileGrid(s, { focusId, eligible, seeded: true });
-// Ctrl+Tab: cycleFocus wraps around the roster order
-const ctrlTab = (s: GridState) => settle(s, cycleId(roster, s.focused ?? undefined, 1));
+// Ctrl+Tab: the switcher opens the tab picked, here the next one in the roster, wrapping
+const ctrlTab = (s: GridState) => settle(s, roster[(roster.indexOf(s.focused ?? "") + 1) % roster.length]);
 // the arrows and j/k: step() clamps at the ends of the order
 const arrow = (s: GridState, delta: number) => settle(s, moveCursor(roster, s.focused ?? undefined, delta));
 

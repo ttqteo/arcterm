@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The tab switcher of Float and terminal fullscreen, the app's own Cmd+Tab: Ctrl+Tab (Option+Tab too on a Mac) opens it
-// over the terminal with the tab you were on before this one picked, Tab and Shift+Tab move the pick while the modifier
-// stays down, and letting the modifier go opens the pick. Escape, any other key or the window losing focus keeps the tab
-// in view. Recent first, so a quick Ctrl+Tab flips between the last two tabs, and the switcher is drawn only once the
+// The Agent surface's tab switcher, the app's own Cmd+Tab: Ctrl+Tab (Option+Tab too on a Mac) opens it over the
+// terminal with the tab you were on before this one picked, Tab and Shift+Tab move the pick while the modifier stays
+// down, and letting the modifier go opens the pick. Escape, any other key or the window losing focus keeps the tab in
+// view. Recent first, so a quick Ctrl+Tab flips between the last two tabs, and the switcher is drawn only once the
 // modifier has been held for SWITCHER_DELAY_MS, so that flip never flashes it. Nothing opens, and so nothing is marked
 // read, until the modifier goes up. Pure: no React, no Wave runtime imports.
 

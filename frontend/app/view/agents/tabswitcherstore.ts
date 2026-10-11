@@ -7,10 +7,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
-import { centerModeAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
-import { floatModeAtom } from "./floatstore";
-import { terminalFullscreenAtom } from "./railstore";
 import { floatTabOrder } from "./sproutroster";
 import {
     openSwitcher,
@@ -27,15 +24,6 @@ export const tabSwitcherAtom = atom<SwitcherState | null>(null) as PrimitiveAtom
 
 // the agents and terminals most recently in view, newest first (trackRecentTabs)
 export const recentTabsAtom = atom<string[]>([]) as PrimitiveAtom<string[]>;
-
-/** Where Ctrl+Tab opens the switcher rather than stepping the Active list: in Float, and in fullscreen while the
- *  terminal is what it shows. Both hide the tree, so there is no list on screen to step through. */
-export function switcherMode(): boolean {
-    return (
-        globalStore.get(floatModeAtom) ||
-        (globalStore.get(terminalFullscreenAtom) && globalStore.get(centerModeAtom) === "terminal")
-    );
-}
 
 let showTimer: ReturnType<typeof setTimeout> | undefined;
 

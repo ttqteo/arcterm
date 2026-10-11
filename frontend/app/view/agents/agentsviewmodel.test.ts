@@ -12,7 +12,6 @@ import {
     burstRenderMode,
     canSubmitAsk,
     conversationText,
-    cycleId,
     deriveTerminalVMs,
     detailExceedsInline,
     detailLineCount,
@@ -834,18 +833,6 @@ describe("moveCursor", () => {
     });
     it("is undefined for an empty list", () => {
         expect(moveCursor([], "a", 1)).toBeUndefined();
-    });
-});
-
-describe("cycleId", () => {
-    it("wraps forward past the end and starts at 0 when current is unknown", () => {
-        expect(cycleId(["a", "b", "c"], "c", 1)).toBe("a");
-        expect(cycleId(["a", "b", "c"], undefined, 1)).toBe("a");
-        expect(cycleId(["a", "b", "c"], "a", 1)).toBe("b");
-    });
-    it("wraps backward and returns undefined for empty", () => {
-        expect(cycleId(["a", "b", "c"], "a", -1)).toBe("c");
-        expect(cycleId([], "a", 1)).toBeUndefined();
     });
 });
 

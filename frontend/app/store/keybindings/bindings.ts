@@ -41,7 +41,7 @@ import { railVisibleAtom, terminalFullscreenAtom } from "@/app/view/agents/rails
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
 import { resolveActiveRunId } from "@/app/view/agents/runmodel";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
-import { closeSwitcher, switcherKey, switcherMode, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
+import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
@@ -170,12 +170,13 @@ export function closeTarget(items: AgentVM[], focusId: string | undefined, paneI
     return items.find((x) => x.id === id) ?? null;
 }
 
-// Ctrl+Tab / Ctrl+Shift+Tab (or Option+Tab on a Mac) where the switcher replaces the Active list's cycle
+// Ctrl+Tab / Ctrl+Shift+Tab (or Option+Tab on a Mac): the tab switcher. Under another modal it stands down, but not
+// under its own (the open switcher counts as one, for Escape).
 function switcherBindings(model: AgentsViewModel, mod: "ctrl" | "alt"): Binding[] {
     const key = mod === "ctrl" ? "Ctrl" : "Alt";
     const suffix = mod === "ctrl" ? "" : "-alt";
     const when = (ctx: KeyContext) =>
-        ctx.surface === "agent" && switcherMode() && (!ctx.modalOpen || globalStore.get(tabSwitcherAtom) != null);
+        ctx.surface === "agent" && (!ctx.modalOpen || globalStore.get(tabSwitcherAtom) != null);
     return [
         {
             id: `switcher:next${suffix}`,
@@ -342,30 +343,11 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "Launch Pi tab",
             run: () => void launchPiTab(model),
         },
-        {
-            // Every keyboard way of moving between agents (this, the arrows and j/k in buildAgentBindings) only writes
-            // focusIdAtom. AgentSurface turns that into the grid rule (agentgrid.ts focusAgent): the agent's cell takes
-            // focus if it has one, otherwise the agent replaces the focused cell. Nothing here knows about the grid.
-            id: "cycle-agent-next",
-            keys: "Ctrl:Tab",
-            group: "Agent",
-            label: "Next agent",
-            when: (ctx) => ctx.surface === "agent" && !switcherMode(),
-            run: () => model.cycleFocus(false),
-        },
-        {
-            // Not "previous" despite the label: cycleFocus(true) steps forward through the asking agents only, and
-            // follows the same grid rule as cycle-agent-next.
-            id: "cycle-agent-prev",
-            keys: "Ctrl:Shift:Tab",
-            group: "Agent",
-            label: "Previous agent",
-            when: (ctx) => ctx.surface === "agent" && !switcherMode(),
-            run: () => model.cycleFocus(true),
-        },
-        // In Float and in terminal fullscreen there is no tree to step through: Ctrl+Tab opens the switcher over the
-        // terminal instead (tabswitcher.ts), the plain terminals among its tabs, from inside a terminal too. Under
-        // another modal it stands down, but not under its own (the open switcher counts as one, for Escape).
+        // Ctrl+Tab opens the switcher over the terminal (tabswitcher.ts): recent first, the plain terminals among its
+        // tabs, from inside a terminal too, and the same in a float, in fullscreen and in the plain surface. Like every
+        // keyboard way between agents (the arrows and j/k in buildAgentBindings) it only writes focusIdAtom, which
+        // AgentSurface turns into the grid rule (agentgrid.ts focusAgent): the agent's cell takes focus if it has one,
+        // otherwise the agent replaces the focused cell. Nothing here knows about the grid.
         ...switcherBindings(model, "ctrl"),
         // Option+Tab too on a Mac, where nothing else takes it. Not on Windows: Alt+Tab is the system's app switcher
         // there and never reaches the window, so Ctrl+Tab alone switches.

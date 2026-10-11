@@ -85,7 +85,7 @@ describe("agent canvas mode chips", () => {
             "c canvas",
             "Alt:c switch view",
             "esc back",
-            "Ctrl:Tab cycle",
+            "Ctrl:Tab switch",
             ...globals(),
         ]);
     });
@@ -95,7 +95,7 @@ describe("agent canvas mode chips", () => {
         expect(chips()).toEqual([
             "↑↓ move",
             "Alt:c switch view",
-            "Ctrl:Tab cycle",
+            "Ctrl:Tab switch",
             "c terminal",
             "[ ] board",
             "m mark",
@@ -109,7 +109,7 @@ describe("agent canvas mode chips", () => {
         expect(chips()).toEqual([
             "↑↓ move",
             "Alt:c switch view",
-            "Ctrl:Tab cycle",
+            "Ctrl:Tab switch",
             "m stop marking",
             "c terminal",
             ...globals(),
@@ -123,7 +123,7 @@ describe("agent canvas mode chips", () => {
         expect(chips()).toEqual([
             "↑↓ move",
             "Alt:c switch view",
-            "Ctrl:Tab cycle",
+            "Ctrl:Tab switch",
             "Mod:Enter send",
             "m stop marking",
             "c terminal",
@@ -137,14 +137,14 @@ describe("agent canvas mode chips", () => {
         expect(chipsInTerm).not.toContain("c canvas");
     });
 
-    it("History and a session offer only esc terminal and cycle: F11 and send stand down, even mid-marking", () => {
+    it("History and a session offer only esc terminal and switch: F11 and send stand down, even mid-marking", () => {
         for (const mode of ["history", "session"] as const) {
             globalStore.set(centerModeAtom, mode);
-            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab cycle", ...globals()]);
+            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab switch", ...globals()]);
             setCanvasMode("a1", "canvas", 1);
             setMarking("a1", true);
             updateCanvas("a1", (s) => ({ ...s, marks: [{ x: 0, y: 0, w: 20, h: 20, note: "" }] }));
-            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab cycle", ...globals()]);
+            expect(chips()).toEqual(["esc terminal", "Ctrl:Tab switch", ...globals()]);
             setMarking("a1", false);
             setCanvasMode("a1", "terminal", 2);
         }

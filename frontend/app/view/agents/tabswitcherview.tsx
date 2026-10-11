@@ -3,9 +3,9 @@
 
 // The Ctrl+Tab switcher drawn over the window (tabswitcher.ts): a row of tiles, one per tab, recent first, each the
 // runtime's mark with its status dot and unread count, the pick in the grey selection fill; under the row the pick's
-// name, state and model, then the keys. In Float the tiles are bare (smaller in a narrow window); in fullscreen there is
-// room for each tile's name. Mounted once in the cockpit root, it also owns the keyup that opens the pick and the blur and
-// stray key that close it; the bindings (switcher:*) open and step it.
+// name, state and model, then the keys. In Float the tiles are bare (smaller in a narrow window); in the full window
+// there is room for each tile's name. Mounted once in the cockpit root, it also owns the keyup that opens the pick and
+// the blur and stray key that close it; the bindings (switcher:*) open and step it.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { isMacOS } from "@/util/platformutil";

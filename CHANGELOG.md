@@ -22,10 +22,11 @@ Add one line in the same commit as any change a user would notice, under `Added`
 - Your pet (Sprout or the Minion) **teleports** when you minimize into it and back: it turns to light and leaves in a
   blue beam from where it walks, then lands in the screen's corner on a ring with a burst of sparks; Restore plays it
   the other way. Reduced motion skips it.
-- **Ctrl+Tab** in a float or in terminal fullscreen opens a tab switcher over the terminal, as the system's app
-  switcher works: hold Ctrl and press Tab to move through your agents and terminals, most recent first, then let go to
-  open the one picked. A quick Ctrl+Tab flips back to the tab you were on before, and passing over an agent leaves its
-  unread turns unread. Option+Tab works too on a Mac.
+- **Ctrl+Tab** on the Agent surface opens a tab switcher over the terminal, as the system's app switcher works: hold
+  Ctrl and press Tab to move through your agents and terminals, most recent first, then let go to open the one picked.
+  A quick Ctrl+Tab flips back to the tab you were on before, and passing over an agent leaves its unread turns unread.
+  It works the same in a float and in fullscreen, and Option+Tab works too on a Mac. Ctrl+Shift+Tab now steps back
+  through the switcher; it no longer jumps to the next agent that is asking.
 - **Code** can pin files: right-click a file → **Pin**, or **Pin** in the bar above the editor. Pinned files list at
   the top of the Files tab, per project; clicking one opens it and shows where it lives in the tree, and the
   file search (Ctrl+P, ⌘P on a Mac) lists them first.

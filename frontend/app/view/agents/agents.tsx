@@ -9,7 +9,6 @@ import { atomWithStorage } from "jotai/utils";
 import { sentAskIdsAtom } from "./agentaskstore";
 import { showTerminal } from "./agentcenter";
 import {
-    cycleId,
     groupAgents,
     mergePendingLaunches,
     nextAskId,
@@ -160,21 +159,6 @@ export class AgentsViewModel implements ViewModel {
         globalStore.set(this.focusIdAtom, agentId);
         globalStore.set(this.surfaceAtom, "agent");
         showTerminal();
-    }
-
-    // Cycle the focused agent (Ctrl+Tab) through the Active section as it reads. askingOnly restricts to asking agents
-    // (Ctrl+Shift+Tab), which also reaches one a fold hides, since it is waiting on you.
-    cycleFocus(askingOnly: boolean) {
-        const agents = globalStore.get(this.agentsAtom);
-        let ids = activeNavOrder(this);
-        if (askingOnly) {
-            const asking = new Set(agents.filter((a) => a.state === "asking").map((a) => a.id));
-            ids = [...new Set([...ids, ...asking])].filter((id) => asking.has(id));
-        }
-        const next = cycleId(ids, globalStore.get(this.focusIdAtom), 1);
-        if (next != null) {
-            this.focusFromKeys(next);
-        }
     }
 
     // Alt+1..9: the nth agent the Active section shows, as its row's digit says while Alt is held. A digit past the
