@@ -20165,7 +20165,7 @@ const agentRailTabs = {
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5 = await h.ev(railTabLabels);
         const surface5a = await h.activeSurfaceLabel();
-        await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("[data-rail-file] button") ?? [])].find((b) => b.textContent.includes("Open in Code"))?.focus()`);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] [data-file-open-code]")?.focus()`);
         await railTabsKey(h, "Escape", "Escape", 27);
         const tabs5b = await h.ev(railTabLabels);
         const surface5b = await h.activeSurfaceLabel();
@@ -20704,7 +20704,7 @@ const mdComments = {
         rec("12. with no terminal the tray offers Copy alone; Copy writes the exact message, reads Copied, and keeps the card", opened12 && noSend && copied && text12 === MDC_COPY_EXPECTED && tray12.includes("Copied. The comments stay until you send or delete them.") && cards12 === 1, JSON.stringify({ opened12, noSend, copied, text12, tray12, cards12 }));
 
         // 13. the Code preview renders the image too
-        await h.ev(`[...(${MDC_ASIDE}?.querySelectorAll("[data-rail-file] button") ?? [])].find((b) => b.textContent.includes("Open in Code"))?.click()`);
+        await h.ev(`${MDC_ASIDE}?.querySelector("[data-rail-file] [data-file-open-code]")?.click()`);
         // the Agent surface stays mounted while hidden, so the panel's own image must not count
         const codeImg = await polishWaitFor(h, `[...document.querySelectorAll('img[data-md-src="images/shot.png"]')].some((i) => !i.closest("aside") && i.checkVisibility())`, 10000);
         const surface13 = await h.activeSurfaceLabel();

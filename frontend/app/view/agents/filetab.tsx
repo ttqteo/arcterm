@@ -12,7 +12,7 @@ import { isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowUpRight, ChevronLeft, ChevronRight, GitCompare, WrapText } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, FileCode2, GitCompare, WrapText } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
@@ -24,7 +24,7 @@ import {
     railFileForward,
     railMdModeAtom,
 } from "./agentrailstore";
-import { currentFileView, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
+import { currentFileView, fileHeadPath, fileLabel, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { FileTabDiff } from "./filetabdiff";
@@ -47,6 +47,7 @@ const OPTIONS: MonacoTypes.editor.IEditorOptions = {
     scrollbar: { useShadows: false, verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
 };
 const LIVE_POLL_MS = 1000;
+const COPIED_MS = 1200;
 // the line a link named: a grey fill (selection is grey, DESIGN.md) and an accent mark in the gutter
 const HIT_LINE = "bg-surface-hover";
 const HIT_MARK = "border-l-2 border-accent";
@@ -63,6 +64,7 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     const [diffOn, setDiffOn] = useAtom(railDiffOnAtom);
     const drafts = useAtomValue(mdCommentAtom(agentId));
     const [following, setFollowing] = useState(!!ref?.live);
+    const [copied, setCopied] = useState(false);
     const followingRef = useRef(following);
     followingRef.current = following;
     const stampRef = useRef<string | undefined>(undefined);
@@ -128,6 +130,8 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
     // a file deleted since the base still has a diff: everything removed
     const diffable = view === "diff" && (state.kind === "text" || state.kind === "missing");
     const { dir, name } = fileLabel(ref);
+    const head = fileHeadPath(ref);
+    const history = file.back.length > 0 || file.forward.length > 0;
     const openCode = () => fireAndForget(() => openRefInCode(model, ref));
     const openWholeDiff = (rel: string) => {
         globalStore.set(model.focusIdAtom, agentId);
@@ -269,27 +273,32 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
         // data-owns-keys: the panel's own keys (Esc here) reach it before the surface's (dispatcher.ts ownsKeys)
         <div data-rail-file={ref.abs} data-owns-keys onKeyDown={onKeyDown} className="flex min-h-0 flex-1 flex-col">
             <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-2.5">
-                <button
-                    type="button"
-                    aria-label="Back"
-                    disabled={file.back.length === 0}
-                    onClick={() => railFileBack(agentId)}
-                    className={ICON_BTN}
-                >
-                    <ChevronLeft size={14} aria-hidden />
-                </button>
-                <button
-                    type="button"
-                    aria-label="Forward"
-                    disabled={file.forward.length === 0}
-                    onClick={() => railFileForward(agentId)}
-                    className={ICON_BTN}
-                >
-                    <ChevronRight size={14} aria-hidden />
-                </button>
-                <span title={ref.abs} className="min-w-0 flex-1 truncate text-[11.5px]">
-                    <span className="text-muted">{dir}</span>
-                    <span className="text-ink-hi">{name}</span>
+                {/* Back and Forward show once there is somewhere to go, so a first file's header is not two dead arrows */}
+                {history ? (
+                    <>
+                        <button
+                            type="button"
+                            aria-label="Back"
+                            disabled={file.back.length === 0}
+                            onClick={() => railFileBack(agentId)}
+                            className={ICON_BTN}
+                        >
+                            <ChevronLeft size={14} aria-hidden />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Forward"
+                            disabled={file.forward.length === 0}
+                            onClick={() => railFileForward(agentId)}
+                            className={ICON_BTN}
+                        >
+                            <ChevronRight size={14} aria-hidden />
+                        </button>
+                    </>
+                ) : null}
+                <span data-file-head title={ref.abs} className="min-w-0 flex-1 truncate pl-1 text-[11.5px]">
+                    <span className="text-muted">{head.dir}</span>
+                    <span className="text-ink-hi">{head.name}</span>
                     {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
                 </span>
                 {views.length > 0 ? (
@@ -371,10 +380,30 @@ export function FileTab({ model, agent, file }: { model: AgentsViewModel; agent:
                         <GitCompare size={13} aria-hidden />
                     </button>
                 ) : null}
+                <button
+                    type="button"
+                    data-file-copy-path
+                    aria-label={copied ? "Copied" : "Copy path"}
+                    title={copied ? "Copied" : `Copy path: ${ref.abs}`}
+                    onClick={() => {
+                        void navigator.clipboard?.writeText(ref.abs);
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), COPIED_MS);
+                    }}
+                    className={cn(ICON_BTN, copied && "text-accent-soft hover:text-accent-soft")}
+                >
+                    {copied ? <Check size={13} strokeWidth={2} aria-hidden /> : <Copy size={13} aria-hidden />}
+                </button>
                 {ref.live ? null : (
-                    <button type="button" onClick={openCode} className={BTN}>
-                        Open in Code
-                        <ArrowUpRight size={11} aria-hidden />
+                    <button
+                        type="button"
+                        data-file-open-code
+                        aria-label="Open in Code"
+                        title="Open in Code, to edit"
+                        onClick={openCode}
+                        className={ICON_BTN}
+                    >
+                        <FileCode2 size={13} aria-hidden />
                     </button>
                 )}
             </div>

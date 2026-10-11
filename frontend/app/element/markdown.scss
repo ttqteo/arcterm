@@ -371,3 +371,28 @@
         margin: 0.3em 0 1.1em;
     }
 }
+
+// The same document in the Agent panel's File tab (mddoc.tsx): a side panel's column, far narrower than the Code
+// surface's 760px measure, so the headings step down and the lines sit closer. Body text keeps DESIGN.md's 14px.
+.markdown.markdown-doc.markdown-rail .content {
+    line-height: 1.6;
+
+    .heading {
+        margin-top: 1.6em;
+        margin-bottom: 0.5em;
+
+        &.is-1 {
+            font-size: 1.45em;
+        }
+        &.is-2 {
+            font-size: 1.22em;
+        }
+        &.is-3 {
+            font-size: 1.08em;
+        }
+    }
+
+    .paragraph {
+        margin-bottom: 0.75em;
+    }
+}

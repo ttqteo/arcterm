@@ -78,9 +78,13 @@ Add one line in the same commit as any change a user would notice, under `Added`
   Agent and **started from** on its run sheet, which open the session's terminal, or its transcript once it has ended.
   The other way round, the session's header links its runs with `↳`: one opens its run sheet, several
   (`3 runs, 1 active`) a menu of them.
+- The Agent panel's File tab has a copy button in its header that copies the file's full path.
 
 ### Changed
 
+- The Agent panel's File tab is roomier. Its header no longer repeats the file name the tab already shows, only its
+  folder. Back and Forward appear only once you have opened a second file, and Open in Code is an icon. A markdown
+  preview there has smaller headings and less margin, so more of the file fits.
 - The RAM panel's arcterm section has an **Agents** line, every agent's RAM added up, so its rows add up to
   **Total, with agents**.
 - The Codex and Antigravity marks are a white mark on a dark tile, like pi's, so they read clearly on a dark theme

@@ -49,7 +49,7 @@ import {
 import { mdCommentAtom, openBox, setBoxRange } from "./mdcommentstore";
 
 // the text column's left inset: room for the gutter +
-const GUTTER = 36;
+const GUTTER = 30;
 const FLOAT_BTN =
     "absolute z-10 flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border-0 bg-accent px-[10px] py-[5px] text-[12.5px] font-semibold leading-[1.2] text-background shadow-popover-sm hover:bg-accenthover";
 const KBD = "rounded-[4px] bg-background/20 px-[5px] font-mono text-[10.5px]";
@@ -384,7 +384,7 @@ export function MdDoc({
                     setHover(null);
                     setHoverImg(null);
                 }}
-                className="relative pb-10 pr-[22px] pt-[18px]"
+                className="relative pb-10 pr-[18px] pt-4"
                 style={{ paddingLeft: GUTTER }}
             >
                 <div data-md-overlay aria-hidden className="pointer-events-none absolute inset-0">
@@ -416,7 +416,7 @@ export function MdDoc({
                             text={doc.body}
                             header={header}
                             scrollable={false}
-                            className="markdown-doc"
+                            className="markdown-doc markdown-rail"
                             contentClassName="p-0"
                             fontSizeOverride={14}
                             resolveOpts={resolveOpts}
@@ -436,7 +436,7 @@ export function MdDoc({
                         aria-label="Comment on this block"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={(e) => plus(hover.index, e.shiftKey)}
-                        className="absolute left-2 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-accent p-0 text-background hover:bg-accenthover"
+                        className="absolute left-1.5 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-accent p-0 text-background hover:bg-accenthover"
                         style={{ top: hover.top }}
                     >
                         <Plus size={12} strokeWidth={2.6} aria-hidden />

@@ -190,3 +190,10 @@ export function fileLabel(ref: FileRef): { dir: string; name: string } {
 export function fileTabLabel(ref: FileRef): string {
     return ref.title || fileLabel(ref).name;
 }
+
+// what the File tab's header adds to the tab: the folder the file sits in, and its name only when the tab shows a title
+// in its place
+export function fileHeadPath(ref: FileRef): { dir: string; name: string } {
+    const { dir, name } = fileLabel(ref);
+    return { dir, name: ref.title ? name : "" };
+}
